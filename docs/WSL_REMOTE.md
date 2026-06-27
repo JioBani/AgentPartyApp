@@ -314,11 +314,19 @@ E2E QA runs against a **real** distro, not a mock, once the engine is headless
 **S6 status:** done — OpenRouter key forwarded into the distro engine via WSLENV
 (so harness/model routing works in WSL); engine processes disposed when their
 last window closes and on app quit; the CLI shim + launcher ship as
-`extraResources` (`resources/bin/`). **Remaining (needs a real build/install to
-verify):** register `resources/bin` on the Windows PATH from the NSIS installer,
-and provision the **Linux claude binary** into the distro (until then, a *real*
-model session in WSL fails with an explicit "claude binary not found" error —
-never a silent fallback; mock sessions and routing are unaffected).
+`extraResources` (`resources/bin/`).
+
+**Real model in WSL — verified.** `spawnWslEngine` provisions the Claude Agent
+SDK (incl. the linux native binary) into `~/.agent_party_app/server` on first
+connect (guarded; best-effort with a logged warning). With the distro logged in
+(`claude login`), a real session created in the WSL engine returns a live Claude
+response streamed back over wsl.exe — confirmed end to end (sonnet, "PONG").
+Harness/model separation holds: native Claude via the distro's subscription, same
+ClaudeAdapter path.
+
+**Remaining (packaging only, needs a real installer run):** register
+`resources/bin` on the Windows PATH from the NSIS installer so `agent-party` is
+typeable without a full path. Everything else works today.
 
 Net: install once on Windows; typical dev distros (with node) need **zero**
 extra steps; a bare distro needs at most a one-time `apt install nodejs`.

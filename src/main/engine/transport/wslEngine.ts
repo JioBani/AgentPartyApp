@@ -35,6 +35,7 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     const serverDir = "$HOME/.agent_party_app/server";
     const serverPath = `${serverDir}/engine-server.mjs`;
     await runBash(options.distro, `mkdir -p "${serverDir}" && cp "${wslBundle}" "${serverPath}"`);
+    await ensureSdk(options.distro, serverDir);
 
     // Forward the OpenRouter key into the distro via WSLENV (not on the command
     // line, so it never appears in args/logs); the distro engine's router reads it.
@@ -47,7 +48,9 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
       "wsl.exe",
       [
         "-d", options.distro, "-e", "bash", "-lc",
-        `exec node "${serverPath}" --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
+        // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
+        // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
+        `cd "${serverDir}" && exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );
@@ -70,6 +73,30 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
       }
     },
   };
+}
+
+/** Keep in sync with the app's @anthropic-ai/claude-agent-sdk dependency. */
+const SDK_SPEC = "@anthropic-ai/claude-agent-sdk@^0.3.186";
+
+/**
+ * Provisions the Claude Agent SDK (incl. the linux native binary) into the
+ * distro server dir so real sessions resolve it — VS Code's "server install on
+ * connect". Guarded, so it only installs once. Best-effort: if it fails (e.g.
+ * no network), we log and continue — mock/QA sessions don't need it, and a real
+ * session then fails with the SDK's own explicit error (no silent fallback).
+ */
+async function ensureSdk(distro: string, serverDir: string): Promise<void> {
+  try {
+    await runBash(
+      distro,
+      `cd "${serverDir}" && [ -d node_modules/@anthropic-ai/claude-agent-sdk ] || { npm init -y >/dev/null 2>&1; npm install ${SDK_SPEC} >/dev/null 2>&1; }`,
+    );
+  } catch (error) {
+    log("warn", "wsl-engine", "could not provision the Claude Agent SDK in the distro (real sessions will fail until installed)", {
+      distro,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function assertNode(distro: string): Promise<void> {
