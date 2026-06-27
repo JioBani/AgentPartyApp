@@ -26,6 +26,13 @@ let automationApi: AutomationApiServer | undefined;
 let appController: AppController | undefined;
 let engineRegistry: EngineRegistry | undefined;
 
+/** `AgentParty.exe --workspace <uri>` (used by the agent-party CLI auto-launch). */
+function launchWorkspace(): string | undefined {
+  const index = process.argv.indexOf("--workspace");
+  const value = index >= 0 ? process.argv[index + 1] : "";
+  return value ? serializeWorkspaceLocation(parseWorkspaceLocation(value)) : undefined;
+}
+
 function defaultWorkspace(): string {
   return getSettings().workspacePath || process.cwd();
 }
@@ -142,7 +149,7 @@ async function bootstrap(): Promise<void> {
   });
   registerIpc();
   registerApplicationMenu();
-  await createWindow(defaultWorkspace());
+  await createWindow(launchWorkspace() || defaultWorkspace());
   await automationApi.start();
   writeAutomationDiscovery();
 }
