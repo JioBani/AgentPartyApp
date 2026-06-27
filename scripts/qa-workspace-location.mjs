@@ -36,10 +36,10 @@ const local = W.parseWorkspaceLocation(winPath);
 assert(local.host.kind === "local", "a Windows path parses as local");
 assert(local.path === winPath, "local keeps the raw path");
 assert(W.serializeWorkspaceLocation(local) === winPath, "local serializes back to the raw path (no URI)");
-assert(W.workspaceKey(winPath) === path.win32.resolve(winPath), "local key equals path.win32.resolve (identical to old logic)");
+assert(W.workspaceKey(winPath) === path.resolve(winPath), "local key equals the platform path.resolve (identical to old logic)");
 
 // a relative-ish local path still resolves like before
-assert(W.workspaceKey("C:\\a\\b\\..\\c") === path.win32.resolve("C:\\a\\b\\..\\c"), "local key normalizes via win32.resolve");
+assert(W.workspaceKey("C:\\a\\b\\..\\c") === path.resolve("C:\\a\\b\\..\\c"), "local key normalizes via the platform path.resolve");
 
 // --- wsl: URI round-trips and gets a stable, non-Windows identity ---------
 const uri = "wsl+Ubuntu:/home/user/project";

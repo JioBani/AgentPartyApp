@@ -1,6 +1,5 @@
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
-import { app } from "electron";
 import { ClaudeAdapter } from "../core/claudeAdapter";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig } from "../core/modelRegistry";
@@ -22,7 +21,13 @@ interface ManagedSession {
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
 
-  constructor(private readonly router: EmbeddedRouter) {
+  /**
+   * @param userDataDir base dir for harness debug logs (Electron's userData on
+   *   the desktop; an engine-chosen dir when running headless, e.g. in WSL).
+   *   Injected rather than read from `electron.app` so the engine core runs
+   *   under plain node. See docs/WSL_REMOTE.md.
+   */
+  constructor(private readonly router: EmbeddedRouter, private readonly userDataDir: string) {
     super();
   }
 
@@ -184,7 +189,7 @@ export class SessionManager extends EventEmitter {
 
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput): HarnessSession {
     const settings = getSettings();
-    const storageDir = path.join(app.getPath("userData"), "logs");
+    const storageDir = path.join(this.userDataDir, "logs");
     const routerAccountingKey = `agentparty-native-session:${id}`;
     return new ClaudeAdapter({
       id,

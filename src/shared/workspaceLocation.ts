@@ -47,15 +47,20 @@ export function serializeWorkspaceLocation(loc: WorkspaceLocation): string {
 
 /**
  * Stable identity used for caching/dedup (engine contexts, window grouping).
- * Replaces every ad-hoc `path.resolve(workspacePath)`. For local locations this
- * is exactly `path.win32.resolve(path)` — byte-identical to the previous logic
- * on Windows — so adopting it changes nothing for local workspaces.
+ * Replaces every ad-hoc `path.resolve(workspacePath)`.
+ *
+ * "local" means "native to the host running this code": on Windows that is
+ * `path.win32.resolve` (byte-identical to the previous logic), and inside a WSL
+ * distro engine it is `path.posix.resolve` — so a Linux workspace path is not
+ * mangled into backslashes. We therefore use the platform-default `path.resolve`
+ * for local. WSL locations addressed from another host use the distro-qualified
+ * posix form and never touch `path.resolve`.
  */
 export function workspaceLocationKey(loc: WorkspaceLocation): string {
   if (loc.host.kind === "wsl") {
     return `wsl+${loc.host.distro}:${path.posix.normalize(loc.path || "/")}`;
   }
-  return path.win32.resolve(loc.path || ".");
+  return path.resolve(loc.path || ".");
 }
 
 /** Convenience: identity key straight from a serialized string. */

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { app } from "electron";
+import { getUserDataDir } from "./userDataDir";
 import { AppSettings } from "../shared/types";
 
 const defaults: AppSettings = {
@@ -59,5 +59,5 @@ function readSettingsFile(): Partial<AppSettings> {
 }
 
 function settingsPath(): string {
-  return path.join(app.getPath("userData"), "settings.json");
+  return path.join(getUserDataDir(), "settings.json");
 }

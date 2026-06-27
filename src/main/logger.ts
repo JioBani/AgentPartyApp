@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { app } from "electron";
+import { getUserDataDir } from "./userDataDir";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -16,7 +16,7 @@ let logFilePath = "";
 let debugLoggingEnabled = false;
 
 export function initLogger(): string {
-  const dir = path.join(app.getPath("userData"), "logs");
+  const dir = path.join(getUserDataDir(), "logs");
   fs.mkdirSync(dir, { recursive: true });
   logFilePath = path.join(dir, `agentparty-${new Date().toISOString().replace(/[:.]/g, "-")}.ndjson`);
   log("info", "app", "logger initialized", { logFilePath });

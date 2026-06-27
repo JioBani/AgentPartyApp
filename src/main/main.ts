@@ -7,7 +7,8 @@ import { getPublicSettings, getSettings } from "./settings";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { WorkspaceManager } from "./workspaceManager";
-import { EngineRegistry } from "./engine/engineRegistry";
+import { createEngineHost } from "./engine/engineHost";
+import { setUserDataDir } from "./userDataDir";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
@@ -56,19 +57,24 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
 }
 
 async function bootstrap(): Promise<void> {
+  setUserDataDir(app.getPath("userData"));
   initLogger();
   const settings = getSettings();
   setDebugLoggingEnabled(settings.debugEnabled);
-  router = new EmbeddedRouter({
-    preferredPort: parsePort(settings.routerBaseUrl),
-    authToken: settings.routerAuthToken,
-    openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+  const host = createEngineHost({
+    storageDir: app.getPath("userData"),
+    router: {
+      preferredPort: parsePort(settings.routerBaseUrl),
+      authToken: settings.routerAuthToken,
+      openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+    },
   });
-  await router.start();
+  router = host.router;
+  sessionManager = host.sessionManager;
+  workspaceManager = host.workspaceManager;
+  await host.startRouter();
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
-  sessionManager = new SessionManager(router);
-  workspaceManager = new WorkspaceManager(sessionManager);
   windowRegistry = new WindowRegistry();
 
   // Route session streams to the windows viewing that session's workspace.
@@ -86,10 +92,9 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager });
   appController = new AppController({
     sessionManager,
-    engineRegistry,
+    engineRegistry: host.engineRegistry,
     windowRegistry,
     getRouterBaseUrl: () => router?.baseUrl || getSettings().routerBaseUrl,
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,

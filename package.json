@@ -17,6 +17,7 @@
     "test:render": "node scripts/qa-render.mjs",
     "test:layout": "node scripts/qa-layout.mjs",
     "test:workspace": "node scripts/qa-workspace-location.mjs",
+    "test:wsl-engine": "node scripts/qa-wsl-engine.mjs",
     "test:ui": "npm run test:workspace && npm run test:layout && npm run test:render",
     "start": "node scripts/launch-electron.mjs",
     "start:qa": "cross-env AGENTPARTY_QA=1 node scripts/launch-electron.mjs",

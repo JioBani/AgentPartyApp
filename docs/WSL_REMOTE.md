@@ -144,15 +144,18 @@ Mirrors VS Code's "install server on first connect":
 
 1. **Detect distros** — `wsl.exe -l -q` (+ verify online). Surface the list; do
    not guess a default silently.
-2. **Ensure runtime + engine** under `~/.agent_party_app/server/<version>/`
-   inside the distro: the engine bundle and the **linux claude binary**
-   (npm-install in-distro, or copy a bundled artifact). Version-gated so upgrades
-   reinstall.
-3. **Spawn** `wsl.exe -d <distro> -- <node> server.js --socket <path>`.
+2. **Require distro node** (decided: rely on the distro's node, not a bundled
+   runtime — see §16). Probe `node -v` in the distro; if missing or too old,
+   **surface an explicit error with an install hint** (`sudo apt install nodejs`)
+   — never silently fall back to a Windows run.
+3. **Ensure engine** under `~/.agent_party_app/server/<version>/` inside the
+   distro: copy the engine bundle **and the linux claude binary** from the
+   Windows app into the distro. Version-gated so upgrades reinstall.
+4. **Spawn** `wsl.exe -d <distro> -- <node> server.js --socket <path>`.
    **Strip `ELECTRON_RUN_AS_NODE`** (the known launch-bug lesson — see
    [[renderer-qa-without-electron]] context): inside the distro we run *plain
    node*, not electron.
-4. **Handshake**: version check, capability check, then connect.
+5. **Handshake**: version check, capability check, then connect.
 
 Failures (no distro, install error, version mismatch, handshake timeout) are
 **surfaced explicitly** (log + UI), never silently downgraded to a Windows run
@@ -243,9 +246,13 @@ automation API *from* WSL is unreliable. Interop (proven available:
 shim hand off to a Windows process that *can* reach `127.0.0.1`. This is the same
 reason `code` shells out to `Code.exe` instead of opening a socket.
 
-The shim is installed onto the distro `PATH` during the in-distro server install
-(§8). The open request reuses the existing `POST /api/windows` endpoint
-(convention #4) with a `wsl+<distro>:` URI — no bespoke channel.
+The shim does **not** require a WSL-side install to be typeable: WSL appends the
+Windows `PATH` into the distro via interop, so a shim placed in the Windows app's
+`bin/` directory (on the Windows PATH) is immediately runnable as `agent-party`
+inside any distro — exactly why `command -v code` already resolves the Windows
+`code` shim from WSL (verified). The open request reuses the existing
+`POST /api/windows` endpoint (convention #4) with a `wsl+<distro>:` URI — no
+bespoke channel.
 
 ## 14. WSL QA environment (verified)
 
@@ -260,10 +267,29 @@ E2E QA runs against a **real** distro, not a mock, once the engine is headless
   workspace. `.agent_party_app/` for it must land on ext4, engine-side.
 - `$WSL_DISTRO_NAME` is set inside the distro (the CLI relies on it).
 
-## 15. Risks / open questions
+## 15. Deployment / install model (decided)
 
-- **Linux claude binary delivery** into the distro: npm-install on connect vs.
-  shipping a bundled artifact we copy in. (node itself is present — see §14.)
+**One install — on Windows.** There is no manual WSL-side install of AgentParty.
+
+- **The `agent-party` CLI** becomes typeable in every distro automatically,
+  because WSL appends the Windows `PATH` (interop) and our shim lives in the
+  Windows app's `bin/` (§13) — same mechanism that already exposes `code`.
+- **The Linux engine** is auto-provisioned into the distro on first use
+  (`~/.agent_party_app/server/<version>/`, copied from the Windows app — §8),
+  like VS Code's "server install on connect".
+- **node:** decided to **rely on the distro's node** (verified present, v22).
+  If a distro lacks node, the bootstrap surfaces an explicit error + install
+  hint (§8 step 2) — never a silent Windows fallback. We do **not** bundle a
+  Linux node runtime (lighter installer; acceptable for dev distros). Revisit
+  only if zero-prerequisite distros become a requirement.
+- **The Linux claude binary** is shipped inside the Windows app and copied into
+  the distro during provisioning (S6) — not separately installed by the user.
+
+Net: install once on Windows; typical dev distros (with node) need **zero**
+extra steps; a bare distro needs at most a one-time `apt install nodejs`.
+
+## 16. Risks / open questions
+
 - **File preview on the Windows side**: if the UI ever needs workspace files
   directly (thumbnails, diffs), it must go through the engine RPC, not `\\wsl$`.
 - **Per-host auth/router duplication** and where keys live.
