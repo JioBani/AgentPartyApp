@@ -201,20 +201,76 @@ in [`apiSpec.ts`](../src/shared/apiSpec.ts), documented in [API.md](API.md):
 | **S2** | `EngineConnection` + `LocalEngine` (pure refactor) | unchanged |
 | **S3** | headless engine entry (process-agnostic bootstrap) | unchanged |
 | **S4** | RPC transport; `RemoteEngineClient` ↔ `EngineServer` proven locally | unchanged (still local) |
-| **S5** | WSL bootstrap + distro/path picker + `/api/hosts` | unchanged; WSL opt-in |
-| **S6** | packaging: linux claude binary in-distro; build pipeline | unchanged |
+| **S5** | WSL bootstrap (distro detect, in-distro server install, spawn via `wsl.exe`), distro/path picker + `/api/hosts`, **`agent-party` CLI launcher (§13)** | unchanged; WSL opt-in |
+| **S6** | packaging: linux claude binary in-distro; build pipeline; install the CLI shim onto the distro `PATH` | unchanged |
 
-## 13. Risks / open questions
+## 13. `agent-party` CLI launcher — the `code .` analog (Stage 5)
 
-- **Linux claude binary delivery** into the distro: npm-install on connect
-  (needs network + node in distro) vs. shipping a bundled artifact we copy in.
-- **Node in the distro**: require a user-provided node, or ship a pinned runtime
-  like VS Code's server? (Leaning: ship/pin to avoid "works on my distro".)
-- **File preview on the Windows side**: if the UI ever needs to read workspace
-  files directly (thumbnails, diffs), it must go through the engine RPC, not
-  `\\wsl$` — keep all fs access engine-side.
+**Requirement:** from a directory inside WSL, running `agent-party` (optionally
+`agent-party .`) opens that directory as an AgentParty workspace in the Windows
+UI — exactly how `code .` opens a Remote-WSL window.
+
+**Reference — how `code` does it** (verified by reading the shim at
+`…/Microsoft VS Code/bin/code`): it is a POSIX `sh` script on the WSL `PATH`
+that does **not** network from Linux to Windows. Instead it:
+
+1. reads `$WSL_DISTRO_NAME` to know the distro,
+2. uses `wslpath`/`WSLENV` (e.g. `WSLENV=ELECTRON_RUN_AS_NODE/w`) to translate
+   paths/env across the boundary,
+3. invokes the **Windows** Electron exe over WSL→Windows **interop**
+   (`ELECTRON_RUN_AS_NODE=1 Code.exe cli.js …`), letting the Windows side do the
+   actual window open / remote handshake.
+
+**Our design (mirror it):**
+
+```
+[WSL]  agent-party  (sh shim on PATH)
+   │  builds  wsl+$WSL_DISTRO_NAME:$(realpath .)
+   │  interop → invokes Windows launcher (no WSL→Win networking)
+   ▼
+[Windows]  agent-party-cli (Electron-as-node or small exe)
+   │  if app running → POST /api/windows { workspacePath: "wsl+<distro>:/path" }   (127.0.0.1, Windows-local)
+   │  else           → launch the app, then request the window
+   ▼
+[Windows]  AgentParty UI opens/focuses a window for that WSL workspace
+   │  (window then connects the engine inside <distro> — §4/§8)
+```
+
+Why interop and not WSL→Windows sockets: in default WSL2 NAT networking, Linux
+`localhost` does **not** reach the Windows loopback, so calling the Windows
+automation API *from* WSL is unreliable. Interop (proven available:
+`/proc/sys/fs/binfmt_misc/WSLInterop = enabled`, `cmd.exe` callable) lets the
+shim hand off to a Windows process that *can* reach `127.0.0.1`. This is the same
+reason `code` shells out to `Code.exe` instead of opening a socket.
+
+The shim is installed onto the distro `PATH` during the in-distro server install
+(§8). The open request reuses the existing `POST /api/windows` endpoint
+(convention #4) with a `wsl+<distro>:` URI — no bespoke channel.
+
+## 14. WSL QA environment (verified)
+
+E2E QA runs against a **real** distro, not a mock, once the engine is headless
+(S3+). Verified on this machine:
+
+- distro **Ubuntu-22.04** (WSL2, default), interop **enabled**.
+- **node v22.22.2** and **git** already present in the distro → the engine can
+  run on the distro's node; pinning a runtime stays optional (see risks).
+- native Linux scratch cwd: **`/home/dev/agentparty-wsl-e2e`** on **ext4**
+  (not the `\\wsl$` / `/mnt/c` 9P bridge) — this is the canonical WSL-native QA
+  workspace. `.agent_party_app/` for it must land on ext4, engine-side.
+- `$WSL_DISTRO_NAME` is set inside the distro (the CLI relies on it).
+
+## 15. Risks / open questions
+
+- **Linux claude binary delivery** into the distro: npm-install on connect vs.
+  shipping a bundled artifact we copy in. (node itself is present — see §14.)
+- **File preview on the Windows side**: if the UI ever needs workspace files
+  directly (thumbnails, diffs), it must go through the engine RPC, not `\\wsl$`.
 - **Per-host auth/router duplication** and where keys live.
-- **localhost vs explicit socket** on WSL2 (favor explicit socket).
+- **WSL2 networking:** Windows→WSL `localhost` is auto-forwarded, but WSL→Windows
+  is not (NAT). Engine RPC is Windows→WSL (OK); the CLI open is WSL→Windows and
+  therefore uses **interop**, not sockets (§13). Favor an explicit socket/pipe
+  for the engine transport over relying on localhost.
 
 ---
 
