@@ -17,7 +17,7 @@ function arg(name: string): string {
   return index >= 0 ? process.argv[index + 1] || "" : "";
 }
 
-function main(): void {
+async function main(): Promise<void> {
   setConsoleLogging(false);
 
   const workspace = arg("workspace") || process.cwd();
@@ -27,6 +27,10 @@ function main(): void {
     storageDir: storage,
     router: { preferredPort: 0, authToken: "engine", openRouterApiKey: process.env.OPENROUTER_API_KEY || "" },
   });
+  // Start the embedded router so router-backed models (MiniMax M3, etc.) work —
+  // it runs inside the distro alongside the harness. preferredPort 0 binds a
+  // free port; without this the harness sees the router at 127.0.0.1:0.
+  await host.startRouter();
   const engine = host.engineRegistry.forWorkspace(workspace);
 
   serveEngine(engine, process.stdin, process.stdout);
@@ -49,4 +53,7 @@ function main(): void {
   process.stderr.write("ENGINE_SERVER_READY\n");
 }
 
-main();
+main().catch((error) => {
+  process.stderr.write(`ENGINE_SERVER_ERROR ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
