@@ -138,6 +138,22 @@ spawned remote), enforcing the shared-context rule.
 - Prove it **locally first**: run `EngineServer` as a Windows child node process
   over the socket before introducing `wsl.exe`. Same transport, fewer variables.
 
+**Implemented (S7 — the live session plane):**
+- Session control by id (send/interrupt/approve/restart/compact/model/effort/
+  permission/close) is now part of EngineConnection and routed to the engine
+  that owns **the caller's workspace** (the sending window / `?window=`) — a
+  session lives in its workspace's engine, so no global session→engine map is
+  needed.
+- The engine **pushes** session activity (`session:events`/`:snapshot`/
+  `:sessions`) over the same channel as `{ kind: "event" }` frames;
+  `RemoteEngineClient.onEvent` re-emits them and the desktop broadcasts them to
+  that workspace's windows (re-stamping the workspace to the Windows-side URI).
+- Verified by `test:wsl-session`: a turn sent to a member whose session lives in
+  the WSL engine streams its reply (assistant delta + turn_complete) back to
+  Windows over wsl.exe — real transport/routing/streaming, only the model
+  *content* mocked. Holds at the app level too (seed+send via HTTP → the WSL
+  session goes idle on completion).
+
 ## 8. In-distro server bootstrap (Stage 5)
 
 Mirrors VS Code's "install server on first connect":

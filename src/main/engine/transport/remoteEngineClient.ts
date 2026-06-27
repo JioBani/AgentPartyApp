@@ -23,6 +23,7 @@ export interface RemoteTransport {
 export class RemoteEngineClient implements EngineConnection {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+  private readonly eventListeners = new Set<(channel: string, payload: unknown) => void>();
   private readonly transport: Promise<RemoteTransport>;
   private detach: (() => void) | undefined;
   private disposed = false;
@@ -34,7 +35,13 @@ export class RemoteEngineClient implements EngineConnection {
         if (this.disposed) {
           return;
         }
-        this.detach = readLines(t.input, (message: RpcResponse) => {
+        this.detach = readLines(t.input, (message: RpcResponse & { kind?: string; channel?: string; payload?: unknown }) => {
+          if (message?.kind === "event" && typeof message.channel === "string") {
+            for (const listener of this.eventListeners) {
+              listener(message.channel, message.payload);
+            }
+            return;
+          }
           if (typeof message?.id !== "number") {
             return;
           }
@@ -52,6 +59,12 @@ export class RemoteEngineClient implements EngineConnection {
       },
       (error) => this.failAll(error instanceof Error ? error : new Error(String(error))),
     );
+  }
+
+  /** Subscribe to pushed session events (session:events/snapshot/sessions). */
+  onEvent(listener: (channel: string, payload: unknown) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
   }
 
   /** Detaches and rejects anything in flight. */
@@ -96,6 +109,15 @@ export class RemoteEngineClient implements EngineConnection {
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }
   resumeSession(sessionId: string) { return this.call<Result<"resumeSession">>("resumeSession", sessionId); }
   listWorkspaceSessions() { return this.call<Result<"listWorkspaceSessions">>("listWorkspaceSessions"); }
+  sendUserTurn(sessionId: string, text: string) { return this.call<void>("sendUserTurn", sessionId, text); }
+  interruptSession(sessionId: string) { return this.call<void>("interruptSession", sessionId); }
+  restartSession(sessionId: string) { return this.call<void>("restartSession", sessionId); }
+  compactSession(sessionId: string) { return this.call<void>("compactSession", sessionId); }
+  setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string) { return this.call<void>("setSessionModel", sessionId, model, providerId, runtimeModel); }
+  setSessionEffort(sessionId: string, effort: string) { return this.call<void>("setSessionEffort", sessionId, effort); }
+  setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
+  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
+  closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }) { return this.call<Result<"qaSeed">>("qaSeed", input); }
   qaCreateMockMember(spec: QaMemberSpec) { return this.call<Result<"qaCreateMockMember">>("qaCreateMockMember", spec); }
   qaEmit(name: string, body: QaEmitInput) { return this.call<Result<"qaEmit">>("qaEmit", name, body); }

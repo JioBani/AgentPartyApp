@@ -69,6 +69,17 @@ export interface EngineConnection {
   resumeSession(sessionId: string): Promise<SessionView>;
   listWorkspaceSessions(): Promise<SessionView[]>;
 
+  // --- Session control (by id, within this engine's workspace) -----------
+  sendUserTurn(sessionId: string, text: string): Promise<void>;
+  interruptSession(sessionId: string): Promise<void>;
+  restartSession(sessionId: string): Promise<void>;
+  compactSession(sessionId: string): Promise<void>;
+  setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void>;
+  setSessionEffort(sessionId: string, effort: string): Promise<void>;
+  setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
+  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
+  closeSession(sessionId: string): Promise<boolean>;
+
   // --- QA (test-only, workspace-scoped) ----------------------------------
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }>;
   qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }>;

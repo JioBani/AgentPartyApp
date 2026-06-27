@@ -21,8 +21,15 @@ export interface RpcResponse {
   error?: string;
 }
 
+/** A server→client push (session events), distinguished from responses by `kind`. */
+export interface RpcEvent {
+  kind: "event";
+  channel: string;
+  payload: unknown;
+}
+
 /** Writes one JSON value as a single `\n`-terminated line. */
-export function writeLine(stream: Writable, value: RpcRequest | RpcResponse): void {
+export function writeLine(stream: Writable, value: RpcRequest | RpcResponse | RpcEvent): void {
   stream.write(`${JSON.stringify(value)}\n`);
 }
 

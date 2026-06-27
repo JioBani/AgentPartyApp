@@ -112,6 +112,43 @@ export class LocalEngine implements EngineConnection {
     return this.deps.sessionManager.listSessions().filter((session) => workspaceKey(session.workspace) === key);
   }
 
+  // --- Session control ----------------------------------------------------
+  async sendUserTurn(sessionId: string, text: string): Promise<void> {
+    this.deps.sessionManager.sendUserTurn(sessionId, text);
+  }
+
+  async interruptSession(sessionId: string): Promise<void> {
+    this.deps.sessionManager.interrupt(sessionId);
+  }
+
+  async restartSession(sessionId: string): Promise<void> {
+    this.deps.sessionManager.restart(sessionId);
+  }
+
+  async compactSession(sessionId: string): Promise<void> {
+    this.deps.sessionManager.compact(sessionId);
+  }
+
+  async setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
+    this.deps.sessionManager.setModel(sessionId, model, providerId, runtimeModel);
+  }
+
+  async setSessionEffort(sessionId: string, effort: string): Promise<void> {
+    this.deps.sessionManager.setEffort(sessionId, effort);
+  }
+
+  async setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
+    this.deps.sessionManager.setPermissionMode(sessionId, permissionMode);
+  }
+
+  async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {
+    this.deps.sessionManager.approve(sessionId, requestId, behavior, updatedInput, message);
+  }
+
+  async closeSession(sessionId: string): Promise<boolean> {
+    return this.deps.sessionManager.closeSession(sessionId);
+  }
+
   private withWorkspace(input?: CreateSessionInput | string): CreateSessionInput {
     if (typeof input === "string" || !input) {
       return { workspacePath: this.workspacePath };

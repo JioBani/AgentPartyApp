@@ -119,7 +119,7 @@ export class AutomationApiServer {
       }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && sessionMatch) {
-        sendJson(res, 200, c.handleSessionAction(sessionMatch[1], sessionMatch[2], await readJson(req)));
+        sendJson(res, 200, await c.handleSessionAction(workspace, sessionMatch[1], sessionMatch[2], await readJson(req)));
         return;
       }
       if (method === "GET" && (url.pathname === "/api/party" || url.pathname === "/api/harness/party")) {

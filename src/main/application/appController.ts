@@ -150,49 +150,52 @@ export class AppController {
     return this.engineFor(workspacePath).resumeSession(sessionId);
   }
 
-  closeSession(sessionId: string): { ok: boolean } {
-    return { ok: this.deps.sessionManager.closeSession(sessionId) };
+  // Session control is routed to the engine that owns the workspace the caller
+  // (window / ?window=) is viewing — the session lives in that engine, local or
+  // a WSL distro. See docs/WSL_REMOTE.md §7.
+  async closeSession(workspacePath: string, sessionId: string): Promise<{ ok: boolean }> {
+    return { ok: await this.engineFor(workspacePath).closeSession(sessionId) };
   }
 
-  sendSessionMessage(sessionId: string, text: string): void {
-    this.deps.sessionManager.sendUserTurn(sessionId, text);
+  sendSessionMessage(workspacePath: string, sessionId: string, text: string): Promise<void> {
+    return this.engineFor(workspacePath).sendUserTurn(sessionId, text);
   }
 
-  handleSessionAction(sessionId: string, action: string, body: any): { ok: true } {
-    const handler = this.sessionActions()[action];
+  async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true }> {
+    const handler = this.sessionActions(workspacePath)[action];
     if (!handler) {
       throw new Error(`Unknown session action '${action}'.`);
     }
-    handler(sessionId, body || {});
+    await handler(sessionId, body || {});
     return { ok: true };
   }
 
-  interruptSession(sessionId: string): void {
-    this.deps.sessionManager.interrupt(sessionId);
+  interruptSession(workspacePath: string, sessionId: string): Promise<void> {
+    return this.engineFor(workspacePath).interruptSession(sessionId);
   }
 
-  restartSession(sessionId: string): void {
-    this.deps.sessionManager.restart(sessionId);
+  restartSession(workspacePath: string, sessionId: string): Promise<void> {
+    return this.engineFor(workspacePath).restartSession(sessionId);
   }
 
-  compactSession(sessionId: string): void {
-    this.deps.sessionManager.compact(sessionId);
+  compactSession(workspacePath: string, sessionId: string): Promise<void> {
+    return this.engineFor(workspacePath).compactSession(sessionId);
   }
 
-  setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): void {
-    this.deps.sessionManager.setModel(sessionId, model, providerId, runtimeModel);
+  setSessionModel(workspacePath: string, sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
+    return this.engineFor(workspacePath).setSessionModel(sessionId, model, providerId, runtimeModel);
   }
 
-  setSessionEffort(sessionId: string, effort: string): void {
-    this.deps.sessionManager.setEffort(sessionId, effort);
+  setSessionEffort(workspacePath: string, sessionId: string, effort: string): Promise<void> {
+    return this.engineFor(workspacePath).setSessionEffort(sessionId, effort);
   }
 
-  setSessionPermissionMode(sessionId: string, permissionMode: string): void {
-    this.deps.sessionManager.setPermissionMode(sessionId, permissionMode);
+  setSessionPermissionMode(workspacePath: string, sessionId: string, permissionMode: string): Promise<void> {
+    return this.engineFor(workspacePath).setSessionPermissionMode(sessionId, permissionMode);
   }
 
-  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void {
-    this.deps.sessionManager.approve(sessionId, requestId, behavior, updatedInput, message);
+  approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {
+    return this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
   }
 
   // --- Party (scoped to a workspace) --------------------------------------
@@ -364,17 +367,18 @@ export class AppController {
     };
   }
 
-  private sessionActions(): Record<string, (sessionId: string, body: any) => void> {
+  private sessionActions(workspacePath: string): Record<string, (sessionId: string, body: any) => Promise<unknown>> {
+    const engine = this.engineFor(workspacePath);
     return {
-      send: (sessionId, body) => this.deps.sessionManager.sendUserTurn(sessionId, String(body.text || "")),
-      interrupt: (sessionId) => this.deps.sessionManager.interrupt(sessionId),
-      close: (sessionId) => { this.deps.sessionManager.closeSession(sessionId); },
-      restart: (sessionId) => this.deps.sessionManager.restart(sessionId),
-      compact: (sessionId) => this.deps.sessionManager.compact(sessionId),
-      model: (sessionId, body) => this.deps.sessionManager.setModel(sessionId, String(body.model || ""), body.providerId, body.runtimeModel),
-      effort: (sessionId, body) => this.deps.sessionManager.setEffort(sessionId, String(body.effort || "")),
-      permission: (sessionId, body) => this.deps.sessionManager.setPermissionMode(sessionId, String(body.permissionMode || "")),
-      approve: (sessionId, body) => this.deps.sessionManager.approve(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
+      send: (sessionId, body) => engine.sendUserTurn(sessionId, String(body.text || "")),
+      interrupt: (sessionId) => engine.interruptSession(sessionId),
+      close: (sessionId) => engine.closeSession(sessionId),
+      restart: (sessionId) => engine.restartSession(sessionId),
+      compact: (sessionId) => engine.compactSession(sessionId),
+      model: (sessionId, body) => engine.setSessionModel(sessionId, String(body.model || ""), body.providerId, body.runtimeModel),
+      effort: (sessionId, body) => engine.setSessionEffort(sessionId, String(body.effort || "")),
+      permission: (sessionId, body) => engine.setSessionPermissionMode(sessionId, String(body.permissionMode || "")),
+      approve: (sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
     };
   }
 

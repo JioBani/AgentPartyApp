@@ -92,7 +92,10 @@ async function bootstrap(): Promise<void> {
         serverBundleWinPath: serverBundle,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       });
-      return new RemoteEngineClient(handle.transport, serialized, handle.dispose);
+      const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose);
+      // Stream the distro engine's live session activity to this workspace's windows.
+      client.onEvent((channel, payload) => forwardRemoteEvent(serialized, channel, payload));
+      return client;
     },
   });
   router = host.router;
@@ -158,6 +161,23 @@ function broadcastToWorkspace(workspacePath: string, channel: string, payload: u
   for (const entry of registry().forWorkspace(workspacePath)) {
     entry.window.webContents.send(channel, payload);
   }
+}
+
+/**
+ * Forwards a remote (WSL) engine's pushed session event to the windows viewing
+ * its workspace, re-stamping the workspace to the Windows-side URI (the distro
+ * sends its own posix path). `session:sessions` maps to the `session:list` IPC.
+ */
+function forwardRemoteEvent(workspacePath: string, channel: string, payload: any): void {
+  if (channel === "session:sessions") {
+    const list = Array.isArray(payload) ? payload.map((session) => ({ ...session, workspace: workspacePath })) : payload;
+    for (const entry of registry().forWorkspace(workspacePath)) {
+      entry.window.webContents.send("session:list", list);
+    }
+    return;
+  }
+  const stamped = payload && typeof payload === "object" ? { ...payload, workspace: workspacePath } : payload;
+  broadcastToWorkspace(workspacePath, channel, stamped);
 }
 
 function focusedWindow(): BrowserWindow | undefined {
@@ -251,18 +271,18 @@ function registerIpc(): void {
   handle("session:create", async (event, input?: unknown) => controller().createSession(senderWorkspace(event), input as any));
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));
   handle("session:resume", async (event, sessionId: string, workspacePath?: string) => controller().resumeSession(workspacePath || senderWorkspace(event), sessionId));
-  handle("session:close", async (_event, sessionId: string) => controller().closeSession(sessionId));
-  handle("session:send", async (_event, sessionId: string, text: string) => controller().sendSessionMessage(sessionId, text));
-  handle("session:interrupt", async (_event, sessionId: string) => controller().interruptSession(sessionId));
-  handle("session:restart", async (_event, sessionId: string) => controller().restartSession(sessionId));
-  handle("session:compact", async (_event, sessionId: string) => controller().compactSession(sessionId));
-  handle("session:setModel", async (_event, sessionId: string, model: string, providerId?: string, runtimeModel?: string) => {
-    controller().setSessionModel(sessionId, model, providerId, runtimeModel);
+  handle("session:close", async (event, sessionId: string) => controller().closeSession(senderWorkspace(event), sessionId));
+  handle("session:send", async (event, sessionId: string, text: string) => controller().sendSessionMessage(senderWorkspace(event), sessionId, text));
+  handle("session:interrupt", async (event, sessionId: string) => controller().interruptSession(senderWorkspace(event), sessionId));
+  handle("session:restart", async (event, sessionId: string) => controller().restartSession(senderWorkspace(event), sessionId));
+  handle("session:compact", async (event, sessionId: string) => controller().compactSession(senderWorkspace(event), sessionId));
+  handle("session:setModel", async (event, sessionId: string, model: string, providerId?: string, runtimeModel?: string) => {
+    await controller().setSessionModel(senderWorkspace(event), sessionId, model, providerId, runtimeModel);
   });
-  handle("session:setEffort", async (_event, sessionId: string, effort: string) => controller().setSessionEffort(sessionId, effort));
-  handle("session:setPermissionMode", async (_event, sessionId: string, permissionMode: string) => controller().setSessionPermissionMode(sessionId, permissionMode));
-  handle("session:approve", async (_event, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => {
-    controller().approveSession(sessionId, requestId, behavior, updatedInput, message);
+  handle("session:setEffort", async (event, sessionId: string, effort: string) => controller().setSessionEffort(senderWorkspace(event), sessionId, effort));
+  handle("session:setPermissionMode", async (event, sessionId: string, permissionMode: string) => controller().setSessionPermissionMode(senderWorkspace(event), sessionId, permissionMode));
+  handle("session:approve", async (event, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => {
+    await controller().approveSession(senderWorkspace(event), sessionId, requestId, behavior, updatedInput, message);
   });
 
   handle("window:minimize", async (event) => controller().minimizeWindow(senderWindowId(event)));

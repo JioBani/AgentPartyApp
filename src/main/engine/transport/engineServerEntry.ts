@@ -1,6 +1,7 @@
 import { setConsoleLogging } from "../../logger";
 import { createEngineHost } from "../engineHost";
 import { serveEngine } from "./engineServer";
+import { writeLine } from "./rpc";
 
 /**
  * Standalone engine server: builds an Electron-free engine host and serves one
@@ -29,6 +30,12 @@ function main(): void {
   const engine = host.engineRegistry.forWorkspace(workspace);
 
   serveEngine(engine, process.stdin, process.stdout);
+
+  // Push this workspace's live session activity to the client over the same
+  // channel (distinguished from RPC responses by `kind: "event"`).
+  host.sessionManager.on("events", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:events", payload }));
+  host.sessionManager.on("snapshot", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:snapshot", payload }));
+  host.sessionManager.on("sessions", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:sessions", payload }));
 
   const shutdown = () => {
     host.dispose();
