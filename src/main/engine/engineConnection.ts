@@ -68,3 +68,16 @@ export interface EngineConnection {
   qaEmit(name: string, body: QaEmitInput): void;
   qaReset(): PartyListing;
 }
+
+/**
+ * The same surface as {@link EngineConnection} with every method returning a
+ * Promise — the shape a caller sees when the engine is across a transport
+ * (a WSL distro). Derived from `EngineConnection` so there is one source of
+ * truth: `RemoteEngineClient` implements this, and an over-the-wire server
+ * dispatches to a (synchronous) `LocalEngine`. See docs/WSL_REMOTE.md §7.
+ */
+export type AsyncEngineConnection = {
+  [K in keyof EngineConnection]: EngineConnection[K] extends (...args: infer A) => infer R
+    ? (...args: A) => Promise<Awaited<R>>
+    : EngineConnection[K];
+};

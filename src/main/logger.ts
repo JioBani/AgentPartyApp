@@ -14,6 +14,16 @@ export interface LogEntry {
 
 let logFilePath = "";
 let debugLoggingEnabled = false;
+let consoleLogging = true;
+
+/**
+ * Toggles console output (file logging is unaffected). The engine server turns
+ * this off because it uses stdout as its RPC channel — stray console.log would
+ * corrupt the protocol. See docs/WSL_REMOTE.md §7.
+ */
+export function setConsoleLogging(enabled: boolean): void {
+  consoleLogging = enabled;
+}
 
 export function initLogger(): string {
   const dir = path.join(getUserDataDir(), "logs");
@@ -42,6 +52,9 @@ export function log(level: LogLevel, scope: string, message: string, data?: unkn
     fs.appendFileSync(file, line, "utf8");
   } catch {
     // Logging must never break the app.
+  }
+  if (!consoleLogging) {
+    return;
   }
   if (level === "error") {
     console.error(`[${scope}] ${message}`, data);
