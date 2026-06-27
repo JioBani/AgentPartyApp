@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu } from "electron";
 import { EmbeddedRouter } from "../core/routerShim";
@@ -126,6 +127,21 @@ async function bootstrap(): Promise<void> {
   registerApplicationMenu();
   await createWindow(defaultWorkspace());
   await automationApi.start();
+  writeAutomationDiscovery();
+}
+
+/**
+ * Publishes the automation URL to <userData>/automation.json so the agent-party
+ * CLI's Windows launcher can find the running app (the port may be a fallback).
+ * See docs/WSL_REMOTE.md §13.
+ */
+function writeAutomationDiscovery(): void {
+  try {
+    const file = path.join(app.getPath("userData"), "automation.json");
+    fs.writeFileSync(file, `${JSON.stringify({ baseUrl: automationApi?.baseUrl, pid: process.pid }, null, 2)}\n`);
+  } catch (error) {
+    log("warn", "automation", "failed to write discovery file", { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 function broadcastToWorkspace(workspacePath: string, channel: string, payload: unknown): void {

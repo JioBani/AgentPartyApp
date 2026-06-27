@@ -20,6 +20,7 @@
     "test:wsl-engine": "node scripts/qa-wsl-engine.mjs",
     "test:engine-rpc": "node scripts/qa-engine-rpc.mjs",
     "test:wsl-remote": "node scripts/qa-wsl-remote.mjs",
+    "test:wsl-cli": "node scripts/qa-wsl-cli.mjs",
     "test:ui": "npm run test:workspace && npm run test:layout && npm run test:render",
     "start": "node scripts/launch-electron.mjs",
     "start:qa": "cross-env AGENTPARTY_QA=1 node scripts/launch-electron.mjs",

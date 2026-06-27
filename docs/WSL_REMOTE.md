@@ -254,6 +254,16 @@ inside any distro — exactly why `command -v code` already resolves the Windows
 `POST /api/windows` endpoint (convention #4) with a `wsl+<distro>:` URI — no
 bespoke channel.
 
+**Implemented (S5d):**
+- `scripts/agent-party` — the WSL `sh` shim: builds `wsl+$WSL_DISTRO_NAME:$(realpath .)`
+  and execs the Windows launcher via interop (`node.exe`, no WSL→Win networking).
+- `scripts/agent-party-launcher.mjs` — Windows launcher: discovers the running
+  app's automation URL from `<userData>/automation.json` (written by the app on
+  startup) and POSTs `/api/windows`.
+- Verified by `npm run test:wsl-cli` (app running): typing `agent-party` in a
+  distro dir opens that cwd as a workspace. Installing the shim onto the Windows
+  `bin/` (so it is typeable without a path) is a packaging step — §8/S6.
+
 ## 14. WSL QA environment (verified)
 
 E2E QA runs against a **real** distro, not a mock, once the engine is headless

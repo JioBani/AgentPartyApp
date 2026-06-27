@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+#
+# agent-party — open the current (or given) directory in the AgentParty desktop
+# app, the way `code .` opens a Remote-WSL window. See docs/WSL_REMOTE.md §13.
+#
+# Runs inside WSL (reachable on PATH via the Windows PATH that interop appends).
+# It builds a WorkspaceLocation URI from $WSL_DISTRO_NAME + the target dir, then
+# hands off to the Windows launcher over interop (node.exe) — it does NOT talk to
+# the app over the network, because WSL→Windows localhost is unreliable.
+#
+# Usage: agent-party [dir]
+set -e
+
+TARGET="$(realpath "${1:-.}")"
+
+if [ -n "$WSL_DISTRO_NAME" ]; then
+  URI="wsl+$WSL_DISTRO_NAME:$TARGET"
+else
+  # Not in WSL: open the path as a local workspace.
+  URI="$TARGET"
+fi
+
+SHIM_DIR="$(dirname "$(realpath "$0")")"
+LAUNCHER="$SHIM_DIR/agent-party-launcher.mjs"
+
+if ! command -v node.exe >/dev/null 2>&1; then
+  echo "agent-party: node.exe is not reachable from WSL (Windows Node.js + interop required)." >&2
+  exit 1
+fi
+
+exec node.exe "$(wslpath -w "$LAUNCHER")" "$URI"
