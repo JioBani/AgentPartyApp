@@ -105,7 +105,7 @@ export class AutomationApiServer {
         return;
       }
       if (method === "POST" && url.pathname === "/api/sessions") {
-        sendJson(res, 200, c.createSession(workspace, await readJson(req)));
+        sendJson(res, 200, await c.createSession(workspace, await readJson(req)));
         return;
       }
       if (method === "GET" && url.pathname === "/api/sessions/history") {
@@ -114,7 +114,7 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/sessions/resume") {
         const body = await readJson(req);
-        sendJson(res, 200, c.resumeSession(body.workspacePath || workspace, String(body.sessionId || "")));
+        sendJson(res, 200, await c.resumeSession(body.workspacePath || workspace, String(body.sessionId || "")));
         return;
       }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
@@ -185,11 +185,11 @@ export class AutomationApiServer {
       return;
     }
     if (method === "POST" && url.pathname === "/api/qa/seed") {
-      sendJson(res, 200, c.qaSeed(workspace, await readJson(req)));
+      sendJson(res, 200, await c.qaSeed(workspace, await readJson(req)));
       return;
     }
     if (method === "POST" && url.pathname === "/api/qa/members") {
-      sendJson(res, 200, c.qaCreateMockMember(workspace, await readJson(req)));
+      sendJson(res, 200, await c.qaCreateMockMember(workspace, await readJson(req)));
       return;
     }
     if (method === "POST" && url.pathname === "/api/qa/open") {
@@ -198,12 +198,12 @@ export class AutomationApiServer {
       return;
     }
     if (method === "POST" && url.pathname === "/api/qa/reset") {
-      sendJson(res, 200, c.qaReset(workspace));
+      sendJson(res, 200, await c.qaReset(workspace));
       return;
     }
     const emitMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/emit$/);
     if (method === "POST" && emitMatch) {
-      sendJson(res, 200, c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));
+      sendJson(res, 200, await c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));
       return;
     }
     sendJson(res, 404, { error: "not_found" });

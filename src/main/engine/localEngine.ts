@@ -11,10 +11,12 @@ export interface LocalEngineDeps {
 }
 
 /**
- * In-process engine for a local (Windows) workspace. A thin facade over the
+ * In-process engine for a local workspace (Windows desktop, or inside a WSL
+ * distro when this code runs as the distro's engine). A thin facade over the
  * workspace's {@link PartyApplicationService} and the shared
- * {@link SessionManager}; behavior is exactly what AppController did inline
- * before the boundary was extracted. See docs/WSL_REMOTE.md §6.
+ * {@link SessionManager}. The work is synchronous; methods are async only to
+ * satisfy the {@link EngineConnection} contract (a remote engine must be async).
+ * See docs/WSL_REMOTE.md §6.
  */
 export class LocalEngine implements EngineConnection {
   constructor(private readonly deps: LocalEngineDeps) {}
@@ -28,51 +30,51 @@ export class LocalEngine implements EngineConnection {
   }
 
   // --- Party --------------------------------------------------------------
-  listParty(): PartyListing {
+  async listParty(): Promise<PartyListing> {
     return this.party.list();
   }
 
-  createParty(input: CreatePartyInput) {
+  async createParty(input: CreatePartyInput) {
     return this.party.createParty(input);
   }
 
-  selectParty(partyId: string) {
+  async selectParty(partyId: string) {
     return this.party.selectParty(partyId);
   }
 
-  createMember(input: CreateMemberInput) {
+  async createMember(input: CreateMemberInput) {
     return this.party.createMember(input);
   }
 
-  sendPartyMessage(name: string, content: string, from?: string): PartyMutationResult {
+  async sendPartyMessage(name: string, content: string, from?: string): Promise<PartyMutationResult> {
     return this.party.sendMessage(name, content, from);
   }
 
-  closeMember(name: string) {
+  async closeMember(name: string) {
     return this.party.closeMember(name);
   }
 
-  resumeMember(name: string) {
+  async resumeMember(name: string) {
     return this.party.resumeMember(name);
   }
 
-  openMember(name: string) {
+  async openMember(name: string) {
     return this.party.openMember(name);
   }
 
-  startMember(name: string, input?: StartPartyMemberInput) {
+  async startMember(name: string, input?: StartPartyMemberInput) {
     return this.party.startMember(name, input);
   }
 
-  bindMember(name: string, sessionId: string) {
+  async bindMember(name: string, sessionId: string) {
     return this.party.bindMember(name, sessionId);
   }
 
-  removeMember(name: string) {
+  async removeMember(name: string) {
     return this.party.removeMember(name);
   }
 
-  partyAction(name: string, action: string, body: any): PartyMutationResult {
+  async partyAction(name: string, action: string, body: any): Promise<PartyMutationResult> {
     const handler = this.partyActions()[action];
     if (!handler) {
       throw new Error(`Unknown party action '${action}'.`);
@@ -93,7 +95,7 @@ export class LocalEngine implements EngineConnection {
   }
 
   // --- Sessions -----------------------------------------------------------
-  createSession(input?: CreateSessionInput | string): SessionView {
+  async createSession(input?: CreateSessionInput | string): Promise<SessionView> {
     return this.deps.sessionManager.createSession(this.withWorkspace(input));
   }
 
@@ -101,11 +103,11 @@ export class LocalEngine implements EngineConnection {
     return this.deps.sessionManager.listResumableSessions(this.workspacePath);
   }
 
-  resumeSession(sessionId: string): SessionView {
+  async resumeSession(sessionId: string): Promise<SessionView> {
     return this.deps.sessionManager.resumeSession(sessionId, this.workspacePath);
   }
 
-  listWorkspaceSessions(): SessionView[] {
+  async listWorkspaceSessions(): Promise<SessionView[]> {
     const key = workspaceKey(this.workspacePath);
     return this.deps.sessionManager.listSessions().filter((session) => workspaceKey(session.workspace) === key);
   }
@@ -118,7 +120,7 @@ export class LocalEngine implements EngineConnection {
   }
 
   // --- QA (test-only) -----------------------------------------------------
-  qaSeed(input: { party?: string; members?: QaMemberSpec[] }): { created: string[]; listing: PartyListing } {
+  async qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }> {
     const parties = this.party.list().parties;
     const existing = input.party ? parties.find((item) => item.name === input.party) : undefined;
     if (existing) {
@@ -138,7 +140,7 @@ export class LocalEngine implements EngineConnection {
     return { created, listing: this.party.list() };
   }
 
-  qaCreateMockMember(spec: QaMemberSpec): { sessionId?: string; listing: PartyListing } {
+  async qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }> {
     const sessionId = this.startMockMember(spec);
     if (sessionId) {
       this.applyBlocks(sessionId, spec.blocks);
@@ -147,13 +149,13 @@ export class LocalEngine implements EngineConnection {
     return { sessionId, listing: this.party.list() };
   }
 
-  qaEmit(name: string, body: QaEmitInput): void {
+  async qaEmit(name: string, body: QaEmitInput): Promise<void> {
     const sessionId = this.qaSessionIdFor(name);
     this.applyBlocks(sessionId, body.events);
     this.applyStatus(sessionId, body.status);
   }
 
-  qaReset(): PartyListing {
+  async qaReset(): Promise<PartyListing> {
     for (const member of this.party.list().members) {
       if (member.name !== "main" && member.sessionId && this.deps.sessionManager.isMockSession(member.sessionId)) {
         this.party.removeMember(member.name);

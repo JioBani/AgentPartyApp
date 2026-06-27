@@ -34,7 +34,7 @@ const host = createEngineHost({
 const engine = host.engineRegistry.forWorkspace(workspace);
 
 // Seed a party with mock members — no model calls, same path the UI drives.
-const seed = engine.qaSeed({
+const seed = await engine.qaSeed({
   party: "WSL E2E",
   members: [
     { name: "wsl-1", role: "backend" },
@@ -47,7 +47,7 @@ assert(names.includes("wsl-1") && names.includes("wsl-2"), `listParty shows memb
 assert(seed.listing.parties.some((p) => p.name === "WSL E2E"), "party 'WSL E2E' present");
 
 // Inject a mock event — proves the mock harness runs headless under this node.
-engine.qaEmit("wsl-1", { events: [{ type: "assistant_text_delta", text: "hello from the engine" }], status: "working" });
+await engine.qaEmit("wsl-1", { events: [{ type: "assistant_text_delta", text: "hello from the engine" }], status: "working" });
 assert(true, "qaEmit accepted (mock harness alive)");
 
 // The point of Tier A: state persists to the workspace's own fs (ext4 in WSL),

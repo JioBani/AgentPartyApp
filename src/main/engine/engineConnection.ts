@@ -38,46 +38,40 @@ export interface QaEmitInput {
   status?: "working" | "idle" | "approval";
 }
 
+/**
+ * Every method is async: the engine may be in another host (a WSL distro)
+ * reached over a transport, and a remote boundary cannot be synchronous. The
+ * in-process {@link LocalEngine} satisfies it by wrapping its synchronous work
+ * in promises; `RemoteEngineClient` satisfies it over the wire. See
+ * docs/WSL_REMOTE.md §6/§7.
+ */
 export interface EngineConnection {
   readonly workspacePath: string;
 
   // --- Party (workspace-scoped) ------------------------------------------
-  listParty(): PartyListing;
-  createParty(input: CreatePartyInput): ReturnType<PartyApplicationService["createParty"]>;
-  selectParty(partyId: string): ReturnType<PartyApplicationService["selectParty"]>;
-  createMember(input: CreateMemberInput): ReturnType<PartyApplicationService["createMember"]>;
-  sendPartyMessage(name: string, content: string, from?: string): PartyMutationResult;
-  closeMember(name: string): ReturnType<PartyApplicationService["closeMember"]>;
-  resumeMember(name: string): ReturnType<PartyApplicationService["resumeMember"]>;
-  openMember(name: string): ReturnType<PartyApplicationService["openMember"]>;
-  startMember(name: string, input?: StartPartyMemberInput): ReturnType<PartyApplicationService["startMember"]>;
-  bindMember(name: string, sessionId: string): ReturnType<PartyApplicationService["bindMember"]>;
-  removeMember(name: string): ReturnType<PartyApplicationService["removeMember"]>;
+  listParty(): Promise<PartyListing>;
+  createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
+  selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
+  createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
+  sendPartyMessage(name: string, content: string, from?: string): Promise<PartyMutationResult>;
+  closeMember(name: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
+  resumeMember(name: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
+  openMember(name: string): Promise<ReturnType<PartyApplicationService["openMember"]>>;
+  startMember(name: string, input?: StartPartyMemberInput): Promise<ReturnType<PartyApplicationService["startMember"]>>;
+  bindMember(name: string, sessionId: string): Promise<ReturnType<PartyApplicationService["bindMember"]>>;
+  removeMember(name: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
   /** Dispatches one of the named party actions (HTTP `/api/party/members/:name/:action`). */
-  partyAction(name: string, action: string, body: any): PartyMutationResult;
+  partyAction(name: string, action: string, body: any): Promise<PartyMutationResult>;
 
   // --- Sessions (workspace-scoped) ---------------------------------------
-  createSession(input?: CreateSessionInput | string): SessionView;
+  createSession(input?: CreateSessionInput | string): Promise<SessionView>;
   listResumableSessions(): Promise<{ sessions: ResumableSessionInfo[]; error?: string }>;
-  resumeSession(sessionId: string): SessionView;
-  listWorkspaceSessions(): SessionView[];
+  resumeSession(sessionId: string): Promise<SessionView>;
+  listWorkspaceSessions(): Promise<SessionView[]>;
 
   // --- QA (test-only, workspace-scoped) ----------------------------------
-  qaSeed(input: { party?: string; members?: QaMemberSpec[] }): { created: string[]; listing: PartyListing };
-  qaCreateMockMember(spec: QaMemberSpec): { sessionId?: string; listing: PartyListing };
-  qaEmit(name: string, body: QaEmitInput): void;
-  qaReset(): PartyListing;
+  qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }>;
+  qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }>;
+  qaEmit(name: string, body: QaEmitInput): Promise<void>;
+  qaReset(): Promise<PartyListing>;
 }
-
-/**
- * The same surface as {@link EngineConnection} with every method returning a
- * Promise — the shape a caller sees when the engine is across a transport
- * (a WSL distro). Derived from `EngineConnection` so there is one source of
- * truth: `RemoteEngineClient` implements this, and an over-the-wire server
- * dispatches to a (synchronous) `LocalEngine`. See docs/WSL_REMOTE.md §7.
- */
-export type AsyncEngineConnection = {
-  [K in keyof EngineConnection]: EngineConnection[K] extends (...args: infer A) => infer R
-    ? (...args: A) => Promise<Awaited<R>>
-    : EngineConnection[K];
-};

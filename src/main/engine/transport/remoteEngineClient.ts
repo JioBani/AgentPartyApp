@@ -1,6 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput } from "../../../shared/types";
-import type { AsyncEngineConnection, EngineConnection, QaEmitInput, QaMemberSpec } from "../engineConnection";
+import type { EngineConnection, QaEmitInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcResponse } from "./rpc";
 
 /** Awaited return type of an EngineConnection method. */
@@ -11,7 +11,7 @@ type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...
  * as if it were local, fulfilling {@link AsyncEngineConnection}. Requests are
  * correlated to responses by id over the stream pair. See docs/WSL_REMOTE.md §7.
  */
-export class RemoteEngineClient implements AsyncEngineConnection {
+export class RemoteEngineClient implements EngineConnection {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   private readonly detach: () => void;
