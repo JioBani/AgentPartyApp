@@ -31,10 +31,12 @@ const { spawnWslEngine } = await import(pathToFileURL(wslBundle).href);
 
 const distro = process.env.QA_WSL_DISTRO || "Ubuntu-22.04";
 const wslWs = process.env.QA_WSL_WS || "/home/dev/agentparty-wsl-e2e";
+const model = process.env.QA_MODEL || "sonnet";
+const openRouterApiKey = process.env.OPENROUTER_API_KEY || "";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-console.log(`REAL model call via WSL engine (${distro} @ ${wslWs}):`);
-const handle = spawnWslEngine({ distro, workspacePosix: wslWs, serverBundleWinPath: serverBundle });
+console.log(`REAL model call via WSL engine (${distro} @ ${wslWs}) — model=${model}:`);
+const handle = spawnWslEngine({ distro, workspacePosix: wslWs, serverBundleWinPath: serverBundle, openRouterApiKey });
 const client = new RemoteEngineClient(handle.transport, wslWs, handle.dispose);
 
 const texts = [];
@@ -52,7 +54,7 @@ client.onEvent((channel, payload) => {
 });
 
 try {
-  const session = await client.createSession({ model: "sonnet", effort: "low", permissionMode: "bypassPermissions", selectedProviderId: "anthropic" });
+  const session = await client.createSession({ model, effort: "low", permissionMode: "bypassPermissions" });
   console.log(`  session created in WSL engine: ${session.id} (${session.snapshot?.status})`);
 
   await client.sendUserTurn(session.id, "Reply with exactly the word PONG and nothing else.");
