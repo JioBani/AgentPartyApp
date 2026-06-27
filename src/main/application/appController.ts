@@ -3,31 +3,20 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput } from "../../shared/types";
-import { workspaceKey } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
-import { PartyApplicationService } from "./partyApplicationService";
+import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
-import type { WorkspaceManager } from "../workspaceManager";
+import type { EngineConnection, QaMemberSpec } from "../engine/engineConnection";
+import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowInfo, WindowRegistry } from "../windowRegistry";
-
-/** One mock member to seed for frontend QA. */
-interface QaMemberSpec {
-  name: string;
-  role?: string;
-  model?: string;
-  effort?: string;
-  status?: "working" | "idle" | "approval";
-  autoReply?: boolean;
-  blocks?: unknown[];
-}
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
-  workspaceManager: WorkspaceManager;
+  engineRegistry: EngineRegistry;
   windowRegistry: WindowRegistry;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
@@ -45,12 +34,12 @@ export interface AppControllerDeps {
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
 
-  private party(workspacePath: string): PartyApplicationService {
-    return this.deps.workspaceManager.context(workspacePath).party;
+  private engineFor(workspacePath: string): EngineConnection {
+    return this.deps.engineRegistry.forWorkspace(workspacePath);
   }
 
   private broadcastParty(workspacePath: string): void {
-    const payload = this.party(workspacePath).list();
+    const payload = this.engineFor(workspacePath).listParty();
     for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
       entry.window.webContents.send("party:update", payload);
     }
@@ -67,7 +56,7 @@ export class AppController {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       auth: getAuthState(),
-      sessions: this.sessionsForWorkspace(workspacePath),
+      sessions: this.engineFor(workspacePath).listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(settings.claudeModel, [], []),
       harnesses,
       router: { baseUrl: this.deps.getRouterBaseUrl() },
@@ -76,7 +65,7 @@ export class AppController {
         spec: `${this.deps.getAutomationBaseUrl()}/api/spec`,
       },
       logs: { logFilePath: getLogFilePath() },
-      party: this.party(workspacePath).list(),
+      party: this.engineFor(workspacePath).listParty(),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
     };
@@ -138,15 +127,15 @@ export class AppController {
 
   // --- Sessions (addressed globally by session id) ------------------------
   createSession(workspacePath: string, input?: CreateSessionInput | string): ReturnType<SessionManager["createSession"]> {
-    return this.deps.sessionManager.createSession(this.withWorkspace(workspacePath, input));
+    return this.engineFor(workspacePath).createSession(input);
   }
 
   listResumableSessions(workspacePath: string): ReturnType<SessionManager["listResumableSessions"]> {
-    return this.deps.sessionManager.listResumableSessions(workspacePath);
+    return this.engineFor(workspacePath).listResumableSessions();
   }
 
   resumeSession(workspacePath: string, sessionId: string): ReturnType<SessionManager["resumeSession"]> {
-    return this.deps.sessionManager.resumeSession(sessionId, workspacePath);
+    return this.engineFor(workspacePath).resumeSession(sessionId);
   }
 
   closeSession(sessionId: string): { ok: boolean } {
@@ -196,58 +185,53 @@ export class AppController {
 
   // --- Party (scoped to a workspace) --------------------------------------
   listPartyMembers(workspacePath: string): ReturnType<PartyApplicationService["list"]> {
-    return this.party(workspacePath).list();
+    return this.engineFor(workspacePath).listParty();
   }
 
   createParty(workspacePath: string, input: CreatePartyInput): ReturnType<PartyApplicationService["createParty"]> {
-    return this.mutateParty(workspacePath, (party) => party.createParty(input));
+    return this.mutateParty(workspacePath, (engine) => engine.createParty(input));
   }
 
   selectParty(workspacePath: string, partyId: string): ReturnType<PartyApplicationService["selectParty"]> {
-    return this.mutateParty(workspacePath, (party) => party.selectParty(partyId));
+    return this.mutateParty(workspacePath, (engine) => engine.selectParty(partyId));
   }
 
   createPartyMember(workspacePath: string, input: CreateMemberInput): ReturnType<PartyApplicationService["createMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.createMember(input));
+    return this.mutateParty(workspacePath, (engine) => engine.createMember(input));
   }
 
   sendPartyMessage(workspacePath: string, name: string, content: string, from?: string): ReturnType<PartyApplicationService["sendMessage"]> {
-    return this.mutateParty(workspacePath, (party) => party.sendMessage(name, content, from));
+    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from));
   }
 
   handlePartyAction(workspacePath: string, name: string, action: string, body: any): ReturnType<PartyApplicationService["sendMessage"]> {
-    const party = this.party(workspacePath);
-    const handler = this.partyActions(party)[action];
-    if (!handler) {
-      throw new Error(`Unknown party action '${action}'.`);
-    }
-    const result = handler(name, body || {});
+    const result = this.engineFor(workspacePath).partyAction(name, action, body || {});
     this.broadcastParty(workspacePath);
     return result;
   }
 
   closePartyMember(workspacePath: string, name: string): ReturnType<PartyApplicationService["closeMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.closeMember(name));
+    return this.mutateParty(workspacePath, (engine) => engine.closeMember(name));
   }
 
   resumePartyMember(workspacePath: string, name: string): ReturnType<PartyApplicationService["resumeMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.resumeMember(name));
+    return this.mutateParty(workspacePath, (engine) => engine.resumeMember(name));
   }
 
   openPartyMember(workspacePath: string, name: string): ReturnType<PartyApplicationService["openMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.openMember(name));
+    return this.mutateParty(workspacePath, (engine) => engine.openMember(name));
   }
 
   startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput): ReturnType<PartyApplicationService["startMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.startMember(name, input));
+    return this.mutateParty(workspacePath, (engine) => engine.startMember(name, input));
   }
 
   bindPartyMember(workspacePath: string, name: string, sessionId: string): ReturnType<PartyApplicationService["bindMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.bindMember(name, sessionId));
+    return this.mutateParty(workspacePath, (engine) => engine.bindMember(name, sessionId));
   }
 
   removePartyMember(workspacePath: string, name: string): ReturnType<PartyApplicationService["removeMember"]> {
-    return this.mutateParty(workspacePath, (party) => party.removeMember(name));
+    return this.mutateParty(workspacePath, (engine) => engine.removeMember(name));
   }
 
   // --- Window actions (addressed by window id) ----------------------------
@@ -303,44 +287,21 @@ export class AppController {
 
   qaSeed(workspacePath: string, input: { party?: string; members?: QaMemberSpec[] }): { ok: true; created: string[] } & ReturnType<PartyApplicationService["list"]> {
     this.requireQa();
-    const party = this.party(workspacePath);
-    const parties = party.list().parties;
-    const existing = input.party ? parties.find((item) => item.name === input.party) : undefined;
-    if (existing) {
-      party.selectParty(existing.id);
-    } else if (input.party || parties.length === 0) {
-      party.createParty({ name: input.party || "QA Party" });
-    }
-    const created: string[] = [];
-    for (const spec of input.members || []) {
-      const sessionId = this.qaStartMockMember(party, spec);
-      if (sessionId) {
-        this.qaApplyBlocks(sessionId, spec.blocks);
-        this.qaApplyStatus(sessionId, spec.status);
-      }
-      created.push(spec.name);
-    }
+    const { created, listing } = this.engineFor(workspacePath).qaSeed(input);
     this.broadcastParty(workspacePath);
-    return { ok: true, created, ...party.list() };
+    return { ok: true, created, ...listing };
   }
 
   qaCreateMockMember(workspacePath: string, spec: QaMemberSpec): { ok: true; sessionId?: string } & ReturnType<PartyApplicationService["list"]> {
     this.requireQa();
-    const party = this.party(workspacePath);
-    const sessionId = this.qaStartMockMember(party, spec);
-    if (sessionId) {
-      this.qaApplyBlocks(sessionId, spec.blocks);
-      this.qaApplyStatus(sessionId, spec.status);
-    }
+    const { sessionId, listing } = this.engineFor(workspacePath).qaCreateMockMember(spec);
     this.broadcastParty(workspacePath);
-    return { ok: true, sessionId, ...party.list() };
+    return { ok: true, sessionId, ...listing };
   }
 
   qaEmit(workspacePath: string, name: string, body: { events?: unknown[]; status?: "working" | "idle" | "approval" }): { ok: true } {
     this.requireQa();
-    const sessionId = this.qaSessionIdFor(workspacePath, name);
-    this.qaApplyBlocks(sessionId, body.events);
-    this.qaApplyStatus(sessionId, body.status);
+    this.engineFor(workspacePath).qaEmit(name, body);
     return { ok: true };
   }
 
@@ -352,79 +313,16 @@ export class AppController {
 
   qaReset(workspacePath: string): { ok: true } & ReturnType<PartyApplicationService["list"]> {
     this.requireQa();
-    const party = this.party(workspacePath);
-    for (const member of party.list().members) {
-      if (member.name !== "main" && member.sessionId && this.deps.sessionManager.isMockSession(member.sessionId)) {
-        party.removeMember(member.name);
-      }
-    }
+    const listing = this.engineFor(workspacePath).qaReset();
     this.broadcastParty(workspacePath);
-    return { ok: true, ...party.list() };
+    return { ok: true, ...listing };
   }
 
   // --- internals ----------------------------------------------------------
-  private mutateParty<T>(workspacePath: string, op: (party: PartyApplicationService) => T): T {
-    const result = op(this.party(workspacePath));
+  private mutateParty<T>(workspacePath: string, op: (engine: EngineConnection) => T): T {
+    const result = op(this.engineFor(workspacePath));
     this.broadcastParty(workspacePath);
     return result;
-  }
-
-  private withWorkspace(workspacePath: string, input?: CreateSessionInput | string): CreateSessionInput {
-    if (typeof input === "string" || !input) {
-      return { workspacePath };
-    }
-    return { ...input, workspacePath: input.workspacePath || workspacePath };
-  }
-
-  private sessionsForWorkspace(workspacePath: string) {
-    const key = workspaceKey(workspacePath);
-    return this.deps.sessionManager.listSessions().filter((session) => workspaceKey(session.workspace) === key);
-  }
-
-  private qaStartMockMember(party: PartyApplicationService, spec: QaMemberSpec): string | undefined {
-    if (!spec.name) {
-      throw new Error("QA member requires a name.");
-    }
-    const exists = party.list().members.some((member) => member.name === spec.name);
-    if (!exists) {
-      party.createMember({
-        name: spec.name,
-        requirement: spec.role || `QA mock member ${spec.name}`,
-        runtime: "claude-code",
-        model: spec.model,
-        effort: spec.effort,
-      });
-    }
-    const result = party.startMember(
-      spec.name,
-      { model: spec.model, effort: spec.effort as StartPartyMemberInput["effort"] },
-      { mock: true, autoReply: spec.autoReply ?? true },
-    );
-    return result.member?.sessionId || result.session?.id;
-  }
-
-  private qaApplyBlocks(sessionId: string | undefined, blocks?: unknown[]): void {
-    if (!sessionId || !blocks) {
-      return;
-    }
-    for (const event of blocks) {
-      this.deps.sessionManager.injectMockEvent(sessionId, event);
-    }
-  }
-
-  private qaApplyStatus(sessionId: string | undefined, status?: "working" | "idle" | "approval"): void {
-    if (!sessionId || !status) {
-      return;
-    }
-    this.deps.sessionManager.setMockStatus(sessionId, status === "working" ? "responding" : "idle");
-  }
-
-  private qaSessionIdFor(workspacePath: string, name: string): string {
-    const member = this.party(workspacePath).list().members.find((item) => item.name === name);
-    if (!member?.sessionId) {
-      throw new Error(`Mock member '${name}' has no active session. Seed it first.`);
-    }
-    return member.sessionId;
   }
 
   private requireQa(): void {
@@ -447,7 +345,7 @@ export class AppController {
   }
 
   private async getResumableState(workspacePath: string): Promise<Pick<InitialAppState, "resumableSessions" | "resumableSessionsError">> {
-    const result = await this.deps.sessionManager.listResumableSessions(workspacePath);
+    const result = await this.engineFor(workspacePath).listResumableSessions();
     return {
       resumableSessions: result.sessions,
       resumableSessionsError: result.error,
@@ -468,15 +366,4 @@ export class AppController {
     };
   }
 
-  private partyActions(party: PartyApplicationService): Record<string, (name: string, body: any) => ReturnType<PartyApplicationService["sendMessage"]>> {
-    return {
-      send: (name, body) => party.sendMessage(name, String(body.content || ""), body.from),
-      close: (name) => party.closeMember(name),
-      resume: (name) => party.resumeMember(name),
-      open: (name) => party.openMember(name),
-      start: (name, body) => party.startMember(name, body),
-      bind: (name, body) => party.bindMember(name, String(body.sessionId || "")),
-      remove: (name) => party.removeMember(name),
-    };
-  }
 }

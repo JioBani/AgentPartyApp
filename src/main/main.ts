@@ -7,6 +7,7 @@ import { getPublicSettings, getSettings } from "./settings";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { WorkspaceManager } from "./workspaceManager";
+import { EngineRegistry } from "./engine/engineRegistry";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
@@ -85,9 +86,10 @@ async function bootstrap(): Promise<void> {
     }
   });
 
+  const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager });
   appController = new AppController({
     sessionManager,
-    workspaceManager,
+    engineRegistry,
     windowRegistry,
     getRouterBaseUrl: () => router?.baseUrl || getSettings().routerBaseUrl,
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
