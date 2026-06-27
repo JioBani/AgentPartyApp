@@ -1,6 +1,6 @@
-import * as path from "node:path";
 import type { BrowserWindow, WebContents } from "electron";
 import type { WindowInfo } from "../shared/types";
+import { workspaceKey } from "../shared/workspaceLocation";
 
 export type { WindowInfo } from "../shared/types";
 
@@ -11,7 +11,7 @@ export interface WindowEntry {
 }
 
 function normalize(workspacePath: string): string {
-  return path.resolve(workspacePath || process.cwd());
+  return workspaceKey(workspacePath || process.cwd());
 }
 
 /**

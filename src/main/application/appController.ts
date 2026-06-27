@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput } from "../../shared/types";
+import { workspaceKey } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -376,8 +377,8 @@ export class AppController {
   }
 
   private sessionsForWorkspace(workspacePath: string) {
-    const key = path.resolve(workspacePath);
-    return this.deps.sessionManager.listSessions().filter((session) => path.resolve(session.workspace) === key);
+    const key = workspaceKey(workspacePath);
+    return this.deps.sessionManager.listSessions().filter((session) => workspaceKey(session.workspace) === key);
   }
 
   private qaStartMockMember(party: PartyApplicationService, spec: QaMemberSpec): string | undefined {

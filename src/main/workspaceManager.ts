@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import { PartyApplicationService } from "./application/partyApplicationService";
+import { workspaceKey } from "../shared/workspaceLocation";
 import type { SessionManager } from "./sessionManager";
 
 /**
@@ -25,7 +25,7 @@ export class WorkspaceManager {
   constructor(private readonly sessionManager: SessionManager) {}
 
   context(workspacePath: string): WorkspaceContext {
-    const key = path.resolve(workspacePath || process.cwd());
+    const key = workspaceKey(workspacePath || process.cwd());
     let context = this.contexts.get(key);
     if (!context) {
       context = new WorkspaceContext(key, this.sessionManager);

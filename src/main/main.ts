@@ -9,6 +9,7 @@ import { AppController } from "./application/appController";
 import { WorkspaceManager } from "./workspaceManager";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
+import { workspaceKey } from "../shared/workspaceLocation";
 
 let router: EmbeddedRouter | undefined;
 let sessionManager: SessionManager | undefined;
@@ -78,8 +79,8 @@ async function bootstrap(): Promise<void> {
   });
   sessionManager.on("sessions", () => {
     for (const entry of registry().all()) {
-      const key = path.resolve(entry.workspacePath);
-      const subset = sessionManager!.listSessions().filter((session) => path.resolve(session.workspace) === key);
+      const key = workspaceKey(entry.workspacePath);
+      const subset = sessionManager!.listSessions().filter((session) => workspaceKey(session.workspace) === key);
       entry.window.webContents.send("session:list", subset);
     }
   });
