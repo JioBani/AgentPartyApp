@@ -54,6 +54,9 @@
         "nsis",
         "portable"
       ]
+    },
+    "nsis": {
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {
