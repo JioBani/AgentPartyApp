@@ -37,6 +37,20 @@ export class EngineRegistry {
     return engine;
   }
 
+  /** Tears down the engine for a workspace (e.g. when its last window closes). */
+  dispose(workspacePath: string): void {
+    const key = workspaceKey(workspacePath);
+    disposeEngine(this.engines.get(key));
+    this.engines.delete(key);
+  }
+
+  disposeAll(): void {
+    for (const engine of this.engines.values()) {
+      disposeEngine(engine);
+    }
+    this.engines.clear();
+  }
+
   private create(workspacePath: string): EngineConnection {
     const location = parseWorkspaceLocation(workspacePath);
     if (location.host.kind === "wsl") {
@@ -53,5 +67,13 @@ export class EngineRegistry {
       party: this.deps.workspaceManager.context(workspacePath).party,
       sessionManager: this.deps.sessionManager,
     });
+  }
+}
+
+/** A remote engine owns a child process; LocalEngine has nothing to tear down. */
+function disposeEngine(engine: EngineConnection | undefined): void {
+  const maybe = engine as { dispose?: () => void } | undefined;
+  if (typeof maybe?.dispose === "function") {
+    maybe.dispose();
   }
 }

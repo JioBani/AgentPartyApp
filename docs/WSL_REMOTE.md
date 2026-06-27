@@ -295,6 +295,15 @@ E2E QA runs against a **real** distro, not a mock, once the engine is headless
 - **The Linux claude binary** is shipped inside the Windows app and copied into
   the distro during provisioning (S6) — not separately installed by the user.
 
+**S6 status:** done — OpenRouter key forwarded into the distro engine via WSLENV
+(so harness/model routing works in WSL); engine processes disposed when their
+last window closes and on app quit; the CLI shim + launcher ship as
+`extraResources` (`resources/bin/`). **Remaining (needs a real build/install to
+verify):** register `resources/bin` on the Windows PATH from the NSIS installer,
+and provision the **Linux claude binary** into the distro (until then, a *real*
+model session in WSL fails with an explicit "claude binary not found" error —
+never a silent fallback; mock sessions and routing are unaffected).
+
 Net: install once on Windows; typical dev distros (with node) need **zero**
 extra steps; a bare distro needs at most a one-time `apt install nodejs`.
 

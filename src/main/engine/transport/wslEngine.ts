@@ -8,6 +8,8 @@ export interface WslEngineOptions {
   workspacePosix: string;
   /** Windows path to the bundled engine server (dist/engine-server.mjs). */
   serverBundleWinPath: string;
+  /** Forwarded to the distro engine's router for router-backed models. */
+  openRouterApiKey?: string;
 }
 
 export interface WslEngineHandle {
@@ -34,13 +36,20 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     const serverPath = `${serverDir}/engine-server.mjs`;
     await runBash(options.distro, `mkdir -p "${serverDir}" && cp "${wslBundle}" "${serverPath}"`);
 
+    // Forward the OpenRouter key into the distro via WSLENV (not on the command
+    // line, so it never appears in args/logs); the distro engine's router reads it.
+    const env = { ...process.env };
+    if (options.openRouterApiKey) {
+      env.OPENROUTER_API_KEY = options.openRouterApiKey;
+      env.WSLENV = appendWslEnv(env.WSLENV, "OPENROUTER_API_KEY");
+    }
     child = spawn(
       "wsl.exe",
       [
         "-d", options.distro, "-e", "bash", "-lc",
         `exec node "${serverPath}" --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
       ],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      { stdio: ["pipe", "pipe", "pipe"], env },
     );
     child.on("error", (error) => log("error", "wsl-engine", "spawn error", { distro: options.distro, error: error.message }));
 
@@ -71,6 +80,14 @@ async function assertNode(distro: string): Promise<void> {
       `WSL distro '${distro}' has no 'node' on PATH. Install Node.js in the distro (e.g. 'sudo apt install nodejs') and retry.`,
     );
   }
+}
+
+/** Adds a var name to a `WSLENV` list (colon-separated) so wsl.exe forwards it. */
+function appendWslEnv(current: string | undefined, name: string): string {
+  if (!current) {
+    return name;
+  }
+  return current.split(":").includes(name) ? current : `${current}:${name}`;
 }
 
 function wslpath(distro: string, winPath: string): Promise<string> {

@@ -41,6 +41,10 @@
       "package.json",
       "README.md"
     ],
+    "extraResources": [
+      { "from": "scripts/agent-party", "to": "bin/agent-party" },
+      { "from": "scripts/agent-party-launcher.mjs", "to": "bin/agent-party-launcher.mjs" }
+    ],
     "win": {
       "target": [
         "nsis",

@@ -9,6 +9,7 @@ import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { WorkspaceManager } from "./workspaceManager";
 import { createEngineHost } from "./engine/engineHost";
+import type { EngineRegistry } from "./engine/engineRegistry";
 import { spawnWslEngine } from "./engine/transport/wslEngine";
 import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
@@ -23,6 +24,7 @@ let workspaceManager: WorkspaceManager | undefined;
 let windowRegistry: WindowRegistry | undefined;
 let automationApi: AutomationApiServer | undefined;
 let appController: AppController | undefined;
+let engineRegistry: EngineRegistry | undefined;
 
 function defaultWorkspace(): string {
   return getSettings().workspacePath || process.cwd();
@@ -47,7 +49,13 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   });
 
   const entry = registry().register(window, workspacePath);
-  window.on("closed", () => log("info", "window", "window closed", { id: entry.id }));
+  window.on("closed", () => {
+    log("info", "window", "window closed", { id: entry.id });
+    // Last window for this workspace → tear down its engine (kills a WSL child).
+    if (registry().forWorkspace(entry.workspacePath).length === 0) {
+      engineRegistry?.dispose(entry.workspacePath);
+    }
+  });
 
   const rendererUrl = process.env.AGENTPARTY_RENDERER_URL;
   if (rendererUrl) {
@@ -82,6 +90,7 @@ async function bootstrap(): Promise<void> {
         distro: location.host.distro,
         workspacePosix: location.path,
         serverBundleWinPath: serverBundle,
+        openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       });
       return new RemoteEngineClient(handle.transport, serialized, handle.dispose);
     },
@@ -89,6 +98,7 @@ async function bootstrap(): Promise<void> {
   router = host.router;
   sessionManager = host.sessionManager;
   workspaceManager = host.workspaceManager;
+  engineRegistry = host.engineRegistry;
   await host.startRouter();
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
@@ -321,6 +331,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   log("info", "app", "before quit");
+  engineRegistry?.disposeAll();
   sessionManager?.dispose();
   router?.dispose();
   automationApi?.dispose();
