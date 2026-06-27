@@ -18,19 +18,30 @@ export interface WorkspaceLocation {
 
 /** `wsl+<distro>:<posix-abs-path>` — mirrors VS Code's `wsl+<distro>` authority. */
 const WSL_URI = /^wsl\+([^:]+):(.*)$/;
+/** Windows UNC view of a distro: `\\wsl$\<distro>\...` or `\\wsl.localhost\<distro>\...`. */
+const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\]+)\\?(.*)$/;
 
 /**
- * Parses a serialized location. Anything that is not a `wsl+<distro>:` URI is
- * treated as a local path, verbatim — so existing settings/state that store a
- * raw Windows path keep working unchanged.
+ * Parses a serialized location into a host + native path:
+ * - `wsl+<distro>:/path` → that WSL location.
+ * - a `\\wsl$\<distro>\...` / `\\wsl.localhost\...` UNC path → the same WSL
+ *   location (so the Windows folder picker can choose a WSL folder).
+ * - anything else → a local path, verbatim (existing Windows paths unchanged).
  */
 export function parseWorkspaceLocation(value: string): WorkspaceLocation {
-  const match = WSL_URI.exec(value.trim());
-  if (match) {
-    const distro = match[1].trim();
-    const posixPath = match[2] || "/";
-    return { host: { kind: "wsl", distro }, path: posixPath };
+  const trimmed = value.trim();
+
+  const uri = WSL_URI.exec(trimmed);
+  if (uri) {
+    return { host: { kind: "wsl", distro: uri[1].trim() }, path: uri[2] || "/" };
   }
+
+  const unc = WSL_UNC.exec(trimmed);
+  if (unc) {
+    const posixPath = `/${unc[2].replace(/\\/g, "/")}`.replace(/\/+$/, "") || "/";
+    return { host: { kind: "wsl", distro: unc[1].trim() }, path: posixPath };
+  }
+
   return { host: { kind: "local" }, path: value };
 }
 

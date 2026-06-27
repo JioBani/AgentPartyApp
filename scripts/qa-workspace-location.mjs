@@ -54,6 +54,14 @@ assert(!W.workspaceKey(uri).includes("C:\\"), "wsl key is never mangled into a W
 const uri2 = "wsl+Ubuntu-22.04:/home/user/./a/../proj";
 assert(W.workspaceKey(uri2) === "wsl+Ubuntu-22.04:/home/user/proj", "wsl key posix-normalizes the path");
 
+// --- UNC: a \\wsl$\ / \\wsl.localhost\ folder pick becomes a WSL location ---
+const unc1 = W.parseWorkspaceLocation("\\\\wsl$\\Ubuntu-22.04\\home\\dev\\project");
+assert(unc1.host.kind === "wsl" && unc1.host.distro === "Ubuntu-22.04", "\\\\wsl$ UNC parses distro");
+assert(unc1.path === "/home/dev/project", "\\\\wsl$ UNC parses the posix path");
+assert(W.serializeWorkspaceLocation(unc1) === "wsl+Ubuntu-22.04:/home/dev/project", "\\\\wsl$ UNC serializes to the wsl URI");
+const unc2 = W.parseWorkspaceLocation("\\\\wsl.localhost\\Debian\\srv\\app");
+assert(unc2.host.kind === "wsl" && unc2.host.distro === "Debian" && unc2.path === "/srv/app", "\\\\wsl.localhost UNC parses to wsl location");
+
 // --- isolation: local and wsl with the same tail are different identities -
 assert(W.workspaceKey("/home/user/project") !== W.workspaceKey("wsl+Ubuntu:/home/user/project"), "local vs wsl with same path are distinct identities");
 assert(W.workspaceKey("wsl+Ubuntu:/p") !== W.workspaceKey("wsl+Debian:/p"), "same path on different distros are distinct identities");

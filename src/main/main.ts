@@ -11,6 +11,7 @@ import { createEngineHost } from "./engine/engineHost";
 import { spawnWslEngine } from "./engine/transport/wslEngine";
 import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
+import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
@@ -210,7 +211,9 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) {
       return getPublicSettings();
     }
-    const state = await controller().setWindowWorkspace(senderWindowId(event), result.filePaths[0]);
+    // A `\\wsl$\<distro>\...` selection is interpreted as a WSL workspace.
+    const workspace = serializeWorkspaceLocation(parseWorkspaceLocation(result.filePaths[0]));
+    const state = await controller().setWindowWorkspace(senderWindowId(event), workspace);
     return state.settings;
   });
 

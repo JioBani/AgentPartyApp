@@ -119,9 +119,20 @@ export interface WindowInfo {
   focused: boolean;
 }
 
+/** The targeted window's workspace, parsed for display (badge + host-native path). */
+export interface WorkspaceDisplay {
+  /** Serialized location: a raw path for local, `wsl+<distro>:/path` for WSL. */
+  uri: string;
+  kind: "local" | "wsl";
+  distro?: string;
+  /** Host-native path (a Linux path for WSL). */
+  path: string;
+}
+
 export interface InitialAppState {
   ok: true;
   settings: AppSettings;
+  workspace?: WorkspaceDisplay;
   auth: AuthProviderState[];
   sessions: SessionView[];
   modelRoutes: unknown[];

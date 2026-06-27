@@ -2,7 +2,8 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput } from "../../shared/types";
+import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, WorkspaceDisplay } from "../../shared/types";
+import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -38,6 +39,16 @@ export class AppController {
     return this.deps.engineRegistry.forWorkspace(workspacePath);
   }
 
+  private workspaceDisplay(workspacePath: string): WorkspaceDisplay {
+    const location = parseWorkspaceLocation(workspacePath);
+    return {
+      uri: serializeWorkspaceLocation(location),
+      kind: location.host.kind,
+      distro: location.host.kind === "wsl" ? location.host.distro : undefined,
+      path: location.path,
+    };
+  }
+
   private async broadcastParty(workspacePath: string): Promise<void> {
     const payload = await this.engineFor(workspacePath).listParty();
     for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
@@ -55,6 +66,7 @@ export class AppController {
     return {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
+      workspace: this.workspaceDisplay(workspacePath),
       auth: getAuthState(),
       sessions: await this.engineFor(workspacePath).listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(settings.claudeModel, [], []),

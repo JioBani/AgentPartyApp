@@ -409,7 +409,12 @@ export function App() {
               <header className="screen-header">
                 <div className="screen-title">
                   <h1>Workbench</h1>
-                  <span className="wb-mono screen-repo">{displayPath(state.settings.workspacePath) || "작업공간 없음"}</span>
+                  <span className="wb-mono screen-repo">
+                    {state.workspace?.kind === "wsl" && (
+                      <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>
+                    )}
+                    {state.workspace?.path || displayPath(state.settings.workspacePath) || "작업공간 없음"}
+                  </span>
                   <p>멤버를 탭으로 열고 패널을 나누어 여러 세션을 한 화면에서 관리합니다.</p>
                 </div>
                 <div className="screen-actions">
