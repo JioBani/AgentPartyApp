@@ -85,7 +85,11 @@ async function bootstrap(): Promise<void> {
       if (location.host.kind !== "wsl") {
         throw new Error(`Unsupported remote host for '${serialized}'.`);
       }
-      const serverBundle = path.join(__dirname, "../engine-server.mjs");
+      // In a packaged app the bundle is asar-unpacked (external wsl.exe/cp can't
+      // read inside app.asar); use the on-disk unpacked path. No-op in dev.
+      const serverBundle = path
+        .join(__dirname, "../engine-server.mjs")
+        .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
       const handle = spawnWslEngine({
         distro: location.host.distro,
         workspacePosix: location.path,

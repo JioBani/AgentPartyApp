@@ -42,6 +42,9 @@
       "package.json",
       "README.md"
     ],
+    "asarUnpack": [
+      "dist/engine-server.mjs"
+    ],
     "extraResources": [
       { "from": "scripts/agent-party", "to": "bin/agent-party" },
       { "from": "scripts/agent-party-launcher.mjs", "to": "bin/agent-party-launcher.mjs" }
