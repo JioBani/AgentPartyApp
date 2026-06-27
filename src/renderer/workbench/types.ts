@@ -13,6 +13,8 @@ export type TranscriptBlock =
       description?: string;
       input?: unknown;
       resolved?: "allow" | "deny";
+      /** For AskUserQuestion: the user's chosen answers (question text -> label). */
+      answers?: Record<string, string>;
       at?: string;
     };
 

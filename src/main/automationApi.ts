@@ -206,6 +206,11 @@ export class AutomationApiServer {
       sendJson(res, 200, await c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));
       return;
     }
+    const interactionMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/interaction$/);
+    if (method === "POST" && interactionMatch) {
+      sendJson(res, 200, await c.qaInteraction(workspace, decodeURIComponent(interactionMatch[1]), await readJson(req)));
+      return;
+    }
     sendJson(res, 404, { error: "not_found" });
   }
 

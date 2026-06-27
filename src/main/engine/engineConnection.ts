@@ -38,6 +38,31 @@ export interface QaEmitInput {
   status?: "working" | "idle" | "approval";
 }
 
+/** One option of an AskUserQuestion mock interaction. */
+export interface QaQuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** One question of an AskUserQuestion mock interaction. */
+export interface QaQuestion {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: QaQuestionOption[];
+}
+
+/**
+ * Drives a model-style interaction (e.g. an AskUserQuestion prompt) into a mock
+ * member without a real model, so the interactive UI can be exercised over the
+ * automation API. Extend the `type` union as more interactions are mocked.
+ */
+export interface QaInteractionInput {
+  type: "askUserQuestion";
+  requestId?: string;
+  questions?: QaQuestion[];
+}
+
 /**
  * Every method is async: the engine may be in another host (a WSL distro)
  * reached over a transport, and a remote boundary cannot be synchronous. The
@@ -84,5 +109,7 @@ export interface EngineConnection {
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }>;
   qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }>;
   qaEmit(name: string, body: QaEmitInput): Promise<void>;
+  /** Mocks an interactive prompt (e.g. AskUserQuestion) into a mock member. */
+  qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }>;
   qaReset(): Promise<PartyListing>;
 }

@@ -297,6 +297,15 @@ export function App() {
       void window.agentParty.approve(sessionId, requestId, behavior);
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, behavior));
     },
+    answerQuestion(name, requestId, input, answers) {
+      const sessionId = sessionIdFor(name);
+      if (!sessionId) {
+        return;
+      }
+      const updatedInput = { ...(input && typeof input === "object" ? input : {}), answers };
+      void window.agentParty.approve(sessionId, requestId, "allow", updatedInput);
+      setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, "allow", answers));
+    },
     interrupt(name) {
       const sessionId = sessionIdFor(name);
       if (sessionId) void window.agentParty.interrupt(sessionId);

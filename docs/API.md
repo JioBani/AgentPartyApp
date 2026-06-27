@@ -430,6 +430,40 @@ Simulate an approval prompt:
 { "events": [ { "type": "approval_request", "requestId": "a1", "toolName": "apply_patch", "description": "좁은 패치 적용", "input": { "command": "git apply auth-narrow.patch" } } ] }
 ```
 
+### `POST /api/qa/members/:name/interaction`
+
+Mocks a model-driven **interactive prompt** into a seeded member so the
+interactive UI (e.g. the AskUserQuestion choice card) can be exercised without a
+real model. Emits the same `approval_request` event the real harness produces,
+then the member can be answered through `POST /api/sessions/:id/approve` (or by
+clicking an option in the UI). Returns the generated `requestId`.
+
+```json
+{
+  "type": "askUserQuestion",
+  "questions": [
+    {
+      "question": "어떤 작업을 진행할까요?",
+      "header": "작업 선택",
+      "multiSelect": false,
+      "options": [
+        { "label": "코드 리뷰", "description": "현재 변경점을 리뷰합니다." },
+        { "label": "버그 수정", "description": "보고된 버그를 수정합니다." }
+      ]
+    }
+  ]
+}
+```
+
+`questions` is optional — a sensible default question is used when omitted.
+`requestId` is optional and auto-generated if not supplied. To answer, allow the
+request with the chosen labels folded into the tool input:
+
+```json
+{ "requestId": "<from response>", "behavior": "allow",
+  "updatedInput": { "answers": { "어떤 작업을 진행할까요?": "코드 리뷰" } } }
+```
+
 ### `POST /api/qa/open`
 
 Drives the targeted window's Workbench layout directly, opening mock members

@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
-import { Brain, Check, ChevronRight, Search, ShieldCheck } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { Brain, Check, ChevronRight, ListChecks, Search, ShieldCheck } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 
@@ -28,7 +28,9 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
         </div>
       )}
       {view.transcript.map((block) => (
-        <Block key={block.id} block={block} view={view} density={density} actions={actions} />
+        // Key by kind+id: an AskUserQuestion approval and its merged tool block
+        // share the same tool-use id, so id alone would collide.
+        <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} />
       ))}
       {view.busy && <TypingIndicator />}
     </div>
@@ -63,6 +65,11 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
         </div>
       );
     case "tool":
+      // AskUserQuestion is shown by its approval card (the interactive question),
+      // so its duplicate tool entry is suppressed here to avoid a raw-JSON echo.
+      if (block.name === "AskUserQuestion") {
+        return null;
+      }
       return <ToolBlock block={block} density={density} />;
     case "status":
       return (
@@ -101,6 +108,10 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
 }
 
 function ApprovalBlock({ block, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
+  const questions = parseQuestions(block.input);
+  if (block.toolName === "AskUserQuestion" && questions.length > 0) {
+    return <QuestionBlock block={block} questions={questions} view={view} density={density} actions={actions} />;
+  }
   const command = approvalCommand(block.input);
   return (
     <div className={"wb-block wb-approval density-" + density}>
@@ -121,6 +132,103 @@ function ApprovalBlock({ block, view, density, actions }: { block: Extract<Trans
       )}
     </div>
   );
+}
+
+interface ParsedOption { label: string; description?: string }
+interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[] }
+
+/** Renders an AskUserQuestion interaction as selectable choices instead of a raw allow/deny prompt. */
+function QuestionBlock({ block, questions, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; questions: ParsedQuestion[]; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
+  const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const resolved = Boolean(block.resolved);
+
+  const toggle = (q: ParsedQuestion, label: string) => {
+    setSelections((current) => {
+      const prev = current[q.question] || [];
+      if (q.multiSelect) {
+        const next = prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label];
+        return { ...current, [q.question]: next };
+      }
+      return { ...current, [q.question]: [label] };
+    });
+  };
+
+  const answers = Object.fromEntries(questions.map((q) => [q.question, (selections[q.question] || []).join(", ")]));
+  const ready = questions.every((q) => (selections[q.question] || []).length > 0);
+  const submit = () => actions.answerQuestion(view.name, block.requestId, block.input, answers);
+
+  return (
+    <div className={"wb-block wb-approval wb-question density-" + density}>
+      <div className="wb-approval-head">
+        <ListChecks size={14} />
+        <strong>질문에 답해주세요</strong>
+        {questions[0]?.header && <span className="wb-chip wb-mono">{questions[0].header}</span>}
+      </div>
+      {questions.map((q, qi) => {
+        const picked = resolved ? answerLabels(block.answers, q.question) : selections[q.question] || [];
+        return (
+          <div className="wb-question-item" key={qi}>
+            <p className="wb-question-text">{q.question}</p>
+            <div className="wb-question-options">
+              {q.options.map((opt, oi) => {
+                const active = picked.includes(opt.label);
+                return (
+                  <button
+                    key={oi}
+                    type="button"
+                    className={"wb-question-option" + (active ? " is-active" : "")}
+                    disabled={resolved}
+                    aria-pressed={active}
+                    onClick={() => toggle(q, opt.label)}
+                  >
+                    <span className="wb-question-option-label">{opt.label}</span>
+                    {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {resolved ? (
+        <span className="wb-status-badge is-allow">답변함{summarizeAnswers(block.answers) ? ` · ${summarizeAnswers(block.answers)}` : ""}</span>
+      ) : (
+        <div className="wb-approval-actions">
+          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
+          <button type="button" className="wb-btn wb-btn-member" disabled={!ready} onClick={submit}>답변 보내기</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function parseQuestions(input: unknown): ParsedQuestion[] {
+  const record = input && typeof input === "object" ? (input as Record<string, unknown>) : undefined;
+  const raw = record?.questions;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((item) => {
+      const q = item as Record<string, unknown>;
+      const options = Array.isArray(q.options)
+        ? (q.options as Record<string, unknown>[]).map((o) => ({ label: String(o.label ?? ""), description: o.description ? String(o.description) : undefined })).filter((o) => o.label)
+        : [];
+      return { question: String(q.question ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options };
+    })
+    .filter((q) => q.question && q.options.length > 0);
+}
+
+function answerLabels(answers: Record<string, string> | undefined, question: string): string[] {
+  const value = answers?.[question];
+  return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function summarizeAnswers(answers: Record<string, string> | undefined): string {
+  if (!answers) {
+    return "";
+  }
+  return Object.values(answers).filter(Boolean).join(" / ");
 }
 
 function TypingIndicator() {

@@ -11,7 +11,7 @@ import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
-import type { EngineConnection, QaMemberSpec } from "../engine/engineConnection";
+import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowInfo, WindowRegistry } from "../windowRegistry";
 
@@ -318,6 +318,12 @@ export class AppController {
     this.requireQa();
     await this.engineFor(workspacePath).qaEmit(name, body);
     return { ok: true };
+  }
+
+  async qaInteraction(workspacePath: string, name: string, body: QaInteractionInput): Promise<{ ok: true; requestId: string }> {
+    this.requireQa();
+    const { requestId } = await this.engineFor(workspacePath).qaInteraction(name, body);
+    return { ok: true, requestId };
   }
 
   qaOpen(windowId: string | undefined, panels: string[][]): { ok: true; panels: string[][] } {

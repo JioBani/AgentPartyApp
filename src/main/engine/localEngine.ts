@@ -2,7 +2,7 @@ import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionVi
 import { workspaceKey } from "../../shared/workspaceLocation";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
-import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaMemberSpec } from "./engineConnection";
+import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -192,6 +192,22 @@ export class LocalEngine implements EngineConnection {
     this.applyStatus(sessionId, body.status);
   }
 
+  async qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }> {
+    const sessionId = this.qaSessionIdFor(name);
+    const requestId = body.requestId || `qa-ask-${name}-${Date.now()}`;
+    const questions = normalizeQuestions(body.questions);
+    // Mirrors exactly what ClaudeAdapter emits for AskUserQuestion, so the mock
+    // is indistinguishable from a real interaction in the renderer.
+    this.deps.sessionManager.injectMockEvent(sessionId, {
+      type: "approval_request",
+      requestId,
+      toolName: "AskUserQuestion",
+      input: { questions },
+      title: "AskUserQuestion",
+    });
+    return { requestId };
+  }
+
   async qaReset(): Promise<PartyListing> {
     for (const member of this.party.list().members) {
       if (member.name !== "main" && member.sessionId && this.deps.sessionManager.isMockSession(member.sessionId)) {
@@ -246,4 +262,30 @@ export class LocalEngine implements EngineConnection {
     }
     return member.sessionId;
   }
+}
+
+const DEFAULT_QA_QUESTIONS: QaQuestion[] = [
+  {
+    question: "어떤 작업을 진행할까요?",
+    header: "작업 선택",
+    multiSelect: false,
+    options: [
+      { label: "코드 리뷰", description: "현재 변경점을 리뷰합니다." },
+      { label: "버그 수정", description: "보고된 버그를 수정합니다." },
+      { label: "새 기능", description: "기능을 추가합니다." },
+    ],
+  },
+];
+
+/** Fills defaults so a mock AskUserQuestion always renders a valid card. */
+function normalizeQuestions(questions: QaQuestion[] | undefined): QaQuestion[] {
+  const source = Array.isArray(questions) && questions.length > 0 ? questions : DEFAULT_QA_QUESTIONS;
+  return source.map((q) => ({
+    question: String(q.question || "질문"),
+    header: q.header ? String(q.header) : undefined,
+    multiSelect: Boolean(q.multiSelect),
+    options: (Array.isArray(q.options) ? q.options : [])
+      .map((o) => ({ label: String(o.label || ""), description: o.description ? String(o.description) : undefined }))
+      .filter((o) => o.label),
+  }));
 }

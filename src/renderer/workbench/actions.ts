@@ -9,6 +9,12 @@ export interface WorkbenchActions {
   /** Sends a turn to the member, starting its session first if needed. */
   sendMessage(memberName: string, text: string): void | Promise<void>;
   approve(memberName: string, requestId: string, behavior: "allow" | "deny"): void;
+  /**
+   * Answers an AskUserQuestion interaction: allows the tool with the chosen
+   * answers folded into its input (`answers` = question text -> selected label),
+   * which is the shape the SDK expects to feed the model.
+   */
+  answerQuestion(memberName: string, requestId: string, input: unknown, answers: Record<string, string>): void;
   interrupt(memberName: string): void;
   restart(memberName: string): void;
   compact(memberName: string): void;
