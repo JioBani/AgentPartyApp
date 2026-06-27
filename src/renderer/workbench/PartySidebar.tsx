@@ -1,0 +1,135 @@
+import { FormEvent, useState } from "react";
+import { Check, ChevronsLeft, Plus, Users, X } from "lucide-react";
+import type { PartyDefinition } from "../../shared/types";
+import type { MemberView } from "./types";
+import { memberColorVars } from "../theme/memberColors";
+import { statusLabel } from "./memberStatus";
+import { Dropdown } from "./Dropdown";
+import { RUNTIME_OPTIONS } from "./controls";
+
+export interface CreateMemberInput {
+  name: string;
+  requirement: string;
+  runtime: string;
+}
+
+interface PartySidebarProps {
+  parties: PartyDefinition[];
+  activePartyId?: string;
+  activePartyName: string;
+  views: MemberView[];
+  openMembers: Set<string>;
+  workingByParty: Record<string, number>;
+  memberCountByParty: Record<string, number>;
+  width: number;
+  onSelectParty: (partyId: string) => void;
+  onCreateParty: (name: string) => void;
+  onCreateMember: (input: CreateMemberInput) => void;
+  onOpenMember: (member: string) => void;
+  onCollapse: () => void;
+}
+
+export function PartySidebar(props: PartySidebarProps) {
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onCollapse } = props;
+  const [draft, setDraft] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [memberDraft, setMemberDraft] = useState({ name: "", requirement: "", runtime: "claude-code" });
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const name = draft.trim();
+    if (!name) {
+      return;
+    }
+    onCreateParty(name);
+    setDraft("");
+  }
+
+  const memberValid = memberDraft.name.trim() && memberDraft.requirement.trim();
+
+  function submitMember(event: FormEvent) {
+    event.preventDefault();
+    if (!memberValid) {
+      return;
+    }
+    onCreateMember({ name: memberDraft.name.trim(), requirement: memberDraft.requirement.trim(), runtime: memberDraft.runtime });
+    setMemberDraft({ name: "", requirement: "", runtime: "claude-code" });
+    setCreating(false);
+  }
+
+  return (
+    <aside className="wb-sidebar" style={{ width }}>
+      <header className="wb-sidebar-head">
+        <Users size={16} />
+        <span className="wb-sidebar-party" title={activePartyName}>{activePartyName}</span>
+        <button type="button" className="wb-icon-btn" title="파티 패널 접기" onClick={onCollapse}><ChevronsLeft size={16} /></button>
+      </header>
+
+      <section className="wb-sidebar-section">
+        <div className="wb-section-label">Parties <span className="wb-mono">{parties.length}</span></div>
+        <form className="wb-new-party" onSubmit={submit}>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="새 파티 이름…" />
+          <button type="submit" className="wb-icon-btn is-accent" title="Create party"><Plus size={15} /></button>
+        </form>
+        <div className="wb-party-list">
+          {parties.map((party) => {
+            const working = workingByParty[party.id] || 0;
+            const count = memberCountByParty[party.id] || 0;
+            const active = party.id === activePartyId;
+            // Member/working counts are only known for the loaded (active) party;
+            // for others we show the name without inventing a count.
+            return (
+              <button type="button" key={party.id} className={"wb-party-row" + (active ? " is-active" : "")} onClick={() => onSelectParty(party.id)}>
+                <span className={"wb-live-dot" + (active && working > 0 ? " is-live" : "")} />
+                <span className="wb-party-name">{party.name}</span>
+                {active && <span className="wb-mono wb-party-sub">{count} members · {working} working</span>}
+                {active && <Check size={14} className="wb-party-check" />}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="wb-sidebar-section wb-members-section">
+        <div className="wb-section-label">
+          <span>Members</span>
+          {!creating && <span className="wb-hint">클릭해 패널로 열기</span>}
+          <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? "취소" : "멤버 추가"} onClick={() => setCreating((value) => !value)}>
+            {creating ? <X size={14} /> : <Plus size={15} />}
+          </button>
+        </div>
+
+        {creating && (
+          <form className="wb-new-member" onSubmit={submitMember}>
+            <input autoFocus value={memberDraft.name} onChange={(event) => setMemberDraft((current) => ({ ...current, name: event.target.value }))} placeholder="멤버 이름…" />
+            <input value={memberDraft.requirement} onChange={(event) => setMemberDraft((current) => ({ ...current, requirement: event.target.value }))} placeholder="역할 (예: 백엔드 API)" />
+            <Dropdown value={memberDraft.runtime} options={RUNTIME_OPTIONS} onChange={(runtime) => setMemberDraft((current) => ({ ...current, runtime }))} title="런타임" />
+            <div className="wb-new-member-actions">
+              <button type="button" className="wb-btn wb-btn-ghost" onClick={() => setCreating(false)}>취소</button>
+              <button type="submit" className="wb-btn wb-btn-accent" disabled={!memberValid}>추가</button>
+            </div>
+          </form>
+        )}
+
+        <div className="wb-member-list">
+          {views.length === 0 && <div className="wb-empty">No members</div>}
+          {views.map((view) => (
+            <button
+              type="button"
+              key={view.name}
+              className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "")}
+              style={memberColorVars(view.name)}
+              onClick={() => onOpenMember(view.name)}
+            >
+              <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
+              <span className="wb-member-name">{view.name}</span>
+              {view.pendingApproval && <span className="wb-member-badge">승인</span>}
+              {!view.pendingApproval && view.unread > 0 && <span className="wb-member-unread">{view.unread}</span>}
+              {!view.pendingApproval && view.unread === 0 && <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>}
+            </button>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}

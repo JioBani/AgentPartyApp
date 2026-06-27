@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-renderer/
+release/
+*.log
+.env
+.env.*
+.DS_Store
+.agentparty/
+.agent_party_app/
+.codex/
+새 폴더/

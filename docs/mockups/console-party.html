@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AgentParty — Console mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: dark;
+  --font-display:"Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-ui:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  --ink-base:#0E1116;
+  --ink-elevated:#141921;
+  --ink-sunken:#0A0D11;
+  --surface:#1A212B;
+  --surface-hover:#222B36;
+  --surface-active:#2A3340;
+  --border-subtle:#20272F;
+  --border:#2C3540;
+  --border-strong:#3D4856;
+  --text:#E7ECF2;
+  --text-muted:#9BA8B6;
+  --text-dim:#67727E;
+
+  --action-bg:#EDEFF2;
+  --action-text:#11141A;
+
+  --ch-amber:#E0A84E;
+  --ch-coral:#E8806B;
+  --ch-rose:#D17BA8;
+  --ch-iris:#8E8BF0;
+  --ch-cyan:#5BB8C9;
+  --ch-green:#7FB97A;
+
+  --success:#6FBF8F;
+  --warning:#D9A857;
+  --danger:#E5707E;
+
+  --r-xs:5px; --r-sm:7px; --r-md:10px; --r-lg:14px;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--ink-base);
+  color:var(--text);
+  font-family:var(--font-ui);
+  font-size:13px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none}
+.mono{font-family:var(--font-mono)}
+
+/* ---------- shell ---------- */
+.app{
+  width:1440px;height:900px;margin:0 auto;
+  display:grid;
+  grid-template-columns:56px 1fr;
+  grid-template-rows:38px 1fr;
+  grid-template-areas:"title title" "rail main";
+  background:var(--ink-base);
+  border:1px solid var(--border);
+  overflow:hidden;
+}
+
+/* titlebar */
+.titlebar{
+  grid-area:title;display:flex;align-items:center;justify-content:space-between;
+  padding:0 6px 0 14px;background:var(--ink-elevated);
+  border-bottom:1px solid var(--border-subtle);
+}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:600;letter-spacing:.2px;font-size:13px}
+.brand .spark{color:var(--ch-amber)}
+.wbtns{display:flex;gap:2px}
+.wbtn{width:42px;height:26px;display:grid;place-items:center;border-radius:var(--r-xs);color:var(--text-dim)}
+.wbtn:hover{background:var(--surface-hover);color:var(--text)}
+.wbtn.close:hover{background:#5b2730;color:#ffd7dc}
+
+/* nav rail */
+.rail{
+  grid-area:rail;background:var(--ink-elevated);
+  border-right:1px solid var(--border-subtle);
+  display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:12px;
+}
+.nav{width:42px;height:42px;display:grid;place-items:center;border-radius:var(--r-sm);color:var(--text-dim);position:relative}
+.nav:hover{background:var(--surface-hover);color:var(--text-muted)}
+.nav.active{color:var(--text);background:var(--surface-active)}
+.nav.active::before{content:"";position:absolute;left:-12px;top:9px;height:24px;width:3px;border-radius:3px;background:var(--ch-amber)}
+.nav svg{width:19px;height:19px}
+
+/* main */
+.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0}
+.head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid var(--border-subtle);
+}
+.head h1{font-family:var(--font-display);font-weight:600;font-size:18px;margin:0;letter-spacing:.2px}
+.head .sub{color:var(--text-dim);font-size:12px;margin-top:2px}
+.head .path{font-family:var(--font-mono);color:var(--text-muted)}
+.head-actions{display:flex;gap:8px}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:var(--r-sm);
+  background:var(--surface);border:1px solid var(--border);color:var(--text-muted);font-weight:500;font-size:12.5px;
+}
+.btn:hover{background:var(--surface-hover);color:var(--text);border-color:var(--border-strong)}
+.btn.primary{background:var(--action-bg);color:var(--action-text);border-color:transparent;font-weight:600}
+.btn.primary:hover{background:#fff}
+.btn svg{width:15px;height:15px}
+
+/* ---------- channel rail (SIGNATURE) ---------- */
+.channels{padding:14px 18px 4px}
+.channels .lbl{
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;color:var(--text-dim);
+  text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:8px;
+}
+.channels .lbl::after{content:"";flex:1;height:1px;background:var(--border-subtle)}
+.chrow{display:flex;gap:10px}
+.chan{
+  flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:11px 13px;position:relative;overflow:hidden;
+}
+.chan.live{border-color:color-mix(in srgb, var(--c) 50%, var(--border))}
+.chan::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);opacity:.35}
+.chan.live::before{opacity:1}
+.chan .top{display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.chan.idle .dot{background:var(--text-dim)}
+.chan.live .dot{box-shadow:0 0 0 0 var(--c);animation:pulse 1.8s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 60%,transparent)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.chan .name{font-family:var(--font-display);font-weight:600;font-size:14px}
+.chan .state{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.chan.idle .state{color:var(--text-dim)}
+/* waveform */
+.wave{display:flex;align-items:flex-end;gap:2px;height:20px}
+.wave i{width:3px;border-radius:2px;background:var(--c);opacity:.85}
+.chan.idle .wave i{background:var(--text-dim);opacity:.4}
+.chan.live .wave i{animation:bar 1.1s ease-in-out infinite}
+@keyframes bar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+.wave i{transform-origin:bottom}
+.chan-add{
+  flex:none;width:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  border:1px dashed var(--border-strong);border-radius:var(--r-md);color:var(--text-dim);background:transparent;
+}
+.chan-add:hover{color:var(--text-muted);border-color:var(--text-dim);background:var(--surface)}
+.chan-add svg{width:18px;height:18px}
+
+/* ---------- workbench body ---------- */
+.wb{flex:1;display:grid;grid-template-columns:248px 1fr;gap:14px;padding:12px 18px 18px;min-height:0}
+.sidebar{display:flex;flex-direction:column;gap:12px;min-height:0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:13px}
+.card .ttl{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:11px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.field label{font-size:11.5px;color:var(--text-muted)}
+.sel{
+  appearance:none;height:30px;padding:0 10px;border-radius:var(--r-sm);
+  background:var(--ink-sunken);border:1px solid var(--border);color:var(--text);font-size:12px;font-family:var(--font-ui);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239BA8B6' stroke-width='2'><path d='M2 4l4 4 4-4'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center;
+}
+.draftrow{display:flex;gap:7px;margin-top:2px}
+.mini{height:28px;padding:0 12px;border-radius:var(--r-sm);background:var(--action-bg);color:var(--action-text);font-weight:600;font-size:12px}
+.mini.ghost{background:var(--surface-hover);color:var(--text-muted);border:1px solid var(--border)}
+.toggle{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--text-muted);font-size:12px}
+.switch{width:30px;height:17px;border-radius:9px;background:var(--surface-active);position:relative;flex:none}
+.switch i{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--text-dim);top:2px;left:2px;transition:.15s}
+.switch.on{background:color-mix(in srgb,var(--ch-cyan) 35%,var(--surface-active))}
+.switch.on i{left:15px;background:var(--ch-cyan)}
+.tools{display:flex;flex-direction:column;gap:7px;margin-top:auto}
+.tbtn{display:flex;align-items:center;gap:9px;height:34px;padding:0 12px;border-radius:var(--r-sm);background:var(--surface);border:1px solid var(--border);color:var(--text-muted);font-size:12.5px}
+.tbtn:hover{background:var(--surface-hover);color:var(--text)}
+.tbtn.danger{color:var(--danger)}.tbtn.danger:hover{background:#3a1f24}
+.tbtn svg{width:15px;height:15px}
+
+/* chat pane */
+.chat{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--ink-sunken);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.chat-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--surface)}
+.chat-head .who{display:flex;align-items:center;gap:9px}
+.chat-head .swatch{width:9px;height:9px;border-radius:50%;background:var(--ch-amber)}
+.chat-head strong{font-family:var(--font-display);font-weight:600;font-size:14px}
+.chat-head small{color:var(--text-dim);font-family:var(--font-mono);font-size:11px;margin-left:4px}
+.pill{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;letter-spacing:.04em}
+.pill.live{color:var(--ch-amber);background:color-mix(in srgb,var(--ch-amber) 14%,transparent);border:1px solid color-mix(in srgb,var(--ch-amber) 35%,transparent)}
+.pill.ok{color:var(--success);background:color-mix(in srgb,var(--success) 12%,transparent);border:1px solid color-mix(in srgb,var(--success) 30%,transparent)}
+
+.convo{flex:1;overflow:auto;padding:18px 20px;display:flex;flex-direction:column;gap:16px}
+.turn{display:grid;grid-template-columns:54px 1fr;gap:14px}
+.turn .gut{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-align:right;padding-top:2px}
+.turn .gut.you{color:var(--text-muted)}
+.turn .gut.agent{color:var(--ch-amber)}
+.bubble p{margin:0;color:var(--text)}
+.bubble.you p{color:var(--text-muted)}
+.cursor{display:inline-block;width:7px;height:15px;background:var(--ch-amber);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.event{border-left:2px solid var(--border-strong);padding:2px 0 2px 13px;display:flex;flex-direction:column;gap:6px}
+.event .line{display:flex;align-items:center;gap:9px;color:var(--text-muted);font-size:12.5px}
+.event .line svg{width:14px;height:14px;color:var(--text-dim)}
+.event .line .nm{font-family:var(--font-mono);color:var(--text)}
+.event .line .chev{margin-left:auto;color:var(--text-dim)}
+.event pre{margin:0;background:var(--ink-base);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:11px 13px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-muted);overflow:auto}
+.event pre .k{color:var(--ch-cyan)}.event pre .s{color:var(--ch-green)}
+
+.approval{border-left:2px solid var(--warning);background:color-mix(in srgb,var(--warning) 7%,transparent);border-radius:0 var(--r-sm) var(--r-sm) 0;padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.approval .ah{display:flex;align-items:center;gap:9px;font-weight:600}
+.approval .ah svg{width:15px;height:15px;color:var(--warning)}
+.approval small{color:var(--text-muted)}
+.approval .acts{display:flex;gap:8px;margin-top:2px}
+.approval .allow{height:30px;padding:0 16px;border-radius:var(--r-sm);background:var(--action-bg);color:var(--action-text);font-weight:600}
+.approval .deny{height:30px;padding:0 16px;border-radius:var(--r-sm);background:transparent;border:1px solid var(--danger);color:var(--danger);font-weight:500}
+
+.typing{display:flex;align-items:center;gap:9px;color:var(--text-dim);font-size:12px;font-family:var(--font-mono);padding-left:68px}
+.spin{width:14px;height:14px;border:2px solid var(--border-strong);border-top-color:var(--ch-amber);border-radius:50%;animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+.composer{padding:14px 16px;border-top:1px solid var(--border-subtle);background:var(--surface);display:flex;gap:10px;align-items:flex-end}
+.composer .ta{flex:1;background:var(--ink-sunken);border:1px solid var(--border);border-radius:var(--r-sm);padding:11px 13px;color:var(--text);min-height:46px;font-size:13px}
+.composer .ta .ph{color:var(--text-dim)}
+.composer .hint{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:6px}
+.send{width:46px;height:46px;border-radius:var(--r-sm);background:var(--action-bg);color:var(--action-text);display:grid;place-items:center;flex:none}
+.send svg{width:18px;height:18px}
+
+/* ---------- party view ---------- */
+.party{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:min-content;gap:14px;padding:16px 18px;overflow:auto;align-content:start}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:15px}
+.panel .ttl{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:13px}
+.inp{height:32px;width:100%;background:var(--ink-sunken);border:1px solid var(--border);border-radius:var(--r-sm);padding:0 11px;color:var(--text);font-size:12.5px;font-family:var(--font-ui);margin-bottom:10px}
+.inp::placeholder{color:var(--text-dim)}
+.ta2{width:100%;background:var(--ink-sunken);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 11px;color:var(--text);font-size:12.5px;font-family:var(--font-ui);min-height:56px;margin-bottom:10px;resize:none}
+.member{display:grid;grid-template-columns:1fr auto;gap:8px 12px;padding:13px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--ink-base);margin-bottom:10px;border-left:3px solid var(--c)}
+.member .mn{display:flex;align-items:center;gap:9px}
+.member .mn .dot{width:8px;height:8px}
+.member .mn strong{font-family:var(--font-display);font-weight:600;font-size:14px}
+.member .mn small{color:var(--text-dim);font-family:var(--font-mono);font-size:11px}
+.member .role{grid-column:1/-1;color:var(--text-muted);font-size:12px;padding:2px 0}
+.member .macts{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.chip{height:26px;padding:0 11px;border-radius:var(--r-sm);background:var(--surface-hover);border:1px solid var(--border);color:var(--text-muted);font-size:11.5px}
+.chip:hover{color:var(--text);border-color:var(--border-strong)}
+.chip.danger{color:var(--danger)}
+.msg{padding:11px 13px;border:1px solid var(--border-subtle);border-radius:var(--r-sm);background:var(--ink-base);margin-bottom:9px}
+.msg .mh{display:flex;align-items:center;gap:7px;font-size:11.5px;margin-bottom:5px}
+.msg .mh .from{font-family:var(--font-display);font-weight:600}
+.msg .mh .to{font-family:var(--font-display);font-weight:600}
+.msg .mh span{color:var(--text-dim)}
+.msg p{margin:0;color:var(--text-muted);font-size:12.5px}
+.tag{font-family:var(--font-mono);font-size:10px;padding:2px 7px;border-radius:12px;margin-left:auto}
+.tag.deliv{color:var(--success);background:color-mix(in srgb,var(--success) 12%,transparent)}
+.tag.queue{color:var(--warning);background:color-mix(in srgb,var(--warning) 12%,transparent)}
+
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- titlebar -->
+  <div class="titlebar">
+    <div class="brand"><svg class="spark" viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/></svg><span>AgentParty</span></div>
+    <div class="wbtns">
+      <button class="wbtn">—</button>
+      <button class="wbtn">▢</button>
+      <button class="wbtn close">✕</button>
+    </div>
+  </div>
+
+  <!-- nav rail -->
+  <nav class="rail">
+    <div class="nav" title="Workbench"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+    <div class="nav" title="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></div>
+    <div class="nav active" title="Party"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="7" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="8" r="2.6"/><path d="M16 14a5 5 0 0 1 5 5"/></svg></div>
+    <div class="nav" title="Auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="14" r="4"/><path d="M11 11l8-8 2 2-2 2 2 2-3 2"/></svg></div>
+    <div class="nav" title="Runtime"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
+    <div class="nav" title="Automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg></div>
+  </nav>
+
+  <!-- main -->
+  <main class="main">
+    <!-- ===== WORKBENCH ===== -->
+    <div id="view-wb" class="hidden">
+      <div class="head">
+        <div>
+          <h1>Workbench</h1>
+          <div class="sub">Run your party of agents and watch them work · <span class="path">~/Project/AgentPartyApp</span></div>
+        </div>
+        <div class="head-actions">
+          <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Workspace</button>
+          <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New party</button>
+        </div>
+      </div>
+
+      <!-- SIGNATURE: channel rail -->
+      <div class="channels">
+        <div class="lbl">Channels · 3 members</div>
+        <div class="chrow">
+          <div class="chan live" style="--c:var(--ch-amber)">
+            <div class="top"><span class="dot"></span><span class="name">main</span><span class="state">editing</span></div>
+            <div class="wave"><i style="height:5px"></i><i style="height:9px"></i><i style="height:16px"></i><i style="height:20px"></i><i style="height:13px"></i><i style="height:7px"></i><i style="height:11px"></i><i style="height:18px"></i><i style="height:10px"></i><i style="height:6px"></i><i style="height:14px"></i><i style="height:8px"></i></div>
+          </div>
+          <div class="chan live" style="--c:var(--ch-cyan)">
+            <div class="top"><span class="dot"></span><span class="name">review</span><span class="state">running tool</span></div>
+            <div class="wave"><i style="height:9px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:16px"></i><i style="height:8px"></i><i style="height:12px"></i><i style="height:18px"></i><i style="height:11px"></i><i style="height:6px"></i><i style="height:15px"></i><i style="height:9px"></i><i style="height:13px"></i></div>
+          </div>
+          <div class="chan idle" style="--c:var(--ch-iris)">
+            <div class="top"><span class="dot"></span><span class="name">impl</span><span class="state">idle</span></div>
+            <div class="wave"><i style="height:4px"></i><i style="height:4px"></i><i style="height:5px"></i><i style="height:4px"></i><i style="height:4px"></i><i style="height:5px"></i><i style="height:4px"></i><i style="height:4px"></i><i style="height:5px"></i><i style="height:4px"></i><i style="height:4px"></i><i style="height:5px"></i></div>
+          </div>
+          <button class="chan-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>Add member</button>
+        </div>
+      </div>
+
+      <div class="wb">
+        <!-- sidebar -->
+        <aside class="sidebar">
+          <div class="card">
+            <div class="ttl">main · runtime</div>
+            <div class="field"><label>Model</label><select class="sel"><option>Claude Opus 4.8 · anthropic</option></select></div>
+            <div class="field"><label>Effort</label><select class="sel"><option>medium</option></select></div>
+            <div class="field"><label>Permission</label><select class="sel"><option>Plan</option></select></div>
+            <div class="draftrow"><button class="mini">Apply</button><button class="mini ghost">Reset</button></div>
+            <div class="toggle"><span class="switch"><i></i></span>Debug logging</div>
+          </div>
+          <div class="tools">
+            <button class="tbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>Compact</button>
+            <button class="tbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 1 3 6.7L3 16"/><path d="M3 21v-5h5"/></svg>Restart</button>
+            <button class="tbtn danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop</button>
+          </div>
+        </aside>
+
+        <!-- chat -->
+        <section class="chat">
+          <div class="chat-head">
+            <div class="who"><span class="swatch"></span><strong>main</strong><small>~/Project/AgentPartyApp</small></div>
+            <span class="pill live">● working</span>
+          </div>
+          <div class="convo">
+            <div class="turn"><div class="gut you">you</div><div class="bubble you"><p>Refactor the session manager so each member owns its own runtime preset, and verify nothing else breaks.</p></div></div>
+            <div class="turn"><div class="gut agent">main</div><div class="bubble"><p>I'll start by reading <span class="mono">sessionManager.ts</span> to map how presets are currently shared, then isolate per-member state before touching the call sites.</p></div></div>
+            <div class="turn"><div class="gut"></div>
+              <div class="event">
+                <div class="line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 7l-2-2-7 7v2h2z"/><path d="M16 5l3 3"/></svg><span>read</span><span class="nm mono">src/main/sessionManager.ts</span><span class="chev">▸</span></div>
+              </div>
+            </div>
+            <div class="turn"><div class="gut"></div>
+              <div class="event">
+                <div class="line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 7l-2-2-7 7v2h2z"/><path d="M16 5l3 3"/></svg><span>edit</span><span class="nm mono">src/main/sessionManager.ts</span><span class="chev">▾</span></div>
+                <pre><span class="k">"insert"</span>: <span class="s">"applyPreset(member.id, preset)"</span>,
+<span class="k">"at"</span>: <span class="s">"line 142"</span></pre>
+              </div>
+            </div>
+            <div class="turn"><div class="gut"></div>
+              <div class="approval">
+                <div class="ah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Approve write to a file outside the edited range</div>
+                <small>main wants to write <span class="mono">src/shared/types.ts</span> — adds <span class="mono">MemberPreset</span> to the shared contract.</small>
+                <div class="acts"><button class="allow">Allow</button><button class="deny">Deny</button></div>
+              </div>
+            </div>
+            <div class="turn"><div class="gut agent">main</div><div class="bubble"><p>Once approved I'll thread the preset through <span class="mono">startMember()</span> and rerun the smoke test<span class="cursor"></span></p></div></div>
+            <div class="typing"><span class="spin"></span>main is working</div>
+          </div>
+          <div class="composer">
+            <div class="ta"><span class="ph">Send a task to main…</span><div class="hint">Ctrl + Enter to send</div></div>
+            <button class="send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg></button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ===== PARTY (hidden, screenshotted separately) ===== -->
+    <div id="view-party">
+      <div class="head">
+        <div><h1>Party</h1><div class="sub">Create, message, and manage the agents in <span class="path">Feature QA</span></div></div>
+        <div class="head-actions"><button class="btn">Refresh</button><button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New party</button></div>
+      </div>
+      <div class="party">
+        <div class="panel">
+          <div class="ttl">New member</div>
+          <input class="inp" placeholder="Member name (e.g. tester)">
+          <select class="sel" style="width:100%;margin-bottom:10px"><option>Claude Code</option><option>Codex</option></select>
+          <textarea class="ta2" placeholder="Role and responsibility — what does this agent own?"></textarea>
+          <textarea class="ta2" placeholder="Optional first task"></textarea>
+          <button class="btn primary" style="width:100%;justify-content:center">Create member</button>
+        </div>
+        <div class="panel">
+          <div class="ttl">Members · 3</div>
+          <div class="member" style="--c:var(--ch-amber)">
+            <div class="mn"><span class="dot" style="background:var(--ch-amber)"></span><strong>main</strong><small>running · opus-4.8</small></div>
+            <div class="role">Coordinates the party and reports back to you.</div>
+            <div class="macts"><button class="chip">Open</button><button class="chip">Bind active</button><button class="chip">Close</button></div>
+          </div>
+          <div class="member" style="--c:var(--ch-cyan)">
+            <div class="mn"><span class="dot" style="background:var(--ch-cyan)"></span><strong>review</strong><small>running · sonnet-4.6</small></div>
+            <div class="role">Reviews diffs for correctness and reuse before commit.</div>
+            <div class="macts"><button class="chip">Open</button><button class="chip">Bind active</button><button class="chip">Close</button><button class="chip danger">Remove</button></div>
+          </div>
+          <div class="member" style="--c:var(--ch-iris)">
+            <div class="mn"><span class="dot" style="background:var(--ch-iris)"></span><strong>impl</strong><small>idle · opus-4.8</small></div>
+            <div class="role">Implements scoped code changes from the spec.</div>
+            <div class="macts"><button class="chip">Open</button><button class="chip">Bind active</button><button class="chip">Close</button><button class="chip danger">Remove</button></div>
+          </div>
+        </div>
+        <div class="panel" style="grid-column:1/-1">
+          <div class="ttl">Recent messages</div>
+          <div class="msg"><div class="mh"><span class="from" style="color:var(--ch-amber)">main</span><span>→</span><span class="to" style="color:var(--ch-cyan)">review</span><span class="tag deliv">delivered</span></div><p>Diff is staged on the session manager refactor. Check the per-member preset threading before I commit.</p></div>
+          <div class="msg"><div class="mh"><span class="from" style="color:var(--ch-cyan)">review</span><span>→</span><span class="to" style="color:var(--ch-amber)">main</span><span class="tag deliv">delivered</span></div><p>Looks good except <span class="mono">startMember()</span> still reads the global preset on resume. Flag it before commit.</p></div>
+          <div class="msg"><div class="mh"><span class="from" style="color:var(--ch-amber)">main</span><span>→</span><span class="to" style="color:var(--ch-iris)">impl</span><span class="tag queue">queued</span></div><p>Once review signs off, pick up the test coverage for resume paths.</p></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

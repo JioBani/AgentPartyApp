@@ -1,0 +1,65 @@
+{
+  "name": "agentparty-app",
+  "productName": "AgentParty",
+  "version": "0.1.0",
+  "description": "AgentParty desktop client for local multi-agent coding sessions.",
+  "author": "AgentParty",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\"",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.main.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "test:e2e": "npm run build && node scripts/e2e-smoke.js",
+    "test:render": "node scripts/qa-render.mjs",
+    "test:layout": "node scripts/qa-layout.mjs",
+    "test:ui": "npm run test:layout && npm run test:render",
+    "start": "node scripts/launch-electron.mjs",
+    "start:qa": "cross-env AGENTPARTY_QA=1 node scripts/launch-electron.mjs",
+    "start:dev": "cross-env AGENTPARTY_RENDERER_URL=http://127.0.0.1:5173 node scripts/launch-electron.mjs",
+    "qa:seed": "node scripts/qa-frontend.mjs",
+    "dist:win": "npm run build && electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "party.agentparty.desktop",
+    "productName": "AgentParty",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-renderer/**",
+      "docs/**",
+      "package.json",
+      "README.md"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.186",
+    "@vitejs/plugin-react": "^4.5.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.0.7"
+  }
+}

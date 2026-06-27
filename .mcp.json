@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "agentparty": {
+      "command": "bun",
+      "args": [
+        "c:\\Users\\Dev\\.vscode\\extensions\\agentparty.agentparty-vscode-0.0.1\\runtime\\src\\channel-server.ts"
+      ]
+    }
+  }
+}
