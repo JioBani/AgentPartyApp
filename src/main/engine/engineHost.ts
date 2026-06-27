@@ -3,6 +3,7 @@ import { SessionManager } from "../sessionManager";
 import { WorkspaceManager } from "../workspaceManager";
 import { setUserDataDir } from "../userDataDir";
 import { EngineRegistry } from "./engineRegistry";
+import type { EngineRegistryDeps } from "./engineRegistry";
 
 export interface EngineHostConfig {
   /** Base dir for harness debug logs (Electron userData on desktop; an
@@ -13,6 +14,8 @@ export interface EngineHostConfig {
     authToken: string;
     openRouterApiKey?: string;
   };
+  /** Desktop-only: builds a connection to an engine in another host (WSL). */
+  createRemoteEngine?: EngineRegistryDeps["createRemoteEngine"];
 }
 
 /**
@@ -41,7 +44,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
   });
   const sessionManager = new SessionManager(router, config.storageDir);
   const workspaceManager = new WorkspaceManager(sessionManager);
-  const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager });
+  const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {
     router,

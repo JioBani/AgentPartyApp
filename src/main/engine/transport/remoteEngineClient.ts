@@ -6,49 +6,78 @@ import { readLines, writeLine, type RpcResponse } from "./rpc";
 /** Awaited return type of an EngineConnection method. */
 type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...args: any[]) => infer Ret ? Awaited<Ret> : never;
 
+/** The stream pair the client talks over (a child process's stdio). */
+export interface RemoteTransport {
+  input: Readable;
+  output: Writable;
+}
+
 /**
- * Drives an engine running behind a transport (a child process / WSL distro)
- * as if it were local, fulfilling {@link AsyncEngineConnection}. Requests are
- * correlated to responses by id over the stream pair. See docs/WSL_REMOTE.md §7.
+ * Drives an engine running behind a transport (a child process / WSL distro) as
+ * if it were local, fulfilling {@link EngineConnection}. Requests correlate to
+ * responses by id. The transport is supplied as a promise so the client can be
+ * constructed synchronously (keeping EngineRegistry.forWorkspace sync) while the
+ * distro spawn/handshake completes in the background — calls queue until it
+ * resolves. See docs/WSL_REMOTE.md §7.
  */
 export class RemoteEngineClient implements EngineConnection {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-  private readonly detach: () => void;
+  private readonly transport: Promise<RemoteTransport>;
+  private detach: (() => void) | undefined;
+  private disposed = false;
 
-  constructor(input: Readable, private readonly output: Writable, readonly workspacePath: string) {
-    this.detach = readLines(input, (message: RpcResponse) => {
-      if (typeof message?.id !== "number") {
-        return;
-      }
-      const waiter = this.pending.get(message.id);
-      if (!waiter) {
-        return;
-      }
-      this.pending.delete(message.id);
-      if (message.ok) {
-        waiter.resolve(message.result);
-      } else {
-        waiter.reject(new Error(message.error || "engine error"));
-      }
-    });
+  constructor(transport: RemoteTransport | Promise<RemoteTransport>, readonly workspacePath: string, private readonly onDispose?: () => void) {
+    this.transport = Promise.resolve(transport);
+    this.transport.then(
+      (t) => {
+        if (this.disposed) {
+          return;
+        }
+        this.detach = readLines(t.input, (message: RpcResponse) => {
+          if (typeof message?.id !== "number") {
+            return;
+          }
+          const waiter = this.pending.get(message.id);
+          if (!waiter) {
+            return;
+          }
+          this.pending.delete(message.id);
+          if (message.ok) {
+            waiter.resolve(message.result);
+          } else {
+            waiter.reject(new Error(message.error || "engine error"));
+          }
+        });
+      },
+      (error) => this.failAll(error instanceof Error ? error : new Error(String(error))),
+    );
   }
 
   /** Detaches and rejects anything in flight. */
   dispose(): void {
-    this.detach();
+    this.disposed = true;
+    this.detach?.();
+    this.failAll(new Error("engine client disposed"));
+    this.onDispose?.();
+  }
+
+  private failAll(error: Error): void {
     for (const waiter of this.pending.values()) {
-      waiter.reject(new Error("engine client disposed"));
+      waiter.reject(error);
     }
     this.pending.clear();
   }
 
   private call<T>(method: keyof EngineConnection, ...args: unknown[]): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const id = this.nextId++;
-      this.pending.set(id, { resolve, reject });
-      writeLine(this.output, { id, method: String(method), args });
-    });
+    return this.transport.then(
+      (t) =>
+        new Promise<T>((resolve, reject) => {
+          const id = this.nextId++;
+          this.pending.set(id, { resolve, reject });
+          writeLine(t.output, { id, method: String(method), args });
+        }),
+    );
   }
 
   listParty() { return this.call<Result<"listParty">>("listParty"); }

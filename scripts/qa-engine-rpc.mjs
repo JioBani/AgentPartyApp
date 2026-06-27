@@ -60,7 +60,7 @@ await new Promise((resolve, reject) => {
 });
 assert(true, "server child spawned and signaled ready over stderr");
 
-const client = new RemoteEngineClient(child.stdout, child.stdin, workspace);
+const client = new RemoteEngineClient({ input: child.stdout, output: child.stdin }, workspace);
 
 try {
   assert(client.workspacePath === workspace, "client reports its workspace");

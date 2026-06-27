@@ -8,6 +8,8 @@ import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { WorkspaceManager } from "./workspaceManager";
 import { createEngineHost } from "./engine/engineHost";
+import { spawnWslEngine } from "./engine/transport/wslEngine";
+import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
@@ -67,6 +69,19 @@ async function bootstrap(): Promise<void> {
       preferredPort: parsePort(settings.routerBaseUrl),
       authToken: settings.routerAuthToken,
       openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+    },
+    // Desktop only: a WSL workspace is served by an engine spawned in the distro.
+    createRemoteEngine: (location, serialized) => {
+      if (location.host.kind !== "wsl") {
+        throw new Error(`Unsupported remote host for '${serialized}'.`);
+      }
+      const serverBundle = path.join(__dirname, "../engine-server.mjs");
+      const handle = spawnWslEngine({
+        distro: location.host.distro,
+        workspacePosix: location.path,
+        serverBundleWinPath: serverBundle,
+      });
+      return new RemoteEngineClient(handle.transport, serialized, handle.dispose);
     },
   });
   router = host.router;

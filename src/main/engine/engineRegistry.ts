@@ -1,4 +1,4 @@
-import { parseWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
+import { parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
 import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
@@ -7,14 +7,20 @@ import { LocalEngine } from "./localEngine";
 export interface EngineRegistryDeps {
   workspaceManager: WorkspaceManager;
   sessionManager: SessionManager;
+  /**
+   * Builds a connection to an engine running in another host (e.g. a WSL
+   * distro). Provided by the desktop; absent in a headless engine, which never
+   * nests remotes. When absent, a WSL workspace is an explicit error.
+   */
+  createRemoteEngine?: (location: WorkspaceLocation, serialized: string) => EngineConnection;
 }
 
 /**
  * Resolves a workspace to the {@link EngineConnection} that serves it. Local
- * workspaces get an in-process {@link LocalEngine}; WSL workspaces will get a
- * remote engine in later stages. One connection per workspace identity, so
- * same-workspace windows share it (the locked single-source rule, extended to
- * `(host, workspace)`). See docs/WSL_REMOTE.md §6.
+ * workspaces get an in-process {@link LocalEngine}; WSL workspaces get a remote
+ * engine (running inside the distro). One connection per workspace identity, so
+ * same-(host,workspace) windows share it — the locked single-source rule.
+ * See docs/WSL_REMOTE.md §6.
  */
 export class EngineRegistry {
   private readonly engines = new Map<string, EngineConnection>();
@@ -34,11 +40,13 @@ export class EngineRegistry {
   private create(workspacePath: string): EngineConnection {
     const location = parseWorkspaceLocation(workspacePath);
     if (location.host.kind === "wsl") {
-      // Surfaced explicitly — never silently downgraded to a local Windows run.
-      throw new Error(
-        `WSL workspace '${workspacePath}' requires the remote engine, which is not available yet ` +
-          "(see docs/WSL_REMOTE.md, stages S3–S5).",
-      );
+      if (!this.deps.createRemoteEngine) {
+        // Surfaced explicitly — never silently downgraded to a local Windows run.
+        throw new Error(
+          `WSL workspace '${workspacePath}' requires the remote engine, which is not configured in this process.`,
+        );
+      }
+      return this.deps.createRemoteEngine(location, workspacePath);
     }
     return new LocalEngine({
       workspacePath,
