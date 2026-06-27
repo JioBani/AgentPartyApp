@@ -219,7 +219,7 @@ assert(!crashed, `mount did not throw${crashed ? `: ${crashed.stack || crashed}`
 const html = document.getElementById("root").innerHTML;
 const text = document.getElementById("root").textContent || "";
 assert(html.length > 2000, "root rendered substantial markup");
-assert(text.includes("워크벤치"), "workbench nav label shown");
+assert(text.includes("Workbench"), "workbench nav label shown");
 assert(text.includes("Refactor Auth"), "active party name shown in sidebar");
 assert(document.querySelectorAll('[data-panel-id]').length === 2, "two panels rendered from seeded layout");
 for (const name of ["backend", "frontend", "reviewer", "tester"]) {

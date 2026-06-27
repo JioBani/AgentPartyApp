@@ -6,10 +6,27 @@
  * To retheme the app, edit themes.ts — not hard-coded colors here.
  */
 
+/* Maplestory is the UI font (Nexon, free for commercial use). Bundled locally
+   as woff2 so the Electron app renders it offline. Code/tool output keeps a
+   monospace stack since Maplestory is not fixed-width. */
+@font-face {
+  font-family: "Maplestory";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/Maplestory-Light.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Maplestory";
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/Maplestory-Bold.woff2") format("woff2");
+}
+
 :root {
-  /* Geist is the design font; bundle it locally for offline Electron, else
-     fall back to the platform UI stack. */
-  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Maplestory for UI; fall back to the platform UI stack if it fails to load. */
+  --font-sans: "Maplestory", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
 
   --space-1: 4px;

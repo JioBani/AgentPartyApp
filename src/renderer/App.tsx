@@ -364,7 +364,7 @@ export function App() {
   }
 
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
-    { id: "workbench", label: "워크벤치", icon: <Sparkles size={18} /> },
+    { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
     { id: "sessions", label: "세션", icon: <History size={18} /> },
     { id: "party", label: "파티", icon: <UsersRound size={18} /> },
     { id: "auth", label: "인증", icon: <KeyRound size={18} /> },
@@ -408,7 +408,7 @@ export function App() {
             <>
               <header className="screen-header">
                 <div className="screen-title">
-                  <h1>워크벤치</h1>
+                  <h1>Workbench</h1>
                   <span className="wb-mono screen-repo">{displayPath(state.settings.workspacePath) || "작업공간 없음"}</span>
                   <p>멤버를 탭으로 열고 패널을 나누어 여러 세션을 한 화면에서 관리합니다.</p>
                 </div>

@@ -43,7 +43,7 @@ export const initialState: InitialAppState = {
 
 export function viewTitle(view: ViewId): string {
   const titles: Record<ViewId, string> = {
-    workbench: "워크벤치",
+    workbench: "Workbench",
     sessions: "세션",
     party: "파티",
     auth: "인증",
