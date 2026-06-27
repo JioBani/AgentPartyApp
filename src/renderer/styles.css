@@ -1302,10 +1302,45 @@ body.wb-resizing {
   background: var(--danger-dim);
 }
 
+.wb-question-progress {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+}
+
 .wb-question-item {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.wb-question-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.wb-question-summary-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.wb-question-summary-q {
+  color: var(--text-2);
+}
+
+.wb-question-summary-a {
+  color: var(--text-0);
+  font-weight: 600;
+  text-align: right;
 }
 
 .wb-question-text {

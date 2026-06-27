@@ -137,9 +137,14 @@ function ApprovalBlock({ block, view, density, actions }: { block: Extract<Trans
 interface ParsedOption { label: string; description?: string }
 interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[] }
 
-/** Renders an AskUserQuestion interaction as selectable choices instead of a raw allow/deny prompt. */
+/**
+ * Renders an AskUserQuestion interaction as selectable choices. When the model
+ * asks several questions, they are stepped through one at a time (like VS Code /
+ * the Claude Code desktop app) instead of dumping them all at once.
+ */
 function QuestionBlock({ block, questions, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; questions: ParsedQuestion[]; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const [step, setStep] = useState(0);
   const resolved = Boolean(block.resolved);
 
   const toggle = (q: ParsedQuestion, label: string) => {
@@ -154,50 +159,75 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
   };
 
   const answers = Object.fromEntries(questions.map((q) => [q.question, (selections[q.question] || []).join(", ")]));
-  const ready = questions.every((q) => (selections[q.question] || []).length > 0);
+  const allAnswered = questions.every((q) => (selections[q.question] || []).length > 0);
   const submit = () => actions.answerQuestion(view.name, block.requestId, block.input, answers);
+
+  const multiple = questions.length > 1;
+  const clampedStep = Math.min(step, questions.length - 1);
+  const current = questions[clampedStep];
+  const currentPicked = selections[current.question] || [];
+  const isLast = clampedStep === questions.length - 1;
+
+  if (resolved) {
+    return (
+      <div className={"wb-block wb-approval wb-question density-" + density}>
+        <div className="wb-approval-head">
+          <ListChecks size={14} />
+          <strong>질문에 답함</strong>
+        </div>
+        <div className="wb-question-summary">
+          {questions.map((q, qi) => (
+            <div className="wb-question-summary-row" key={qi}>
+              <span className="wb-question-summary-q">{q.header || q.question}</span>
+              <span className="wb-question-summary-a">{answerLabels(block.answers, q.question).join(", ") || "—"}</span>
+            </div>
+          ))}
+        </div>
+        <span className="wb-status-badge is-allow">답변함</span>
+      </div>
+    );
+  }
 
   return (
     <div className={"wb-block wb-approval wb-question density-" + density}>
       <div className="wb-approval-head">
         <ListChecks size={14} />
         <strong>질문에 답해주세요</strong>
-        {questions[0]?.header && <span className="wb-chip wb-mono">{questions[0].header}</span>}
+        {current.header && <span className="wb-chip wb-mono">{current.header}</span>}
+        {multiple && <span className="wb-question-progress">{clampedStep + 1} / {questions.length}</span>}
       </div>
-      {questions.map((q, qi) => {
-        const picked = resolved ? answerLabels(block.answers, q.question) : selections[q.question] || [];
-        return (
-          <div className="wb-question-item" key={qi}>
-            <p className="wb-question-text">{q.question}</p>
-            <div className="wb-question-options">
-              {q.options.map((opt, oi) => {
-                const active = picked.includes(opt.label);
-                return (
-                  <button
-                    key={oi}
-                    type="button"
-                    className={"wb-question-option" + (active ? " is-active" : "")}
-                    disabled={resolved}
-                    aria-pressed={active}
-                    onClick={() => toggle(q, opt.label)}
-                  >
-                    <span className="wb-question-option-label">{opt.label}</span>
-                    {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-      {resolved ? (
-        <span className="wb-status-badge is-allow">답변함{summarizeAnswers(block.answers) ? ` · ${summarizeAnswers(block.answers)}` : ""}</span>
-      ) : (
-        <div className="wb-approval-actions">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
-          <button type="button" className="wb-btn wb-btn-member" disabled={!ready} onClick={submit}>답변 보내기</button>
+      <div className="wb-question-item">
+        <p className="wb-question-text">{current.question}</p>
+        <div className="wb-question-options">
+          {current.options.map((opt, oi) => {
+            const active = currentPicked.includes(opt.label);
+            const advance = !current.multiSelect && !isLast;
+            return (
+              <button
+                key={oi}
+                type="button"
+                className={"wb-question-option" + (active ? " is-active" : "")}
+                aria-pressed={active}
+                onClick={() => { toggle(current, opt.label); if (advance) setStep(clampedStep + 1); }}
+              >
+                <span className="wb-question-option-label">{opt.label}</span>
+                {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
+      <div className="wb-approval-actions">
+        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
+        {multiple && clampedStep > 0 && (
+          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => setStep(clampedStep - 1)}>이전</button>
+        )}
+        {isLast ? (
+          <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}>답변 보내기</button>
+        ) : (
+          <button type="button" className="wb-btn wb-btn-member" disabled={currentPicked.length === 0} onClick={() => setStep(clampedStep + 1)}>다음</button>
+        )}
+      </div>
     </div>
   );
 }
@@ -222,13 +252,6 @@ function parseQuestions(input: unknown): ParsedQuestion[] {
 function answerLabels(answers: Record<string, string> | undefined, question: string): string[] {
   const value = answers?.[question];
   return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
-}
-
-function summarizeAnswers(answers: Record<string, string> | undefined): string {
-  if (!answers) {
-    return "";
-  }
-  return Object.values(answers).filter(Boolean).join(" / ");
 }
 
 function TypingIndicator() {

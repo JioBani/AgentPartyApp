@@ -67,10 +67,16 @@ const { mount } = await import(pathToFileURL(bundlePath).href);
 mount(document.getElementById("root"));
 await new Promise((r) => setTimeout(r, 150));
 
-const questions = [{ question: "어떤 작업을 진행할까요?", header: "작업 선택", options: [
-  { label: "코드 리뷰", description: "현재 변경점을 리뷰합니다." },
-  { label: "버그 수정", description: "보고된 버그를 수정합니다." },
-], multiSelect: false }];
+const questions = [
+  { question: "어떤 작업을 진행할까요?", header: "작업 선택", multiSelect: false, options: [
+    { label: "코드 리뷰", description: "현재 변경점을 리뷰합니다." },
+    { label: "버그 수정", description: "보고된 버그를 수정합니다." },
+  ] },
+  { question: "어떤 우선순위로 진행할까요?", header: "우선순위", multiSelect: false, options: [
+    { label: "빠르게", description: "최소 변경." },
+    { label: "꼼꼼하게", description: "철저히." },
+  ] },
+];
 const input = { questions };
 const id = "toolu_01ASKQ";
 
@@ -90,25 +96,36 @@ const transcript = document.querySelector(".wb-transcript");
 const blocks = transcript ? [...transcript.children] : [];
 const cards = transcript ? transcript.querySelectorAll(".wb-question") : [];
 const toolBoxes = transcript ? transcript.querySelectorAll(".wb-tool") : [];
-const text = transcript?.textContent || "";
+const text = () => transcript?.textContent || "";
+const options = () => [...transcript.querySelectorAll(".wb-question-option")];
 
 assert(cards.length === 1, `exactly one AskUserQuestion card rendered (got ${cards.length})`);
 assert(toolBoxes.length === 0, `no duplicate/empty tool boxes for AskUserQuestion (got ${toolBoxes.length})`);
 assert(blocks.length <= 3, `transcript is not cluttered with stacked blocks (got ${blocks.length})`);
-assert(text.includes("어떤 작업을 진행할까요?"), "question text shown in full");
-assert(text.includes("코드 리뷰") && text.includes("버그 수정"), "all option labels shown");
-assert(transcript?.querySelectorAll(".wb-question-option").length === 2, "options are interactive buttons");
 
-// Choose the first option and submit.
-transcript.querySelector(".wb-question-option")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+// Stepper: only the first question is shown, with a progress indicator.
+assert(text().includes("어떤 작업을 진행할까요?"), "first question shown");
+assert(!text().includes("어떤 우선순위로 진행할까요?"), "second question NOT shown until advanced (stepped, not all-at-once)");
+assert((transcript.querySelector(".wb-question-progress")?.textContent || "").replace(/\s/g, "") === "1/2", "progress shows 1/2");
+assert(options().length === 2, "only the current question's options are interactive buttons");
+
+// Choosing a single-select option auto-advances to the next question.
+options()[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 50));
+assert((transcript.querySelector(".wb-question-progress")?.textContent || "").replace(/\s/g, "") === "2/2", "advanced to 2/2 after selecting");
+assert(text().includes("어떤 우선순위로 진행할까요?"), "second question shown after advancing");
+
+// Answer the last question; submit becomes available.
+options()[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((r) => setTimeout(r, 50));
 [...transcript.querySelectorAll(".wb-question .wb-btn-member")][0]?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((r) => setTimeout(r, 80));
 
 assert(Array.isArray(approveArgs) && approveArgs[2] === "allow", "answering approves the request");
 const updatedInput = approveArgs?.[3];
-assert(updatedInput?.answers?.["어떤 작업을 진행할까요?"] === "코드 리뷰", "approve carries SDK-correct answers shape");
-assert((document.querySelector(".wb-question .wb-status-badge")?.textContent || "").includes("코드 리뷰"), "resolved card shows the chosen answer");
+assert(updatedInput?.answers?.["어떤 작업을 진행할까요?"] === "코드 리뷰", "answer for question 1 carried in SDK-correct shape");
+assert(updatedInput?.answers?.["어떤 우선순위로 진행할까요?"] === "빠르게", "answer for question 2 carried");
+assert((document.querySelector(".wb-question .wb-status-badge")?.textContent || "").includes("답변함"), "resolved card shows answered state");
 
 const realErrors = consoleErrors.filter((l) => !l.includes("not wrapped in act"));
 assert(realErrors.length === 0, `no console errors / key collisions (${realErrors.length})${realErrors[0] ? ": " + realErrors[0].slice(0, 120) : ""}`);
