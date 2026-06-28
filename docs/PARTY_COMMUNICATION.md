@@ -1,6 +1,16 @@
 # Party Communication — Technical Design
 
-Status: **design agreed, implementation pending**
+Status: **agent side implemented (Claude Code, local engine); UI wizard pending**
+
+Implemented: `core/partyBridge.ts` (Boundary 2 interface + `buildPartyToolDefs`),
+the `agentparty-app` in-process MCP server in `claudeAdapter` (5 tools,
+auto-allowed via `canUseTool`), identity-bound bridge in
+`PartyApplicationService`, reasoning persisted on members, and party broadcast on
+agent-driven mutations (SessionManager `party` event → `AppController`). Verified
+by `npm run test:party-bridge` (30 assertions, in `test:ui`) and **live e2e**
+(`scripts/qa-wsl-party-live.mjs`, billed — not in suite): a real Sonnet agent in
+the WSL engine called `mcp__agentparty-app__list-models`, was auto-allowed (no
+approval prompt), and reported the catalog count back.
 Scope: inter-session communication for Agent Party (members talking to each
 other, and users/agents managing parties and members).
 
@@ -141,8 +151,17 @@ partyTools = {
   createMember: (input)            => appController.createPartyMember(workspace, input),
   removeMember: (name)             => appController.removePartyMember(workspace, name),
   list:         ()                 => appController.partySnapshot(workspace),
+  listModels:   ()                 => appController.listModels(workspace),  // discovery
 }
 ```
+
+`listModels` exists so the agent can **set harness / model / reasoning itself**
+on `createMember`: it returns the available harnesses (with `claude-code`
+implemented and `codex` marked planned) and the model catalog with each model's
+reasoning options (effort / thinking / budget) and metadata (perf, cost,
+context). The agent discovers valid ids and option sets *before* creating,
+instead of guessing — keeping "zero model-memory reliance" intact. It reads the
+same catalog (`modelCatalog` / `buildModelRoutes`) the UI and routing use.
 Per harness, only **how they're exposed** (Boundary 2) differs — never **what
 they do** (handlers) or **where they land** (core).
 
@@ -189,13 +208,22 @@ agent: send({ to:"reviewer", content:"…" })
   → AppController.sendMessage("reviewer", "…", "main")        // same method the UI uses
   → partyApplicationService.sendMessage(...)
   → if target has a live session: sessionManager.sendUserTurn(targetSessionId,
-        "<channel from=\"main\">…</channel>")                 // wrapping convention
-     else: queue on the member (delivered=false)
+        "<channel source=\"agentparty\" from=\"main\">…</channel>")  // wrapping convention (kept)
+     else: RETURN AN ERROR ("member off / not found") — see decisions
 ```
 
-`member-create` / `member-remove` / `list` map the same way to existing
-`AppController` methods. **The only genuinely new work** is exposing these to
-the agent via Boundary 2; routing, state, UI, and HTTP are reused.
+**`send` is fire-and-forget** (async bus): it returns delivered, it does **not**
+wait for the recipient's reply. The reply comes back later as the recipient's
+own `send`. When the target has no live session or does not exist, `send`
+**returns a clear error** rather than queuing or auto-starting — the caller
+decides what to do (e.g. `member-create` it).
+
+`member-create` **creates and auto-starts** the member's session in one call, so
+the new member is immediately live and sendable (consistent with the
+"offline → error" send policy). `member-remove` / `list` / `listModels` map the
+same way to existing `AppController` methods. **The only genuinely new work** is
+exposing these to the agent via Boundary 2; routing, state, UI, and HTTP are
+reused.
 
 ---
 
@@ -230,17 +258,42 @@ app*. Our app is the host, so all of that is deleted rather than reimplemented.
 
 ---
 
-## 12. Open decisions (to be finalized)
+## 12. Decisions
 
-- [ ] Tool namespace name the agent sees (avoid colliding with legacy
-      `agentparty`). Candidates: `party`, `roster`, `partyline`, `agentparty-app`.
-- [ ] Message wrapping into the target session: keep
-      `<channel source="agentparty" from="…">…</channel>` convention or a new marker.
-- [ ] Queuing policy when the target member has no live session.
-- [ ] Behavior for self-send / send to a nonexistent member.
-- [ ] Scope: external-agent (HTTP + installed skill) track — now or later.
-- [ ] Per-feature decisions for member-create (reasoning UI reuse), delete
-      confirmations, status shape.
+Resolved:
+- [x] **Tool namespace:** `agentparty-app` → `mcp__agentparty-app__send`,
+      `…__member-create`, `…__member-remove`, `…__list`, `…__list-models`.
+- [x] **Message wrapping:** keep
+      `<channel source="agentparty" from="…">…</channel>` (reuse `buildChannelPayload`;
+      members' CLAUDE.md already documents handling it).
+- [x] **`send` semantics:** fire-and-forget; does not wait for a reply.
+- [x] **Target off / not found:** **return an error** ("member is off / not
+      found") — no queuing, no auto-start. Caller decides (e.g. create it).
+- [x] **Self-send / nonexistent member:** error (never silently dropped).
+- [x] **`member-create`:** creates **and auto-starts** the session in one call.
+      The **agent sets harness / model / reasoning itself**, discovered via
+      `list-models`.
+- [x] **Harness scope:** expose **both** `claude-code` and `codex`; selecting
+      `codex` returns a "not implemented yet" error (only `claude-code` is built).
+- [x] **`list-models` tool (new):** in-process discovery of available harnesses
+      + model catalog + per-model reasoning options, so the agent can fill
+      `member-create` correctly.
+- [x] **Party create/delete:** UI only (not an agent tool); delete cascades
+      members + sessions.
+- [x] **External-agent track:** deferred (non-goal, §13).
+
+Resolved (round 2):
+- [x] **Return shapes:** rich. `list-models` returns harnesses (with
+      implemented/planned) + each model's id/label/provider/perf/cost/context and
+      reasoning option sets. `list` returns name/role/status/harness/model.
+- [x] **Member-create UI:** a **modal step wizard** (name → harness → model →
+      reasoning → role/confirm), not a single all-at-once form. Reuses the
+      catalog / RuntimeModal reasoning controls per step.
+
+Still open:
+- [ ] Status display location/format; delete confirmation UX (during UI round).
+- [ ] Queuing policy is moot for now (off = error); revisit if an async inbox is
+      wanted later.
 
 ---
 

@@ -21,7 +21,7 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, modelCatalog } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, modelCatalog, catalogModelById, catalogModelByRuntime } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -64,6 +64,15 @@ assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Gro
 assert(!eff("haiku").supported && Boolean(th("haiku").budget), "Haiku has no effort but a thinking budget");
 
 assert(modelCatalog().length === routes.length, "every catalog entry produced a route");
+
+// Stale-model healing (guards the member-create bug where a legacy persisted
+// model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).
+console.log("\nStale model healing assertions:");
+const legacy = "GLM-5.2 (OpenRouter)";
+assert(!catalogModelById(legacy) && !catalogModelByRuntime(legacy), "legacy 'GLM-5.2 (OpenRouter)' is not catalogued (settings sanitize resets it)");
+assert(Boolean(catalogModelById("GLM-5.2")) && byId["GLM-5.2"].providerId === "openrouter", "clean 'GLM-5.2' is a routable OpenRouter model");
+assert(buildModelRoutes(legacy, [], []).some((r) => r.model === legacy), "an unroutable current model injects a selectable fallback route — the bug source");
+assert(!buildModelRoutes("sonnet", [], []).some((r) => r.model === legacy), "a sanitized (catalog) current model never surfaces the legacy id");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nMODEL CATALOG PASSED");
 process.exit(failures.length ? 1 : 0);
