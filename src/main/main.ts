@@ -18,6 +18,17 @@ import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 
+// Let webContents.capturePage() return real pixels even when the window is
+// occluded / behind other windows — the automation /api/capture relies on this
+// for headless QA. Chromium's "native window occlusion" marks covered windows
+// hidden and stops painting them, so capturePage yields an empty (0x0) image on
+// Windows; disabling it (plus the occluded/renderer backgrounding switches)
+// keeps frames flowing for a backgrounded window. See electron/electron#31992.
+// Must run before app `ready` — module load is early enough.
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+
 let router: EmbeddedRouter | undefined;
 let sessionManager: SessionManager | undefined;
 let workspaceManager: WorkspaceManager | undefined;
@@ -52,6 +63,8 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Keep painting when backgrounded so /api/capture works off-foreground.
+      backgroundThrottling: false,
     },
   });
 

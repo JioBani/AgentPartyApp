@@ -9,6 +9,27 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | **Integration** | real services + a fake boundary (e.g. fake SessionManager) | service wiring without a model call | `npm run test:party-bridge` |
 | **Full-process e2e** | the **real Electron app** + real engine + real model | end-to-end through the actual app, billed | manual (below) |
 
+### What `test:ui` covers (jsdom suite — keep this current when adding scripts)
+
+| Script | Covers |
+|---|---|
+| `qa-workspace-location` | workspace = cwd / storage location rules |
+| `qa-layout` | panel/tab layout engine, incl. `openMemberInNewPanel` (create → new region) |
+| `qa-render` | renderer smoke render |
+| `qa-askq` | AskUserQuestion choice-card rendering |
+| `qa-interaction-api` | QA interaction API (inject AskUserQuestion) |
+| `qa-model-catalog` | model catalog / routing |
+| `qa-party-bridge` | in-process party bridge (send/create/remove/list) + the session **primer** |
+| `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
+| `qa-member-wizard` | member-create step wizard + model detail |
+| `qa-member-remove` | sidebar member-delete (two-click confirm, `main` protected) |
+| `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
+| `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
+| `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) |
+
+When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
+for endpoints) so other sessions can discover it.
+
 The first two are deterministic and belong in CI. The full-process e2e is manual
 (it launches a GUI and makes billed model calls) but is the **only** tier that
 catches main↔renderer / remote-engine wiring gaps — e.g. it caught the WSL party
@@ -116,12 +137,15 @@ party tools to create another member and they message each other), verified via
 ```
 POST /api/capture  {}        →  { ok, path, width, height, bytes }
 ```
-Then read the PNG. **Caveat (Windows):** `webContents.capturePage()` returns an
-**empty buffer when the window is occluded or minimized**, so `/api/capture`
-yields a 0-byte file unless the window is foreground. It captures reliably **right
-after launch** (the window is foreground) and while nothing has stolen the OS
-foreground. If you get empty captures, the feature is fine — bring the window
-forward (a fresh `POST /api/windows` opens a foreground window) and retry.
+Then read the PNG. **Background capture works** — even when the window is behind
+others. `src/main/main.ts` disables Chromium's native window occlusion
+(`disable-features=CalculateNativeWinOcclusion` + occluded/renderer backgrounding
+switches) and sets `webPreferences.backgroundThrottling: false`, so an occluded
+window keeps painting and `capturePage()` returns real pixels off-foreground.
+(Without those, Windows returns a 0-byte image for occluded windows —
+electron/electron#31992.) A still-**minimized** window may still capture empty;
+if so, restore it. The switches only apply to a freshly launched app, so rebuild
++ relaunch after changing them.
 
 ### 6. Stop the app
 Kill by the discovery-file `pid`. On Windows from Git Bash, `taskkill /PID` gets
