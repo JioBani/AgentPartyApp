@@ -326,8 +326,11 @@ export function App() {
       if (runtime.route && sessionId) {
         await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
       }
-      if (sessionId) {
+      if (sessionId && runtime.effort) {
         await window.agentParty.setEffort(sessionId, runtime.effort);
+      }
+      if (sessionId && runtime.thinkingMode) {
+        await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
       }
       setRuntimeDrafts((current) => ({
         ...current,
@@ -336,8 +339,8 @@ export function App() {
           model: runtime.route?.model ?? current[name]?.model,
           providerId: runtime.route?.providerId ?? current[name]?.providerId,
           runtimeModel: runtime.route?.runtimeModel ?? current[name]?.runtimeModel,
-          effort: runtime.effort,
-          thinking: runtime.thinking,
+          effort: runtime.effort ?? current[name]?.effort,
+          thinking: runtime.thinkingMode ? runtime.thinkingMode !== "disabled" : current[name]?.thinking,
         },
       }));
     },
@@ -347,6 +350,12 @@ export function App() {
         void window.agentParty.setEffort(sessionId, effort);
       }
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], effort } }));
+    },
+    setThinking(name, mode, budget) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) {
+        void window.agentParty.setThinking(sessionId, mode, budget);
+      }
     },
     setPermissionMode(name, mode) {
       const sessionId = sessionIdFor(name);

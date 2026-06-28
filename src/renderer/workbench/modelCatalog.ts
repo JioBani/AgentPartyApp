@@ -1,28 +1,13 @@
 /**
- * Static display metadata for the Runtime modal. Real model routes come from
- * the main process; this catalog supplies the human-facing detail (tier, perf,
- * cost, context, thinking support, effort options) the prototype renders.
- *
- * A model that is not in the catalog still renders with sensible neutral
- * defaults, so an unknown route never disappears from the picker.
+ * Display helpers for the Runtime modal. All real model data (perf, cost,
+ * prices, context, reasoning controls) now comes from the main process on each
+ * route (sourced from src/shared/modelCatalog.json); this file only maps a route
+ * into the small view shape the modal renders, with neutral fallbacks so an
+ * unknown route never disappears.
  */
+import type { RouteLike } from "./routes";
 
 export type ProviderId = "anthropic" | "openai" | "openrouter" | "custom";
-
-export interface ModelMeta {
-  /** Matches the route model id (or a runtime model alias). */
-  id: string;
-  name: string;
-  provider: ProviderId;
-  tier: string;
-  perf: 1 | 2 | 3 | 4;
-  cost: 1 | 2 | 3 | 4 | 5;
-  inPerM: string;
-  outPerM: string;
-  context: string;
-  thinking: boolean;
-  efforts: string[];
-}
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   anthropic: "Anthropic",
@@ -38,33 +23,43 @@ export const PROVIDER_DOTS: Record<ProviderId, string> = {
   custom: "#79808d",
 };
 
-export const MODEL_CATALOG: ModelMeta[] = [
-  { id: "claude-opus-4.1", name: "claude-opus-4.1", provider: "anthropic", tier: "Frontier", perf: 4, cost: 5, inPerM: "$15", outPerM: "$75", context: "200K", thinking: true, efforts: ["low", "medium", "high"] },
-  { id: "claude-sonnet-4.5", name: "claude-sonnet-4.5", provider: "anthropic", tier: "Frontier", perf: 4, cost: 4, inPerM: "$3", outPerM: "$15", context: "200K", thinking: true, efforts: ["low", "medium", "high"] },
-  { id: "claude-haiku-4", name: "claude-haiku-4", provider: "anthropic", tier: "Fast", perf: 2, cost: 2, inPerM: "$0.80", outPerM: "$4", context: "200K", thinking: false, efforts: ["low", "medium"] },
-  { id: "gpt-5", name: "gpt-5", provider: "openai", tier: "Frontier", perf: 4, cost: 3, inPerM: "$1.25", outPerM: "$10", context: "400K", thinking: true, efforts: ["minimal", "low", "medium", "high"] },
-  { id: "o4-mini", name: "o4-mini", provider: "openai", tier: "Balanced", perf: 3, cost: 2, inPerM: "$1.10", outPerM: "$4.40", context: "200K", thinking: true, efforts: ["low", "medium", "high"] },
-  { id: "deepseek-v3.2", name: "deepseek-v3.2", provider: "openrouter", tier: "Balanced", perf: 3, cost: 1, inPerM: "$0.27", outPerM: "$1.10", context: "164K", thinking: false, efforts: ["low", "medium", "high"] },
-];
+export interface ModelView {
+  id: string;
+  name: string;
+  provider: ProviderId;
+  /** Performance tier 0-5 (leaderboard '칸'); undefined when not benchmarked. */
+  perf?: number;
+  /** Cost tier 1-5 (leaderboard '비용'). */
+  cost?: number;
+  inPerM?: string;
+  outPerM?: string;
+  ioPerM?: string;
+  context: string;
+}
 
-const DEFAULT_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const PROVIDERS: ProviderId[] = ["anthropic", "openai", "openrouter", "custom"];
 
-export function modelMeta(modelId: string, provider?: ProviderId): ModelMeta {
-  const found = MODEL_CATALOG.find((meta) => meta.id === modelId);
-  if (found) {
-    return found;
-  }
+export function routeProvider(route: RouteLike): ProviderId {
+  const provider = route.providerId as ProviderId;
+  return PROVIDERS.includes(provider) ? provider : "custom";
+}
+
+function price(value: number | undefined): string | undefined {
+  return typeof value === "number" ? `$${value}` : undefined;
+}
+
+/** Normalizes a route's catalog metrics into the modal's display shape. */
+export function modelView(route: RouteLike): ModelView {
+  const meta = route.meta || {};
   return {
-    id: modelId,
-    name: modelId || "model",
-    provider: provider || "anthropic",
-    tier: "Custom",
-    perf: 3,
-    cost: 3,
-    inPerM: "—",
-    outPerM: "—",
-    context: "—",
-    thinking: false,
-    efforts: DEFAULT_EFFORTS,
+    id: route.model,
+    name: route.label || route.model,
+    provider: routeProvider(route),
+    perf: meta.perf,
+    cost: meta.costTier,
+    inPerM: price(meta.inPerM),
+    outPerM: price(meta.outPerM),
+    ioPerM: price(meta.ioPerM),
+    context: meta.context || "—",
   };
 }

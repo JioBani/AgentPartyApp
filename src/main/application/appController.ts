@@ -190,6 +190,10 @@ export class AppController {
     return this.engineFor(workspacePath).setSessionEffort(sessionId, effort);
   }
 
+  setSessionThinking(workspacePath: string, sessionId: string, mode: string, budget?: number): Promise<void> {
+    return this.engineFor(workspacePath).setSessionThinking(sessionId, mode, budget);
+  }
+
   setSessionPermissionMode(workspacePath: string, sessionId: string, permissionMode: string): Promise<void> {
     return this.engineFor(workspacePath).setSessionPermissionMode(sessionId, permissionMode);
   }
@@ -383,6 +387,7 @@ export class AppController {
       compact: (sessionId) => engine.compactSession(sessionId),
       model: (sessionId, body) => engine.setSessionModel(sessionId, String(body.model || ""), body.providerId, body.runtimeModel),
       effort: (sessionId, body) => engine.setSessionEffort(sessionId, String(body.effort || "")),
+      thinking: (sessionId, body) => engine.setSessionThinking(sessionId, String(body.mode || ""), typeof body.budget === "number" ? body.budget : undefined),
       permission: (sessionId, body) => engine.setSessionPermissionMode(sessionId, String(body.permissionMode || "")),
       approve: (sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
     };

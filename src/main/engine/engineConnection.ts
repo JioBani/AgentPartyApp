@@ -101,6 +101,7 @@ export interface EngineConnection {
   compactSession(sessionId: string): Promise<void>;
   setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void>;
   setSessionEffort(sessionId: string, effort: string): Promise<void>;
+  setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
   closeSession(sessionId: string): Promise<boolean>;

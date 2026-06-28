@@ -18,7 +18,8 @@ export interface WorkbenchActions {
   interrupt(memberName: string): void;
   restart(memberName: string): void;
   compact(memberName: string): void;
-  applyRuntime(memberName: string, runtime: { route?: RouteLike; effort: string; thinking: boolean; debug: boolean }): void | Promise<void>;
+  applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
   setEffort(memberName: string, effort: string): void;
+  setThinking(memberName: string, mode: string, budget?: number): void;
   setPermissionMode(memberName: string, mode: string): void;
 }

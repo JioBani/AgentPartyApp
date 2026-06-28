@@ -137,6 +137,10 @@ export class LocalEngine implements EngineConnection {
     this.deps.sessionManager.setEffort(sessionId, effort);
   }
 
+  async setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void> {
+    this.deps.sessionManager.setThinking(sessionId, mode, budget);
+  }
+
   async setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
     this.deps.sessionManager.setPermissionMode(sessionId, permissionMode);
   }

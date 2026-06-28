@@ -107,7 +107,8 @@ assert(blocks.length <= 3, `transcript is not cluttered with stacked blocks (got
 assert(text().includes("어떤 작업을 진행할까요?"), "first question shown");
 assert(!text().includes("어떤 우선순위로 진행할까요?"), "second question NOT shown until advanced (stepped, not all-at-once)");
 assert((transcript.querySelector(".wb-question-progress")?.textContent || "").replace(/\s/g, "") === "1/2", "progress shows 1/2");
-assert(options().length === 2, "only the current question's options are interactive buttons");
+assert(options().filter((b) => !b.classList.contains("wb-question-other")).length === 2, "current question shows its 2 structured options");
+assert(options().some((b) => b.classList.contains("wb-question-other")), "an Other (free-text) option is always appended");
 
 // Choosing a single-select option auto-advances to the next question.
 options()[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -126,6 +127,34 @@ const updatedInput = approveArgs?.[3];
 assert(updatedInput?.answers?.["어떤 작업을 진행할까요?"] === "코드 리뷰", "answer for question 1 carried in SDK-correct shape");
 assert(updatedInput?.answers?.["어떤 우선순위로 진행할까요?"] === "빠르게", "answer for question 2 carried");
 assert((document.querySelector(".wb-question .wb-status-badge")?.textContent || "").includes("답변함"), "resolved card shows answered state");
+
+// --- Other (free-text) path: a fresh pending question with an Other option ---
+approveArgs = null;
+const id2 = "toolu_OTHER";
+const input2 = { questions: [{ question: "기타 질문?", header: "기타", options: [{ label: "A" }, { label: "B" }], multiSelect: false }] };
+emit("events", { sessionId: "s-main", events: [
+  { type: "tool_call", id: id2, name: "AskUserQuestion", input: input2, status: "started" },
+  { type: "approval_request", requestId: id2, toolName: "AskUserQuestion", input: input2, title: "AskUserQuestion" },
+] });
+await new Promise((r) => setTimeout(r, 120));
+const cards2 = document.querySelectorAll(".wb-question");
+const otherCard = cards2[cards2.length - 1];
+const otherBtn = otherCard.querySelector(".wb-question-other");
+assert(Boolean(otherBtn), "an 'Other (free-text)' option is always offered");
+otherBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 40));
+const otherInput = otherCard.querySelector(".wb-question-other-input");
+assert(Boolean(otherInput), "choosing Other reveals a free-text input");
+const submit2 = [...otherCard.querySelectorAll(".wb-btn-member")][0];
+assert(submit2.disabled, "submit stays disabled until free text is typed");
+// React tracks the value via a hidden setter; use the native setter so onChange fires.
+const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+valueSetter.call(otherInput, "직접 적은 답");
+otherInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 40));
+[...otherCard.querySelectorAll(".wb-btn-member")][0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 60));
+assert(approveArgs?.[3]?.answers?.["기타 질문?"] === "직접 적은 답", "Other free text is sent as the answer");
 
 const realErrors = consoleErrors.filter((l) => !l.includes("not wrapped in act"));
 assert(realErrors.length === 0, `no console errors / key collisions (${realErrors.length})${realErrors[0] ? ": " + realErrors[0].slice(0, 120) : ""}`);

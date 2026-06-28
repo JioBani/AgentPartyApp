@@ -142,8 +142,11 @@ interface ParsedQuestion { question: string; header?: string; multiSelect: boole
  * asks several questions, they are stepped through one at a time (like VS Code /
  * the Claude Code desktop app) instead of dumping them all at once.
  */
+const OTHER = "__other__";
+
 function QuestionBlock({ block, questions, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; questions: ParsedQuestion[]; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
   const resolved = Boolean(block.resolved);
 
@@ -158,14 +161,29 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
     });
   };
 
-  const answers = Object.fromEntries(questions.map((q) => [q.question, (selections[q.question] || []).join(", ")]));
-  const allAnswered = questions.every((q) => (selections[q.question] || []).length > 0);
+  // Resolve a question's picks to answer text, substituting free-typed text for the Other option.
+  const answerFor = (q: ParsedQuestion): string =>
+    (selections[q.question] || [])
+      .map((pick) => (pick === OTHER ? (otherText[q.question] || "").trim() : pick))
+      .filter(Boolean)
+      .join(", ");
+  const isAnswered = (q: ParsedQuestion): boolean => {
+    const picks = selections[q.question] || [];
+    if (picks.length === 0) {
+      return false;
+    }
+    return picks.includes(OTHER) ? Boolean((otherText[q.question] || "").trim()) : true;
+  };
+
+  const answers = Object.fromEntries(questions.map((q) => [q.question, answerFor(q)]));
+  const allAnswered = questions.every(isAnswered);
   const submit = () => actions.answerQuestion(view.name, block.requestId, block.input, answers);
 
   const multiple = questions.length > 1;
   const clampedStep = Math.min(step, questions.length - 1);
   const current = questions[clampedStep];
   const currentPicked = selections[current.question] || [];
+  const otherActive = currentPicked.includes(OTHER);
   const isLast = clampedStep === questions.length - 1;
 
   if (resolved) {
@@ -215,6 +233,27 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
               </button>
             );
           })}
+          {/* Claude Code always offers a free-text answer; mirror that here. */}
+          <button
+            type="button"
+            className={"wb-question-option wb-question-other" + (otherActive ? " is-active" : "")}
+            aria-pressed={otherActive}
+            onClick={() => toggle(current, OTHER)}
+          >
+            <span className="wb-question-option-label">기타 (직접 입력)</span>
+            <span className="wb-question-option-desc">원하는 답을 직접 적습니다.</span>
+          </button>
+          {otherActive && (
+            <input
+              type="text"
+              className="wb-question-other-input"
+              autoFocus
+              placeholder="답을 입력하세요…"
+              value={otherText[current.question] || ""}
+              onChange={(event) => setOtherText((prev) => ({ ...prev, [current.question]: event.target.value }))}
+              onKeyDown={(event) => { if (event.key === "Enter" && isLast && allAnswered) submit(); }}
+            />
+          )}
         </div>
       </div>
       <div className="wb-approval-actions">
@@ -225,7 +264,7 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
         {isLast ? (
           <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}>답변 보내기</button>
         ) : (
-          <button type="button" className="wb-btn wb-btn-member" disabled={currentPicked.length === 0} onClick={() => setStep(clampedStep + 1)}>다음</button>
+          <button type="button" className="wb-btn wb-btn-member" disabled={!isAnswered(current)} onClick={() => setStep(clampedStep + 1)}>다음</button>
         )}
       </div>
     </div>

@@ -153,6 +153,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     this.pushSnapshot();
   }
 
+  setThinking(_mode: string, _budget?: number): void {
+    // Mock sessions have no model backend; thinking is a no-op for QA.
+    this.pushSnapshot();
+  }
+
   setPermissionMode(permissionMode: string): void {
     this.snapshot.permissionMode = permissionMode;
     this.pushSnapshot();

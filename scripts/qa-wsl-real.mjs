@@ -54,7 +54,7 @@ client.onEvent((channel, payload) => {
 });
 
 try {
-  const session = await client.createSession({ model, effort: "low", permissionMode: "bypassPermissions" });
+  const session = await client.createSession({ model, effort: process.env.QA_EFFORT || "low", permissionMode: "bypassPermissions" });
   console.log(`  session created in WSL engine: ${session.id} (${session.snapshot?.status})`);
 
   await client.sendUserTurn(session.id, "Reply with exactly the word PONG and nothing else.");

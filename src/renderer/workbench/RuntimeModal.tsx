@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Lightbulb, SlidersHorizontal, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
-import { RouteLike, routeKey } from "./routes";
-import { MODEL_CATALOG, ModelMeta, PROVIDER_DOTS, PROVIDER_LABELS, ProviderId, modelMeta } from "./modelCatalog";
+import { RouteCapabilities, RouteLike, routeKey } from "./routes";
+import { ModelView, PROVIDER_DOTS, PROVIDER_LABELS, ProviderId, modelView, routeProvider } from "./modelCatalog";
 
 interface RuntimeModalProps {
   view: MemberView;
@@ -15,7 +15,7 @@ interface RuntimeModalProps {
 
 interface RouteEntry {
   route: RouteLike;
-  meta: ModelMeta;
+  meta: ModelView;
 }
 
 /**
@@ -23,10 +23,7 @@ interface RouteEntry {
  * which restarts the member's session (hence the dirty note in the footer).
  */
 export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: RuntimeModalProps) {
-  const entries = useMemo<RouteEntry[]>(
-    () => routes.map((route) => ({ route, meta: modelMeta(route.model, (route.providerId as ProviderId) || undefined) })),
-    [routes],
-  );
+  const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
 
   const currentKey = useMemo(() => {
     const match = routes.find((route) => route.model === view.model || route.runtimeModel === view.model);
@@ -34,15 +31,28 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   }, [routes, entries, view.model]);
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
-  const [effort, setEffort] = useState(view.effort || "medium");
-  const [thinking, setThinking] = useState(false);
+  const selected = entries.find((entry) => routeKey(entry.route) === selectedKey) || entries[0];
+  const capabilities: RouteCapabilities = selected?.route.capabilities || {};
+  const effortCap = capabilities.effort;
+  const thinkingCap = capabilities.thinking;
+
+  const [effort, setEffort] = useState(view.effort || effortCap?.defaultValue || "medium");
+  const [thinkingMode, setThinkingMode] = useState<string>(thinkingCap?.defaultValue || "");
+  const [budget, setBudget] = useState<number>(thinkingCap?.budget?.default ?? 0);
   const [debug, setDebug] = useState(debugEnabled);
+
+  // Reset staged reasoning values when the selected model (and thus its
+  // capabilities) changes, so controls always reflect that model's spec.
+  useEffect(() => {
+    setEffort(effortCap?.supported ? effortCap.defaultValue || "medium" : "medium");
+    setThinkingMode(thinkingCap?.supported ? thinkingCap.defaultValue || "" : "");
+    setBudget(thinkingCap?.budget?.default ?? 0);
+  }, [selectedKey]);
 
   useEffect(() => {
     setSelectedKey(currentKey);
-    setEffort(view.effort || "medium");
     setDebug(debugEnabled);
-  }, [currentKey, view.effort, debugEnabled]);
+  }, [currentKey, debugEnabled]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -54,16 +64,26 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const selected = entries.find((entry) => routeKey(entry.route) === selectedKey) || entries[0];
   const selectedMeta = selected?.meta;
-  const effortOptions = selectedMeta?.efforts || ["low", "medium", "high"];
+  const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
+  const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
 
-  const dirty = selectedKey !== currentKey || effort !== (view.effort || "medium") || debug !== debugEnabled || thinking;
+  const dirty =
+    selectedKey !== currentKey ||
+    (effortCap?.supported && effort !== (effortCap.defaultValue || "medium")) ||
+    (thinkingCap?.supported && thinkingMode !== (thinkingCap.defaultValue || "")) ||
+    debug !== debugEnabled;
 
   const grouped = useMemo(() => groupByProvider(entries), [entries]);
 
   function apply() {
-    actions.applyRuntime(view.name, { route: selected?.route, effort, thinking, debug });
+    actions.applyRuntime(view.name, {
+      route: selected?.route,
+      effort: effortCap?.supported ? effort : undefined,
+      thinkingMode: thinkingCap?.supported ? thinkingMode : undefined,
+      thinkingBudget: showBudget ? budget : undefined,
+      debug,
+    });
     onClose();
   }
 
@@ -103,7 +123,6 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                     >
                       <span className="wb-model-name">
                         <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
-                        <small>{entry.meta.tier}</small>
                       </span>
                       <PerfMeter value={entry.meta.perf} />
                       <CostMeter value={entry.meta.cost} />
@@ -127,11 +146,15 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                 <div className="wb-stat-cards">
                   <div className="wb-stat-card">
                     <div className="wb-modal-label">Performance</div>
-                    <div className="wb-stat-row"><PerfMeter value={selectedMeta.perf} /><strong>{selectedMeta.tier}</strong></div>
+                    <div className="wb-stat-row"><PerfMeter value={selectedMeta.perf} /><strong>{perfLabel(selectedMeta.perf)}</strong></div>
                   </div>
                   <div className="wb-stat-card">
                     <div className="wb-modal-label">Cost · per 1M</div>
-                    <div className="wb-stat-row wb-mono"><strong>{selectedMeta.inPerM}</strong> in <strong>{selectedMeta.outPerM}</strong> out</div>
+                    <div className="wb-stat-row wb-mono wb-cost-prices">
+                      {selectedMeta.inPerM && <span><b>{selectedMeta.inPerM}</b> in</span>}
+                      {selectedMeta.outPerM && <span><b>{selectedMeta.outPerM}</b> out</span>}
+                      {selectedMeta.ioPerM && <span><b>{selectedMeta.ioPerM}</b> io</span>}
+                    </div>
                     <CostMeter value={selectedMeta.cost} />
                   </div>
                   <div className="wb-stat-card">
@@ -140,30 +163,53 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                   </div>
                 </div>
 
-                <div className="wb-detail-section">
-                  <div className="wb-detail-section-head"><strong>Effort</strong> <span>모델에 따라 선택지가 달라집니다</span></div>
-                  <div className="wb-segmented">
-                    {effortOptions.map((option) => (
-                      <button
-                        type="button"
-                        key={option}
-                        className={"wb-segment" + (option === effort ? " is-active" : "")}
-                        onClick={() => setEffort(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
+                {effortCap?.supported && effortCap.options.length > 0 && (
+                  <div className="wb-detail-section">
+                    <div className="wb-detail-section-head"><strong>Effort</strong> <span>모델별 추론 강도</span></div>
+                    <div className="wb-segmented">
+                      {effortCap.options.map((option) => (
+                        <button
+                          type="button"
+                          key={option.id}
+                          className={"wb-segment" + (option.id === effort ? " is-active" : "")}
+                          onClick={() => setEffort(option.id)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {selectedMeta.thinking && (
-                  <label className="wb-toggle-card">
-                    <span className="wb-toggle-text">
-                      <Lightbulb size={15} />
-                      <span><strong>Extended thinking</strong><small>응답하기 전에 모델이 먼저 추론하도록 합니다.</small></span>
-                    </span>
-                    <input type="checkbox" className="wb-switch" checked={thinking} onChange={(event) => setThinking(event.target.checked)} />
-                  </label>
+                {thinkingCap?.supported && thinkingCap.modes && thinkingCap.modes.length > 0 && (
+                  <div className="wb-detail-section">
+                    <div className="wb-detail-section-head"><strong><Lightbulb size={13} /> Thinking</strong> <span>모델별 추론 모드</span></div>
+                    <div className="wb-segmented">
+                      {thinkingCap.modes.map((mode) => (
+                        <button
+                          type="button"
+                          key={mode.id}
+                          className={"wb-segment" + (mode.id === thinkingMode ? " is-active" : "")}
+                          onClick={() => setThinkingMode(mode.id)}
+                        >
+                          {mode.label}
+                        </button>
+                      ))}
+                    </div>
+                    {showBudget && thinkingCap.budget && (
+                      <label className="wb-budget">
+                        <span className="wb-budget-head">Thinking budget <span className="wb-mono">{budget.toLocaleString()} tok</span></span>
+                        <input
+                          type="range"
+                          min={thinkingCap.budget.min ?? 1024}
+                          max={thinkingCap.budget.max ?? 81920}
+                          step={1024}
+                          value={budget}
+                          onChange={(event) => setBudget(Number(event.target.value))}
+                        />
+                      </label>
+                    )}
+                  </div>
                 )}
 
                 <label className="wb-toggle-card">
@@ -190,21 +236,30 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   );
 }
 
-function PerfMeter({ value }: { value: number }) {
+function perfLabel(value: number | undefined): string {
+  if (value == null) {
+    return "—";
+  }
+  return `${value} / 5`;
+}
+
+function PerfMeter({ value }: { value: number | undefined }) {
+  const v = value ?? 0;
   return (
-    <span className={"wb-meter wb-perf" + (value >= 4 ? " is-high" : "")} title={`Performance ${value}/4`}>
-      {[1, 2, 3, 4].map((bar) => (
-        <i key={bar} className={bar <= value ? "is-on" : ""} style={{ height: `${4 + bar * 2}px` }} />
+    <span className={"wb-meter wb-perf" + (v >= 4 ? " is-high" : "")} title={value == null ? "Performance n/a" : `Performance ${v}/5`}>
+      {[1, 2, 3, 4, 5].map((bar) => (
+        <i key={bar} className={bar <= v ? "is-on" : ""} style={{ height: `${3 + bar * 2}px` }} />
       ))}
     </span>
   );
 }
 
-function CostMeter({ value }: { value: number }) {
+function CostMeter({ value }: { value: number | undefined }) {
+  const v = value ?? 0;
   return (
-    <span className="wb-meter wb-cost wb-mono" title={`Cost ${value}/5`}>
+    <span className="wb-meter wb-cost wb-mono" title={value == null ? "Cost n/a" : `Cost ${v}/5`}>
       {[1, 2, 3, 4, 5].map((bar) => (
-        <span key={bar} className={bar <= value ? "is-on" : "is-off"}>$</span>
+        <span key={bar} className={bar <= v ? "is-on" : "is-off"}>$</span>
       ))}
     </span>
   );
@@ -214,7 +269,7 @@ function groupByProvider(entries: RouteEntry[]): Array<{ provider: ProviderId; e
   const order: ProviderId[] = ["anthropic", "openai", "openrouter", "custom"];
   const buckets = new Map<ProviderId, RouteEntry[]>();
   for (const entry of entries) {
-    const provider = entry.meta.provider;
+    const provider = routeProvider(entry.route);
     if (!buckets.has(provider)) {
       buckets.set(provider, []);
     }
@@ -224,5 +279,3 @@ function groupByProvider(entries: RouteEntry[]): Array<{ provider: ProviderId; e
     .filter((provider) => buckets.has(provider))
     .map((provider) => ({ provider, entries: buckets.get(provider)! }));
 }
-
-export { MODEL_CATALOG };

@@ -1,5 +1,6 @@
 import * as http from "node:http";
 import * as net from "node:net";
+import { openRouterAliasMap } from "../shared/modelCatalog";
 
 export interface EmbeddedRouterOptions {
   preferredPort: number;
@@ -22,14 +23,9 @@ interface CostBucket {
   hasCost: boolean;
 }
 
-const aliasToOpenRouterModel: Record<string, string> = {
-  "claude-glm": "z-ai/glm-5.2",
-  "claude-minimax": "minimax/minimax-m3",
-  "claude-qwen": "qwen/qwen3.7-max",
-  "claude-coder": "qwen/qwen3-coder",
-  "claude-deepseek-flash": "deepseek/deepseek-chat",
-  "claude-deepseek-pro": "deepseek/deepseek-chat",
-};
+// runtimeModel/model id -> OpenRouter model id, sourced from the shared catalog
+// so the router and the model registry never drift apart.
+const aliasToOpenRouterModel: Record<string, string> = openRouterAliasMap();
 
 export class EmbeddedRouter {
   private server: http.Server | undefined;
@@ -127,7 +123,7 @@ export class EmbeddedRouter {
       throw new Error("OPENROUTER_API_KEY is not configured. Set agentpartyNative.router.openRouterApiKey or the OPENROUTER_API_KEY environment variable.");
     }
     const requestedModel = String(body.model || process.env.ANTHROPIC_CUSTOM_MODEL_OPTION || "");
-    const model = aliasToOpenRouterModel[requestedModel] || requestedModel;
+    const model = aliasToOpenRouterModel[requestedModel.toLowerCase()] || requestedModel;
     if (!model || model.startsWith("claude-")) {
       throw new Error(`No embedded OpenRouter mapping for '${requestedModel}'.`);
     }
@@ -147,6 +143,7 @@ export class EmbeddedRouter {
         tool_choice: toOpenAiToolChoice(body.tool_choice),
         temperature: body.temperature,
         max_tokens: body.max_tokens,
+        reasoning: toOpenRouterReasoning(body),
         stream: false,
       }),
     });
@@ -181,6 +178,56 @@ export class EmbeddedRouter {
     if (payload.__openrouter?.costUnavailableReason) {
       bucket.unavailableReasons.push(String(payload.__openrouter.costUnavailableReason));
     }
+  }
+}
+
+/**
+ * Translates the reasoning intent the Claude Code harness forwards
+ * (`output_config.effort` + `thinking`) into OpenRouter's unified `reasoning`
+ * parameter, which OpenRouter normalizes to each provider's native control
+ * (reasoning_effort, thinking, thinking_level, etc.). Without this the harness's
+ * effort/thinking selection is silently dropped for router-backed models.
+ */
+function toOpenRouterReasoning(body: any): Record<string, unknown> | undefined {
+  const thinkingType = body?.thinking?.type;
+  const budget = numberValue(body?.thinking?.budget_tokens) ?? numberValue(body?.thinking?.budgetTokens);
+  const effort = typeof body?.output_config?.effort === "string" ? body.output_config.effort : undefined;
+
+  if (thinkingType === "disabled") {
+    return { enabled: false, exclude: true };
+  }
+  const reasoning: Record<string, unknown> = {};
+  if (budget != null) {
+    reasoning.max_tokens = budget;
+  } else if (effort) {
+    const mapped = mapEffortToOpenRouter(effort);
+    if (mapped) {
+      reasoning.effort = mapped;
+    }
+  }
+  if (Object.keys(reasoning).length === 0) {
+    return thinkingType === "enabled" ? { enabled: true } : undefined;
+  }
+  return reasoning;
+}
+
+/** OpenRouter accepts minimal|low|medium|high; clamp the harness's wider scale. */
+function mapEffortToOpenRouter(effort: string): string | undefined {
+  switch (effort) {
+    case "none":
+      return undefined;
+    case "minimal":
+      return "minimal";
+    case "low":
+      return "low";
+    case "medium":
+      return "medium";
+    case "high":
+    case "xhigh":
+    case "max":
+      return "high";
+    default:
+      return undefined;
   }
 }
 

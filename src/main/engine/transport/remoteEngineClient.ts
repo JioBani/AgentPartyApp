@@ -115,6 +115,7 @@ export class RemoteEngineClient implements EngineConnection {
   compactSession(sessionId: string) { return this.call<void>("compactSession", sessionId); }
   setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string) { return this.call<void>("setSessionModel", sessionId, model, providerId, runtimeModel); }
   setSessionEffort(sessionId: string, effort: string) { return this.call<void>("setSessionEffort", sessionId, effort); }
+  setSessionThinking(sessionId: string, mode: string, budget?: number) { return this.call<void>("setSessionThinking", sessionId, mode, budget); }
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
   closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }

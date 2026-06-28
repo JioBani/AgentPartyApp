@@ -157,10 +157,25 @@ Changes the session model.
 
 ### `POST /api/sessions/:id/effort`
 
-Changes reasoning effort.
+Changes reasoning effort. Options come from the model's catalog entry
+(`src/shared/modelCatalog.json`). For router-backed (OpenRouter) models this is
+translated to OpenRouter's unified `reasoning.effort`, so effort actually
+controls reasoning.
 
 ```json
 { "effort": "medium" }
+```
+
+### `POST /api/sessions/:id/thinking`
+
+Changes the thinking mode for models whose catalog entry exposes a thinking
+control (e.g. MiniMax M3's adaptive/enabled/disabled, GLM-5.2's on/off). `mode`
+is one of `adaptive` | `enabled` | `disabled`; `budget` (optional) sets a
+thinking-token budget for models that expose a budget slider. Restarts the
+session (resumed) to apply.
+
+```json
+{ "mode": "disabled" }
 ```
 
 ### `POST /api/sessions/:id/permission`

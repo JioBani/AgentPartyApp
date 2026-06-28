@@ -158,6 +158,10 @@ export class SessionManager extends EventEmitter {
     this.sessions.get(id)?.adapter.setEffort(effort as any);
   }
 
+  setThinking(id: string, mode: string, budget?: number): void {
+    this.sessions.get(id)?.adapter.setThinking(mode, budget);
+  }
+
   setPermissionMode(id: string, permissionMode: string): void {
     this.sessions.get(id)?.adapter.setPermissionMode(permissionMode);
   }

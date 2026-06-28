@@ -13,6 +13,7 @@ import type {
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor } from "./modelRegistry";
+import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
 
@@ -23,6 +24,9 @@ export interface ClaudeAdapterOptions {
   model: string;
   providerId?: ModelProviderId;
   effort: ClaudeEffort;
+  /** Thinking mode override (adaptive|enabled|disabled); falls back to the model's catalog default. */
+  thinking?: string;
+  thinkingBudget?: number;
   permissionMode?: PermissionMode;
   maxBudgetUsd?: number;
   safeMode: boolean;
@@ -101,6 +105,8 @@ export class ClaudeAdapter extends EventEmitter {
   private runtimeModel: string;
   private providerId: ModelProviderId;
   private effort: ClaudeEffort;
+  private thinkingMode: string | undefined;
+  private thinkingBudget: number | undefined;
   private resumeSessionId: string | undefined;
   private turnCount = 0;
   private lastEventAt: string | undefined;
@@ -134,6 +140,8 @@ export class ClaudeAdapter extends EventEmitter {
     this.providerId = options.providerId || inferModelProvider(options.model, options.customModelRoutes);
     this.currentRoute = this.resolveCurrentRoute();
     this.effort = options.effort;
+    this.thinkingMode = options.thinking;
+    this.thinkingBudget = options.thinkingBudget;
     this.permissionMode = options.permissionMode || "default";
     this.resumeSessionId = options.resumeSessionId;
     this.debugMode = options.debugEnabled;
@@ -242,13 +250,33 @@ export class ClaudeAdapter extends EventEmitter {
     );
   }
 
-  setThinking(enabled: boolean, mode?: string): void {
-    this.emitEvent({
-      type: "status",
-      status: "thinking",
-      detail: `not supported by Claude Code route yet (${enabled ? mode || "enabled" : "disabled"})`,
-      at: now(),
-    });
+  setThinking(mode: string, budget?: number): void {
+    this.thinkingMode = mode;
+    this.thinkingBudget = typeof budget === "number" ? budget : this.thinkingBudget;
+    if (!this.query) {
+      this.emitEvent({ type: "status", status: "thinking", detail: `set to ${mode}; applies when the session starts`, at: now() });
+      return;
+    }
+    // thinking is a query-construction option; resume the current session so the
+    // new config takes effect without losing the conversation.
+    this.emitEvent({ type: "status", status: "thinking", detail: `set to ${mode}; restarting to apply`, at: now() });
+    this.restart(true);
+  }
+
+  /** Resolves the thinking config sent to the harness: explicit override, else the model's catalog default. */
+  private resolveThinking(): { type: "adaptive" } | { type: "enabled"; budgetTokens: number } | { type: "disabled" } | undefined {
+    const spec = (catalogModelById(this.model) || catalogModelByRuntime(this.runtimeModel))?.reasoning?.thinking;
+    const mode = this.thinkingMode ?? spec?.default;
+    if (!mode) {
+      return undefined;
+    }
+    if (mode === "disabled") {
+      return { type: "disabled" };
+    }
+    if (typeof this.thinkingBudget === "number" && this.thinkingBudget > 0) {
+      return { type: "enabled", budgetTokens: this.thinkingBudget };
+    }
+    return { type: "adaptive" };
   }
 
   setPermissionMode(permissionMode: string): void {
@@ -383,6 +411,7 @@ export class ClaudeAdapter extends EventEmitter {
         env,
         model: this.runtimeModel,
         effort: this.effort,
+        thinking: this.resolveThinking(),
         permissionMode: this.permissionMode,
         allowDangerouslySkipPermissions: this.permissionMode === "bypassPermissions",
         resume: this.resumeSessionId,
@@ -1007,17 +1036,8 @@ function isNativeClaudeModel(model: string): boolean {
 }
 
 function isRoutableRouterModel(model: string): boolean {
-  return new Set([
-    "claude-gpt-5.5",
-    "claude-gpt-5.4",
-    "claude-gpt-5.4-mini",
-    "claude-glm",
-    "claude-minimax",
-    "claude-qwen",
-    "claude-coder",
-    "claude-deepseek-flash",
-    "claude-deepseek-pro",
-  ]).has(model);
+  // OpenRouter-backed models are those the catalog maps to a concrete OR id.
+  return Boolean(openRouterAliasMap()[model.toLowerCase()]) || catalogModelByRuntime(model)?.provider === "openrouter";
 }
 
 async function assertRouterReachable(baseUrl: string): Promise<void> {

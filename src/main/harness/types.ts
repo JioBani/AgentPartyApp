@@ -14,6 +14,7 @@ export interface HarnessSession extends EventEmitter {
   setDebugMode(enabled: boolean): void;
   setModel(model: string, providerId?: string, runtimeModel?: string): void;
   setEffort(effort: string): void;
+  setThinking(mode: string, budget?: number): void;
   setPermissionMode(permissionMode: string): void;
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void;
   on(event: "event", listener: (event: ClaudeNormalizedEvent) => void): this;
