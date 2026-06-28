@@ -38,6 +38,10 @@ export interface PartyMember {
   sessionId?: string;
   model?: string;
   effort?: string;
+  /** Reasoning/thinking mode (adaptive | enabled | disabled); persisted for resume. */
+  reasoning?: string;
+  /** Thinking token budget when applicable. */
+  reasoningBudget?: number;
   permissionMode?: PermissionModeSetting;
   createdAt?: string;
   updatedAt?: string;
@@ -87,6 +91,8 @@ export interface CreateMemberInput {
   runtime?: "codex" | "claude" | "claude-code";
   model?: string;
   effort?: string;
+  reasoning?: string;
+  reasoningBudget?: number;
   permissionMode?: PermissionModeSetting;
 }
 
@@ -110,6 +116,9 @@ export interface CreateSessionInput {
   selectedProviderId?: AppSettings["selectedProviderId"];
   model?: string;
   effort?: AppSettings["claudeEffort"];
+  /** Thinking mode (adaptive | enabled | disabled); falls back to the model's catalog default. */
+  thinking?: string;
+  thinkingBudget?: number;
   permissionMode?: AppSettings["claudePermissionMode"];
 }
 

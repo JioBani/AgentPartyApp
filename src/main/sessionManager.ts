@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
+import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig } from "../core/modelRegistry";
 import { EmbeddedRouter } from "../core/routerShim";
@@ -18,6 +19,12 @@ interface ManagedSession {
   closed?: boolean;
 }
 
+/** Pairs a party member's bridge with its identity for in-process tool access. */
+export interface SessionPartyBinding {
+  bridge: PartyBridge;
+  identity: PartyIdentity;
+}
+
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
 
@@ -31,13 +38,22 @@ export class SessionManager extends EventEmitter {
     super();
   }
 
-  createSession(input?: string | CreateSessionInput, resumeSessionId?: string): SessionView {
+  createSession(input?: string | CreateSessionInput, resumeSessionId?: string, binding?: SessionPartyBinding): SessionView {
     const settings = getSettings();
     const id = resumeSessionId ? `resume-${Date.now()}` : `session-${Date.now()}`;
     const request = normalizeCreateSessionInput(input);
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
-    const adapter = this.createAdapter(id, workspace, resumeSessionId, request);
+    const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding);
     return this.registerSession(id, workspace, adapter);
+  }
+
+  /**
+   * Signals that a workspace's party state changed out-of-band (e.g. a member
+   * drove a party tool). Re-broadcast by the main process; see
+   * docs/PARTY_COMMUNICATION.md §8.
+   */
+  notifyPartyChanged(workspace: string): void {
+    this.emit("party", { workspace });
   }
 
   /**
@@ -191,7 +207,7 @@ export class SessionManager extends EventEmitter {
     this.sessions.clear();
   }
 
-  private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput): HarnessSession {
+  private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
     const settings = getSettings();
     const storageDir = path.join(this.userDataDir, "logs");
     const routerAccountingKey = `agentparty-native-session:${id}`;
@@ -202,6 +218,8 @@ export class SessionManager extends EventEmitter {
       model: request.model || settings.claudeModel,
       providerId: request.selectedProviderId || settings.selectedProviderId,
       effort: request.effort || settings.claudeEffort,
+      thinking: request.thinking,
+      thinkingBudget: request.thinkingBudget,
       permissionMode: request.permissionMode || settings.claudePermissionMode,
       safeMode: settings.claudeSafeMode,
       debugEnabled: settings.debugEnabled,
@@ -213,6 +231,8 @@ export class SessionManager extends EventEmitter {
       resetRouterTurnUsage: (accountingKey) => this.router.resetTurnUsage(accountingKey),
       consumeRouterTurnUsage: (accountingKey) => this.router.consumeTurnUsage(accountingKey),
       resumeSessionId,
+      partyBridge: binding?.bridge,
+      partyIdentity: binding?.identity,
     });
   }
 

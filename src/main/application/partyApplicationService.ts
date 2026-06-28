@@ -13,7 +13,10 @@ import type {
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
-import type { SessionManager } from "../sessionManager";
+import type { SessionManager, SessionPartyBinding } from "../sessionManager";
+import type { PartyBridge } from "../../core/partyBridge";
+import { buildModelRoutes } from "../../core/modelRegistry";
+import { harnesses } from "../harness/types";
 
 export interface PartyApplicationDeps {
   sessionManager: SessionManager;
@@ -211,6 +214,8 @@ export class PartyApplicationService {
       status: "idle",
       model: input.model || settings.claudeModel,
       effort: input.effort || settings.claudeEffort,
+      reasoning: input.reasoning,
+      reasoningBudget: input.reasoningBudget,
       permissionMode: input.permissionMode || settings.claudePermissionMode,
       createdAt: now,
       updatedAt: now,
@@ -237,11 +242,20 @@ export class PartyApplicationService {
       selectedProviderId: input.selectedProviderId || settings.selectedProviderId,
       model: member.model,
       effort: member.effort as any,
+      thinking: member.reasoning,
+      thinkingBudget: member.reasoningBudget,
       permissionMode: member.permissionMode,
     };
-    return options.mock
-      ? this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply })
-      : this.deps.sessionManager.createSession(createInput);
+    if (options.mock) {
+      return this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply });
+    }
+    // Give the member's session the in-process party tool surface, with its
+    // identity closure-bound so `from` is never agent-supplied.
+    const binding: SessionPartyBinding = {
+      bridge: this.partyBridgeFor(member.partyId || "default", member.name),
+      identity: { party: member.partyId || "default", member: member.name },
+    };
+    return this.deps.sessionManager.createSession(createInput, undefined, binding);
   }
 
   private ensureMigrated(state: StoredPartyState): StoredPartyState {
@@ -322,9 +336,126 @@ export class PartyApplicationService {
     fs.writeFileSync(path.join(dir, "MEMBER.md"), content);
   }
 
+  // --- Party bridge (Boundary 2 of docs/PARTY_COMMUNICATION.md) -------------
+  // The in-process capability surface handed to a member's session. Every method
+  // routes through the same service methods the UI/HTTP use, never throws (tool
+  // handlers stay trivial), and re-broadcasts party state so the UI updates.
+  // `from` is closure-bound to the calling member; operations resolve against
+  // the active party (the app is single-active-party — see §12 limitation).
+  private partyBridgeFor(party: string, selfMember: string): PartyBridge {
+    const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
+    return {
+      send: async (from, to, content) => {
+        try {
+          const result = this.sendMessage(to, content, from || selfMember);
+          notify();
+          if (!result.partyMessage?.delivered) {
+            return { ok: false, error: `Member '${to}' is not running. Start it (or member-create it) before sending.` };
+          }
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      createMember: async (request) => {
+        const harness = String(request.harness || "claude-code").toLowerCase();
+        if (harness === "codex") {
+          return { ok: false, error: "The 'codex' harness is not implemented yet — use 'claude-code'." };
+        }
+        if (harness !== "claude-code") {
+          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code'.` };
+        }
+        try {
+          this.createMember({
+            partyId: party,
+            name: request.name,
+            requirement: request.role,
+            role: request.role,
+            runtime: "claude-code",
+            model: request.model,
+            effort: request.effort,
+            reasoning: request.reasoning,
+            reasoningBudget: request.reasoningBudget,
+          });
+          const started = this.startMember(request.name);
+          notify();
+          return { ok: true, data: { ok: true, name: request.name, status: started.member?.status ?? "running" } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      removeMember: async (name) => {
+        try {
+          this.removeMember(name);
+          notify();
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      list: async () => {
+        const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+        const members = state.members
+          .filter((member) => (member.partyId || "default") === (state.currentPartyId || party))
+          .map((member) => this.withLiveStatus(member))
+          .map((member) => ({
+            name: member.name,
+            role: member.role ?? "",
+            status: member.status,
+            harness: member.runtime ?? "claude-code",
+            model: member.model ?? "",
+          }));
+        return { ok: true, data: { members } };
+      },
+      listModels: async () => ({ ok: true, data: partyModelDiscovery() }),
+    };
+  }
+
   private workspacePath(): string {
     return this.deps.getWorkspacePath() || process.cwd();
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The rich harness + model catalog returned by the `list-models` party tool, so
+ * an agent can fill `member-create` correctly. Reads the same catalog
+ * (`buildModelRoutes`) the UI and routing use.
+ */
+function partyModelDiscovery(): {
+  harnesses: Array<{ id: string; label: string; status: string }>;
+  models: Array<Record<string, unknown>>;
+} {
+  const routes = buildModelRoutes(getSettings().claudeModel, [], []);
+  return {
+    harnesses: harnesses.map((harness) => ({ id: harness.id, label: harness.label, status: harness.status })),
+    models: routes.map((route) => {
+      const thinking = route.capabilities.thinking;
+      const effort = route.capabilities.effort;
+      const reasoning = thinking.supported
+        ? {
+            effort: effort.supported ? { options: effort.options.map((option) => option.id), default: effort.defaultValue } : undefined,
+            thinking: thinking.modes ? { modes: thinking.modes.map((mode) => mode.id), default: thinking.defaultValue } : undefined,
+            budget: thinking.budget,
+          }
+        : null;
+      return {
+        id: route.model,
+        label: route.label,
+        provider: route.providerId,
+        perf: route.meta?.perf,
+        costTier: route.meta?.costTier,
+        inPerM: route.meta?.inPerM,
+        outPerM: route.meta?.outPerM,
+        ioPerM: route.meta?.ioPerM,
+        context: route.meta?.context,
+        reasoning,
+      };
+    }),
+  };
 }
 
 function buildChannelPayload(message: PartyMessage, target: PartyMember): string {

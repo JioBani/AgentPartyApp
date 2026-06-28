@@ -16,6 +16,8 @@ import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId,
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
+import { buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
+import type { PartyBridge, PartyIdentity } from "./partyBridge";
 
 export interface ClaudeAdapterOptions {
   id: string;
@@ -39,6 +41,13 @@ export interface ClaudeAdapterOptions {
   resetRouterTurnUsage?: (accountingKey: string) => void;
   consumeRouterTurnUsage?: (accountingKey: string) => RouterTurnUsage | undefined;
   resumeSessionId?: string;
+  /**
+   * When this session represents a party member, the bridge + identity that
+   * expose the in-process party tools (send / member-create / …) to its agent.
+   * Both must be present for the `agentparty-app` MCP server to be attached.
+   */
+  partyBridge?: PartyBridge;
+  partyIdentity?: PartyIdentity;
 }
 
 type SdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -420,6 +429,7 @@ export class ClaudeAdapter extends EventEmitter {
         includeHookEvents: true,
         enableFileCheckpointing: true,
         tools: { type: "preset", preset: "claude_code" },
+        ...this.partyMcpServers(sdk),
         settingSources: this.options.safeMode ? [] : ["user", "project", "local"],
         extraArgs: {
           ...(this.debugMode ? { "debug-to-stderr": null } : {}),
@@ -506,7 +516,31 @@ export class ClaudeAdapter extends EventEmitter {
     }
   }
 
+  /**
+   * Builds the `agentparty-app` in-process MCP server (Boundary 2 of
+   * docs/PARTY_COMMUNICATION.md) when this session is a party member. The tool
+   * handlers run in *this* process and call the injected bridge directly; the
+   * caller's identity is closure-bound so `from` is never agent-supplied.
+   * Returns `{}` (no servers) for non-member sessions.
+   */
+  private partyMcpServers(sdk: SdkModule): { mcpServers?: Record<string, ReturnType<SdkModule["createSdkMcpServer"]>> } {
+    const bridge = this.options.partyBridge;
+    const identity = this.options.partyIdentity;
+    if (!bridge || !identity) {
+      return {};
+    }
+    const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
+    const server = sdk.createSdkMcpServer({ name: PARTY_MCP_SERVER, version: "0.1.0", tools });
+    return { mcpServers: { [PARTY_MCP_SERVER]: server } };
+  }
+
   private readonly canUseTool: CanUseTool = async (toolName, input, options) => {
+    // Party tools are first-class app capabilities the member is meant to drive
+    // freely (coordination shouldn't require a human approval prompt). They are
+    // schema-validated and routed through AppController, so auto-allow them.
+    if (toolName.startsWith(PARTY_TOOL_PREFIX)) {
+      return { behavior: "allow", updatedInput: input };
+    }
     const requestId = options.toolUseID || `permission-${Date.now()}`;
 
     return await new Promise<PermissionResult>((resolve) => {

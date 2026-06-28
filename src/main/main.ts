@@ -132,6 +132,11 @@ async function bootstrap(): Promise<void> {
       entry.window.webContents.send("session:list", subset);
     }
   });
+  // A member drove a party tool in-process (member-create / send / remove);
+  // re-broadcast that workspace's party state so its windows update.
+  sessionManager.on("party", (payload: { workspace: string }) => {
+    void appController?.notifyPartyChanged(payload.workspace);
+  });
 
   appController = new AppController({
     sessionManager,
@@ -185,6 +190,11 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
     for (const entry of registry().forWorkspace(workspacePath)) {
       entry.window.webContents.send("session:list", list);
     }
+    return;
+  }
+  if (channel === "party:changed") {
+    // Re-fetch this remote workspace's party (over RPC) and push party:update.
+    void appController?.notifyPartyChanged(workspacePath);
     return;
   }
   const stamped = payload && typeof payload === "object" ? { ...payload, workspace: workspacePath } : payload;

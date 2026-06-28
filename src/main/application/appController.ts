@@ -56,6 +56,15 @@ export class AppController {
     }
   }
 
+  /**
+   * Re-broadcasts a workspace's party state after an out-of-band change (e.g. a
+   * member drove a party tool in-process). Wired from the SessionManager `party`
+   * event in main.ts; see docs/PARTY_COMMUNICATION.md §8.
+   */
+  notifyPartyChanged(workspacePath: string): Promise<void> {
+    return this.broadcastParty(workspacePath);
+  }
+
   private windowFor(windowId?: string): BrowserWindow | undefined {
     return this.deps.windowRegistry.resolve(windowId)?.window;
   }

@@ -40,6 +40,10 @@ async function main(): Promise<void> {
   host.sessionManager.on("events", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:events", payload }));
   host.sessionManager.on("snapshot", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:snapshot", payload }));
   host.sessionManager.on("sessions", (payload) => writeLine(process.stdout, { kind: "event", channel: "session:sessions", payload }));
+  // A member drove a party tool inside this engine (member-create / send /
+  // remove). Signal the client so it re-fetches and re-broadcasts party state —
+  // without this, agent-driven party changes never reach a remote workspace's UI.
+  host.sessionManager.on("party", (payload) => writeLine(process.stdout, { kind: "event", channel: "party:changed", payload }));
 
   const shutdown = () => {
     host.dispose();
