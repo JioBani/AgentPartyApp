@@ -4,6 +4,11 @@ import type { PartyMember, SessionView } from "../../shared/types";
 export type TranscriptBlock =
   | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; at?: string }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; at?: string }
+  // Inter-member (agentparty channel) message. `direction` is relative to the
+  // member whose transcript this is: "in" = received, "out" = this member sent.
+  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string }
+  // A party write-action this member drove (member-create / member-remove).
+  | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
   | {
       id: string;
       kind: "approval";

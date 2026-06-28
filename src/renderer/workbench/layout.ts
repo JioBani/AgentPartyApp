@@ -66,6 +66,25 @@ export function openMember(state: LayoutState, memberName: string): LayoutState 
   };
 }
 
+/**
+ * Opens a member in its OWN new panel appended on the right (a new region),
+ * instead of merging it into an existing panel's tab strip. Used when a member
+ * is created (by the wizard or by an agent via member-create) so it goes live in
+ * a fresh slot rather than into the background of the focused panel.
+ */
+export function openMemberInNewPanel(state: LayoutState, memberName: string): LayoutState {
+  const existing = panelOf(state, memberName);
+  if (existing) {
+    return {
+      panels: state.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
+      focusedPanelId: existing.id,
+    };
+  }
+  const panel: PanelState = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
+  const panels = [...state.panels, panel];
+  return { panels: normalizeWeights(panels), focusedPanelId: panel.id };
+}
+
 export function focusPanel(state: LayoutState, panelId: string): LayoutState {
   return { ...state, focusedPanelId: panelId };
 }

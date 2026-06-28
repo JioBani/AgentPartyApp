@@ -97,6 +97,20 @@ m = L.moveTabToNewPanel(m, "two");
 assert(m.panels.length === 2, "drop-to-new-panel creates an extra panel");
 assert(m.panels.some((pan) => pan.tabs.length === 1 && pan.tabs[0] === "two"), "moved tab is alone in the new panel");
 
+// openMemberInNewPanel: a created member lands in its OWN new region, not the focused panel's tabs
+let n = L.openMember(L.emptyLayout(), "alpha");
+n = L.openMember(n, "beta"); // alpha + beta share one panel
+assert(n.panels.length === 1 && n.panels[0].tabs.length === 2, "baseline: two members in one panel");
+n = L.openMemberInNewPanel(n, "spawned");
+assert(n.panels.length === 2, "openMemberInNewPanel appends a new panel (new region)");
+const spawnedPanel = n.panels[n.panels.length - 1];
+assert(spawnedPanel.tabs.length === 1 && spawnedPanel.tabs[0] === "spawned", "new member is alone in the appended panel");
+assert(n.panels[0].tabs.length === 2 && !n.panels[0].tabs.includes("spawned"), "existing panel is untouched (not merged into)");
+assert(n.focusedPanelId === spawnedPanel.id && spawnedPanel.active === "spawned", "the new panel is focused with the member live");
+// re-opening an already-open member just focuses it (no duplicate panel)
+const reopened = L.openMemberInNewPanel(n, "alpha");
+assert(reopened.panels.length === 2, "openMemberInNewPanel on an existing member does not add a panel");
+
 console.log("");
 if (failures.length) {
   console.log(`LAYOUT LOGIC FAILED: ${failures.length} assertion(s)`);

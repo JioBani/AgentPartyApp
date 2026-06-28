@@ -611,6 +611,7 @@
   border-radius: var(--radius-card);
   background: transparent;
   text-align: left;
+  cursor: pointer;
 }
 
 .wb-member-row:hover {
@@ -635,6 +636,35 @@
 .wb-member-status {
   font-size: 10.5px;
   color: var(--text-3);
+}
+
+/* Per-member delete control: hidden until row hover, two-click confirm. */
+.wb-member-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  border-radius: var(--radius-button, 6px);
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+
+.wb-member-row:hover .wb-member-remove {
+  opacity: 1;
+}
+
+.wb-member-remove:hover {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.wb-member-remove.is-armed {
+  opacity: 1;
+  color: #fff;
+  background: var(--danger);
 }
 
 .wb-member-badge,
@@ -1092,6 +1122,191 @@ body.wb-resizing {
   color: var(--text-0);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Inter-member (agentparty channel) messages — who sent what to whom. */
+.wb-channel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-left-width: 2px;
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+
+.wb-channel.is-in {
+  border-left-color: var(--live);
+  background: var(--live-dim);
+}
+
+.wb-channel.is-out {
+  border-left-color: var(--member, var(--accent));
+  background: var(--member-dim, var(--accent-dim));
+}
+
+.wb-channel.is-failed {
+  border-left-color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.wb-channel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+.wb-channel-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wb-channel.is-in .wb-channel-icon {
+  color: var(--live);
+}
+
+.wb-channel.is-out .wb-channel-icon {
+  color: var(--member, var(--accent));
+}
+
+.wb-channel.is-failed .wb-channel-icon {
+  color: var(--danger);
+}
+
+.wb-channel-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.wb-channel-peer {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.wb-channel-arrow {
+  color: var(--text-3);
+}
+
+.wb-channel-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-4);
+  color: var(--text-2);
+}
+
+.wb-channel-head .wb-time {
+  margin-left: auto;
+}
+
+.wb-channel-bubble {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-0);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wb-channel-failed {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* Party write-action cards (member create / remove). */
+.wb-party-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 11px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-left-width: 2px;
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+
+.wb-party-action.is-create {
+  border-left-color: var(--member, var(--accent));
+  background: var(--member-dim, var(--accent-dim));
+}
+
+.wb-party-action.is-remove {
+  border-left-color: var(--text-3);
+}
+
+.wb-party-action.is-failed {
+  border-left-color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.wb-party-action-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11px;
+}
+
+.wb-party-action-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wb-party-action.is-create .wb-party-action-icon {
+  color: var(--member, var(--accent));
+}
+
+.wb-party-action.is-remove .wb-party-action-icon {
+  color: var(--text-2);
+}
+
+.wb-party-action.is-failed .wb-party-action-icon {
+  color: var(--danger);
+}
+
+.wb-party-action-label {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.wb-party-action-member {
+  font-weight: 700;
+  color: var(--text-0);
+  padding: 1px 7px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-4);
+}
+
+.wb-party-action-head .wb-time {
+  margin-left: auto;
+}
+
+.wb-party-action-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.wb-party-action-role {
+  color: var(--text-2);
+}
+
+.wb-party-action .wb-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+.wb-party-action-failed {
+  font-size: 11px;
+  color: var(--danger);
 }
 
 .wb-reasoning {

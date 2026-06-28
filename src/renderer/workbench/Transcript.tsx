@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Brain, Check, ChevronRight, ListChecks, Search, ShieldCheck } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, ListChecks, Search, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 
@@ -71,6 +71,10 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
         return null;
       }
       return <ToolBlock block={block} density={density} />;
+    case "channel":
+      return <ChannelBlock block={block} view={view} />;
+    case "partyAction":
+      return <PartyActionBlock block={block} />;
     case "status":
       return (
         <div className="wb-block wb-status">
@@ -88,6 +92,62 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
     default:
       return null;
   }
+}
+
+/**
+ * An inter-member (agentparty channel) message. `direction` is relative to this
+ * member: "in" = received from a peer, "out" = this member sent to a peer. The
+ * card shows the who→whom route so cross-session traffic is legible at a glance.
+ */
+function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "channel" }>; view: MemberView }) {
+  const incoming = block.direction === "in";
+  const from = incoming ? block.from : view.name;
+  const to = incoming ? view.name : block.to;
+  const failed = block.state === "failed";
+  return (
+    <div className={"wb-block wb-channel" + (incoming ? " is-in" : " is-out") + (failed ? " is-failed" : "")}>
+      <div className="wb-channel-head">
+        <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
+        <span className="wb-channel-route">
+          <span className="wb-channel-peer">{from || "?"}</span>
+          <ArrowRight size={12} className="wb-channel-arrow" />
+          <span className="wb-channel-peer">{to || "?"}</span>
+        </span>
+        <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
+        {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+      </div>
+      {block.text && <div className="wb-channel-bubble">{block.text}</div>}
+      {failed && <div className="wb-channel-failed">전달 실패 — 상대가 실행 중이 아닙니다.</div>}
+    </div>
+  );
+}
+
+/**
+ * A party write-action this member drove: creating or removing another member.
+ * Rendered as a compact action card (with the new member's role/model/harness on
+ * create) so spawning/removing is legible without expanding a raw tool box.
+ */
+function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "partyAction" }> }) {
+  const isCreate = block.action === "create";
+  const failed = block.state === "failed";
+  return (
+    <div className={"wb-block wb-party-action" + (isCreate ? " is-create" : " is-remove") + (failed ? " is-failed" : "")}>
+      <div className="wb-party-action-head">
+        <span className="wb-party-action-icon">{isCreate ? <UserPlus size={13} /> : <UserMinus size={13} />}</span>
+        <span className="wb-party-action-label">{isCreate ? "멤버 생성" : "멤버 삭제"}</span>
+        <span className="wb-party-action-member">{block.member || "?"}</span>
+        {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+      </div>
+      {isCreate && !failed && (block.role || block.model || block.harness) && (
+        <div className="wb-party-action-meta">
+          {block.role && <span className="wb-party-action-role">{block.role}</span>}
+          {block.harness && <span className="wb-chip wb-mono">{block.harness}</span>}
+          {block.model && <span className="wb-chip wb-mono">{block.model}</span>}
+        </div>
+      )}
+      {failed && <div className="wb-party-action-failed">{block.error || (isCreate ? "생성 실패" : "삭제 실패")}</div>}
+    </div>
+  );
 }
 
 function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {

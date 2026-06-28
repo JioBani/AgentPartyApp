@@ -242,6 +242,13 @@ export function App() {
     await applyPartyResult(result);
   }
 
+  // Direct removal for the Workbench sidebar (which owns its own two-click
+  // confirm UI), separate from the legacy admin view's removeConfirm flow.
+  async function removeMemberDirect(name: string) {
+    const result = await window.agentParty.removePartyMember(name);
+    await applyPartyResult(result);
+  }
+
   async function memberAction(action: "close" | "bind" | "remove", name: string) {
     if (action === "remove" && removeConfirm !== name) {
       setRemoveConfirm(name);
@@ -458,6 +465,7 @@ export function App() {
                 actions={actions}
                 onCreateParty={(name) => void createParty(name)}
                 onCreateMember={(input) => void createMemberInline(input)}
+                onRemoveMember={(name) => void removeMemberDirect(name)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}

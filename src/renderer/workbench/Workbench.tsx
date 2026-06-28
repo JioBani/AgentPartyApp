@@ -15,6 +15,8 @@ import {
   moveTab,
   moveTabToNewPanel,
   openMember,
+  openMemberInNewPanel,
+  panelOf,
   pruneLayout,
   resizeAt,
   saveLayout,
@@ -37,6 +39,7 @@ interface WorkbenchProps {
   actions: WorkbenchActions;
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
+  onRemoveMember: (member: string) => void;
   onSelectParty: (partyId: string) => void;
   onMemberOpened: (member: string) => void;
   onVisibleMembersChange: (members: string[]) => void;
@@ -71,7 +74,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -86,6 +89,9 @@ export function Workbench(props: WorkbenchProps) {
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
   const resizeRef = useRef<{ snapshot: LayoutState; leftId: string; rightId: string; startX: number; pairPx: number } | null>(null);
   const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // Tracks members already seen for the current party, so only members created
+  // *after* the party is showing auto-open (initial load / party-switch don't).
+  const knownMembersRef = useRef<{ partyKey: string; names: Set<string> }>({ partyKey: "", names: new Set() });
 
   useEffect(() => {
     saveSidebarWidth(sidebarWidth);
@@ -127,6 +133,26 @@ export function Workbench(props: WorkbenchProps) {
     });
   }, [validMembers]);
 
+  // Auto-open members created while this party is showing, each in its OWN new
+  // panel (a fresh region) so it goes live immediately instead of to background.
+  // A party switch / first mount only seeds the baseline — it does not auto-open.
+  useEffect(() => {
+    const currentNames = new Set(views.map((view) => view.name));
+    const tracker = knownMembersRef.current;
+    if (tracker.partyKey !== partyKey) {
+      knownMembersRef.current = { partyKey, names: currentNames };
+      return;
+    }
+    const added = [...currentNames].filter((name) => !tracker.names.has(name));
+    knownMembersRef.current = { partyKey, names: currentNames };
+    if (added.length === 0) {
+      return;
+    }
+    setLayout((current) => added.reduce((state, name) => (panelOf(state, name) ? state : openMemberInNewPanel(state, name)), current));
+    added.forEach((name) => onMemberOpened(name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [views, partyKey]);
+
   useEffect(() => {
     saveLayout(partyKey, layout);
     onVisibleMembersChange(layout.panels.map((panel) => panel.active).filter(Boolean));
@@ -154,9 +180,8 @@ export function Workbench(props: WorkbenchProps) {
 
   function handleCreateMember(input: CreateMemberInput) {
     onCreateMember(input);
-    // Optimistically open the new member as a tab; the panel fills in once the
-    // member view arrives via the party broadcast.
-    setLayout((current) => openMember(current, input.name));
+    // The new member is opened in its own panel by the new-member effect below,
+    // once it arrives via the party broadcast (uniform for wizard + agent creates).
   }
 
   function addFirstAvailable(panelId: string) {
@@ -307,6 +332,7 @@ export function Workbench(props: WorkbenchProps) {
             onCreateParty={onCreateParty}
             onCreateMember={handleCreateMember}
             onOpenMember={handleOpenMember}
+            onRemoveMember={onRemoveMember}
             onCollapse={() => onToggleSidebar(false)}
           />
           <div className="wb-sidebar-resize" title="사이드바 너비 조정" onPointerDown={onSidebarResizeDown} />
