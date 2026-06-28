@@ -1120,8 +1120,135 @@ body.wb-resizing {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text-0);
+  word-break: break-word;
+}
+
+/* Rendered markdown (assistant replies + inter-member message bodies). The
+   markdown engine emits block elements, so reset to normal flow and let each
+   element control its own spacing; only code/pre keep pre-wrap. */
+.wb-md {
+  white-space: normal;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-0);
+  overflow-wrap: anywhere;
+}
+
+.wb-md > :first-child {
+  margin-top: 0;
+}
+
+.wb-md > :last-child {
+  margin-bottom: 0;
+}
+
+.wb-md p {
+  margin: 0 0 var(--space-3);
+}
+
+.wb-md h1,
+.wb-md h2,
+.wb-md h3,
+.wb-md h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  line-height: 1.3;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.wb-md h1 { font-size: 16px; }
+.wb-md h2 { font-size: 14.5px; }
+.wb-md h3 { font-size: 13px; }
+.wb-md h4 { font-size: 12.5px; }
+
+.wb-md ul,
+.wb-md ol {
+  margin: 0 0 var(--space-3);
+  padding-left: 1.4em;
+}
+
+.wb-md li {
+  margin: 2px 0;
+}
+
+.wb-md li > ul,
+.wb-md li > ol {
+  margin: 2px 0;
+}
+
+.wb-md a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.wb-md strong {
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.wb-md blockquote {
+  margin: 0 0 var(--space-3);
+  padding: 2px 0 2px var(--space-4);
+  border-left: 2px solid var(--border-strong, var(--border-subtle));
+  color: var(--text-2);
+}
+
+.wb-md hr {
+  border: 0;
+  border-top: var(--border-width) solid var(--border-subtle);
+  margin: var(--space-4) 0;
+}
+
+/* Inline code chip. */
+.wb-md-code-inline {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-0);
+  word-break: break-word;
+}
+
+/* Fenced/indented code blocks: wrap (no horizontal scroll) and stay monospace. */
+.wb-md pre {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-input);
+  overflow-x: auto;
+}
+
+.wb-md pre code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Tables (GFM). */
+.wb-md table {
+  border-collapse: collapse;
+  margin: 0 0 var(--space-3);
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.wb-md th,
+.wb-md td {
+  border: var(--border-width) solid var(--border-subtle);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.wb-md th {
+  background: var(--bg-2);
+  font-weight: 700;
 }
 
 /* Inter-member (agentparty channel) messages — who sent what to whom. */
@@ -1417,21 +1544,34 @@ body.wb-resizing {
   border-top: var(--border-width) solid var(--border-subtle);
   font-size: 11.5px;
   color: var(--text-1);
-  overflow-x: auto;
-  white-space: pre;
-}
-
-.density-narrow .wb-pre {
+  /* Wrap long lines (incl. unbroken debug/JSON tokens) instead of forcing a
+     horizontal scrollbar when the panel is narrow. */
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .wb-status {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
   color: var(--text-2);
   font-size: 11.5px;
+  min-width: 0;
+}
+
+/* Keep the leading status icon from shrinking, and let the (often long) debug
+   detail wrap rather than overflow the panel width. */
+.wb-status > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.wb-status .wb-mono {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .wb-error {

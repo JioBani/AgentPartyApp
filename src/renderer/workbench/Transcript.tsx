@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, ListChecks, Search, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
+import { Markdown } from "./Markdown";
 
 interface TranscriptProps {
   view: MemberView;
@@ -61,7 +62,7 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
             <strong>{view.name}</strong>
             {block.at && <span className="wb-mono wb-time">{block.at}</span>}
           </div>
-          <div className="wb-assistant-body">{block.text}</div>
+          <div className="wb-assistant-body"><Markdown text={block.text} /></div>
         </div>
       );
     case "tool":
@@ -116,7 +117,7 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
         <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
         {block.at && <span className="wb-mono wb-time">{block.at}</span>}
       </div>
-      {block.text && <div className="wb-channel-bubble">{block.text}</div>}
+      {block.text && <div className="wb-channel-bubble"><Markdown text={block.text} /></div>}
       {failed && <div className="wb-channel-failed">전달 실패 — 상대가 실행 중이 아닙니다.</div>}
     </div>
   );
