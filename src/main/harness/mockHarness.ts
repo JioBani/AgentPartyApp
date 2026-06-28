@@ -96,8 +96,12 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
 
   sendUserTurn(text: string): void {
     this.snapshot.lastUserMessageAt = now();
+    // Render the incoming turn exactly like ClaudeAdapter.sendUserTurn (a
+    // `status: "sent"` event whose detail is the message text). Without this the
+    // receiver's transcript stays blank, so an inter-member message simulated via
+    // POST /api/party/messages would not be visible during frontend QA.
+    this.inject({ type: "status", status: "sent", detail: text });
     if (!this.autoReply) {
-      this.pushSnapshot();
       return;
     }
     this.setStatus("responding");

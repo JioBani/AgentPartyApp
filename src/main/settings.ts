@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getUserDataDir } from "./userDataDir";
 import { AppSettings } from "../shared/types";
+import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 
 const defaults: AppSettings = {
   workspacePath: process.cwd(),
@@ -20,7 +21,22 @@ const defaults: AppSettings = {
 };
 
 export function getSettings(): AppSettings {
-  return { ...defaults, ...readSettingsFile() };
+  return sanitizeSettings({ ...defaults, ...readSettingsFile() });
+}
+
+/**
+ * Heals a persisted `claudeModel` that no longer resolves to a catalog model —
+ * e.g. a value selected before the model catalog was reworked (the legacy
+ * "GLM-5.2 (OpenRouter)" id). Left untouched it injects an unroutable "current
+ * model" fallback route (modelRegistry), which then becomes selectable in the UI
+ * and only fails later at session start. Reset to the default model + provider.
+ */
+function sanitizeSettings(settings: AppSettings): AppSettings {
+  const model = settings.claudeModel;
+  if (model && !catalogModelById(model) && !catalogModelByRuntime(model)) {
+    return { ...settings, claudeModel: defaults.claudeModel, selectedProviderId: defaults.selectedProviderId };
+  }
+  return settings;
 }
 
 export function getPublicSettings(): AppSettings {

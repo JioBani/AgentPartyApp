@@ -18,6 +18,9 @@
     "test:askq": "node scripts/qa-askq.mjs",
     "test:interaction": "node scripts/qa-interaction-api.mjs",
     "test:catalog": "node scripts/qa-model-catalog.mjs",
+    "test:party-bridge": "node scripts/qa-party-bridge.mjs",
+    "test:party-mock": "node scripts/qa-party-mock.mjs",
+    "test:member-wizard": "node scripts/qa-member-wizard.mjs",
     "test:layout": "node scripts/qa-layout.mjs",
     "test:workspace": "node scripts/qa-workspace-location.mjs",
     "test:wsl-engine": "node scripts/qa-wsl-engine.mjs",
@@ -25,12 +28,13 @@
     "test:wsl-remote": "node scripts/qa-wsl-remote.mjs",
     "test:wsl-cli": "node scripts/qa-wsl-cli.mjs",
     "test:wsl-session": "node scripts/qa-wsl-session.mjs",
-    "test:ui": "npm run test:workspace && npm run test:layout && npm run test:render && npm run test:askq && npm run test:interaction && npm run test:catalog",
+    "test:ui": "npm run test:workspace && npm run test:layout && npm run test:render && npm run test:askq && npm run test:interaction && npm run test:catalog && npm run test:party-bridge && npm run test:party-mock && npm run test:member-wizard && npm run test:member-start-model",
     "start": "node scripts/launch-electron.mjs",
     "start:qa": "cross-env AGENTPARTY_QA=1 node scripts/launch-electron.mjs",
     "start:dev": "cross-env AGENTPARTY_RENDERER_URL=http://127.0.0.1:5173 node scripts/launch-electron.mjs",
     "qa:seed": "node scripts/qa-frontend.mjs",
-    "dist:win": "npm run build && electron-builder --win --x64"
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "test:member-start-model": "node scripts/qa-member-start-model.mjs"
   },
   "build": {
     "appId": "party.agentparty.desktop",
@@ -49,8 +53,14 @@
       "dist/engine-server.mjs"
     ],
     "extraResources": [
-      { "from": "scripts/agent-party", "to": "bin/agent-party" },
-      { "from": "scripts/agent-party-launcher.mjs", "to": "bin/agent-party-launcher.mjs" }
+      {
+        "from": "scripts/agent-party",
+        "to": "bin/agent-party"
+      },
+      {
+        "from": "scripts/agent-party-launcher.mjs",
+        "to": "bin/agent-party-launcher.mjs"
+      }
     ],
     "win": {
       "target": [
@@ -67,7 +77,8 @@
     "@vitejs/plugin-react": "^4.5.2",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
