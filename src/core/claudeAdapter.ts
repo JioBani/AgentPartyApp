@@ -16,7 +16,7 @@ import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId,
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
-import { buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
+import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 
 export interface ClaudeAdapterOptions {
@@ -430,6 +430,7 @@ export class ClaudeAdapter extends EventEmitter {
         enableFileCheckpointing: true,
         tools: { type: "preset", preset: "claude_code" },
         ...this.partyMcpServers(sdk),
+        ...this.partySystemPrompt(),
         settingSources: this.options.safeMode ? [] : ["user", "project", "local"],
         extraArgs: {
           ...(this.debugMode ? { "debug-to-stderr": null } : {}),
@@ -532,6 +533,21 @@ export class ClaudeAdapter extends EventEmitter {
     const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
     const server = sdk.createSdkMcpServer({ name: PARTY_MCP_SERVER, version: "0.1.0", tools });
     return { mcpServers: { [PARTY_MCP_SERVER]: server } };
+  }
+
+  /**
+   * Appends the AgentParty primer to the claude_code system prompt for member
+   * sessions, so the model knows the app, its identity, the protocol, and which
+   * tool surface to use — instead of relying on memory and confusing our
+   * `agentparty-app` tools with legacy `agentparty` servers. Returns `{}` for
+   * non-member sessions (keeps the default system prompt untouched).
+   */
+  private partySystemPrompt(): { systemPrompt?: { type: "preset"; preset: "claude_code"; append: string } } {
+    const identity = this.options.partyIdentity;
+    if (!identity) {
+      return {};
+    }
+    return { systemPrompt: { type: "preset", preset: "claude_code", append: buildPartyPrimer(identity) } };
   }
 
   private readonly canUseTool: CanUseTool = async (toolName, input, options) => {

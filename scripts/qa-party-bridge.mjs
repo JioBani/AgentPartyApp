@@ -34,7 +34,7 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { buildPartyToolDefs, buildPartyPrimer, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -138,6 +138,17 @@ const out = await sendTool.handler({ to: "buddy", content: "ping" });
 assert(Array.isArray(out.content) && out.content[0].type === "text", "send tool returns an MCP text envelope");
 assert(out.isError === false, "successful send is not flagged as error");
 assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "tool handler stamps from=main (identity, not args)");
+
+// --- session primer: deterministic surface knowledge (no model memory) -------
+console.log("\nParty primer assertions:");
+const primer = buildPartyPrimer({ party: "team-qa", member: "reviewer", role: "Code reviewer" });
+assert(/AgentParty/.test(primer), "primer introduces the AgentParty app");
+assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.includes("Code reviewer"), "primer states the member's identity (party + name + role)");
+assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
+assert(/LEGACY/.test(primer) && /mcp__agentparty__\*/.test(primer) && /mcp__plugin_\*_agentparty__\*/.test(primer), "primer warns off the legacy agentparty surfaces by name");
+assert(/<channel source="agentparty"/.test(primer), "primer documents the channel communication protocol");
+const noRole = buildPartyPrimer({ party: "p", member: "m" });
+assert(/none specified/.test(noRole), "primer handles a missing role gracefully");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nPARTY BRIDGE PASSED");
 process.exit(failures.length ? 1 : 0);

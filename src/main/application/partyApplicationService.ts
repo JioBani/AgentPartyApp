@@ -253,7 +253,7 @@ export class PartyApplicationService {
     // identity closure-bound so `from` is never agent-supplied.
     const binding: SessionPartyBinding = {
       bridge: this.partyBridgeFor(member.partyId || "default", member.name),
-      identity: { party: member.partyId || "default", member: member.name },
+      identity: { party: member.partyId || "default", member: member.name, role: member.role },
     };
     return this.deps.sessionManager.createSession(createInput, undefined, binding);
   }
