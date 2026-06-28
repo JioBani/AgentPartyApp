@@ -227,7 +227,7 @@ export function App() {
     }
   }
 
-  async function createMemberInline(input: { name: string; requirement: string; runtime: string }) {
+  async function createMemberInline(input: { name: string; requirement: string; runtime: string; model?: string; effort?: string; reasoning?: string; reasoningBudget?: number }) {
     const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
     await applyPartyResult(result);
   }
@@ -272,12 +272,19 @@ export function App() {
     async sendMessage(name, text) {
       let sessionId = sessionIdFor(name);
       if (!sessionId) {
+        // Start with the MEMBER's own configured runtime — not the global
+        // default. Precedence: an explicit per-member runtime draft (RuntimeModal)
+        // > the member's stored config (set at creation) > the global default.
+        // Falling back straight to the global model here overwrote a member's
+        // model (e.g. a Kimi member flipped to the global Sonnet on first chat).
         const draft = runtimeDrafts[name];
+        const member = members.find((item) => item.name === name);
+        const memberRoute = routes.find((route) => route.model === member?.model || route.runtimeModel === member?.model);
         const result = await window.agentParty.startPartyMember(name, {
-          selectedProviderId: draft?.providerId || state.settings.selectedProviderId,
-          model: draft?.model || state.settings.claudeModel,
-          effort: (draft?.effort as any) || state.settings.claudeEffort,
-          permissionMode: (draft?.permissionMode as any) || state.settings.claudePermissionMode,
+          selectedProviderId: draft?.providerId || (memberRoute?.providerId as any) || state.settings.selectedProviderId,
+          model: draft?.model || member?.model || state.settings.claudeModel,
+          effort: (draft?.effort as any) || (member?.effort as any) || state.settings.claudeEffort,
+          permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || state.settings.claudePermissionMode,
         });
         await applyPartyResult(result);
         sessionId = result.session?.id;

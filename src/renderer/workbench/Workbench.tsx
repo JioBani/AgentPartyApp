@@ -302,6 +302,7 @@ export function Workbench(props: WorkbenchProps) {
             workingByParty={workingByParty}
             memberCountByParty={memberCountByParty}
             width={sidebarWidth}
+            routes={routes}
             onSelectParty={onSelectParty}
             onCreateParty={onCreateParty}
             onCreateMember={handleCreateMember}

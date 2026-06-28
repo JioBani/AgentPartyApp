@@ -13,7 +13,7 @@ interface RuntimeModalProps {
   onClose: () => void;
 }
 
-interface RouteEntry {
+export interface RouteEntry {
   route: RouteLike;
   meta: ModelView;
 }
@@ -243,7 +243,7 @@ function perfLabel(value: number | undefined): string {
   return `${value} / 5`;
 }
 
-function PerfMeter({ value }: { value: number | undefined }) {
+export function PerfMeter({ value }: { value: number | undefined }) {
   const v = value ?? 0;
   return (
     <span className={"wb-meter wb-perf" + (v >= 4 ? " is-high" : "")} title={value == null ? "Performance n/a" : `Performance ${v}/5`}>
@@ -254,7 +254,7 @@ function PerfMeter({ value }: { value: number | undefined }) {
   );
 }
 
-function CostMeter({ value }: { value: number | undefined }) {
+export function CostMeter({ value }: { value: number | undefined }) {
   const v = value ?? 0;
   return (
     <span className="wb-meter wb-cost wb-mono" title={value == null ? "Cost n/a" : `Cost ${v}/5`}>
@@ -265,7 +265,7 @@ function CostMeter({ value }: { value: number | undefined }) {
   );
 }
 
-function groupByProvider(entries: RouteEntry[]): Array<{ provider: ProviderId; entries: RouteEntry[] }> {
+export function groupByProvider(entries: RouteEntry[]): Array<{ provider: ProviderId; entries: RouteEntry[] }> {
   const order: ProviderId[] = ["anthropic", "openai", "openrouter", "custom"];
   const buckets = new Map<ProviderId, RouteEntry[]>();
   for (const entry of entries) {

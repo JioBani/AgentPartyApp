@@ -2,15 +2,19 @@ import { FormEvent, useState } from "react";
 import { Check, ChevronsLeft, Plus, Users, X } from "lucide-react";
 import type { PartyDefinition } from "../../shared/types";
 import type { MemberView } from "./types";
+import type { RouteLike } from "./routes";
 import { memberColorVars } from "../theme/memberColors";
 import { statusLabel } from "./memberStatus";
-import { Dropdown } from "./Dropdown";
-import { RUNTIME_OPTIONS } from "./controls";
+import { MemberWizard } from "./MemberWizard";
 
 export interface CreateMemberInput {
   name: string;
   requirement: string;
   runtime: string;
+  model?: string;
+  effort?: string;
+  reasoning?: string;
+  reasoningBudget?: number;
 }
 
 interface PartySidebarProps {
@@ -22,6 +26,7 @@ interface PartySidebarProps {
   workingByParty: Record<string, number>;
   memberCountByParty: Record<string, number>;
   width: number;
+  routes: RouteLike[];
   onSelectParty: (partyId: string) => void;
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
@@ -30,10 +35,9 @@ interface PartySidebarProps {
 }
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
-  const [memberDraft, setMemberDraft] = useState({ name: "", requirement: "", runtime: "claude-code" });
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -43,18 +47,6 @@ export function PartySidebar(props: PartySidebarProps) {
     }
     onCreateParty(name);
     setDraft("");
-  }
-
-  const memberValid = memberDraft.name.trim() && memberDraft.requirement.trim();
-
-  function submitMember(event: FormEvent) {
-    event.preventDefault();
-    if (!memberValid) {
-      return;
-    }
-    onCreateMember({ name: memberDraft.name.trim(), requirement: memberDraft.requirement.trim(), runtime: memberDraft.runtime });
-    setMemberDraft({ name: "", requirement: "", runtime: "claude-code" });
-    setCreating(false);
   }
 
   return (
@@ -100,15 +92,11 @@ export function PartySidebar(props: PartySidebarProps) {
         </div>
 
         {creating && (
-          <form className="wb-new-member" onSubmit={submitMember}>
-            <input autoFocus value={memberDraft.name} onChange={(event) => setMemberDraft((current) => ({ ...current, name: event.target.value }))} placeholder="멤버 이름…" />
-            <input value={memberDraft.requirement} onChange={(event) => setMemberDraft((current) => ({ ...current, requirement: event.target.value }))} placeholder="역할 (예: 백엔드 API)" />
-            <Dropdown value={memberDraft.runtime} options={RUNTIME_OPTIONS} onChange={(runtime) => setMemberDraft((current) => ({ ...current, runtime }))} title="런타임" />
-            <div className="wb-new-member-actions">
-              <button type="button" className="wb-btn wb-btn-ghost" onClick={() => setCreating(false)}>취소</button>
-              <button type="submit" className="wb-btn wb-btn-accent" disabled={!memberValid}>추가</button>
-            </div>
-          </form>
+          <MemberWizard
+            routes={routes}
+            onCancel={() => setCreating(false)}
+            onCreate={(input) => { onCreateMember(input); setCreating(false); }}
+          />
         )}
 
         <div className="wb-member-list">
