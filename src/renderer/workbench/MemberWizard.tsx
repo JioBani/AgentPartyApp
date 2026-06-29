@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Lightbulb, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
 import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./RuntimeModal";
 import type { CreateMemberInput } from "./PartySidebar";
+import type { DefaultMemberProfile } from "../../shared/types";
 
 interface MemberWizardProps {
   routes: RouteLike[];
+  /** Seed values so "next, next, next" creates a member with the saved defaults. */
+  defaultProfile: DefaultMemberProfile;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -34,10 +37,10 @@ const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
  * RuntimeModal model + reasoning controls so a member is configured exactly the
  * way its runtime is later tuned.
  */
-export function MemberWizard({ routes, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, defaultProfile, onCancel, onCreate }: MemberWizardProps) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
-  const [harness, setHarness] = useState("claude-code");
+  const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
   const [role, setRole] = useState("");
 
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
@@ -47,7 +50,11 @@ export function MemberWizard({ routes, onCancel, onCreate }: MemberWizardProps) 
   );
   const grouped = useMemo(() => groupByProvider(harnessEntries), [harnessEntries]);
 
-  const [selectedKey, setSelectedKey] = useState("");
+  // Seed the model from the default profile so "next, next, next" works.
+  const [selectedKey, setSelectedKey] = useState(() => {
+    const match = routes.find((route) => route.model === defaultProfile.model && (route.harnessId || "claude-code") === (defaultProfile.harness || "claude-code"));
+    return match ? routeKey(match) : "";
+  });
   const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries[0];
   const capabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
@@ -65,10 +72,19 @@ export function MemberWizard({ routes, onCancel, onCreate }: MemberWizardProps) 
   }, [harnessEntries, selectedKey]);
 
   // Reset staged reasoning to the selected model's defaults whenever it changes.
+  // On the FIRST run, prefer the default profile's reasoning where it specifies
+  // one (so "next, next, next" honors the saved default); fall back to the
+  // model's own default otherwise.
+  const firstReasoning = useRef(true);
   useEffect(() => {
-    setEffort(effortCap?.supported ? effortCap.defaultValue || "medium" : "");
-    setThinkingMode(thinkingCap?.supported ? thinkingCap.defaultValue || "" : "");
-    setBudget(thinkingCap?.budget?.default ?? 0);
+    const first = firstReasoning.current;
+    firstReasoning.current = false;
+    const effDefault = effortCap?.supported ? effortCap.defaultValue || "medium" : "";
+    const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
+    const budgetDefault = thinkingCap?.budget?.default ?? 0;
+    setEffort(first && defaultProfile.effort ? defaultProfile.effort : effDefault);
+    setThinkingMode(first && defaultProfile.reasoning ? defaultProfile.reasoning : thinkDefault);
+    setBudget(first && defaultProfile.reasoningBudget ? defaultProfile.reasoningBudget : budgetDefault);
   }, [selectedKey]);
 
   useEffect(() => {

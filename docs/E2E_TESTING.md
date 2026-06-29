@@ -22,10 +22,13 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-party-bridge` | in-process party bridge (send/create/remove/list) + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail |
-| `qa-member-remove` | sidebar member-delete (two-click confirm, `main` protected) |
+| `qa-member-remove` | sidebar member-delete (right-click → 삭제하기 menu, `main` protected) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
 | `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) |
+| `qa-tool-output` | tool-call (bash) full command + result rendering; command scroll-cap + 전체보기 modal |
+| `qa-command-palette` | composer `/` command/skill palette: harness-aware trigger, **live harness-reported inventory** (plugin/MCP/custom commands) merged with static built-ins, filter, action vs insert select |
+| `qa-default-profile` | single member-creation default derived from runtime settings (`defaultMemberProfileOf`); RuntimeModal **harness lock** after first turn |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.

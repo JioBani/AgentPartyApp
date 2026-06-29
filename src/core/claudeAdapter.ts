@@ -11,7 +11,7 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
-import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
+import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor } from "./modelRegistry";
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
@@ -122,7 +122,7 @@ export class ClaudeAdapter extends EventEmitter {
   private lastUserMessageAt: string | undefined;
   private lastAssistantMessageAt: string | undefined;
   private lastError: string | undefined;
-  private supportedSlashCommands: string[] = [];
+  private supportedSlashCommands: HarnessCommand[] = [];
   private supportedModels: ModelRoute[] = [];
   private currentRoute: ModelRoute | undefined;
   private readonly costResolver = new DefaultTurnCostResolver();
@@ -382,6 +382,7 @@ export class ClaudeAdapter extends EventEmitter {
       turnCount: this.turnCount,
       queuedTurnCount: this.queuedUserTurns.length,
       pendingApprovalCount: this.pendingApprovals.size,
+      slashCommands: this.supportedSlashCommands,
     };
   }
 
@@ -598,7 +599,7 @@ export class ClaudeAdapter extends EventEmitter {
     try {
       const init = await this.query.initializationResult();
       this.log("initialization", init);
-      this.supportedSlashCommands = (init.commands || []).map((command: any) => command.name || command.command || String(command));
+      this.supportedSlashCommands = toHarnessCommands(init.commands);
       try {
         this.supportedModels = buildModelRoutes(this.model, await this.query.supportedModels(), this.options.customModelRoutes);
       } catch {
@@ -615,6 +616,11 @@ export class ClaudeAdapter extends EventEmitter {
         models: this.supportedModels,
         at: now(),
       });
+      // Push a snapshot too: the renderer's per-member view caches the snapshot
+      // (incl. the slash-command inventory) from `snapshot` broadcasts, not from
+      // this `session` event. Without this the command palette stays on its
+      // static fallback until the next status-change snapshot.
+      this.emit("snapshot", this.getSnapshot());
     } catch (error) {
       this.emitError(error);
     }
@@ -700,7 +706,7 @@ export class ClaudeAdapter extends EventEmitter {
         model: this.model,
         permissionMode: this.permissionMode,
         tools: message.tools,
-        slashCommands: message.slash_commands,
+        slashCommands: this.supportedSlashCommands.length ? this.supportedSlashCommands : toHarnessCommands(message.slash_commands),
         models: this.supportedModels,
         at: now(),
       });
@@ -720,7 +726,8 @@ export class ClaudeAdapter extends EventEmitter {
     }
 
     if (message.subtype === "commands_changed") {
-      this.supportedSlashCommands = (message.commands || []).map((command: any) => command.name || command.command || String(command));
+      this.supportedSlashCommands = toHarnessCommands(message.commands);
+      this.emit("snapshot", this.getSnapshot());
       this.emitStatus("commands_changed", `${this.supportedSlashCommands.length} slash commands`);
       return;
     }
@@ -961,6 +968,35 @@ function claudeNativePackageName(): string | undefined {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Normalizes the harness's reported commands into `HarnessCommand[]`. Accepts
+ * either the rich SDK `SlashCommand` objects (init / commands_changed) or the
+ * bare name strings carried by the `system:init` message.
+ */
+function toHarnessCommands(commands: unknown): HarnessCommand[] {
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+  return commands
+    .map((command): HarnessCommand | undefined => {
+      if (typeof command === "string") {
+        return command ? { name: command } : undefined;
+      }
+      const record = asRecord(command);
+      const name = record ? stringValue(record.name) ?? stringValue(record.command) : undefined;
+      if (!name) {
+        return undefined;
+      }
+      return {
+        name,
+        description: record ? stringValue(record.description) : undefined,
+        argumentHint: record ? stringValue(record.argumentHint) ?? stringValue(record.argument_hint) : undefined,
+        aliases: record && Array.isArray(record.aliases) ? record.aliases.filter((a): a is string => typeof a === "string") : undefined,
+      };
+    })
+    .filter((command): command is HarnessCommand => Boolean(command));
 }
 
 function appendJsonDelta(current: unknown, delta: string | undefined): unknown {

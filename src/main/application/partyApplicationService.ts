@@ -10,6 +10,7 @@ import type {
   StartPartyMemberInput,
   SessionView,
 } from "../../shared/types";
+import { defaultMemberProfileOf } from "../../shared/types";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
@@ -47,12 +48,23 @@ export class PartyApplicationService {
     };
     state.parties.push(party);
     state.currentPartyId = party.id;
-    const main = this.buildMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party.", runtime: "claude-code" });
+    // `main` is born from the default creation profile (harness/model/reasoning).
+    const main = this.buildMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party." });
     state.members.push(main);
     this.writeRoleFile(workspace, main);
     this.repository.write(workspace, state);
     log("info", "party", "party created", { workspace, partyId: party.id, name: party.name });
-    return this.result(`Party '${party.name}' created with main member.`, state, main);
+    // Auto-init main's session (no turn — like prewarm) so the party is usable
+    // immediately. Non-fatal: a start failure (auth/executable) must not block
+    // party creation, but it is surfaced rather than swallowed.
+    try {
+      const started = this.startMember("main");
+      return { ...started, message: `Party '${party.name}' created with main member.` };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log("warn", "party", "main session auto-start failed", { workspace, partyId: party.id, error: detail });
+      return this.result(`Party '${party.name}' created, but main session did not start: ${detail}`, state, main);
+    }
   }
 
   selectParty(partyId: string): PartyCommandResult {
@@ -204,19 +216,21 @@ export class PartyApplicationService {
     if (!name || !role) {
       throw new Error("Member name and role are required.");
     }
-    const settings = getSettings();
+    // A member is born with the default creation profile (derived from the
+    // single runtime defaults); explicit input wins.
+    const profile = defaultMemberProfileOf(getSettings());
     const now = new Date().toISOString();
     return {
       partyId: input.partyId,
       name,
       role,
-      runtime: normalizeRuntime(input.runtime),
+      runtime: normalizeRuntime(input.runtime || profile.harness),
       status: "idle",
-      model: input.model || settings.claudeModel,
-      effort: input.effort || settings.claudeEffort,
-      reasoning: input.reasoning,
-      reasoningBudget: input.reasoningBudget,
-      permissionMode: input.permissionMode || settings.claudePermissionMode,
+      model: input.model || profile.model,
+      effort: input.effort || profile.effort,
+      reasoning: input.reasoning ?? profile.reasoning,
+      reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
+      permissionMode: input.permissionMode || profile.permissionMode,
       createdAt: now,
       updatedAt: now,
     };

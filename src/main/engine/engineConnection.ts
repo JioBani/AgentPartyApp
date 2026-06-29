@@ -6,6 +6,7 @@ import type {
   SessionView,
   StartPartyMemberInput,
 } from "../../shared/types";
+import type { HarnessCommand } from "../../core/events";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 
 /**
@@ -31,6 +32,8 @@ export interface QaMemberSpec {
   status?: "working" | "idle" | "approval";
   autoReply?: boolean;
   blocks?: unknown[];
+  /** Seeded slash-command inventory for exercising the command palette in QA. */
+  commands?: HarnessCommand[];
 }
 
 export interface QaEmitInput {

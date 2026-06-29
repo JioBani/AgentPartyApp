@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, ListChecks, Search, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, ListChecks, Maximize2, Search, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -12,17 +12,43 @@ interface TranscriptProps {
 
 export function Transcript({ view, density, actions }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Whether the view is pinned to the bottom (true unless the user scrolled up).
+  const stickRef = useRef(true);
   const lastText = lastBlockText(view.transcript);
 
-  useLayoutEffect(() => {
+  const stickToBottom = () => {
     const node = scrollRef.current;
-    if (node) {
+    if (node && stickRef.current) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [view.transcript.length, lastText]);
+  };
+
+  // New content keeps the bottom pinned (only if the user hasn't scrolled up).
+  useLayoutEffect(stickToBottom, [view.transcript.length, lastText]);
+
+  // When the scroll area resizes (e.g. the composer auto-grows and shrinks this
+  // pane), re-pin to the bottom so the whole conversation appears to scroll up
+  // together — instead of the top staying put while the latest messages hide
+  // behind the composer.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => stickToBottom());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const onScroll = () => {
+    const node = scrollRef.current;
+    if (node) {
+      stickRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+    }
+  };
 
   return (
-    <div className={"wb-transcript density-" + density} ref={scrollRef}>
+    <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
       {view.status === "not-started" && view.transcript.length === 0 && (
         <div className="wb-transcript-empty">
           <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
@@ -152,7 +178,11 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
 }
 
 function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {
+  const [full, setFull] = useState(false);
   const arg = summarizeArg(block.input);
+  // The summary `arg` is ellipsis-clipped; show the FULL command/input in the body
+  // so a long bash command (or other arg) is never lost when expanded.
+  const fullInput = toolInputDetail(block.input);
   const result = formatResult(block.result);
   const failed = block.status === "failed";
   return (
@@ -163,8 +193,48 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}
       </summary>
+      {fullInput && (
+        // Command body scrolls within a capped height; the expand button opens a
+        // full, scrollable view (command + result) for very long content.
+        <div className="wb-tool-cmd-wrap">
+          <pre className="wb-pre wb-tool-cmd">{fullInput}</pre>
+          <button
+            type="button"
+            className="wb-tool-expand"
+            title="전체 보기"
+            aria-label="전체 보기"
+            onClick={(event) => { event.preventDefault(); event.stopPropagation(); setFull(true); }}
+          >
+            <Maximize2 size={12} />
+          </button>
+        </div>
+      )}
       {result && <pre className="wb-pre wb-tool-result">{result}</pre>}
+      {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </details>
+  );
+}
+
+/** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */
+function ToolDetailModal({ name, command, result, onClose }: { name: string; command: string; result: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="wb-tool-modal-backdrop" onClick={onClose}>
+      <div className="wb-tool-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="wb-tool-modal-head">
+          <span className="wb-mono wb-tool-name">{name}</span>
+          <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="wb-tool-modal-body">
+          {command && <pre className="wb-pre wb-tool-cmd">{command}</pre>}
+          {result && <pre className="wb-pre wb-tool-result">{result}</pre>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -391,12 +461,45 @@ function approvalCommand(input: unknown): string {
   return "";
 }
 
+/**
+ * Full input shown in the expanded tool body (the summary `arg` is clipped). For
+ * a command (bash) it's the raw command; otherwise the full input as JSON — so a
+ * long path/query/command is fully visible when expanded, never truncated.
+ */
+function toolInputDetail(input: unknown): string {
+  if (!input || typeof input !== "object") {
+    return "";
+  }
+  const record = input as Record<string, unknown>;
+  const command = record.command ?? record.cmd;
+  if (typeof command === "string") {
+    return `$ ${command}`;
+  }
+  if (Object.keys(record).length === 0) {
+    return "";
+  }
+  try {
+    return JSON.stringify(record, null, 2);
+  } catch {
+    return "";
+  }
+}
+
 function formatResult(result: unknown): string {
   if (result == null || result === "") {
     return "";
   }
   if (typeof result === "string") {
     return result;
+  }
+  // Anthropic tool_result content is an array of blocks (or one block); pull the
+  // text out so bash/tool output reads as plain text instead of escaped JSON.
+  const blocks = Array.isArray(result) ? result : [result];
+  const texts = blocks
+    .filter((b): b is { type: string; text: string } => Boolean(b) && typeof b === "object" && (b as any).type === "text" && typeof (b as any).text === "string")
+    .map((b) => b.text);
+  if (texts.length > 0) {
+    return texts.join("\n");
   }
   try {
     return JSON.stringify(result, null, 2);

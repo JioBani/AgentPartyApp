@@ -16,6 +16,8 @@ export interface MockHarnessOptions {
   permissionMode: string;
   /** When true, a user turn auto-produces a canned reply (nice for manual QA). */
   autoReply?: boolean;
+  /** Seeded slash-command inventory so the palette can be exercised in QA. */
+  commands?: ClaudeSessionSnapshot["slashCommands"];
 }
 
 /**
@@ -49,11 +51,12 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       turnCount: 0,
       queuedTurnCount: 0,
       pendingApprovalCount: 0,
+      slashCommands: options.commands,
     };
   }
 
   start(): void {
-    this.emitEvent({ type: "session", sessionId: this.snapshot.sessionId || this.snapshot.id, model: this.snapshot.model, permissionMode: this.snapshot.permissionMode, at: now() });
+    this.emitEvent({ type: "session", sessionId: this.snapshot.sessionId || this.snapshot.id, model: this.snapshot.model, permissionMode: this.snapshot.permissionMode, slashCommands: this.snapshot.slashCommands, at: now() });
     this.pushSnapshot();
   }
 
@@ -64,6 +67,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     }
     const event = { ...partial, at: partial.at || now() } as ClaudeNormalizedEvent;
     switch (event.type) {
+      case "session":
+        if (event.slashCommands) {
+          this.snapshot.slashCommands = event.slashCommands;
+        }
+        break;
       case "assistant_text_delta":
       case "reasoning_delta":
       case "tool_call":

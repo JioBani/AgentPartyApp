@@ -33,28 +33,38 @@ let removed = [];
 const props = {
   parties: [{ id: "p1", name: "P", createdAt: "", updatedAt: "" }], activePartyId: "p1", activePartyName: "P",
   views: [mkView("main"), mkView("alice")], openMembers: new Set(), workingByParty: { p1: 0 }, memberCountByParty: { p1: 2 },
-  width: 240, routes: [], onSelectParty: () => {}, onCreateParty: () => {}, onCreateMember: () => {}, onOpenMember: () => {},
+  width: 240, routes: [], defaultProfile: { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" },
+  onSelectParty: () => {}, onCreateParty: () => {}, onCreateMember: () => {}, onOpenMember: () => {},
   onRemoveMember: (name) => removed.push(name), onCollapse: () => {},
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(PartySidebar, props));
 await new Promise((r) => setTimeout(r, 80));
 
 const click = (el) => el?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+const rightClick = (el) => el?.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 50, clientY: 50 }));
 const rows = [...document.querySelectorAll(".wb-member-row")];
 const rowFor = (name) => rows.find((row) => row.querySelector(".wb-member-name")?.textContent === name);
+const tick = () => new Promise((r) => setTimeout(r, 30));
 
-console.log("\nMember-remove sidebar assertions:");
+console.log("\nMember-remove (right-click context menu) assertions:");
 assert(rows.length === 2, "both members rendered");
-assert(!rowFor("main")?.querySelector(".wb-member-remove"), "'main' has no remove control");
-const aliceRemove = rowFor("alice")?.querySelector(".wb-member-remove");
-assert(Boolean(aliceRemove), "'alice' has a remove control");
 
-click(aliceRemove); await new Promise((r) => setTimeout(r, 30));
-assert(removed.length === 0, "first click does NOT remove (arms instead)");
-assert(Boolean(rowFor("alice")?.querySelector(".wb-member-remove.is-armed")), "first click arms the control");
+// Right-click 'main' → no menu (main is not removable).
+rightClick(rowFor("main")); await tick();
+assert(!document.querySelector(".wb-ctx-menu"), "right-click on 'main' shows no context menu");
 
-click(rowFor("alice").querySelector(".wb-member-remove")); await new Promise((r) => setTimeout(r, 30));
-assert(removed.length === 1 && removed[0] === "alice", "second click calls onRemoveMember('alice')");
+// Right-click 'alice' → a context menu with a delete item appears; no removal yet.
+rightClick(rowFor("alice")); await tick();
+const ctx = document.querySelector(".wb-ctx-menu");
+assert(Boolean(ctx), "right-click on 'alice' opens a context menu");
+const del = ctx && [...ctx.querySelectorAll(".wb-ctx-item")].find((b) => /삭제하기/.test(b.textContent || ""));
+assert(Boolean(del), "context menu shows a '삭제하기' item");
+assert(removed.length === 0, "opening the menu does not remove anything yet");
+
+// Click '삭제하기' → onRemoveMember('alice'), menu closes.
+click(del); await tick();
+assert(removed.length === 1 && removed[0] === "alice", "clicking '삭제하기' calls onRemoveMember('alice')");
+assert(!document.querySelector(".wb-ctx-menu"), "menu closes after deleting");
 
 console.log(failures.length ? `\nMEMBER REMOVE FAILED (${failures.length})` : "\nMEMBER REMOVE PASSED");
 process.exit(failures.length ? 1 : 0);

@@ -65,11 +65,12 @@ const svc = new PartyApplicationService({ sessionManager, getWorkspacePath: () =
 
 console.log("\nParty bridge assertions:");
 
-// Create a party (auto-creates `main`) and start it to capture main's bridge.
+// Create a party: `main` is auto-created AND its session auto-init'd (no turn).
 const created = svc.createParty({ name: "team-qa" });
 const partyId = created.member?.partyId || created.currentPartyId;
-svc.startMember("main");
-assert(captured.length === 1, "starting a member creates exactly one session binding");
+assert(captured.length === 1, "creating a party auto-starts main's session (exactly one binding)");
+// main is born from the single runtime default profile (harness + model).
+assert(created.member?.name === "main" && created.member?.runtime === "claude-code" && created.member?.model === "sonnet", "main is created from the runtime default profile");
 const mainBinding = captured[0];
 assert(mainBinding?.identity?.member === "main" && mainBinding?.identity?.party === partyId, "binding identity is closure-bound to the member (party + name)");
 const bridge = mainBinding.bridge;

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, UsersRound, X } from "lucide-react";
 import type { InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
+import { defaultMemberProfileOf } from "../shared/types";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
@@ -27,11 +28,14 @@ export function App() {
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
-  const [globalRuntime, setGlobalRuntime] = useState({ routeKey: "", effort: "medium", permissionMode: "default" });
+  const [globalRuntime, setGlobalRuntime] = useState({ routeKey: "", effort: "medium", permissionMode: "default", reasoning: "" });
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
   // Tracks whether a live party broadcast has arrived, so a late-resolving
   // initial-state load cannot clobber it with a stale snapshot.
   const partyBroadcastSeen = useRef(false);
+  // Members with an in-flight session start, and members already prewarmed once.
+  const startingRef = useRef<Set<string>>(new Set());
+  const prewarmedRef = useRef<Set<string>>(new Set());
 
   const members = state.party.members;
   const sessions = state.sessions;
@@ -68,6 +72,7 @@ export function App() {
         routeKey: routeKeyForModel(next.settings.claudeModel, next.modelRoutes as RouteLike[]),
         effort: next.settings.claudeEffort,
         permissionMode: next.settings.claudePermissionMode,
+        reasoning: next.settings.claudeReasoning || "",
       });
     });
 
@@ -275,33 +280,63 @@ export function App() {
     return sessionId && sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
   }
 
+  // Starts a member's session if one isn't already active, returning its id.
+  // Starts with the MEMBER's own configured runtime — not the global default.
+  // Precedence: an explicit per-member runtime draft (RuntimeModal) > the
+  // member's stored config (set at creation) > the global default. Falling back
+  // straight to the global model here overwrote a member's model (e.g. a Kimi
+  // member flipped to the global Sonnet on first chat). `startingRef` guards
+  // against concurrent starts for the same member.
+  async function ensureSession(name: string): Promise<string | undefined> {
+    const existing = sessionIdFor(name);
+    if (existing) {
+      return existing;
+    }
+    if (startingRef.current.has(name)) {
+      return undefined;
+    }
+    startingRef.current.add(name);
+    try {
+      const draft = runtimeDrafts[name];
+      const member = members.find((item) => item.name === name);
+      const memberRoute = routes.find((route) => route.model === member?.model || route.runtimeModel === member?.model);
+      const result = await window.agentParty.startPartyMember(name, {
+        selectedProviderId: draft?.providerId || (memberRoute?.providerId as any) || state.settings.selectedProviderId,
+        model: draft?.model || member?.model || state.settings.claudeModel,
+        effort: (draft?.effort as any) || (member?.effort as any) || state.settings.claudeEffort,
+        permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || state.settings.claudePermissionMode,
+      });
+      await applyPartyResult(result);
+      return result.session?.id;
+    } finally {
+      startingRef.current.delete(name);
+    }
+  }
+
   const actions: WorkbenchActions = {
     async sendMessage(name, text) {
-      let sessionId = sessionIdFor(name);
-      if (!sessionId) {
-        // Start with the MEMBER's own configured runtime — not the global
-        // default. Precedence: an explicit per-member runtime draft (RuntimeModal)
-        // > the member's stored config (set at creation) > the global default.
-        // Falling back straight to the global model here overwrote a member's
-        // model (e.g. a Kimi member flipped to the global Sonnet on first chat).
-        const draft = runtimeDrafts[name];
-        const member = members.find((item) => item.name === name);
-        const memberRoute = routes.find((route) => route.model === member?.model || route.runtimeModel === member?.model);
-        const result = await window.agentParty.startPartyMember(name, {
-          selectedProviderId: draft?.providerId || (memberRoute?.providerId as any) || state.settings.selectedProviderId,
-          model: draft?.model || member?.model || state.settings.claudeModel,
-          effort: (draft?.effort as any) || (member?.effort as any) || state.settings.claudeEffort,
-          permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || state.settings.claudePermissionMode,
-        });
-        await applyPartyResult(result);
-        sessionId = result.session?.id;
-      }
+      const sessionId = await ensureSession(name);
       if (!sessionId) {
         setPartyNotice(`'${name}' 세션을 시작하지 못했습니다.`);
         return;
       }
-      setLogsBySession((current) => appendBlock(current, sessionId!, { id: crypto.randomUUID(), kind: "user", text, at: nowTime() }));
+      setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, at: nowTime() }));
       await window.agentParty.sendMessage(sessionId, text);
+    },
+    prewarm(name) {
+      // At-most-once per member: init the session ahead of the first turn so the
+      // palette can show the harness's real command/skill inventory. A failure is
+      // surfaced (not silently swallowed) and not retried in a loop — sending a
+      // message later goes through ensureSession again.
+      if (sessionIdFor(name) || prewarmedRef.current.has(name)) {
+        return;
+      }
+      prewarmedRef.current.add(name);
+      void ensureSession(name).then((id) => {
+        if (!id) {
+          setPartyNotice(`'${name}' 세션을 미리 준비하지 못했습니다. 메시지를 보내면 다시 시도합니다.`);
+        }
+      });
     },
     approve(name, requestId, behavior) {
       const sessionId = sessionIdFor(name);
@@ -385,11 +420,13 @@ export function App() {
     if (!route) {
       return;
     }
+    // The single runtime default — used for both `main` and member creation.
     const settings = await window.agentParty.updateSettings({
       selectedHarnessId: (route.harnessId as any) || "claude-code",
       selectedProviderId: (route.providerId as any) || "anthropic",
       claudeModel: route.model,
       claudeEffort: globalRuntime.effort as any,
+      claudeReasoning: globalRuntime.reasoning || undefined,
       claudePermissionMode: globalRuntime.permissionMode as any,
     });
     setState((current) => ({ ...current, settings }));
@@ -459,6 +496,7 @@ export function App() {
                 activePartyId={state.party.currentPartyId}
                 views={views}
                 routes={routes}
+                defaultProfile={defaultMemberProfileOf(state.settings)}
                 debugEnabled={state.settings.debugEnabled}
                 sidebarOpen={sidebarOpen}
                 layoutRequest={layoutRequest}

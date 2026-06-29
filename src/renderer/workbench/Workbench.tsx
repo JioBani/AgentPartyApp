@@ -1,6 +1,6 @@
 import { Fragment, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
-import type { PartyDefinition } from "../../shared/types";
+import type { DefaultMemberProfile, PartyDefinition } from "../../shared/types";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { RouteLike } from "./routes";
@@ -32,6 +32,7 @@ interface WorkbenchProps {
   activePartyId?: string;
   views: MemberView[];
   routes: RouteLike[];
+  defaultProfile: DefaultMemberProfile;
   debugEnabled: boolean;
   sidebarOpen: boolean;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
@@ -74,7 +75,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, defaultProfile, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -328,6 +329,7 @@ export function Workbench(props: WorkbenchProps) {
             memberCountByParty={memberCountByParty}
             width={sidebarWidth}
             routes={routes}
+            defaultProfile={defaultProfile}
             onSelectParty={onSelectParty}
             onCreateParty={onCreateParty}
             onCreateMember={handleCreateMember}

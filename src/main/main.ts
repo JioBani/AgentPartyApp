@@ -29,6 +29,19 @@ app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 
+// One running instance owns all windows for a workspace (shared in-memory
+// source + a single engine per workspace storage). A second launch — Explorer
+// "open here", another `agent-party` call — must forward its argv to us instead
+// of starting a rival process. QA/e2e launches a single process, so the lock is
+// harmless there. Skipped when QA explicitly allows parallel instances.
+const allowMultiInstance = process.env.AGENTPARTY_ALLOW_MULTI_INSTANCE === "1";
+const gotInstanceLock = allowMultiInstance || app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv) => handleSecondInstance(argv));
+}
+
 let router: EmbeddedRouter | undefined;
 let sessionManager: SessionManager | undefined;
 let workspaceManager: WorkspaceManager | undefined;
@@ -37,11 +50,53 @@ let automationApi: AutomationApiServer | undefined;
 let appController: AppController | undefined;
 let engineRegistry: EngineRegistry | undefined;
 
-/** `AgentParty.exe --workspace <uri>` (used by the agent-party CLI auto-launch). */
-function launchWorkspace(): string | undefined {
-  const index = process.argv.indexOf("--workspace");
-  const value = index >= 0 ? process.argv[index + 1] : "";
+/**
+ * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
+ * launch (`agent-party` CLI, Explorer "open here") and by the single-instance
+ * `second-instance` handler that receives the new process's argv.
+ */
+function workspaceFromArgv(argv: string[]): string | undefined {
+  const index = argv.indexOf("--workspace");
+  const value = index >= 0 ? argv[index + 1] : "";
   return value ? serializeWorkspaceLocation(parseWorkspaceLocation(value)) : undefined;
+}
+
+function launchWorkspace(): string | undefined {
+  return workspaceFromArgv(process.argv);
+}
+
+/** Brings an open window to the foreground (restoring it if minimized). */
+function focusWindow(window: BrowserWindow): void {
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.show();
+  window.focus();
+}
+
+/**
+ * Routes a re-launch (Explorer "open here", a second `agent-party` invocation)
+ * into the already-running instance: focus the window already viewing that
+ * workspace, else open a new window for it — never a duplicate engine on the
+ * same workspace storage.
+ */
+function handleSecondInstance(argv: string[]): void {
+  const workspace = workspaceFromArgv(argv);
+  const target = workspace ? windowRegistry?.forWorkspace(workspace)[0] : undefined;
+  if (target) {
+    focusWindow(target.window);
+    return;
+  }
+  if (workspace) {
+    void createWindow(workspace);
+    return;
+  }
+  const existing = windowRegistry?.all()[0];
+  if (existing) {
+    focusWindow(existing.window);
+  } else {
+    void createWindow(defaultWorkspace());
+  }
 }
 
 function defaultWorkspace(): string {
@@ -373,10 +428,12 @@ function parsePort(baseUrl: string): number {
   }
 }
 
-app.whenReady().then(bootstrap).catch((error) => {
-  dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
-  app.quit();
-});
+if (gotInstanceLock) {
+  app.whenReady().then(bootstrap).catch((error) => {
+    dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
+}
 
 app.on("activate", () => {
   if (registry().all().length === 0) {

@@ -173,6 +173,7 @@ export class LocalEngine implements EngineConnection {
     for (const spec of input.members || []) {
       const sessionId = this.startMockMember(spec);
       if (sessionId) {
+        this.applyCommands(sessionId, spec.commands);
         this.applyBlocks(sessionId, spec.blocks);
         this.applyStatus(sessionId, spec.status);
       }
@@ -184,6 +185,7 @@ export class LocalEngine implements EngineConnection {
   async qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }> {
     const sessionId = this.startMockMember(spec);
     if (sessionId) {
+      this.applyCommands(sessionId, spec.commands);
       this.applyBlocks(sessionId, spec.blocks);
       this.applyStatus(sessionId, spec.status);
     }
@@ -250,6 +252,15 @@ export class LocalEngine implements EngineConnection {
     for (const event of blocks) {
       this.deps.sessionManager.injectMockEvent(sessionId, event);
     }
+  }
+
+  private applyCommands(sessionId: string | undefined, commands?: QaMemberSpec["commands"]): void {
+    if (!sessionId || !commands || commands.length === 0) {
+      return;
+    }
+    // A `session` event carrying the inventory is exactly what ClaudeAdapter
+    // emits on init, so the mock drives the palette identically.
+    this.deps.sessionManager.injectMockEvent(sessionId, { type: "session", sessionId, slashCommands: commands });
   }
 
   private applyStatus(sessionId: string | undefined, status?: "working" | "idle" | "approval"): void {

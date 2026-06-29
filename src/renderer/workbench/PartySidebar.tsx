@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Check, ChevronsLeft, Plus, Trash2, Users, X } from "lucide-react";
-import type { PartyDefinition } from "../../shared/types";
+import type { DefaultMemberProfile, PartyDefinition } from "../../shared/types";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
 import { memberColorVars } from "../theme/memberColors";
@@ -27,6 +27,7 @@ interface PartySidebarProps {
   memberCountByParty: Record<string, number>;
   width: number;
   routes: RouteLike[];
+  defaultProfile: DefaultMemberProfile;
   onSelectParty: (partyId: string) => void;
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
@@ -36,11 +37,30 @@ interface PartySidebarProps {
 }
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, defaultProfile, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
-  // Two-click confirm: the first trash click arms a member, the second removes it.
-  const [armed, setArmed] = useState("");
+  // Right-click context menu for a member row ({name, x, y} at the cursor).
+  const [menu, setMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+
+  // Dismiss the context menu on any outside click, scroll, or Escape.
+  useEffect(() => {
+    if (!menu) {
+      return;
+    }
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -97,6 +117,7 @@ export function PartySidebar(props: PartySidebarProps) {
         {creating && (
           <MemberWizard
             routes={routes}
+            defaultProfile={defaultProfile}
             onCancel={() => setCreating(false)}
             onCreate={(input) => { onCreateMember(input); setCreating(false); }}
           />
@@ -105,45 +126,47 @@ export function PartySidebar(props: PartySidebarProps) {
         <div className="wb-member-list">
           {views.length === 0 && <div className="wb-empty">No members</div>}
           {views.map((view) => {
-            const isArmed = armed === view.name;
             const removable = view.name !== "main";
             return (
               <div
                 role="button"
                 tabIndex={0}
                 key={view.name}
-                className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "")}
+                className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "") + (menu?.name === view.name ? " is-menu" : "")}
                 style={memberColorVars(view.name)}
                 onClick={() => onOpenMember(view.name)}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
-                onMouseLeave={() => setArmed((current) => (current === view.name ? "" : current))}
+                onContextMenu={(event) => {
+                  if (!removable) {
+                    return; // 'main' cannot be removed — no menu.
+                  }
+                  event.preventDefault();
+                  setMenu({ name: view.name, x: event.clientX, y: event.clientY });
+                }}
               >
                 <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
                 <span className="wb-member-name">{view.name}</span>
                 {view.pendingApproval && <span className="wb-member-badge">승인</span>}
                 {!view.pendingApproval && view.unread > 0 && <span className="wb-member-unread">{view.unread}</span>}
                 {!view.pendingApproval && view.unread === 0 && <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>}
-                {removable && (
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    aria-label={isArmed ? `${view.name} 영구 삭제 확인` : `${view.name} 삭제`}
-                    title={isArmed ? "한 번 더 눌러 영구 삭제" : "멤버 삭제"}
-                    className={"wb-member-remove" + (isArmed ? " is-armed" : "")}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (isArmed) { onRemoveMember(view.name); setArmed(""); }
-                      else { setArmed(view.name); }
-                    }}
-                  >
-                    {isArmed ? <Check size={13} /> : <Trash2 size={13} />}
-                  </span>
-                )}
               </div>
             );
           })}
         </div>
       </section>
+
+      {menu && (
+        // Fixed to the viewport at the cursor; click handlers above close it.
+        <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="wb-ctx-item is-danger"
+            onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
+          >
+            <Trash2 size={13} /> 삭제하기
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

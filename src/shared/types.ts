@@ -2,6 +2,23 @@ import type { ClaudeSessionSnapshot } from "../core/events";
 
 export type PermissionModeSetting = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
 
+/**
+ * The default creation profile, *derived* from the single runtime defaults (see
+ * {@link defaultMemberProfileOf}). `main` is created from it and the member
+ * wizard is prefilled from it — so a member is creatable with just
+ * "next, next, next". Not stored separately: the one source of truth is the
+ * runtime defaults on AppSettings.
+ */
+export interface DefaultMemberProfile {
+  harness: "claude-code" | "codex";
+  model: string;
+  effort: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Reasoning/thinking mode (adaptive | enabled | disabled). */
+  reasoning?: string;
+  reasoningBudget?: number;
+  permissionMode: PermissionModeSetting;
+}
+
 export interface AppSettings {
   workspacePath: string;
   claudeExecutablePath: string;
@@ -9,6 +26,9 @@ export interface AppSettings {
   selectedProviderId: "anthropic" | "openrouter" | "openai" | "custom";
   claudeModel: string;
   claudeEffort: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Default reasoning/thinking mode for new members (adaptive | enabled | disabled). */
+  claudeReasoning?: string;
+  claudeReasoningBudget?: number;
   claudePermissionMode: PermissionModeSetting;
   claudeSafeMode: boolean;
   debugEnabled: boolean;
@@ -16,6 +36,18 @@ export interface AppSettings {
   routerAuthToken: string;
   openRouterApiKey: string;
   automationApiPort: number;
+}
+
+/** Derives the single member-creation default from the runtime defaults. */
+export function defaultMemberProfileOf(settings: AppSettings): DefaultMemberProfile {
+  return {
+    harness: settings.selectedHarnessId,
+    model: settings.claudeModel,
+    effort: settings.claudeEffort,
+    reasoning: settings.claudeReasoning,
+    reasoningBudget: settings.claudeReasoningBudget,
+    permissionMode: settings.claudePermissionMode,
+  };
 }
 
 export interface AuthProviderState {

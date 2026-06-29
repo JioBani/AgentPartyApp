@@ -76,6 +76,16 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
 
   const grouped = useMemo(() => groupByProvider(entries), [entries]);
 
+  // Harness is fixed once a turn has run: switching harness means a fresh
+  // session, which would discard the conversation. Before the first turn it is
+  // free to change (prewarm/init only). So models of a *different* harness than
+  // the member's current one are locked once turnCount > 0.
+  const currentHarness = useMemo(() => {
+    const route = routes.find((item) => routeKey(item) === currentKey);
+    return (route?.harnessId as string) || "claude-code";
+  }, [routes, currentKey]);
+  const harnessLocked = (view.session?.snapshot.turnCount ?? 0) > 0;
+
   function apply() {
     actions.applyRuntime(view.name, {
       route: selected?.route,
@@ -104,7 +114,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
 
         <div className="wb-modal-body">
           <section className="wb-model-list">
-            <div className="wb-modal-label">Model <span className="wb-mono">{entries.length} available</span></div>
+            <div className="wb-modal-label">Model <span className="wb-mono">{entries.length} available</span>{harnessLocked && <span className="wb-mono wb-modal-note"> · 하네스 잠금 ({currentHarness})</span>}</div>
             {grouped.map((group) => (
               <div className="wb-model-group" key={group.provider}>
                 <div className="wb-model-provider">
@@ -114,12 +124,15 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                 </div>
                 {group.entries.map((entry) => {
                   const key = routeKey(entry.route);
+                  const locked = harnessLocked && (entry.route.harnessId || "claude-code") !== currentHarness;
                   return (
                     <button
                       type="button"
                       key={key}
-                      className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
-                      onClick={() => setSelectedKey(key)}
+                      disabled={locked}
+                      title={locked ? "턴이 시작된 뒤에는 하네스를 바꿀 수 없습니다 (새 세션 필요)" : undefined}
+                      className={"wb-model-row" + (key === selectedKey ? " is-selected" : "") + (locked ? " is-locked" : "")}
+                      onClick={() => { if (!locked) setSelectedKey(key); }}
                     >
                       <span className="wb-model-name">
                         <span className="wb-mono">{entry.route.label || entry.meta.name}</span>

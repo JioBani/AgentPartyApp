@@ -1,4 +1,4 @@
-import { PointerEvent } from "react";
+import { PointerEvent, useEffect } from "react";
 import { ChevronDown, ChevronsDownUp, RotateCcw, Square } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -30,6 +30,17 @@ export function Panel(props: PanelProps) {
   const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onTabPointerDown } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
+
+  // Prewarm the visible member's session (init only, no turn) so its composer
+  // palette can show the harness's real command/skill inventory before the
+  // first message. Idempotent + at-most-once is enforced in the action.
+  const activeName = view?.name;
+  const hasSession = Boolean(view?.session);
+  useEffect(() => {
+    if (activeName && !hasSession) {
+      actions.prewarm(activeName);
+    }
+  }, [activeName, hasSession, actions]);
 
   return (
     <div

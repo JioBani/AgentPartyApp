@@ -172,10 +172,10 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
 export function RuntimeSettingsView({ routes, harnesses, draft, router, settings, onDraft, onApply, onToggleDebug }: {
   routes: RouteLike[];
   harnesses: any[];
-  draft: { routeKey: string; effort: string; permissionMode: string };
+  draft: { routeKey: string; effort: string; permissionMode: string; reasoning: string };
   router: string;
   settings: InitialAppState["settings"];
-  onDraft: (value: { routeKey: string; effort: string; permissionMode: string }) => void;
+  onDraft: (value: { routeKey: string; effort: string; permissionMode: string; reasoning: string }) => void;
   onApply: () => void;
   onToggleDebug: (enabled: boolean) => void;
 }) {
@@ -183,15 +183,15 @@ export function RuntimeSettingsView({ routes, harnesses, draft, router, settings
     <section className="legacy-view">
       <div className="split-grid">
         <section className="card">
-          <div className="card-title">기본 런타임</div>
+          <div className="card-title">기본 생성 조건</div>
           <Info label="Router" value={router} />
-          <Info label="Harness" value={settings.selectedHarnessId} />
           <Info label="Provider" value={settings.selectedProviderId} />
-          <div className="notice">이 기본값은 새 멤버 세션을 시작할 때 사용됩니다.</div>
-          <label className="field">모델<select value={draft.routeKey} onChange={(event) => onDraft({ ...draft, routeKey: event.target.value })}>{routes.map((route) => <option key={routeKey(route)} value={routeKey(route)} disabled={route.enabled === false}>{(route.label || route.model) + " - " + (route.providerId || "anthropic")}</option>)}</select></label>
+          <div className="notice">새 멤버(및 main)가 이 조건으로 생성됩니다. 모델 라우트가 하네스를 결정합니다.</div>
+          <label className="field">모델 (하네스 포함)<select value={draft.routeKey} onChange={(event) => onDraft({ ...draft, routeKey: event.target.value })}>{routes.map((route) => <option key={routeKey(route)} value={routeKey(route)} disabled={route.enabled === false}>{(route.label || route.model) + " - " + (route.harnessId || "claude-code")}</option>)}</select></label>
           <label className="field">추론 강도<select value={draft.effort} onChange={(event) => onDraft({ ...draft, effort: event.target.value })}>{["low", "medium", "high", "xhigh", "max"].map((effort) => <option key={effort} value={effort}>{effort}</option>)}</select></label>
+          <label className="field">추론 모드<select value={draft.reasoning} onChange={(event) => onDraft({ ...draft, reasoning: event.target.value })}><option value="">모델 기본</option>{["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
           <label className="field">권한 모드<select value={draft.permissionMode} onChange={(event) => onDraft({ ...draft, permissionMode: event.target.value })}>{permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>
-          <div className="field-actions"><button type="button" className="accent-btn" onClick={onApply}>기본값 적용</button></div>
+          <div className="field-actions"><button type="button" className="accent-btn" onClick={onApply}>기본 생성 조건 저장</button></div>
           <label className="toggle-line"><input type="checkbox" checked={settings.debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} />디버그 로그</label>
         </section>
         <section className="card">

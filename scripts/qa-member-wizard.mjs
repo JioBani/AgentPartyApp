@@ -49,7 +49,8 @@ const routes = [
 
 let created = null;
 const root = reactDom.createRoot(document.getElementById("root"));
-root.render(React.createElement(MemberWizard, { routes, onCancel: () => {}, onCreate: (input) => { created = input; } }));
+const defaultProfile = { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" };
+root.render(React.createElement(MemberWizard, { routes, defaultProfile, onCancel: () => {}, onCreate: (input) => { created = input; } }));
 await tick(80);
 
 const q = (sel) => document.querySelector(sel);

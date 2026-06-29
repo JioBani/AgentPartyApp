@@ -1,9 +1,11 @@
-import { FormEvent, KeyboardEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { AtSign, CircleStop, Maximize2, Paperclip, Send } from "lucide-react";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
 import { PERMISSION_OPTIONS } from "./controls";
+import { CommandPalette } from "./CommandPalette";
+import { useCommandPalette } from "./useCommandPalette";
 
 interface ComposerProps {
   view: MemberView;
@@ -16,9 +18,37 @@ interface ComposerProps {
  * row; narrow collapses to a single-line input so the Send/Stop control stays
  * reachable. Stop replaces Send while the member is working.
  */
+/** Max auto-grow height (px) before the textarea scrolls internally. */
+const TEXTAREA_MAX_HEIGHT = 220;
+
 export function Composer({ view, density, actions }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Command/skill palette — harness-aware (`/` for claude-code/codex, etc.).
+  const palette = useCommandPalette({
+    runtime: view.member.runtime,
+    discovered: view.session?.snapshot.slashCommands,
+    draft,
+    setDraft,
+    onAction: (action) => {
+      if (action === "compact") actions.compact(view.name);
+      else if (action === "restart") actions.restart(view.name);
+      else if (action === "interrupt") actions.interrupt(view.name);
+    },
+  });
+
+  // Grow the textarea with its content (up to a cap, then it scrolls), and
+  // shrink back when the draft is cleared/shortened.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) {
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px";
+  }, [draft]);
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -31,10 +61,18 @@ export function Composer({ view, density, actions }: ComposerProps) {
   }
 
   function onKeyDown(event: KeyboardEvent) {
+    // The palette claims navigation/selection keys while it is open.
+    if (palette.handleKeyDown(event)) {
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       submit();
     }
   }
+
+  const palettePopover = palette.open ? (
+    <CommandPalette commands={palette.matches} activeIndex={palette.activeIndex} onHover={palette.setActiveIndex} onSelect={palette.apply} />
+  ) : null;
 
   const stop = view.busy;
   const iconOnly = stop ? (
@@ -62,6 +100,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   if (density === "narrow" && !expanded) {
     return (
       <form className="wb-composer is-narrow" onSubmit={submit}>
+        {palettePopover}
         <div className="wb-composer-bar">
           <input
             className="wb-composer-input"
@@ -80,8 +119,10 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   return (
     <form className="wb-composer" onSubmit={submit}>
+      {palettePopover}
       <div className="wb-composer-box">
         <textarea
+          ref={textareaRef}
           className="wb-composer-textarea"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
