@@ -34,7 +34,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         next = upsertToolBlock(next, sessionId, event);
       }
     } else if (event.type === "approval_request") {
-      next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, at: nowTime() });
+      next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, at: nowTime() });
     } else if (event.type === "approval_resolved") {
       next = markApprovalResolved(next, sessionId, event.requestId, event.decision);
     } else if (event.type === "turn_complete") {

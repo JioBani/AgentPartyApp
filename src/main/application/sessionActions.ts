@@ -1,4 +1,5 @@
 import type { EngineConnection } from "../engine/engineConnection";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 
 export type SessionActionName =
   | "send"
@@ -10,6 +11,7 @@ export type SessionActionName =
   | "effort"
   | "thinking"
   | "permission"
+  | "codex-policy"
   | "approve";
 
 type SessionActionHandler = (engine: EngineConnection, sessionId: string, body: any) => Promise<unknown>;
@@ -24,6 +26,7 @@ const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
   effort: (engine, sessionId, body) => engine.setSessionEffort(sessionId, String(body.effort || "")),
   thinking: (engine, sessionId, body) => engine.setSessionThinking(sessionId, String(body.mode || ""), typeof body.budget === "number" ? body.budget : undefined),
   permission: (engine, sessionId, body) => engine.setSessionPermissionMode(sessionId, String(body.permissionMode || "")),
+  "codex-policy": (engine, sessionId, body) => engine.setSessionCodexPolicy(sessionId, body.policy as CodexPolicy),
   approve: (engine, sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
 };
 

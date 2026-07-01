@@ -338,12 +338,12 @@ export function App() {
         }
       });
     },
-    approve(name, requestId, behavior) {
+    approve(name, requestId, behavior, updatedInput) {
       const sessionId = sessionIdFor(name);
       if (!sessionId) {
         return;
       }
-      void window.agentParty.approve(sessionId, requestId, behavior);
+      void window.agentParty.approve(sessionId, requestId, behavior, updatedInput);
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, behavior));
     },
     answerQuestion(name, requestId, input, answers) {
@@ -404,6 +404,12 @@ export function App() {
       const sessionId = sessionIdFor(name);
       if (sessionId) {
         void window.agentParty.setThinking(sessionId, mode, budget);
+      }
+    },
+    setCodexPolicy(name, policy) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) {
+        void window.agentParty.setCodexPolicy(sessionId, policy);
       }
     },
     setPermissionMode(name, mode) {

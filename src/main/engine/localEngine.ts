@@ -1,4 +1,5 @@
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput } from "../../shared/types";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 import { workspaceKey } from "../../shared/workspaceLocation";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
@@ -128,6 +129,10 @@ export class LocalEngine implements EngineConnection {
 
   async setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
     this.deps.sessionManager.setPermissionMode(sessionId, permissionMode);
+  }
+
+  async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {
+    this.deps.sessionManager.setCodexPolicy(sessionId, policy);
   }
 
   async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {

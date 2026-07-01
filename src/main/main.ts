@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen } from "electron";
 import { EmbeddedRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -72,6 +72,39 @@ function launchWorkspace(): string | undefined {
   return workspaceFromArgv(process.argv);
 }
 
+/**
+ * Positions a new window on a chosen monitor when `AGENTPARTY_WINDOW_DISPLAY` is
+ * set (`left` | `right` | a display index). Used by QA/e2e so the real window
+ * opens on the left monitor and doesn't cover the user's other monitor. No-op
+ * (normal launch behavior) when the env var is absent.
+ */
+function placeWindowOnDisplay(window: BrowserWindow): void {
+  const target = process.env.AGENTPARTY_WINDOW_DISPLAY;
+  if (!target) {
+    return;
+  }
+  try {
+    const displays = [...screen.getAllDisplays()].sort((a, b) => a.bounds.x - b.bounds.x);
+    if (displays.length === 0) {
+      return;
+    }
+    const index = Number(target);
+    const display = Number.isInteger(index) ? displays[Math.max(0, Math.min(index, displays.length - 1))]
+      : target === "right" ? displays[displays.length - 1]
+      : displays[0];
+    const area = display.workArea;
+    const [w, h] = window.getSize();
+    const width = Math.min(w, area.width);
+    const height = Math.min(h, area.height);
+    const x = Math.round(area.x + Math.max(0, (area.width - width) / 2));
+    const y = Math.round(area.y + Math.max(0, (area.height - height) / 2));
+    window.setBounds({ x, y, width, height });
+    log("info", "window", "positioned on display", { target, x, y, width, height });
+  } catch (error) {
+    log("warn", "window", "display positioning failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 /** Brings an open window to the foreground (restoring it if minimized). */
 function focusWindow(window: BrowserWindow): void {
   if (window.isMinimized()) {
@@ -129,6 +162,8 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
       backgroundThrottling: false,
     },
   });
+
+  placeWindowOnDisplay(window);
 
   const entry = registry().register(window, workspacePath);
   window.on("closed", () => {
@@ -378,6 +413,7 @@ function registerIpc(): void {
   handle("session:setEffort", async (event, sessionId: string, effort: string) => controller().setSessionEffort(senderWorkspace(event), sessionId, effort));
   handle("session:setThinking", async (event, sessionId: string, mode: string, budget?: number) => controller().setSessionThinking(senderWorkspace(event), sessionId, mode, budget));
   handle("session:setPermissionMode", async (event, sessionId: string, permissionMode: string) => controller().setSessionPermissionMode(senderWorkspace(event), sessionId, permissionMode));
+  handle("session:setCodexPolicy", async (event, sessionId: string, policy: any) => controller().setSessionCodexPolicy(senderWorkspace(event), sessionId, policy));
   handle("session:approve", async (event, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => {
     await controller().approveSession(senderWorkspace(event), sessionId, requestId, behavior, updatedInput, message);
   });

@@ -1,4 +1,5 @@
 import type { RouteLike } from "./routes";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 
 /**
  * Command surface a panel needs, addressed by member name. The App shell maps
@@ -14,7 +15,12 @@ export interface WorkbenchActions {
    * and at-most-once per member; a no-op when a session is already active.
    */
   prewarm(memberName: string): void;
-  approve(memberName: string, requestId: string, behavior: "allow" | "deny"): void;
+  /**
+   * Resolves an approval request. `updatedInput` carries request-specific extras —
+   * for Codex, `{ codexDecision: "once" | "session" | "always" | "decline" }` so the
+   * card's richer choice reaches the harness (once/session/prefix-rule/decline).
+   */
+  approve(memberName: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): void;
   /**
    * Answers an AskUserQuestion interaction: allows the tool with the chosen
    * answers folded into its input (`answers` = question text -> selected label),
@@ -28,4 +34,6 @@ export interface WorkbenchActions {
   setEffort(memberName: string, effort: string): void;
   setThinking(memberName: string, mode: string, budget?: number): void;
   setPermissionMode(memberName: string, mode: string): void;
+  /** Codex two-axis safety model (sandbox × approval + guardian); applied live. */
+  setCodexPolicy(memberName: string, policy: CodexPolicy): void;
 }

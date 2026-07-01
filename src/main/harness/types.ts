@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/events";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 
 export type HarnessId = "claude-code" | "codex";
 
@@ -16,6 +17,8 @@ export interface HarnessSession extends EventEmitter {
   setEffort(effort: string): void;
   setThinking(mode: string, budget?: number): void;
   setPermissionMode(permissionMode: string): void;
+  /** Codex-only: update the two-axis safety model live. Absent on Claude. */
+  setCodexPolicy?(policy: CodexPolicy): void;
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void;
   on(event: "event", listener: (event: ClaudeNormalizedEvent) => void): this;
   on(event: "snapshot", listener: (snapshot: ClaudeSessionSnapshot) => void): this;

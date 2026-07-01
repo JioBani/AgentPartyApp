@@ -107,7 +107,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
             <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
               <span className="wb-dot" /> {view.name}
             </span>
-            <span className="wb-mono wb-modal-sub">Claude Code</span>
+            <span className="wb-mono wb-modal-sub">{view.member.runtime === "codex" ? "Codex" : "Claude Code"}</span>
           </div>
           <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
         </header>

@@ -1,5 +1,6 @@
 import type { AppSettings, CreateMemberInput, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
 import { defaultMemberProfileOf } from "../../shared/types";
+import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
 
 export function createPartyDefinition(name: string, now = new Date().toISOString()): PartyDefinition {
   return {
@@ -21,17 +22,20 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
   }
 
   const profile = defaultMemberProfileOf(settings);
+  const runtime = normalizeRuntime(input.runtime || profile.harness);
   return {
     partyId: input.partyId,
     name,
     role,
-    runtime: normalizeRuntime(input.runtime || profile.harness),
+    runtime,
     status: "idle",
     model: input.model || profile.model,
     effort: input.effort || profile.effort,
     reasoning: input.reasoning ?? profile.reasoning,
     reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
     permissionMode: input.permissionMode || profile.permissionMode,
+    // Codex members get the two-axis default (Auto); Claude members don't use it.
+    codexPolicy: runtime === "codex" ? { ...DEFAULT_CODEX_POLICY } : undefined,
     createdAt: now,
     updatedAt: now,
   };

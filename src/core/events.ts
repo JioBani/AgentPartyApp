@@ -47,6 +47,8 @@ export interface ClaudeSessionSnapshot {
   pendingApprovalCount?: number;
   /** Live inventory of slash commands the harness reports for this session. */
   slashCommands?: HarnessCommand[];
+  /** Codex two-axis safety model (sandbox × approval + guardian); Codex sessions only. */
+  codexPolicy?: import("../shared/codexPolicy").CodexPolicy;
 }
 
 export interface ResumableSessionInfo {
@@ -69,7 +71,7 @@ export type ClaudeNormalizedEvent =
   | { type: "reasoning_delta"; text: string; blockIndex?: number; at: string }
   | { type: "thinking_tokens"; estimatedTokens: number; delta?: number; at: string }
   | { type: "tool_call"; id: string; name: string; input?: unknown; status: "started" | "completed" | "failed"; result?: unknown; at: string }
-  | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; at: string }
+  | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; at: string }

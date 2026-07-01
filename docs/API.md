@@ -187,6 +187,20 @@ Changes permission mode.
 { "permissionMode": "default" }
 ```
 
+### `POST /api/sessions/:id/codex-policy`
+
+Updates a **Codex** session's two-axis safety model live (sandbox mode ×
+approval policy + guardian). Takes effect on the next turn. Errors if the session
+is not a Codex harness.
+
+```json
+{ "policy": { "sandbox": "workspace-write", "approval": "on-request", "guardian": false } }
+```
+
+- `sandbox`: `read-only` | `workspace-write` | `danger-full-access`
+- `approval`: `untrusted` | `on-request` | `never`
+- `guardian`: route approvals through an auto-review reviewer.
+
 ### `POST /api/sessions/:id/approve`
 
 Responds to a pending approval request.
@@ -199,6 +213,18 @@ Responds to a pending approval request.
   "message": ""
 }
 ```
+
+`behavior` is the coarse allow/deny. `updatedInput` carries request-specific
+extras:
+
+- **Codex approvals** — `{ "codexDecision": "once" | "session" | "always" | "decline" }`
+  picks the richer choice the harness supports. `once` = accept this request,
+  `session` = don't ask again this session, `always` = record a prefix rule
+  (execpolicy amendment) so the same command auto-approves later (command
+  approvals only; degrades to `session` when no rule was offered), `decline` =
+  deny. When omitted, `behavior` maps to `once`/`decline`.
+- **AskUserQuestion / Codex request-user-input** — `{ "answers": { "<question>": "<label>" } }`
+  folds the chosen answers back into the tool input.
 
 ## AgentParty Parties
 

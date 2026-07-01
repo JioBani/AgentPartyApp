@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, WorkspaceDisplay } from "../../shared/types";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
@@ -202,6 +203,10 @@ export class AppController {
 
   setSessionPermissionMode(workspacePath: string, sessionId: string, permissionMode: string): Promise<void> {
     return this.engineFor(workspacePath).setSessionPermissionMode(sessionId, permissionMode);
+  }
+
+  setSessionCodexPolicy(workspacePath: string, sessionId: string, policy: CodexPolicy): Promise<void> {
+    return this.engineFor(workspacePath).setSessionCodexPolicy(sessionId, policy);
   }
 
   approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {

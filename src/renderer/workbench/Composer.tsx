@@ -6,6 +6,9 @@ import { Dropdown } from "./Dropdown";
 import { PERMISSION_OPTIONS } from "./controls";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
+import { CodexPermissionControl } from "./CodexPermissionControl";
+import { harnessCapabilities } from "../../shared/harnessCapabilities";
+import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
 
 interface ComposerProps {
   view: MemberView;
@@ -85,7 +88,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
   ) : (
     <button type="submit" className="wb-send-labeled" title="Send" disabled={!draft.trim()}>Send <Send size={14} /></button>
   );
-  const permission = (
+  // Permission control next to Send: Codex members get the two-axis
+  // (sandbox × approval + guardian) control; Claude members get the single mode.
+  const permission = harnessCapabilities(view.member.runtime).twoAxisPermission ? (
+    <CodexPermissionControl
+      policy={view.session?.snapshot.codexPolicy || view.member.codexPolicy || DEFAULT_CODEX_POLICY}
+      onChange={(policy) => actions.setCodexPolicy(view.name, policy)}
+    />
+  ) : (
     <Dropdown
       value={view.permissionMode || "default"}
       options={PERMISSION_OPTIONS}

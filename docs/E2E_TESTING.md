@@ -29,6 +29,8 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-tool-output` | tool-call (bash) full command + result rendering; command scroll-cap + 전체보기 modal |
 | `qa-command-palette` | composer `/` command/skill palette: harness-aware trigger, **live harness-reported inventory** (plugin/MCP/custom commands) merged with static built-ins, filter, action vs insert select |
 | `qa-default-profile` | single member-creation default derived from runtime settings (`defaultMemberProfileOf`); RuntimeModal **harness lock** after first turn |
+| `qa-codex-policy` | Codex two-axis safety model: presets (Read Only/Auto/Full Access) + sandbox×approval + guardian; RuntimeModal shows it for Codex only |
+| `qa-codex-approval` | Codex approval card variants: decision option sets per request kind + decision→protocol mapping (accept/acceptForSession/execpolicy-amendment/decline), request→meta/response translation (command/fileChange/permissions/userInput/elicitation), and the Transcript card showing the exact command/diff + once/session/prefix-rule/decline buttons |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.
@@ -97,6 +99,19 @@ For the deterministic smoke path, run:
 ```
 npm run test:e2e
 ```
+
+For a deterministic **Codex approval-decision** e2e (no model), run:
+```
+npm run test:e2e:codex-approval
+```
+It launches the real app on the LEFT monitor with a fake `codex app-server`
+(`scripts/fake-codex-appserver.mjs`) that pauses a turn on a command / file-change
+approval, resolves it via `POST /api/sessions/:id/approve` with
+`{ codexDecision: "session" | "always" }`, and asserts the whole path emits the
+correct protocol decision (`acceptForSession` /
+`acceptWithExecpolicyAmendment` / degrade-to-session). The fake server records the
+decision it received to a sidecar file so the assertion sees the real end-to-end
+result.
 The smoke driver launches its own Electron process with
 `AGENTPARTY_ALLOW_MULTI_INSTANCE=1` and a dedicated automation port
 (`AGENTPARTY_E2E_PORT`, default `48931`) so it does not attach to an already

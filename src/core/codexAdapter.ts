@@ -1,11 +1,16 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
+import * as path from "node:path";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
 import type { PartyIdentity } from "./partyBridge";
 import { buildPartyPrimer } from "./partyBridge";
+import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
+import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
+import type { CodexApprovalKind } from "../shared/codexApproval";
+import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -13,6 +18,8 @@ export interface CodexAdapterOptions {
   model: string;
   effort: ClaudeEffort;
   permissionMode?: string;
+  /** Explicit two-axis safety model; falls back to deriving from permissionMode. */
+  policy?: CodexPolicy;
   debugEnabled: boolean;
   executablePath?: string;
   executableArgs?: string[];
@@ -66,10 +73,12 @@ export class CodexAdapter extends EventEmitter {
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
+  private policy: CodexPolicy;
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
     this.sessionId = options.resumeSessionId || "";
+    this.policy = options.policy ?? codexPolicyFromPermissionMode(options.permissionMode);
   }
 
   start(): void {
@@ -165,6 +174,7 @@ export class CodexAdapter extends EventEmitter {
       queuedTurnCount: this.queuedTurns.length,
       pendingApprovalCount: this.pendingApprovals.size,
       slashCommands: CODEX_COMMANDS,
+      codexPolicy: this.policy,
     };
   }
 
@@ -188,19 +198,39 @@ export class CodexAdapter extends EventEmitter {
 
   setPermissionMode(permissionMode: string): void {
     (this.options as { permissionMode?: string }).permissionMode = permissionMode;
+    this.policy = codexPolicyFromPermissionMode(permissionMode);
     this.emitEvent({ type: "status", status: "permission", detail: permissionMode, at: now() });
   }
 
-  respondApproval(requestId: string, behavior?: "allow" | "deny", _updatedInput?: unknown, _message?: string): void {
+  /**
+   * Updates the two-axis safety model live; takes effect on the next turn's
+   * params. Surfaced as a status event (no silent change) — the header/transcript
+   * must show the member's current sandbox/approval/guardian.
+   */
+  setCodexPolicy(policy: CodexPolicy): void {
+    this.policy = policy;
+    const detail = `sandbox=${policy.sandbox} approval=${policy.approval}${policy.guardian ? " guardian=on" : ""}`;
+    this.emitEvent({ type: "status", status: "codex-policy", detail, at: now() });
+  }
+
+  /**
+   * Answers a server approval/input request. The user-facing choice (once /
+   * session / always / decline) rides in `updatedInput.codexDecision`; the coarse
+   * `behavior` is the allow/deny fallback. Each request method maps to its own
+   * protocol response shape (command/file/permissions/user-input/elicitation).
+   */
+  respondApproval(requestId: string, behavior?: "allow" | "deny", updatedInput?: unknown, _message?: string): void {
     const approval = this.pendingApprovals.get(requestId);
     if (!approval) {
       this.emitEvent({ type: "error", message: `Unknown Codex approval request '${requestId}'.`, at: now() });
       return;
     }
-    const decision = approvalDecision(approval.method, behavior === "allow");
-    this.respond(requestId, decision);
+    const decision = codexDecisionOf(behavior, updatedInput);
+    const params = (approval.input || {}) as Record<string, any>;
+    const result = approvalResult(approval.method, decision, params, updatedInput);
+    this.respond(requestId, result);
     this.pendingApprovals.delete(requestId);
-    this.emitEvent({ type: "approval_resolved", requestId, decision: behavior === "allow" ? "allow" : "deny", at: now() });
+    this.emitEvent({ type: "approval_resolved", requestId, decision: decision === "decline" ? "deny" : "allow", at: now() });
   }
 
   private async ensureThread(): Promise<void> {
@@ -217,19 +247,23 @@ export class CodexAdapter extends EventEmitter {
     if (this.process) {
       return;
     }
-    const executable = this.options.executablePath || process.env.AGENTPARTY_CODEX_BIN || "codex";
+    const requested = this.options.executablePath || process.env.AGENTPARTY_CODEX_BIN || "codex";
+    const resolved = resolveCodexExecutable(requested);
     const spawnArgs = [...this.codexExecutableArgs(), "app-server"];
-    this.process = spawn(executable, spawnArgs, {
+    this.process = spawn(resolved.command, spawnArgs, {
       cwd: this.options.cwd,
       env: process.env,
       windowsHide: true,
+      // A bare `codex` on Windows is a `.cmd` shim; resolve to a concrete file,
+      // or fall back to shell resolution. Without this, spawn fails ENOENT.
+      shell: resolved.shell,
     });
     this.lineReader = readline.createInterface({ input: this.process.stdout });
     this.lineReader.on("line", (line) => this.readMessage(line));
     this.process.stderr.on("data", (chunk) => this.readStderr(String(chunk)));
     this.process.on("error", (error) => this.finishWithError(error));
     this.process.on("exit", (code, signal) => this.handleExit(code, signal));
-    this.emitEvent({ type: "status", status: "spawned", detail: [executable, ...spawnArgs].join(" "), at: now() });
+    this.emitEvent({ type: "status", status: "spawned", detail: [resolved.command, ...spawnArgs].join(" "), at: now() });
   }
 
   private async initializeServer(): Promise<void> {
@@ -259,9 +293,9 @@ export class CodexAdapter extends EventEmitter {
     const result = await this.request("thread/start", {
       model: this.options.model,
       cwd: this.options.cwd,
-      approvalPolicy: approvalPolicyFor(this.options.permissionMode),
-      approvalsReviewer: "user",
-      sandbox: sandboxModeFor(this.options.permissionMode),
+      approvalPolicy: this.policy.approval,
+      approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
+      sandbox: this.policy.sandbox,
     });
     this.applyThreadResult(result);
   }
@@ -271,9 +305,9 @@ export class CodexAdapter extends EventEmitter {
       threadId: this.sessionId,
       model: this.options.model,
       cwd: this.options.cwd,
-      approvalPolicy: approvalPolicyFor(this.options.permissionMode),
-      approvalsReviewer: "user",
-      sandbox: sandboxModeFor(this.options.permissionMode),
+      approvalPolicy: this.policy.approval,
+      approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
+      sandbox: this.policy.sandbox,
     });
     this.applyThreadResult(result);
   }
@@ -311,9 +345,9 @@ export class CodexAdapter extends EventEmitter {
         threadId: this.sessionId,
         input: [{ type: "text", text: prompt, text_elements: [] }],
         cwd: this.options.cwd,
-        approvalPolicy: approvalPolicyFor(this.options.permissionMode),
-        approvalsReviewer: "user",
-        sandboxPolicy: sandboxPolicyFor(this.options.permissionMode),
+        approvalPolicy: this.policy.approval,
+        approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
+        sandboxPolicy: sandboxPolicyObject(this.policy.sandbox),
         model: this.options.model,
         effort: effortFor(this.options.effort),
       });
@@ -390,14 +424,20 @@ export class CodexAdapter extends EventEmitter {
   private handleServerRequest(message: any): void {
     const requestId = String(message.id);
     const method = String(message.method);
-    this.pendingApprovals.set(requestId, { method, input: message.params });
+    const params = message.params || {};
+    this.pendingApprovals.set(requestId, { method, input: params });
+    const meta = approvalMeta(method, params);
+    // A tool asking for a value reuses the interactive question card; its answers
+    // are shaped like AskUserQuestion so the renderer can drive it.
+    const input = meta.kind === "userInput" ? { questions: normalizeUserInputQuestions(params.questions) } : params;
     this.emitEvent({
       type: "approval_request",
       requestId,
       toolName: method,
-      input: message.params,
-      title: "Codex approval request",
-      description: approvalDescription(method, message.params),
+      input,
+      title: approvalTitle(meta.kind),
+      description: meta.reason,
+      codex: meta,
       at: now(),
     });
   }
@@ -584,25 +624,8 @@ export class CodexAdapter extends EventEmitter {
   }
 }
 
-function approvalPolicyFor(permissionMode: string | undefined): unknown {
-  if (permissionMode === "bypassPermissions" || permissionMode === "dontAsk") {
-    return "never";
-  }
-  return "on-request";
-}
-
-function sandboxModeFor(permissionMode: string | undefined): string {
-  if (permissionMode === "bypassPermissions" || permissionMode === "dontAsk") {
-    return "danger-full-access";
-  }
-  if (permissionMode === "acceptEdits" || permissionMode === "auto") {
-    return "workspace-write";
-  }
-  return "read-only";
-}
-
-function sandboxPolicyFor(permissionMode: string | undefined): unknown {
-  const mode = sandboxModeFor(permissionMode);
+/** Maps a sandbox mode to the app-server `sandboxPolicy` object. */
+function sandboxPolicyObject(mode: SandboxMode): unknown {
   if (mode === "danger-full-access") {
     return { type: "dangerFullAccess" };
   }
@@ -616,27 +639,21 @@ function effortFor(effort: ClaudeEffort): string | null {
   return effort === "xhigh" || effort === "max" ? "high" : effort;
 }
 
-function approvalDecision(method: string, allowed: boolean): unknown {
-  if (method === "execCommandApproval" || method === "applyPatchApproval") {
-    return { decision: allowed ? "approved" : "denied" };
+function approvalTitle(kind: CodexApprovalKind): string {
+  switch (kind) {
+    case "command":
+      return "명령 실행 승인";
+    case "fileChange":
+      return "파일 변경 승인";
+    case "permissions":
+      return "권한 상승 승인";
+    case "userInput":
+      return "Codex가 입력을 요청함";
+    case "elicitation":
+      return "MCP 서버 요청";
+    default:
+      return "Codex 승인 요청";
   }
-  if (method === "item/fileChange/requestApproval") {
-    return { decision: allowed ? "accept" : "decline" };
-  }
-  if (method === "item/commandExecution/requestApproval") {
-    return { decision: allowed ? "accept" : "decline" };
-  }
-  return { decision: allowed ? "accept" : "decline" };
-}
-
-function approvalDescription(method: string, input: any): string {
-  if (method === "item/commandExecution/requestApproval") {
-    return String(input?.command || input?.reason || "Codex wants to run a command.");
-  }
-  if (method === "item/fileChange/requestApproval") {
-    return String(input?.reason || input?.grantRoot || "Codex wants to change files.");
-  }
-  return method;
 }
 
 function normalizeCodexUsage(value: unknown): TurnUsage | undefined {
@@ -669,4 +686,18 @@ function compactJson(value: unknown): string {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Resolves how to spawn the codex executable. A bare command name on Windows
+ * (e.g. `codex` installed by npm) is a `.cmd` shim: `spawn` can't find the bare
+ * name (ENOENT) and Node refuses to run a `.cmd` directly (EINVAL) — so let the
+ * shell resolve it via PATHEXT. An explicit path or already-extensioned name
+ * (e.g. `AGENTPARTY_CODEX_BIN`) is spawned directly.
+ */
+function resolveCodexExecutable(executable: string): { command: string; shell: boolean } {
+  if (executable.includes("/") || executable.includes("\\") || path.extname(executable)) {
+    return { command: executable, shell: false };
+  }
+  return { command: executable, shell: process.platform === "win32" };
 }

@@ -7,6 +7,7 @@ import type {
   StartPartyMemberInput,
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 
 /**
@@ -106,6 +107,7 @@ export interface EngineConnection {
   setSessionEffort(sessionId: string, effort: string): Promise<void>;
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
+  setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
   closeSession(sessionId: string): Promise<boolean>;
 

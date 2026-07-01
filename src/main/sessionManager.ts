@@ -7,6 +7,7 @@ import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig } from "../core/modelRegistry";
 import { EmbeddedRouter } from "../core/routerShim";
 import { CreateSessionInput, ResumableSessionInfo, SessionView } from "../shared/types";
+import type { CodexPolicy } from "../shared/codexPolicy";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { getSettings } from "./settings";
@@ -183,6 +184,14 @@ export class SessionManager extends EventEmitter {
     this.sessions.get(id)?.adapter.setPermissionMode(permissionMode);
   }
 
+  setCodexPolicy(id: string, policy: CodexPolicy): void {
+    const adapter = this.sessions.get(id)?.adapter;
+    if (!adapter?.setCodexPolicy) {
+      throw new Error(`Session '${id}' does not support a Codex policy (not a Codex harness).`);
+    }
+    adapter.setCodexPolicy(policy);
+  }
+
   setDebugMode(enabled: boolean): void {
     for (const session of this.sessions.values()) {
       session.adapter.setDebugMode(enabled);
@@ -217,6 +226,7 @@ export class SessionManager extends EventEmitter {
         model: request.model || settings.claudeModel || "gpt-5.4",
         effort: request.effort || settings.claudeEffort,
         permissionMode: request.permissionMode || settings.claudePermissionMode,
+        policy: request.codexPolicy,
         debugEnabled: settings.debugEnabled,
         resumeSessionId,
         partyIdentity: binding?.identity,

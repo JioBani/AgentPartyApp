@@ -20,6 +20,7 @@ export const automationEndpoints = [
   "POST /api/sessions/:id/effort",
   "POST /api/sessions/:id/thinking",
   "POST /api/sessions/:id/permission",
+  "POST /api/sessions/:id/codex-policy",
   "POST /api/sessions/:id/approve",
   "GET /api/party",
   "POST /api/parties",

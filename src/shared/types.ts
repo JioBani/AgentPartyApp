@@ -1,4 +1,5 @@
 import type { ClaudeSessionSnapshot } from "../core/events";
+import type { CodexPolicy } from "./codexPolicy";
 
 export type PermissionModeSetting = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
 
@@ -75,6 +76,8 @@ export interface PartyMember {
   /** Thinking token budget when applicable. */
   reasoningBudget?: number;
   permissionMode?: PermissionModeSetting;
+  /** Codex two-axis safety model (sandbox × approval + guardian); Codex members only. */
+  codexPolicy?: CodexPolicy;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -152,6 +155,8 @@ export interface CreateSessionInput {
   thinking?: string;
   thinkingBudget?: number;
   permissionMode?: AppSettings["claudePermissionMode"];
+  /** Codex two-axis safety model; used only when the harness is Codex. */
+  codexPolicy?: CodexPolicy;
 }
 
 export interface WindowInfo {

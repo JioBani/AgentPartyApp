@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, ListChecks, Maximize2, Search, ShieldCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, FileDiff, ListChecks, Maximize2, Search, ShieldCheck, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
+import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
+import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 
 interface TranscriptProps {
   view: MemberView;
@@ -240,8 +242,13 @@ function ToolDetailModal({ name, command, result, onClose }: { name: string; com
 
 function ApprovalBlock({ block, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
   const questions = parseQuestions(block.input);
-  if (block.toolName === "AskUserQuestion" && questions.length > 0) {
+  // AskUserQuestion and Codex's request-user-input both drive the question card.
+  if ((block.toolName === "AskUserQuestion" || block.codex?.kind === "userInput") && questions.length > 0) {
     return <QuestionBlock block={block} questions={questions} view={view} density={density} actions={actions} />;
+  }
+  // Codex approvals get the richer once/session/prefix-rule/decline card.
+  if (block.codex) {
+    return <CodexApprovalBlock block={block} codex={block.codex} view={view} density={density} actions={actions} />;
   }
   const command = approvalCommand(block.input);
   return (
@@ -265,8 +272,63 @@ function ApprovalBlock({ block, view, density, actions }: { block: Extract<Trans
   );
 }
 
+const CODEX_APPROVAL_ICON: Record<CodexApprovalKind, JSX.Element> = {
+  command: <Terminal size={14} />,
+  fileChange: <FileDiff size={14} />,
+  permissions: <ShieldCheck size={14} />,
+  userInput: <ListChecks size={14} />,
+  elicitation: <ShieldCheck size={14} />,
+  generic: <ShieldCheck size={14} />,
+};
+
+/**
+ * Codex approval card. Shows the exact command / file diff and the full decision
+ * set the harness supports (once / this session / prefix rule / decline). "always"
+ * only appears when Codex offered a prefix rule for the command. Each choice rides
+ * to the harness via `updatedInput.codexDecision`.
+ */
+function CodexApprovalBlock({ block, codex, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; codex: CodexApprovalMeta; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
+  const options = codexApprovalOptions(codex);
+  const decide = (decision: CodexDecision) =>
+    actions.approve(view.name, block.requestId, decision === "decline" ? "deny" : "allow", { codexDecision: decision });
+  return (
+    <div className={"wb-block wb-approval wb-codex-approval density-" + density}>
+      <div className="wb-approval-head">
+        {CODEX_APPROVAL_ICON[codex.kind]}
+        <strong>{block.title || "Codex 승인 요청"}</strong>
+      </div>
+      {codex.command && (
+        <pre className="wb-pre wb-approval-cmd">$ {codex.command}</pre>
+      )}
+      {codex.cwd && <div className="wb-approval-meta"><span className="wb-mono">cwd</span> {codex.cwd}</div>}
+      {codex.diff && <pre className="wb-pre wb-approval-diff">{codex.diff}</pre>}
+      {codex.reason && !codex.command && <p className="wb-approval-desc">{codex.reason}</p>}
+      {codex.canAlways && codex.alwaysHint && (
+        <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {codex.alwaysHint}</div>
+      )}
+      {block.resolved ? (
+        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "승인함" : "거부함"}</span>
+      ) : (
+        <div className="wb-approval-actions wb-codex-approval-actions">
+          {options.map((decision) => (
+            <button
+              key={decision}
+              type="button"
+              title={CODEX_DECISION_HINTS[decision]}
+              className={"wb-btn " + (decision === "decline" ? "wb-btn-ghost" : decision === "once" ? "wb-btn-member" : "wb-btn-soft")}
+              onClick={() => decide(decision)}
+            >
+              {CODEX_DECISION_LABELS[decision]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ParsedOption { label: string; description?: string }
-interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[] }
+interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[]; secret?: boolean }
 
 /**
  * Renders an AskUserQuestion interaction as selectable choices. When the model
@@ -314,7 +376,8 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
   const clampedStep = Math.min(step, questions.length - 1);
   const current = questions[clampedStep];
   const currentPicked = selections[current.question] || [];
-  const otherActive = currentPicked.includes(OTHER);
+  // A question with no preset options is pure free text: the input is always shown.
+  const otherActive = currentPicked.includes(OTHER) || current.options.length === 0;
   const isLast = clampedStep === questions.length - 1;
 
   if (resolved) {
@@ -364,19 +427,22 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
               </button>
             );
           })}
-          {/* Claude Code always offers a free-text answer; mirror that here. */}
-          <button
-            type="button"
-            className={"wb-question-option wb-question-other" + (otherActive ? " is-active" : "")}
-            aria-pressed={otherActive}
-            onClick={() => toggle(current, OTHER)}
-          >
-            <span className="wb-question-option-label">기타 (직접 입력)</span>
-            <span className="wb-question-option-desc">원하는 답을 직접 적습니다.</span>
-          </button>
+          {/* Claude Code always offers a free-text answer; mirror that here. A
+              pure free-text question (no options) shows only the input, no button. */}
+          {current.options.length > 0 && (
+            <button
+              type="button"
+              className={"wb-question-option wb-question-other" + (otherActive ? " is-active" : "")}
+              aria-pressed={otherActive}
+              onClick={() => toggle(current, OTHER)}
+            >
+              <span className="wb-question-option-label">기타 (직접 입력)</span>
+              <span className="wb-question-option-desc">원하는 답을 직접 적습니다.</span>
+            </button>
+          )}
           {otherActive && (
             <input
-              type="text"
+              type={current.secret ? "password" : "text"}
               className="wb-question-other-input"
               autoFocus
               placeholder="답을 입력하세요…"
@@ -414,9 +480,11 @@ function parseQuestions(input: unknown): ParsedQuestion[] {
       const options = Array.isArray(q.options)
         ? (q.options as Record<string, unknown>[]).map((o) => ({ label: String(o.label ?? ""), description: o.description ? String(o.description) : undefined })).filter((o) => o.label)
         : [];
-      return { question: String(q.question ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options };
+      return { question: String(q.question ?? q.header ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options, secret: Boolean(q.secret) };
     })
-    .filter((q) => q.question && q.options.length > 0);
+    // Options are optional: a request-user-input question may be pure free text
+    // (the card always offers a "직접 입력" fallback), so only require the prompt.
+    .filter((q) => q.question);
 }
 
 function answerLabels(answers: Record<string, string> | undefined, question: string): string[] {

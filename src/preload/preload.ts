@@ -20,6 +20,7 @@ const api = {
   setEffort: (sessionId: string, effort: string) => ipcRenderer.invoke("session:setEffort", sessionId, effort),
   setThinking: (sessionId: string, mode: string, budget?: number) => ipcRenderer.invoke("session:setThinking", sessionId, mode, budget),
   setPermissionMode: (sessionId: string, permissionMode: string) => ipcRenderer.invoke("session:setPermissionMode", sessionId, permissionMode),
+  setCodexPolicy: (sessionId: string, policy: unknown) => ipcRenderer.invoke("session:setCodexPolicy", sessionId, policy),
   approve: (sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => ipcRenderer.invoke("session:approve", sessionId, requestId, behavior, updatedInput, message),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),

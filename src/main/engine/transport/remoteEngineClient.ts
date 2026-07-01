@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput } from "../../../shared/types";
+import type { CodexPolicy } from "../../../shared/codexPolicy";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcResponse } from "./rpc";
 
@@ -117,6 +118,7 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionEffort(sessionId: string, effort: string) { return this.call<void>("setSessionEffort", sessionId, effort); }
   setSessionThinking(sessionId: string, mode: string, budget?: number) { return this.call<void>("setSessionThinking", sessionId, mode, budget); }
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
+  setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
   closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }) { return this.call<Result<"qaSeed">>("qaSeed", input); }

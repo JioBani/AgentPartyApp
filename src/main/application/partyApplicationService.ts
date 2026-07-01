@@ -219,6 +219,7 @@ export class PartyApplicationService {
       thinking: member.reasoning,
       thinkingBudget: member.reasoningBudget,
       permissionMode: member.permissionMode,
+      codexPolicy: member.codexPolicy,
     };
     if (options.mock) {
       return this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply });

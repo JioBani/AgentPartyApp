@@ -18,6 +18,8 @@ export type TranscriptBlock =
       description?: string;
       input?: unknown;
       resolved?: "allow" | "deny";
+      /** Codex approval metadata (command/diff/decision options); Codex requests only. */
+      codex?: import("../../shared/codexApproval").CodexApprovalMeta;
       /** For AskUserQuestion: the user's chosen answers (question text -> label). */
       answers?: Record<string, string>;
       at?: string;
