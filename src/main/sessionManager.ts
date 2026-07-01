@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
+import { CodexAdapter } from "../core/codexAdapter";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig } from "../core/modelRegistry";
@@ -209,6 +210,18 @@ export class SessionManager extends EventEmitter {
 
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
     const settings = getSettings();
+    if ((request.selectedHarnessId || settings.selectedHarnessId) === "codex") {
+      return new CodexAdapter({
+        id,
+        cwd,
+        model: request.model || settings.claudeModel || "gpt-5.4",
+        effort: request.effort || settings.claudeEffort,
+        permissionMode: request.permissionMode || settings.claudePermissionMode,
+        debugEnabled: settings.debugEnabled,
+        resumeSessionId,
+        partyIdentity: binding?.identity,
+      });
+    }
     const storageDir = path.join(this.userDataDir, "logs");
     const routerAccountingKey = `agentparty-native-session:${id}`;
     return new ClaudeAdapter({

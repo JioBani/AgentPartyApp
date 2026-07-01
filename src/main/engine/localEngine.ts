@@ -3,6 +3,7 @@ import { workspaceKey } from "../../shared/workspaceLocation";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
+import { runPartyAction } from "./partyActions";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -75,23 +76,7 @@ export class LocalEngine implements EngineConnection {
   }
 
   async partyAction(name: string, action: string, body: any): Promise<PartyMutationResult> {
-    const handler = this.partyActions()[action];
-    if (!handler) {
-      throw new Error(`Unknown party action '${action}'.`);
-    }
-    return handler(name, body || {});
-  }
-
-  private partyActions(): Record<string, (name: string, body: any) => PartyMutationResult> {
-    return {
-      send: (name, body) => this.party.sendMessage(name, String(body.content || ""), body.from),
-      close: (name) => this.party.closeMember(name),
-      resume: (name) => this.party.resumeMember(name),
-      open: (name) => this.party.openMember(name),
-      start: (name, body) => this.party.startMember(name, body),
-      bind: (name, body) => this.party.bindMember(name, String(body.sessionId || "")),
-      remove: (name) => this.party.removeMember(name),
-    };
+    return runPartyAction(this.party, name, action, body);
   }
 
   // --- Sessions -----------------------------------------------------------

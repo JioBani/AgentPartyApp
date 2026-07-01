@@ -10,7 +10,7 @@
  *         -> fake SessionManager (capture)
  *
  * Asserts: identity is closure-bound (from is never agent input), member-create
- * auto-starts and persists reasoning, codex is rejected, sending to an off/absent
+ * auto-starts and persists reasoning, codex is accepted, sending to an off/absent
  * member errors, list/list-models return rich data, and broadcasts fire.
  */
 import { build } from "esbuild";
@@ -80,20 +80,20 @@ const models = await bridge.listModels();
 assert(models.ok && Array.isArray(models.data?.harnesses), "list-models returns harnesses");
 const harnessIds = models.data.harnesses.map((h) => h.id);
 assert(harnessIds.includes("claude-code") && harnessIds.includes("codex"), "both claude-code and codex harnesses are exposed");
-assert(models.data.harnesses.find((h) => h.id === "codex")?.status === "planned", "codex is marked planned");
+assert(models.data.harnesses.find((h) => h.id === "codex")?.status === "available", "codex is marked available");
 assert(Array.isArray(models.data.models) && models.data.models.length > 5, "list-models returns the model catalog");
 assert(models.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one model exposes reasoning options");
 assert(models.data.models.some((m) => typeof m.perf === "number" && m.context), "models carry rich meta (perf + context)");
 
-// --- member-create: codex rejected ------------------------------------------
+// --- member-create: codex accepted ------------------------------------------
 const codex = await bridge.createMember({ name: "cx", role: "x", harness: "codex" });
-assert(!codex.ok && /codex/i.test(codex.error || ""), "member-create rejects the unimplemented codex harness");
-assert(captured.length === 1, "rejected codex create does not start a session");
+assert(codex.ok && svc.list().members.find((m) => m.name === "cx")?.runtime === "codex", "member-create accepts codex harness");
+assert(captured.length === 2, "codex member-create starts a codex session");
 
 // --- member-create: claude-code auto-starts + persists reasoning -------------
 const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", harness: "claude-code", model: "sonnet", reasoning: "enabled" });
 assert(make.ok, "member-create (claude-code) succeeds");
-assert(captured.length === 2, "member-create auto-starts the new member's session");
+assert(captured.length === 3, "member-create auto-starts the new member's session");
 const reviewer = svc.list().members.find((m) => m.name === "reviewer");
 assert(reviewer?.reasoning === "enabled", "reasoning is persisted on the created member");
 assert(reviewer?.status === "running", "created member is live");

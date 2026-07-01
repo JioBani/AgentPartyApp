@@ -127,8 +127,8 @@ export const harnesses: HarnessDescriptor[] = [
   {
     id: "codex",
     label: "Codex",
-    enabled: false,
-    description: "Reserved for Codex app-server harness.",
+    enabled: true,
+    description: "Codex CLI app-server harness with persistent JSON-RPC threads.",
   },
 ];
 
@@ -140,6 +140,7 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of modelCatalog()) {
     addRoute(routes, seen, routeFromCatalog(model));
   }
+  addRoute(routes, seen, codexDefaultRoute());
 
   // Keep the currently selected model visible even if it is not catalogued
   // (e.g. a user-configured custom route), so it never silently disappears.
@@ -161,6 +162,21 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   }
 
   return routes;
+}
+
+function codexDefaultRoute(): ModelRoute {
+  const capabilities = disabledCapabilities();
+  return {
+    harnessId: "codex",
+    providerId: "openai",
+    model: "gpt-5.4",
+    runtimeModel: "gpt-5.4",
+    label: "GPT-5.4 (Codex)",
+    description: "Default Codex app-server model route.",
+    pricing: { billing: "subscription", directPrice: "Codex subscription" },
+    capabilities,
+    enabled: true,
+  };
 }
 
 function routeFromCatalog(model: CatalogModel): ModelRoute {

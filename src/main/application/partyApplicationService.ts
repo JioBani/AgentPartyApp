@@ -10,7 +10,6 @@ import type {
   StartPartyMemberInput,
   SessionView,
 } from "../../shared/types";
-import { defaultMemberProfileOf } from "../../shared/types";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
@@ -18,6 +17,15 @@ import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import type { PartyBridge } from "../../core/partyBridge";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { harnesses } from "../harness/types";
+import {
+  buildChannelPayload,
+  buildPartyMember,
+  createPartyDefinition,
+  createPartyMessage,
+  errorMessage,
+  normalizeHarnessId,
+  normalizeMemberName,
+} from "./partyDomain";
 
 export interface PartyApplicationDeps {
   sessionManager: SessionManager;
@@ -39,17 +47,11 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const name = String(input.name || "").trim() || "New Party";
-    const now = new Date().toISOString();
-    const party: PartyDefinition = {
-      id: `party-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const party = createPartyDefinition(name);
     state.parties.push(party);
     state.currentPartyId = party.id;
     // `main` is born from the default creation profile (harness/model/reasoning).
-    const main = this.buildMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party." });
+    const main = buildPartyMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party." }, getSettings());
     state.members.push(main);
     this.writeRoleFile(workspace, main);
     this.repository.write(workspace, state);
@@ -81,7 +83,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, input.partyId || state.currentPartyId);
-    const member = this.buildMember({ ...input, partyId: party.id });
+    const member = buildPartyMember({ ...input, partyId: party.id }, getSettings());
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
@@ -175,20 +177,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const target = this.requireMember(state, to);
-    const trimmed = content.trim();
-    if (!trimmed) {
-      throw new Error("Message content is required.");
-    }
-    const message: PartyMessage = {
-      partyId: target.partyId,
-      id: `party-msg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      from: normalizeMemberName(from) || "user",
-      to: target.name,
-      content: trimmed,
-      createdAt: new Date().toISOString(),
-      delivered: false,
-      targetSessionId: target.sessionId,
-    };
+    const message = createPartyMessage(target, content, from);
     if (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId)) {
       this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target));
       message.delivered = true;
@@ -204,35 +193,6 @@ export class PartyApplicationService {
     return {
       ...this.result(message.delivered ? `Message delivered to '${target.name}'.` : `Message queued for '${target.name}', but no active session is bound.`, state, target),
       partyMessage: message,
-    };
-  }
-
-  private buildMember(input: CreateMemberInput): PartyMember {
-    const name = normalizeMemberName(input.name);
-    const role = String(input.role || input.requirement || "").trim();
-    if (!input.partyId) {
-      throw new Error("Party id is required.");
-    }
-    if (!name || !role) {
-      throw new Error("Member name and role are required.");
-    }
-    // A member is born with the default creation profile (derived from the
-    // single runtime defaults); explicit input wins.
-    const profile = defaultMemberProfileOf(getSettings());
-    const now = new Date().toISOString();
-    return {
-      partyId: input.partyId,
-      name,
-      role,
-      runtime: normalizeRuntime(input.runtime || profile.harness),
-      status: "idle",
-      model: input.model || profile.model,
-      effort: input.effort || profile.effort,
-      reasoning: input.reasoning ?? profile.reasoning,
-      reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
-      permissionMode: input.permissionMode || profile.permissionMode,
-      createdAt: now,
-      updatedAt: now,
     };
   }
 
@@ -373,11 +333,8 @@ export class PartyApplicationService {
       },
       createMember: async (request) => {
         const harness = String(request.harness || "claude-code").toLowerCase();
-        if (harness === "codex") {
-          return { ok: false, error: "The 'codex' harness is not implemented yet — use 'claude-code'." };
-        }
-        if (harness !== "claude-code") {
-          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code'.` };
+        if (harness !== "claude-code" && harness !== "codex") {
+          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code' or 'codex'.` };
         }
         try {
           this.createMember({
@@ -385,7 +342,7 @@ export class PartyApplicationService {
             name: request.name,
             requirement: request.role,
             role: request.role,
-            runtime: "claude-code",
+            runtime: harness,
             model: request.model,
             effort: request.effort,
             reasoning: request.reasoning,
@@ -430,10 +387,6 @@ export class PartyApplicationService {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * The rich harness + model catalog returned by the `list-models` party tool, so
  * an agent can fill `member-create` correctly. Reads the same catalog
@@ -470,25 +423,4 @@ function partyModelDiscovery(): {
       };
     }),
   };
-}
-
-function buildChannelPayload(message: PartyMessage, target: PartyMember): string {
-  const role = target.role ? `\n<agentparty_role member="${escapeAttribute(target.name)}">\n${target.role}\n</agentparty_role>` : "";
-  return `<channel source="agentparty" from="${escapeAttribute(message.from)}" to="${escapeAttribute(message.to)}">\n${message.content}\n</channel>${role}`;
-}
-
-function normalizeRuntime(value: unknown): PartyMember["runtime"] {
-  return value === "codex" ? "codex" : value === "claude" ? "claude" : "claude-code";
-}
-
-function normalizeHarnessId(value: unknown): "claude-code" | "codex" {
-  return value === "codex" ? "codex" : "claude-code";
-}
-
-function normalizeMemberName(value: unknown): string {
-  return String(value || "").trim().replace(/\s+/g, "-");
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }

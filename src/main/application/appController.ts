@@ -14,6 +14,7 @@ import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowInfo, WindowRegistry } from "../windowRegistry";
+import { runSessionAction } from "./sessionActions";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -171,11 +172,7 @@ export class AppController {
   }
 
   async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true }> {
-    const handler = this.sessionActions(workspacePath)[action];
-    if (!handler) {
-      throw new Error(`Unknown session action '${action}'.`);
-    }
-    await handler(sessionId, body || {});
+    await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
     return { ok: true };
   }
 
@@ -383,22 +380,6 @@ export class AppController {
     return {
       resumableSessions: result.sessions,
       resumableSessionsError: result.error,
-    };
-  }
-
-  private sessionActions(workspacePath: string): Record<string, (sessionId: string, body: any) => Promise<unknown>> {
-    const engine = this.engineFor(workspacePath);
-    return {
-      send: (sessionId, body) => engine.sendUserTurn(sessionId, String(body.text || "")),
-      interrupt: (sessionId) => engine.interruptSession(sessionId),
-      close: (sessionId) => engine.closeSession(sessionId),
-      restart: (sessionId) => engine.restartSession(sessionId),
-      compact: (sessionId) => engine.compactSession(sessionId),
-      model: (sessionId, body) => engine.setSessionModel(sessionId, String(body.model || ""), body.providerId, body.runtimeModel),
-      effort: (sessionId, body) => engine.setSessionEffort(sessionId, String(body.effort || "")),
-      thinking: (sessionId, body) => engine.setSessionThinking(sessionId, String(body.mode || ""), typeof body.budget === "number" ? body.budget : undefined),
-      permission: (sessionId, body) => engine.setSessionPermissionMode(sessionId, String(body.permissionMode || "")),
-      approve: (sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
     };
   }
 

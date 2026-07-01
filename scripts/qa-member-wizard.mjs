@@ -45,6 +45,11 @@ const routes = [
     meta: { perf: 4, costTier: 2, inPerM: 1, outPerM: 2, ioPerM: 0, context: "256K" },
     capabilities: { effort: { supported: false, options: [] }, thinking: { supported: false } },
   },
+  {
+    harnessId: "codex", providerId: "openai", model: "gpt-5.4", label: "GPT-5.4 (Codex)",
+    meta: { perf: 5, costTier: 4, context: "256K" },
+    capabilities: { effort: { supported: false, options: [] }, thinking: { supported: false } },
+  },
 ];
 
 let created = null;
@@ -76,7 +81,7 @@ click(nextBtn()); await tick(40);
 // Step 2 — harness
 assert(text().includes("Codex"), "harness step shows Codex");
 const codexCard = all(".wb-wizard-card").find((c) => c.textContent.includes("Codex"));
-assert(codexCard?.disabled, "Codex harness is disabled (planned)");
+assert(!codexCard?.disabled, "Codex harness is available");
 assert(!nextBtn().disabled, "claude-code is selected by default → Next enabled");
 click(nextBtn()); await tick(40);
 

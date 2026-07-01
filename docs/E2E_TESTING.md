@@ -93,6 +93,17 @@ engine's `qa*` methods directly — the same methods the `/api/qa/*` routes call
 
 ## Full-process e2e: launch the real app and drive it over HTTP
 
+For the deterministic smoke path, run:
+```
+npm run test:e2e
+```
+The smoke driver launches its own Electron process with
+`AGENTPARTY_ALLOW_MULTI_INSTANCE=1` and a dedicated automation port
+(`AGENTPARTY_E2E_PORT`, default `48931`) so it does not attach to an already
+open development app. It also injects a fake `codex app-server` binary through
+`AGENTPARTY_CODEX_BIN`/`AGENTPARTY_CODEX_ARGS`, so the Codex harness path is
+verified without a real model call.
+
 The app **can** be launched here. The catch that makes it look otherwise: VS Code
 / Claude Code terminals export `ELECTRON_RUN_AS_NODE=1`, which makes the Electron
 binary boot as plain Node (so `app` is undefined). `scripts/launch-electron.mjs`

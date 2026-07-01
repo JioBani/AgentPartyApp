@@ -106,6 +106,7 @@ Creates a Claude Code harness session.
 ```
 
 When these runtime fields are supplied, they are applied to the new session at creation time.
+Use `"selectedHarnessId": "codex"` with a Codex route such as `"model": "gpt-5.4"` to start a local Codex app-server-backed session. Codex auth is delegated to the local `codex` CLI; tests may override the binary with `AGENTPARTY_CODEX_BIN` and optional JSON-array args in `AGENTPARTY_CODEX_ARGS`.
 
 ### `GET /api/sessions/history`
 
@@ -214,7 +215,7 @@ workspace (`?window=<id>`; focused window when omitted).
 
 ### `POST /api/parties`
 
-Creates a party and automatically creates its `main` member. No harness session is started.
+Creates a party, creates its `main` member, and attempts to init-start `main` so skills and slash commands can populate the palette before the first chat. Init failures are returned in the command message and logged instead of being hidden.
 
 ```json
 { "name": "Feature QA" }
@@ -264,11 +265,11 @@ Compatibility endpoint for sending a message to a member.
 
 ### `POST /api/party/members/:name/open`
 
-Marks a member as opened in the UI without starting a harness session. The first chat message starts the session.
+Marks a non-main member as opened in the UI without starting a harness session by itself. The Workbench may immediately call `start` for an active opened panel to prewarm the command/skill palette.
 
 ### `POST /api/party/members/:name/start`
 
-Starts a fresh harness session for an opened member. The normal UI path does not call this until the user sends the first chat message. The session cwd is the selected project root, not the member directory.
+Starts a fresh harness session for an opened member. `main` is init-started when its party is created; other members normally start when the user sends the first chat message. The session cwd is the selected project root, not the member directory.
 
 ```json
 {

@@ -63,7 +63,8 @@ assert(!eff("Kimi K2.7 Code").supported && !th("Kimi K2.7 Code").supported, "Kim
 assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Grok Build 0.1 (undocumented) shows no reasoning control");
 assert(!eff("haiku").supported && Boolean(th("haiku").budget), "Haiku has no effort but a thinking budget");
 
-assert(modelCatalog().length === routes.length, "every catalog entry produced a route");
+assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
+assert(modelCatalog().length + 1 === routes.length, "every catalog entry plus the Codex default produced a route");
 
 // Stale-model healing (guards the member-create bug where a legacy persisted
 // model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).

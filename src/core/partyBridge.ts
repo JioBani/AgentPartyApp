@@ -30,7 +30,7 @@ export interface PartyToolResult {
 export interface PartyCreateMemberRequest {
   name: string;
   role: string;
-  /** Harness id; `claude-code` is implemented, `codex` is accepted but rejected. */
+  /** Harness id; `claude-code` and `codex` are supported. */
   harness?: string;
   model?: string;
   /** Reasoning/thinking mode (adaptive|enabled|disabled) for the new member. */
@@ -129,7 +129,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "member-create",
-      "Create a new member in your party and start its session. You choose the harness, model, and reasoning — call list-models first to see valid options. harness='codex' is accepted but not implemented yet.",
+      "Create a new member in your party and start its session. You choose the harness, model, and reasoning — call list-models first to see valid options.",
       {
         name: z.string().describe("New member name (letters, digits, _ or -)."),
         role: z.string().describe("Short role description for the new member."),

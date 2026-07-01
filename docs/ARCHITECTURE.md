@@ -14,12 +14,15 @@ Change this layer when a public contract changes.
 ### Core runtime
 
 - `src/core`: provider routing, normalized Claude/Codex event types, and harness-facing utilities.
+- `src/core/claudeAdapter.ts`, `src/core/codexAdapter.ts`: concrete harness adapters behind the shared `HarnessSession` contract. Codex uses `codex app-server` JSON-RPC, keeps one app-server process per AgentParty session, and normalizes thread/turn notifications into the same renderer event stream.
 
 This layer should not know about Electron, React, IPC, or HTTP.
 
 ### Application use cases
 
 - `src/main/application/appController.ts`: one method per app capability.
+- `src/main/application/sessionActions.ts`: named session action dispatch for `/api/sessions/:id/:action`.
+- `src/main/application/partyDomain.ts`: pure party/member/message creation and normalization rules.
 
 IPC and HTTP both call this controller. If a feature can be triggered from the UI, it should also be triggerable from the automation API through the same controller path.
 
@@ -29,12 +32,13 @@ IPC and HTTP both call this controller. If a feature can be triggered from the U
 - `src/main/automationApi.ts`: local HTTP parsing and route dispatch.
 - `src/main/sessionManager.ts`: live harness process/session ownership.
 - `src/main/settings.ts`, `src/main/authService.ts`, `src/main/partyRepository.ts`, `src/main/logger.ts`: local persistence and app infrastructure.
-- `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates an idle `main` member, opening a member does not start a harness, and the first chat message starts the member session at the project root before sending input.
+- `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates `main` and immediately init-starts its session so slash commands and skills can be discovered for the palette. Opening non-main members does not start a harness; their first chat message starts the member session at the project root before sending input.
 - `src/main/runtimeMode.ts`: process mode checks such as E2E.
+- `src/main/engine/partyActions.ts`: named member action dispatch for `/api/party/members/:name/:action`.
 
 Adapters should stay thin. They can parse input, call application use cases, and translate output.
 
-E2E mode must not call paid or user-owned external provider APIs. Provider verification is mocked when `AGENTPARTY_E2E=1`; party message E2E checks use unbound members so no harness turn is sent.
+E2E mode must not call paid or user-owned external provider APIs. Provider verification is mocked when `AGENTPARTY_E2E=1`; `main` init is allowed for skill discovery, and party message E2E checks should use non-main unbound members when no harness turn should be sent.
 
 ### Renderer
 

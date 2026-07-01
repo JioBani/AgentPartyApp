@@ -28,6 +28,13 @@ import { workspaceKey } from "../shared/workspaceLocation";
 app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
+if (process.env.AGENTPARTY_DISABLE_GPU === "1") {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+}
+if (process.env.AGENTPARTY_USER_DATA) {
+  app.setPath("userData", process.env.AGENTPARTY_USER_DATA);
+}
 
 // One running instance owns all windows for a workspace (shared in-memory
 // source + a single engine per workspace storage). A second launch — Explorer

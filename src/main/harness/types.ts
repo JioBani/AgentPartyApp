@@ -38,7 +38,7 @@ export const harnesses: HarnessDescriptor[] = [
   {
     id: "codex",
     label: "Codex",
-    status: "planned",
-    description: "Reserved for a Codex CLI/runtime adapter behind the same session contract.",
+    status: "available",
+    description: "Local Codex CLI harness backed by persistent app-server JSON-RPC.",
   },
 ];

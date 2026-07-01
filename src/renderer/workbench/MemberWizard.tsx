@@ -25,7 +25,7 @@ interface HarnessChoice {
 
 const HARNESSES: HarnessChoice[] = [
   { id: "claude-code", label: "Claude Code", status: "available", icon: <Sparkles size={16} />, hint: "Claude Code SDK 기반 로컬 하네스" },
-  { id: "codex", label: "Codex", status: "planned", icon: <TerminalSquare size={16} />, hint: "아직 미구현 — 추후 지원 예정" },
+  { id: "codex", label: "Codex", status: "available", icon: <TerminalSquare size={16} />, hint: "Codex CLI exec 기반 로컬 하네스" },
 ];
 
 const STEPS = ["이름", "하네스", "모델", "추론", "역할"] as const;

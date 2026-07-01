@@ -17,7 +17,7 @@ const defaults: AppSettings = {
   routerBaseUrl: "http://127.0.0.1:3455",
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-  automationApiPort: 47831,
+  automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 47831,
 };
 
 export function getSettings(): AppSettings {
@@ -32,11 +32,13 @@ export function getSettings(): AppSettings {
  * and only fails later at session start. Reset to the default model + provider.
  */
 function sanitizeSettings(settings: AppSettings): AppSettings {
-  const model = settings.claudeModel;
+  const envAutomationPort = Number(process.env.AGENTPARTY_AUTOMATION_PORT || "");
+  const withRuntimeOverrides = envAutomationPort > 0 ? { ...settings, automationApiPort: envAutomationPort } : settings;
+  const model = withRuntimeOverrides.claudeModel;
   if (model && !catalogModelById(model) && !catalogModelByRuntime(model)) {
-    return { ...settings, claudeModel: defaults.claudeModel, selectedProviderId: defaults.selectedProviderId };
+    return { ...withRuntimeOverrides, claudeModel: defaults.claudeModel, selectedProviderId: defaults.selectedProviderId };
   }
-  return settings;
+  return withRuntimeOverrides;
 }
 
 export function getPublicSettings(): AppSettings {

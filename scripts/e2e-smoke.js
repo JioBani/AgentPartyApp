@@ -1,19 +1,27 @@
-const { spawn } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 const root = "C:\\Project\\AgentPartyApp";
 const qaWorkspace = path.join(os.tmpdir(), "agentparty-app-e2e-workspace");
-const ports = Array.from({ length: 30 }, (_, index) => 47831 + index);
+const automationPort = Number(process.env.AGENTPARTY_E2E_PORT || "") || 48931;
 
 async function main() {
-  fs.rmSync(qaWorkspace, { recursive: true, force: true });
+  await removeQaWorkspace();
   fs.mkdirSync(qaWorkspace, { recursive: true });
+  const fakeCodex = writeFakeCodex();
   const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, AGENTPARTY_E2E: "1" },
+    env: {
+      ...process.env,
+      AGENTPARTY_E2E: "1",
+      AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
+      AGENTPARTY_AUTOMATION_PORT: String(automationPort),
+      AGENTPARTY_CODEX_BIN: process.execPath,
+      AGENTPARTY_CODEX_ARGS: JSON.stringify([fakeCodex]),
+    },
     windowsHide: true,
   });
   child.stdout.on("data", (chunk) => process.stdout.write(chunk));
@@ -61,7 +69,7 @@ async function main() {
       name: `QA Party ${Date.now()}`,
     });
     assert(createdParty.ok && createdParty.currentPartyId, "party created");
-    assert(createdParty.members.some((member) => member.name === "main" && member.status === "idle"), "main member created without started session");
+    assert(createdParty.members.some((member) => member.name === "main"), "main member created for skill discovery");
 
     const createdMember = await postJson(`${baseUrl}/api/party/members`, {
       name: `qa-${Date.now()}`,
@@ -72,10 +80,11 @@ async function main() {
     const memberName = createdMember.member.name;
     const party = await getJson(`${baseUrl}/api/party`);
     assert(party.members.some((member) => member.name === memberName), "party member listed");
+    await postJson(`${baseUrl}/api/party/members/${encodeURIComponent(memberName)}/close`, {});
     const partyMessage = await postJson(`${baseUrl}/api/party/messages`, {
       from: "qa",
       to: memberName,
-      content: "This should be queued because no session is bound.",
+      content: "This should be queued because this non-main member was closed.",
     });
     assert(partyMessage.ok && partyMessage.partyMessage?.delivered === false, "party message queued without live call");
     await postJson(`${baseUrl}/api/party/members/${encodeURIComponent(memberName)}/remove`, {});
@@ -92,6 +101,19 @@ async function main() {
     assert(session.snapshot?.permissionMode === "plan", "session created with preset permission mode");
     await postJson(`${baseUrl}/api/sessions/${session.id}/close`, {});
 
+    const codexSession = await postJson(`${baseUrl}/api/sessions`, {
+      workspacePath: qaWorkspace,
+      selectedHarnessId: "codex",
+      selectedProviderId: "openai",
+      model: "gpt-5.4",
+      permissionMode: "plan",
+    });
+    assert(codexSession.id && codexSession.snapshot?.model === "gpt-5.4", "codex session created with preset model");
+    assert(codexSession.snapshot?.slashCommands?.some((command) => command.name === "approvals"), "codex session exposes codex slash commands");
+    await postJson(`${baseUrl}/api/sessions/${codexSession.id}/send`, { text: "Reply with PONG." });
+    await waitForCodexTurn(baseUrl, codexSession.id);
+    await postJson(`${baseUrl}/api/sessions/${codexSession.id}/close`, {});
+
     const capture = await postJson(`${baseUrl}/api/capture`, {});
     assert(capture.ok && capture.path && capture.bytes > 1000, "capture returns png file");
     await postJson(`${baseUrl}/api/navigation`, { view: "sessions" });
@@ -102,24 +124,86 @@ async function main() {
     await waitForExit(child);
     console.log("E2E smoke passed");
   } catch (error) {
-    child.kill();
+    killProcessTree(child.pid);
     throw error;
+  }
+}
+
+function writeFakeCodex() {
+  const scriptPath = path.join(qaWorkspace, "fake-codex.mjs");
+  fs.writeFileSync(scriptPath, [
+    "import readline from 'node:readline';",
+    "const threadId = 'codex-e2e-thread';",
+    "let turn = 0;",
+    "const out = (value) => console.log(JSON.stringify(value));",
+    "const rl = readline.createInterface({ input: process.stdin });",
+    "rl.on('line', (line) => {",
+    "  const msg = JSON.parse(line);",
+    "  if (msg.method === 'initialize') {",
+    "    out({ id: msg.id, result: { userAgent: 'fake-codex-app-server', codexHome: process.cwd(), platformFamily: 'windows', platformOs: 'windows' } });",
+    "    return;",
+    "  }",
+    "  if (msg.method === 'initialized') { return; }",
+    "  if (msg.method === 'thread/start' || msg.method === 'thread/resume') {",
+    "    out({ id: msg.id, result: { thread: { id: threadId, sessionId: threadId, status: { type: 'idle' }, cwd: process.cwd(), turns: [] }, model: msg.params?.model || 'gpt-5.4', modelProvider: 'openai', cwd: process.cwd(), instructionSources: [], approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: { type: 'readOnly', networkAccess: false }, reasoningEffort: 'medium' } });",
+    "    return;",
+    "  }",
+    "  if (msg.method === 'turn/start') {",
+    "    turn += 1;",
+    "    const turnId = `turn-${turn}`;",
+    "    out({ id: msg.id, result: { turn: { id: turnId, items: [], itemsView: 'notLoaded', status: 'inProgress', error: null, startedAt: null, completedAt: null, durationMs: null } } });",
+    "    out({ method: 'thread/started', params: { thread: { id: threadId, sessionId: threadId, status: { type: 'idle' }, cwd: process.cwd(), turns: [] } } });",
+    "    out({ method: 'turn/started', params: { threadId, turn: { id: turnId, items: [], itemsView: 'notLoaded', status: 'inProgress', error: null, startedAt: 1, completedAt: null, durationMs: null } } });",
+    "    out({ method: 'item/started', params: { threadId, turnId, item: { type: 'commandExecution', id: 'cmd-1', command: 'echo PONG', cwd: process.cwd(), processId: null, source: 'exec', status: 'inProgress', commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null } } });",
+    "    out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'commandExecution', id: 'cmd-1', command: 'echo PONG', cwd: process.cwd(), processId: null, source: 'exec', status: 'completed', commandActions: [], aggregatedOutput: 'PONG', exitCode: 0, durationMs: 1 } } });",
+    "    out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', id: `msg-${turn}`, text: 'PONG', phase: 'final_answer', memoryCitation: null } } });",
+    "    out({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: { total: { totalTokens: 12, inputTokens: 10, cachedInputTokens: 0, outputTokens: 2, reasoningOutputTokens: 0 }, last: { totalTokens: 12, inputTokens: 10, cachedInputTokens: 0, outputTokens: 2, reasoningOutputTokens: 0 }, modelContextWindow: 1000 } } });",
+    "    out({ method: 'thread/status/changed', params: { threadId, status: { type: 'idle' } } });",
+    "    out({ method: 'turn/completed', params: { threadId, turn: { id: turnId, items: [], itemsView: 'notLoaded', status: 'completed', error: null, startedAt: 1, completedAt: 2, durationMs: 1 } } });",
+    "  }",
+    "});",
+  ].join("\n"), "utf8");
+  return scriptPath;
+}
+
+async function waitForCodexTurn(baseUrl, sessionId) {
+  const started = Date.now();
+  while (Date.now() - started < 10000) {
+    const state = await getJson(`${baseUrl}/api/state`);
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (session?.snapshot?.turnCount >= 1 && session.snapshot.status === "idle") {
+      return;
+    }
+    await delay(250);
+  }
+  throw new Error("Codex fake turn did not complete.");
+}
+
+async function removeQaWorkspace() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      fs.rmSync(qaWorkspace, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (error?.code !== "EBUSY" || attempt === 9) {
+        throw error;
+      }
+      await delay(300);
+    }
   }
 }
 
 async function waitForApi() {
   const started = Date.now();
   while (Date.now() - started < 30000) {
-    for (const port of ports) {
-      const baseUrl = `http://127.0.0.1:${port}`;
-      try {
-        const health = await getJson(`${baseUrl}/api/health`);
-        if (health?.ok) {
-          return baseUrl;
-        }
-      } catch {
-        // keep polling
+    const baseUrl = `http://127.0.0.1:${automationPort}`;
+    try {
+      const health = await getJson(`${baseUrl}/api/health`);
+      if (health?.ok) {
+        return baseUrl;
       }
+    } catch {
+      // keep polling
     }
     await delay(500);
   }
@@ -154,6 +238,21 @@ function waitForExit(child) {
       resolve();
     });
   });
+}
+
+function killProcessTree(pid) {
+  if (!pid) {
+    return;
+  }
+  try {
+    execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+  } catch {
+    try {
+      process.kill(pid);
+    } catch {
+      // Process already exited.
+    }
+  }
 }
 
 function assert(value, message) {
