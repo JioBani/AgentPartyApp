@@ -33,6 +33,12 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       } else {
         next = upsertToolBlock(next, sessionId, event);
       }
+    } else if (event.type === "plan") {
+      next = upsertPlanBlock(next, sessionId, event);
+    } else if (event.type === "file_change") {
+      if (Array.isArray(event.changes) && event.changes.length > 0) {
+        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "fileChange", changes: event.changes, status: event.status, at: nowTime() });
+      }
     } else if (event.type === "approval_request") {
       next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, at: nowTime() });
     } else if (event.type === "approval_resolved") {
@@ -63,7 +69,11 @@ function upsertToolBlock(current: Record<string, TranscriptBlock[]>, sessionId: 
   const items = current[sessionId] || [];
   const index = items.findIndex((item) => item.kind === "tool" && item.id === id);
   if (index < 0) {
-    return appendBlock(current, sessionId, { id, kind: "tool", name: event.name, status: event.status, input: event.input, result: event.result, at: nowTime() });
+    return appendBlock(current, sessionId, {
+      id, kind: "tool", name: event.name, status: event.status, input: event.input, result: event.result,
+      source: event.source, cwd: event.cwd, exitCode: event.exitCode, durationMs: event.durationMs,
+      output: event.outputDelta || undefined, at: nowTime(),
+    });
   }
   const prev = items[index] as Extract<TranscriptBlock, { kind: "tool" }>;
   const merged: TranscriptBlock = {
@@ -72,7 +82,29 @@ function upsertToolBlock(current: Record<string, TranscriptBlock[]>, sessionId: 
     status: preferToolStatus(prev.status, event.status),
     input: preferInput(prev.input, event.input),
     result: event.result ?? prev.result,
+    source: event.source ?? prev.source,
+    cwd: event.cwd ?? prev.cwd,
+    // Command live output streams in as deltas — append rather than replace.
+    output: event.outputDelta ? (prev.output || "") + event.outputDelta : prev.output,
+    exitCode: typeof event.exitCode === "number" ? event.exitCode : prev.exitCode,
+    durationMs: typeof event.durationMs === "number" ? event.durationMs : prev.durationMs,
   };
+  const next = items.slice();
+  next[index] = merged;
+  return { ...current, [sessionId]: next };
+}
+
+/** A single evolving plan card per session: the latest plan event replaces it. */
+function upsertPlanBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, event: any): Record<string, TranscriptBlock[]> {
+  const items = current[sessionId] || [];
+  const index = items.findIndex((item) => item.kind === "plan");
+  const steps = Array.isArray(event.steps) ? event.steps : [];
+  if (index < 0) {
+    return appendBlock(current, sessionId, { id: "plan", kind: "plan", steps, explanation: event.explanation, at: nowTime() });
+  }
+  const prev = items[index] as Extract<TranscriptBlock, { kind: "plan" }>;
+  // Keep prior steps if this update only carried explanation text (plan item).
+  const merged: TranscriptBlock = { ...prev, steps: steps.length ? steps : prev.steps, explanation: event.explanation ?? prev.explanation };
   const next = items.slice();
   next[index] = merged;
   return { ...current, [sessionId]: next };

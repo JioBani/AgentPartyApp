@@ -70,11 +70,12 @@ export type ClaudeNormalizedEvent =
   | { type: "assistant_text_delta"; text: string; blockIndex?: number; at: string }
   | { type: "reasoning_delta"; text: string; blockIndex?: number; at: string }
   | { type: "thinking_tokens"; estimatedTokens: number; delta?: number; at: string }
-  | { type: "tool_call"; id: string; name: string; input?: unknown; status: "started" | "completed" | "failed"; result?: unknown; at: string }
+  | { type: "tool_call"; id: string; name: string; input?: unknown; status: "started" | "completed" | "failed"; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; outputDelta?: string; at: string }
+  | { type: "plan"; steps: import("../shared/codexItems").CodexPlanStep[]; explanation?: string; at: string }
   | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
-  | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; at: string }
+  | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; changes?: import("../shared/codexItems").CodexFileEdit[]; status?: string; at: string }
   | { type: "turn_complete"; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; at: string }
   | { type: "error"; message: string; at: string };
 

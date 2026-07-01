@@ -11,6 +11,7 @@ import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
+import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -491,6 +492,17 @@ export class CodexAdapter extends EventEmitter {
       }
       return;
     }
+    if (method === "turn/plan/updated") {
+      this.emitEvent({ type: "plan", steps: planStepsFrom(params.plan), explanation: params.explanation || undefined, at: now() });
+      return;
+    }
+    if (method === "item/commandExecution/outputDelta") {
+      const delta = String(params.delta || "");
+      if (delta) {
+        this.emitEvent({ type: "tool_call", id: String(params.itemId || ""), name: "shell", status: "started", source: "shell", outputDelta: delta, at: now() });
+      }
+      return;
+    }
     if (method === "error") {
       this.finishWithError(new Error(String(params.error?.message || params.error || "Codex app-server error.")));
       return;
@@ -517,16 +529,69 @@ export class CodexAdapter extends EventEmitter {
       }
       return;
     }
+    if (item.type === "plan") {
+      // A plan item is free text; structured steps arrive via turn/plan/updated
+      // and update the same card. Show the text until steps exist.
+      if (typeof item.text === "string" && item.text.trim()) {
+        this.emitEvent({ type: "plan", steps: [], explanation: item.text, at: now() });
+      }
+      return;
+    }
     if (item.type === "commandExecution") {
-      this.emitEvent({ type: "tool_call", id, name: "command_execution", input: item.command, status, result: item.aggregatedOutput || item.exitCode, at: now() });
+      const failed = item.status === "failed" || (typeof item.exitCode === "number" && item.exitCode !== 0);
+      this.emitEvent({
+        type: "tool_call",
+        id,
+        name: "shell",
+        input: item.command,
+        status: status === "completed" && failed ? "failed" : status,
+        result: item.aggregatedOutput ?? undefined,
+        source: toolSourceLabel(item),
+        cwd: typeof item.cwd === "string" ? item.cwd : undefined,
+        exitCode: typeof item.exitCode === "number" ? item.exitCode : undefined,
+        durationMs: typeof item.durationMs === "number" ? item.durationMs : undefined,
+        at: now(),
+      });
       return;
     }
     if (item.type === "fileChange") {
-      this.emitEvent({ type: "file_change", filePath: undefined, input: item.changes, result: item.status, at: now() });
+      const changes = fileEditsFrom(item.changes);
+      this.emitEvent({ type: "file_change", changes, status: typeof item.status === "string" ? item.status : undefined, at: now() });
       return;
     }
     if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
-      this.emitEvent({ type: "tool_call", id, name: item.tool || item.server || "tool", input: item.arguments, status, result: item.result || item.contentItems || item.error, at: now() });
+      const failed = Boolean(item.error) || item.status === "failed" || item.success === false;
+      this.emitEvent({
+        type: "tool_call",
+        id,
+        name: item.tool || item.server || "tool",
+        input: item.arguments,
+        status: status === "completed" && failed ? "failed" : status,
+        result: item.error || item.result || item.contentItems,
+        source: toolSourceLabel(item),
+        durationMs: typeof item.durationMs === "number" ? item.durationMs : undefined,
+        at: now(),
+      });
+      return;
+    }
+    if (item.type === "webSearch") {
+      this.emitEvent({ type: "tool_call", id, name: "web_search", input: { query: item.query }, status, source: "web", at: now() });
+      return;
+    }
+    if (item.type === "imageGeneration") {
+      this.emitEvent({ type: "tool_call", id, name: "image_generation", input: { revisedPrompt: item.revisedPrompt }, status, result: item.savedPath || item.result, source: "image", at: now() });
+      return;
+    }
+    if (item.type === "imageView") {
+      this.emitEvent({ type: "tool_call", id, name: "image_view", input: { path: item.path }, status, source: "image", at: now() });
+      return;
+    }
+    if (item.type === "subAgentActivity") {
+      this.emitEvent({ type: "status", status: "subagent", detail: `${item.kind || "activity"} · ${item.agentPath || item.agentThreadId || ""}`.trim(), at: now() });
+      return;
+    }
+    if (item.type === "collabAgentToolCall") {
+      this.emitEvent({ type: "status", status: "subagent", detail: `${item.tool || "collab"} → ${(item.receiverThreadIds || []).join(", ")}`.trim(), at: now() });
     }
   }
 

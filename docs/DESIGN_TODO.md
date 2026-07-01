@@ -15,6 +15,14 @@
   - 방향: 버튼 강조를 primary 1개만 남기고 나머지는 차분하게, 카드 배경·보더도
     다른 transcript 블록과 통일감 있게. (구체안은 일괄 작업 때 결정)
 
+- [ ] **Codex transcript item 카드 톤 통일** — plan(계획)·fileChange(파일 변경)
+  카드도 승인 카드와 같은 디자인 패스에서 함께 조정.
+  - 위치: [Transcript.tsx](../src/renderer/workbench/Transcript.tsx) `PlanBlock`/
+    `FileChangeBlock`, 스타일 `.wb-plan*`/`.wb-filechange*`/`.wb-tool-source`/
+    `.wb-tool-meta` in [styles.css](../src/renderer/styles.css).
+  - 지금: member-accent 헤더 + 배지가 승인 카드와 같은 화려함 계열. 톤 다운 시
+    함께 맞춰야 통일감.
+
 - [ ] **Codex 권한 설정 UI(컴포저) 디자인 수정** — 재검토 필요.
   - 위치: [CodexPermissionControl.tsx](../src/renderer/workbench/CodexPermissionControl.tsx),
     스타일 `.wb-codex-perm-*` / `.wb-codex-guardian` in

@@ -31,6 +31,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-default-profile` | single member-creation default derived from runtime settings (`defaultMemberProfileOf`); RuntimeModal **harness lock** after first turn |
 | `qa-codex-policy` | Codex two-axis safety model: presets (Read Only/Auto/Full Access) + sandbox×approval + guardian; RuntimeModal shows it for Codex only |
 | `qa-codex-approval` | Codex approval card variants: decision option sets per request kind + decision→protocol mapping (accept/acceptForSession/execpolicy-amendment/decline), request→meta/response translation (command/fileChange/permissions/userInput/elicitation), and the Transcript card showing the exact command/diff + once/session/prefix-rule/decline buttons |
+| `qa-codex-items` | Codex ThreadItem coverage: pure model (diff stats, fileChange normalization, plan steps, tool source mcp:<server>/plugin/namespace) + event pipeline (plan upserts one evolving card, command output deltas append, cwd/exit/duration merge, fileChange→diff block) + Transcript DOM (plan checklist, fileChange +/- stats, tool source badge + exit/duration, live output) |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.

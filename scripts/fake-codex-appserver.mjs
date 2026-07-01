@@ -64,8 +64,14 @@ rl.on("line", (line) => {
       send({ id: msg.id, result: { turn: { id: "turn-1" } } });
       send({ method: "turn/started", params: { turn: { id: "turn-1" } } });
       const inputText = (msg.params?.input || []).map((part) => String(part?.text || "")).join(" ");
+      const cwd = msg.params?.cwd || "";
+      if (inputText.includes("KIND=items")) {
+        emitItemStream(cwd);
+        send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+        return;
+      }
       const kind = inputText.includes("KIND=fileChange") ? "fileChange" : "command";
-      send(approvalRequest(kind, msg.params?.cwd || ""));
+      send(approvalRequest(kind, cwd));
       return;
     }
     // Any other request: acknowledge with an empty result so nothing hangs.
@@ -74,6 +80,24 @@ rl.on("line", (line) => {
   }
   // Notifications (initialized, etc.) need no response.
 });
+
+/** Emits every transcript ThreadItem type so the adapter's normalizeItem is exercised end-to-end. */
+function emitItemStream(cwd) {
+  // plan (structured steps via turn/plan/updated)
+  send({ method: "turn/plan/updated", params: { threadId: "thr-fake", turnId: "turn-1", explanation: "작업 계획", plan: [{ step: "환경 점검", status: "completed" }, { step: "테스트 실행", status: "inProgress" }] } });
+  // commandExecution with live output
+  const cmd = { type: "commandExecution", id: "cmd-1", command: "npm test", cwd, source: "agent", status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null, processId: null };
+  send({ method: "item/started", params: { item: cmd } });
+  send({ method: "item/commandExecution/outputDelta", params: { threadId: "thr-fake", turnId: "turn-1", itemId: "cmd-1", delta: "running tests...\n" } });
+  send({ method: "item/commandExecution/outputDelta", params: { threadId: "thr-fake", turnId: "turn-1", itemId: "cmd-1", delta: "PASS 12 tests\n" } });
+  send({ method: "item/completed", params: { item: { ...cmd, status: "completed", aggregatedOutput: "running tests...\nPASS 12 tests\n", exitCode: 0, durationMs: 1420 } } });
+  // fileChange (per-file diff)
+  send({ method: "item/completed", params: { item: { type: "fileChange", id: "fc-1", status: "completed", changes: [{ path: "src/app.ts", kind: { type: "update" }, diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@\n-const x = 1;\n+const x = 2;\n+const y = 3;" }] } } });
+  // mcpToolCall (source badge)
+  send({ method: "item/completed", params: { item: { type: "mcpToolCall", id: "mcp-1", server: "brave", tool: "search", status: "completed", arguments: { q: "codex" }, pluginId: null, result: { ok: true }, error: null, durationMs: 210 } } });
+  // webSearch
+  send({ method: "item/completed", params: { item: { type: "webSearch", id: "ws-1", query: "codex app-server", action: null } } });
+}
 
 function approvalRequest(kind, cwd) {
   if (kind === "fileChange") {

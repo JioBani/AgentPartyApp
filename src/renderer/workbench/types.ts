@@ -3,7 +3,11 @@ import type { PartyMember, SessionView } from "../../shared/types";
 /** Per-member transcript block — the rendering contract filled by agent events. */
 export type TranscriptBlock =
   | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; at?: string }
-  | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; at?: string }
+  | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
+  // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
+  | { id: string; kind: "plan"; steps: import("../../shared/codexItems").CodexPlanStep[]; explanation?: string; at?: string }
+  // A Codex fileChange item: per-file diff with +/- stats.
+  | { id: string; kind: "fileChange"; changes: import("../../shared/codexItems").CodexFileEdit[]; status?: string; at?: string }
   // Inter-member (agentparty channel) message. `direction` is relative to the
   // member whose transcript this is: "in" = received, "out" = this member sent.
   | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string }

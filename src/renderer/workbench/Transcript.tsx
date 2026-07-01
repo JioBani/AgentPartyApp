@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, FileDiff, ListChecks, Maximize2, Search, ShieldCheck, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, ListChecks, Maximize2, Search, ShieldCheck, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -116,6 +116,10 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
           <span className="wb-mono">{block.text}</span>
         </div>
       );
+    case "plan":
+      return <PlanBlock block={block} />;
+    case "fileChange":
+      return <FileChangeBlock block={block} density={density} />;
     case "approval":
       return <ApprovalBlock block={block} view={view} density={density} actions={actions} />;
     default:
@@ -185,16 +189,21 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   // The summary `arg` is ellipsis-clipped; show the FULL command/input in the body
   // so a long bash command (or other arg) is never lost when expanded.
   const fullInput = toolInputDetail(block.input);
-  const result = formatResult(block.result);
+  // Command execution streams live output separately from its final result.
+  const result = block.output || formatResult(block.result);
   const failed = block.status === "failed";
+  // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
+  const meta = toolMeta(block);
   return (
     <details className={"wb-block wb-tool density-" + density} open={density === "wide" && Boolean(result)}>
       <summary>
         <ChevronRight size={13} className="wb-caret" />
         <span className={"wb-tool-check" + (failed ? " failed" : "")}><Check size={11} /></span>
         <span className="wb-mono wb-tool-name">{block.name}</span>
+        {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}
       </summary>
+      {meta && <div className="wb-tool-meta">{meta}</div>}
       {fullInput && (
         // Command body scrolls within a capped height; the expand button opens a
         // full, scrollable view (command + result) for very long content.
@@ -211,9 +220,83 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
           </button>
         </div>
       )}
-      {result && <pre className="wb-pre wb-tool-result">{result}</pre>}
+      {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{result}</pre>}
       {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </details>
+  );
+}
+
+/** Compact meta line for a tool: cwd, exit code, duration. */
+function toolMeta(block: Extract<TranscriptBlock, { kind: "tool" }>): string {
+  const parts: string[] = [];
+  if (block.cwd) {
+    parts.push(`cwd ${block.cwd}`);
+  }
+  if (typeof block.exitCode === "number") {
+    parts.push(`exit ${block.exitCode}`);
+  }
+  if (typeof block.durationMs === "number") {
+    parts.push(block.durationMs >= 1000 ? `${(block.durationMs / 1000).toFixed(1)}s` : `${block.durationMs}ms`);
+  }
+  return parts.join("  ·  ");
+}
+
+const PLAN_ICON: Record<string, JSX.Element> = {
+  completed: <Check size={13} />,
+  inProgress: <CircleDot size={13} />,
+  pending: <Circle size={13} />,
+};
+
+/** Codex plan/TODO card: a checklist with per-step status (pending/in-progress/done). */
+function PlanBlock({ block }: { block: Extract<TranscriptBlock, { kind: "plan" }> }) {
+  const done = block.steps.filter((s) => s.status === "completed").length;
+  return (
+    <div className="wb-block wb-plan">
+      <div className="wb-plan-head">
+        <ListChecks size={14} />
+        <strong>계획</strong>
+        {block.steps.length > 0 && <span className="wb-plan-count">{done}/{block.steps.length}</span>}
+      </div>
+      {block.steps.length > 0 ? (
+        <ol className="wb-plan-steps">
+          {block.steps.map((step, i) => (
+            <li key={i} className={"wb-plan-step is-" + step.status}>
+              <span className="wb-plan-step-ic">{PLAN_ICON[step.status] || PLAN_ICON.pending}</span>
+              <span className="wb-plan-step-text">{step.step}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        block.explanation && <p className="wb-plan-text"><Markdown text={block.explanation} /></p>
+      )}
+    </div>
+  );
+}
+
+/** Codex fileChange item: each affected file with +/- stats and a collapsible diff. */
+function FileChangeBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "fileChange" }>; density: PanelDensity }) {
+  const total = block.changes.reduce((acc, c) => ({ added: acc.added + c.added, removed: acc.removed + c.removed }), { added: 0, removed: 0 });
+  return (
+    <div className={"wb-block wb-filechange density-" + density}>
+      <div className="wb-filechange-head">
+        <FileDiff size={14} />
+        <strong>파일 변경</strong>
+        <span className="wb-chip">{block.changes.length}개 파일</span>
+        <span className="wb-diff-stat"><span className="wb-diff-add">+{total.added}</span> <span className="wb-diff-del">-{total.removed}</span></span>
+        {block.status && <span className="wb-mono wb-filechange-status">{block.status}</span>}
+      </div>
+      {block.changes.map((change, i) => (
+        <details key={i} className="wb-filechange-file" open={density === "wide" && block.changes.length === 1}>
+          <summary>
+            <ChevronRight size={12} className="wb-caret" />
+            <span className={"wb-filechange-kind is-" + change.kind}>{change.kind}</span>
+            <span className="wb-mono wb-filechange-path">{change.path}</span>
+            <span className="wb-diff-stat"><span className="wb-diff-add">+{change.added}</span> <span className="wb-diff-del">-{change.removed}</span></span>
+          </summary>
+          {change.diff && <pre className="wb-pre wb-approval-diff">{change.diff}</pre>}
+        </details>
+      ))}
+    </div>
   );
 }
 
