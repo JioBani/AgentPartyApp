@@ -54,6 +54,8 @@ export interface PaletteCommand {
   /** Argument signature shown after the name, e.g. "<member>" or "[topic]". */
   args?: string;
   badges?: PaletteBadge[];
+  /** When disabled, why — shown in the palette preview (e.g. "비활성화됨"). */
+  disabledReason?: string;
   run: PaletteRun;
 }
 
@@ -63,6 +65,10 @@ export interface DiscoveredCommand {
   description?: string;
   argumentHint?: string;
   aliases?: string[];
+  /** Explicit provenance from the harness ("skill" | "plugin" | "built-in" | …). */
+  source?: string;
+  /** Set when the harness reports the command is unavailable, with the reason. */
+  disabledReason?: string;
 }
 
 export interface HarnessPalette {
@@ -169,18 +175,53 @@ export function buildPalette(runtime: string | undefined, discovered?: Discovere
 /** Classifies a discovered command, enriching from a matching static entry. */
 function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, known: PaletteCommand | undefined): PaletteCommand {
   const name = discovered.name;
+  // Explicit harness-reported source wins over name-shape inference.
+  const source = explicitSource(discovered.source) ?? known?.source ?? classifySource(name);
+  const category = categoryForSource(source) ?? known?.category ?? classifyCategory(name);
   const base: PaletteCommand = known
     ? { ...known }
-    : { id: name, trigger: prefix + name, title: name, description: "", category: classifyCategory(name), source: classifySource(name), run: { type: "insert" } };
+    : { id: name, trigger: prefix + name, title: name, description: "", category, source, run: { type: "insert" } };
+  const disabled = Boolean(discovered.disabledReason);
+  const badges = disabled ? [...(base.badges || []).filter((b) => b !== "disabled"), "disabled" as PaletteBadge] : base.badges;
   return {
     ...base,
     id: name,
     trigger: prefix + name,
     title: name,
+    category,
+    source,
     // Live metadata wins over the static description / argument hint.
     description: discovered.description || base.description,
     args: discovered.argumentHint || base.args,
+    badges,
+    disabledReason: discovered.disabledReason || base.disabledReason,
   };
+}
+
+/** A harness-reported source string, when it names a known palette source. */
+function explicitSource(source: string | undefined): PaletteSource | undefined {
+  const known: PaletteSource[] = ["built-in", "skill", "agent", "mcp", "plugin", "user", "project", "agentparty"];
+  return known.find((s) => s === source);
+}
+
+/** Section a source belongs in (skills group under Skills, plugins under Plugins, …). */
+function categoryForSource(source: PaletteSource | undefined): PaletteCategory | undefined {
+  switch (source) {
+    case "skill":
+      return "skill";
+    case "plugin":
+      return "plugin";
+    case "mcp":
+      return "mcp";
+    case "agent":
+      return "agent";
+    case "agentparty":
+      return "agentparty";
+    case "built-in":
+      return "command";
+    default:
+      return undefined;
+  }
 }
 
 /** MCP prompts and plugin-namespaced commands are recognizable by name shape. */

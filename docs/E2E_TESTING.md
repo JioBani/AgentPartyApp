@@ -32,6 +32,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-policy` | Codex two-axis safety model: presets (Read Only/Auto/Full Access) + sandbox×approval + guardian; RuntimeModal shows it for Codex only |
 | `qa-codex-approval` | Codex approval card variants: decision option sets per request kind + decision→protocol mapping (accept/acceptForSession/execpolicy-amendment/decline), request→meta/response translation (command/fileChange/permissions/userInput/elicitation), and the Transcript card showing the exact command/diff + once/session/prefix-rule/decline buttons |
 | `qa-codex-items` | Codex ThreadItem coverage: pure model (diff stats, fileChange normalization, plan steps, tool source mcp:<server>/plugin/namespace) + event pipeline (plan upserts one evolving card, command output deltas append, cwd/exit/duration merge, fileChange→diff block) + Transcript DOM (plan checklist, fileChange +/- stats, tool source badge + exit/duration, live output) |
+| `qa-codex-discovery` | Codex `/` palette discovery: skills/list + plugin/installed → palette commands by source with disabled reasons (disabled skill / admin-disabled plugin; not-installed excluded), palette grouping (Skills/Plugins/Commands) + disabled badge, and CommandPalette DOM (source badges, dimmed disabled rows, preview reason) |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.

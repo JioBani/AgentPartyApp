@@ -12,6 +12,7 @@ import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
+import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -40,15 +41,15 @@ type PendingApproval = {
 };
 
 const CODEX_COMMANDS: HarnessCommand[] = [
-  { name: "model", description: "Switch model" },
-  { name: "approvals", description: "Change approval mode" },
-  { name: "new", description: "Start a new conversation" },
-  { name: "init", description: "Create an AGENTS.md for this repo" },
-  { name: "compact", description: "Summarize to free context" },
-  { name: "diff", description: "Show working-tree diff" },
-  { name: "mention", description: "Mention a file", argumentHint: "<path>" },
-  { name: "status", description: "Show session status" },
-  { name: "mcp", description: "List MCP servers" },
+  { name: "model", description: "Switch model", source: "built-in" },
+  { name: "approvals", description: "Change approval mode", source: "built-in" },
+  { name: "new", description: "Start a new conversation", source: "built-in" },
+  { name: "init", description: "Create an AGENTS.md for this repo", source: "built-in" },
+  { name: "compact", description: "Summarize to free context", source: "built-in" },
+  { name: "diff", description: "Show working-tree diff", source: "built-in" },
+  { name: "mention", description: "Mention a file", argumentHint: "<path>", source: "built-in" },
+  { name: "status", description: "Show session status", source: "built-in" },
+  { name: "mcp", description: "List MCP servers", source: "built-in" },
 ];
 
 export class CodexAdapter extends EventEmitter {
@@ -75,6 +76,8 @@ export class CodexAdapter extends EventEmitter {
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
   private policy: CodexPolicy;
+  /** Live palette inventory: built-in commands + discovered skills/plugins. */
+  private inventory: HarnessCommand[] = CODEX_COMMANDS;
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
@@ -93,7 +96,7 @@ export class CodexAdapter extends EventEmitter {
       sessionId: this.sessionId || this.options.id,
       model: this.options.model,
       permissionMode: this.options.permissionMode,
-      slashCommands: CODEX_COMMANDS,
+      slashCommands: this.inventory,
       at: now(),
     });
     this.initializing = this.ensureThread();
@@ -174,7 +177,7 @@ export class CodexAdapter extends EventEmitter {
       turnCount: this.turnCount,
       queuedTurnCount: this.queuedTurns.length,
       pendingApprovalCount: this.pendingApprovals.size,
-      slashCommands: CODEX_COMMANDS,
+      slashCommands: this.inventory,
       codexPolicy: this.policy,
     };
   }
@@ -322,9 +325,41 @@ export class CodexAdapter extends EventEmitter {
       sessionId: this.sessionId,
       model: String(result?.model || this.options.model),
       permissionMode: this.options.permissionMode,
-      slashCommands: CODEX_COMMANDS,
+      slashCommands: this.inventory,
       at: now(),
     });
+    // Discover the real command/skill/plugin inventory (async, best-effort).
+    void this.refreshInventory();
+  }
+
+  /**
+   * Queries the app-server for skills (skills/list) and installed plugins
+   * (plugin/installed) and merges them into the palette inventory alongside the
+   * built-in commands, tagged by source with a disabled reason when unavailable.
+   * Best-effort: a failed query is surfaced as a status, never fatal.
+   */
+  private async refreshInventory(): Promise<void> {
+    const [skills, plugins] = await Promise.all([
+      this.request("skills/list", { cwds: [this.options.cwd] }).catch((error) => this.noteDiscoveryError("skills", error)),
+      this.request("plugin/installed", {}).catch((error) => this.noteDiscoveryError("plugins", error)),
+    ]);
+    const merged = [...CODEX_COMMANDS, ...skillCommands(skills), ...pluginCommands(plugins)];
+    // Dedupe by name, keeping the first (built-ins win over same-named skills).
+    const seen = new Set<string>();
+    this.inventory = merged.filter((command) => (seen.has(command.name) ? false : seen.add(command.name)));
+    this.emitEvent({
+      type: "session",
+      sessionId: this.sessionId,
+      model: this.options.model,
+      permissionMode: this.options.permissionMode,
+      slashCommands: this.inventory,
+      at: now(),
+    });
+  }
+
+  private noteDiscoveryError(kind: string, error: unknown): undefined {
+    this.emitEvent({ type: "status", status: "discovery", detail: `${kind}: ${error instanceof Error ? error.message : String(error)}`, at: now() });
+    return undefined;
   }
 
   private async runTurn(text: string): Promise<void> {
@@ -448,7 +483,7 @@ export class CodexAdapter extends EventEmitter {
     const params = message.params || {};
     if (method === "thread/started") {
       this.sessionId = String(params.thread?.id || params.thread?.sessionId || this.sessionId);
-      this.emitEvent({ type: "session", sessionId: this.sessionId, model: this.options.model, permissionMode: this.options.permissionMode, slashCommands: CODEX_COMMANDS, at: now() });
+      this.emitEvent({ type: "session", sessionId: this.sessionId, model: this.options.model, permissionMode: this.options.permissionMode, slashCommands: this.inventory, at: now() });
       return;
     }
     if (method === "thread/status/changed") {
@@ -505,6 +540,11 @@ export class CodexAdapter extends EventEmitter {
     }
     if (method === "error") {
       this.finishWithError(new Error(String(params.error?.message || params.error || "Codex app-server error.")));
+      return;
+    }
+    if (method === "skills/changed" || method === "app/list/updated") {
+      // The skill/plugin inventory changed — re-discover so the palette updates.
+      void this.refreshInventory();
       return;
     }
     if (method === "warning" || method === "configWarning" || method === "deprecationNotice" || method === "mcpServer/startupStatus/updated") {

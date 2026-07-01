@@ -60,6 +60,20 @@ rl.on("line", (line) => {
       send({ id: msg.id, result: { thread: { id: "thr-fake" }, model: msg.params?.model || "fake" } });
       return;
     }
+    if (msg.method === "skills/list") {
+      send({ id: msg.id, result: { data: [{ cwd: msg.params?.cwds?.[0] || "/w", skills: [
+        { name: "deep-dive", shortDescription: "심층 분석 스킬", enabled: true },
+        { name: "legacy-skill", description: "구버전", enabled: false },
+      ], errors: [] }] } });
+      return;
+    }
+    if (msg.method === "plugin/installed") {
+      send({ id: msg.id, result: { marketplaces: [{ plugins: [
+        { summary: { id: "fmt", name: "formatter", installed: true, enabled: true, availability: "AVAILABLE", keywords: ["format"] } },
+        { summary: { id: "blk", name: "blocked-plugin", installed: true, enabled: true, availability: "DISABLED_BY_ADMIN" } },
+      ] }], marketplaceLoadErrors: [] } });
+      return;
+    }
     if (msg.method === "turn/start") {
       send({ id: msg.id, result: { turn: { id: "turn-1" } } });
       send({ method: "turn/started", params: { turn: { id: "turn-1" } } });

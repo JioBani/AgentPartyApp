@@ -15,6 +15,10 @@ export interface HarnessCommand {
   /** Argument hint, e.g. "<file>". */
   argumentHint?: string;
   aliases?: string[];
+  /** Provenance for the palette source badge: "built-in" | "skill" | "plugin" | … */
+  source?: string;
+  /** When set, the command is unavailable and this explains why (e.g. "disabled"). */
+  disabledReason?: string;
 }
 
 export interface TurnCost {

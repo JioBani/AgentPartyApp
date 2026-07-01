@@ -69,7 +69,7 @@ export function CommandPalette({ commands, activeIndex, onHover, onSelect }: Com
                     key={command.id}
                     role="option"
                     aria-selected={isActive}
-                    className={"wb-cmd-row" + (isActive ? " is-active" : "")}
+                    className={"wb-cmd-row" + (isActive ? " is-active" : "") + (command.badges?.includes("disabled") ? " is-disabled" : "")}
                     onMouseEnter={() => onHover(index)}
                     onMouseDown={(e) => {
                       // Keep textarea focus; fire before blur.
@@ -96,6 +96,7 @@ export function CommandPalette({ commands, activeIndex, onHover, onSelect }: Com
             {active.args && <span className="wb-cmd-args">{active.args}</span>}
           </div>
           <div className="wb-cmd-preview-desc">{active.description}</div>
+          {active.disabledReason && <div className="wb-cmd-preview-disabled">{active.disabledReason}</div>}
           {active.badges && active.badges.length > 0 && (
             <div className="wb-cmd-badges">
               {active.badges.map((badge) => (

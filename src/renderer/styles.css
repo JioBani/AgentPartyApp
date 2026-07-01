@@ -2145,6 +2145,16 @@ body.wb-resizing {
   color: var(--text-2);
 }
 
+.wb-cmd-row.is-disabled {
+  opacity: 0.5;
+}
+
+.wb-cmd-preview-disabled {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--danger, #d66);
+}
+
 .wb-cmd-badges {
   display: flex;
   flex-wrap: wrap;
