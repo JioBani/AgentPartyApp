@@ -10,11 +10,13 @@ import type {
   StartPartyMemberInput,
   SessionView,
 } from "../../shared/types";
+import { harnessDefaultsOf } from "../../shared/types";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import type { PartyBridge } from "../../core/partyBridge";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { harnesses } from "../harness/types";
 import {
@@ -197,10 +199,11 @@ export class PartyApplicationService {
   }
 
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
-    const settings = getSettings();
-    member.model = input.model || member.model || settings.claudeModel;
-    member.effort = input.effort || member.effort || settings.claudeEffort;
-    member.permissionMode = input.permissionMode || member.permissionMode || settings.claudePermissionMode;
+    // Fill unset fields from the member's own harness defaults (not one global).
+    const defaults = harnessDefaultsOf(getSettings(), normalizeHarnessId(member.runtime));
+    member.model = input.model || member.model || defaults.model;
+    member.effort = input.effort || member.effort || defaults.effort;
+    member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
   }
 
   private createMemberSession(
@@ -209,11 +212,10 @@ export class PartyApplicationService {
     input: StartPartyMemberInput,
     options: { mock?: boolean; autoReply?: boolean },
   ): SessionView {
-    const settings = getSettings();
     const createInput = {
       workspacePath: workspace,
       selectedHarnessId: normalizeHarnessId(member.runtime),
-      selectedProviderId: input.selectedProviderId || settings.selectedProviderId,
+      selectedProviderId: input.selectedProviderId,
       model: member.model,
       effort: member.effort as any,
       thinking: member.reasoning,
@@ -379,7 +381,7 @@ export class PartyApplicationService {
           }));
         return { ok: true, data: { members } };
       },
-      listModels: async () => ({ ok: true, data: partyModelDiscovery() }),
+      listModels: async () => ({ ok: true, data: partyModelDiscovery(this.deps.sessionManager.getCodexModelState()) }),
     };
   }
 
@@ -390,29 +392,34 @@ export class PartyApplicationService {
 
 /**
  * The rich harness + model catalog returned by the `list-models` party tool, so
- * an agent can fill `member-create` correctly. Reads the same catalog
- * (`buildModelRoutes`) the UI and routing use.
+ * an agent can fill `member-create` correctly (each model states its harness).
+ * Reads the same catalog (`buildModelRoutes`) the UI and routing use, including
+ * the live Codex account catalog when discovered; a discovery failure rides
+ * along as `codexModelsError` instead of being dropped.
  */
-function partyModelDiscovery(): {
+function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
   harnesses: Array<{ id: string; label: string; status: string }>;
   models: Array<Record<string, unknown>>;
+  codexModelsError?: string;
 } {
-  const routes = buildModelRoutes(getSettings().claudeModel, [], []);
+  const routes = buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels?.models);
   return {
     harnesses: harnesses.map((harness) => ({ id: harness.id, label: harness.label, status: harness.status })),
+    codexModelsError: codexModels?.status === "error" ? codexModels.error : undefined,
     models: routes.map((route) => {
       const thinking = route.capabilities.thinking;
       const effort = route.capabilities.effort;
-      const reasoning = thinking.supported
+      const reasoning = thinking.supported || effort.supported
         ? {
             effort: effort.supported ? { options: effort.options.map((option) => option.id), default: effort.defaultValue } : undefined,
-            thinking: thinking.modes ? { modes: thinking.modes.map((mode) => mode.id), default: thinking.defaultValue } : undefined,
-            budget: thinking.budget,
+            thinking: thinking.supported && thinking.modes ? { modes: thinking.modes.map((mode) => mode.id), default: thinking.defaultValue } : undefined,
+            budget: thinking.supported ? thinking.budget : undefined,
           }
         : null;
       return {
         id: route.model,
         label: route.label,
+        harness: route.harnessId,
         provider: route.providerId,
         perf: route.meta?.perf,
         costTier: route.meta?.costTier,

@@ -8,6 +8,8 @@ export const automationEndpoints = [
   "POST /api/auth/openrouter",
   "DELETE /api/auth/openrouter",
   "POST /api/auth/openrouter/test",
+  "GET /api/models",
+  "POST /api/models/codex/refresh",
   "POST /api/sessions",
   "GET /api/sessions/history",
   "POST /api/sessions/resume",

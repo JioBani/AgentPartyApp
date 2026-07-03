@@ -75,6 +75,12 @@ export function catalogModelByRuntime(runtimeModel: string): CatalogModel | unde
   return MODELS.find((m) => (m.runtimeModel || m.id).toLowerCase() === lower);
 }
 
+/** Finds a catalog entry by its concrete OpenRouter model id (`orModelId`). */
+export function catalogModelByOrModelId(orModelId: string): CatalogModel | undefined {
+  const lower = orModelId.toLowerCase();
+  return MODELS.find((m) => (m.orModelId || "").toLowerCase() === lower);
+}
+
 /** OpenRouter models only (provider openrouter with a concrete OR id). */
 export function openRouterModels(): CatalogModel[] {
   return MODELS.filter((m) => m.provider === "openrouter" && Boolean(m.orModelId));

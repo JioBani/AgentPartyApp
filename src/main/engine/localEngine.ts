@@ -80,6 +80,14 @@ export class LocalEngine implements EngineConnection {
     return runPartyAction(this.party, name, action, body);
   }
 
+  // --- Models ---------------------------------------------------------------
+  async listCodexModels(refresh?: boolean) {
+    if (refresh) {
+      return this.deps.sessionManager.refreshCodexModels();
+    }
+    return this.deps.sessionManager.getCodexModelState();
+  }
+
   // --- Sessions -----------------------------------------------------------
   async createSession(input?: CreateSessionInput | string): Promise<SessionView> {
     return this.deps.sessionManager.createSession(this.withWorkspace(input));

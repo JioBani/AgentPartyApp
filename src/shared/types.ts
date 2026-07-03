@@ -1,37 +1,51 @@
 import type { ClaudeSessionSnapshot } from "../core/events";
+import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
 
 export type PermissionModeSetting = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
+export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
+export type HarnessId = "claude-code" | "codex";
+export type ProviderId = "anthropic" | "openrouter" | "openai" | "custom";
 
 /**
- * The default creation profile, *derived* from the single runtime defaults (see
- * {@link defaultMemberProfileOf}). `main` is created from it and the member
- * wizard is prefilled from it — so a member is creatable with just
- * "next, next, next". Not stored separately: the one source of truth is the
- * runtime defaults on AppSettings.
+ * The per-harness member-creation defaults. Each harness owns its own default
+ * model/effort/reasoning and its harness-appropriate permission config
+ * (single-mode `permissionMode` for Claude Code, two-axis `codexPolicy` for
+ * Codex). This is the single source of truth for "what a new member of harness
+ * X starts as" — adding a new harness is just a new entry in
+ * {@link AppSettings.harnessDefaults}. See {@link harnessDefaultsOf}.
  */
-export interface DefaultMemberProfile {
-  harness: "claude-code" | "codex";
+export interface HarnessDefaults {
   model: string;
-  effort: "low" | "medium" | "high" | "xhigh" | "max";
+  effort: EffortSetting;
   /** Reasoning/thinking mode (adaptive | enabled | disabled). */
   reasoning?: string;
   reasoningBudget?: number;
-  permissionMode: PermissionModeSetting;
+  /** Single-mode permission (Claude Code and similar harnesses). */
+  permissionMode?: PermissionModeSetting;
+  /** Two-axis safety model (Codex and similar harnesses). */
+  codexPolicy?: CodexPolicy;
+}
+
+/**
+ * A resolved creation profile for one harness, derived from
+ * {@link AppSettings.harnessDefaults}. `main` is created from the default
+ * harness's profile and the member wizard is prefilled per selected harness —
+ * so a member is creatable with just "next, next, next".
+ */
+export interface DefaultMemberProfile extends HarnessDefaults {
+  harness: HarnessId;
 }
 
 export interface AppSettings {
   workspacePath: string;
+  /** Claude Code executable override (Claude-harness infrastructure). */
   claudeExecutablePath: string;
-  selectedHarnessId: "claude-code" | "codex";
-  selectedProviderId: "anthropic" | "openrouter" | "openai" | "custom";
-  claudeModel: string;
-  claudeEffort: "low" | "medium" | "high" | "xhigh" | "max";
-  /** Default reasoning/thinking mode for new members (adaptive | enabled | disabled). */
-  claudeReasoning?: string;
-  claudeReasoningBudget?: number;
-  claudePermissionMode: PermissionModeSetting;
   claudeSafeMode: boolean;
+  /** The harness a brand-new member defaults to. */
+  selectedHarnessId: HarnessId;
+  /** Per-harness member-creation defaults — the single source of truth. */
+  harnessDefaults: Record<HarnessId, HarnessDefaults>;
   debugEnabled: boolean;
   routerBaseUrl: string;
   routerAuthToken: string;
@@ -39,16 +53,19 @@ export interface AppSettings {
   automationApiPort: number;
 }
 
-/** Derives the single member-creation default from the runtime defaults. */
-export function defaultMemberProfileOf(settings: AppSettings): DefaultMemberProfile {
-  return {
-    harness: settings.selectedHarnessId,
-    model: settings.claudeModel,
-    effort: settings.claudeEffort,
-    reasoning: settings.claudeReasoning,
-    reasoningBudget: settings.claudeReasoningBudget,
-    permissionMode: settings.claudePermissionMode,
-  };
+/** All harnesses that have defaults, in a stable order. */
+export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex"];
+
+/** The creation defaults for one harness (falls back to the default harness). */
+export function harnessDefaultsOf(settings: AppSettings, harnessId?: HarnessId): HarnessDefaults {
+  const id = harnessId || settings.selectedHarnessId;
+  return settings.harnessDefaults[id] || settings.harnessDefaults[settings.selectedHarnessId];
+}
+
+/** Derives the member-creation default profile for a harness (default harness if omitted). */
+export function defaultMemberProfileOf(settings: AppSettings, harnessId?: HarnessId): DefaultMemberProfile {
+  const id = harnessId || settings.selectedHarnessId;
+  return { harness: id, ...harnessDefaultsOf(settings, id) };
 }
 
 export interface AuthProviderState {
@@ -133,9 +150,9 @@ export interface CreateMemberInput {
 
 export interface StartPartyMemberInput {
   model?: string;
-  effort?: AppSettings["claudeEffort"];
-  permissionMode?: AppSettings["claudePermissionMode"];
-  selectedProviderId?: AppSettings["selectedProviderId"];
+  effort?: EffortSetting;
+  permissionMode?: PermissionModeSetting;
+  selectedProviderId?: ProviderId;
 }
 
 export interface SessionView {
@@ -147,14 +164,14 @@ export interface SessionView {
 
 export interface CreateSessionInput {
   workspacePath?: string;
-  selectedHarnessId?: AppSettings["selectedHarnessId"];
-  selectedProviderId?: AppSettings["selectedProviderId"];
+  selectedHarnessId?: HarnessId;
+  selectedProviderId?: ProviderId;
   model?: string;
-  effort?: AppSettings["claudeEffort"];
+  effort?: EffortSetting;
   /** Thinking mode (adaptive | enabled | disabled); falls back to the model's catalog default. */
   thinking?: string;
   thinkingBudget?: number;
-  permissionMode?: AppSettings["claudePermissionMode"];
+  permissionMode?: PermissionModeSetting;
   /** Codex two-axis safety model; used only when the harness is Codex. */
   codexPolicy?: CodexPolicy;
 }
@@ -182,6 +199,8 @@ export interface InitialAppState {
   auth: AuthProviderState[];
   sessions: SessionView[];
   modelRoutes: unknown[];
+  /** Live Codex account-catalog discovery state (pending/ready/error). */
+  codexModels?: CodexModelDiscoveryState;
   harnesses: unknown[];
   router: { baseUrl: string };
   automationApi?: { baseUrl: string; spec: string };

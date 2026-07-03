@@ -1,5 +1,5 @@
-import type { AppSettings, CreateMemberInput, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
-import { defaultMemberProfileOf } from "../../shared/types";
+import type { AppSettings, CreateMemberInput, HarnessId, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
+import { harnessDefaultsOf } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
 
 export function createPartyDefinition(name: string, now = new Date().toISOString()): PartyDefinition {
@@ -21,8 +21,11 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     throw new Error("Member name and role are required.");
   }
 
-  const profile = defaultMemberProfileOf(settings);
-  const runtime = normalizeRuntime(input.runtime || profile.harness);
+  // A member is created from ITS harness's defaults (not one global profile), so
+  // e.g. a Codex member starts with the Codex default model + sandbox policy.
+  const runtime = normalizeRuntime(input.runtime || settings.selectedHarnessId);
+  const harnessId: HarnessId = runtime === "codex" ? "codex" : "claude-code";
+  const profile = harnessDefaultsOf(settings, harnessId);
   return {
     partyId: input.partyId,
     name,
@@ -33,9 +36,9 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     effort: input.effort || profile.effort,
     reasoning: input.reasoning ?? profile.reasoning,
     reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
-    permissionMode: input.permissionMode || profile.permissionMode,
-    // Codex members get the two-axis default (Auto); Claude members don't use it.
-    codexPolicy: runtime === "codex" ? { ...DEFAULT_CODEX_POLICY } : undefined,
+    permissionMode: input.permissionMode || profile.permissionMode || "default",
+    // Codex members carry the harness's two-axis policy default; Claude members don't use it.
+    codexPolicy: harnessId === "codex" ? { ...(profile.codexPolicy || DEFAULT_CODEX_POLICY) } : undefined,
     createdAt: now,
     updatedAt: now,
   };

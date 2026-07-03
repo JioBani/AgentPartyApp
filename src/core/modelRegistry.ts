@@ -1,10 +1,14 @@
 import {
   catalogModelById,
   catalogModelByRuntime,
+  catalogModelByOrModelId,
   modelCatalog,
+  openRouterModels,
   type CatalogModel,
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
+import type { CodexModelInfo } from "../shared/codexModels";
+import { CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 
 export type HarnessId = "claude-code" | "codex";
 export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "custom";
@@ -33,6 +37,8 @@ export interface ModelRoute {
   providerId: ModelProviderId;
   model: string;
   runtimeModel?: string;
+  /** Codex custom provider id (e.g. "openrouter"); absent = built-in account. */
+  modelProvider?: string;
   label: string;
   description?: string;
   pricing?: ModelPricing;
@@ -132,7 +138,7 @@ export const harnesses: HarnessDescriptor[] = [
   },
 ];
 
-export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = []): ModelRoute[] {
+export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[]): ModelRoute[] {
   const routes: ModelRoute[] = [];
   const seen = new Set<string>();
 
@@ -140,7 +146,20 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of modelCatalog()) {
     addRoute(routes, seen, routeFromCatalog(model));
   }
-  addRoute(routes, seen, codexDefaultRoute());
+  // Codex harness: the live account catalog (model/list) when discovered; the
+  // static default keeps the harness usable before/without discovery.
+  for (const model of codexModels || []) {
+    addRoute(routes, seen, codexRouteFromModel(model));
+  }
+  if (!codexModels?.length) {
+    addRoute(routes, seen, codexDefaultRoute());
+  }
+  // Codex harness (Phase 2): every OpenRouter catalog model, routed through the
+  // OpenRouter custom provider. These extend the account catalog so a Codex
+  // member can run non-OpenAI models (docs/codex-ux-research/07-model-routing.md).
+  for (const model of openRouterModels()) {
+    addRoute(routes, seen, codexOpenRouterRoute(model));
+  }
 
   // Keep the currently selected model visible even if it is not catalogued
   // (e.g. a user-configured custom route), so it never silently disappears.
@@ -162,6 +181,101 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   }
 
   return routes;
+}
+
+/**
+ * A route for one model of the discovered Codex account catalog. Effort options
+ * come from the model's own `supportedReasoningEfforts`; thinking/permission are
+ * unsupported on this harness (Codex manages reasoning internally and uses the
+ * two-axis sandbox/approval policy instead of Claude permission modes).
+ * Leaderboard meta (perf/cost) is enriched from the shared catalog when the
+ * same model exists there under a spelling variant (e.g. "GPT-5.4 mini").
+ */
+export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
+  const catalogTwin = catalogMetaForCodexModel(model.model);
+  return {
+    harnessId: "codex",
+    providerId: "openai",
+    model: model.model,
+    runtimeModel: model.model,
+    label: model.displayName,
+    description: model.description,
+    pricing: { billing: "subscription", directPrice: "Codex subscription", context: catalogTwin?.context },
+    capabilities: {
+      effort:
+        model.reasoningEfforts.length > 0
+          ? {
+              supported: true,
+              mutableDuringSession: true,
+              defaultValue: model.defaultReasoningEffort || model.reasoningEfforts[0].id,
+              options: model.reasoningEfforts.map((effort) => ({ id: effort.id, label: effortLabel(effort.id), description: effort.description })),
+            }
+          : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+    },
+    meta: catalogTwin
+      ? { perf: catalogTwin.perf, costTier: catalogTwin.costTier, inPerM: catalogTwin.inPerM, outPerM: catalogTwin.outPerM, ioPerM: catalogTwin.ioPerM, context: catalogTwin.context }
+      : undefined,
+    enabled: true,
+  };
+}
+
+/**
+ * Finds the shared-catalog entry describing the same underlying model as a
+ * Codex slug, tolerating spelling variants ("gpt-5.4-mini" vs "GPT-5.4 mini")
+ * by comparing ids with separators stripped.
+ */
+function catalogMetaForCodexModel(slug: string): CatalogModel | undefined {
+  const wanted = comparableModelId(slug);
+  return modelCatalog().find((model) => comparableModelId(model.id) === wanted);
+}
+
+function comparableModelId(id: string): string {
+  return id.toLowerCase().replace(/[\s._-]+/g, "");
+}
+
+/**
+ * A codex-harness route for an OpenRouter catalog model (Phase 2). The model
+ * slug sent to the app-server is the concrete `orModelId` (e.g. "z-ai/glm-5.2"),
+ * routed through the OpenRouter custom provider. Effort options come from the
+ * catalog's reasoning spec (Codex forwards the effort as the provider's
+ * reasoning control); thinking/permission stay unsupported on this harness.
+ * Leaderboard meta (perf/cost) is preserved from the catalog.
+ */
+export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
+  const effort = model.reasoning?.effort;
+  return {
+    harnessId: "codex",
+    providerId: "openrouter",
+    model: model.orModelId || model.id,
+    runtimeModel: model.orModelId || model.id,
+    modelProvider: CODEX_OPENROUTER_PROVIDER.id,
+    label: model.label,
+    description: `${model.description || ""} Runs on the Codex harness via OpenRouter (billed to your OpenRouter key).`.trim(),
+    pricing: pricingFromCatalog(model),
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: true,
+  };
 }
 
 function codexDefaultRoute(): ModelRoute {
@@ -259,7 +373,7 @@ function pricingFromCatalog(model: CatalogModel): ModelPricing {
 }
 
 export function pricingForModel(model: string): ModelPricing | undefined {
-  const catalogued = catalogModelById(model) || catalogModelByRuntime(model);
+  const catalogued = catalogModelById(model) || catalogModelByRuntime(model) || catalogModelByOrModelId(model);
   return catalogued ? pricingFromCatalog(catalogued) : undefined;
 }
 

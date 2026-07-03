@@ -32,9 +32,15 @@ const byId = Object.fromEntries(routes.map((r) => [r.model, r]));
 
 // Leaderboard OR-O set must be exactly these, with concrete OR ids.
 const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 Pro", "MiniMax M3", "Gemini 3.x Pro", "Kimi K2.7 Code", "Kimi K2.6", "Grok Build 0.1", "Qwen3.7 Plus", "Grok 4.3"];
-const orRoutes = routes.filter((r) => r.providerId === "openrouter");
-assert(orRoutes.length === expectedOr.length, `exactly ${expectedOr.length} OpenRouter models exposed (got ${orRoutes.length})`);
+// OpenRouter models appear on BOTH harnesses: as claude-code routes (router-backed)
+// and as codex routes (Phase 2, modelProvider=openrouter). `byId` keys off the
+// claude-code label; codex OR routes are keyed by the orModelId slug.
+const orClaudeRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "claude-code");
+assert(orClaudeRoutes.length === expectedOr.length, `exactly ${expectedOr.length} OpenRouter models on the claude-code harness (got ${orClaudeRoutes.length})`);
 assert(expectedOr.every((id) => byId[id]), "all leaderboard OR-O models are present");
+const orCodexRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "codex");
+assert(orCodexRoutes.length === expectedOr.length, `all ${expectedOr.length} OpenRouter models also exposed as codex routes (got ${orCodexRoutes.length})`);
+assert(orCodexRoutes.every((r) => r.modelProvider === "openrouter" && /.+\/.+/.test(r.model)), "codex OR routes pin modelProvider=openrouter + carry the orModelId slug");
 
 // Junk/duplicate OR models from the old hardcoded list are gone.
 for (const gone of ["Qwen3 Coder", "MiniMax M2.7", "Qwen3 Coder Plus", "GLM-5.2 (OpenRouter)", "openrouter/<provider>/<model>"]) {
@@ -64,7 +70,9 @@ assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Gro
 assert(!eff("haiku").supported && Boolean(th("haiku").budget), "Haiku has no effort but a thinking budget");
 
 assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
-assert(modelCatalog().length + 1 === routes.length, "every catalog entry plus the Codex default produced a route");
+// Routes = every catalog entry (claude-code) + the static Codex account fallback
+// + one codex OpenRouter route per OpenRouter catalog model (Phase 2).
+assert(modelCatalog().length + 1 + openRouterModels().length === routes.length, "catalog + Codex default + codex OpenRouter routes all produced");
 
 // Stale-model healing (guards the member-create bug where a legacy persisted
 // model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).

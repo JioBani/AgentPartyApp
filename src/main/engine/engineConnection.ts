@@ -7,6 +7,7 @@ import type {
   StartPartyMemberInput,
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 
@@ -91,6 +92,15 @@ export interface EngineConnection {
   removeMember(name: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
   /** Dispatches one of the named party actions (HTTP `/api/party/members/:name/:action`). */
   partyAction(name: string, action: string, body: any): Promise<PartyMutationResult>;
+
+  // --- Models (engine-scoped) ----------------------------------------------
+  /**
+   * Snapshot of the Codex account catalog discovered from the engine host's
+   * `codex app-server` (`model/list`). `refresh` re-runs discovery and awaits
+   * the fresh settle; otherwise the current snapshot returns immediately
+   * (kicking a background discovery on first call).
+   */
+  listCodexModels(refresh?: boolean): Promise<CodexModelDiscoveryState>;
 
   // --- Sessions (workspace-scoped) ---------------------------------------
   createSession(input?: CreateSessionInput | string): Promise<SessionView>;

@@ -49,15 +49,16 @@ async function main() {
 
     const settings = await postJson(`${baseUrl}/api/settings`, {
       selectedHarnessId: "claude-code",
-      selectedProviderId: "openrouter",
-      claudeModel: "MiniMax M3",
-      claudeEffort: "medium",
-      claudePermissionMode: "plan",
+      harnessDefaults: {
+        "claude-code": { model: "MiniMax M3", effort: "medium", permissionMode: "plan" },
+        codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } },
+      },
       workspacePath: qaWorkspace,
     });
-    assert(settings.selectedProviderId === "openrouter", "provider setting updated");
-    assert(settings.claudeModel === "MiniMax M3", "model setting updated");
-    assert(settings.claudePermissionMode === "plan", "permission mode setting updated");
+    assert(settings.selectedHarnessId === "claude-code", "default harness setting updated");
+    assert(settings.harnessDefaults["claude-code"].model === "MiniMax M3", "claude-code default model updated");
+    assert(settings.harnessDefaults["claude-code"].permissionMode === "plan", "claude-code default permission mode updated");
+    assert(settings.harnessDefaults.codex.model === "gpt-5.5", "codex default model updated independently");
 
     const auth = await postJson(`${baseUrl}/api/auth/openrouter/test`, {});
     assert(Array.isArray(auth), "auth test returns providers");

@@ -23,9 +23,18 @@ function deriveStatus(member: PartyMember, session: SessionView | undefined, tra
     return "approval";
   }
   if (isSessionBusy(session)) {
-    return "working";
+    // The stall watchdog appends a "stall" diagnostic as the newest block when a
+    // turn goes silent; while it stays newest (no later activity) the member is
+    // stalled, not merely working — so the UI can offer stop/restart instead of
+    // an indefinite spinner. Real activity appends after it and clears this.
+    return isStalled(transcript) ? "stalled" : "working";
   }
   return "idle";
+}
+
+function isStalled(transcript: TranscriptBlock[]): boolean {
+  const last = transcript[transcript.length - 1];
+  return Boolean(last && last.kind === "diagnostic" && last.category === "stall");
 }
 
 export interface BuildMemberViewInput {
@@ -76,6 +85,8 @@ export function statusLabel(status: MemberStatus): string {
   switch (status) {
     case "working":
       return "working";
+    case "stalled":
+      return "stalled";
     case "approval":
       return "approval";
     case "not-started":

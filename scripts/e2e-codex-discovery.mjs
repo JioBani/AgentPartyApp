@@ -1,9 +1,12 @@
 /*
- * Full-process e2e for Codex `/` palette discovery (Item 4), driven by the fake
- * codex app-server. Launches the REAL app on the LEFT monitor, creates a Codex
- * session, and asserts that the real adapter queried skills/list + plugin/installed
- * and merged the discovered skills/plugins (with source + disabled reason) into the
- * session snapshot's slashCommands — the inventory the composer palette renders.
+ * Full-process e2e for Codex `/` palette discovery (Item 4) AND live model
+ * catalog discovery, driven by the fake codex app-server. Launches the REAL app
+ * on the LEFT monitor, creates a Codex session, and asserts that:
+ *   - the adapter queried skills/list + plugin/installed and merged the results
+ *     (with source + disabled reason) into the session snapshot's slashCommands;
+ *   - model/list discovery populated GET /api/models with every visible fake
+ *     model as a codex route (default first, hidden dropped), replacing the
+ *     single static fallback.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -44,6 +47,20 @@ async function main() {
     assert((await getJson("/api/health")).ok, "health ok");
     await post("/api/windows/win-1/workspace", { workspacePath: ws });
 
+    // Model catalog discovery (kicked by state loads) settles against the fake
+    // app-server; /api/models must then expose every visible model as a route.
+    const catalog = await waitForModelCatalog();
+    assert(catalog.codexModels.status === "ready", "codex model discovery reports ready");
+    // Account-catalog routes (from model/list) are the openai-provider codex
+    // routes; codex OpenRouter routes (Phase 2) carry providerId openrouter.
+    const accountRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.providerId === "openai");
+    assert(accountRoutes.length === 2, "both visible fake models are account codex routes (hidden one dropped)");
+    assert(accountRoutes[0].model === "fake-5.5", "the account-default model is first");
+    assert(accountRoutes[0].capabilities?.effort?.options?.length === 4, "effort options come from the model's supportedReasoningEfforts");
+    assert(!accountRoutes.some((route) => route.model === "gpt-5.4"), "the static fallback route is replaced by the live catalog");
+    const orRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.modelProvider === "openrouter");
+    assert(orRoutes.length >= 10, "OpenRouter catalog models are also exposed as codex routes (Phase 2)");
+
     const session = await post("/api/sessions", {
       workspacePath: ws,
       selectedHarnessId: "codex",
@@ -72,6 +89,23 @@ async function main() {
     killProcessTree(child.pid);
     throw error;
   }
+}
+
+/** Waits until codex model discovery settles (ready or error) in /api/models. */
+async function waitForModelCatalog() {
+  const started = Date.now();
+  let last;
+  while (Date.now() - started < 20000) {
+    last = await getJson("/api/models");
+    if (last.codexModels?.status === "ready") {
+      return last;
+    }
+    if (last.codexModels?.status === "error") {
+      throw new Error(`codex model discovery failed: ${last.codexModels.error}`);
+    }
+    await delay(400);
+  }
+  throw new Error(`codex model discovery did not settle within 20s (last: ${JSON.stringify(last?.codexModels)})`);
 }
 
 /** Waits until the session snapshot's slashCommands include the discovered skill. */

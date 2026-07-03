@@ -44,6 +44,9 @@ async function main(): Promise<void> {
   // remove). Signal the client so it re-fetches and re-broadcasts party state —
   // without this, agent-driven party changes never reach a remote workspace's UI.
   host.sessionManager.on("party", (payload) => writeLine(process.stdout, { kind: "event", channel: "party:changed", payload }));
+  // Codex model discovery settled inside this engine — signal the client so it
+  // re-fetches routes and pushes models:update (same rule: no silent state).
+  host.sessionManager.on("codex-models", (payload) => writeLine(process.stdout, { kind: "event", channel: "codex-models:changed", payload }));
 
   const shutdown = () => {
     host.dispose();

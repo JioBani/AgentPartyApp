@@ -31,7 +31,7 @@ export type TranscriptBlock =
       at?: string;
     };
 
-export type MemberStatus = "working" | "idle" | "approval" | "not-started";
+export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled";
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 

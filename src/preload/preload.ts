@@ -8,6 +8,8 @@ const api = {
   setOpenRouterKey: (value: string) => ipcRenderer.invoke("auth:setOpenRouterKey", value),
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
+  listModels: () => ipcRenderer.invoke("models:list"),
+  refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
   createSession: (input?: unknown) => ipcRenderer.invoke("session:create", input),
   listResumableSessions: (workspacePath?: string) => ipcRenderer.invoke("session:listResumable", workspacePath),
   resumeSession: (sessionId: string, workspacePath?: string) => ipcRenderer.invoke("session:resume", sessionId, workspacePath),
@@ -57,6 +59,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("party:update", listener);
     return () => ipcRenderer.off("party:update", listener);
+  },
+  onModelsUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("models:update", listener);
+    return () => ipcRenderer.off("models:update", listener);
   },
   onQaLayout: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

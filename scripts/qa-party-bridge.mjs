@@ -59,6 +59,10 @@ const sessionManager = {
   sendUserTurn(id, text) { sentTurns.push({ id, text }); },
   closeSession(id) { live.delete(id); },
   notifyPartyChanged() { notifyCount += 1; },
+  // Live codex catalog: discovered, so list-models must expose it per-harness.
+  getCodexModelState() {
+    return { status: "ready", models: [{ model: "gpt-5.5", displayName: "GPT-5.5", isDefault: true, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }], serviceTiers: [] }] };
+  },
 };
 
 const svc = new PartyApplicationService({ sessionManager, getWorkspacePath: () => workspace });
@@ -84,6 +88,10 @@ assert(models.data.harnesses.find((h) => h.id === "codex")?.status === "availabl
 assert(Array.isArray(models.data.models) && models.data.models.length > 5, "list-models returns the model catalog");
 assert(models.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one model exposes reasoning options");
 assert(models.data.models.some((m) => typeof m.perf === "number" && m.context), "models carry rich meta (perf + context)");
+assert(models.data.models.every((m) => m.harness === "claude-code" || m.harness === "codex"), "every model states its harness (member-create needs it)");
+const codexListed = models.data.models.filter((m) => m.harness === "codex");
+assert(codexListed.some((m) => m.id === "gpt-5.5"), "the live codex catalog rides into list-models");
+assert(codexListed.find((m) => m.id === "gpt-5.5")?.reasoning?.effort?.options?.length === 4, "codex models expose effort options (effort-only reasoning)");
 
 // --- member-create: codex accepted ------------------------------------------
 const codex = await bridge.createMember({ name: "cx", role: "x", harness: "codex" });

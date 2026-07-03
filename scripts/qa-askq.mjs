@@ -43,7 +43,7 @@ const noop = async () => ({ ok: true });
 const snap = { id: "s-main", cwd: "/home/dev", model: "MiniMax M3", effort: "medium", permissionMode: "plan", status: "responding", startedAt: "", debugMode: false, turnCount: 1, queuedTurnCount: 0, pendingApprovalCount: 1 };
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/home/dev", claudeExecutablePath: "", selectedHarnessId: "claude-code", selectedProviderId: "openrouter", claudeModel: "MiniMax M3", claudeEffort: "medium", claudePermissionMode: "plan", claudeSafeMode: false, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
+  settings: { workspacePath: "/home/dev", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "MiniMax M3", effort: "medium", permissionMode: "plan" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
   auth: [], sessions: [{ id: "s-main", title: "main", workspace: "/home/dev", snapshot: snap }], modelRoutes: [], harnesses: [], router: { baseUrl: "" }, automationApi: { baseUrl: "", spec: "" }, logs: { logFilePath: "" },
   party: { parties: [{ id: "p1", name: "team-a", createdAt: "", updatedAt: "" }], currentPartyId: "p1", members: [{ partyId: "p1", name: "main", status: "running", runtime: "claude-code", role: "Primary", sessionId: "s-main", model: "MiniMax M3" }], messages: [] },
   resumableSessions: [],
@@ -52,7 +52,7 @@ let approveArgs = null;
 window.agentParty = new Proxy({
   getInitialState: async () => initialState,
   approve: async (...args) => { approveArgs = args; return { ok: true }; },
-  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"),
+  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
   listParty: async () => initialState.party,
 }, { get: (t, p) => p in t ? t[p] : noop });

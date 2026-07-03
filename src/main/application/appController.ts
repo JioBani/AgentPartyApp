@@ -3,6 +3,8 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, WorkspaceDisplay } from "../../shared/types";
+import { harnessDefaultsOf } from "../../shared/types";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
@@ -74,13 +76,15 @@ export class AppController {
   // --- Global state -------------------------------------------------------
   async getState(workspacePath: string): Promise<InitialAppState> {
     const settings = getSettings();
+    const codexModels = await this.engineFor(workspacePath).listCodexModels();
     return {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
       auth: getAuthState(),
       sessions: await this.engineFor(workspacePath).listWorkspaceSessions(),
-      modelRoutes: buildModelRoutes(settings.claudeModel, [], []),
+      modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
+      codexModels,
       harnesses,
       router: { baseUrl: this.deps.getRouterBaseUrl() },
       automationApi: {
@@ -96,6 +100,32 @@ export class AppController {
 
   getLogs(): { logFilePath: string } {
     return { logFilePath: getLogFilePath() };
+  }
+
+  // --- Model routes ---------------------------------------------------------
+  /** Current selectable model routes + Codex catalog discovery state. */
+  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; codexModels: CodexModelDiscoveryState }> {
+    const codexModels = await this.engineFor(workspacePath).listCodexModels();
+    return { ok: true, modelRoutes: buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels.models), codexModels };
+  }
+
+  /** Re-runs Codex catalog discovery and returns the fresh state. */
+  async refreshCodexModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; codexModels: CodexModelDiscoveryState }> {
+    const codexModels = await this.engineFor(workspacePath).listCodexModels(true);
+    return { ok: true, modelRoutes: buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels.models), codexModels };
+  }
+
+  /**
+   * Pushes rebuilt model routes to every window after a Codex catalog discovery
+   * settles (ready or error), so open pickers update live and a failure is
+   * visible instead of silently keeping the static fallback. Wired from the
+   * SessionManager `codex-models` event in main.ts.
+   */
+  async notifyCodexModelsChanged(): Promise<void> {
+    for (const entry of this.deps.windowRegistry.all()) {
+      const payload = await this.listModels(entry.workspacePath);
+      entry.window.webContents.send("models:update", payload);
+    }
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {

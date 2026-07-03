@@ -36,7 +36,7 @@ const members = [{ partyId: "p1", name: "kbot", status: "idle", runtime: "claude
 const party = { parties: [{ id: "p1", name: "P", createdAt: "", updatedAt: "" }], currentPartyId: "p1", members, messages: [] };
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/w", claudeExecutablePath: "", selectedHarnessId: "claude-code", selectedProviderId: "anthropic", claudeModel: "sonnet", claudeEffort: "medium", claudePermissionMode: "default", claudeSafeMode: false, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
+  settings: { workspacePath: "/w", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
   auth: [], sessions: [], modelRoutes, harnesses: [], router: { baseUrl: "" }, automationApi: { baseUrl: "", spec: "" }, logs: { logFilePath: "" }, party, resumableSessions: [],
 };
 
@@ -46,7 +46,7 @@ window.agentParty = new Proxy({
   listParty: async () => party,
   startPartyMember: async (name, input) => { startArgs = { name, input }; return { ok: true, message: "", ...party, session: { id: "s-kbot", title: "Kimi K2.6", workspace: "/w", snapshot: { id: "s-kbot", model: "Kimi K2.6", status: "idle" } } }; },
   sendMessage: noop,
-  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onQaLayout: on("qaLayout"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
+  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"), onQaLayout: on("qaLayout"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
 }, { get: (t, p) => (p in t ? t[p] : noop) });
 
 window.localStorage.setItem("agentparty.layout.p1", JSON.stringify({ panels: [{ id: "pa", tabs: ["kbot"], active: "kbot", weight: 1 }], focusedPanelId: "pa" }));

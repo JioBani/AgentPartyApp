@@ -55,7 +55,8 @@ const routes = [
 let created = null;
 const root = reactDom.createRoot(document.getElementById("root"));
 const defaultProfile = { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" };
-root.render(React.createElement(MemberWizard, { routes, defaultProfile, onCancel: () => {}, onCreate: (input) => { created = input; } }));
+const harnessDefaults = { "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } };
+root.render(React.createElement(MemberWizard, { routes, defaultProfile, harnessDefaults, onCancel: () => {}, onCreate: (input) => { created = input; } }));
 await tick(80);
 
 const q = (sel) => document.querySelector(sel);

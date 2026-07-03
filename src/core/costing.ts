@@ -104,6 +104,14 @@ class OpenRouterCostProvider implements CostProvider {
       return generationCost;
     }
 
+    // No provider-reported cost or generation id (e.g. Codex→OpenRouter, which
+    // talks to OpenRouter directly and exposes only token counts): estimate from
+    // the catalog's per-token pricing so the turn shows a real number.
+    const estimated = estimateTokenCost(context);
+    if (estimated) {
+      return estimated;
+    }
+
     return {
       source: "openrouter",
       basis: "unavailable",

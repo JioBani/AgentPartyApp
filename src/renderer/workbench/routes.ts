@@ -28,6 +28,8 @@ export interface RouteMeta {
 export type RouteLike = {
   harnessId?: string;
   providerId?: string;
+  /** Codex custom provider id (e.g. "openrouter"); absent = built-in account. */
+  modelProvider?: string;
   model: string;
   runtimeModel?: string;
   label?: string;

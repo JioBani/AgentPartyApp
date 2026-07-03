@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Check, ChevronsLeft, Plus, Trash2, Users, X } from "lucide-react";
-import type { DefaultMemberProfile, PartyDefinition } from "../../shared/types";
+import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
 import { memberColorVars } from "../theme/memberColors";
@@ -27,7 +28,11 @@ interface PartySidebarProps {
   memberCountByParty: Record<string, number>;
   width: number;
   routes: RouteLike[];
+  /** Live Codex catalog discovery state, surfaced by the member wizard. */
+  codexModels?: CodexModelDiscoveryState;
+  onRefreshCodexModels?: () => void;
   defaultProfile: DefaultMemberProfile;
+  harnessDefaults: Record<string, HarnessDefaults>;
   onSelectParty: (partyId: string) => void;
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
@@ -37,7 +42,7 @@ interface PartySidebarProps {
 }
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, defaultProfile, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   // Right-click context menu for a member row ({name, x, y} at the cursor).
@@ -117,7 +122,10 @@ export function PartySidebar(props: PartySidebarProps) {
         {creating && (
           <MemberWizard
             routes={routes}
+            codexModels={codexModels}
+            onRefreshCodexModels={onRefreshCodexModels}
             defaultProfile={defaultProfile}
+            harnessDefaults={harnessDefaults}
             onCancel={() => setCreating(false)}
             onCreate={(input) => { onCreateMember(input); setCreating(false); }}
           />

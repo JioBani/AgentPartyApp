@@ -4,12 +4,16 @@ import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter } from "../core/codexAdapter";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
-import { ModelRouteConfig } from "../core/modelRegistry";
+import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
+import { discoverCodexModels } from "../core/codexModelDiscovery";
 import { EmbeddedRouter } from "../core/routerShim";
-import { CreateSessionInput, ResumableSessionInfo, SessionView } from "../shared/types";
+import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf } from "../shared/types";
+import type { CodexModelDiscoveryState } from "../shared/codexModels";
+import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
+import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
 
 interface ManagedSession {
@@ -19,6 +23,11 @@ interface ManagedSession {
   queuedEvents: ClaudeNormalizedEvent[];
   flushTimer?: NodeJS.Timeout;
   closed?: boolean;
+  /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
+  lastActivityAt: number;
+  turnActive: boolean;
+  awaitingUser: boolean;
+  stallNotified: boolean;
 }
 
 /** Pairs a party member's bridge with its identity for in-process tool access. */
@@ -29,6 +38,19 @@ export interface SessionPartyBinding {
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
+  private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
+  /**
+   * Stall watchdog: a turn that goes silent for this long (no event of any kind
+   * from the harness, and not waiting on the user for an approval) is flagged so
+   * the UI stops showing an indefinite "responding" spinner. A warning, never an
+   * auto-kill — the model may just be slow — so the user decides (wait / stop /
+   * restart). Harness-general: it observes the normalized event stream every
+   * adapter emits, so a new harness needs no watchdog code of its own.
+   */
+  private static readonly STALL_MS = 120_000;
+  private static readonly WATCHDOG_INTERVAL_MS = 20_000;
+  private watchdog: NodeJS.Timeout | undefined;
 
   /**
    * @param userDataDir base dir for harness debug logs (Electron's userData on
@@ -59,6 +81,49 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Snapshot of the live Codex account catalog (`model/list`); kicks discovery
+   * on first call and caches the settle for the process lifetime. `refresh`
+   * re-runs discovery and awaits the fresh result. A settle (ready or error)
+   * emits `"codex-models"` so the app can push updated model routes to windows —
+   * a failure stays visible in the state, never silently reverts the UI.
+   */
+  getCodexModelState(): CodexModelDiscoveryState {
+    if (!this.codexDiscovery) {
+      // E2E must not reach user-owned provider APIs; discovery only runs when
+      // the test supplies a fake codex binary. The skip is stated, not silent.
+      if (isE2E() && !process.env.AGENTPARTY_CODEX_BIN) {
+        this.codexModels = {
+          status: "error",
+          models: [],
+          error: "Codex model discovery is disabled in E2E mode without an AGENTPARTY_CODEX_BIN override.",
+          at: new Date().toISOString(),
+        };
+        this.codexDiscovery = Promise.resolve(this.codexModels);
+      } else {
+        this.codexDiscovery = this.runCodexDiscovery();
+      }
+    }
+    return this.codexModels;
+  }
+
+  async refreshCodexModels(): Promise<CodexModelDiscoveryState> {
+    this.codexDiscovery = this.runCodexDiscovery();
+    return this.codexDiscovery;
+  }
+
+  private async runCodexDiscovery(): Promise<CodexModelDiscoveryState> {
+    try {
+      const models = await discoverCodexModels({ cwd: this.userDataDir });
+      this.codexModels = { status: "ready", models, at: new Date().toISOString() };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.codexModels = { status: "error", models: [], error: message, at: new Date().toISOString() };
+    }
+    this.emit("codex-models", this.codexModels);
+    return this.codexModels;
+  }
+
+  /**
    * Creates a QA mock session backed by {@link MockHarnessSession}. It performs
    * no model calls; events are driven by the QA API. Used only in QA mode.
    */
@@ -70,9 +135,9 @@ export class SessionManager extends EventEmitter {
     const adapter = new MockHarnessSession({
       id,
       cwd: workspace,
-      model: request.model || settings.claudeModel,
-      effort: request.effort || settings.claudeEffort,
-      permissionMode: request.permissionMode || settings.claudePermissionMode,
+      model: request.model || harnessDefaultsOf(settings).model,
+      effort: request.effort || harnessDefaultsOf(settings).effort,
+      permissionMode: request.permissionMode || harnessDefaultsOf(settings).permissionMode || "default",
       autoReply: options?.autoReply,
     });
     return this.registerSession(id, workspace, adapter);
@@ -100,12 +165,85 @@ export class SessionManager extends EventEmitter {
   }
 
   private registerSession(id: string, workspace: string, adapter: HarnessSession): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, queuedEvents: [] };
+    const session: ManagedSession = { id, workspace, adapter, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
+    this.ensureWatchdog();
     adapter.start();
     this.emit("sessions", this.listSessions());
     return this.toView(session);
+  }
+
+  private ensureWatchdog(): void {
+    if (this.watchdog) {
+      return;
+    }
+    this.watchdog = setInterval(() => this.scanForStalls(), SessionManager.WATCHDOG_INTERVAL_MS);
+    // Never keep the process alive on the watchdog alone.
+    this.watchdog.unref?.();
+  }
+
+  /**
+   * Tracks per-turn liveness from the normalized event stream so the watchdog can
+   * tell "still generating" from "hung". Any real event re-arms the alarm; a turn
+   * that is waiting on the user (approval) is intentionally not treated as stalled.
+   */
+  private trackTurnActivity(session: ManagedSession, event: ClaudeNormalizedEvent): void {
+    session.lastActivityAt = Date.now();
+    session.stallNotified = false;
+    switch (event.type) {
+      case "turn_complete":
+      case "error":
+        session.turnActive = false;
+        session.awaitingUser = false;
+        break;
+      case "approval_request":
+        session.turnActive = true;
+        session.awaitingUser = true;
+        break;
+      case "approval_resolved":
+        session.awaitingUser = false;
+        break;
+      case "status": {
+        const status = String((event as { status?: unknown }).status || "");
+        if (status === "sent" || status === "requesting" || status === "responding") {
+          session.turnActive = true;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  /** Flags any active turn that has gone silent past the stall threshold (once). */
+  private scanForStalls(): void {
+    const now = Date.now();
+    for (const session of this.sessions.values()) {
+      if (session.closed || !session.turnActive || session.awaitingUser || session.stallNotified) {
+        continue;
+      }
+      const idleMs = now - session.lastActivityAt;
+      if (idleMs < SessionManager.STALL_MS) {
+        continue;
+      }
+      session.stallNotified = true;
+      const seconds = Math.round(idleMs / 1000);
+      const event: ClaudeNormalizedEvent = {
+        type: "diagnostic",
+        severity: "warning",
+        category: "stall",
+        title: "응답이 멈춘 것 같습니다",
+        detail: `${seconds}초 동안 하네스에서 아무 응답이 없습니다. 모델이 도구 호출 등에서 실패했거나 멈췄을 수 있습니다(모델이 느린 것일 수도 있습니다).`,
+        recovery: "계속 기다리거나, 정지 후 다시 시도하거나, 세션을 재시작하세요.",
+        at: new Date().toISOString(),
+      };
+      // Route through the normal event pipeline (not trackTurnActivity) so the
+      // renderer shows it and the flag is not immediately re-armed.
+      this.queueEvent(session, event);
+      this.flushEvents(session);
+      this.emit("sessions", this.listSessions());
+    }
   }
 
   async listResumableSessions(workspacePath?: string): Promise<{ sessions: ResumableSessionInfo[]; error?: string }> {
@@ -208,6 +346,10 @@ export class SessionManager extends EventEmitter {
   }
 
   dispose(): void {
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = undefined;
+    }
     for (const session of this.sessions.values()) {
       if (session.flushTimer) {
         clearTimeout(session.flushTimer);
@@ -219,31 +361,37 @@ export class SessionManager extends EventEmitter {
 
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
     const settings = getSettings();
-    if ((request.selectedHarnessId || settings.selectedHarnessId) === "codex") {
+    const harnessId = request.selectedHarnessId || settings.selectedHarnessId;
+    const harnessDefaults = harnessDefaultsOf(settings, harnessId);
+    if (harnessId === "codex") {
       return new CodexAdapter({
         id,
         cwd,
-        model: request.model || settings.claudeModel || "gpt-5.4",
-        effort: request.effort || settings.claudeEffort,
-        permissionMode: request.permissionMode || settings.claudePermissionMode,
-        policy: request.codexPolicy,
+        model: request.model || harnessDefaults.model,
+        effort: request.effort || harnessDefaults.effort,
+        permissionMode: request.permissionMode || harnessDefaults.permissionMode,
+        policy: request.codexPolicy || harnessDefaults.codexPolicy,
         debugEnabled: settings.debugEnabled,
         resumeSessionId,
         partyIdentity: binding?.identity,
+        // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
+        // account catalog (openai) only. See codexProviders.ts.
+        openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,
       });
     }
     const storageDir = path.join(this.userDataDir, "logs");
     const routerAccountingKey = `agentparty-native-session:${id}`;
+    const model = request.model || harnessDefaults.model;
     return new ClaudeAdapter({
       id,
       cwd,
       executablePath: settings.claudeExecutablePath,
-      model: request.model || settings.claudeModel,
-      providerId: request.selectedProviderId || settings.selectedProviderId,
-      effort: request.effort || settings.claudeEffort,
+      model,
+      providerId: request.selectedProviderId || inferModelProvider(model),
+      effort: request.effort || harnessDefaults.effort,
       thinking: request.thinking,
       thinkingBudget: request.thinkingBudget,
-      permissionMode: request.permissionMode || settings.claudePermissionMode,
+      permissionMode: request.permissionMode || harnessDefaults.permissionMode,
       safeMode: settings.claudeSafeMode,
       debugEnabled: settings.debugEnabled,
       storageDir,
@@ -264,6 +412,7 @@ export class SessionManager extends EventEmitter {
       if (session.closed || !this.sessions.has(session.id)) {
         return;
       }
+      this.trackTurnActivity(session, event);
       this.queueEvent(session, event);
       if (event.type === "session" || event.type === "turn_complete" || event.type === "error" || event.type === "status") {
         this.emit("sessions", this.listSessions());

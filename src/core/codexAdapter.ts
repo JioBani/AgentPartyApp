@@ -1,14 +1,16 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
-import * as path from "node:path";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
+import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
 import type { PartyIdentity } from "./partyBridge";
 import { buildPartyPrimer } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
+import { CODEX_OPENROUTER_PROVIDER, codexProviderConfigArgs, codexProviderForModel, type CodexCustomProvider } from "../shared/codexProviders";
+import { pricingForModel } from "./modelRegistry";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
@@ -28,6 +30,13 @@ export interface CodexAdapterOptions {
   executableArgs?: string[];
   resumeSessionId?: string;
   partyIdentity?: PartyIdentity;
+  /**
+   * OpenRouter API key. When the model routes through a custom provider whose
+   * env var is this key, it is placed on the app-server process env so the
+   * provider authenticates (Phase 2 — codexProviders.ts). Absent = account
+   * catalog (openai) only.
+   */
+  openRouterApiKey?: string;
 }
 
 type JsonRpcId = string;
@@ -84,6 +93,16 @@ export class CodexAdapter extends EventEmitter {
     super();
     this.sessionId = options.resumeSessionId || "";
     this.policy = options.policy ?? codexPolicyFromPermissionMode(options.permissionMode);
+  }
+
+  /**
+   * The custom provider the current model routes through (OpenRouter etc.), or
+   * undefined for the built-in openai account catalog. Derived from the model
+   * slug via the shared catalog so no extra plumbing is threaded through the
+   * session layers. See codexProviders.ts.
+   */
+  private currentProvider(): CodexCustomProvider | undefined {
+    return codexProviderForModel(this.options.model);
   }
 
   start(): void {
@@ -252,12 +271,20 @@ export class CodexAdapter extends EventEmitter {
     if (this.process) {
       return;
     }
-    const requested = this.options.executablePath || process.env.AGENTPARTY_CODEX_BIN || "codex";
+    const requested = codexExecutable(this.options.executablePath);
     const resolved = resolveCodexExecutable(requested);
-    const spawnArgs = [...this.codexExecutableArgs(), "app-server"];
+    // When an OpenRouter key is available, define the OpenRouter custom provider
+    // inline (never touching ~/.codex/config.toml) and expose the key on the
+    // process env, so any thread whose model is an OpenRouter slug can route to
+    // it (selected per-thread via modelProvider). See codexProviders.ts.
+    const providerArgs = this.options.openRouterApiKey ? codexProviderConfigArgs(CODEX_OPENROUTER_PROVIDER) : [];
+    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...providerArgs, "app-server"];
+    const env = this.options.openRouterApiKey
+      ? { ...process.env, [CODEX_OPENROUTER_PROVIDER.envKey]: this.options.openRouterApiKey }
+      : process.env;
     this.process = spawn(resolved.command, spawnArgs, {
       cwd: this.options.cwd,
-      env: process.env,
+      env,
       windowsHide: true,
       // A bare `codex` on Windows is a `.cmd` shim; resolve to a concrete file,
       // or fall back to shell resolution. Without this, spawn fails ENOENT.
@@ -297,6 +324,7 @@ export class CodexAdapter extends EventEmitter {
   private async startThread(): Promise<void> {
     const result = await this.request("thread/start", {
       model: this.options.model,
+      modelProvider: this.resolveModelProvider(),
       cwd: this.options.cwd,
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
@@ -309,12 +337,32 @@ export class CodexAdapter extends EventEmitter {
     const result = await this.request("thread/resume", {
       threadId: this.sessionId,
       model: this.options.model,
+      modelProvider: this.resolveModelProvider(),
       cwd: this.options.cwd,
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
     });
     this.applyThreadResult(result);
+  }
+
+  /**
+   * The `modelProvider` id for the current model, or undefined for the built-in
+   * openai account catalog. Throws when the model needs a custom provider but
+   * its key is missing — a routed model must not silently fall back to the
+   * account default (project no-silent-fallback rule).
+   */
+  private resolveModelProvider(): string | undefined {
+    const provider = this.currentProvider();
+    if (!provider) {
+      return undefined;
+    }
+    if (provider.id === CODEX_OPENROUTER_PROVIDER.id && !this.options.openRouterApiKey) {
+      throw new Error(
+        `Model '${this.options.model}' routes through OpenRouter, but no OpenRouter API key is configured. Add the key in Settings before starting this Codex member.`,
+      );
+    }
+    return provider.id;
   }
 
   private applyThreadResult(result: any): void {
@@ -573,15 +621,27 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     const id = String(item.id || `${item.type || "item"}-${Date.now()}`);
-    if (item.type === "agentMessage" && typeof item.text === "string" && item.text) {
-      this.lastAssistantMessageAt = now();
-      this.emitEvent({ type: "assistant_text_delta", text: item.text, at: now() });
+    // codex reports the same message/reasoning item at multiple lifecycle points
+    // (item/started, updates, item/completed) all sharing one item id. Buffered
+    // providers (e.g. OpenRouter via the responses wire) carry the FULL text on
+    // item/started already, then repeat it on item/completed — emitting on both
+    // would render (and cost-display) the text twice. Deltas are opted out, so
+    // nothing streams before completion: emit exactly once, on item/completed.
+    // (The model generated once — same item id, single token bill — so this is a
+    // display de-dup, not a content change.)
+    if (item.type === "agentMessage") {
+      if (status === "completed" && typeof item.text === "string" && item.text) {
+        this.lastAssistantMessageAt = now();
+        this.emitEvent({ type: "assistant_text_delta", text: item.text, at: now() });
+      }
       return;
     }
     if (item.type === "reasoning") {
-      const text = [...stringArray(item.summary), ...stringArray(item.content)].join("\n");
-      if (text) {
-        this.emitEvent({ type: "reasoning_delta", text, at: now() });
+      if (status === "completed") {
+        const text = [...stringArray(item.summary), ...stringArray(item.content)].join("\n");
+        if (text) {
+          this.emitEvent({ type: "reasoning_delta", text, at: now() });
+        }
       }
       return;
     }
@@ -669,13 +729,27 @@ export class CodexAdapter extends EventEmitter {
       this.turnCount += 1;
     }
     this.activeTurn = false;
-    const cost = await this.costResolver.resolve({
-      providerId: "openai",
-      model: this.options.model,
-      runtimeModel: this.options.model,
-      pricing: { billing: "subscription", directPrice: "Codex subscription" },
-      usage: this.lastUsage,
-    });
+    // Account-catalog turns are subscription-billed; OpenRouter-routed turns
+    // (Phase 2) bill per token against the OpenRouter key, so cost is estimated
+    // from the model's catalog pricing + reported token usage.
+    const provider = this.currentProvider();
+    const cost = await this.costResolver.resolve(
+      provider?.id === CODEX_OPENROUTER_PROVIDER.id
+        ? {
+            providerId: "openrouter",
+            model: this.options.model,
+            runtimeModel: this.options.model,
+            pricing: pricingForModel(this.options.model),
+            usage: this.lastUsage,
+          }
+        : {
+            providerId: "openai",
+            model: this.options.model,
+            runtimeModel: this.options.model,
+            pricing: { billing: "subscription", directPrice: "Codex subscription" },
+            usage: this.lastUsage,
+          },
+    );
     this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, at: now() });
     this.drainQueuedTurn();
   }
@@ -720,22 +794,6 @@ export class CodexAdapter extends EventEmitter {
     this.process = undefined;
     this.pendingRequests.clear();
     this.pendingApprovals.clear();
-  }
-
-  private codexExecutableArgs(): string[] {
-    if (this.options.executableArgs) {
-      return this.options.executableArgs;
-    }
-    const raw = process.env.AGENTPARTY_CODEX_ARGS;
-    if (!raw) {
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
-    }
   }
 
   private emitEvent(event: ClaudeNormalizedEvent): void {
@@ -799,18 +857,4 @@ function stringArray(value: unknown): string[] {
 
 function now(): string {
   return new Date().toISOString();
-}
-
-/**
- * Resolves how to spawn the codex executable. A bare command name on Windows
- * (e.g. `codex` installed by npm) is a `.cmd` shim: `spawn` can't find the bare
- * name (ENOENT) and Node refuses to run a `.cmd` directly (EINVAL) — so let the
- * shell resolve it via PATHEXT. An explicit path or already-extensioned name
- * (e.g. `AGENTPARTY_CODEX_BIN`) is spawned directly.
- */
-function resolveCodexExecutable(executable: string): { command: string; shell: boolean } {
-  if (executable.includes("/") || executable.includes("\\") || path.extname(executable)) {
-    return { command: executable, shell: false };
-  }
-  return { command: executable, shell: process.platform === "win32" };
 }

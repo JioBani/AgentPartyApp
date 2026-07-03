@@ -30,14 +30,25 @@ async function bundle(entry, name, external = []) {
   const p = path.join(outDir, name); writeFileSync(p, r.outputFiles[0].text); return import(pathToFileURL(p).href);
 }
 
-// ---- Layer 1: derivation ----------------------------------------------------
-const { defaultMemberProfileOf } = await bundle("src/shared/types.ts", "types-profile.mjs", []);
-console.log("\ndefaultMemberProfileOf (single source = runtime defaults):");
-const settings = { selectedHarnessId: "claude-code", claudeModel: "kimi", claudeEffort: "high", claudeReasoning: "enabled", claudeReasoningBudget: 4096, claudePermissionMode: "plan" };
+// ---- Layer 1: per-harness derivation ----------------------------------------
+const { defaultMemberProfileOf, harnessDefaultsOf } = await bundle("src/shared/types.ts", "types-profile.mjs", []);
+console.log("\ndefaultMemberProfileOf (per-harness defaults, single source):");
+const settings = {
+  selectedHarnessId: "claude-code",
+  harnessDefaults: {
+    "claude-code": { model: "kimi", effort: "high", reasoning: "enabled", reasoningBudget: 4096, permissionMode: "plan" },
+    codex: { model: "gpt-5.4-mini", effort: "low", codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false } },
+  },
+};
 const profile = defaultMemberProfileOf(settings);
-assert(profile.harness === "claude-code" && profile.model === "kimi", "harness + model come from runtime defaults");
-assert(profile.effort === "high" && profile.reasoning === "enabled" && profile.reasoningBudget === 4096, "effort + reasoning come from runtime defaults");
-assert(profile.permissionMode === "plan", "permission mode comes from runtime defaults");
+assert(profile.harness === "claude-code" && profile.model === "kimi", "default harness + its model come from harnessDefaults");
+assert(profile.effort === "high" && profile.reasoning === "enabled" && profile.reasoningBudget === 4096, "effort + reasoning come from the harness's defaults");
+assert(profile.permissionMode === "plan", "claude-code permission mode comes from its defaults");
+// A DIFFERENT harness resolves to ITS OWN defaults (the whole point of the change).
+const codexProfile = defaultMemberProfileOf(settings, "codex");
+assert(codexProfile.harness === "codex" && codexProfile.model === "gpt-5.4-mini" && codexProfile.effort === "low", "codex profile uses the codex harness defaults, not claude's");
+assert(codexProfile.codexPolicy?.sandbox === "read-only", "codex profile carries the codex 2-axis policy default");
+assert(harnessDefaultsOf(settings, "codex").model === "gpt-5.4-mini" && harnessDefaultsOf(settings).model === "kimi", "harnessDefaultsOf resolves per harness (and defaults to the selected harness)");
 
 // ---- Layer 2: RuntimeModal harness lock -------------------------------------
 const { RuntimeModal } = await bundle("src/renderer/workbench/RuntimeModal.tsx", "runtime-modal.mjs", ["react", "react-dom", "react-dom/client", "react/jsx-runtime"]);

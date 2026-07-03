@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Lightbulb, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Lightbulb, RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
 import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./RuntimeModal";
 import type { CreateMemberInput } from "./PartySidebar";
-import type { DefaultMemberProfile } from "../../shared/types";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 
 interface MemberWizardProps {
   routes: RouteLike[];
+  /** Live Codex catalog discovery state — the model step must say when the
+   *  codex list is still loading or failed (fallback-only), never silently. */
+  codexModels?: CodexModelDiscoveryState;
+  onRefreshCodexModels?: () => void;
   /** Seed values so "next, next, next" creates a member with the saved defaults. */
   defaultProfile: DefaultMemberProfile;
+  /** Per-harness defaults — switching harness seeds THAT harness's default. */
+  harnessDefaults: Record<string, HarnessDefaults>;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -37,7 +44,7 @@ const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
  * RuntimeModal model + reasoning controls so a member is configured exactly the
  * way its runtime is later tuned.
  */
-export function MemberWizard({ routes, defaultProfile, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onCancel, onCreate }: MemberWizardProps) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
@@ -64,27 +71,29 @@ export function MemberWizard({ routes, defaultProfile, onCancel, onCreate }: Mem
   const [thinkingMode, setThinkingMode] = useState("");
   const [budget, setBudget] = useState(0);
 
-  // Default the model selection to the first one of the chosen harness.
+  // When the chosen harness changes, seed the model to THAT harness's default
+  // (so switching to Codex prefills the Codex default model, not just the first
+  // one). Falls back to the harness's first model.
   useEffect(() => {
     if (!harnessEntries.some((entry) => routeKey(entry.route) === selectedKey)) {
-      setSelectedKey(harnessEntries[0] ? routeKey(harnessEntries[0].route) : "");
+      const defModel = harnessDefaults[harness]?.model;
+      const defEntry = defModel ? harnessEntries.find((entry) => entry.route.model === defModel) : undefined;
+      const seed = defEntry || harnessEntries[0];
+      setSelectedKey(seed ? routeKey(seed.route) : "");
     }
-  }, [harnessEntries, selectedKey]);
+  }, [harnessEntries, selectedKey, harness, harnessDefaults]);
 
-  // Reset staged reasoning to the selected model's defaults whenever it changes.
-  // On the FIRST run, prefer the default profile's reasoning where it specifies
-  // one (so "next, next, next" honors the saved default); fall back to the
-  // model's own default otherwise.
-  const firstReasoning = useRef(true);
+  // Reset staged reasoning whenever the selected model changes. Prefer the
+  // member's harness default effort/reasoning where set (so "next, next, next"
+  // honors that harness's saved default), else the model's own default.
   useEffect(() => {
-    const first = firstReasoning.current;
-    firstReasoning.current = false;
+    const hDefaults = harnessDefaults[harness];
     const effDefault = effortCap?.supported ? effortCap.defaultValue || "medium" : "";
     const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
     const budgetDefault = thinkingCap?.budget?.default ?? 0;
-    setEffort(first && defaultProfile.effort ? defaultProfile.effort : effDefault);
-    setThinkingMode(first && defaultProfile.reasoning ? defaultProfile.reasoning : thinkDefault);
-    setBudget(first && defaultProfile.reasoningBudget ? defaultProfile.reasoningBudget : budgetDefault);
+    setEffort(effortCap?.supported && hDefaults?.effort ? hDefaults.effort : effDefault);
+    setThinkingMode(thinkingCap?.supported && hDefaults?.reasoning ? hDefaults.reasoning : thinkDefault);
+    setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);
   }, [selectedKey]);
 
   useEffect(() => {
@@ -192,6 +201,19 @@ export function MemberWizard({ routes, defaultProfile, onCancel, onCreate }: Mem
           {step === 2 && (
             <div className="wb-wizard-pane wb-wizard-models">
               <div className="wb-modal-label">모델 <span className="wb-mono">{harnessEntries.length} available</span></div>
+              {harness === "codex" && codexModels?.status === "pending" && (
+                <p className="wb-wizard-hint">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 목록이 갱신됩니다.</p>
+              )}
+              {harness === "codex" && codexModels?.status === "error" && (
+                <p className="wb-wizard-error">
+                  Codex 모델 목록을 불러오지 못했습니다: {codexModels.error}
+                  {onRefreshCodexModels && (
+                    <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshCodexModels}>
+                      <RefreshCw size={13} /> 다시 시도
+                    </button>
+                  )}
+                </p>
+              )}
               <div className="wb-wizard-model-list">
                 {grouped.map((group) => (
                   <div className="wb-model-group" key={group.provider}>
@@ -245,6 +267,11 @@ export function MemberWizard({ routes, defaultProfile, onCancel, onCreate }: Mem
                       <div className="wb-stat-row wb-mono"><strong>{selectedMeta.context || "—"}</strong></div>
                     </div>
                   </div>
+                  {selected?.route.modelProvider === "openrouter" && (
+                    <p className="wb-wizard-hint wb-codex-or-note">
+                      이 모델은 Codex 하네스에서 OpenRouter로 라우팅됩니다. Codex 구독이 아니라 <strong>OpenRouter API 키</strong>로 과금되며, 키가 설정돼 있어야 시작됩니다.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

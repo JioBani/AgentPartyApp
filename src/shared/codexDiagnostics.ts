@@ -59,6 +59,20 @@ export function classifyDiagnostic(method: string, params: any): CodexDiagnostic
       return { severity: "info", category: "deprecation", title: str(params?.summary) || "지원 중단 예정", detail: str(params?.details) };
     case "warning": {
       const message = str(params?.message);
+      // Informational, not a fault: Codex has no built-in metadata entry for
+      // arbitrary OpenRouter model slugs, so it uses a default context window.
+      // The model runs normally and the selected model does NOT change (this is
+      // not the model-selection fallback the no-silent-fallback rule guards).
+      // Surface it as a calm info note (accent-colored, Info icon) with the
+      // reassurance leading, so it reads as FYI rather than an error.
+      if (/model metadata.*not found|fallback metadata/i.test(message || "")) {
+        return {
+          severity: "info",
+          category: "config",
+          title: "참고: OpenRouter 모델 (Codex 내장 정보 없음)",
+          detail: "에러가 아닙니다. Codex에 이 모델의 내장 메타데이터가 없어 기본 컨텍스트 창으로 실행합니다 — 응답은 정상입니다. 아주 긴 세션에서 auto-compaction 시점만 근사치가 됩니다.",
+        };
+      }
       const sandbox = /sandbox|read-only|acl|world-?writable/i.test(message || "");
       return {
         severity: "warning",

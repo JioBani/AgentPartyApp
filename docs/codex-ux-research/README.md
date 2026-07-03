@@ -35,6 +35,11 @@
   personality, browser/computer use, image gen, 인증, `codex doctor`.
 - `05-agentparty-codex-harness-backlog.md`: 현재 AgentParty/`codexAdapter`와
   대조한 누락 기능, Claude Code↔Codex 개념 매핑표, API parity, P0~P2 backlog.
+- `06-implementation-roadmap.md`: 사용자 관점 우선순위 로드맵(1군 필수 → 2군 편의
+  → 3군 차별). "사용자가 무엇을 하려는데 어떻게 보이는가" 기준으로 정렬.
+- `07-model-routing.md`: 모델·프로바이더 라우팅 — `model/list` 응답 스키마,
+  `modelProvider/capabilities/read`, `model_providers` 스펙(wire_api=responses
+  주의), thread/turn 단위 전환 규칙, ChatGPT/API 키 인증 제약.
 
 ## 로컬 확인
 

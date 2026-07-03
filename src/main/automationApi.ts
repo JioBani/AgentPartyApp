@@ -104,6 +104,14 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.testOpenRouterKey());
         return;
       }
+      if (method === "GET" && url.pathname === "/api/models") {
+        sendJson(res, 200, await c.listModels(workspace));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/models/codex/refresh") {
+        sendJson(res, 200, await c.refreshCodexModels(workspace));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/sessions") {
         sendJson(res, 200, await c.createSession(workspace, await readJson(req)));
         return;

@@ -1,6 +1,8 @@
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
-import type { InitialAppState, PartyMember, SessionView } from "../../shared/types";
+import type { HarnessDefaults, HarnessId, InitialAppState, PartyMember, PermissionModeSetting, SessionView } from "../../shared/types";
+import { HARNESS_IDS } from "../../shared/types";
+import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { RouteLike, routeKey } from "../workbench/routes";
 
 const permissionModes = [
@@ -169,40 +171,92 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
   );
 }
 
-export function RuntimeSettingsView({ routes, harnesses, draft, router, settings, onDraft, onApply, onToggleDebug }: {
+const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex" };
+
+export function RuntimeSettingsView({ routes, harnesses, router, settings, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug }: {
   routes: RouteLike[];
   harnesses: any[];
-  draft: { routeKey: string; effort: string; permissionMode: string; reasoning: string };
   router: string;
   settings: InitialAppState["settings"];
-  onDraft: (value: { routeKey: string; effort: string; permissionMode: string; reasoning: string }) => void;
-  onApply: () => void;
+  onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
+  onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
 }) {
   return (
     <section className="legacy-view">
+      <section className="card">
+        <div className="card-title">기본 하네스</div>
+        <div className="notice">새 멤버는 각 하네스의 기본값으로 생성됩니다. 아래에서 하네스별 기본값을 지정하세요.</div>
+        <Info label="Router" value={router} />
+        <label className="field">새 멤버 기본 하네스
+          <select value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
+            {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
+          </select>
+        </label>
+        <label className="toggle-line"><input type="checkbox" checked={settings.debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} />디버그 로그</label>
+      </section>
       <div className="split-grid">
-        <section className="card">
-          <div className="card-title">기본 생성 조건</div>
-          <Info label="Router" value={router} />
-          <Info label="Provider" value={settings.selectedProviderId} />
-          <div className="notice">새 멤버(및 main)가 이 조건으로 생성됩니다. 모델 라우트가 하네스를 결정합니다.</div>
-          <label className="field">모델 (하네스 포함)<select value={draft.routeKey} onChange={(event) => onDraft({ ...draft, routeKey: event.target.value })}>{routes.map((route) => <option key={routeKey(route)} value={routeKey(route)} disabled={route.enabled === false}>{(route.label || route.model) + " - " + (route.harnessId || "claude-code")}</option>)}</select></label>
-          <label className="field">추론 강도<select value={draft.effort} onChange={(event) => onDraft({ ...draft, effort: event.target.value })}>{["low", "medium", "high", "xhigh", "max"].map((effort) => <option key={effort} value={effort}>{effort}</option>)}</select></label>
-          <label className="field">추론 모드<select value={draft.reasoning} onChange={(event) => onDraft({ ...draft, reasoning: event.target.value })}><option value="">모델 기본</option>{["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
-          <label className="field">권한 모드<select value={draft.permissionMode} onChange={(event) => onDraft({ ...draft, permissionMode: event.target.value })}>{permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>
-          <div className="field-actions"><button type="button" className="accent-btn" onClick={onApply}>기본 생성 조건 저장</button></div>
-          <label className="toggle-line"><input type="checkbox" checked={settings.debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} />디버그 로그</label>
-        </section>
-        <section className="card">
-          <div className="card-title">모델 라우트</div>
-          <div className="row-list">{routes.map((route) => <div className="info-line" key={routeKey(route)}><span>{route.label || route.model}</span><small>{route.providerId} - {route.harnessId}</small></div>)}</div>
-        </section>
-        <section className="card">
-          <div className="card-title">하네스</div>
-          <div className="row-list">{harnesses.map((harness) => <div className="info-line" key={harness.id}><span>{harness.label}</span><small>{harness.status} - {harness.description}</small></div>)}</div>
-        </section>
+        {HARNESS_IDS.map((id) => (
+          <HarnessDefaultsCard
+            key={id}
+            harnessId={id}
+            label={HARNESS_LABELS[id]}
+            defaults={settings.harnessDefaults[id]}
+            routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
+            onSave={(patch) => onSaveHarnessDefaults(id, patch)}
+          />
+        ))}
       </div>
+    </section>
+  );
+}
+
+/** One harness's editable creation defaults (model/effort/reasoning + permission). */
+function HarnessDefaultsCard({ harnessId, label, defaults, routes, onSave }: {
+  harnessId: HarnessId;
+  label: string;
+  defaults: HarnessDefaults;
+  routes: RouteLike[];
+  onSave: (patch: Partial<HarnessDefaults>) => void;
+}) {
+  const [model, setModel] = useState(defaults.model);
+  const [effort, setEffort] = useState(defaults.effort);
+  const [reasoning, setReasoning] = useState(defaults.reasoning || "");
+  const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
+  const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
+
+  function save() {
+    const patch: Partial<HarnessDefaults> = { model, effort: effort as HarnessDefaults["effort"], reasoning: reasoning || undefined };
+    if (harnessId === "codex") {
+      const axes = preset === "custom" ? (defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }) : CODEX_PRESETS[preset];
+      patch.codexPolicy = { ...axes, guardian: defaults.codexPolicy?.guardian ?? false } as CodexPolicy;
+    } else {
+      patch.permissionMode = permissionMode as HarnessDefaults["permissionMode"];
+    }
+    onSave(patch);
+  }
+
+  return (
+    <section className="card">
+      <div className="card-title">{label} 기본값</div>
+      <label className="field">모델
+        <select value={model} onChange={(event) => setModel(event.target.value)}>
+          {routes.map((route) => <option key={routeKey(route)} value={route.model} disabled={route.enabled === false}>{route.label || route.model}</option>)}
+        </select>
+      </label>
+      <label className="field">추론 강도<select value={effort} onChange={(event) => setEffort(event.target.value as HarnessDefaults["effort"])}>{["low", "medium", "high", "xhigh", "max"].map((e) => <option key={e} value={e}>{e}</option>)}</select></label>
+      <label className="field">추론 모드<select value={reasoning} onChange={(event) => setReasoning(event.target.value)}><option value="">모델 기본</option>{["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
+      {harnessId === "codex" ? (
+        <label className="field">권한 (샌드박스 × 승인)
+          <select value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)}>
+            {(Object.keys(CODEX_PRESET_LABELS) as Array<keyof typeof CODEX_PRESET_LABELS>).map((p) => <option key={p} value={p}>{CODEX_PRESET_LABELS[p]}</option>)}
+            {preset === "custom" && <option value="custom">Custom</option>}
+          </select>
+        </label>
+      ) : (
+        <label className="field">권한 모드<select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}>{permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>
+      )}
+      <div className="field-actions"><button type="button" className="accent-btn" onClick={save}>{label} 기본값 저장</button></div>
     </section>
   );
 }

@@ -49,24 +49,36 @@ Captures the current Electron window and stores it as a PNG. If `path` is omitte
 
 Updates app settings.
 
+Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
+harness owns its own default model/effort/reasoning and its harness-appropriate
+permission config (`permissionMode` for Claude Code, `codexPolicy` two-axis for
+Codex). `selectedHarnessId` is the harness a brand-new member defaults to. A new
+member is created from ITS harness's defaults (a Codex member gets the Codex
+default model + sandbox policy, a Claude member the Claude default + permission
+mode). A legacy settings.json with flat `claudeModel`/`claudeEffort`/
+`claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
+
 Example:
 
 ```json
 {
   "selectedHarnessId": "claude-code",
-  "selectedProviderId": "openrouter",
-  "claudeModel": "MiniMax M3",
-  "claudeEffort": "medium",
-  "claudePermissionMode": "plan",
+  "harnessDefaults": {
+    "claude-code": { "model": "MiniMax M3", "effort": "medium", "permissionMode": "plan" },
+    "codex": { "model": "gpt-5.5", "effort": "medium", "codexPolicy": { "sandbox": "read-only", "approval": "on-request", "guardian": false } }
+  },
   "debugEnabled": true
 }
 ```
 
-Permission modes:
+Claude Code permission modes:
 
 ```text
 default, acceptEdits, plan, auto, dontAsk, bypassPermissions
 ```
+
+Codex `codexPolicy` axes: `sandbox` = `read-only | workspace-write | danger-full-access`;
+`approval` = `untrusted | on-request | never`; `guardian` = route approvals through a reviewer.
 
 ## Authentication
 
@@ -88,6 +100,43 @@ Calls OpenRouter's model endpoint to verify the configured key.
 
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call OpenRouter.
 
+## Models
+
+### `GET /api/models`
+
+Returns the selectable model routes and the Codex catalog discovery state.
+
+```json
+{
+  "ok": true,
+  "modelRoutes": [{ "harnessId": "codex", "model": "gpt-5.5", "label": "GPT-5.5" }],
+  "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" }
+}
+```
+
+Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing.md`):
+
+- **Account catalog** — a live `codex app-server` `model/list` discovery (the
+  authenticated OpenAI account's models, e.g. `gpt-5.5`). Discovery runs once per
+  app run in the background; until it settles the state is `pending` and a single
+  static fallback route (`gpt-5.4`) represents the codex harness. A failure (e.g.
+  codex CLI not installed) is reported as `{ "status": "error", "error": "..." }`
+  — never silently hidden. When `AGENTPARTY_E2E=1` and no `AGENTPARTY_CODEX_BIN`
+  override is set, discovery is skipped with an explicit error state so tests
+  never reach user-owned APIs.
+- **OpenRouter models** — every OpenRouter catalog model is also exposed as a
+  codex route (`"harnessId": "codex"`, `"modelProvider": "openrouter"`, `"model"`
+  = the OpenRouter slug such as `z-ai/glm-5.2`). Starting such a member routes
+  `codex app-server` to OpenRouter via inline provider config (no `config.toml`
+  edit) and bills the configured **OpenRouter API key** (not the Codex
+  subscription). Selecting one without an OpenRouter key configured fails
+  explicitly at session start.
+
+### `POST /api/models/codex/refresh`
+
+Re-runs Codex model discovery and returns the same shape as `GET /api/models`
+after the fresh discovery settles.
+
 ## Sessions
 
 ### `POST /api/sessions`
@@ -106,7 +155,7 @@ Creates a Claude Code harness session.
 ```
 
 When these runtime fields are supplied, they are applied to the new session at creation time.
-Use `"selectedHarnessId": "codex"` with a Codex route such as `"model": "gpt-5.4"` to start a local Codex app-server-backed session. Codex auth is delegated to the local `codex` CLI; tests may override the binary with `AGENTPARTY_CODEX_BIN` and optional JSON-array args in `AGENTPARTY_CODEX_ARGS`.
+Use `"selectedHarnessId": "codex"` with a Codex route (any model from `GET /api/models` with `"harnessId": "codex"`, e.g. `"model": "gpt-5.5"`) to start a local Codex app-server-backed session. Codex auth is delegated to the local `codex` CLI; tests may override the binary with `AGENTPARTY_CODEX_BIN` and optional JSON-array args in `AGENTPARTY_CODEX_ARGS`.
 
 ### `GET /api/sessions/history`
 

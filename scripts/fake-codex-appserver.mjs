@@ -60,6 +60,34 @@ rl.on("line", (line) => {
       send({ id: msg.id, result: { thread: { id: "thr-fake" }, model: msg.params?.model || "fake" } });
       return;
     }
+    if (msg.method === "model/list") {
+      // Mirrors the real response shape (see docs/codex-ux-research/07-model-routing.md §1):
+      // non-default first + a hidden entry, so normalization (default-first, hidden dropped) is exercised.
+      send({ id: msg.id, result: { data: [
+        {
+          id: "fake-5.4", model: "fake-5.4", displayName: "Fake 5.4", description: "Everyday fake model.",
+          hidden: false, isDefault: false, defaultReasoningEffort: "low",
+          supportedReasoningEfforts: [
+            { reasoningEffort: "low", description: "fast" },
+            { reasoningEffort: "high", description: "deep" },
+          ],
+          serviceTiers: [], inputModalities: ["text"],
+        },
+        {
+          id: "fake-5.5", model: "fake-5.5", displayName: "Fake 5.5", description: "Frontier fake model.",
+          hidden: false, isDefault: true, defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: [
+            { reasoningEffort: "low", description: "fast" },
+            { reasoningEffort: "medium", description: "balanced" },
+            { reasoningEffort: "high", description: "deep" },
+            { reasoningEffort: "xhigh", description: "deepest" },
+          ],
+          serviceTiers: [{ id: "priority", name: "Fast", description: "1.5x speed" }], inputModalities: ["text", "image"],
+        },
+        { id: "fake-review", model: "fake-review", displayName: "Fake Reviewer", hidden: true, isDefault: false, supportedReasoningEfforts: [], serviceTiers: [] },
+      ], nextCursor: null } });
+      return;
+    }
     if (msg.method === "skills/list") {
       send({ id: msg.id, result: { data: [{ cwd: msg.params?.cwds?.[0] || "/w", skills: [
         { name: "deep-dive", shortDescription: "심층 분석 스킬", enabled: true },

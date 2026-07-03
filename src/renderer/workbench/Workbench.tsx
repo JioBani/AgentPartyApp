@@ -1,6 +1,6 @@
 import { Fragment, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
-import type { DefaultMemberProfile, PartyDefinition } from "../../shared/types";
+import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { RouteLike } from "./routes";
@@ -26,13 +26,19 @@ import {
 import { Panel } from "./Panel";
 import { CreateMemberInput, PartySidebar } from "./PartySidebar";
 import { RuntimeModal } from "./RuntimeModal";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 
 interface WorkbenchProps {
   parties: PartyDefinition[];
   activePartyId?: string;
   views: MemberView[];
   routes: RouteLike[];
+  /** Live Codex catalog discovery state, surfaced by the member wizard. */
+  codexModels?: CodexModelDiscoveryState;
+  onRefreshCodexModels?: () => void;
   defaultProfile: DefaultMemberProfile;
+  /** Per-harness creation defaults, so the wizard seeds each harness's default. */
+  harnessDefaults: Record<string, HarnessDefaults>;
   debugEnabled: boolean;
   sidebarOpen: boolean;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
@@ -75,7 +81,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, defaultProfile, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -329,7 +335,10 @@ export function Workbench(props: WorkbenchProps) {
             memberCountByParty={memberCountByParty}
             width={sidebarWidth}
             routes={routes}
+            codexModels={codexModels}
+            onRefreshCodexModels={onRefreshCodexModels}
             defaultProfile={defaultProfile}
+            harnessDefaults={harnessDefaults}
             onSelectParty={onSelectParty}
             onCreateParty={onCreateParty}
             onCreateMember={handleCreateMember}

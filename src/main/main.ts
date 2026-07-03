@@ -63,8 +63,12 @@ let engineRegistry: EngineRegistry | undefined;
  * `second-instance` handler that receives the new process's argv.
  */
 function workspaceFromArgv(argv: string[]): string | undefined {
+  // Accept both `--workspace <path>` (Explorer "open here", `agent-party` CLI)
+  // and `--workspace=<path>`. Position-independent so an Electron/Chromium flag
+  // reordering never hides it.
+  const inline = argv.find((arg) => arg.startsWith("--workspace="));
   const index = argv.indexOf("--workspace");
-  const value = index >= 0 ? argv[index + 1] : "";
+  const value = inline ? inline.slice("--workspace=".length) : index >= 0 ? argv[index + 1] || "" : "";
   return value ? serializeWorkspaceLocation(parseWorkspaceLocation(value)) : undefined;
 }
 
@@ -122,6 +126,10 @@ function focusWindow(window: BrowserWindow): void {
  */
 function handleSecondInstance(argv: string[]): void {
   const workspace = workspaceFromArgv(argv);
+  // Diagnostic: the reported "opens the app's own folder instead of the picked
+  // one" bug lands here (a re-launch while an instance holds the single-instance
+  // lock). Log the raw argv + what we resolved so a live repro is pinpointable.
+  log("info", "window", "second-instance launch", { argv: argv.slice(1), resolvedWorkspace: workspace, fellBackToDefault: !workspace });
   const target = workspace ? windowRegistry?.forWorkspace(workspace)[0] : undefined;
   if (target) {
     focusWindow(target.window);
@@ -247,6 +255,11 @@ async function bootstrap(): Promise<void> {
   sessionManager.on("party", (payload: { workspace: string }) => {
     void appController?.notifyPartyChanged(payload.workspace);
   });
+  // Codex catalog discovery settled (ready or error): push rebuilt model routes
+  // so pickers update live and a failure is visible (no silent fallback).
+  sessionManager.on("codex-models", () => {
+    void appController?.notifyCodexModelsChanged();
+  });
 
   appController = new AppController({
     sessionManager,
@@ -264,7 +277,9 @@ async function bootstrap(): Promise<void> {
   });
   registerIpc();
   registerApplicationMenu();
-  await createWindow(launchWorkspace() || defaultWorkspace());
+  const launched = launchWorkspace();
+  log("info", "window", "initial launch workspace", { argv: process.argv.slice(1), resolvedWorkspace: launched, fellBackToDefault: !launched });
+  await createWindow(launched || defaultWorkspace());
   await automationApi.start();
   writeAutomationDiscovery();
 }
@@ -305,6 +320,11 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
   if (channel === "party:changed") {
     // Re-fetch this remote workspace's party (over RPC) and push party:update.
     void appController?.notifyPartyChanged(workspacePath);
+    return;
+  }
+  if (channel === "codex-models:changed") {
+    // The remote engine's codex catalog settled: rebuild and push model routes.
+    void appController?.notifyCodexModelsChanged();
     return;
   }
   const stamped = payload && typeof payload === "object" ? { ...payload, workspace: workspacePath } : payload;
@@ -360,8 +380,8 @@ function applyRuntimeSettings(): void {
   });
   log("info", "settings", "runtime settings applied", {
     routerBaseUrl: router?.baseUrl,
-    selectedProviderId: settings.selectedProviderId,
-    claudeModel: settings.claudeModel,
+    selectedHarnessId: settings.selectedHarnessId,
+    harnessDefaults: settings.harnessDefaults,
     openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY),
   });
 }
@@ -398,6 +418,9 @@ function registerIpc(): void {
   handle("auth:setOpenRouterKey", async (_event, value: string) => controller().setOpenRouterKey(value || ""));
   handle("auth:clearOpenRouterKey", async () => controller().clearOpenRouterKey());
   handle("auth:testOpenRouterKey", async () => controller().testOpenRouterKey());
+
+  handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
+  handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
 
   handle("session:create", async (event, input?: unknown) => controller().createSession(senderWorkspace(event), input as any));
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));

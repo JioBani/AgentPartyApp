@@ -10,3 +10,9 @@ release/
 .agent_party_app/
 .codex/
 새 폴더/
+
+# Build artifacts / temp / binary research
+release-pkg/
+scripts/_tmp_*
+*.xlsx
+release-out/

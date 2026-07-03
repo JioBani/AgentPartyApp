@@ -962,6 +962,11 @@ body.wb-resizing {
   background: var(--success-dim);
 }
 
+.wb-status-pill.is-stalled {
+  color: var(--warning, #d9a441);
+  background: var(--warning-dim, rgba(217, 164, 65, 0.16));
+}
+
 .wb-pill {
   display: inline-flex;
   align-items: center;

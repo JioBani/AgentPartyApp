@@ -1,0 +1,69 @@
+import { openRouterModels } from "./modelCatalog";
+
+/**
+ * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
+ * The Codex account catalog (`model/list`) only knows OpenAI models; to run any
+ * other model on the Codex harness we define an OpenAI-compatible provider that
+ * `codex app-server` routes to. The provider is injected per-session via inline
+ * `-c model_providers.<id>.*` overrides (NOT by editing the user's config.toml),
+ * and selected per-thread with `thread/start.modelProvider`.
+ *
+ * Verified 2026-07-03 against real codex CLI 0.142.4 + a live OpenRouter key.
+ */
+
+export interface CodexCustomProvider {
+  /** Provider id used for `model_provider` / `thread/start.modelProvider`. */
+  id: string;
+  name: string;
+  baseUrl: string;
+  /** MUST be "responses" — codex removed the chat/completions wire in 2026-02. */
+  wireApi: "responses";
+  /** Env var the provider API key is read from (set on the app-server process). */
+  envKey: string;
+}
+
+export const CODEX_OPENROUTER_PROVIDER: CodexCustomProvider = {
+  id: "openrouter",
+  name: "OpenRouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  wireApi: "responses",
+  envKey: "OPENROUTER_API_KEY",
+};
+
+const PROVIDERS: Record<string, CodexCustomProvider> = {
+  [CODEX_OPENROUTER_PROVIDER.id]: CODEX_OPENROUTER_PROVIDER,
+};
+
+export function codexCustomProvider(id: string | undefined): CodexCustomProvider | undefined {
+  return id ? PROVIDERS[id] : undefined;
+}
+
+/**
+ * The custom provider a Codex model slug routes through, or undefined for the
+ * built-in `openai` account catalog. Catalog-driven: an OpenRouter model's
+ * `orModelId` (e.g. "z-ai/glm-5.2") maps to the OpenRouter provider; a bare
+ * account slug (e.g. "gpt-5.5") maps to nothing (built-in openai).
+ */
+export function codexProviderForModel(model: string): CodexCustomProvider | undefined {
+  const lower = model.toLowerCase();
+  const isOpenRouterSlug = openRouterModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
+  return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;
+}
+
+/**
+ * Inline `-c` args that define a custom provider for a `codex app-server` spawn.
+ * Empty for the built-in openai provider (no override needed).
+ */
+export function codexProviderConfigArgs(provider: CodexCustomProvider | undefined): string[] {
+  if (!provider) {
+    return [];
+  }
+  const prefix = `model_providers.${provider.id}`;
+  return [
+    "-c", `${prefix}.name=${JSON.stringify(provider.name)}`,
+    "-c", `${prefix}.base_url=${JSON.stringify(provider.baseUrl)}`,
+    "-c", `${prefix}.wire_api=${JSON.stringify(provider.wireApi)}`,
+    "-c", `${prefix}.env_key=${JSON.stringify(provider.envKey)}`,
+    "-c", `${prefix}.requires_openai_auth=false`,
+  ];
+}

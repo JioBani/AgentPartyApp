@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, UsersRound, X } from "lucide-react";
-import type { InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
-import { defaultMemberProfileOf } from "../shared/types";
+import type { HarnessDefaults, InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
+import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
@@ -28,7 +28,6 @@ export function App() {
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
-  const [globalRuntime, setGlobalRuntime] = useState({ routeKey: "", effort: "medium", permissionMode: "default", reasoning: "" });
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
   // Tracks whether a live party broadcast has arrived, so a late-resolving
   // initial-state load cannot clobber it with a stale snapshot.
@@ -68,12 +67,6 @@ export function App() {
       if (next.sessions?.[0]) {
         setActiveSessionId(next.sessions[0].id);
       }
-      setGlobalRuntime({
-        routeKey: routeKeyForModel(next.settings.claudeModel, next.modelRoutes as RouteLike[]),
-        effort: next.settings.claudeEffort,
-        permissionMode: next.settings.claudePermissionMode,
-        reasoning: next.settings.claudeReasoning || "",
-      });
     });
 
     const offEvents = window.agentParty.onSessionEvents((payload: any) => {
@@ -97,6 +90,14 @@ export function App() {
       partyBroadcastSeen.current = true;
       setState((current) => ({ ...current, party }));
     });
+    // Codex catalog discovery settled: refresh the selectable model routes and
+    // the discovery status (pending/ready/error) that pickers surface.
+    const offModelsUpdate = window.agentParty.onModelsUpdate((payload) => {
+      const update = payload as { modelRoutes?: unknown[]; codexModels?: InitialAppState["codexModels"] };
+      if (Array.isArray(update?.modelRoutes)) {
+        setState((current) => ({ ...current, modelRoutes: update.modelRoutes as unknown[], codexModels: update.codexModels }));
+      }
+    });
     const offQaLayout = window.agentParty.onQaLayout((payload) => {
       const panels = (payload as { panels?: string[][] })?.panels;
       if (Array.isArray(panels)) {
@@ -115,6 +116,7 @@ export function App() {
       offSnapshot();
       offSessions();
       offPartyUpdate();
+      offModelsUpdate();
       offQaLayout();
       offNavigate();
       offWorkspaceChoose();
@@ -300,11 +302,15 @@ export function App() {
       const draft = runtimeDrafts[name];
       const member = members.find((item) => item.name === name);
       const memberRoute = routes.find((route) => route.model === member?.model || route.runtimeModel === member?.model);
+      // The member already carries its harness's model/effort/permission (set at
+      // creation from that harness's defaults); fall back to the same harness's
+      // defaults if somehow unset. Provider is inferred from the model route.
+      const harnessDefaults = harnessDefaultsOf(state.settings, (member?.runtime === "codex" ? "codex" : "claude-code"));
       const result = await window.agentParty.startPartyMember(name, {
-        selectedProviderId: draft?.providerId || (memberRoute?.providerId as any) || state.settings.selectedProviderId,
-        model: draft?.model || member?.model || state.settings.claudeModel,
-        effort: (draft?.effort as any) || (member?.effort as any) || state.settings.claudeEffort,
-        permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || state.settings.claudePermissionMode,
+        selectedProviderId: draft?.providerId || (memberRoute?.providerId as any),
+        model: draft?.model || member?.model || harnessDefaults.model,
+        effort: (draft?.effort as any) || (member?.effort as any) || harnessDefaults.effort,
+        permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || harnessDefaults.permissionMode,
       });
       await applyPartyResult(result);
       return result.session?.id;
@@ -421,21 +427,19 @@ export function App() {
     },
   };
 
-  async function applyGlobalRuntime() {
-    const route = routes.find((item) => routeKey(item) === globalRuntime.routeKey);
-    if (!route) {
-      return;
-    }
-    // The single runtime default — used for both `main` and member creation.
+  /** Persists one harness's creation defaults (model/effort/reasoning/permission). */
+  async function saveHarnessDefaults(harnessId: "claude-code" | "codex", patch: Partial<HarnessDefaults>) {
+    const current = state.settings.harnessDefaults[harnessId];
     const settings = await window.agentParty.updateSettings({
-      selectedHarnessId: (route.harnessId as any) || "claude-code",
-      selectedProviderId: (route.providerId as any) || "anthropic",
-      claudeModel: route.model,
-      claudeEffort: globalRuntime.effort as any,
-      claudeReasoning: globalRuntime.reasoning || undefined,
-      claudePermissionMode: globalRuntime.permissionMode as any,
+      harnessDefaults: { ...state.settings.harnessDefaults, [harnessId]: { ...current, ...patch } },
     });
-    setState((current) => ({ ...current, settings }));
+    setState((prev) => ({ ...prev, settings }));
+  }
+
+  /** Sets which harness a brand-new member defaults to. */
+  async function setDefaultHarness(harnessId: "claude-code" | "codex") {
+    const settings = await window.agentParty.updateSettings({ selectedHarnessId: harnessId });
+    setState((prev) => ({ ...prev, settings }));
   }
 
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
@@ -502,7 +506,10 @@ export function App() {
                 activePartyId={state.party.currentPartyId}
                 views={views}
                 routes={routes}
+                codexModels={state.codexModels}
+                onRefreshCodexModels={() => void window.agentParty.refreshCodexModels()}
                 defaultProfile={defaultMemberProfileOf(state.settings)}
+                harnessDefaults={state.settings.harnessDefaults}
                 debugEnabled={state.settings.debugEnabled}
                 sidebarOpen={sidebarOpen}
                 layoutRequest={layoutRequest}
@@ -575,11 +582,10 @@ export function App() {
                 <RuntimeSettingsView
                   routes={routes}
                   harnesses={state.harnesses as any[]}
-                  draft={globalRuntime}
                   router={state.router.baseUrl}
                   settings={state.settings}
-                  onDraft={setGlobalRuntime}
-                  onApply={applyGlobalRuntime}
+                  onSaveHarnessDefaults={saveHarnessDefaults}
+                  onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
                 />
               )}

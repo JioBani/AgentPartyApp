@@ -104,7 +104,7 @@ const members = [
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", selectedHarnessId: "claude-code", selectedProviderId: "anthropic", claudeModel: "claude-sonnet-4.5", claudeEffort: "high", claudePermissionMode: "default", claudeSafeMode: false, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
   auth: [],
   sessions,
   modelRoutes,
@@ -151,10 +151,13 @@ window.agentParty = {
   resumePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   startPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   removePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  listModels: async () => ({ ok: true, modelRoutes: initialState.modelRoutes, codexModels: initialState.codexModels }),
+  refreshCodexModels: noop,
   onSessionEvents: on("events"),
   onSnapshot: on("snapshot"),
   onSessions: on("sessions"),
   onPartyUpdate: on("partyUpdate"),
+  onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"),
   onNavigate: on("nav"),
   onWorkspaceChoose: on("ws"),
