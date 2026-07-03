@@ -56,6 +56,22 @@ export function buildMemberView({ member, sessions, transcriptBySession, seenCou
   };
 }
 
+/**
+ * The most severe diagnostic among the last few transcript blocks, for the panel
+ * header badge — so a reroute / rate-limit / warning is visible without scrolling.
+ * Scans the tail only (recent), and error outranks warning outranks info.
+ */
+export function latestDiagnostic(transcript: TranscriptBlock[]): Extract<TranscriptBlock, { kind: "diagnostic" }> | undefined {
+  const rank = (s: string) => (s === "error" ? 3 : s === "warning" ? 2 : 1);
+  let best: Extract<TranscriptBlock, { kind: "diagnostic" }> | undefined;
+  for (const block of transcript.slice(-12)) {
+    if (block.kind === "diagnostic" && (!best || rank(block.severity) >= rank(best.severity))) {
+      best = block;
+    }
+  }
+  return best;
+}
+
 export function statusLabel(status: MemberStatus): string {
   switch (status) {
     case "working":

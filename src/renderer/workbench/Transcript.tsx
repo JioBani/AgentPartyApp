@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, ListChecks, Maximize2, Search, ShieldCheck, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -120,6 +120,8 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return <PlanBlock block={block} />;
     case "fileChange":
       return <FileChangeBlock block={block} density={density} />;
+    case "diagnostic":
+      return <DiagnosticBlock block={block} />;
     case "approval":
       return <ApprovalBlock block={block} view={view} density={density} actions={actions} />;
     default:
@@ -296,6 +298,31 @@ function FileChangeBlock({ block, density }: { block: Extract<TranscriptBlock, {
           {change.diff && <pre className="wb-pre wb-approval-diff">{change.diff}</pre>}
         </details>
       ))}
+    </div>
+  );
+}
+
+const DIAGNOSTIC_ICON: Record<string, JSX.Element> = {
+  reroute: <Shuffle size={14} />,
+  info: <Info size={14} />,
+};
+
+/**
+ * A surfaced Codex diagnostic — reroute, rate-limit, guardian/config warning,
+ * or sandbox/MCP problem — shown as a severity-colored banner (never dropped
+ * silently). Recoverable problems (Windows sandbox) show a recovery hint.
+ */
+function DiagnosticBlock({ block }: { block: Extract<TranscriptBlock, { kind: "diagnostic" }> }) {
+  const icon = DIAGNOSTIC_ICON[block.category] || DIAGNOSTIC_ICON[block.severity] || <AlertTriangle size={14} />;
+  return (
+    <div className={"wb-block wb-diagnostic is-" + block.severity}>
+      <div className="wb-diagnostic-head">
+        <span className="wb-diagnostic-ic">{icon}</span>
+        <strong>{block.title}</strong>
+        <span className="wb-diagnostic-cat">{block.category}</span>
+      </div>
+      {block.detail && <div className="wb-diagnostic-detail">{block.detail}</div>}
+      {block.recovery && <div className="wb-diagnostic-recovery">{block.recovery}</div>}
     </div>
   );
 }

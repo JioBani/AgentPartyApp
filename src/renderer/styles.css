@@ -3240,6 +3240,100 @@ body.wb-resizing {
   white-space: nowrap;
 }
 
+/* ---------- Codex diagnostics (Item 5): reroute / rate-limit / warnings ---------- */
+.wb-diagnostic {
+  border: var(--border-width) solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wb-diagnostic.is-warning {
+  border-left-color: var(--warning, #d90);
+}
+
+.wb-diagnostic.is-error {
+  border-left-color: var(--danger, #d66);
+}
+
+.wb-diagnostic.is-info {
+  border-left-color: var(--accent);
+}
+
+.wb-diagnostic-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wb-diagnostic-head strong {
+  font-size: 12px;
+  color: var(--text-0);
+}
+
+.wb-diagnostic.is-warning .wb-diagnostic-ic {
+  color: var(--warning, #d90);
+}
+
+.wb-diagnostic.is-error .wb-diagnostic-ic {
+  color: var(--danger, #d66);
+}
+
+.wb-diagnostic.is-info .wb-diagnostic-ic {
+  color: var(--accent);
+}
+
+.wb-diagnostic-cat {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.wb-diagnostic-detail {
+  font-size: 11.5px;
+  color: var(--text-1);
+  padding-left: 22px;
+}
+
+.wb-diagnostic-recovery {
+  font-size: 11.5px;
+  color: var(--text-0);
+  padding: 4px 8px;
+  margin-left: 22px;
+  border-radius: var(--radius-button);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-2));
+}
+
+.wb-diag-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  color: #fff;
+}
+
+.wb-diag-badge.is-warning {
+  background: var(--warning, #d90);
+}
+
+.wb-diag-badge.is-error {
+  background: var(--danger, #d66);
+}
+
+.wb-diag-badge.is-info {
+  background: var(--accent);
+}
+
 /* ---------- Legacy views (sessions/party/auth/runtime/automation) ---------- */
 .legacy-view {
   flex: 1;

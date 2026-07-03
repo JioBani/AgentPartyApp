@@ -33,6 +33,8 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       } else {
         next = upsertToolBlock(next, sessionId, event);
       }
+    } else if (event.type === "diagnostic") {
+      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "diagnostic", severity: event.severity, category: event.category, title: event.title, detail: event.detail, recovery: event.recovery, at: nowTime() });
     } else if (event.type === "plan") {
       next = upsertPlanBlock(next, sessionId, event);
     } else if (event.type === "file_change") {

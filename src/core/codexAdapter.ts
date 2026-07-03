@@ -13,6 +13,7 @@ import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
+import { classifyDiagnostic } from "../shared/codexDiagnostics";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -547,8 +548,23 @@ export class CodexAdapter extends EventEmitter {
       void this.refreshInventory();
       return;
     }
-    if (method === "warning" || method === "configWarning" || method === "deprecationNotice" || method === "mcpServer/startupStatus/updated") {
-      this.emitEvent({ type: "status", status: method, detail: compactJson(params), at: now() });
+    // Reroute / rate-limit / warnings must never be silently dropped (project
+    // "no silent fallback" rule): classify with a severity/category and surface.
+    if (
+      method === "model/rerouted" ||
+      method === "account/rateLimits/updated" ||
+      method === "guardianWarning" ||
+      method === "warning" ||
+      method === "configWarning" ||
+      method === "deprecationNotice" ||
+      method === "windows/worldWritableWarning" ||
+      method === "mcpServer/startupStatus/updated"
+    ) {
+      const diagnostic = classifyDiagnostic(method, params);
+      if (diagnostic) {
+        this.emitEvent({ type: "diagnostic", ...diagnostic, at: now() });
+      }
+      return;
     }
   }
 
@@ -779,14 +795,6 @@ function numberValue(value: unknown): number | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function compactJson(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
 
 function now(): string {

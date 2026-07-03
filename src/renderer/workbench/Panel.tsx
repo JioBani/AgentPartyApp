@@ -3,7 +3,7 @@ import { ChevronDown, ChevronsDownUp, RotateCcw, Square } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
-import { statusLabel } from "./memberStatus";
+import { latestDiagnostic, statusLabel } from "./memberStatus";
 import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
@@ -70,6 +70,10 @@ export function Panel(props: PanelProps) {
             <span className="wb-dot" />
             <strong>{view.name}</strong>
             <span className={"wb-status-pill is-" + view.status}>{statusLabel(view.status)}</span>
+            {(() => {
+              const diag = latestDiagnostic(view.transcript);
+              return diag ? <span className={"wb-diag-badge is-" + diag.severity} title={diag.title}>{diag.category}</span> : null;
+            })()}
           </div>
           <div className="wb-toolbar-controls">
             <button type="button" className="wb-pill wb-model-pill" title="Model settings" onClick={() => onOpenRuntime(view.name)}>

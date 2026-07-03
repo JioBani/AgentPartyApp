@@ -84,6 +84,14 @@ rl.on("line", (line) => {
         send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
         return;
       }
+      if (inputText.includes("KIND=diagnostics")) {
+        // Reroute (no silent fallback) + a sandbox warning (with recovery hint).
+        send({ method: "model/rerouted", params: { threadId: "thr-fake", turnId: "turn-1", fromModel: "gpt-5.4", toModel: "gpt-5.4-mini", reason: "highRiskCyberActivity" } });
+        send({ method: "warning", params: { threadId: "thr-fake", message: "sandbox is read-only despite --write" } });
+        send({ method: "account/rateLimits/updated", params: { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } } });
+        send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+        return;
+      }
       const kind = inputText.includes("KIND=fileChange") ? "fileChange" : "command";
       send(approvalRequest(kind, cwd));
       return;
