@@ -275,6 +275,12 @@ export class SessionManager extends EventEmitter {
     return this.sessions.has(id);
   }
 
+  /** The live harness thread id (Claude/Codex) for an app session, if resumable. */
+  harnessSessionId(id: string): string | undefined {
+    const harnessId = this.sessions.get(id)?.adapter.getSnapshot().sessionId;
+    return harnessId || undefined;
+  }
+
   interrupt(id: string): void {
     this.sessions.get(id)?.adapter.interrupt();
   }

@@ -127,6 +127,31 @@ export class PartyApplicationService {
     return this.startMember(name);
   }
 
+  /** The persisted transcript (assembled UI blocks) for a member, restored on load. */
+  getMemberTranscript(name: string): unknown[] {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const member = this.requireMember(state, name);
+    return this.repository.readTranscript(this.workspacePath(), member.partyId || "default", member.name);
+  }
+
+  /**
+   * Persists a member's transcript to disk (called debounced by the renderer, the
+   * transcript's assembler). Also captures the member's live harness thread id so
+   * a later reopen resumes that thread — keeping the record and the model context.
+   */
+  saveMemberTranscript(name: string, blocks: unknown[]): void {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name);
+    this.repository.writeTranscript(workspace, member.partyId || "default", member.name, blocks);
+    const harnessId = member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined;
+    if (harnessId && harnessId !== member.harnessSessionId) {
+      member.harnessSessionId = harnessId;
+      member.updatedAt = new Date().toISOString();
+      this.repository.write(workspace, state);
+    }
+  }
+
   bindMember(name: string, sessionId: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
@@ -232,7 +257,9 @@ export class PartyApplicationService {
       bridge: this.partyBridgeFor(member.partyId || "default", member.name),
       identity: { party: member.partyId || "default", member: member.name, role: member.role },
     };
-    return this.deps.sessionManager.createSession(createInput, undefined, binding);
+    // Resume the harness's own thread when we have one, so reopening the member
+    // (or the app) continues the conversation with its model context intact.
+    return this.deps.sessionManager.createSession(createInput, member.harnessSessionId || undefined, binding);
   }
 
   private ensureMigrated(state: StoredPartyState): StoredPartyState {

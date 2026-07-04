@@ -42,12 +42,18 @@ export interface BuildMemberViewInput {
   sessions: SessionView[];
   transcriptBySession: Record<string, TranscriptBlock[]>;
   seenCount: number;
+  /** Persisted transcript restored from disk — shown when no live session is bound. */
+  restored?: TranscriptBlock[];
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, seenCount }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, seenCount, restored }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
-  const transcript = session ? transcriptBySession[session.id] || [] : [];
+  // A live session's transcript wins (it is seeded from the restored history on
+  // resume, so it already contains it); otherwise show the restored history so a
+  // closed member — or a reopened app — still displays its past conversation.
+  const live = session ? transcriptBySession[session.id] || [] : [];
+  const transcript = live.length ? live : (restored || []);
   const status = deriveStatus(member, session, transcript);
   return {
     name: member.name,

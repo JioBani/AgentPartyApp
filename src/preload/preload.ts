@@ -40,6 +40,8 @@ const api = {
   resumePartyMember: (name: string) => ipcRenderer.invoke("party:resume", name),
   startPartyMember: (name: string, input?: unknown) => ipcRenderer.invoke("party:start", name, input),
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
+  getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
+  saveMemberTranscript: (name: string, blocks: unknown[]) => ipcRenderer.invoke("party:transcript:save", name, blocks),
   onSessionEvents: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("session:events", listener);

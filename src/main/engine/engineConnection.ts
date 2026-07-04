@@ -92,6 +92,10 @@ export interface EngineConnection {
   removeMember(name: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
   /** Dispatches one of the named party actions (HTTP `/api/party/members/:name/:action`). */
   partyAction(name: string, action: string, body: any): Promise<PartyMutationResult>;
+  /** The member's persisted transcript (assembled UI blocks), restored on load. */
+  getMemberTranscript(name: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
+  /** Persists the member's transcript (renderer-driven, debounced) + captures its resumable thread id. */
+  saveMemberTranscript(name: string, blocks: unknown[]): Promise<void>;
 
   // --- Models (engine-scoped) ----------------------------------------------
   /**

@@ -375,6 +375,16 @@ Closes the member's active session while keeping its registry/scaffold.
 
 Fully removes a member. This is destructive.
 
+### `GET /api/party/members/:name/transcript`
+
+The member's persisted transcript (assembled UI blocks), restored on app/member
+reopen. The renderer saves it debounced; reopening a member resumes the harness
+thread (Claude/Codex) via the stored thread id so the model context continues too.
+
+```json
+{ "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
+```
+
 ## Harness Party API
 
 Harness skills and tools can call these local endpoints from inside a session. This is a local mechanical identity mechanism, not a public auth system.

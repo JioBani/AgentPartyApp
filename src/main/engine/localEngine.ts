@@ -80,6 +80,14 @@ export class LocalEngine implements EngineConnection {
     return runPartyAction(this.party, name, action, body);
   }
 
+  async getMemberTranscript(name: string) {
+    return this.party.getMemberTranscript(name);
+  }
+
+  async saveMemberTranscript(name: string, blocks: unknown[]): Promise<void> {
+    this.party.saveMemberTranscript(name, blocks);
+  }
+
   // --- Models ---------------------------------------------------------------
   async listCodexModels(refresh?: boolean) {
     if (refresh) {

@@ -56,6 +56,39 @@ export class PartyRepository {
     return path.join(this.rootDir(workspacePath), "parties", sanitizeName(partyId), "members", sanitizeName(memberName));
   }
 
+  /**
+   * The persisted transcript (assembled UI blocks) for one member, so a closed
+   * member or a reopened app restores its conversation. Capped to the most recent
+   * {@link TRANSCRIPT_CAP} blocks to bound the file. Never throws — a missing or
+   * corrupt file reads as an empty transcript.
+   */
+  readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
+    try {
+      const file = this.transcriptPath(workspacePath, partyId, memberName);
+      if (!fs.existsSync(file)) {
+        return [];
+      }
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      return Array.isArray(parsed?.blocks) ? parsed.blocks : [];
+    } catch (error) {
+      log("warn", "party", "failed to read member transcript", { partyId, memberName, error: error instanceof Error ? error.message : String(error) });
+      return [];
+    }
+  }
+
+  writeTranscript(workspacePath: string, partyId: string, memberName: string, blocks: unknown[]): void {
+    const file = this.transcriptPath(workspacePath, partyId, memberName);
+    const capped = Array.isArray(blocks) ? blocks.slice(-TRANSCRIPT_CAP) : [];
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tempPath = `${file}.tmp`;
+    fs.writeFileSync(tempPath, `${JSON.stringify({ version: 1, blocks: capped }, null, 2)}\n`);
+    fs.renameSync(tempPath, file);
+  }
+
+  private transcriptPath(workspacePath: string, partyId: string, memberName: string): string {
+    return path.join(this.memberDir(workspacePath, partyId, memberName), "transcript.json");
+  }
+
   private filePath(workspacePath: string): string {
     return path.join(this.rootDir(workspacePath), "state.json");
   }
@@ -77,6 +110,8 @@ export class PartyRepository {
 
 const ROOT_DIR = ".agent_party_app";
 const LEGACY_ROOT = ".agentparty";
+/** Max transcript blocks persisted per member (bounds the on-disk file). */
+const TRANSCRIPT_CAP = 800;
 
 function sanitizeName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");

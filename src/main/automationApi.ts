@@ -153,6 +153,11 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.createPartyMember(workspace, await readJson(req)));
         return;
       }
+      const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
+      if (method === "GET" && transcriptMatch) {
+        sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1])) });
+        return;
+      }
       const partyMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && partyMatch) {
         sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req)));

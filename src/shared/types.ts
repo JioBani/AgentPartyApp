@@ -86,6 +86,12 @@ export interface PartyMember {
   runtime?: "codex" | "claude" | "claude-code";
   role?: string;
   sessionId?: string;
+  /**
+   * The harness's own resumable thread id (Claude SDK session / Codex thread),
+   * distinct from the transient app `sessionId`. Persisted so reopening the
+   * member — or reopening the app — resumes that thread and keeps model context.
+   */
+  harnessSessionId?: string;
   model?: string;
   effort?: string;
   /** Reasoning/thinking mode (adaptive | enabled | disabled); persisted for resume. */

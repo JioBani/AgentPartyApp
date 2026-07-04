@@ -17,6 +17,9 @@ export function App() {
   const [state, setState] = useState<InitialAppState>(initialState);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [logsBySession, setLogsBySession] = useState<Record<string, TranscriptBlock[]>>({});
+  // Persisted transcripts restored from disk, keyed by member name — shown for a
+  // closed member or right after an app reopen (before/without a live session).
+  const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
   const [openRouterDraft, setOpenRouterDraft] = useState("");
   const [partyNameDraft, setPartyNameDraft] = useState("");
   const [partyDraft, setPartyDraft] = useState({ name: "", requirement: "", initialTask: "", runtime: "claude-code" });
@@ -39,6 +42,12 @@ export function App() {
   const members = state.party.members;
   const sessions = state.sessions;
   const routes = state.modelRoutes as RouteLike[];
+  // Live mirrors for the session-event handler (registered once) so it can seed a
+  // resumed session's transcript from the member's restored history.
+  const membersRef = useRef(members);
+  membersRef.current = members;
+  const restoredRef = useRef(restoredByMember);
+  restoredRef.current = restoredByMember;
 
   const selectedParty = useMemo(
     () => (state.party.parties || []).find((party) => party.id === state.party.currentPartyId) || (state.party.parties || [])[0],
@@ -51,8 +60,9 @@ export function App() {
       sessions,
       transcriptBySession: logsBySession,
       seenCount: seenLengths[member.name] ?? 0,
+      restored: restoredByMember[member.name],
     })),
-    [members, sessions, logsBySession, seenLengths],
+    [members, sessions, logsBySession, seenLengths, restoredByMember],
   );
 
   const activeSession = useMemo(
@@ -70,7 +80,19 @@ export function App() {
     });
 
     const offEvents = window.agentParty.onSessionEvents((payload: any) => {
-      setLogsBySession((current) => applyEvents(current, payload.sessionId, payload.events || []));
+      setLogsBySession((current) => {
+        let base = current;
+        // First events for a freshly (re)started session: seed with the member's
+        // restored history so a resumed conversation continues instead of blank.
+        if (current[payload.sessionId] === undefined) {
+          const member = membersRef.current.find((item) => item.sessionId === payload.sessionId);
+          const restored = member ? restoredRef.current[member.name] : undefined;
+          if (restored && restored.length) {
+            base = { ...current, [payload.sessionId]: restored };
+          }
+        }
+        return applyEvents(base, payload.sessionId, payload.events || []);
+      });
     });
     const offSnapshot = window.agentParty.onSnapshot((payload: any) => {
       setState((current) => ({
@@ -142,6 +164,39 @@ export function App() {
       return changed ? next : prev;
     });
   }, [visibleMembers, logsBySession, members]);
+
+  // Restore each member's persisted transcript from disk once, so a reopened app
+  // (or a closed member) shows its past conversation. Fetched lazily per member.
+  useEffect(() => {
+    for (const member of members) {
+      if (restoredByMember[member.name] !== undefined) {
+        continue;
+      }
+      // Mark as fetched (empty) up front so we don't refetch on every render.
+      setRestoredByMember((current) => (current[member.name] !== undefined ? current : { ...current, [member.name]: [] }));
+      void window.agentParty.getMemberTranscript?.(member.name)?.then((blocks) => {
+        if (Array.isArray(blocks) && blocks.length) {
+          setRestoredByMember((current) => ({ ...current, [member.name]: blocks as TranscriptBlock[] }));
+        }
+      }).catch(() => {});
+    }
+  }, [members]);
+
+  // Persist each active member's transcript to disk (debounced), and keep the
+  // restored copy in sync so closing the member (or the app) preserves it. The
+  // main side also captures the harness thread id here, so a reopen resumes it.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      for (const member of membersRef.current) {
+        const blocks = member.sessionId ? logsBySession[member.sessionId] : undefined;
+        if (blocks && blocks.length) {
+          void window.agentParty.saveMemberTranscript?.(member.name, blocks);
+          setRestoredByMember((current) => (current[member.name] === blocks ? current : { ...current, [member.name]: blocks }));
+        }
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [logsBySession]);
 
   async function chooseWorkspace() {
     const settings = await window.agentParty.chooseWorkspace();
@@ -313,7 +368,14 @@ export function App() {
         permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || harnessDefaults.permissionMode,
       });
       await applyPartyResult(result);
-      return result.session?.id;
+      // Seed the (resumed) session's transcript with the member's restored history
+      // so the conversation continues visibly, matching the harness thread resume.
+      const sid = result.session?.id;
+      const restored = restoredRef.current[name];
+      if (sid && restored && restored.length) {
+        setLogsBySession((current) => (current[sid] === undefined ? { ...current, [sid]: restored } : current));
+      }
+      return sid;
     } finally {
       startingRef.current.delete(name);
     }

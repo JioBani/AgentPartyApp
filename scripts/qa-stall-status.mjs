@@ -38,5 +38,15 @@ assert(status([stall, { id: "a2", kind: "assistant", text: "resumed" }]) === "wo
 assert(status([stall], idleSession) === "idle", "once the turn ends (not busy) it is idle, not stalled");
 assert(buildMemberView({ member, sessions: [busySession], transcriptBySession: { s1: [stall] }, seenCount: 0 }).busy === false, "a stalled member is not 'busy' (so the panel offers restart, not an endless stop-spinner)");
 
+console.log("\nrestored transcript fallback (session history):");
+const restored = [{ id: "r1", kind: "user", text: "old" }, { id: "r2", kind: "assistant", text: "reply" }];
+// No live session (closed member / just-reopened app) → the restored history shows.
+const closedMember = { name: "cx", status: "closed", runtime: "codex", model: "gpt-5.4" };
+const closedView = buildMemberView({ member: closedMember, sessions: [], transcriptBySession: {}, seenCount: 0, restored });
+assert(closedView.transcript.length === 2 && closedView.transcript[1].text === "reply", "a member with no live session shows its restored transcript");
+// A live session's transcript wins over the restored copy (it was seeded from it).
+const liveView = buildMemberView({ member, sessions: [busySession], transcriptBySession: { s1: [{ id: "a", kind: "assistant", text: "live" }] }, seenCount: 0, restored });
+assert(liveView.transcript.length === 1 && liveView.transcript[0].text === "live", "a live session's transcript takes precedence over the restored copy");
+
 console.log(failures.length ? `\nSTALL STATUS FAILED (${failures.length})` : "\nSTALL STATUS PASSED");
 process.exit(failures.length ? 1 : 0);

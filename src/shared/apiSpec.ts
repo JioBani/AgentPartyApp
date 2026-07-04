@@ -36,6 +36,7 @@ export const automationEndpoints = [
   "POST /api/party/members/:name/bind",
   "POST /api/party/members/:name/close",
   "POST /api/party/members/:name/remove",
+  "GET /api/party/members/:name/transcript",
   "GET /api/harness/party",
   "POST /api/harness/party/messages",
   "GET /api/windows",

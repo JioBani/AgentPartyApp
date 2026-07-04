@@ -294,6 +294,14 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.removeMember(name));
   }
 
+  getMemberTranscript(workspacePath: string, name: string): Promise<unknown[]> {
+    return this.engineFor(workspacePath).getMemberTranscript(name);
+  }
+
+  saveMemberTranscript(workspacePath: string, name: string, blocks: unknown[]): Promise<void> {
+    return this.engineFor(workspacePath).saveMemberTranscript(name, blocks);
+  }
+
   // --- Window actions (addressed by window id) ----------------------------
   minimizeWindow(windowId?: string): { ok: true } {
     this.windowFor(windowId)?.minimize();

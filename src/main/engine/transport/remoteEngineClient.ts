@@ -106,6 +106,8 @@ export class RemoteEngineClient implements EngineConnection {
   bindMember(name: string, sessionId: string) { return this.call<Result<"bindMember">>("bindMember", name, sessionId); }
   removeMember(name: string) { return this.call<Result<"removeMember">>("removeMember", name); }
   partyAction(name: string, action: string, body: any) { return this.call<Result<"partyAction">>("partyAction", name, action, body); }
+  getMemberTranscript(name: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name); }
+  saveMemberTranscript(name: string, blocks: unknown[]) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, blocks); }
   listCodexModels(refresh?: boolean) { return this.call<Result<"listCodexModels">>("listCodexModels", refresh); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }

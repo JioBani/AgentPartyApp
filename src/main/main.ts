@@ -458,6 +458,8 @@ function registerIpc(): void {
   handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any));
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name));
+  handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name));
+  handle("party:transcript:save", async (event, name: string, blocks: unknown[]) => controller().saveMemberTranscript(senderWorkspace(event), name, blocks));
 }
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown): void {
