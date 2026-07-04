@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -72,7 +72,7 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return (
         <div className="wb-block wb-user">
           <div className="wb-user-head"><span className="wb-user-who">You</span>{block.at && <span className="wb-mono wb-time">{block.at}</span>}</div>
-          <div className="wb-user-bubble">{block.text}</div>
+          <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" /></div>
         </div>
       );
     case "reasoning":
@@ -151,7 +151,7 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
         <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
         {block.at && <span className="wb-mono wb-time">{block.at}</span>}
       </div>
-      {block.text && <div className="wb-channel-bubble"><Markdown text={block.text} /></div>}
+      {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
       {failed && <div className="wb-channel-failed">전달 실패 — 상대가 실행 중이 아닙니다.</div>}
     </div>
   );
@@ -188,14 +188,18 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
 function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {
   const [full, setFull] = useState(false);
   const arg = summarizeArg(block.input);
-  // The summary `arg` is ellipsis-clipped; show the FULL command/input in the body
-  // so a long bash command (or other arg) is never lost when expanded.
+  // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
+  // command/result. The full command + output live in the "전체 보기" popup so a
+  // long bash run never floods the transcript inline.
   const fullInput = toolInputDetail(block.input);
   // Command execution streams live output separately from its final result.
   const result = block.output || formatResult(block.result);
   const failed = block.status === "failed";
   // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
   const meta = toolMeta(block);
+  // Anything long enough that the inline view is only a preview → offer the popup.
+  const hasMore = needsClip(fullInput) || needsClip(result);
+  const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
   return (
     <details className={"wb-block wb-tool density-" + density} open={density === "wide" && Boolean(result)}>
       <summary>
@@ -204,25 +208,15 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}
-      </summary>
-      {meta && <div className="wb-tool-meta">{meta}</div>}
-      {fullInput && (
-        // Command body scrolls within a capped height; the expand button opens a
-        // full, scrollable view (command + result) for very long content.
-        <div className="wb-tool-cmd-wrap">
-          <pre className="wb-pre wb-tool-cmd">{fullInput}</pre>
-          <button
-            type="button"
-            className="wb-tool-expand"
-            title="전체 보기"
-            aria-label="전체 보기"
-            onClick={(event) => { event.preventDefault(); event.stopPropagation(); setFull(true); }}
-          >
+        {hasMore && (
+          <button type="button" className="wb-tool-expand" title="전체 보기" aria-label="전체 보기" onClick={openFull}>
             <Maximize2 size={12} />
           </button>
-        </div>
-      )}
-      {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{result}</pre>}
+        )}
+      </summary>
+      {meta && <div className="wb-tool-meta">{meta}</div>}
+      {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
+      {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
       {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </details>
   );
@@ -327,8 +321,54 @@ function DiagnosticBlock({ block }: { block: Extract<TranscriptBlock, { kind: "d
   );
 }
 
-/** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */
-function ToolDetailModal({ name, command, result, onClose }: { name: string; command: string; result: string; onClose: () => void }) {
+// Inline content (a sent message, a bash run) shows only a clipped preview; the
+// full text opens in a popup. Keeps the transcript scannable when a message or
+// command output is long, without ever losing the full content.
+const PREVIEW_LINES = 6;
+const PREVIEW_CHARS = 320;
+
+function needsClip(text: string): boolean {
+  return Boolean(text) && (text.length > PREVIEW_CHARS || text.split("\n").length > PREVIEW_LINES);
+}
+
+/** The clipped preview of a longer text (first few lines / chars, trailing ellipsis). */
+function previewOf(text: string): string {
+  if (!needsClip(text)) {
+    return text;
+  }
+  const byLines = text.split("\n").slice(0, PREVIEW_LINES).join("\n");
+  const clipped = byLines.length > PREVIEW_CHARS ? byLines.slice(0, PREVIEW_CHARS) : byLines;
+  return `${clipped.replace(/\s+$/, "")} …`;
+}
+
+/**
+ * A message body shown as a preview by default; when it's long, a "전체 보기"
+ * control opens the full text in a popup. Used for sent/received messages so the
+ * transcript stays scannable (the full content is one click away).
+ */
+function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
+  const [full, setFull] = useState(false);
+  const clip = needsClip(text);
+  const shown = clip ? previewOf(text) : text;
+  return (
+    <>
+      {markdown ? <Markdown text={shown} /> : <span className="wb-expandable-text">{shown}</span>}
+      {clip && (
+        <button type="button" className="wb-expand-inline" title="전체 보기" onClick={() => setFull(true)}>
+          <Maximize2 size={11} /> 전체 보기
+        </button>
+      )}
+      {full && (
+        <DetailModal title={title} onClose={() => setFull(false)}>
+          {markdown ? <Markdown text={text} /> : <pre className="wb-pre wb-expandable-full">{text}</pre>}
+        </DetailModal>
+      )}
+    </>
+  );
+}
+
+/** A centered popup with a titled body — the shared shell for "전체 보기" overlays. */
+function DetailModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -338,15 +378,22 @@ function ToolDetailModal({ name, command, result, onClose }: { name: string; com
     <div className="wb-tool-modal-backdrop" onClick={onClose}>
       <div className="wb-tool-modal" onClick={(event) => event.stopPropagation()}>
         <div className="wb-tool-modal-head">
-          <span className="wb-mono wb-tool-name">{name}</span>
+          <span className="wb-mono wb-tool-name">{title}</span>
           <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>
         </div>
-        <div className="wb-tool-modal-body">
-          {command && <pre className="wb-pre wb-tool-cmd">{command}</pre>}
-          {result && <pre className="wb-pre wb-tool-result">{result}</pre>}
-        </div>
+        <div className="wb-tool-modal-body">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */
+function ToolDetailModal({ name, command, result, onClose }: { name: string; command: string; result: string; onClose: () => void }) {
+  return (
+    <DetailModal title={name} onClose={onClose}>
+      {command && <pre className="wb-pre wb-tool-cmd">{command}</pre>}
+      {result && <pre className="wb-pre wb-tool-result">{result}</pre>}
+    </DetailModal>
   );
 }
 

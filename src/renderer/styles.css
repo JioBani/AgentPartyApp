@@ -1611,6 +1611,48 @@ body.wb-resizing {
   color: var(--text-0);
 }
 
+/* When the expand icon sits in the tool summary row, it's inline (not the
+   absolute overlay used for the command body). Pushed to the row's far right. */
+.wb-tool > summary .wb-tool-expand {
+  position: static;
+  margin-left: auto;
+  flex: 0 0 auto;
+  box-shadow: none;
+}
+
+/* Message bodies (sent/received) preview by default; "전체 보기" opens the popup. */
+.wb-expandable-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.wb-expandable-full {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.wb-expand-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  border-radius: var(--radius-pill, 999px);
+  border: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-3);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-expand-inline:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+
 /* "전체 보기" overlay — full, scrollable command + result. */
 .wb-tool-modal-backdrop {
   position: fixed;

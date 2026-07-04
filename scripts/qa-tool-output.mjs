@@ -1,8 +1,8 @@
 /*
- * Regression for tool-call (e.g. bash) output rendering. The summary `arg` is
- * intentionally ellipsis-clipped, so a long command must still be fully visible
- * in the EXPANDED body, and tool_result content arrays must render as plain
- * text (not escaped JSON) — full content, never truncated.
+ * Regression for tool-call (e.g. bash) output rendering. Long commands/output
+ * show a clipped PREVIEW inline (kept scannable), with a "전체 보기" control that
+ * opens a popup holding the FULL command + result; short content shows no expand
+ * control. tool_result content arrays must render as plain text (not escaped JSON).
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -36,51 +36,56 @@ const view = {
   name: "r", color: "#888", member: { name: "r", partyId: "p1", status: "idle", runtime: "claude-code", role: "" },
   status: "idle", unread: 0, pendingApproval: false, busy: false, model: "sonnet", effort: "medium", permissionMode: "default",
   transcript: [
-    // String result.
+    // String result (long → previewed inline, full in popup).
     { id: "t1", kind: "tool", name: "Bash", status: "completed", input: { command: longCommand }, result: longOutput, at: "10:00" },
-    // Anthropic content-array result.
+    // Anthropic content-array result (long).
     { id: "t2", kind: "tool", name: "Bash", status: "completed", input: { command: "echo hi" }, result: [{ type: "text", text: longOutput }], at: "10:01" },
+    // Short result → no expand control, full content inline.
+    { id: "t3", kind: "tool", name: "Bash", status: "completed", input: { command: "echo hi" }, result: "hello world", at: "10:02" },
   ],
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(Transcript, { view, density: "wide", actions: {} }));
 await new Promise((res) => setTimeout(res, 120));
 
-console.log("\nTool output rendering:");
+console.log("\nTool output rendering (preview inline):");
 const details = [...document.querySelectorAll(".wb-tool")];
-assert(details.length === 2, "two tool blocks rendered");
+assert(details.length === 3, "three tool blocks rendered");
 
 const cmd = document.querySelector(".wb-tool-cmd");
-assert(Boolean(cmd), "expanded tool body shows a full-command line");
-assert((cmd?.textContent || "").includes(longCommand), "the FULL bash command is present in the body (not ellipsis-clipped)");
+assert(Boolean(cmd), "tool body shows a command line");
 assert((cmd?.textContent || "").startsWith("$ "), "command is shown with a $ prefix");
+assert((cmd?.textContent || "").includes("for f in"), "command preview keeps the start of the command");
+assert(!(cmd?.textContent || "").includes("x".repeat(300)), "the long command tail is NOT dumped inline (previewed)");
 
 const results = [...document.querySelectorAll(".wb-tool-result")];
-assert(results.length === 2, "both tool results rendered");
-results.forEach((p, i) => {
-  const txt = p.textContent || "";
-  assert(txt.includes("line 0:") && txt.includes("line 149:"), `result #${i}: full output present (first + last line), not truncated`);
-});
-// The content-array result must be plain text, not JSON.
+assert(results.length === 3, "all tool results rendered");
+// The two long results are previewed: first line present, last line NOT (clipped).
+assert((results[0].textContent || "").includes("line 0:"), "long result preview shows the first line");
+assert(!(results[0].textContent || "").includes("line 149:"), "long result preview clips the tail (not dumped inline)");
+assert((results[0].textContent || "").trim().endsWith("…"), "clipped preview ends with an ellipsis");
+// The content-array result must be plain text, not JSON (even in preview).
 const arrResult = results[1]?.textContent || "";
 assert(!arrResult.trim().startsWith("[") && !arrResult.includes('"type"'), "content-array result renders as plain text, not escaped JSON");
+// Short result renders in full, no clipping.
+assert((results[2].textContent || "") === "hello world", "short result is shown in full (no preview clip)");
 
-console.log("\nCommand scroll + full-view modal:");
-const wrap = document.querySelector(".wb-tool-cmd-wrap");
-assert(Boolean(wrap), "command body is wrapped for scroll + expand control");
-const expandBtn = wrap?.querySelector(".wb-tool-expand");
-assert(Boolean(expandBtn), "'전체 보기' expand button is present");
+console.log("\nExpand control + full-view popup:");
+const blocks = [...document.querySelectorAll(".wb-tool")];
+assert(!blocks[2].querySelector(".wb-tool-expand"), "short tool has NO '전체 보기' control");
+const expandBtn = blocks[0].querySelector("summary .wb-tool-expand");
+assert(Boolean(expandBtn), "long tool has a '전체 보기' control in its summary");
 assert(!document.querySelector(".wb-tool-modal"), "no modal before clicking expand");
 expandBtn?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
-assert(Boolean(modal), "clicking expand opens the full-view modal");
+assert(Boolean(modal), "clicking expand opens the full-view popup");
 const modalText = modal?.textContent || "";
-assert(modalText.includes(longCommand), "modal shows the FULL command");
-assert(modalText.includes("line 0:") && modalText.includes("line 149:"), "modal shows the full result too");
+assert(modalText.includes(longCommand), "popup shows the FULL command (untruncated)");
+assert(modalText.includes("line 0:") && modalText.includes("line 149:"), "popup shows the full result (first + last line)");
 // Close via backdrop click.
 document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
-assert(!document.querySelector(".wb-tool-modal"), "modal closes on backdrop click");
+assert(!document.querySelector(".wb-tool-modal"), "popup closes on backdrop click");
 
 console.log(failures.length ? `\nTOOL OUTPUT FAILED (${failures.length})` : "\nTOOL OUTPUT PASSED");
 process.exit(failures.length ? 1 : 0);
