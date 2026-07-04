@@ -117,6 +117,8 @@ export class ClaudeAdapter extends EventEmitter {
   private thinkingMode: string | undefined;
   private thinkingBudget: number | undefined;
   private resumeSessionId: string | undefined;
+  /** Guards the one-shot fresh-restart recovery when a resume id is unresolvable. */
+  private resumeRecoveryTried = false;
   private turnCount = 0;
   private lastEventAt: string | undefined;
   private lastUserMessageAt: string | undefined;
@@ -629,6 +631,9 @@ export class ClaudeAdapter extends EventEmitter {
   private async normalize(message: SDKMessage): Promise<void> {
     if ((message as any).session_id) {
       this.sessionId = (message as any).session_id || this.sessionId;
+      // A live session is established (resume succeeded or a fresh start): allow a
+      // future stale-resume to recover once more.
+      this.resumeRecoveryTried = false;
     }
 
     if (message.type === "system") {
@@ -811,6 +816,39 @@ export class ClaudeAdapter extends EventEmitter {
 
   private emitError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+    // Benign: the SDK rejects a pending request with this generic message when we
+    // deliberately close/restart the query (model/thinking change, resume
+    // recovery). It isn't a session failure — surface it as a quiet status, not a
+    // red error block. A real failure carries its own message and still errors.
+    if (/Query closed before response received/i.test(message)) {
+      this.emitEvent({ type: "status", status: "restarted", detail: "이전 요청이 재시작으로 종료됨", at: now() });
+      this.log("query_closed_benign", message);
+      return;
+    }
+    // A resume that references a session the harness no longer has ("No
+    // conversation found with session ID ...") — e.g. a persisted thread that was
+    // never turn-committed, or that the SDK has since dropped — would otherwise
+    // brick the member. Recover once: drop the resume id and restart a FRESH
+    // session. Surfaced (not silent), and the prior transcript stays on screen.
+    if (this.resumeSessionId && !this.resumeRecoveryTried && isResumeNotFound(message)) {
+      this.resumeRecoveryTried = true;
+      this.log("resume_recover", { failedResume: this.resumeSessionId, message });
+      this.emitEvent({
+        type: "diagnostic",
+        severity: "warning",
+        category: "resume",
+        title: "이전 대화를 이어갈 수 없습니다",
+        detail: "저장된 세션을 찾을 수 없어(하네스가 정리했거나 아직 커밋되지 않음) 새 세션으로 다시 시작합니다.",
+        recovery: "그대로 대화를 계속하면 됩니다. 이전 기록은 화면에 남아 있습니다.",
+        at: now(),
+      });
+      // Clear both the live and the option resume id so no restart re-resumes it.
+      this.options.resumeSessionId = undefined;
+      this.resumeSessionId = undefined;
+      this.sessionId = "";
+      this.restart(false);
+      return;
+    }
     this.lastError = message;
     this.currentStatus = "error";
     this.emitEvent({ type: "error", message, at: now() });
@@ -1105,6 +1143,15 @@ function scrubPermissionOptions(options: Parameters<CanUseTool>[2]): Record<stri
 
 function asModelProviderId(value: unknown): ModelProviderId | undefined {
   return value === "anthropic" || value === "openrouter" || value === "openai" || value === "custom" ? value : undefined;
+}
+
+/**
+ * Whether an SDK error means the resume target session no longer exists — the
+ * signal to recover with a fresh session. Matches the Claude Agent SDK's
+ * "No conversation found with session ID ..." and close variants.
+ */
+function isResumeNotFound(message: string): boolean {
+  return /no conversation found|conversation not found|session .*not found|resume.*not found|unknown session/i.test(message);
 }
 
 function isNativeClaudeModel(model: string): boolean {

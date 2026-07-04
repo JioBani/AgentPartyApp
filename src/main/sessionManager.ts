@@ -275,10 +275,19 @@ export class SessionManager extends EventEmitter {
     return this.sessions.has(id);
   }
 
-  /** The live harness thread id (Claude/Codex) for an app session, if resumable. */
+  /**
+   * The live harness thread id (Claude/Codex) for an app session — but only once
+   * a turn has committed. A zero-turn session is not yet persisted by the harness,
+   * so storing its id and resuming it later fails with "No conversation found".
+   * Gating on turnCount is the root-cause prevention; the adapter's
+   * resume-not-found recovery covers the residual cases (cross-run GC, expiry).
+   */
   harnessSessionId(id: string): string | undefined {
-    const harnessId = this.sessions.get(id)?.adapter.getSnapshot().sessionId;
-    return harnessId || undefined;
+    const snapshot = this.sessions.get(id)?.adapter.getSnapshot();
+    if (!snapshot?.sessionId || !(snapshot.turnCount && snapshot.turnCount > 0)) {
+      return undefined;
+    }
+    return snapshot.sessionId;
   }
 
   interrupt(id: string): void {
