@@ -92,27 +92,58 @@ export function workspaceLocationsEqual(a: WorkspaceLocation, b: WorkspaceLocati
  * process argv into a serialized workspace location. Pure + electron-free so it
  * can be unit-tested; the Electron entry wraps it to log the warning.
  *
- * Guards two ways a launcher can hand us garbage (both once opened a bogus
- * workspace, violating the no-silent-fallback rule):
- *  - a *dropped* path, so `--workspace` is immediately followed by another flag
- *    (e.g. the Chromium switch `--allow-file-access-from-files`): the flag is NOT
- *    consumed as the path.
- *  - a *non-absolute* local value: it would be `path.resolve`d against the
- *    process cwd downstream, fabricating `<cwd>\<token>` instead of erroring.
+ * The tricky case (a real, reproduced bug): Electron's
+ * `app.commandLine.appendSwitch(...)` INJECTS Chromium switches between
+ * `--workspace` and its value and moves the positional path to the END of argv.
+ * So for `AgentParty.exe --workspace "C:\proj"` the app actually sees
+ * `["--workspace", "--allow-file-access-from-files", "--disable-features=…", "C:\proj"]`.
+ * Taking `argv[index+1]` then grabbed a *flag* as the path, which was resolved
+ * against the process cwd into a fabricated workspace. So:
+ *  - the space-separated value is only trusted when the next token isn't a flag;
+ *    otherwise the path is recovered from the last positional (non-flag) arg.
+ *  - a *non-absolute* local value is rejected (it would be cwd-resolved into a
+ *    bogus path), surfacing a warning instead — the no-silent-fallback rule.
+ *  - `--workspace=<path>` (inline) is immune to the reorder and always preferred.
  *
  * Returns `location` when usable, and/or a `warning` string the caller surfaces.
  */
 export function workspaceArgFromArgv(argv: string[]): { location?: string; warning?: string } {
   const inline = argv.find((arg) => arg.startsWith("--workspace="));
   const index = argv.indexOf("--workspace");
-  const nextToken = index >= 0 ? argv[index + 1] : undefined;
-  const value = (inline ? inline.slice("--workspace=".length) : nextToken && !nextToken.startsWith("--") ? nextToken : "").trim();
+  let value = "";
+  if (inline) {
+    value = inline.slice("--workspace=".length);
+  } else if (index >= 0) {
+    const next = argv[index + 1];
+    // A flag (or nothing) after `--workspace` means Electron reordered argv:
+    // recover the path from the last positional argument instead of the flag.
+    value = next && !next.startsWith("--") ? next : lastPositional(argv, index);
+  }
+  value = value.trim();
   if (!value) {
-    return index >= 0 && !inline ? { warning: `--workspace present but its path was missing/dropped (next token: ${nextToken ?? "none"})` } : {};
+    return index >= 0 && !inline ? { warning: "--workspace present but no path could be resolved from argv (dropped/reordered by launcher) — using default workspace" } : {};
   }
   const location = parseWorkspaceLocation(value);
   if (location.host.kind === "local" && !path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
     return { warning: `ignoring non-absolute --workspace value: ${value}` };
   }
   return { location: serializeWorkspaceLocation(location) };
+}
+
+/**
+ * The last positional (non-flag, non-`.`) argv entry — where Electron parks the
+ * reordered `--workspace` path. Skips argv[0] (the executable) and the
+ * `--workspace` token itself so neither is ever mistaken for the path.
+ */
+function lastPositional(argv: string[], workspaceIndex: number): string {
+  for (let i = argv.length - 1; i >= 1; i--) {
+    if (i === workspaceIndex) {
+      continue;
+    }
+    const arg = argv[i];
+    if (arg && !arg.startsWith("--") && arg !== ".") {
+      return arg;
+    }
+  }
+  return "";
 }

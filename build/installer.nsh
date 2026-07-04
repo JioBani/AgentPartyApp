@@ -7,7 +7,7 @@
 ;    WSL appends the Windows PATH via interop (the same reason `code` works).
 ;
 ; 2. Register an Explorer context-menu entry ("AgentParty로 열기") on folders and
-;    on the folder background, launching `AgentParty.exe --workspace "<folder>"`
+;    on the folder background, launching `AgentParty.exe --workspace="<folder>"`
 ;    so the picked directory opens as the workspace. The running instance routes
 ;    this into a new window (single-instance lock), so it never starts a rival
 ;    process on the same workspace.
@@ -37,11 +37,15 @@
   ; Right-click a folder.
   WriteRegStr HKCU "Software\Classes\Directory\shell\AgentParty" "" "AgentParty로 열기"
   WriteRegStr HKCU "Software\Classes\Directory\shell\AgentParty" "Icon" "$INSTDIR\AgentParty.exe,0"
-  WriteRegStr HKCU "Software\Classes\Directory\shell\AgentParty\command" "" '"$INSTDIR\AgentParty.exe" --workspace "%V"'
+  ; Inline `--workspace="%V"` (NOT space-separated): Electron's appendSwitch
+  ; injects Chromium flags between `--workspace` and a space-separated value and
+  ; reorders the positional path to the end, so the app would read a flag as the
+  ; workspace. The inline form keeps path+flag one token, immune to the reorder.
+  WriteRegStr HKCU "Software\Classes\Directory\shell\AgentParty\command" "" '"$INSTDIR\AgentParty.exe" --workspace="%V"'
   ; Right-click empty space inside a folder (the folder background).
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AgentParty" "" "AgentParty로 열기"
   WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AgentParty" "Icon" "$INSTDIR\AgentParty.exe,0"
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AgentParty\command" "" '"$INSTDIR\AgentParty.exe" --workspace "%V"'
+  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AgentParty\command" "" '"$INSTDIR\AgentParty.exe" --workspace="%V"'
 !macroend
 
 !macro customUnInstall

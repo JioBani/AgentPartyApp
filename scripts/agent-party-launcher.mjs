@@ -65,7 +65,9 @@ function launchApp() {
   // Strip ELECTRON_RUN_AS_NODE so the exe boots as the app, not as plain node.
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  spawn(exe, ["--workspace", uri], { detached: true, stdio: "ignore", env }).unref();
+  // Inline `--workspace=<uri>` (one token): Electron's appendSwitch reorders a
+  // space-separated value away from `--workspace`, which the app would misread.
+  spawn(exe, [`--workspace=${uri}`], { detached: true, stdio: "ignore", env }).unref();
   console.log(`Launching AgentParty for ${uri}…`);
 }
 

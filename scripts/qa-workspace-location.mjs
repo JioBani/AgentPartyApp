@@ -77,10 +77,16 @@ const argv = (...rest) => [".", ...rest];
 assert(W.workspaceArgFromArgv(argv("--workspace", "C:\\Project\\custom jira")).location === "C:\\Project\\custom jira", "`--workspace <abs>` resolves the path (spaces ok)");
 assert(W.workspaceArgFromArgv(argv("--workspace=C:\\Project\\x")).location === "C:\\Project\\x", "`--workspace=<abs>` resolves the path");
 assert(W.workspaceArgFromArgv(argv("--workspace", "wsl+Ubuntu:/home/dev/p")).location === "wsl+Ubuntu:/home/dev/p", "a wsl+ URI is accepted");
-// THE reported bug: --workspace immediately followed by a Chromium flag (path dropped)
+// THE reported bug (reproduced from a live log): Electron's appendSwitch injects
+// Chromium flags between `--workspace` and its value and moves the real path to
+// the end. Recover it from the trailing positional — never consume a flag.
+const reordered = W.workspaceArgFromArgv(["AgentParty.exe", "--workspace", "--allow-file-access-from-files", "--disable-features=CalculateNativeWinOcclusion", "--disable-renderer-backgrounding", "C:\\Project\\custom jira"]);
+assert(reordered.location === "C:\\Project\\custom jira" && !reordered.warning, "recovers the reordered `--workspace` path from the trailing positional (real Electron argv)");
+assert(!W.workspaceArgFromArgv(["AgentParty.exe", "--workspace", "--allow-file-access-from-files"]).location, "the exe (argv[0]) is never mistaken for the path when the real path is absent");
+// path truly dropped (no positional at all): warn + fall back, never fabricate
 const dropped = W.workspaceArgFromArgv(argv("--workspace", "--allow-file-access-from-files"));
-assert(dropped.location === undefined, "a flag after `--workspace` is NOT consumed as the path (no fabricated workspace)");
-assert(typeof dropped.warning === "string" && /missing|dropped/i.test(dropped.warning), "a dropped `--workspace` path is surfaced as a warning, not silent");
+assert(dropped.location === undefined, "a flag after `--workspace` with no positional is NOT consumed as the path (no fabricated workspace)");
+assert(typeof dropped.warning === "string" && /dropped|reorder/i.test(dropped.warning), "a dropped `--workspace` path is surfaced as a warning, not silent");
 // a non-absolute local value would otherwise cwd-resolve into a bogus path
 const rel = W.workspaceArgFromArgv(argv("--workspace", "custom jira"));
 assert(rel.location === undefined && /non-absolute/i.test(rel.warning || ""), "a non-absolute local `--workspace` value is rejected with a warning (not cwd-resolved)");
