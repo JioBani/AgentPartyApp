@@ -70,6 +70,24 @@ assert(W.workspaceKey("wsl+Ubuntu:/p") !== W.workspaceKey("wsl+Debian:/p"), "sam
 assert(W.workspaceLocationsEqual(W.parseWorkspaceLocation(uri), W.parseWorkspaceLocation(uri)), "equal locations compare equal");
 assert(!W.workspaceLocationsEqual(W.parseWorkspaceLocation(uri), local), "different hosts compare unequal");
 
+// --- workspaceArgFromArgv: never fabricate a workspace from a broken argv ---
+console.log("\n--workspace argv resolution:");
+const argv = (...rest) => [".", ...rest];
+// happy paths
+assert(W.workspaceArgFromArgv(argv("--workspace", "C:\\Project\\custom jira")).location === "C:\\Project\\custom jira", "`--workspace <abs>` resolves the path (spaces ok)");
+assert(W.workspaceArgFromArgv(argv("--workspace=C:\\Project\\x")).location === "C:\\Project\\x", "`--workspace=<abs>` resolves the path");
+assert(W.workspaceArgFromArgv(argv("--workspace", "wsl+Ubuntu:/home/dev/p")).location === "wsl+Ubuntu:/home/dev/p", "a wsl+ URI is accepted");
+// THE reported bug: --workspace immediately followed by a Chromium flag (path dropped)
+const dropped = W.workspaceArgFromArgv(argv("--workspace", "--allow-file-access-from-files"));
+assert(dropped.location === undefined, "a flag after `--workspace` is NOT consumed as the path (no fabricated workspace)");
+assert(typeof dropped.warning === "string" && /missing|dropped/i.test(dropped.warning), "a dropped `--workspace` path is surfaced as a warning, not silent");
+// a non-absolute local value would otherwise cwd-resolve into a bogus path
+const rel = W.workspaceArgFromArgv(argv("--workspace", "custom jira"));
+assert(rel.location === undefined && /non-absolute/i.test(rel.warning || ""), "a non-absolute local `--workspace` value is rejected with a warning (not cwd-resolved)");
+// no --workspace at all → nothing, no warning
+const none = W.workspaceArgFromArgv(argv("--other", "x"));
+assert(none.location === undefined && !none.warning, "no `--workspace` → no location and no spurious warning");
+
 console.log("");
 if (failures.length) {
   console.log(`WORKSPACE LOCATION FAILED: ${failures.length} assertion(s)`);

@@ -86,3 +86,33 @@ export function isWslLocation(loc: WorkspaceLocation): boolean {
 export function workspaceLocationsEqual(a: WorkspaceLocation, b: WorkspaceLocation): boolean {
   return workspaceLocationKey(a) === workspaceLocationKey(b);
 }
+
+/**
+ * Resolves the `--workspace <path>` / `--workspace=<path>` argument out of a
+ * process argv into a serialized workspace location. Pure + electron-free so it
+ * can be unit-tested; the Electron entry wraps it to log the warning.
+ *
+ * Guards two ways a launcher can hand us garbage (both once opened a bogus
+ * workspace, violating the no-silent-fallback rule):
+ *  - a *dropped* path, so `--workspace` is immediately followed by another flag
+ *    (e.g. the Chromium switch `--allow-file-access-from-files`): the flag is NOT
+ *    consumed as the path.
+ *  - a *non-absolute* local value: it would be `path.resolve`d against the
+ *    process cwd downstream, fabricating `<cwd>\<token>` instead of erroring.
+ *
+ * Returns `location` when usable, and/or a `warning` string the caller surfaces.
+ */
+export function workspaceArgFromArgv(argv: string[]): { location?: string; warning?: string } {
+  const inline = argv.find((arg) => arg.startsWith("--workspace="));
+  const index = argv.indexOf("--workspace");
+  const nextToken = index >= 0 ? argv[index + 1] : undefined;
+  const value = (inline ? inline.slice("--workspace=".length) : nextToken && !nextToken.startsWith("--") ? nextToken : "").trim();
+  if (!value) {
+    return index >= 0 && !inline ? { warning: `--workspace present but its path was missing/dropped (next token: ${nextToken ?? "none"})` } : {};
+  }
+  const location = parseWorkspaceLocation(value);
+  if (location.host.kind === "local" && !path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
+    return { warning: `ignoring non-absolute --workspace value: ${value}` };
+  }
+  return { location: serializeWorkspaceLocation(location) };
+}

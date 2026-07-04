@@ -13,7 +13,7 @@ import type { EngineRegistry } from "./engine/engineRegistry";
 import { spawnWslEngine } from "./engine/transport/wslEngine";
 import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
-import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../shared/workspaceLocation";
+import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
@@ -64,13 +64,14 @@ let engineRegistry: EngineRegistry | undefined;
  * `second-instance` handler that receives the new process's argv.
  */
 function workspaceFromArgv(argv: string[]): string | undefined {
-  // Accept both `--workspace <path>` (Explorer "open here", `agent-party` CLI)
-  // and `--workspace=<path>`. Position-independent so an Electron/Chromium flag
-  // reordering never hides it.
-  const inline = argv.find((arg) => arg.startsWith("--workspace="));
-  const index = argv.indexOf("--workspace");
-  const value = inline ? inline.slice("--workspace=".length) : index >= 0 ? argv[index + 1] || "" : "";
-  return value ? serializeWorkspaceLocation(parseWorkspaceLocation(value)) : undefined;
+  // Pure resolution lives in the shared, unit-tested `workspaceArgFromArgv`; here
+  // we only surface its warning (a launcher that dropped the folder path, or a
+  // non-absolute value) so it never silently opens a fabricated workspace.
+  const { location, warning } = workspaceArgFromArgv(argv);
+  if (warning) {
+    log("warn", "window", warning, { argv: argv.slice(1) });
+  }
+  return location;
 }
 
 function launchWorkspace(): string | undefined {
