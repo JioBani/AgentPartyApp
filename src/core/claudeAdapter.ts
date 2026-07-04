@@ -295,6 +295,8 @@ export class ClaudeAdapter extends EventEmitter {
     if (!this.query) {
       return;
     }
+    // Every session is launched bypass-capable (see the query options), so any
+    // mode — including bypassPermissions — applies live without a restart.
     void this.query.setPermissionMode(this.permissionMode).then(
       () => this.emitEvent({ type: "status", status: "permission", detail: permissionMode, at: now() }),
       (error) => this.emitError(error),
@@ -425,7 +427,12 @@ export class ClaudeAdapter extends EventEmitter {
         effort: this.effort,
         thinking: this.resolveThinking(),
         permissionMode: this.permissionMode,
-        allowDangerouslySkipPermissions: this.permissionMode === "bypassPermissions",
+        // Always launch bypass-CAPABLE (this only grants the ability; the active
+        // permissionMode still governs behavior). The SDK ties bypassPermissions
+        // to a launch-time capability that a resumed session inherits, so without
+        // this a member started in any other mode can never switch to bypass
+        // ("...session was not launched with --dangerously-skip-permissions").
+        allowDangerouslySkipPermissions: true,
         resume: this.resumeSessionId,
         canUseTool: this.canUseTool,
         includePartialMessages: true,
