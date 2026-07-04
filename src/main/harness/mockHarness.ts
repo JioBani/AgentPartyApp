@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/events";
 import type { HarnessSession } from "./types";
+import type { HarnessId } from "../../shared/types";
+import type { McpAuthResult, McpServerInfo, McpServerSnapshot } from "../../shared/mcp";
 
 /** Distributes `Omit` across the event union so each member keeps its own keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -18,6 +20,8 @@ export interface MockHarnessOptions {
   autoReply?: boolean;
   /** Seeded slash-command inventory so the palette can be exercised in QA. */
   commands?: ClaudeSessionSnapshot["slashCommands"];
+  /** Which harness this mock stands in for (drives the MCP snapshot tag). */
+  harness?: HarnessId;
 }
 
 /**
@@ -34,10 +38,15 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
   private disposed = false;
   private timers = new Set<NodeJS.Timeout>();
   private autoReply: boolean;
+  private readonly harness: HarnessId;
+  /** Deterministic MCP server set for QA — covers each state + capability mix. */
+  private readonly mcpServers: McpServerInfo[];
 
   constructor(options: MockHarnessOptions) {
     super();
     this.autoReply = options.autoReply ?? true;
+    this.harness = options.harness ?? "claude-code";
+    this.mcpServers = seedMockMcpServers();
     this.snapshot = {
       id: options.id,
       cwd: options.cwd,
@@ -179,6 +188,37 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     this.inject({ type: "approval_resolved", requestId, decision: behavior, at: now() });
   }
 
+  // MCP: deterministic in-memory servers so the status + action path (and the
+  // /api/sessions/:id/mcp endpoint) can be exercised end-to-end without a model.
+  async listMcpServers(): Promise<McpServerSnapshot> {
+    return { supported: true, harness: this.harness, servers: this.mcpServers.map((server) => ({ ...server, tools: [...server.tools] })) };
+  }
+
+  async reconnectMcpServer(name: string): Promise<void> {
+    const server = this.requireMcp(name);
+    server.state = "connected";
+    server.error = undefined;
+  }
+
+  async setMcpServerEnabled(name: string, enabled: boolean): Promise<void> {
+    const server = this.requireMcp(name);
+    server.state = enabled ? "connected" : "disabled";
+  }
+
+  async authenticateMcpServer(name: string): Promise<McpAuthResult> {
+    const server = this.requireMcp(name);
+    server.state = "connected";
+    return { authorizationUrl: `https://auth.example/mock/${encodeURIComponent(name)}` };
+  }
+
+  private requireMcp(name: string): McpServerInfo {
+    const server = this.mcpServers.find((entry) => entry.name === name);
+    if (!server) {
+      throw new Error(`Mock MCP server '${name}' not found.`);
+    }
+    return server;
+  }
+
   private schedule(fn: () => void, delay: number): void {
     const timer = setTimeout(() => {
       this.timers.delete(timer);
@@ -198,6 +238,15 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/** A fresh seed each session so mutations (reconnect/toggle) don't leak across QA runs. */
+function seedMockMcpServers(): McpServerInfo[] {
+  return [
+    { name: "filesystem", state: "connected", transport: "stdio", scope: "user", tools: [{ name: "read_file", description: "Read a file" }, { name: "write_file" }], canReconnect: true, canToggle: true, canAuthenticate: false },
+    { name: "sentry", state: "needs-auth", transport: "http", scope: "project", url: "https://mcp.sentry.dev/mcp", error: "Needs authentication", tools: [], canReconnect: true, canToggle: true, canAuthenticate: true },
+    { name: "legacy", state: "failed", transport: "stdio", scope: "local", error: "spawn ENOENT", tools: [], canReconnect: true, canToggle: true, canAuthenticate: false },
+  ];
 }
 
 function truncate(text: string): string {

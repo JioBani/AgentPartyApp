@@ -11,6 +11,7 @@ import type {
   SessionView,
 } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
+import type { ImageAttachment } from "../../shared/attachments";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
@@ -127,6 +128,37 @@ export class PartyApplicationService {
     return this.startMember(name);
   }
 
+  /**
+   * Sends a user turn to a member — the SINGLE path behind both the UI Send
+   * button and the HTTP API, so an agent drives the exact same route a user
+   * does. Idempotently ensures the member has a live session (starting it with
+   * the member's own persisted config when absent — never a duplicate when one
+   * is already active), then delivers the raw user turn plus any image
+   * attachments. Distinct from {@link sendMessage}, which wraps inter-member
+   * channel messages.
+   */
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name);
+    let session: SessionView | undefined;
+    let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
+    if (!sessionId) {
+      const started = this.startMember(member.name);
+      session = started.session;
+      sessionId = session?.id;
+    }
+    if (!sessionId) {
+      throw new Error(`Could not start a session for member '${member.name}'.`);
+    }
+    this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
+    // Re-read: startMember wrote the new sessionId/status; reflect it back.
+    const fresh = this.ensureMigrated(this.repository.read(workspace));
+    const target = this.requireMember(fresh, member.name);
+    log("info", "party", "user turn sent", { workspace, partyId: target.partyId, member: target.name, sessionId, images: attachments?.length || 0 });
+    return { ...this.result(`Message sent to '${target.name}'.`, fresh, target), session };
+  }
+
   /** The persisted transcript (assembled UI blocks) for a member, restored on load. */
   getMemberTranscript(name: string): unknown[] {
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
@@ -200,13 +232,42 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' removed.`, state);
   }
 
-  sendMessage(to: string, content: string, from = "user"): PartyCommandResult {
+  /**
+   * Permanently deletes a whole party: closes every live session it owns, drops
+   * its members/messages, and removes its on-disk storage. If the deleted party
+   * was active, focus falls to another party (or none, if it was the last one).
+   */
+  removeParty(partyId: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const party = state.parties.find((item) => item.id === partyId);
+    if (!party) {
+      throw new Error(`Party '${partyId}' does not exist.`);
+    }
+    for (const member of state.members) {
+      if (member.partyId === party.id && member.sessionId) {
+        this.deps.sessionManager.closeSession(member.sessionId);
+      }
+    }
+    state.parties = state.parties.filter((item) => item.id !== party.id);
+    state.members = state.members.filter((item) => item.partyId !== party.id);
+    state.messages = state.messages.filter((message) => message.partyId !== party.id);
+    if (state.currentPartyId === party.id) {
+      state.currentPartyId = state.parties[0]?.id;
+    }
+    fs.rmSync(this.repository.partyDir(workspace, party.id), { recursive: true, force: true });
+    this.repository.write(workspace, state);
+    log("info", "party", "party removed", { workspace, partyId: party.id, name: party.name });
+    return this.result(`Party '${party.name}' removed.`, state);
+  }
+
+  sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[]): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const target = this.requireMember(state, to);
     const message = createPartyMessage(target, content, from);
     if (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId)) {
-      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target));
+      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);
       message.delivered = true;
       target.status = "running";
     } else {

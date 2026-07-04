@@ -1,5 +1,7 @@
 import type { RouteLike } from "./routes";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
 /**
  * Command surface a panel needs, addressed by member name. The App shell maps
@@ -7,8 +9,9 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
  * components never touch `window.agentParty` directly.
  */
 export interface WorkbenchActions {
-  /** Sends a turn to the member, starting its session first if needed. */
-  sendMessage(memberName: string, text: string): void | Promise<void>;
+  /** Sends a turn to the member (starting its session first if needed), with
+   *  optional image attachments (provider-neutral). */
+  sendMessage(memberName: string, text: string, attachments?: ImageAttachment[]): void | Promise<void>;
   /**
    * Starts the member's session ahead of the first turn (no message sent), so
    * the harness reports its live command/skill inventory for the palette. Idempotent
@@ -36,4 +39,12 @@ export interface WorkbenchActions {
   setPermissionMode(memberName: string, mode: string): void;
   /** Codex two-axis safety model (sandbox × approval + guardian); applied live. */
   setCodexPolicy(memberName: string, policy: CodexPolicy): void;
+  /** Lists the member's external MCP servers (status + tools). Needs a live session. */
+  listMcp(memberName: string): Promise<McpServerSnapshot>;
+  /** Reconnects one MCP server (Codex: reloads MCP config). */
+  reconnectMcp(memberName: string, server: string): Promise<void>;
+  /** Enables/disables one MCP server (Claude Code only). */
+  toggleMcp(memberName: string, server: string, enabled: boolean): Promise<void>;
+  /** Starts OAuth for a remote MCP server (Codex); returns an authorization URL. */
+  authenticateMcp(memberName: string, server: string): Promise<McpAuthResult>;
 }

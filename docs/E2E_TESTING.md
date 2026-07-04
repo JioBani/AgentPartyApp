@@ -22,7 +22,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-party-bridge` | in-process party bridge (send/create/remove/list) + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail |
-| `qa-member-remove` | sidebar member-delete (right-click → 삭제하기 menu, `main` protected) |
+| `qa-member-remove` | sidebar delete via right-click context menu: **member** delete (`삭제하기`, `main` protected) **and party** delete (two-step confirm `파티 삭제…` → `한 번 더 클릭` → `onRemoveParty`) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
 | `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) |
@@ -37,7 +37,10 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-discovery` | Codex `/` palette discovery: skills/list + plugin/installed → palette commands by source with disabled reasons (disabled skill / admin-disabled plugin; not-installed excluded), palette grouping (Skills/Plugins/Commands) + disabled badge, and CommandPalette DOM (source badges, dimmed disabled rows, preview reason) |
 | `qa-codex-diagnostics` | Codex no-silent-fallback surfacing: classifier (reroute/rate-limit/guardian/config/deprecation/sandbox/mcp → severity+category, sandbox recovery hint; noisy rate-limit ticks + healthy MCP return null) + event pipeline (diagnostic→block, latestDiagnostic header pick) + Transcript DOM (severity banner, reroute detail, recovery hint) |
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
+| `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; the three text-only models (GLM-5.2 / Qwen3.7 Max / DeepSeek V4 Pro) are `image:false`, the rest `true`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the router shim translates an Anthropic image block into an OpenAI `image_url` part **without silently dropping it** (text-only messages stay plain strings) |
+| `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
 | `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
+| `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.
@@ -51,6 +54,21 @@ broadcast bug that the integration test (in-process fake) could not see.
 end.** You should never need to start a real session and type chat to verify a
 frontend behavior. Mock the backend's inputs and outputs over the API instead,
 and watch the result in the UI — then do one full-process e2e to confirm.
+
+**Self-launching, offline full-process checks** exist for state-only paths that
+need no model turn — they boot a real Electron app on an isolated
+`AGENTPARTY_USER_DATA` + temp workspace, drive it over HTTP, and clean up:
+`node scripts/qa-app-party-delete-e2e.mjs` verifies party deletion end-to-end
+(create A+B → delete active B → A becomes current + B's on-disk dir removed →
+delete last party → parties/current cleared → missing party errors, no silent
+no-op). Not billed; safe to run anytime after `npm run build`.
+
+`node scripts/qa-app-mcp-e2e.mjs` verifies the MCP status endpoint against the
+**real** harness adapters (billed — starts a live Claude + Codex member): creates
+one member per harness, warms its session, then `GET /api/sessions/:id/mcp` and
+asserts `supported:true`, the correct `harness` tag, and a well-formed `servers`
+array from the real SDK `mcpServerStatus()` (Claude) / app-server
+`mcpServerStatus/list` (Codex) — proving the real MCP path, not just the mock.
 
 ---
 

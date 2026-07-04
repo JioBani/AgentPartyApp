@@ -231,7 +231,8 @@ function mapEffortToOpenRouter(effort: string): string | undefined {
   }
 }
 
-function toOpenAiMessages(body: any): any[] {
+/** Exported for QA: Anthropic request body -> OpenAI chat messages (incl. images). */
+export function toOpenAiMessages(body: any): any[] {
   const messages: any[] = [];
   if (body.system) {
     messages.push({ role: "system", content: contentToText(body.system) });
@@ -272,7 +273,49 @@ function toOpenAiMessage(message: any): any | any[] {
       })),
     };
   }
-  return { role, content: contentToText(message.content) };
+  return { role, content: contentToOpenAiParts(message.content) };
+}
+
+/**
+ * Converts Anthropic content blocks to an OpenAI message `content`. Plain text
+ * collapses to a string; when image blocks are present it becomes a multimodal
+ * parts array ({type:"text"} + {type:"image_url"}). This is the vision path: it
+ * MUST NOT drop image blocks (the old text-only collapse silently lost them).
+ */
+function contentToOpenAiParts(content: any): string | any[] {
+  if (!Array.isArray(content)) {
+    return contentToText(content);
+  }
+  if (!content.some((block) => block?.type === "image")) {
+    return contentToText(content);
+  }
+  const parts: any[] = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      if (block) parts.push({ type: "text", text: block });
+    } else if (block?.type === "text") {
+      if (block.text) parts.push({ type: "text", text: block.text });
+    } else if (block?.type === "image") {
+      const url = imageBlockToUrl(block);
+      if (url) parts.push({ type: "image_url", image_url: { url } });
+    }
+  }
+  return parts.length ? parts : "";
+}
+
+/** Anthropic image block -> a URL usable in OpenAI `image_url` (data: or remote). */
+function imageBlockToUrl(block: any): string | undefined {
+  const source = block?.source;
+  if (!source) {
+    return undefined;
+  }
+  if (source.type === "base64" && source.data) {
+    return `data:${source.media_type || "image/png"};base64,${source.data}`;
+  }
+  if (source.type === "url" && source.url) {
+    return String(source.url);
+  }
+  return undefined;
 }
 
 function contentToText(content: any): string {

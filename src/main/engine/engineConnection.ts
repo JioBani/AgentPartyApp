@@ -9,6 +9,8 @@ import type {
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 
 /**
@@ -82,8 +84,11 @@ export interface EngineConnection {
   listParty(): Promise<PartyListing>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
+  removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;
   createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
-  sendPartyMessage(name: string, content: string, from?: string): Promise<PartyMutationResult>;
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<PartyMutationResult>;
+  /** User turn to a member (auto-starts its session); the shared UI+API send path. */
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   closeMember(name: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
   resumeMember(name: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
   openMember(name: string): Promise<ReturnType<PartyApplicationService["openMember"]>>;
@@ -113,7 +118,7 @@ export interface EngineConnection {
   listWorkspaceSessions(): Promise<SessionView[]>;
 
   // --- Session control (by id, within this engine's workspace) -----------
-  sendUserTurn(sessionId: string, text: string): Promise<void>;
+  sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void>;
   interruptSession(sessionId: string): Promise<void>;
   restartSession(sessionId: string): Promise<void>;
   compactSession(sessionId: string): Promise<void>;
@@ -124,6 +129,12 @@ export interface EngineConnection {
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
   closeSession(sessionId: string): Promise<boolean>;
+
+  // --- MCP (external servers a member connects to; by session id) ---------
+  listSessionMcpServers(sessionId: string): Promise<McpServerSnapshot>;
+  reconnectSessionMcpServer(sessionId: string, server: string): Promise<void>;
+  setSessionMcpServerEnabled(sessionId: string, server: string, enabled: boolean): Promise<void>;
+  authenticateSessionMcpServer(sessionId: string, server: string): Promise<McpAuthResult>;
 
   // --- QA (test-only, workspace-scoped) ----------------------------------
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }>;

@@ -1,6 +1,9 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
 import { DefaultTurnCostResolver } from "./costing";
@@ -10,12 +13,15 @@ import { buildPartyPrimer } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import { CODEX_OPENROUTER_PROVIDER, codexProviderConfigArgs, codexProviderForModel, type CodexCustomProvider } from "../shared/codexProviders";
-import { pricingForModel } from "./modelRegistry";
+import { pricingForModel, visionForModel } from "./modelRegistry";
+import type { ImageAttachment } from "../shared/attachments";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
+import { emptyMcpSnapshot } from "../shared/mcp";
+import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -73,7 +79,9 @@ export class CodexAdapter extends EventEmitter {
   private sessionId = "";
   private activeTurnId: string | undefined;
   private turnCount = 0;
-  private queuedTurns: string[] = [];
+  private queuedTurns: QueuedCodexTurn[] = [];
+  /** Temp dir holding images written for `localImage` inputs; removed on dispose. */
+  private imageTempDir?: string;
   private activeTurn = false;
   private lastEventAt: string | undefined;
   private lastUserMessageAt: string | undefined;
@@ -88,6 +96,8 @@ export class CodexAdapter extends EventEmitter {
   private policy: CodexPolicy;
   /** Live palette inventory: built-in commands + discovered skills/plugins. */
   private inventory: HarnessCommand[] = CODEX_COMMANDS;
+  /** Live per-server MCP startup state (name → state) from startupStatus/updated. */
+  private readonly mcpStartup = new Map<string, { status: string; error?: string; failureReason?: string }>();
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
@@ -124,19 +134,34 @@ export class CodexAdapter extends EventEmitter {
     this.emit("snapshot", this.getSnapshot());
   }
 
-  sendUserTurn(text: string): void {
+  sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
     if (this.disposed) {
+      return;
+    }
+    // Text-only safety net (no-silent-drop policy): refuse an image turn on a
+    // model known to reject images, with a visible error. The composer gates
+    // this in the UI; this guards the HTTP/agent paths.
+    if (attachments?.length && visionForModel(this.options.model).image === false) {
+      this.emitEvent({
+        type: "diagnostic",
+        severity: "error",
+        category: "vision",
+        title: "이 모델은 이미지 입력을 지원하지 않습니다",
+        detail: `${this.options.model}은(는) 텍스트 전용 모델입니다. 이미지 ${attachments.length}개를 보내지 못했습니다.`,
+        recovery: "이미지 없이 다시 보내거나, 이미지(비전)를 지원하는 모델로 전환하세요.",
+        at: now(),
+      });
       return;
     }
     if (!this.started) {
       this.start();
     }
     if (this.activeTurn) {
-      this.queuedTurns.push(text);
+      this.queuedTurns.push({ text, attachments });
       this.emitEvent({ type: "status", status: "queued", detail: `${this.queuedTurns.length} message(s) queued`, at: now() });
       return;
     }
-    void this.runTurn(text);
+    void this.runTurn(text, attachments);
   }
 
   interrupt(): void {
@@ -174,6 +199,10 @@ export class CodexAdapter extends EventEmitter {
   dispose(): void {
     this.disposed = true;
     this.shutdownProcess();
+    if (this.imageTempDir) {
+      try { fs.rmSync(this.imageTempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+      this.imageTempDir = undefined;
+    }
     this.removeAllListeners();
   }
 
@@ -235,6 +264,73 @@ export class CodexAdapter extends EventEmitter {
     this.policy = policy;
     const detail = `sandbox=${policy.sandbox} approval=${policy.approval}${policy.guardian ? " guardian=on" : ""}`;
     this.emitEvent({ type: "status", status: "codex-policy", detail, at: now() });
+  }
+
+  // --- MCP (external servers this member connects to as a client) ----------
+  // Backed by the app-server v2 surface: mcpServerStatus/list (config + tools +
+  // auth), live startup state from mcpServer/startupStatus/updated, reconnect via
+  // config/mcpServer/reload, and OAuth via mcpServer/oauth/login. There is no
+  // live enable/disable RPC (config-file driven), so canToggle is false.
+
+  async listMcpServers(): Promise<McpServerSnapshot> {
+    if (!this.process) {
+      return emptyMcpSnapshot("codex", "세션이 아직 시작되지 않았습니다 — 멤버를 시작한 뒤 확인하세요.");
+    }
+    try {
+      const params: Record<string, unknown> = { detail: "full" };
+      if (this.sessionId) {
+        params.threadId = this.sessionId;
+      }
+      const response = await this.request("mcpServerStatus/list", params);
+      const data: any[] = Array.isArray(response?.data) ? response.data : [];
+      const servers = data.map((entry) => this.toNeutralMcpServer(entry));
+      return { supported: true, harness: "codex", servers };
+    } catch (error) {
+      return { supported: true, harness: "codex", servers: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async reconnectMcpServer(name: string): Promise<void> {
+    // The app-server exposes a config reload (re-reads config.toml and refreshes
+    // loaded servers) rather than a per-server reconnect — the closest action.
+    await this.request("config/mcpServer/reload", {});
+    this.emitEvent({ type: "status", status: "mcp", detail: `reload (${name})`, at: now() });
+  }
+
+  async authenticateMcpServer(name: string): Promise<McpAuthResult> {
+    const params: Record<string, unknown> = { name };
+    if (this.sessionId) {
+      params.threadId = this.sessionId;
+    }
+    const response = await this.request("mcpServer/oauth/login", params);
+    const authorizationUrl = typeof response?.authorizationUrl === "string" ? response.authorizationUrl : undefined;
+    this.emitEvent({ type: "status", status: "mcp", detail: `oauth ${name}`, at: now() });
+    return { authorizationUrl, note: authorizationUrl ? "브라우저에서 인증을 완료하세요." : undefined };
+  }
+
+  private toNeutralMcpServer(entry: any): McpServerInfo {
+    const name = String(entry?.name || "");
+    const authStatus = String(entry?.authStatus || "");
+    const startup = this.mcpStartup.get(name);
+    const toolsMap = entry?.tools && typeof entry.tools === "object" ? entry.tools : {};
+    const tools = Object.values(toolsMap).map((tool: any) => ({ name: String(tool?.name || ""), description: typeof tool?.description === "string" ? tool.description : undefined }));
+    let state = mapCodexMcpState(startup?.status, authStatus);
+    if (state === "unknown" && tools.length > 0) {
+      // The app-server only lists tools for connected servers.
+      state = "connected";
+    }
+    const canAuthenticate = authStatus === "notLoggedIn" || authStatus === "oAuth" || startup?.failureReason === "reauthenticationRequired";
+    return {
+      name,
+      state,
+      transport: "unknown",
+      version: typeof entry?.serverInfo?.version === "string" ? entry.serverInfo.version : undefined,
+      error: startup?.error,
+      tools,
+      canReconnect: true,
+      canToggle: false,
+      canAuthenticate,
+    };
   }
 
   /**
@@ -411,7 +507,7 @@ export class CodexAdapter extends EventEmitter {
     return undefined;
   }
 
-  private async runTurn(text: string): Promise<void> {
+  private async runTurn(text: string, attachments?: ImageAttachment[]): Promise<void> {
     this.activeTurn = true;
     this.turnState = "submitted";
     this.status = "requesting";
@@ -426,9 +522,16 @@ export class CodexAdapter extends EventEmitter {
         throw new Error("Codex app-server did not provide a thread id.");
       }
       const prompt = this.options.partyIdentity ? `${buildPartyPrimer(this.options.partyIdentity)}\n\n${text}` : text;
+      // The app-server `turn/start` input is an internally-tagged item list.
+      // Images are `localImage` items pointing at a temp file (verified variant
+      // in the codex binary), which codex reads and forwards to the model.
+      const input: Array<Record<string, unknown>> = [{ type: "text", text: prompt, text_elements: [] }];
+      for (const image of attachments || []) {
+        input.push({ type: "localImage", path: this.writeTempImage(image) });
+      }
       const result = await this.request("turn/start", {
         threadId: this.sessionId,
-        input: [{ type: "text", text: prompt, text_elements: [] }],
+        input,
         cwd: this.options.cwd,
         approvalPolicy: this.policy.approval,
         approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
@@ -608,6 +711,18 @@ export class CodexAdapter extends EventEmitter {
       method === "windows/worldWritableWarning" ||
       method === "mcpServer/startupStatus/updated"
     ) {
+      if (method === "mcpServer/startupStatus/updated") {
+        // Record the live connect state so listMcpServers() reflects it (the
+        // static mcpServerStatus/list carries auth+tools but not startup state).
+        const serverName = String(params?.name || params?.server || "");
+        if (serverName) {
+          this.mcpStartup.set(serverName, {
+            status: String(params?.status || params?.state || ""),
+            error: typeof params?.error === "string" ? params.error : undefined,
+            failureReason: typeof params?.failureReason === "string" ? params.failureReason : undefined,
+          });
+        }
+      }
       const diagnostic = classifyDiagnostic(method, params);
       if (diagnostic) {
         this.emitEvent({ type: "diagnostic", ...diagnostic, at: now() });
@@ -768,10 +883,24 @@ export class CodexAdapter extends EventEmitter {
     this.activeTurn = false;
     const next = this.queuedTurns.shift();
     if (next) {
-      void this.runTurn(next);
+      void this.runTurn(next.text, next.attachments);
       return;
     }
     this.emit("snapshot", this.getSnapshot());
+  }
+
+  /**
+   * Writes an image attachment to a per-session temp file and returns its path
+   * for a `localImage` input item. The temp dir is removed on {@link dispose}.
+   */
+  private writeTempImage(image: ImageAttachment): string {
+    if (!this.imageTempDir) {
+      this.imageTempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-codex-img-"));
+    }
+    const ext = extensionForMediaType(image.mediaType);
+    const file = path.join(this.imageTempDir, `img-${++this.requestSeq}${ext}`);
+    fs.writeFileSync(file, Buffer.from(image.dataBase64, "base64"));
+    return file;
   }
 
   private handleExit(code: number | null, signal: NodeJS.Signals | null): void {
@@ -804,6 +933,24 @@ export class CodexAdapter extends EventEmitter {
 }
 
 /** Maps a sandbox mode to the app-server `sandboxPolicy` object. */
+/** A queued Codex user turn (text plus any image attachments). */
+interface QueuedCodexTurn {
+  text: string;
+  attachments?: ImageAttachment[];
+}
+
+/** File extension for an image temp file, from its MIME type. */
+function extensionForMediaType(mediaType: string): string {
+  const map: Record<string, string> = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+  };
+  return map[mediaType.toLowerCase()] || ".png";
+}
+
 function sandboxPolicyObject(mode: SandboxMode): unknown {
   if (mode === "danger-full-access") {
     return { type: "dangerFullAccess" };
@@ -857,4 +1004,24 @@ function stringArray(value: unknown): string[] {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Live startup state (starting/ready/failed/cancelled) + static auth status →
+ * neutral MCP state. Startup wins when known; otherwise a not-logged-in server
+ * reads as needs-auth. `unknown` is upgraded to `connected` by the caller when
+ * the server lists tools (the app-server only lists tools once connected).
+ */
+function mapCodexMcpState(startup: string | undefined, authStatus: string): McpServerState {
+  switch (startup) {
+    case "ready":
+      return "connected";
+    case "starting":
+      return "connecting";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "disabled";
+  }
+  return authStatus === "notLoggedIn" ? "needs-auth" : "unknown";
 }

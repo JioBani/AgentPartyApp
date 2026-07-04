@@ -3,6 +3,15 @@ export interface RouteOption {
   label: string;
 }
 
+/** Multimodal input support surfaced from the catalog. `image` tri-state:
+ *  true = supported, false = text-only, undefined = unknown. */
+export interface RouteVision {
+  image?: boolean;
+  video?: boolean;
+  maxImages?: number;
+  maxBytesPerImage?: number;
+}
+
 /** Per-model reasoning capability surfaced from the catalog (main process). */
 export interface RouteCapabilities {
   effort?: { supported: boolean; defaultValue?: string; options: RouteOption[] };
@@ -12,6 +21,7 @@ export interface RouteCapabilities {
     modes?: RouteOption[];
     budget?: { default: number; min?: number; max?: number };
   };
+  vision?: RouteVision;
 }
 
 /** Leaderboard metrics surfaced from the catalog. */

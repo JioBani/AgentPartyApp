@@ -638,8 +638,9 @@
   color: var(--text-3);
 }
 
-/* Right-click context menu (member delete). */
-.wb-member-row.is-menu {
+/* Right-click context menu (member / party delete). */
+.wb-member-row.is-menu,
+.wb-party-row.is-menu {
   background: var(--bg-2);
   border-color: var(--border-subtle);
 }
@@ -678,6 +679,39 @@
 
 .wb-ctx-item.is-danger:hover {
   background: var(--danger-dim);
+}
+
+/* App-level status toast (session-start failures and other transient notices). */
+.app-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 380px;
+  padding: 10px 12px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-1, var(--bg-2));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.36);
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+
+.app-toast-x {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: var(--radius-button, 6px);
+  color: var(--text-3);
+  background: transparent;
+}
+
+.app-toast-x:hover {
+  color: var(--text-1);
+  background: var(--bg-3);
 }
 
 .wb-member-badge,
@@ -1960,6 +1994,131 @@ body.wb-resizing {
   flex: none;
   padding: 9px 11px;
   border-top: var(--border-width) solid var(--border-subtle);
+}
+
+/* Drag-and-drop image attachment. */
+.wb-composer.is-drag .wb-composer-box,
+.wb-composer.is-drag .wb-composer-bar {
+  border-color: var(--accent-bd);
+  box-shadow: 0 0 0 2px var(--accent-dim, rgba(99, 102, 241, 0.25));
+}
+
+.wb-composer-dropzone {
+  position: absolute;
+  inset: 6px 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--accent-bd);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
+  font-size: 12.5px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+/* Pending attachment thumbnails (composer) + sent-message thumbnails (transcript). */
+.wb-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.wb-attachment {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-1);
+}
+
+.wb-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wb-attachment-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.wb-attachment-x:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.wb-attach-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.wb-attach-hint.is-error {
+  color: var(--danger);
+}
+
+/* Sent images inside a user transcript message. */
+.wb-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 6px;
+}
+
+.wb-msg-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 10px;
+  border: var(--border-width) solid var(--border-subtle);
+  object-fit: contain;
+  background: var(--bg-1);
+}
+
+.wb-msg-image-stub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: var(--border-width) dashed var(--border-subtle);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* Model vision (image input) support tag in the model-info detail. */
+.wb-vision-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.wb-vision-tag.is-yes {
+  color: var(--ok, #22c55e);
+}
+
+.wb-vision-tag.is-no {
+  color: var(--danger);
+}
+
+.wb-vision-tag.is-unknown {
+  color: var(--text-3);
 }
 
 .wb-composer-box {
@@ -3770,3 +3929,88 @@ body.wb-resizing {
   background: var(--bg-input);
   border: var(--border-width) solid var(--border-subtle);
 }
+
+/* --- MCP servers modal --------------------------------------------------- */
+.wb-mcp-modal { width: min(560px, 92vw); }
+.wb-mcp-head-actions { display: inline-flex; gap: var(--space-2); align-items: center; }
+.wb-mcp-body { display: flex; flex-direction: column; gap: var(--space-3); min-height: 160px; }
+.wb-mcp-note {
+  font-size: 12px;
+  color: var(--text-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-2);
+  border-radius: var(--radius-badge);
+}
+.wb-mcp-error {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: 12px;
+  color: var(--danger);
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-dim, rgba(220, 80, 80, 0.14));
+  border-radius: var(--radius-badge);
+}
+.wb-mcp-auth {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--accent-dim, var(--bg-2));
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-badge);
+  font-size: 12px;
+}
+.wb-mcp-auth-url { flex: 1 1 100%; word-break: break-all; color: var(--text-2); }
+.wb-mcp-empty {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  align-items: center; justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+.wb-mcp-empty small { color: var(--text-3); font-size: 11px; }
+.wb-mcp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.wb-mcp-card {
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-button);
+  padding: var(--space-3);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  background: var(--bg-2);
+}
+.wb-mcp-card.is-failed { border-color: var(--danger); }
+.wb-mcp-card-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.wb-mcp-name { font-size: 13px; }
+.wb-mcp-chips { display: inline-flex; gap: var(--space-2); margin-left: auto; }
+.wb-mcp-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 600;
+  padding: 2px 8px; border-radius: var(--radius-badge);
+  color: var(--text-2); background: var(--bg-3);
+}
+.wb-mcp-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.wb-mcp-state.is-connected { color: var(--success); background: var(--success-dim); }
+.wb-mcp-state.is-connecting { color: var(--warning, #d9a441); background: var(--warning-dim, rgba(217, 164, 65, 0.16)); }
+.wb-mcp-state.is-connecting .wb-mcp-dot { animation: wb-pulse 1.6s ease-in-out infinite; }
+.wb-mcp-state.is-failed { color: var(--danger); background: var(--danger-dim, rgba(220, 80, 80, 0.14)); }
+.wb-mcp-state.is-needs-auth { color: var(--warning, #d9a441); background: var(--warning-dim, rgba(217, 164, 65, 0.16)); }
+.wb-mcp-state.is-disabled,
+.wb-mcp-state.is-unknown { color: var(--text-3); background: var(--bg-3); }
+.wb-mcp-card-error { font-size: 11.5px; color: var(--danger); word-break: break-word; }
+.wb-mcp-card-foot { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.wb-mcp-tools {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer;
+  font-size: 11.5px; color: var(--text-2); padding: 0;
+}
+.wb-mcp-tools.is-empty { cursor: default; color: var(--text-3); }
+.wb-mcp-caret { transition: transform 0.12s ease; }
+.wb-mcp-caret.is-open { transform: rotate(90deg); }
+.wb-mcp-actions { display: inline-flex; gap: var(--space-2); margin-left: auto; }
+.wb-mcp-actions .wb-tool-btn { width: auto; padding: 0 var(--space-2); gap: 4px; font-size: 11.5px; }
+.wb-mcp-tool-list {
+  list-style: none; margin: 0; padding: var(--space-2) 0 0;
+  display: flex; flex-direction: column; gap: 4px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+.wb-mcp-tool-list li { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; }
+.wb-mcp-tool-list small { color: var(--text-3); font-size: 10.5px; }
+.wb-spin { animation: wb-spin 0.9s linear infinite; }
+@keyframes wb-spin { to { transform: rotate(360deg); } }

@@ -94,7 +94,7 @@ click(sonnetRow); await tick(40);
 assert(!nextBtn().disabled, "model selected → Next enabled");
 // Model detail panel for the selected model.
 assert(q(".wb-wizard-model-detail") !== null, "model detail panel shown for the selected model");
-assert(all(".wb-wizard-model-detail .wb-stat-card").length === 3, "detail shows performance / cost / context cards");
+assert(all(".wb-wizard-model-detail .wb-stat-card").length === 4, "detail shows performance / cost / context / vision cards");
 const detailText = q(".wb-wizard-model-detail")?.textContent || "";
 assert(detailText.includes("5 / 5"), "detail shows the model's performance");
 assert(detailText.includes("1M"), "detail shows the model's context window");

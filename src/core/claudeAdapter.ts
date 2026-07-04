@@ -4,15 +4,19 @@ import * as net from "node:net";
 import * as path from "node:path";
 import type {
   CanUseTool,
+  McpServerStatus,
   PermissionMode,
   PermissionResult,
   Query,
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { emptyMcpSnapshot } from "../shared/mcp";
+import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
-import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor } from "./modelRegistry";
+import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
+import type { ImageAttachment } from "../shared/attachments";
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
@@ -100,6 +104,12 @@ class AsyncInputQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+/** A queued user turn (text plus any image attachments), awaiting the active turn. */
+interface QueuedTurn {
+  text: string;
+  attachments?: ImageAttachment[];
+}
+
 export class ClaudeAdapter extends EventEmitter {
   private logger: RawLogger | undefined;
   private input = new AsyncInputQueue();
@@ -129,7 +139,7 @@ export class ClaudeAdapter extends EventEmitter {
   private currentRoute: ModelRoute | undefined;
   private readonly costResolver = new DefaultTurnCostResolver();
   private debugMode: boolean;
-  private readonly queuedUserTurns: string[] = [];
+  private readonly queuedUserTurns: QueuedTurn[] = [];
   private lastStatusKey: string | undefined;
   private lastStatusAt = 0;
   private readonly pendingApprovals = new Map<
@@ -171,16 +181,44 @@ export class ClaudeAdapter extends EventEmitter {
     void this.run();
   }
 
-  sendUserTurn(text: string): void {
+  sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
+    // Text-only safety net (no-silent-drop policy): if this model is known not to
+    // accept images, refuse the turn with a visible error instead of dropping the
+    // image. The composer already gates this; this guards the HTTP/agent paths.
+    if (attachments?.length && this.imageInputUnsupported()) {
+      this.emitVisionUnsupported(attachments.length);
+      return;
+    }
     if (!this.started) {
       this.start();
     }
     if (this.isTurnActive()) {
-      this.queuedUserTurns.push(text);
+      this.queuedUserTurns.push({ text, attachments });
       this.emitEvent({ type: "status", status: "queued", detail: `${this.queuedUserTurns.length} message(s) queued`, at: now() });
       return;
     }
-    this.dispatchUserTurn(text);
+    this.dispatchUserTurn(text, attachments);
+  }
+
+  /** True only when the effective model is KNOWN to reject image input. */
+  private imageInputUnsupported(): boolean {
+    const routeVision = this.currentRoute?.capabilities.vision.image;
+    if (routeVision !== undefined) {
+      return routeVision === false;
+    }
+    return visionForModel(this.runtimeModel || this.model).image === false;
+  }
+
+  private emitVisionUnsupported(count: number): void {
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "error",
+      category: "vision",
+      title: "이 모델은 이미지 입력을 지원하지 않습니다",
+      detail: `${this.model}은(는) 텍스트 전용 모델입니다. 이미지 ${count}개를 보내지 못했습니다.`,
+      recovery: "이미지 없이 다시 보내거나, 이미지(비전)를 지원하는 모델로 전환하세요.",
+      at: now(),
+    });
   }
 
   interrupt(): void {
@@ -197,13 +235,20 @@ export class ClaudeAdapter extends EventEmitter {
     this.emit("snapshot", this.getSnapshot());
   }
 
-  private dispatchUserTurn(text: string): void {
+  private dispatchUserTurn(text: string, attachments?: ImageAttachment[]): void {
     this.resetRouterTurnUsage();
+    // Anthropic content blocks: text first, then one image block per attachment.
+    // The router shim (OpenRouter backend) translates these image blocks into
+    // OpenAI `image_url` parts, so the same block shape covers both backends.
+    const content: any[] = [{ type: "text", text }];
+    for (const image of attachments || []) {
+      content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.dataBase64 } });
+    }
     this.input.push({
       type: "user",
       message: {
         role: "user",
-        content: [{ type: "text", text }],
+        content,
       },
       parent_tool_use_id: null,
       session_id: this.sessionId || undefined,
@@ -312,6 +357,66 @@ export class ClaudeAdapter extends EventEmitter {
       this.logger = undefined;
     }
     this.emitEvent({ type: "status", status: "debug", detail: enabled ? "enabled" : "disabled", at: now() });
+  }
+
+  // --- MCP (external servers this member connects to as a client) ----------
+  // Backed by the live SDK query surface: mcpServerStatus() / reconnectMcpServer()
+  // / toggleMcpServer(). OAuth is NOT SDK-exposed (interactive `/mcp` only), so
+  // `authenticateMcpServer` is intentionally absent and needs-auth is surfaced
+  // with a note instead of a dead button.
+
+  async listMcpServers(): Promise<McpServerSnapshot> {
+    if (!this.query) {
+      return emptyMcpSnapshot("claude-code", "세션이 아직 시작되지 않았습니다 — 멤버를 시작한 뒤 확인하세요.");
+    }
+    if (this.options.safeMode) {
+      return emptyMcpSnapshot("claude-code", "Safe 모드에서는 외부 MCP 서버(user/project/local 설정)를 불러오지 않습니다.");
+    }
+    try {
+      const statuses = await this.query.mcpServerStatus();
+      const servers = (statuses || []).map((status) => this.toNeutralMcpServer(status));
+      const note = servers.some((server) => server.state === "needs-auth")
+        ? "인증이 필요한 서버는 대화형 Claude에서 `/mcp` → Authenticate 로 로그인하세요 (SDK는 OAuth를 노출하지 않습니다)."
+        : undefined;
+      return { supported: true, harness: "claude-code", servers, note };
+    } catch (error) {
+      return { supported: true, harness: "claude-code", servers: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async reconnectMcpServer(name: string): Promise<void> {
+    if (!this.query) {
+      throw new Error("세션이 시작되지 않아 MCP 서버를 재연결할 수 없습니다.");
+    }
+    await this.query.reconnectMcpServer(name);
+    this.emitEvent({ type: "status", status: "mcp", detail: `reconnect ${name}`, at: now() });
+  }
+
+  async setMcpServerEnabled(name: string, enabled: boolean): Promise<void> {
+    if (!this.query) {
+      throw new Error("세션이 시작되지 않아 MCP 서버를 토글할 수 없습니다.");
+    }
+    await this.query.toggleMcpServer(name, enabled);
+    this.emitEvent({ type: "status", status: "mcp", detail: `${enabled ? "enable" : "disable"} ${name}`, at: now() });
+  }
+
+  private toNeutralMcpServer(status: McpServerStatus): McpServerInfo {
+    const config = status.config as { type?: string; url?: string } | undefined;
+    const transport = config?.type === "stdio" || config?.type === "http" || config?.type === "sse" ? config.type : "unknown";
+    return {
+      name: status.name,
+      state: mapClaudeMcpState(status.status),
+      transport,
+      scope: status.scope,
+      url: config?.url,
+      version: status.serverInfo?.version,
+      error: status.error,
+      tools: (status.tools || []).map((tool) => ({ name: tool.name, description: tool.description })),
+      canReconnect: true,
+      canToggle: true,
+      // The SDK has no programmatic OAuth; needs-auth is resolved in the interactive client.
+      canAuthenticate: false,
+    };
   }
 
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void {
@@ -935,7 +1040,7 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
     this.emitEvent({ type: "status", status: "dequeued", detail: `${this.queuedUserTurns.length} message(s) remaining`, at: now() });
-    this.dispatchUserTurn(next);
+    this.dispatchUserTurn(next.text, next.attachments);
   }
 
   private ensureLogger(): void {
@@ -1013,6 +1118,24 @@ function claudeNativePackageName(): string | undefined {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/** SDK MCP status → neutral state. `pending` is an in-progress connect. */
+function mapClaudeMcpState(status: McpServerStatus["status"]): McpServerState {
+  switch (status) {
+    case "connected":
+      return "connected";
+    case "pending":
+      return "connecting";
+    case "needs-auth":
+      return "needs-auth";
+    case "disabled":
+      return "disabled";
+    case "failed":
+      return "failed";
+    default:
+      return "unknown";
+  }
 }
 
 /**

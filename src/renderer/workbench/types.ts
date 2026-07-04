@@ -1,8 +1,10 @@
 import type { PartyMember, SessionView } from "../../shared/types";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { RouteVision } from "./routes";
 
 /** Per-member transcript block — the rendering contract filled by agent events. */
 export type TranscriptBlock =
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; at?: string }
+  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; at?: string }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
   // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
   | { id: string; kind: "plan"; steps: import("../../shared/codexItems").CodexPlanStep[]; explanation?: string; at?: string }
@@ -53,6 +55,8 @@ export interface MemberView {
   model: string;
   effort: string;
   permissionMode: string;
+  /** Effective model's multimodal support, for composer gating + indicators. */
+  vision?: RouteVision;
 }
 
 /** One watch-slot. Tabs time-share the slot; `active` is the visible member. */

@@ -26,6 +26,7 @@ import {
 import { Panel } from "./Panel";
 import { CreateMemberInput, PartySidebar } from "./PartySidebar";
 import { RuntimeModal } from "./RuntimeModal";
+import { McpModal } from "./McpModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 
 interface WorkbenchProps {
@@ -47,6 +48,7 @@ interface WorkbenchProps {
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
+  onRemoveParty: (partyId: string) => void;
   onSelectParty: (partyId: string) => void;
   onMemberOpened: (member: string) => void;
   onVisibleMembersChange: (members: string[]) => void;
@@ -81,7 +83,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -89,6 +91,7 @@ export function Workbench(props: WorkbenchProps) {
 
   const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
+  const [mcpTarget, setMcpTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
 
@@ -317,6 +320,7 @@ export function Workbench(props: WorkbenchProps) {
   const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs)), [layout]);
   const activePartyName = parties.find((party) => party.id === activePartyId)?.name || "No Party";
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
+  const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
   const canAddAny = views.some((view) => !openMembers.has(view.name));
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
@@ -344,6 +348,7 @@ export function Workbench(props: WorkbenchProps) {
             onCreateMember={handleCreateMember}
             onOpenMember={handleOpenMember}
             onRemoveMember={onRemoveMember}
+            onRemoveParty={onRemoveParty}
             onCollapse={() => onToggleSidebar(false)}
           />
           <div className="wb-sidebar-resize" title="사이드바 너비 조정" onPointerDown={onSidebarResizeDown} />
@@ -382,6 +387,7 @@ export function Workbench(props: WorkbenchProps) {
               onAdd={() => addFirstAvailable(panel.id)}
               onSplit={() => setLayout((current) => splitPanel(current, panel.id))}
               onOpenRuntime={setRuntimeTarget}
+              onOpenMcp={setMcpTarget}
               onTabPointerDown={onTabPointerDown}
             />
           </Fragment>
@@ -407,6 +413,14 @@ export function Workbench(props: WorkbenchProps) {
           debugEnabled={debugEnabled}
           actions={actions}
           onClose={() => setRuntimeTarget(null)}
+        />
+      )}
+
+      {mcpView && (
+        <McpModal
+          view={mcpView}
+          actions={actions}
+          onClose={() => setMcpTarget(null)}
         />
       )}
     </div>

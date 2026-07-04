@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, UsersRound, X } from "lucide-react";
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
+import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
@@ -9,7 +10,7 @@ import type { MemberView, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, routeKeyForModel, ViewId, viewSubtitle, viewTitle } from "./app/appState";
-import { AuthView, AutomationView, PartyAdminView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
+import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 
 export function App() {
@@ -21,11 +22,8 @@ export function App() {
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
   const [openRouterDraft, setOpenRouterDraft] = useState("");
-  const [partyNameDraft, setPartyNameDraft] = useState("");
-  const [partyDraft, setPartyDraft] = useState({ name: "", requirement: "", initialTask: "", runtime: "claude-code" });
-  const [memberMessages, setMemberMessages] = useState<Record<string, string>>({});
+  // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
-  const [removeConfirm, setRemoveConfirm] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
@@ -61,13 +59,9 @@ export function App() {
       transcriptBySession: logsBySession,
       seenCount: seenLengths[member.name] ?? 0,
       restored: restoredByMember[member.name],
+      routes,
     })),
-    [members, sessions, logsBySession, seenLengths, restoredByMember],
-  );
-
-  const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId),
-    [activeSessionId, sessions],
+    [members, sessions, logsBySession, seenLengths, restoredByMember, routes],
   );
 
   useEffect(() => {
@@ -198,6 +192,15 @@ export function App() {
     return () => clearTimeout(timer);
   }, [logsBySession]);
 
+  // Auto-dismiss the status toast so a transient notice doesn't linger.
+  useEffect(() => {
+    if (!partyNotice) {
+      return;
+    }
+    const timer = setTimeout(() => setPartyNotice(""), 6000);
+    return () => clearTimeout(timer);
+  }, [partyNotice]);
+
   async function chooseWorkspace() {
     const settings = await window.agentParty.chooseWorkspace();
     setState((current) => ({ ...current, settings }));
@@ -206,8 +209,7 @@ export function App() {
   }
 
   async function createParty(name?: string) {
-    const result = await window.agentParty.createParty({ name: (name ?? partyNameDraft).trim() || "새 파티" });
-    setPartyNameDraft("");
+    const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티" });
     await applyPartyResult(result);
     setCurrentView("workbench");
   }
@@ -276,53 +278,21 @@ export function App() {
     await refreshParty();
   }
 
-  async function createMember(event: FormEvent) {
-    event.preventDefault();
-    if (!partyDraft.name.trim() || !partyDraft.requirement.trim()) {
-      setPartyNotice("멤버 이름과 책임을 입력해야 합니다.");
-      return;
-    }
-    const result = await window.agentParty.createPartyMember({ ...partyDraft, partyId: selectedParty?.id });
-    await applyPartyResult(result);
-    if (result.ok) {
-      setPartyDraft({ name: "", requirement: "", initialTask: "", runtime: "claude-code" });
-    }
-  }
-
   async function createMemberInline(input: { name: string; requirement: string; runtime: string; model?: string; effort?: string; reasoning?: string; reasoningBudget?: number }) {
     const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
     await applyPartyResult(result);
   }
 
-  async function sendToMember(name: string) {
-    const content = (memberMessages[name] || "").trim();
-    if (!content) {
-      return;
-    }
-    const result = await window.agentParty.sendPartyMessage(name, content, "user");
-    setMemberMessages((current) => ({ ...current, [name]: "" }));
-    await applyPartyResult(result);
-  }
-
-  // Direct removal for the Workbench sidebar (which owns its own two-click
-  // confirm UI), separate from the legacy admin view's removeConfirm flow.
+  // Direct removal for the Workbench sidebar, which owns its own confirm UI.
   async function removeMemberDirect(name: string) {
     const result = await window.agentParty.removePartyMember(name);
     await applyPartyResult(result);
   }
 
-  async function memberAction(action: "close" | "bind" | "remove", name: string) {
-    if (action === "remove" && removeConfirm !== name) {
-      setRemoveConfirm(name);
-      setPartyNotice(`'${name}' 멤버를 영구 삭제하려면 삭제를 한 번 더 누르세요.`);
-      return;
-    }
-    const result = action === "close"
-      ? await window.agentParty.closePartyMember(name)
-      : action === "bind"
-        ? await window.agentParty.bindPartyMember(name, activeSession?.id || "")
-        : await window.agentParty.removePartyMember(name);
-    setRemoveConfirm("");
+  // Deletes a whole party (cascades to its members); the sidebar arms a confirm
+  // click before calling this.
+  async function removePartyDirect(partyId: string) {
+    const result = await window.agentParty.deleteParty(partyId);
     await applyPartyResult(result);
   }
 
@@ -382,14 +352,32 @@ export function App() {
   }
 
   const actions: WorkbenchActions = {
-    async sendMessage(name, text) {
-      const sessionId = await ensureSession(name);
+    async sendMessage(name, text, attachments) {
+      // Optimistic echo when the member already has a live session (instant feel);
+      // for a not-yet-started member the echo is appended once the shared send
+      // path returns its session id below.
+      const known = sessionIdFor(name);
+      if (known) {
+        setLogsBySession((current) => appendBlock(current, known, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
+      }
+      // Same route as the HTTP API: the backend ensures the member's session
+      // (starting it with the member's own config if needed) and delivers the
+      // user turn. UI and agents go through the identical AppController method.
+      const result = await window.agentParty.sendMemberMessage(name, text, attachments);
+      await applyPartyResult(result);
+      const sessionId = result.member?.sessionId || known;
       if (!sessionId) {
         setPartyNotice(`'${name}' 세션을 시작하지 못했습니다.`);
         return;
       }
-      setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, at: nowTime() }));
-      await window.agentParty.sendMessage(sessionId, text);
+      if (!known) {
+        // Freshly started: seed the restored history, then echo the just-sent turn.
+        const restored = restoredRef.current[name];
+        if (restored && restored.length) {
+          setLogsBySession((current) => (current[sessionId] === undefined ? { ...current, [sessionId]: restored } : current));
+        }
+        setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
+      }
     },
     prewarm(name) {
       // At-most-once per member: init the session ahead of the first turn so the
@@ -480,6 +468,33 @@ export function App() {
         void window.agentParty.setCodexPolicy(sessionId, policy);
       }
     },
+    async listMcp(name) {
+      const sessionId = sessionIdFor(name);
+      const harness = members.find((member) => member.name === name)?.runtime === "codex" ? "codex" : "claude-code";
+      if (!sessionId) {
+        return { supported: true, harness, servers: [], note: "세션을 먼저 시작하세요 (멤버에게 메시지를 보내거나 패널을 열면 준비됩니다)." };
+      }
+      return window.agentParty.listMcpServers(sessionId) as Promise<McpServerSnapshot>;
+    },
+    async reconnectMcp(name, server) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) {
+        await window.agentParty.reconnectMcpServer(sessionId, server);
+      }
+    },
+    async toggleMcp(name, server, enabled) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) {
+        await window.agentParty.setMcpServerEnabled(sessionId, server, enabled);
+      }
+    },
+    async authenticateMcp(name, server) {
+      const sessionId = sessionIdFor(name);
+      if (!sessionId) {
+        return { note: "세션을 먼저 시작하세요." };
+      }
+      return window.agentParty.authenticateMcpServer(sessionId, server) as Promise<McpAuthResult>;
+    },
     setPermissionMode(name, mode) {
       const sessionId = sessionIdFor(name);
       if (sessionId) {
@@ -507,7 +522,6 @@ export function App() {
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
     { id: "sessions", label: "세션", icon: <History size={18} /> },
-    { id: "party", label: "파티", icon: <UsersRound size={18} /> },
     { id: "auth", label: "인증", icon: <KeyRound size={18} /> },
     { id: "runtime", label: "런타임", icon: <SlidersHorizontal size={18} /> },
     { id: "automation", label: "자동화", icon: <Settings size={18} /> },
@@ -579,6 +593,7 @@ export function App() {
                 onCreateParty={(name) => void createParty(name)}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
+                onRemoveParty={(partyId) => void removePartyDirect(partyId)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}
@@ -605,30 +620,6 @@ export function App() {
                   onClose={closeSession}
                   onRefresh={refreshHistory}
                   onResume={resumeHistorySession}
-                />
-              )}
-              {currentView === "party" && (
-                <PartyAdminView
-                  parties={state.party.parties || []}
-                  selectedParty={selectedParty}
-                  members={members}
-                  messages={state.party.messages || []}
-                  partyError={state.party.error}
-                  partyNameDraft={partyNameDraft}
-                  partyDraft={partyDraft}
-                  memberMessages={memberMessages}
-                  removeConfirm={removeConfirm}
-                  partyNotice={partyNotice}
-                  hasActiveSession={Boolean(activeSession)}
-                  onPartyNameDraft={setPartyNameDraft}
-                  onCreateParty={() => void createParty()}
-                  onSelectParty={(id) => void selectParty(id)}
-                  onPartyDraft={setPartyDraft}
-                  onCreateMember={createMember}
-                  onMemberMessage={(name, value) => setMemberMessages((current) => ({ ...current, [name]: value }))}
-                  onSendToMember={sendToMember}
-                  onMemberAction={memberAction}
-                  onRefresh={refreshParty}
                 />
               )}
               {currentView === "auth" && (
@@ -660,6 +651,13 @@ export function App() {
           )}
         </main>
       </div>
+
+      {partyNotice && (
+        <div className="app-toast" role="status">
+          <span>{partyNotice}</span>
+          <button type="button" className="app-toast-x" title="닫기" onClick={() => setPartyNotice("")}><X size={13} /></button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import type { Readable, Writable } from "node:stream";
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput } from "../../../shared/types";
 import type { CodexPolicy } from "../../../shared/codexPolicy";
+import type { ImageAttachment } from "../../../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcResponse } from "./rpc";
 
@@ -97,8 +99,10 @@ export class RemoteEngineClient implements EngineConnection {
   listParty() { return this.call<Result<"listParty">>("listParty"); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }
+  removeParty(partyId: string) { return this.call<Result<"removeParty">>("removeParty", partyId); }
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
-  sendPartyMessage(name: string, content: string, from?: string) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from); }
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments); }
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments); }
   closeMember(name: string) { return this.call<Result<"closeMember">>("closeMember", name); }
   resumeMember(name: string) { return this.call<Result<"resumeMember">>("resumeMember", name); }
   openMember(name: string) { return this.call<Result<"openMember">>("openMember", name); }
@@ -113,7 +117,7 @@ export class RemoteEngineClient implements EngineConnection {
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }
   resumeSession(sessionId: string) { return this.call<Result<"resumeSession">>("resumeSession", sessionId); }
   listWorkspaceSessions() { return this.call<Result<"listWorkspaceSessions">>("listWorkspaceSessions"); }
-  sendUserTurn(sessionId: string, text: string) { return this.call<void>("sendUserTurn", sessionId, text); }
+  sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]) { return this.call<void>("sendUserTurn", sessionId, text, attachments); }
   interruptSession(sessionId: string) { return this.call<void>("interruptSession", sessionId); }
   restartSession(sessionId: string) { return this.call<void>("restartSession", sessionId); }
   compactSession(sessionId: string) { return this.call<void>("compactSession", sessionId); }
@@ -124,6 +128,10 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
   closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }
+  listSessionMcpServers(sessionId: string) { return this.call<McpServerSnapshot>("listSessionMcpServers", sessionId); }
+  reconnectSessionMcpServer(sessionId: string, server: string) { return this.call<void>("reconnectSessionMcpServer", sessionId, server); }
+  setSessionMcpServerEnabled(sessionId: string, server: string, enabled: boolean) { return this.call<void>("setSessionMcpServerEnabled", sessionId, server, enabled); }
+  authenticateSessionMcpServer(sessionId: string, server: string) { return this.call<McpAuthResult>("authenticateSessionMcpServer", sessionId, server); }
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }) { return this.call<Result<"qaSeed">>("qaSeed", input); }
   qaCreateMockMember(spec: QaMemberSpec) { return this.call<Result<"qaCreateMockMember">>("qaCreateMockMember", spec); }
   qaEmit(name: string, body: QaEmitInput) { return this.call<Result<"qaEmit">>("qaEmit", name, body); }

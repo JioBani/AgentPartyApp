@@ -1,5 +1,7 @@
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
@@ -44,12 +46,20 @@ export class LocalEngine implements EngineConnection {
     return this.party.selectParty(partyId);
   }
 
+  async removeParty(partyId: string) {
+    return this.party.removeParty(partyId);
+  }
+
   async createMember(input: CreateMemberInput) {
     return this.party.createMember(input);
   }
 
-  async sendPartyMessage(name: string, content: string, from?: string): Promise<PartyMutationResult> {
-    return this.party.sendMessage(name, content, from);
+  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<PartyMutationResult> {
+    return this.party.sendMessage(name, content, from, attachments);
+  }
+
+  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]) {
+    return this.party.sendUserMessage(name, text, attachments);
   }
 
   async closeMember(name: string) {
@@ -115,8 +125,8 @@ export class LocalEngine implements EngineConnection {
   }
 
   // --- Session control ----------------------------------------------------
-  async sendUserTurn(sessionId: string, text: string): Promise<void> {
-    this.deps.sessionManager.sendUserTurn(sessionId, text);
+  async sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
+    this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
   }
 
   async interruptSession(sessionId: string): Promise<void> {
@@ -157,6 +167,22 @@ export class LocalEngine implements EngineConnection {
 
   async closeSession(sessionId: string): Promise<boolean> {
     return this.deps.sessionManager.closeSession(sessionId);
+  }
+
+  listSessionMcpServers(sessionId: string): Promise<McpServerSnapshot> {
+    return this.deps.sessionManager.listMcpServers(sessionId);
+  }
+
+  reconnectSessionMcpServer(sessionId: string, server: string): Promise<void> {
+    return this.deps.sessionManager.reconnectMcpServer(sessionId, server);
+  }
+
+  setSessionMcpServerEnabled(sessionId: string, server: string, enabled: boolean): Promise<void> {
+    return this.deps.sessionManager.setMcpServerEnabled(sessionId, server, enabled);
+  }
+
+  authenticateSessionMcpServer(sessionId: string, server: string): Promise<McpAuthResult> {
+    return this.deps.sessionManager.authenticateMcpServer(sessionId, server);
   }
 
   private withWorkspace(input?: CreateSessionInput | string): CreateSessionInput {

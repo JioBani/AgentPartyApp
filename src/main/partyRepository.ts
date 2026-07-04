@@ -52,8 +52,13 @@ export class PartyRepository {
     fs.renameSync(tempPath, filePath);
   }
 
+  /** The on-disk directory holding one party's members (role files, transcripts). */
+  partyDir(workspacePath: string, partyId: string): string {
+    return path.join(this.rootDir(workspacePath), "parties", sanitizeName(partyId));
+  }
+
   memberDir(workspacePath: string, partyId: string, memberName: string): string {
-    return path.join(this.rootDir(workspacePath), "parties", sanitizeName(partyId), "members", sanitizeName(memberName));
+    return path.join(this.partyDir(workspacePath, partyId), "members", sanitizeName(memberName));
   }
 
   /**
@@ -78,7 +83,7 @@ export class PartyRepository {
 
   writeTranscript(workspacePath: string, partyId: string, memberName: string, blocks: unknown[]): void {
     const file = this.transcriptPath(workspacePath, partyId, memberName);
-    const capped = Array.isArray(blocks) ? blocks.slice(-TRANSCRIPT_CAP) : [];
+    const capped = (Array.isArray(blocks) ? blocks.slice(-TRANSCRIPT_CAP) : []).map(stripAttachmentBytes);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tempPath = `${file}.tmp`;
     fs.writeFileSync(tempPath, `${JSON.stringify({ version: 1, blocks: capped }, null, 2)}\n`);
@@ -115,4 +120,19 @@ const TRANSCRIPT_CAP = 800;
 
 function sanitizeName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+/**
+ * Drops image attachment bytes before a transcript is persisted. The base64
+ * bytes are large and only needed for the live session's thumbnails; persisting
+ * them would rewrite megabytes on every debounced save and bloat transcript.json.
+ * The lightweight record (mediaType/name) is kept so the restored block still
+ * knows an image was sent; the renderer only draws a thumbnail when bytes exist.
+ */
+function stripAttachmentBytes(block: unknown): unknown {
+  const b = block as { attachments?: Array<{ dataBase64?: string }> } | null;
+  if (!b || !Array.isArray(b.attachments) || b.attachments.length === 0) {
+    return block;
+  }
+  return { ...b, attachments: b.attachments.map(({ dataBase64: _drop, ...rest }) => rest) };
 }

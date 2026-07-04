@@ -99,10 +99,23 @@ export interface PermissionCapability {
   options: ModelOption[];
 }
 
+/**
+ * Multimodal input support of the effective model. `image` is tri-state:
+ * true = accepts images, false = text-only (attaching is refused with a visible
+ * error, never silently dropped), undefined = unknown (attach allowed).
+ */
+export interface VisionCapability {
+  image?: boolean;
+  video?: boolean;
+  maxImages?: number;
+  maxBytesPerImage?: number;
+}
+
 export interface ModelCapabilities {
   effort: EffortCapability;
   thinking: ThinkingCapability;
   permission: PermissionCapability;
+  vision: VisionCapability;
 }
 
 export interface ModelRouteConfig {
@@ -121,6 +134,7 @@ export interface PartialModelCapabilities {
   effort?: Partial<EffortCapability> & { options?: Array<ModelOption | string> };
   thinking?: Partial<ThinkingCapability>;
   permission?: Partial<PermissionCapability> & { options?: Array<ModelOption | string> };
+  vision?: VisionCapability;
 }
 
 export const harnesses: HarnessDescriptor[] = [
@@ -213,6 +227,9 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
           : { supported: false, mutableDuringSession: false, options: [] },
       thinking: { supported: false, mutableDuringSession: false },
       permission: { supported: false, mutableDuringSession: false, options: [] },
+      // A live Codex account model (e.g. "gpt-5.4") inherits vision from its
+      // catalog twin; unknown when it has no catalog entry (honestly reported).
+      vision: catalogTwin ? visionFromCatalog(catalogTwin) : {},
     },
     meta: catalogTwin
       ? { perf: catalogTwin.perf, costTier: catalogTwin.costTier, inPerM: catalogTwin.inPerM, outPerM: catalogTwin.outPerM, ioPerM: catalogTwin.ioPerM, context: catalogTwin.context }
@@ -265,6 +282,7 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
         : { supported: false, mutableDuringSession: false, options: [] },
       thinking: { supported: false, mutableDuringSession: false },
       permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: visionFromCatalog(model),
     },
     meta: {
       perf: model.perf,
@@ -279,7 +297,7 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
 }
 
 function codexDefaultRoute(): ModelRoute {
-  const capabilities = disabledCapabilities();
+  const capabilities = { ...disabledCapabilities(), vision: visionForModel("gpt-5.4") };
   return {
     harnessId: "codex",
     providerId: "openai",
@@ -416,7 +434,29 @@ function capabilitiesFromCatalog(model: CatalogModel): ModelCapabilities {
         }
       : { supported: false, mutableDuringSession: false, defaultEnabled: false },
     permission: standardPermissionCapability(),
+    vision: visionFromCatalog(model),
   };
+}
+
+/** Vision capability of a catalog entry (empty = unknown). */
+function visionFromCatalog(model: CatalogModel): VisionCapability {
+  const v = model.vision;
+  return v ? { image: v.image, video: v.video, maxImages: v.maxImages, maxBytesPerImage: v.maxBytesPerImage } : {};
+}
+
+/**
+ * Resolves the multimodal support of an effective model id, tolerating every id
+ * form the app uses (catalog id, runtime alias, concrete OpenRouter id, and the
+ * Codex account slug spelling variants). Empty = unknown. Used by the adapters
+ * as a text-only safety net and by the UI to gate/annotate attachments.
+ */
+export function visionForModel(model: string): VisionCapability {
+  const found =
+    catalogModelById(model) ||
+    catalogModelByRuntime(model) ||
+    catalogModelByOrModelId(model) ||
+    catalogMetaForCodexModel(model);
+  return found ? visionFromCatalog(found) : {};
 }
 
 function standardPermissionCapability(): PermissionCapability {
@@ -439,6 +479,7 @@ function neutralCapabilities(): ModelCapabilities {
     effort: { supported: true, mutableDuringSession: true, defaultValue: "medium", options: ["low", "medium", "high", "xhigh", "max"].map((level) => ({ id: level, label: effortLabel(level) })) },
     thinking: { supported: false, mutableDuringSession: false, defaultEnabled: false },
     permission: standardPermissionCapability(),
+    vision: {},
   };
 }
 
@@ -447,6 +488,7 @@ function disabledCapabilities(): ModelCapabilities {
     effort: { supported: false, mutableDuringSession: false, options: [] },
     thinking: { supported: false, mutableDuringSession: false },
     permission: { supported: false, mutableDuringSession: false, options: [] },
+    vision: {},
   };
 }
 
@@ -469,6 +511,7 @@ function mergeCapabilities(base: ModelCapabilities, override: PartialModelCapabi
       ...override.permission,
       options: normalizeOptions(override.permission?.options) || base.permission.options,
     },
+    vision: { ...base.vision, ...override.vision },
   };
 }
 

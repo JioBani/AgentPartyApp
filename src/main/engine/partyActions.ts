@@ -1,12 +1,13 @@
 import type { PartyMutationResult } from "./engineConnection";
 import type { PartyApplicationService } from "../application/partyApplicationService";
+import { sanitizeAttachments } from "../../shared/attachments";
 
 export type PartyActionName = "send" | "close" | "resume" | "open" | "start" | "bind" | "remove";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any) => PartyMutationResult;
 
 const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
-  send: (party, name, body) => party.sendMessage(name, String(body.content || ""), body.from),
+  send: (party, name, body) => party.sendMessage(name, String(body.content || ""), body.from, sanitizeAttachments(body.attachments)),
   close: (party, name) => party.closeMember(name),
   resume: (party, name) => party.resumeMember(name),
   open: (party, name) => party.openMember(name),

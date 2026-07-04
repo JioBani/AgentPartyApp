@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect } from "react";
-import { ChevronDown, ChevronsDownUp, RotateCcw, Square } from "lucide-react";
+import { ChevronDown, ChevronsDownUp, Plug, RotateCcw, Square } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -23,11 +23,12 @@ interface PanelProps {
   onAdd: () => void;
   onSplit: () => void;
   onOpenRuntime: (member: string) => void;
+  onOpenMcp: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onTabPointerDown } = props;
+  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onTabPointerDown } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
 
@@ -80,6 +81,7 @@ export function Panel(props: PanelProps) {
               <span className="wb-mono">{view.model || "model"}</span>
               <ChevronDown size={11} className="wb-pill-caret" />
             </button>
+            <button type="button" className="wb-tool-btn" title="MCP 서버" onClick={() => onOpenMcp(view.name)} disabled={!view.session}><Plug size={14} /></button>
             {density === "wide" && (
               <>
                 <span className="wb-toolbar-divider" />

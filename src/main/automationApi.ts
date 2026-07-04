@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import * as net from "node:net";
 import { automationApiSpec } from "../shared/apiSpec";
+import { sanitizeAttachments } from "../shared/attachments";
 import { log } from "./logger";
 import type { AppController } from "./application/appController";
 import type { WindowRegistry } from "./windowRegistry";
@@ -125,6 +126,21 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.resumeSession(body.workspacePath || workspace, String(body.sessionId || "")));
         return;
       }
+      // MCP status + actions. Placed BEFORE the generic 2-segment session route
+      // so `/api/sessions/:id/mcp` isn't captured as action="mcp".
+      const sessionMcpMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/mcp(?:\/([^/]+))?$/);
+      if (sessionMcpMatch) {
+        const sessionId = decodeURIComponent(sessionMcpMatch[1]);
+        const action = sessionMcpMatch[2];
+        if (method === "GET" && !action) {
+          sendJson(res, 200, await c.listSessionMcpServers(workspace, sessionId));
+          return;
+        }
+        if (method === "POST" && action) {
+          sendJson(res, 200, await c.sessionMcpAction(workspace, sessionId, action, await readJson(req)));
+          return;
+        }
+      }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && sessionMatch) {
         sendJson(res, 200, await c.handleSessionAction(workspace, sessionMatch[1], sessionMatch[2], await readJson(req)));
@@ -143,10 +159,21 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.selectParty(workspace, decodeURIComponent(partySelectMatch[1])));
         return;
       }
+      const partyDeleteMatch = url.pathname.match(/^\/api\/parties\/([^/]+)\/delete$/);
+      if (method === "POST" && partyDeleteMatch) {
+        sendJson(res, 200, await c.removeParty(workspace, decodeURIComponent(partyDeleteMatch[1])));
+        return;
+      }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent")));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments)));
+        return;
+      }
+      const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
+      if (method === "POST" && memberMessageMatch) {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.sendMemberMessage(workspace, decodeURIComponent(memberMessageMatch[1]), String(body.text || ""), sanitizeAttachments(body.attachments)));
         return;
       }
       if (method === "POST" && url.pathname === "/api/party/members") {

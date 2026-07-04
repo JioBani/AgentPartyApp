@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { Check, Copy, KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
-import type { HarnessDefaults, HarnessId, InitialAppState, PartyMember, PermissionModeSetting, SessionView } from "../../shared/types";
+import { useState } from "react";
+import { Check, Copy, KeyRound, RefreshCw, ShieldCheck, X } from "lucide-react";
+import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { HARNESS_IDS } from "../../shared/types";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
@@ -49,93 +49,6 @@ export function SessionsView({ sessions, resumable, resumableError, onOpen, onCl
               <button className="list-row" key={session.sessionId} onClick={() => onResume(session.sessionId)}>
                 <span><strong>{session.customTitle || session.summary || session.firstPrompt || session.sessionId}</strong><small>{[session.lastModified ? new Date(session.lastModified).toLocaleString() : "", session.gitBranch].filter(Boolean).join(" - ")}</small></span>
               </button>
-            ))}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-export function PartyAdminView(props: {
-  parties: InitialAppState["party"]["parties"];
-  selectedParty?: { id: string; name: string };
-  members: PartyMember[];
-  messages: NonNullable<InitialAppState["party"]["messages"]>;
-  partyError?: string;
-  partyNameDraft: string;
-  partyDraft: { name: string; requirement: string; initialTask: string; runtime: string };
-  memberMessages: Record<string, string>;
-  removeConfirm: string;
-  partyNotice: string;
-  hasActiveSession: boolean;
-  onPartyNameDraft: (value: string) => void;
-  onCreateParty: () => void;
-  onSelectParty: (id: string) => void;
-  onPartyDraft: (value: { name: string; requirement: string; initialTask: string; runtime: string }) => void;
-  onCreateMember: (event: FormEvent) => void;
-  onMemberMessage: (name: string, value: string) => void;
-  onSendToMember: (name: string) => void;
-  onMemberAction: (action: "close" | "bind" | "remove", name: string) => void;
-  onRefresh: () => void;
-}) {
-  const { selectedParty, members, messages, partyError, partyNameDraft, partyDraft, memberMessages, removeConfirm, partyNotice, hasActiveSession } = props;
-  return (
-    <section className="legacy-view">
-      <div className="view-toolbar"><button className="ghost-btn" onClick={props.onRefresh}><RefreshCw size={15} /> 파티 새로고침</button></div>
-      <div className="split-grid">
-        <form className="card" onSubmit={(event) => { event.preventDefault(); props.onCreateParty(); }}>
-          <div className="card-title">파티 만들기</div>
-          <input value={partyNameDraft} onChange={(event) => props.onPartyNameDraft(event.target.value)} placeholder="파티 이름" />
-          <button type="submit" className="accent-btn"><UsersRound size={15} /> 파티 만들기</button>
-          <div className="chip-list">
-            {(props.parties || []).map((party) => (
-              <button key={party.id} type="button" className={"chip" + (party.id === selectedParty?.id ? " is-active" : "")} onClick={() => props.onSelectParty(party.id)}>
-                <UsersRound size={13} /> {party.name}
-              </button>
-            ))}
-          </div>
-        </form>
-        <form className="card" onSubmit={props.onCreateMember}>
-          <div className="card-title">{selectedParty?.name || "파티"}에 멤버 만들기</div>
-          <input value={partyDraft.name} onChange={(event) => props.onPartyDraft({ ...partyDraft, name: event.target.value })} placeholder="멤버 이름" />
-          <select value={partyDraft.runtime} onChange={(event) => props.onPartyDraft({ ...partyDraft, runtime: event.target.value })}><option value="claude-code">Claude Code</option><option value="codex">Codex</option></select>
-          <textarea value={partyDraft.requirement} onChange={(event) => props.onPartyDraft({ ...partyDraft, requirement: event.target.value })} placeholder="역할과 책임" />
-          <textarea value={partyDraft.initialTask} onChange={(event) => props.onPartyDraft({ ...partyDraft, initialTask: event.target.value })} placeholder="선택 사항: 첫 작업 메모" />
-          <button type="submit" className="accent-btn"><UsersRound size={15} /> 만들기</button>
-          {partyNotice && <div className="notice">{partyNotice}</div>}
-        </form>
-        <section className="card">
-          <div className="card-title">멤버</div>
-          <div className="row-list">
-            {partyError && <div className="soft-error">{partyError}</div>}
-            {!partyError && members.length === 0 && <div className="empty">아직 파티 멤버가 없습니다</div>}
-            {members.map((member) => (
-              <div className="member-admin" key={member.name}>
-                <div className="member-admin-head"><strong>{member.name}</strong><small>{memberSummary(member)}</small></div>
-                <div className="member-admin-role">{member.role}</div>
-                <div className="member-admin-actions">
-                  <button type="button" className="micro" disabled={!hasActiveSession} onClick={() => props.onMemberAction("bind", member.name)}>활성 세션 연결</button>
-                  <button type="button" className="micro" onClick={() => props.onMemberAction("close", member.name)}>닫기</button>
-                  <button type="button" className={"micro danger" + (removeConfirm === member.name ? " armed" : "")} disabled={member.name === "main"} onClick={() => props.onMemberAction("remove", member.name)}><Trash2 size={12} /> 삭제</button>
-                </div>
-                <div className="member-admin-send">
-                  <input value={memberMessages[member.name] || ""} onChange={(event) => props.onMemberMessage(member.name, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") props.onSendToMember(member.name); }} placeholder={`${member.name}에게 메시지`} />
-                  <button type="button" className="micro" onClick={() => props.onSendToMember(member.name)}><Send size={13} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-title">최근 파티 메시지</div>
-          <div className="row-list">
-            {messages.length === 0 && <div className="empty">아직 파티 메시지가 없습니다</div>}
-            {messages.slice(-12).reverse().map((message) => (
-              <div className="party-msg" key={message.id}>
-                <div className="party-msg-head"><strong>{message.from}</strong><span>→</span><strong>{message.to}</strong><span className={"tag " + (message.delivered ? "ok" : "warn")}>{message.delivered ? "전달됨" : "대기 중"}</span></div>
-                <p>{message.content}</p>
-              </div>
             ))}
           </div>
         </section>
@@ -302,8 +215,4 @@ export function AutomationView({ automationApi, logs, debugEnabled, onToggleDebu
 
 function Info({ label, value }: { label: string; value: string }) {
   return <div className="info-line"><span>{label}</span><strong className="wb-mono">{value || "없음"}</strong></div>;
-}
-
-function memberSummary(member: PartyMember): string {
-  return [member.status, member.runtime, member.model, member.sessionId ? `세션 ${member.sessionId}` : ""].filter(Boolean).join(" - ");
 }

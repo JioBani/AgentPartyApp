@@ -11,6 +11,8 @@ import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsO
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
+import type { ImageAttachment } from "../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { isE2E } from "./runtimeMode";
@@ -139,6 +141,7 @@ export class SessionManager extends EventEmitter {
       effort: request.effort || harnessDefaultsOf(settings).effort,
       permissionMode: request.permissionMode || harnessDefaultsOf(settings).permissionMode || "default",
       autoReply: options?.autoReply,
+      harness: request.selectedHarnessId || settings.selectedHarnessId,
     });
     return this.registerSession(id, workspace, adapter);
   }
@@ -267,8 +270,8 @@ export class SessionManager extends EventEmitter {
     return this.createSession({ workspacePath }, sessionId);
   }
 
-  sendUserTurn(id: string, text: string): void {
-    this.sessions.get(id)?.adapter.sendUserTurn(text);
+  sendUserTurn(id: string, text: string, attachments?: ImageAttachment[]): void {
+    this.sessions.get(id)?.adapter.sendUserTurn(text, attachments);
   }
 
   hasSession(id: string): boolean {
@@ -343,6 +346,47 @@ export class SessionManager extends EventEmitter {
       throw new Error(`Session '${id}' does not support a Codex policy (not a Codex harness).`);
     }
     adapter.setCodexPolicy(policy);
+  }
+
+  // --- MCP (external servers a member connects to as a client) -------------
+  private requireAdapter(id: string): HarnessSession {
+    const adapter = this.sessions.get(id)?.adapter;
+    if (!adapter) {
+      throw new Error(`Session '${id}' not found.`);
+    }
+    return adapter;
+  }
+
+  listMcpServers(id: string): Promise<McpServerSnapshot> {
+    const adapter = this.requireAdapter(id);
+    if (!adapter.listMcpServers) {
+      throw new Error(`Session '${id}' does not expose MCP status.`);
+    }
+    return adapter.listMcpServers();
+  }
+
+  reconnectMcpServer(id: string, name: string): Promise<void> {
+    const adapter = this.requireAdapter(id);
+    if (!adapter.reconnectMcpServer) {
+      throw new Error(`Session '${id}' does not support reconnecting an MCP server.`);
+    }
+    return adapter.reconnectMcpServer(name);
+  }
+
+  setMcpServerEnabled(id: string, name: string, enabled: boolean): Promise<void> {
+    const adapter = this.requireAdapter(id);
+    if (!adapter.setMcpServerEnabled) {
+      throw new Error(`Session '${id}' does not support enabling/disabling an MCP server (config-file driven on this harness).`);
+    }
+    return adapter.setMcpServerEnabled(name, enabled);
+  }
+
+  authenticateMcpServer(id: string, name: string): Promise<McpAuthResult> {
+    const adapter = this.requireAdapter(id);
+    if (!adapter.authenticateMcpServer) {
+      throw new Error(`Session '${id}' does not support MCP OAuth here — authenticate via the interactive client.`);
+    }
+    return adapter.authenticateMcpServer(name);
   }
 
   setDebugMode(enabled: boolean): void {

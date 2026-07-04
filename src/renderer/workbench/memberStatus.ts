@@ -1,6 +1,7 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
 import type { MemberStatus, MemberView, TranscriptBlock } from "./types";
+import type { RouteLike, RouteVision } from "./routes";
 
 const BUSY_STATUSES = new Set(["requesting", "responding", "interrupting"]);
 
@@ -44,10 +45,21 @@ export interface BuildMemberViewInput {
   seenCount: number;
   /** Persisted transcript restored from disk — shown when no live session is bound. */
   restored?: TranscriptBlock[];
+  /** Model routes, to resolve the effective model's vision (image) support. */
+  routes?: RouteLike[];
+}
+
+/** The effective model's multimodal support, resolved from the routes. */
+function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined {
+  if (!routes || !model) {
+    return undefined;
+  }
+  const route = routes.find((item) => item.model === model || item.runtimeModel === model);
+  return route?.capabilities?.vision;
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, seenCount, restored }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, seenCount, restored, routes }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
   // A live session's transcript wins (it is seeded from the restored history on
   // resume, so it already contains it); otherwise show the restored history so a
@@ -55,6 +67,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, seenCou
   const live = session ? transcriptBySession[session.id] || [] : [];
   const transcript = live.length ? live : (restored || []);
   const status = deriveStatus(member, session, transcript);
+  const model = String(session?.snapshot.model || member.model || "");
   return {
     name: member.name,
     color: memberColor(member.name),
@@ -65,9 +78,10 @@ export function buildMemberView({ member, sessions, transcriptBySession, seenCou
     unread: Math.max(0, transcript.length - seenCount),
     pendingApproval: status === "approval",
     busy: status === "working",
-    model: String(session?.snapshot.model || member.model || ""),
+    model,
     effort: String(session?.snapshot.effort || member.effort || ""),
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
+    vision: visionFor(model, routes),
   };
 }
 

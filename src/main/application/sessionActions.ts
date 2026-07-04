@@ -1,5 +1,6 @@
 import type { EngineConnection } from "../engine/engineConnection";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import { sanitizeAttachments } from "../../shared/attachments";
 
 export type SessionActionName =
   | "send"
@@ -17,7 +18,7 @@ export type SessionActionName =
 type SessionActionHandler = (engine: EngineConnection, sessionId: string, body: any) => Promise<unknown>;
 
 const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
-  send: (engine, sessionId, body) => engine.sendUserTurn(sessionId, String(body.text || "")),
+  send: (engine, sessionId, body) => engine.sendUserTurn(sessionId, String(body.text || ""), sanitizeAttachments(body.attachments)),
   interrupt: (engine, sessionId) => engine.interruptSession(sessionId),
   close: (engine, sessionId) => engine.closeSession(sessionId),
   restart: (engine, sessionId) => engine.restartSession(sessionId),

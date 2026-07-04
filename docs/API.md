@@ -171,10 +171,15 @@ Opens a previous session.
 
 ### `POST /api/sessions/:id/send`
 
-Sends a user turn.
+Sends a user turn. `attachments` is an optional array of provider-neutral images; each adapter translates them to its own surface (Anthropic image block / OpenAI `image_url` / Codex `localImage`). Sending an image to a text-only model does **not** silently drop it — the turn is refused with a visible `vision` diagnostic (see the model's vision support at `capabilities.vision.image` in the model routes; `false` = text-only, `true` = supported, omitted = unknown).
 
 ```json
-{ "text": "Reply with PONG." }
+{
+  "text": "이 스크린샷의 버그를 설명해줘.",
+  "attachments": [
+    { "kind": "image", "mediaType": "image/png", "dataBase64": "<base64 without the data: prefix>", "name": "bug.png" }
+  ]
+}
 ```
 
 ### `POST /api/sessions/:id/close`
@@ -275,6 +280,61 @@ extras:
 - **AskUserQuestion / Codex request-user-input** — `{ "answers": { "<question>": "<label>" } }`
   folds the chosen answers back into the tool input.
 
+### `GET /api/sessions/:id/mcp`
+
+Lists the **external MCP servers** this session's member connects to (as a
+client), with live status + tools. Backed by the same `AppController` path the
+workbench MCP panel uses, so an agent sees exactly what a user sees. Requires a
+live session (start the member first).
+
+```json
+{
+  "supported": true,
+  "harness": "claude-code",
+  "servers": [
+    {
+      "name": "playwright",
+      "state": "connected",
+      "transport": "stdio",
+      "scope": "user",
+      "url": null,
+      "version": "1.0.0",
+      "error": null,
+      "tools": [{ "name": "browser_navigate", "description": "…" }],
+      "canReconnect": true,
+      "canToggle": true,
+      "canAuthenticate": false
+    }
+  ],
+  "note": "…",
+  "error": null
+}
+```
+
+- `state`: `connected` | `connecting` | `failed` | `needs-auth` | `disabled` | `unknown`.
+- `canReconnect` / `canToggle` / `canAuthenticate`: which actions this **harness**
+  supports for this server. Capabilities are asymmetric — Claude Code supports
+  reconnect + enable/disable but not programmatic OAuth (needs-auth is resolved in
+  the interactive `/mcp`); Codex supports reconnect + OAuth but not live toggle
+  (its enable/disable is config-file driven). The UI only offers supported actions.
+- `note` / `error`: surfaced harness-level messages (never swallowed).
+
+### `POST /api/sessions/:id/mcp/reconnect`
+
+Reconnects one MCP server. `{ "server": "<name>" }`. On Codex this reloads the
+MCP config (re-reads `~/.codex/config.toml` and refreshes loaded servers).
+
+### `POST /api/sessions/:id/mcp/toggle`
+
+Enables/disables one MCP server live. `{ "server": "<name>", "enabled": true }`.
+Claude Code only; errors on Codex (config-file driven there).
+
+### `POST /api/sessions/:id/mcp/authenticate`
+
+Starts OAuth for a remote MCP server. `{ "server": "<name>" }` → `{ "authorizationUrl": "https://…" }`
+to open in a browser. Codex only; on Claude Code, authenticate via the
+interactive `/mcp` (the SDK doesn't expose an OAuth flow).
+
 ## AgentParty Parties
 
 ### `GET /api/party`
@@ -300,21 +360,28 @@ Creates a party, creates its `main` member, and attempts to init-start `main` so
 
 Selects the active party for member creation and compatibility endpoints.
 
+### `POST /api/parties/:id/delete`
+
+Permanently deletes a party: closes every live session it owns, drops its members and messages, and removes its on-disk storage. If the deleted party was active, focus falls to another party (or none, if it was the last one). Returns the refreshed party listing.
+
 ## AgentParty Members
 
 ### `POST /api/party/messages`
 
-Sends a message through the internal AgentParty router.
+Sends a message through the internal AgentParty router. `attachments` is optional (same provider-neutral image shape as `/api/sessions/:id/send`), so an agent can drive an image turn **by member name** without knowing the session id.
 
 ```json
 {
   "from": "user",
   "to": "impl",
-  "content": "Review the current implementation."
+  "content": "이 스크린샷의 레이아웃 버그를 고쳐줘.",
+  "attachments": [
+    { "kind": "image", "mediaType": "image/png", "dataBase64": "<base64 without the data: prefix>", "name": "bug.png" }
+  ]
 }
 ```
 
-If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made.
+If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
 ### `POST /api/party/members`
 
@@ -330,12 +397,25 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
 }
 ```
 
-### `POST /api/party/members/:name/send`
+### `POST /api/party/members/:name/message`
 
-Compatibility endpoint for sending a message to a member.
+**The primary user-send path** — the exact same `AppController.sendMemberMessage` the UI's Send button (Enter / click) calls, so an agent drives an identical route to a user. Idempotently ensures the member has a live session (starting it with the member's own config if none is active — never a duplicate), then delivers the turn as a raw user message. Optional `attachments` (images) ride along, matching how the composer bundles a pasted/dropped image with the send. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
 ```json
-{ "from": "reviewer", "content": "Review the current implementation." }
+{
+  "text": "이 스크린샷의 버그를 설명해줘.",
+  "attachments": [
+    { "kind": "image", "mediaType": "image/png", "dataBase64": "<base64 without the data: prefix>", "name": "bug.png" }
+  ]
+}
+```
+
+### `POST /api/party/members/:name/send`
+
+Lower-level compatibility endpoint that routes a message as an inter-member **channel** payload (wraps it with channel tags). Prefer `/message` for a plain user turn. Accepts the same optional `attachments`.
+
+```json
+{ "from": "user", "content": "이 이미지를 설명해줘.", "attachments": [{ "kind": "image", "mediaType": "image/png", "dataBase64": "<base64>", "name": "shot.png" }] }
 ```
 
 ### `POST /api/party/members/:name/open`

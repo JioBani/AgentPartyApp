@@ -1,113 +1,131 @@
 {
-  "_about": "Single source of truth for model routing, leaderboard metrics (리더보드-최종, AA지수통합 27 Jun '26) and per-model reasoning control (Reasoning제어). Add a model = add one entry. perf 0-5 = leaderboard '칸'; costTier 1-5 = leaderboard '비용'; in/out/io = $/1M. reasoning: omit/null = no reasoning control. Only effort values low/medium/high/xhigh/max and thinking modes adaptive/enabled/disabled are transportable to the harness/router today, so option sets are the transportable subset of each model's native spec.",
+  "_about": "Single source of truth for model routing, leaderboard metrics (리더보드-최종, AA지수통합 27 Jun '26) and per-model reasoning control (Reasoning제어). Add a model = add one entry. perf 0-5 = leaderboard '칸'; costTier 1-5 = leaderboard '비용'; in/out/io = $/1M. reasoning: omit/null = no reasoning control. Only effort values low/medium/high/xhigh/max and thinking modes adaptive/enabled/disabled are transportable to the harness/router today, so option sets are the transportable subset of each model's native spec. vision: image=true accepts image input; image=false is text-only (attaching is refused with a visible error, never silently dropped); omit = unknown (image vision verified 2026-07 web check).",
   "models": [
     {
       "id": "default", "label": "Default (recommended)", "provider": "anthropic", "subscription": true,
       "description": "Claude Code default model. Uses the account/default routing selected by Claude Code.",
       "context": "—",
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "opus[1m]", "label": "Opus", "provider": "anthropic", "subscription": true,
       "description": "Opus with 1M context. Best for complex work.",
       "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 25, "ioPerM": 10,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "disabled" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "disabled" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "sonnet", "label": "Sonnet", "provider": "anthropic", "subscription": true,
       "description": "Sonnet. Efficient default for routine coding tasks.",
       "context": "1M", "perf": 3, "costTier": 5, "inPerM": 3, "outPerM": 15, "ioPerM": 6,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "haiku", "label": "Haiku", "provider": "anthropic", "subscription": true,
       "description": "Haiku. Fastest for quick answers.",
       "context": "200K", "perf": 0, "costTier": 3, "inPerM": 1, "outPerM": 5, "ioPerM": 2,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "disabled" }, "budget": { "default": 4096, "min": 1024, "max": 32000 } }
+      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "disabled" }, "budget": { "default": 4096, "min": 1024, "max": 32000 } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.5", "label": "GPT-5.5", "provider": "openai", "runtimeModel": "claude-gpt-5.5", "subscription": true,
       "description": "Routes through the AgentParty Codex backend.",
       "context": "1.05M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 30, "ioPerM": 11.25,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.4", "label": "GPT-5.4", "provider": "openai", "runtimeModel": "claude-gpt-5.4", "subscription": true,
       "description": "Routes through the AgentParty Codex backend.",
       "context": "1M", "perf": 4, "costTier": 4, "inPerM": 2.5, "outPerM": 15, "ioPerM": 5.63,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.4 mini", "label": "GPT-5.4 mini", "provider": "openai", "runtimeModel": "claude-gpt-5.4-mini", "subscription": true,
       "description": "Routes through the AgentParty Codex backend.",
       "context": "400K", "perf": 1, "costTier": 3, "inPerM": 0.75, "outPerM": 4.5, "ioPerM": 1.69,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GLM-5.2", "label": "GLM-5.2", "provider": "openrouter", "runtimeModel": "claude-glm", "orModelId": "z-ai/glm-5.2", "subscription": false,
       "description": "AgentParty router alias for z-ai/glm-5.2.",
       "context": "1M", "perf": 4, "costTier": 2, "inPerM": 0.95, "outPerM": 3.0, "ioPerM": 1.46,
-      "reasoning": { "effort": { "options": ["high", "max"], "default": "max" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } }
+      "reasoning": { "effort": { "options": ["high", "max"], "default": "max" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
+      "vision": { "image": false }
     },
     {
       "id": "Gemini 3.5 Flash", "label": "Gemini 3.5 Flash", "provider": "openrouter", "runtimeModel": "claude-gemini-flash", "orModelId": "google/gemini-3.5-flash", "subscription": false,
       "description": "AgentParty router alias for google/gemini-3.5-flash.",
       "context": "1.05M", "perf": 4, "costTier": 4, "inPerM": 1.5, "outPerM": 9.0, "ioPerM": 3.38,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "medium" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "medium" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Qwen3.7 Max", "label": "Qwen3.7 Max", "provider": "openrouter", "runtimeModel": "claude-qwen", "orModelId": "qwen/qwen3.7-max", "subscription": false,
       "description": "AgentParty router alias for qwen/qwen3.7-max.",
       "context": "1M", "perf": 3, "costTier": 3, "inPerM": 1.25, "outPerM": 3.75, "ioPerM": 1.88,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } }
+      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } },
+      "vision": { "image": false }
     },
     {
       "id": "DeepSeek V4 Pro", "label": "DeepSeek V4 Pro", "provider": "openrouter", "runtimeModel": "claude-deepseek-pro", "orModelId": "deepseek/deepseek-v4-pro", "subscription": false,
       "description": "AgentParty router alias for deepseek/deepseek-v4-pro.",
       "context": "1.05M", "perf": 2, "costTier": 1, "inPerM": 0.435, "outPerM": 0.87, "ioPerM": 0.54,
-      "reasoning": { "effort": { "options": ["high", "max"], "default": "high" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } }
+      "reasoning": { "effort": { "options": ["high", "max"], "default": "high" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
+      "vision": { "image": false }
     },
     {
       "id": "MiniMax M3", "label": "MiniMax M3", "provider": "openrouter", "runtimeModel": "claude-minimax", "orModelId": "minimax/minimax-m3", "subscription": false,
       "description": "AgentParty router alias for minimax/minimax-m3.",
       "context": "1.05M", "perf": 2, "costTier": 1, "inPerM": 0.3, "outPerM": 1.2, "ioPerM": 0.53,
-      "reasoning": { "thinking": { "modes": ["enabled", "adaptive", "disabled"], "default": "adaptive" } }
+      "reasoning": { "thinking": { "modes": ["enabled", "adaptive", "disabled"], "default": "adaptive" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Gemini 3.x Pro", "label": "Gemini 3.x Pro", "provider": "openrouter", "runtimeModel": "claude-gemini-pro", "orModelId": "google/gemini-3.1-pro-preview", "subscription": false,
       "description": "AgentParty router alias for google/gemini-3.1-pro-preview.",
       "context": "1.05M", "perf": 2, "costTier": 4, "inPerM": 2.0, "outPerM": 12.0, "ioPerM": 4.5,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Kimi K2.7 Code", "label": "Kimi K2.7 Code", "provider": "openrouter", "runtimeModel": "claude-kimi-code", "orModelId": "moonshotai/kimi-k2.7-code", "subscription": false,
       "description": "AgentParty router alias for moonshotai/kimi-k2.7-code.",
       "context": "262K", "perf": 1, "costTier": 2, "inPerM": 0.74, "outPerM": 3.5, "ioPerM": 1.43,
-      "reasoning": null
+      "reasoning": null,
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Kimi K2.6", "label": "Kimi K2.6", "provider": "openrouter", "runtimeModel": "claude-kimi", "orModelId": "moonshotai/kimi-k2.6", "subscription": false,
       "description": "AgentParty router alias for moonshotai/kimi-k2.6.",
       "context": "262K", "perf": 1, "costTier": 2, "inPerM": 0.66, "outPerM": 3.41, "ioPerM": 1.35,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } }
+      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Grok Build 0.1", "label": "Grok Build 0.1", "provider": "openrouter", "runtimeModel": "claude-grok-build", "orModelId": "x-ai/grok-build-0.1", "subscription": false,
       "description": "AgentParty router alias for x-ai/grok-build-0.1.",
       "context": "256K", "perf": 0, "costTier": 2, "inPerM": 1.0, "outPerM": 2.0, "ioPerM": 1.25,
-      "reasoning": null
+      "reasoning": null,
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Qwen3.7 Plus", "label": "Qwen3.7 Plus", "provider": "openrouter", "runtimeModel": "claude-qwen-plus", "orModelId": "qwen/qwen3.7-plus", "subscription": false,
       "description": "AgentParty router alias for qwen/qwen3.7-plus.",
       "context": "1M", "perf": 0, "costTier": 1, "inPerM": 0.32, "outPerM": 1.28, "ioPerM": 0.56,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } }
+      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "Grok 4.3", "label": "Grok 4.3", "provider": "openrouter", "runtimeModel": "claude-grok", "orModelId": "x-ai/grok-4.3", "subscription": false,
       "description": "AgentParty router alias for x-ai/grok-4.3.",
       "context": "1M", "perf": 0, "costTier": 3, "inPerM": 1.25, "outPerM": 2.5, "ioPerM": 1.56,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "low" } }
+      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "low" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     }
   ]
 }

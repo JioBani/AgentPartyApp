@@ -1,12 +1,15 @@
 import { EventEmitter } from "node:events";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/events";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
 export type HarnessId = "claude-code" | "codex";
 
 export interface HarnessSession extends EventEmitter {
   start(): void;
-  sendUserTurn(text: string): void;
+  /** Sends a user turn. `attachments` (images) are optional and provider-neutral. */
+  sendUserTurn(text: string, attachments?: ImageAttachment[]): void;
   interrupt(): void;
   restart(): void;
   compact(): void;
@@ -19,6 +22,17 @@ export interface HarnessSession extends EventEmitter {
   setPermissionMode(permissionMode: string): void;
   /** Codex-only: update the two-axis safety model live. Absent on Claude. */
   setCodexPolicy?(policy: CodexPolicy): void;
+  /**
+   * MCP (external servers this member connects to as a **client**). Optional
+   * because support + per-action capabilities differ per harness; the snapshot's
+   * `canReconnect/canToggle/canAuthenticate` flags tell the UI what each server
+   * supports. An absent method means the harness doesn't support that action at
+   * all (callers surface a clear error rather than silently no-op).
+   */
+  listMcpServers?(): Promise<McpServerSnapshot>;
+  reconnectMcpServer?(name: string): Promise<void>;
+  setMcpServerEnabled?(name: string, enabled: boolean): Promise<void>;
+  authenticateMcpServer?(name: string): Promise<McpAuthResult>;
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void;
   on(event: "event", listener: (event: ClaudeNormalizedEvent) => void): this;
   on(event: "snapshot", listener: (snapshot: ClaudeSessionSnapshot) => void): this;

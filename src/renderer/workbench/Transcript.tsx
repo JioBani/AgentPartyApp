@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
+import { imageDataUrl } from "../../shared/attachments";
 
 interface TranscriptProps {
   view: MemberView;
@@ -72,7 +73,17 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return (
         <div className="wb-block wb-user">
           <div className="wb-user-head"><span className="wb-user-who">You</span>{block.at && <span className="wb-mono wb-time">{block.at}</span>}</div>
-          <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" /></div>
+          {block.attachments && block.attachments.length > 0 && (
+            <div className="wb-msg-images">
+              {block.attachments.map((image, index) =>
+                image.dataBase64
+                  ? <img key={index} className="wb-msg-image" src={imageDataUrl(image)} alt={image.name || "attached image"} title={image.name} />
+                  // Restored (persisted) block: bytes were dropped to bound the file.
+                  : <span key={index} className="wb-msg-image-stub" title={image.name}><ImageOff size={12} /> {image.name || "이미지"}</span>,
+              )}
+            </div>
+          )}
+          {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" /></div>}
         </div>
       );
     case "reasoning":

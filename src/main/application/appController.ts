@@ -6,6 +6,8 @@ import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInp
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { ImageAttachment } from "../../shared/attachments";
+import type { McpServerSnapshot } from "../../shared/mcp";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
@@ -198,8 +200,8 @@ export class AppController {
     return { ok: await this.engineFor(workspacePath).closeSession(sessionId) };
   }
 
-  sendSessionMessage(workspacePath: string, sessionId: string, text: string): Promise<void> {
-    return this.engineFor(workspacePath).sendUserTurn(sessionId, text);
+  sendSessionMessage(workspacePath: string, sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
+    return this.engineFor(workspacePath).sendUserTurn(sessionId, text, attachments);
   }
 
   async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true }> {
@@ -243,6 +245,30 @@ export class AppController {
     return this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
   }
 
+  // --- MCP (external servers a member connects to; by session id) ---------
+  // Same AppController method behind the UI panel and the HTTP API, so an agent
+  // drives the identical route a user does (route-parity rule).
+  listSessionMcpServers(workspacePath: string, sessionId: string): Promise<McpServerSnapshot> {
+    return this.engineFor(workspacePath).listSessionMcpServers(sessionId);
+  }
+
+  async sessionMcpAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<unknown> {
+    const engine = this.engineFor(workspacePath);
+    const server = String(body?.server || "");
+    switch (action) {
+      case "reconnect":
+        await engine.reconnectSessionMcpServer(sessionId, server);
+        return { ok: true };
+      case "toggle":
+        await engine.setSessionMcpServerEnabled(sessionId, server, Boolean(body?.enabled));
+        return { ok: true };
+      case "authenticate":
+        return engine.authenticateSessionMcpServer(sessionId, server);
+      default:
+        throw new Error(`Unknown MCP action '${action}'.`);
+    }
+  }
+
   // --- Party (scoped to a workspace) --------------------------------------
   listPartyMembers(workspacePath: string): Promise<ReturnType<PartyApplicationService["list"]>> {
     return this.engineFor(workspacePath).listParty();
@@ -256,12 +282,21 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.selectParty(partyId));
   }
 
+  removeParty(workspacePath: string, partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.removeParty(partyId));
+  }
+
   createPartyMember(workspacePath: string, input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.createMember(input));
   }
 
-  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from));
+  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments));
+  }
+
+  /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
+  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments));
   }
 
   async handlePartyAction(workspacePath: string, name: string, action: string, body: any): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {

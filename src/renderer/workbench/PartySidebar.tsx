@@ -38,19 +38,29 @@ interface PartySidebarProps {
   onCreateMember: (input: CreateMemberInput) => void;
   onOpenMember: (member: string) => void;
   onRemoveMember: (member: string) => void;
+  onRemoveParty: (partyId: string) => void;
   onCollapse: () => void;
 }
 
+// Right-click context menu target: a member row, or a party row (which needs a
+// confirm step because deleting a party cascades to all of its members).
+type CtxMenu =
+  | { kind: "member"; name: string; x: number; y: number }
+  | { kind: "party"; partyId: string; name: string; x: number; y: number };
+
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onRemoveParty, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
-  // Right-click context menu for a member row ({name, x, y} at the cursor).
-  const [menu, setMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  // Right-click context menu, at the cursor, for a member or party row.
+  const [menu, setMenu] = useState<CtxMenu | null>(null);
+  // Arms the second, confirming click for the destructive party delete.
+  const [confirmParty, setConfirmParty] = useState(false);
 
   // Dismiss the context menu on any outside click, scroll, or Escape.
   useEffect(() => {
     if (!menu) {
+      setConfirmParty(false);
       return;
     }
     const close = () => setMenu(null);
@@ -99,7 +109,18 @@ export function PartySidebar(props: PartySidebarProps) {
             // Member/working counts are only known for the loaded (active) party;
             // for others we show the name without inventing a count.
             return (
-              <button type="button" key={party.id} className={"wb-party-row" + (active ? " is-active" : "")} onClick={() => onSelectParty(party.id)}>
+              <button
+                type="button"
+                key={party.id}
+                className={"wb-party-row" + (active ? " is-active" : "") + (menu?.kind === "party" && menu.partyId === party.id ? " is-menu" : "")}
+                onClick={() => onSelectParty(party.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setConfirmParty(false);
+                  setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
+                }}
+              >
                 <span className={"wb-live-dot" + (active && working > 0 ? " is-live" : "")} />
                 <span className="wb-party-name">{party.name}</span>
                 {active && <span className="wb-mono wb-party-sub">{count} members · {working} working</span>}
@@ -140,7 +161,7 @@ export function PartySidebar(props: PartySidebarProps) {
                 role="button"
                 tabIndex={0}
                 key={view.name}
-                className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "") + (menu?.name === view.name ? " is-menu" : "")}
+                className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "") + (menu?.kind === "member" && menu.name === view.name ? " is-menu" : "")}
                 style={memberColorVars(view.name)}
                 onClick={() => onOpenMember(view.name)}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
@@ -149,7 +170,8 @@ export function PartySidebar(props: PartySidebarProps) {
                     return; // 'main' cannot be removed — no menu.
                   }
                   event.preventDefault();
-                  setMenu({ name: view.name, x: event.clientX, y: event.clientY });
+                  event.stopPropagation();
+                  setMenu({ kind: "member", name: view.name, x: event.clientX, y: event.clientY });
                 }}
               >
                 <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
@@ -166,13 +188,31 @@ export function PartySidebar(props: PartySidebarProps) {
       {menu && (
         // Fixed to the viewport at the cursor; click handlers above close it.
         <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
-          <button
-            type="button"
-            className="wb-ctx-item is-danger"
-            onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
-          >
-            <Trash2 size={13} /> 삭제하기
-          </button>
+          {menu.kind === "member" ? (
+            <button
+              type="button"
+              className="wb-ctx-item is-danger"
+              onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
+            >
+              <Trash2 size={13} /> 삭제하기
+            </button>
+          ) : confirmParty ? (
+            <button
+              type="button"
+              className="wb-ctx-item is-danger"
+              onClick={() => { onRemoveParty(menu.partyId); setMenu(null); }}
+            >
+              <Trash2 size={13} /> 파티와 모든 멤버 삭제 · 한 번 더 클릭
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="wb-ctx-item is-danger"
+              onClick={() => setConfirmParty(true)}
+            >
+              <Trash2 size={13} /> 파티 삭제…
+            </button>
+          )}
         </div>
       )}
     </aside>

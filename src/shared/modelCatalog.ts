@@ -38,6 +38,20 @@ export interface ReasoningSpec {
   budget?: ReasoningBudgetSpec;
 }
 
+/**
+ * Per-model multimodal input support. `image: false` = text-only (attaching an
+ * image is refused with a visible error, never silently dropped). Omitted =
+ * unknown (treated optimistically — attach allowed, model surfaces any error).
+ */
+export interface VisionSpec {
+  image: boolean;
+  video?: boolean;
+  /** Max images per turn this model accepts (advisory; UI caps to it). */
+  maxImages?: number;
+  /** Max bytes per image (advisory; UI caps to it). */
+  maxBytesPerImage?: number;
+}
+
 export interface CatalogModel {
   id: string;
   label: string;
@@ -57,6 +71,8 @@ export interface CatalogModel {
   outPerM?: number;
   ioPerM?: number;
   reasoning?: ReasoningSpec | null;
+  /** Multimodal input support. Omitted = unknown. */
+  vision?: VisionSpec;
 }
 
 const MODELS: CatalogModel[] = (catalog as { models: CatalogModel[] }).models;

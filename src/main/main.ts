@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen, shell } from "electron";
 import { EmbeddedRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -17,6 +17,7 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../shared/wo
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
+import { sanitizeAttachments } from "../shared/attachments";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -352,10 +353,9 @@ function registerApplicationMenu(): void {
       submenu: [
         { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
         { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
-        { label: "Party", accelerator: "CmdOrCtrl+3", click: () => navigate("party") },
-        { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
-        { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
-        { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
+        { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
+        { label: "Runtime", accelerator: "CmdOrCtrl+4", click: () => navigate("runtime") },
+        { label: "Automation", accelerator: "CmdOrCtrl+5", click: () => navigate("automation") },
         { type: "separator" },
         { label: "Reload", role: "reload" },
         { label: "Toggle DevTools", role: "toggleDevTools" },
@@ -426,7 +426,7 @@ function registerIpc(): void {
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));
   handle("session:resume", async (event, sessionId: string, workspacePath?: string) => controller().resumeSession(workspacePath || senderWorkspace(event), sessionId));
   handle("session:close", async (event, sessionId: string) => controller().closeSession(senderWorkspace(event), sessionId));
-  handle("session:send", async (event, sessionId: string, text: string) => controller().sendSessionMessage(senderWorkspace(event), sessionId, text));
+  handle("session:send", async (event, sessionId: string, text: string, attachments?: unknown) => controller().sendSessionMessage(senderWorkspace(event), sessionId, text, sanitizeAttachments(attachments)));
   handle("session:interrupt", async (event, sessionId: string) => controller().interruptSession(senderWorkspace(event), sessionId));
   handle("session:restart", async (event, sessionId: string) => controller().restartSession(senderWorkspace(event), sessionId));
   handle("session:compact", async (event, sessionId: string) => controller().compactSession(senderWorkspace(event), sessionId));
@@ -440,6 +440,17 @@ function registerIpc(): void {
   handle("session:approve", async (event, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => {
     await controller().approveSession(senderWorkspace(event), sessionId, requestId, behavior, updatedInput, message);
   });
+  handle("session:mcpList", async (event, sessionId: string) => controller().listSessionMcpServers(senderWorkspace(event), sessionId));
+  handle("session:mcpReconnect", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "reconnect", { server }));
+  handle("session:mcpToggle", async (event, sessionId: string, server: string, enabled: boolean) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "toggle", { server, enabled }));
+  handle("session:mcpAuthenticate", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "authenticate", { server }));
+  handle("shell:openExternal", async (_event, target: string) => {
+    if (/^https?:\/\//i.test(String(target || ""))) {
+      await shell.openExternal(String(target));
+      return { ok: true };
+    }
+    return { ok: false, error: "Only http(s) URLs can be opened." };
+  });
 
   handle("window:minimize", async (event) => controller().minimizeWindow(senderWindowId(event)));
   handle("window:maximize", async (event) => controller().toggleMaximizeWindow(senderWindowId(event)));
@@ -450,8 +461,10 @@ function registerIpc(): void {
   handle("party:list", async (event) => controller().listPartyMembers(senderWorkspace(event)));
   handle("party:createParty", async (event, input) => controller().createParty(senderWorkspace(event), input));
   handle("party:select", async (event, partyId: string) => controller().selectParty(senderWorkspace(event), partyId));
+  handle("party:deleteParty", async (event, partyId: string) => controller().removeParty(senderWorkspace(event), partyId));
   handle("party:create", async (event, input) => controller().createPartyMember(senderWorkspace(event), input));
-  handle("party:send", async (event, to: string, content: string, from?: string) => controller().sendPartyMessage(senderWorkspace(event), to, content, from));
+  handle("party:send", async (event, to: string, content: string, from?: string, attachments?: unknown) => controller().sendPartyMessage(senderWorkspace(event), to, content, from, sanitizeAttachments(attachments)));
+  handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments)));
   handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name));
   handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name));
   handle("party:open", async (event, name: string) => controller().openPartyMember(senderWorkspace(event), name));

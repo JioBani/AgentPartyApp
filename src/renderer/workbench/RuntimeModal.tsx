@@ -3,6 +3,7 @@ import { Check, Lightbulb, SlidersHorizontal, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { RouteCapabilities, RouteLike, routeKey } from "./routes";
+import { VisionTag } from "./VisionTag";
 import { ModelView, PROVIDER_DOTS, PROVIDER_LABELS, ProviderId, modelView, routeProvider } from "./modelCatalog";
 
 interface RuntimeModalProps {
@@ -173,6 +174,12 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                   <div className="wb-stat-card">
                     <div className="wb-modal-label">Context</div>
                     <div className="wb-stat-row wb-mono"><strong>{selectedMeta.context}</strong></div>
+                  </div>
+                  <div className="wb-stat-card">
+                    <div className="wb-modal-label">이미지 입력</div>
+                    <div className="wb-stat-row wb-mono">
+                      <VisionTag image={capabilities.vision?.image} />
+                    </div>
                   </div>
                 </div>
 

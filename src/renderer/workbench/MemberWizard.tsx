@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Lightbulb, RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
+import { VisionTag } from "./VisionTag";
 import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
 import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./RuntimeModal";
 import type { CreateMemberInput } from "./PartySidebar";
@@ -265,6 +266,10 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                     <div className="wb-stat-card">
                       <div className="wb-modal-label">Context</div>
                       <div className="wb-stat-row wb-mono"><strong>{selectedMeta.context || "—"}</strong></div>
+                    </div>
+                    <div className="wb-stat-card">
+                      <div className="wb-modal-label">이미지 입력</div>
+                      <div className="wb-stat-row wb-mono"><VisionTag image={capabilities.vision?.image} /></div>
                     </div>
                   </div>
                   {selected?.route.modelProvider === "openrouter" && (

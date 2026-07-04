@@ -1,7 +1,11 @@
 /*
- * Regression for the Workbench sidebar member-remove control: each member
- * (except 'main') has a trash button with a two-click confirm; the first click
- * arms, the second calls onRemoveMember. 'main' is not removable.
+ * Regression for the Workbench sidebar delete controls (right-click context
+ * menu):
+ *  - Member rows (except 'main') → '삭제하기' calls onRemoveMember. 'main' is
+ *    not removable (no menu).
+ *  - Party rows → a two-step confirm: the first click arms ('파티 삭제…'), the
+ *    second calls onRemoveParty. Deleting a party cascades to its members, so
+ *    the confirm guards against an accidental single click.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -30,12 +34,13 @@ const reactDom = await import("react-dom/client");
 
 const mkView = (name) => ({ name, color: "#888", member: { name, partyId: "p1", status: "idle", runtime: "claude-code", role: "" }, status: "idle", unread: 0, pendingApproval: false, busy: false, model: "sonnet", effort: "medium", permissionMode: "default", transcript: [] });
 let removed = [];
+let removedParties = [];
 const props = {
   parties: [{ id: "p1", name: "P", createdAt: "", updatedAt: "" }], activePartyId: "p1", activePartyName: "P",
   views: [mkView("main"), mkView("alice")], openMembers: new Set(), workingByParty: { p1: 0 }, memberCountByParty: { p1: 2 },
   width: 240, routes: [], defaultProfile: { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" },
   onSelectParty: () => {}, onCreateParty: () => {}, onCreateMember: () => {}, onOpenMember: () => {},
-  onRemoveMember: (name) => removed.push(name), onCollapse: () => {},
+  onRemoveMember: (name) => removed.push(name), onRemoveParty: (id) => removedParties.push(id), onCollapse: () => {},
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(PartySidebar, props));
 await new Promise((r) => setTimeout(r, 80));
@@ -66,5 +71,27 @@ click(del); await tick();
 assert(removed.length === 1 && removed[0] === "alice", "clicking '삭제하기' calls onRemoveMember('alice')");
 assert(!document.querySelector(".wb-ctx-menu"), "menu closes after deleting");
 
-console.log(failures.length ? `\nMEMBER REMOVE FAILED (${failures.length})` : "\nMEMBER REMOVE PASSED");
+console.log("\nParty-remove (right-click, two-step confirm) assertions:");
+const partyRow = document.querySelector(".wb-party-row");
+assert(Boolean(partyRow), "a party row is rendered");
+
+// Right-click the party → menu shows a first-step '파티 삭제…' (not yet armed).
+rightClick(partyRow); await tick();
+const pctx = document.querySelector(".wb-ctx-menu");
+const step1 = pctx && [...pctx.querySelectorAll(".wb-ctx-item")].find((b) => /파티 삭제…/.test(b.textContent || ""));
+assert(Boolean(step1), "right-click on a party opens a '파티 삭제…' first step");
+assert(removedParties.length === 0, "the first step does not delete the party");
+
+// First click arms the confirm; still no deletion.
+click(step1); await tick();
+const confirm = document.querySelector(".wb-ctx-menu .wb-ctx-item");
+assert(confirm && /한 번 더 클릭/.test(confirm.textContent || ""), "first click arms a '한 번 더 클릭' confirm");
+assert(removedParties.length === 0, "arming the confirm still does not delete the party");
+
+// Second click deletes; menu closes.
+click(confirm); await tick();
+assert(removedParties.length === 1 && removedParties[0] === "p1", "the confirming click calls onRemoveParty('p1')");
+assert(!document.querySelector(".wb-ctx-menu"), "menu closes after deleting the party");
+
+console.log(failures.length ? `\nMEMBER/PARTY REMOVE FAILED (${failures.length})` : "\nMEMBER/PARTY REMOVE PASSED");
 process.exit(failures.length ? 1 : 0);

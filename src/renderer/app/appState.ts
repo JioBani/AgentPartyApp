@@ -1,7 +1,7 @@
 import type { InitialAppState } from "../../shared/types";
 import { RouteLike, routeKey } from "../workbench/routes";
 
-export type ViewId = "workbench" | "sessions" | "party" | "auth" | "runtime" | "automation";
+export type ViewId = "workbench" | "sessions" | "auth" | "runtime" | "automation";
 
 /** Staged per-member runtime values applied when a member's session starts. */
 export interface MemberRuntimeDraft {
@@ -45,7 +45,6 @@ export function viewTitle(view: ViewId): string {
   const titles: Record<ViewId, string> = {
     workbench: "Workbench",
     sessions: "세션",
-    party: "파티",
     auth: "인증",
     runtime: "런타임",
     automation: "자동화",
@@ -58,7 +57,6 @@ export function viewSubtitle(view: ViewId, workspacePath: string): string {
   const subtitles: Record<ViewId, string> = {
     workbench: "패널과 탭으로 멤버 세션을 나누어 실행합니다.",
     sessions: "활성 세션을 열거나 이전 작업을 이어서 진행합니다.",
-    party: "AgentParty 멤버를 만들고 메시지를 보내며 관리합니다.",
     auth: "구독과 provider API 키를 관리합니다.",
     runtime: "하네스, provider, 모델, 디버깅 기본값을 관리합니다.",
     automation: "AI 자동화와 E2E 테스트용 로컬 API 및 로그를 확인합니다.",
@@ -76,5 +74,5 @@ export function routeKeyForModel(model: string, routes: RouteLike[]): string {
 }
 
 export function isViewId(value: string): value is ViewId {
-  return ["workbench", "sessions", "party", "auth", "runtime", "automation"].includes(value);
+  return ["workbench", "sessions", "auth", "runtime", "automation"].includes(value);
 }
