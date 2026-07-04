@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, RefreshCw, Send, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PartyMember, PermissionModeSetting, SessionView } from "../../shared/types";
+import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { HARNESS_IDS } from "../../shared/types";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { RouteLike, routeKey } from "../workbench/routes";
@@ -173,11 +174,13 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
 
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
   settings: InitialAppState["settings"];
+  codexModels?: CodexModelDiscoveryState;
+  onRefreshCodexModels?: () => void;
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
@@ -203,6 +206,8 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, onSav
             label={HARNESS_LABELS[id]}
             defaults={settings.harnessDefaults[id]}
             routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
+            codexModels={id === "codex" ? codexModels : undefined}
+            onRefreshCodexModels={onRefreshCodexModels}
             onSave={(patch) => onSaveHarnessDefaults(id, patch)}
           />
         ))}
@@ -212,11 +217,15 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, onSav
 }
 
 /** One harness's editable creation defaults (model/effort/reasoning + permission). */
-function HarnessDefaultsCard({ harnessId, label, defaults, routes, onSave }: {
+function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, onRefreshCodexModels, onSave }: {
   harnessId: HarnessId;
   label: string;
   defaults: HarnessDefaults;
   routes: RouteLike[];
+  /** Codex-only: live account-catalog discovery state, so a still-loading or
+   *  failed list is stated (never silently shows just the static fallback). */
+  codexModels?: CodexModelDiscoveryState;
+  onRefreshCodexModels?: () => void;
   onSave: (patch: Partial<HarnessDefaults>) => void;
 }) {
   const [model, setModel] = useState(defaults.model);
@@ -244,6 +253,15 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, onSave }: {
           {routes.map((route) => <option key={routeKey(route)} value={route.model} disabled={route.enabled === false}>{route.label || route.model}</option>)}
         </select>
       </label>
+      {harnessId === "codex" && codexModels?.status === "pending" && (
+        <div className="notice">Codex 계정 모델 목록을 불러오는 중입니다… 지금은 기본 모델만 보이며, 완료되면 계정의 전체 모델(GPT-5.x 등)로 갱신됩니다.</div>
+      )}
+      {harnessId === "codex" && codexModels?.status === "error" && (
+        <div className="soft-error">
+          Codex 모델 목록을 불러오지 못해 기본 모델만 표시됩니다: {codexModels.error}
+          {onRefreshCodexModels && <button type="button" className="ghost-btn" onClick={onRefreshCodexModels}><RefreshCw size={13} /> 다시 시도</button>}
+        </div>
+      )}
       <label className="field">추론 강도<select value={effort} onChange={(event) => setEffort(event.target.value as HarnessDefaults["effort"])}>{["low", "medium", "high", "xhigh", "max"].map((e) => <option key={e} value={e}>{e}</option>)}</select></label>
       <label className="field">추론 모드<select value={reasoning} onChange={(event) => setReasoning(event.target.value)}><option value="">모델 기본</option>{["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
       {harnessId === "codex" ? (

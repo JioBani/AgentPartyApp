@@ -584,6 +584,8 @@ export function App() {
                   harnesses={state.harnesses as any[]}
                   router={state.router.baseUrl}
                   settings={state.settings}
+                  codexModels={state.codexModels}
+                  onRefreshCodexModels={() => void window.agentParty.refreshCodexModels()}
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
