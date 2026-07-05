@@ -18,6 +18,8 @@ import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessComm
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
+import { deriveSubagentAction } from "../shared/subagentActivity";
+import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
@@ -151,7 +153,12 @@ export class ClaudeAdapter extends EventEmitter {
       toolUseID: string;
     }
   >();
-  private readonly activeTools = new Map<string, { id: string; name: string; input?: unknown }>();
+  private readonly activeTools = new Map<string, { id: string; name: string; input?: unknown; parentId?: string; subagent?: boolean }>();
+  // Attributes subagent activity from `task_*` events + `Agent`/`Task` tool_use
+  // blocks (verified against recorded real traffic). Nested content tagged with a
+  // known subagent's id as `parent_tool_use_id` is routed to it, keeping subagent
+  // output out of the parent transcript.
+  private subagentTracker = new ClaudeSubagentTracker();
   private readonly startedAt = new Date().toISOString();
 
   constructor(private readonly options: ClaudeAdapterOptions) {
@@ -467,6 +474,7 @@ export class ClaudeAdapter extends EventEmitter {
     this.started = false;
     this.pendingApprovals.clear();
     this.activeTools.clear();
+    this.subagentTracker = new ClaudeSubagentTracker();
     this.queuedUserTurns.length = 0;
     this.start();
   }
@@ -753,19 +761,23 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
 
+    // The SDK envelope tags nested (subagent) content with the parent Agent/Task
+    // tool_use id; the normalizers use it to route output to the right subagent.
+    const parentToolUseId = (message as any).parent_tool_use_id as string | undefined;
+
     if (message.type === "stream_event") {
-      this.normalizeStreamEvent((message as any).event);
+      this.normalizeStreamEvent((message as any).event, parentToolUseId);
       return;
     }
 
     if (message.type === "assistant") {
       this.lastAssistantMessageAt = now();
-      this.normalizeAssistantSnapshot((message as any).message);
+      this.normalizeAssistantSnapshot((message as any).message, parentToolUseId);
       return;
     }
 
     if (message.type === "user") {
-      this.normalizeUserSnapshot((message as any).message);
+      this.normalizeUserSnapshot((message as any).message, parentToolUseId);
       return;
     }
 
@@ -854,8 +866,25 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
 
-    if (message.subtype === "task_started" || message.subtype === "task_updated" || message.subtype === "task_progress" || message.subtype === "tool_use_summary") {
-      this.emitStatus(message.subtype, message.summary || message.description || message.status);
+    // Subagent (`Task`/`Agent`) lifecycle + live activity. These carry the real
+    // per-subagent signal (task_id / tool_use_id / last_tool_name / patch.status)
+    // and are attributed to the subagent dock — NOT dumped into the parent chat
+    // (the earlier `emitStatus` flooded the transcript with these). Verified
+    // against recorded traffic in scripts/fixtures/subagents.
+    if (message.subtype === "task_started") {
+      this.emitSubagents(this.subagentTracker.taskStarted(message));
+      return;
+    }
+    if (message.subtype === "task_progress") {
+      this.emitSubagents(this.subagentTracker.taskProgress(message));
+      return;
+    }
+    if (message.subtype === "task_updated") {
+      this.emitSubagents(this.subagentTracker.taskUpdated(message));
+      return;
+    }
+    if (message.subtype === "task_notification") {
+      // Ambient subagent notification — suppressed from the parent transcript.
       return;
     }
 
@@ -864,7 +893,7 @@ export class ClaudeAdapter extends EventEmitter {
     }
   }
 
-  private normalizeStreamEvent(event: any): void {
+  private normalizeStreamEvent(event: any, parentToolUseId?: string): void {
     if (!event) {
       return;
     }
@@ -879,17 +908,34 @@ export class ClaudeAdapter extends EventEmitter {
         id: event.content_block.id || `tool-${event.index}`,
         name: event.content_block.name || "tool",
         input: withFilePath(event.content_block.input),
+        parentId: this.subagentTracker.isAgent(String(parentToolUseId)) ? parentToolUseId : undefined,
+        subagent: false,
       };
+      // A subagent spawn (`Agent`/`Task`) at the top level: track it and emit a
+      // spawn lifecycle instead of a parent-transcript tool box.
+      if (!tool.parentId && isSubagentSpawnTool(tool.name)) {
+        tool.subagent = true;
+        this.emitSubagents(this.subagentTracker.spawn(tool.id, tool.input));
+      } else if (!tool.parentId) {
+        this.emitEvent({ type: "tool_call", id: tool.id, name: tool.name, input: tool.input, status: "started", at: now() });
+      }
+      // A child tool of a subagent is held until content_block_stop, then emitted
+      // as a subagent block (kept out of the parent transcript).
       this.activeTools.set(String(event.index), tool);
-      this.emitEvent({ type: "tool_call", ...tool, status: "started", at: now() });
       return;
     }
     if (event.type === "content_block_delta") {
       const delta = event.delta;
+      const subagentId = this.subagentTracker.isAgent(String(parentToolUseId)) ? String(parentToolUseId) : undefined;
       if (delta?.type === "text_delta" && typeof delta.text === "string") {
-        this.lastAssistantMessageAt = now();
-        this.emitEvent({ type: "assistant_text_delta", text: delta.text, blockIndex: event.index, at: now() });
-      } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+        if (subagentId) {
+          // Subagent text — route to the subagent, never the parent transcript.
+          this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: delta.text }, at: now() });
+        } else {
+          this.lastAssistantMessageAt = now();
+          this.emitEvent({ type: "assistant_text_delta", text: delta.text, blockIndex: event.index, at: now() });
+        }
+      } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string" && !subagentId) {
         this.emitEvent({ type: "reasoning_delta", text: delta.thinking, blockIndex: event.index, at: now() });
       } else if (delta?.type === "input_json_delta") {
         const tool = this.activeTools.get(String(event.index));
@@ -902,28 +948,83 @@ export class ClaudeAdapter extends EventEmitter {
     if (event.type === "content_block_stop") {
       const tool = this.activeTools.get(String(event.index));
       if (tool) {
-        this.emitEvent({ type: "tool_call", ...tool, status: "completed", at: now() });
+        if (tool.subagent) {
+          // Input finished streaming: fill in the subagent's label/role/task.
+          this.emitSubagents(this.subagentTracker.spawn(tool.id, tool.input));
+        } else if (tool.parentId) {
+          this.emitSubagentToolBlock(tool.parentId, tool.name, tool.input, "completed");
+        } else {
+          this.emitEvent({ type: "tool_call", id: tool.id, name: tool.name, input: tool.input, status: "completed", at: now() });
+        }
         this.activeTools.delete(String(event.index));
       }
     }
   }
 
-  private normalizeAssistantSnapshot(message: any): void {
+  private normalizeAssistantSnapshot(message: any, parentToolUseId?: string): void {
+    const subagentId = this.subagentTracker.isAgent(String(parentToolUseId)) ? String(parentToolUseId) : undefined;
     for (const item of message?.content || []) {
       if (item?.type === "tool_use") {
-        this.emitEvent({ type: "tool_call", id: item.id || item.name || `tool-${Date.now()}`, name: item.name || "tool", input: withFilePath(item.input), status: "started", at: now() });
+        // A top-level Agent/Task spawn, or a nested tool of a known subagent.
+        if (!subagentId && isSubagentSpawnTool(item.name)) {
+          this.emitSubagents(this.subagentTracker.spawn(item.id || item.name, withFilePath(item.input)));
+        } else if (subagentId) {
+          this.emitSubagentToolBlock(subagentId, item.name || "tool", withFilePath(item.input), "completed");
+        } else {
+          this.emitEvent({ type: "tool_call", id: item.id || item.name || `tool-${Date.now()}`, name: item.name || "tool", input: withFilePath(item.input), status: "started", at: now() });
+        }
+      } else if (item?.type === "text" && typeof item.text === "string" && subagentId) {
+        this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: item.text }, at: now() });
       } else if (item?.type === "tool_result") {
-        this.emitEvent({ type: "tool_call", id: item.tool_use_id || `tool-result-${Date.now()}`, name: "tool_result", status: item.is_error ? "failed" : "completed", result: item.content, at: now() });
+        this.normalizeToolResult(item, subagentId);
       }
     }
   }
 
-  private normalizeUserSnapshot(message: any): void {
+  private normalizeUserSnapshot(message: any, parentToolUseId?: string): void {
+    const subagentId = this.subagentTracker.isAgent(String(parentToolUseId)) ? String(parentToolUseId) : undefined;
     for (const item of message?.content || []) {
       if (item?.type === "tool_result") {
-        this.emitEvent({ type: "tool_call", id: item.tool_use_id || `tool-result-${Date.now()}`, name: "tool_result", status: item.is_error ? "failed" : "completed", result: item.content, at: now() });
+        this.normalizeToolResult(item, subagentId);
       }
     }
+  }
+
+  /**
+   * A tool_result. If it closes a subagent SPAWN (its tool_use_id is a tracked
+   * Agent/Task), it marks that subagent done/failed. If it belongs INSIDE a
+   * subagent, it appends to that subagent. Otherwise it's a normal parent tool.
+   */
+  private normalizeToolResult(item: any, subagentId?: string): void {
+    const failed = Boolean(item.is_error);
+    if (this.subagentTracker.isAgent(item.tool_use_id)) {
+      this.emitSubagents(this.subagentTracker.toolResult(item.tool_use_id, failed));
+      return;
+    }
+    if (subagentId) {
+      this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "status", text: failed ? "failed" : "completed" }, at: now() });
+      return;
+    }
+    this.emitEvent({ type: "tool_call", id: item.tool_use_id || `tool-result-${Date.now()}`, name: "tool_result", status: failed ? "failed" : "completed", result: item.content, at: now() });
+  }
+
+  /** Emits the `subagent` events the tracker produced from a raw signal. */
+  private emitSubagents(emits: SubagentEmit[]): void {
+    for (const e of emits) {
+      this.emitEvent({ type: "subagent", agentId: e.agentId, lifecycle: e.lifecycle, activity: e.activity, block: e.block, at: now() });
+    }
+  }
+
+  /** Emits a subagent's nested tool as a block (+ derived live activity). */
+  private emitSubagentToolBlock(agentId: string, name: string, input: unknown, status: "started" | "completed" | "failed"): void {
+    const arg = subagentToolArg(input);
+    this.emitEvent({
+      type: "subagent",
+      agentId,
+      activity: deriveSubagentAction(name, arg),
+      block: { kind: "tool", name, arg, status },
+      at: now(),
+    });
   }
 
   private emitError(error: unknown): void {
@@ -1230,6 +1331,29 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     return value as Record<string, unknown>;
   }
   return undefined;
+}
+
+/**
+ * The Claude Code subagent tool. `Task` was renamed `Agent` in v2.1.63, so both
+ * must match (per the SDK subagents docs / Item 08).
+ */
+function isSubagentSpawnTool(name: string | undefined): boolean {
+  return name === "Agent" || name === "Task";
+}
+
+/** A short arg summary (path/command/pattern/query) for a subagent tool block. */
+function subagentToolArg(input: unknown): string {
+  const record = asRecord(input);
+  if (!record) {
+    return "";
+  }
+  const candidate = record.pattern ?? record.query ?? record.command ?? record.path ?? record.file ?? record.filePath ?? record.file_path;
+  return typeof candidate === "string" ? candidate : "";
+}
+
+/** Non-empty string or undefined. */
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function withFilePath(value: unknown): unknown {

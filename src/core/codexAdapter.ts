@@ -4,6 +4,8 @@ import readline from "node:readline";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { RawLogger } from "./rawLogger";
+import { CodexSubagentTracker, codexWebSearchQuery, type SubagentEmit } from "./subagentTracker";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
 import { DefaultTurnCostResolver } from "./costing";
@@ -32,6 +34,8 @@ export interface CodexAdapterOptions {
   /** Explicit two-axis safety model; falls back to deriving from permissionMode. */
   policy?: CodexPolicy;
   debugEnabled: boolean;
+  /** Base dir for the raw JSON-RPC debug trace (a `logs/` subdir is created). */
+  storageDir: string;
   executablePath?: string;
   executableArgs?: string[];
   resumeSessionId?: string;
@@ -94,6 +98,13 @@ export class CodexAdapter extends EventEmitter {
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
   private policy: CodexPolicy;
+  /** Raw JSON-RPC trace (inbound notifications/responses + outbound requests),
+   *  written only in debug mode — the Codex counterpart to ClaudeAdapter's log. */
+  private logger: RawLogger | undefined;
+  private debugMode: boolean;
+  /** Attributes collab-agent activity: each child runs on its own thread and its
+   *  `item/*` notifications carry that `threadId` (verified against recordings). */
+  private readonly subagentTracker = new CodexSubagentTracker();
   /** Live palette inventory: built-in commands + discovered skills/plugins. */
   private inventory: HarnessCommand[] = CODEX_COMMANDS;
   /** Live per-server MCP startup state (name → state) from startupStatus/updated. */
@@ -102,6 +113,7 @@ export class CodexAdapter extends EventEmitter {
   constructor(private readonly options: CodexAdapterOptions) {
     super();
     this.sessionId = options.resumeSessionId || "";
+    this.debugMode = options.debugEnabled;
     this.policy = options.policy ?? codexPolicyFromPermissionMode(options.permissionMode);
   }
 
@@ -196,8 +208,27 @@ export class CodexAdapter extends EventEmitter {
     void this.request("thread/compact/start", { threadId: this.sessionId }).catch((error) => this.finishWithError(error));
   }
 
+  /** Writes one raw JSON-RPC frame to the debug trace (no-op unless debug on). */
+  private log(direction: string, payload: unknown): void {
+    this.logger?.write(direction, payload);
+  }
+
+  private ensureLogger(): void {
+    if (!this.debugMode || this.logger) {
+      return;
+    }
+    this.logger = new RawLogger({
+      baseDir: path.join(this.options.storageDir, "logs"),
+      sessionId: this.options.id,
+      maxFiles: 10,
+      maxBytes: 2 * 1024 * 1024,
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
+    this.logger?.close();
+    this.logger = undefined;
     this.shutdownProcess();
     if (this.imageTempDir) {
       try { fs.rmSync(this.imageTempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -221,7 +252,8 @@ export class CodexAdapter extends EventEmitter {
       lastEventAt: this.lastEventAt,
       lastUserMessageAt: this.lastUserMessageAt,
       lastAssistantMessageAt: this.lastAssistantMessageAt,
-      debugMode: this.options.debugEnabled,
+      logPath: this.debugMode ? this.logger?.filePath : undefined,
+      debugMode: this.debugMode,
       lastError: this.lastError,
       turnCount: this.turnCount,
       queuedTurnCount: this.queuedTurns.length,
@@ -231,7 +263,14 @@ export class CodexAdapter extends EventEmitter {
     };
   }
 
-  setDebugMode(_enabled: boolean): void {
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+    if (enabled) {
+      this.ensureLogger();
+    } else {
+      this.logger?.close();
+      this.logger = undefined;
+    }
     this.emit("snapshot", this.getSnapshot());
   }
 
@@ -367,6 +406,7 @@ export class CodexAdapter extends EventEmitter {
     if (this.process) {
       return;
     }
+    this.ensureLogger();
     const requested = codexExecutable(this.options.executablePath);
     const resolved = resolveCodexExecutable(requested);
     // When an OpenRouter key is available, define the OpenRouter custom provider
@@ -554,6 +594,7 @@ export class CodexAdapter extends EventEmitter {
     const promise = new Promise<any>((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
     });
+    this.log("out", message);
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
     return promise;
   }
@@ -583,6 +624,7 @@ export class CodexAdapter extends EventEmitter {
       this.emitEvent({ type: "status", status: "stdout", detail: line, at: now() });
       return;
     }
+    this.log("in", message);
     if (message.id && this.pendingRequests.has(String(message.id))) {
       this.completeRequest(String(message.id), message);
       return;
@@ -633,18 +675,37 @@ export class CodexAdapter extends EventEmitter {
   private normalizeNotification(message: any): void {
     const method = String(message.method);
     const params = message.params || {};
+    // Every notification is tagged with the thread it belongs to. Activity on a
+    // collab child thread is attributed to that subagent (dock/detail) instead of
+    // the parent transcript — this is what keeps subagent output separated.
+    const threadId = String(params.threadId || "");
+    const isSub = this.subagentTracker.isSubagentThread(threadId);
     if (method === "thread/started") {
-      this.sessionId = String(params.thread?.id || params.thread?.sessionId || this.sessionId);
-      this.emitEvent({ type: "session", sessionId: this.sessionId, model: this.options.model, permissionMode: this.options.permissionMode, slashCommands: this.inventory, at: now() });
+      const id = String(params.thread?.id || params.thread?.sessionId || this.sessionId);
+      // The root thread (no parent) owns the session; child threads are subagents.
+      if (!params.thread?.parentThreadId) {
+        this.sessionId = id;
+        this.subagentTracker.setRoot(id);
+        this.emitEvent({ type: "session", sessionId: this.sessionId, model: this.options.model, permissionMode: this.options.permissionMode, slashCommands: this.inventory, at: now() });
+      }
       return;
     }
     if (method === "thread/status/changed") {
+      if (isSub) {
+        this.emitSubagents(this.subagentTracker.threadStatus(threadId, params.status?.type));
+        return;
+      }
       const status = String(params.status?.type || "unknown");
       this.status = status === "active" ? "responding" : status;
       this.emitEvent({ type: "status", status: this.status, at: now() });
       return;
     }
     if (method === "turn/started") {
+      // A child thread's turn is the subagent working, not the parent turn.
+      if (isSub) {
+        this.emitSubagents(this.subagentTracker.threadStatus(threadId, "active"));
+        return;
+      }
       this.activeTurnId = String(params.turn?.id || this.activeTurnId || "");
       this.status = "responding";
       this.turnState = "responding";
@@ -652,19 +713,37 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (method === "turn/completed") {
+      // A child turn completing marks that subagent done; only the ROOT turn ends
+      // the parent turn (and closes any still-open subagents as a safety net).
+      if (isSub) {
+        this.emitSubagents(this.subagentTracker.threadStatus(threadId, "idle"));
+        return;
+      }
       this.activeTurnId = undefined;
+      this.emitSubagents(this.subagentTracker.turnComplete());
       void this.emitTurnComplete(params.turn);
       return;
     }
     if (method === "thread/tokenUsage/updated") {
+      if (isSub) {
+        return;
+      }
       this.lastUsage = normalizeCodexUsage(params.tokenUsage?.last || params.tokenUsage?.total);
       return;
     }
     if (method === "item/started" || method === "item/completed") {
+      if (isSub) {
+        this.emitSubagents(this.subagentTracker.item(threadId, params.item, method === "item/started" ? "started" : "completed"));
+        return;
+      }
       this.normalizeItem(params.item, method === "item/started" ? "started" : "completed");
       return;
     }
     if (method === "item/agentMessage/delta") {
+      // A child's streaming text belongs to the subagent, not the parent chat.
+      if (isSub) {
+        return;
+      }
       const text = String(params.delta || params.text || "");
       if (text) {
         this.lastAssistantMessageAt = now();
@@ -673,6 +752,9 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (method === "item/reasoning/textDelta" || method === "item/reasoning/summaryTextDelta") {
+      if (isSub) {
+        return;
+      }
       const text = String(params.delta || params.text || "");
       if (text) {
         this.emitEvent({ type: "reasoning_delta", text, at: now() });
@@ -684,6 +766,10 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (method === "item/commandExecution/outputDelta") {
+      // A child's command output belongs to the subagent, not the parent shell card.
+      if (isSub) {
+        return;
+      }
       const delta = String(params.delta || "");
       if (delta) {
         this.emitEvent({ type: "tool_call", id: String(params.itemId || ""), name: "shell", status: "started", source: "shell", outputDelta: delta, at: now() });
@@ -806,7 +892,7 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (item.type === "webSearch") {
-      this.emitEvent({ type: "tool_call", id, name: "web_search", input: { query: item.query }, status, source: "web", at: now() });
+      this.emitEvent({ type: "tool_call", id, name: "web_search", input: { query: codexWebSearchQuery(item) }, status, source: "web", at: now() });
       return;
     }
     if (item.type === "imageGeneration") {
@@ -818,18 +904,41 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (item.type === "subAgentActivity") {
-      this.emitEvent({ type: "status", status: "subagent", detail: `${item.kind || "activity"} · ${item.agentPath || item.agentThreadId || ""}`.trim(), at: now() });
+      // Optional lifecycle marker (absent in observed runs); the tracker keys on
+      // the child threadId already, so this only nudges phase when it appears.
+      const agentId = String(item.agentThreadId || "");
+      if (agentId) {
+        this.emitSubagents(this.subagentTracker.threadStatus(agentId, item.kind === "interrupted" ? "idle" : "active"));
+      }
       return;
     }
     if (item.type === "collabAgentToolCall") {
-      this.emitEvent({ type: "status", status: "subagent", detail: `${item.tool || "collab"} → ${(item.receiverThreadIds || []).join(", ")}`.trim(), at: now() });
+      // A spawn names the child threads + carries the delegated prompt; the child
+      // threads' own item streams (routed by threadId) supply the live activity.
+      this.emitSubagents(this.subagentTracker.collab(item));
+    }
+  }
+
+  /** Emits the `subagent` events the tracker produced from a raw signal. */
+  private emitSubagents(emits: SubagentEmit[]): void {
+    for (const e of emits) {
+      this.emitEvent({ type: "subagent", agentId: e.agentId, lifecycle: e.lifecycle, activity: e.activity, block: e.block, at: now() });
     }
   }
 
   private readStderr(chunk: string): void {
     for (const line of chunk.split(/\r?\n/)) {
-      if (line.trim()) {
-        this.emitEvent({ type: "status", status: "stderr", detail: line.trim(), at: now() });
+      const text = line.trim();
+      if (!text) {
+        continue;
+      }
+      this.log("stderr", text);
+      // The app-server is very chatty on stderr (rmcp transport logs, tool-router
+      // lines, even echoed command output). Dumping every line floods the parent
+      // transcript, so only surface it in debug; genuine failures arrive via turn
+      // errors / the `error` notification, not raw stderr.
+      if (this.debugMode) {
+        this.emitEvent({ type: "status", status: "stderr", detail: text, at: now() });
       }
     }
   }

@@ -140,6 +140,8 @@ export interface EngineConnection {
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }): Promise<{ created: string[]; listing: PartyListing }>;
   qaCreateMockMember(spec: QaMemberSpec): Promise<{ sessionId?: string; listing: PartyListing }>;
   qaEmit(name: string, body: QaEmitInput): Promise<void>;
+  /** Injects a named subagent scenario (mock-driven subagent-UI design/QA). */
+  qaEmitSubagents(name: string, scenario: string): Promise<{ scenario: string; count: number }>;
   /** Mocks an interactive prompt (e.g. AskUserQuestion) into a mock member. */
   qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }>;
   qaReset(): Promise<PartyListing>;

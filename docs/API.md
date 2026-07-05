@@ -611,6 +611,32 @@ Simulate an approval prompt:
 { "events": [ { "type": "approval_request", "requestId": "a1", "toolName": "apply_patch", "description": "좁은 패치 적용", "input": { "command": "git apply auth-narrow.patch" } } ] }
 ```
 
+### `POST /api/qa/members/:name/subagents`
+
+Injects a named **subagent scenario** into a seeded member as `subagent` events,
+so the subagent dock + drill-in detail can be designed, demoed, and QA'd without
+spawning a real subagent (mock-driven design). The events flow through the exact
+same normalization + renderer fold a live harness would. Scenarios live in
+`src/shared/subagentScenarios.ts`; an unknown name returns an error listing the
+available scenarios (no silent no-op). Returns `{ scenario, count }`.
+
+```json
+{ "scenario": "claude-test-shards" }
+```
+
+Available scenarios: `claude-test-shards` (Claude `Agent`/`Task` fan-out — 6
+shard-runners, 2 실행 · 2 완료 · 2 대기), `codex-call-tracer` (Codex collab thread
+— a completed call-tracer), `codex-web-research` (Codex collab thread doing web
+research — several `web_search` cards + a final markdown report; mirrors the exact
+block stream `CodexSubagentTracker` emits for a web-searching child).
+
+### `POST /api/qa/members/:name/subagents/open`
+
+Opens a member's **subagent detail** (the drill-in overlay), as if the row were
+clicked — so the detail view can be captured/QA'd without a renderer click. Body
+`{ "subId": "shard-auth" }` (the subagent id from the injected scenario). QA mode
+only.
+
 ### `POST /api/qa/members/:name/interaction`
 
 Mocks a model-driven **interactive prompt** into a seeded member so the

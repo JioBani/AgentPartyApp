@@ -1,6 +1,6 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
-import type { MemberStatus, MemberView, TranscriptBlock } from "./types";
+import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import type { RouteLike, RouteVision } from "./routes";
 
 const BUSY_STATUSES = new Set(["requesting", "responding", "interrupting"]);
@@ -42,6 +42,8 @@ export interface BuildMemberViewInput {
   member: PartyMember;
   sessions: SessionView[];
   transcriptBySession: Record<string, TranscriptBlock[]>;
+  /** Per-session subagents, folded from `subagent` events (kept out of the chat). */
+  subagentsBySession?: Record<string, Subagent[]>;
   seenCount: number;
   /** Persisted transcript restored from disk — shown when no live session is bound. */
   restored?: TranscriptBlock[];
@@ -59,8 +61,9 @@ function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, seenCount, restored, routes }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, routes }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
+  const subagents = session ? (subagentsBySession?.[session.id] || []) : [];
   // A live session's transcript wins (it is seeded from the restored history on
   // resume, so it already contains it); otherwise show the restored history so a
   // closed member — or a reopened app — still displays its past conversation.
@@ -75,6 +78,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, seenCou
     session,
     status,
     transcript,
+    subagents,
     unread: Math.max(0, transcript.length - seenCount),
     pendingApproval: status === "approval",
     busy: status === "working",

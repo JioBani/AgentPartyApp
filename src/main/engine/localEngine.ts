@@ -3,6 +3,7 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
+import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
@@ -228,6 +229,22 @@ export class LocalEngine implements EngineConnection {
     const sessionId = this.qaSessionIdFor(name);
     this.applyBlocks(sessionId, body.events);
     this.applyStatus(sessionId, body.status);
+  }
+
+  /**
+   * Injects a named subagent scenario as `subagent` events through the same mock
+   * path as `qaEmit`, so the subagent dock/detail can be designed and QA'd without
+   * ever spawning a real subagent. Unknown scenario names fail loudly (no silent
+   * no-op) so a typo is visible.
+   */
+  async qaEmitSubagents(name: string, scenario: string): Promise<{ scenario: string; count: number }> {
+    const events = expandScenarioByName(scenario, new Date().toISOString());
+    if (!events) {
+      throw new Error(`Unknown subagent scenario '${scenario}'. Available: ${scenarioNames().join(", ")}`);
+    }
+    const sessionId = this.qaSessionIdFor(name);
+    this.applyBlocks(sessionId, events);
+    return { scenario, count: events.length };
   }
 
   async qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }> {

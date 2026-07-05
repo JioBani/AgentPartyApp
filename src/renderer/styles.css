@@ -4190,3 +4190,77 @@ body.wb-resizing {
 .set-link-btn:hover { text-decoration: underline; }
 
 @media (max-width: 900px) { .set-harness-grid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   Subagent dock (persistent list) + detail (drill-in overlay)
+   Component 1 & 2 of the subagent-observation handoff.
+   ============================================================ */
+
+/* --- Shared status dot with an optional live pulse ring --- */
+.wb-subdot { position: relative; width: 7px; height: 7px; flex: none; }
+.wb-subdot-core { position: absolute; inset: 0; border-radius: 50%; }
+.wb-subdot-ring { position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid; opacity: .5; animation: wb-pulse 1.6s infinite; }
+
+/* --- Dock (flex:none so it never scrolls with the transcript) --- */
+.wb-subdock { flex: none; background: var(--bg-0); border-bottom: var(--border-width) solid var(--border-subtle); }
+.wb-subdock-head { display: flex; align-items: center; gap: 8px; height: 33px; padding: 0 11px; cursor: pointer; }
+.wb-subdock-head:hover { background: var(--bg-2); }
+.wb-subdock-caret { flex: none; color: var(--text-3); transition: transform .15s ease; }
+.wb-subdock-caret.is-open { transform: rotate(90deg); }
+.wb-subdock-branch { flex: none; color: var(--accent); }
+.wb-subdock-label { font-size: 11.5px; font-weight: 600; color: var(--text-0); flex: none; }
+.wb-subdock-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 15px; padding: 0 5px; border-radius: 8px; background: var(--bg-3); color: var(--text-1); font: 700 9.5px var(--mono, monospace); flex: none; }
+.wb-subdock-dots { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; }
+.wb-subdock-dots .wb-subdot { width: 6px; height: 6px; }
+.wb-subdock-dots .wb-subdot-ring { inset: -2.5px; }
+.wb-subdock-summary { flex: none; font-size: 10.5px; color: var(--text-2); }
+
+/* --- Dock expanded list (fixed height + own scroll) --- */
+.wb-subdock-list { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; border-top: var(--border-width) solid var(--border-subtle); }
+.wb-subrow { display: flex; align-items: center; gap: 9px; padding: 8px 11px 8px 13px; cursor: pointer; border-top: var(--border-width) solid var(--border-subtle); background: transparent; }
+.wb-subrow:first-child { border-top: none; }
+.wb-subrow:hover { background: var(--bg-2); }
+.wb-subrow-name { font-size: 12px; font-weight: 500; color: var(--text-0); flex: none; }
+.wb-subrow-hint { font-size: 10px; color: var(--text-3); background: var(--bg-3); padding: 1px 5px; border-radius: 4px; flex: none; }
+.wb-subrow-line { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-subrow-spacer { flex: 1; }
+.wb-subrow-meta { flex: none; font-size: 10.5px; color: var(--text-3); }
+.wb-subrow-status { flex: none; display: inline-flex; align-items: center; height: 19px; padding: 0 8px; border-radius: 5px; font-size: 10.5px; font-weight: 600; }
+.wb-subrow-chevron { flex: none; color: var(--text-3); }
+
+/* --- Detail overlay (below the 3px bar + 38px tab strip = 41px) --- */
+.wb-subdetail { position: absolute; left: 0; right: 0; top: 41px; bottom: 0; z-index: 16; display: flex; flex-direction: column; background: var(--bg-1); }
+.wb-subdetail-head { flex: none; display: flex; align-items: center; gap: 9px; height: 46px; padding: 0 10px 0 8px; border-bottom: var(--border-width) solid var(--border-subtle); background: var(--bg-0); }
+.wb-subdetail-back { width: 28px; height: 28px; flex: none; display: flex; align-items: center; justify-content: center; background: transparent; border: none; border-radius: 6px; color: var(--text-2); cursor: pointer; }
+.wb-subdetail-back:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-subdetail-crumb { display: flex; align-items: center; gap: 6px; flex: none; }
+.wb-subdetail-parent-dot { width: 7px; height: 7px; border-radius: 50%; }
+.wb-subdetail-parent { font-size: 11.5px; color: var(--text-2); }
+.wb-subdetail-crumb-sep { color: var(--text-3); }
+.wb-subdetail-id { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+.wb-subdetail-name { font-size: 13px; font-weight: 600; color: var(--text-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-subdetail-hint { font-size: 10px; color: var(--text-3); background: var(--bg-3); padding: 1px 5px; border-radius: 4px; flex: none; }
+.wb-subdetail-status { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 5px; font-size: 10.5px; font-weight: 600; }
+.wb-subdetail-status-dot { width: 5px; height: 5px; border-radius: 50%; animation: wb-pulse 1.4s infinite; }
+
+/* --- Detail task band --- */
+.wb-subdetail-task { flex: none; display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px; border-bottom: var(--border-width) solid var(--border-subtle); background: var(--bg-2); }
+.wb-subdetail-task-ic { flex: none; margin-top: 2px; color: var(--text-3); }
+.wb-subdetail-task-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wb-subdetail-task-label { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-3); }
+.wb-subdetail-task-text { font-size: 12px; line-height: 1.5; color: var(--text-1); }
+
+/* --- Detail body (the subagent's own transcript) --- */
+.wb-subdetail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.wb-subblock-asst { font-size: 12.5px; line-height: 1.6; color: var(--text-0); }
+.wb-subblock-status { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-2); }
+.wb-subblock-status svg { flex: none; color: var(--text-3); }
+.wb-subblock-typing { display: flex; align-items: center; gap: 9px; }
+.wb-subblock-tool { border: var(--border-width) solid var(--border); border-radius: 8px; background: var(--bg-2); overflow: hidden; }
+.wb-subblock-tool-head { display: flex; align-items: center; gap: 8px; height: 33px; padding: 0 11px; }
+.wb-subblock-tool-check { width: 17px; height: 17px; border-radius: 5px; background: var(--success-dim); color: var(--success); display: flex; align-items: center; justify-content: center; flex: none; }
+.wb-subblock-tool-name { font-size: 12px; font-weight: 500; color: var(--text-0); flex: none; }
+.wb-subblock-tool-arg { font-size: 11.5px; color: var(--text-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-subblock-tool-ms { font-size: 10px; color: var(--text-3); flex: none; }
+.wb-subblock-tool-res { margin: 0; padding: 9px 12px 11px; border-top: var(--border-width) solid var(--border-subtle); font-size: 11.5px; line-height: 1.6; color: var(--text-2); white-space: pre; overflow-x: auto; word-break: break-word; }
+.wb-subblock-tool-res.is-wrap { white-space: pre-wrap; }

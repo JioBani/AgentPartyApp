@@ -6,18 +6,22 @@ import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
-import type { MemberView, TranscriptBlock } from "./workbench/types";
+import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, routeKeyForModel, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
+import { applySubagentEvents } from "./app/subagentEvents";
 
 export function App() {
   const theme = useTheme();
   const [state, setState] = useState<InitialAppState>(initialState);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [logsBySession, setLogsBySession] = useState<Record<string, TranscriptBlock[]>>({});
+  // Subagents folded from `subagent` events, kept separate from the transcript so
+  // their output never mixes into the main chat (rendered in the panel's dock).
+  const [subagentsBySession, setSubagentsBySession] = useState<Record<string, Subagent[]>>({});
   // Persisted transcripts restored from disk, keyed by member name — shown for a
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
@@ -30,6 +34,8 @@ export function App() {
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
+  // QA-driven "open this subagent's detail" request (mock-driven detail QA).
+  const [subagentOpenRequest, setSubagentOpenRequest] = useState<{ member: string; subId: string; nonce: number } | null>(null);
   // Tracks whether a live party broadcast has arrived, so a late-resolving
   // initial-state load cannot clobber it with a stale snapshot.
   const partyBroadcastSeen = useRef(false);
@@ -57,11 +63,12 @@ export function App() {
       member,
       sessions,
       transcriptBySession: logsBySession,
+      subagentsBySession,
       seenCount: seenLengths[member.name] ?? 0,
       restored: restoredByMember[member.name],
       routes,
     })),
-    [members, sessions, logsBySession, seenLengths, restoredByMember, routes],
+    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, routes],
   );
 
   useEffect(() => {
@@ -87,6 +94,8 @@ export function App() {
         }
         return applyEvents(base, payload.sessionId, payload.events || []);
       });
+      // Subagent events fold into their own slice (out of the transcript).
+      setSubagentsBySession((current) => applySubagentEvents(current, payload.sessionId, payload.events || []));
     });
     const offSnapshot = window.agentParty.onSnapshot((payload: any) => {
       setState((current) => ({
@@ -121,6 +130,13 @@ export function App() {
         setCurrentView("workbench");
       }
     });
+    const offQaOpenSub = window.agentParty.onQaOpenSubagent((payload) => {
+      const { member, subId } = (payload as { member?: string; subId?: string }) || {};
+      if (member && subId) {
+        setSubagentOpenRequest({ member, subId, nonce: Date.now() });
+        setCurrentView("workbench");
+      }
+    });
     const offNavigate = window.agentParty.onNavigate((view) => {
       if (isViewId(view)) setCurrentView(view);
     });
@@ -134,6 +150,7 @@ export function App() {
       offPartyUpdate();
       offModelsUpdate();
       offQaLayout();
+      offQaOpenSub();
       offNavigate();
       offWorkspaceChoose();
       offNewSession();
@@ -222,6 +239,11 @@ export function App() {
   async function closeSession(sessionId: string) {
     await window.agentParty.closeSession(sessionId);
     setLogsBySession((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    setSubagentsBySession((current) => {
       const next = { ...current };
       delete next[sessionId];
       return next;
@@ -589,6 +611,7 @@ export function App() {
                 debugEnabled={state.settings.debugEnabled}
                 sidebarOpen={sidebarOpen}
                 layoutRequest={layoutRequest}
+                subagentOpenRequest={subagentOpenRequest}
                 actions={actions}
                 onCreateParty={(name) => void createParty(name)}
                 onCreateMember={(input) => void createMemberInline(input)}

@@ -79,6 +79,11 @@ const api = {
     ipcRenderer.on("qa:layout", listener);
     return () => ipcRenderer.off("qa:layout", listener);
   },
+  onQaOpenSubagent: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("qa:open-subagent", listener);
+    return () => ipcRenderer.off("qa:open-subagent", listener);
+  },
   onNavigate: (callback: (view: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, view: string) => callback(view);
     ipcRenderer.on("nav:set", listener);

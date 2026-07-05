@@ -46,7 +46,7 @@ window.agentParty = new Proxy({
   listParty: async () => party,
   startPartyMember: async (name, input) => { startArgs = { name, input }; return { ok: true, message: "", ...party, session: { id: "s-kbot", title: "Kimi K2.6", workspace: "/w", snapshot: { id: "s-kbot", model: "Kimi K2.6", status: "idle" } } }; },
   sendMessage: noop,
-  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"), onQaLayout: on("qaLayout"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
+  onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"), onQaLayout: on("qaLayout"), onQaOpenSubagent: on("qaOpenSub"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
 }, { get: (t, p) => (p in t ? t[p] : noop) });
 
 window.localStorage.setItem("agentparty.layout.p1", JSON.stringify({ panels: [{ id: "pa", tabs: ["kbot"], active: "kbot", weight: 1 }], focusedPanelId: "pa" }));

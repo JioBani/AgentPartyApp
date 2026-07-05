@@ -431,6 +431,7 @@ export class SessionManager extends EventEmitter {
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         policy: request.codexPolicy || harnessDefaults.codexPolicy,
         debugEnabled: settings.debugEnabled,
+        storageDir: path.join(this.userDataDir, "logs"),
         resumeSessionId,
         partyIdentity: binding?.identity,
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =

@@ -44,6 +44,8 @@ interface WorkbenchProps {
   sidebarOpen: boolean;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
+  /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
+  subagentOpenRequest?: { member: string; subId: string; nonce: number } | null;
   actions: WorkbenchActions;
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
@@ -68,6 +70,22 @@ const DRAG_THRESHOLD = 5;
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 460;
 const SIDEBAR_WIDTH_KEY = "agentparty.sidebarWidth";
+const SUBUI_KEY = "agentparty.subagentUi";
+
+/** Per-member subagent UI state (which detail is open + dock collapsed). */
+interface SubagentUiState {
+  open: Record<string, string>;
+  collapsed: Record<string, boolean>;
+}
+
+function loadSubagentUi(): SubagentUiState {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SUBUI_KEY) || "{}");
+    return { open: parsed.open || {}, collapsed: parsed.collapsed || {} };
+  } catch {
+    return { open: {}, collapsed: {} };
+  }
+}
 
 function loadSidebarWidth(): number {
   const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -83,7 +101,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -94,6 +112,7 @@ export function Workbench(props: WorkbenchProps) {
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
+  const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
@@ -106,6 +125,43 @@ export function Workbench(props: WorkbenchProps) {
   useEffect(() => {
     saveSidebarWidth(sidebarWidth);
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SUBUI_KEY, JSON.stringify(subUi));
+    } catch {
+      // Best-effort.
+    }
+  }, [subUi]);
+
+  // Subagent dock/detail UI handlers, addressed by member name.
+  function toggleSubDock(member: string) {
+    setSubUi((current) => ({ ...current, collapsed: { ...current.collapsed, [member]: !current.collapsed[member] } }));
+  }
+  function openSub(member: string, id: string) {
+    setSubUi((current) => ({ ...current, open: { ...current.open, [member]: id } }));
+  }
+  function closeSub(member: string) {
+    setSubUi((current) => {
+      const open = { ...current.open };
+      delete open[member];
+      return { ...current, open };
+    });
+  }
+
+  // Apply a QA-driven "open subagent detail" request (mock-driven detail QA).
+  // `subId: "first"` opens the member's first subagent (convenient when the id is
+  // harness-assigned and not known to the caller).
+  useEffect(() => {
+    if (subagentOpenRequest) {
+      const { member, subId } = subagentOpenRequest;
+      const resolved = subId === "first" ? viewMap.get(member)?.subagents[0]?.id : subId;
+      if (resolved) {
+        openSub(member, resolved);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subagentOpenRequest?.nonce]);
 
   function onSidebarResizeDown(event: ReactPointerEvent) {
     sidebarResizeRef.current = { startX: event.clientX, startWidth: sidebarWidth };
@@ -389,6 +445,11 @@ export function Workbench(props: WorkbenchProps) {
               onOpenRuntime={setRuntimeTarget}
               onOpenMcp={setMcpTarget}
               onTabPointerDown={onTabPointerDown}
+              openSubId={subUi.open[panel.active]}
+              subDockCollapsed={subUi.collapsed[panel.active]}
+              onToggleSubDock={() => toggleSubDock(panel.active)}
+              onOpenSub={(id) => openSub(panel.active, id)}
+              onCloseSub={() => closeSub(panel.active)}
             />
           </Fragment>
         ))}

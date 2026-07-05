@@ -246,6 +246,17 @@ export class AutomationApiServer {
       sendJson(res, 200, await c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));
       return;
     }
+    const subagentsMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/subagents$/);
+    if (method === "POST" && subagentsMatch) {
+      sendJson(res, 200, await c.qaEmitSubagents(workspace, decodeURIComponent(subagentsMatch[1]), await readJson(req)));
+      return;
+    }
+    const openSubMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/subagents\/open$/);
+    if (method === "POST" && openSubMatch) {
+      const body = await readJson(req);
+      sendJson(res, 200, c.qaOpenSubagent(windowId, decodeURIComponent(openSubMatch[1]), String(body?.subId || "")));
+      return;
+    }
     const interactionMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/interaction$/);
     if (method === "POST" && interactionMatch) {
       sendJson(res, 200, await c.qaInteraction(workspace, decodeURIComponent(interactionMatch[1]), await readJson(req)));

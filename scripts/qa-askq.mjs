@@ -53,7 +53,7 @@ window.agentParty = new Proxy({
   getInitialState: async () => initialState,
   approve: async (...args) => { approveArgs = args; return { ok: true }; },
   onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"),
-  onQaLayout: on("qaLayout"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
+  onQaLayout: on("qaLayout"), onQaOpenSubagent: on("qaOpenSub"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
   listParty: async () => initialState.party,
 }, { get: (t, p) => p in t ? t[p] : noop });
 

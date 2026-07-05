@@ -408,6 +408,16 @@ export class AppController {
     return { ok: true };
   }
 
+  async qaEmitSubagents(workspacePath: string, name: string, body: { scenario?: string }): Promise<{ ok: true; scenario: string; count: number }> {
+    this.requireQa();
+    const scenario = String(body?.scenario || "").trim();
+    if (!scenario) {
+      throw new Error("subagent injection requires a 'scenario' name.");
+    }
+    const result = await this.engineFor(workspacePath).qaEmitSubagents(name, scenario);
+    return { ok: true, ...result };
+  }
+
   async qaInteraction(workspacePath: string, name: string, body: QaInteractionInput): Promise<{ ok: true; requestId: string }> {
     this.requireQa();
     const { requestId } = await this.engineFor(workspacePath).qaInteraction(name, body);
@@ -418,6 +428,13 @@ export class AppController {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:layout", { panels });
     return { ok: true, panels };
+  }
+
+  /** Opens a member's subagent detail (drill-in) — mock-driven QA of the detail view. */
+  qaOpenSubagent(windowId: string | undefined, member: string, subId: string): { ok: true; member: string; subId: string } {
+    this.requireQa();
+    this.windowFor(windowId)?.webContents.send("qa:open-subagent", { member, subId });
+    return { ok: true, member, subId };
   }
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {

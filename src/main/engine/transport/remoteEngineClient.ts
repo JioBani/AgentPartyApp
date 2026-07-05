@@ -135,6 +135,7 @@ export class RemoteEngineClient implements EngineConnection {
   qaSeed(input: { party?: string; members?: QaMemberSpec[] }) { return this.call<Result<"qaSeed">>("qaSeed", input); }
   qaCreateMockMember(spec: QaMemberSpec) { return this.call<Result<"qaCreateMockMember">>("qaCreateMockMember", spec); }
   qaEmit(name: string, body: QaEmitInput) { return this.call<Result<"qaEmit">>("qaEmit", name, body); }
+  qaEmitSubagents(name: string, scenario: string) { return this.call<Result<"qaEmitSubagents">>("qaEmitSubagents", name, scenario); }
   qaInteraction(name: string, body: QaInteractionInput) { return this.call<Result<"qaInteraction">>("qaInteraction", name, body); }
   qaReset() { return this.call<Result<"qaReset">>("qaReset"); }
 }

@@ -1,4 +1,5 @@
 import type { ModelRoute } from "./modelRegistry";
+import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../shared/subagentActivity";
 
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -82,6 +83,19 @@ export type ClaudeNormalizedEvent =
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; changes?: import("../shared/codexItems").CodexFileEdit[]; status?: string; at: string }
   | { type: "turn_complete"; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; at: string }
+  // An in-session subagent's lifecycle / live activity / own-transcript block.
+  // Kept OUT of the parent transcript: the renderer folds these into a separate
+  // per-session subagent slice (dock + drill-in detail). One event can carry any
+  // combination of the three optional facets. Both harnesses normalize to this —
+  // see docs/codex-ux-research/08-subagent-activity.md.
+  | { type: "subagent"; agentId: string;
+      /** Sent on spawn and on identity/status transitions (merged, latest wins). */
+      lifecycle?: { phase?: SubagentPhase; label?: string; role?: string; hint?: string; assignedTask?: string; model?: string; tools?: string; dur?: string };
+      /** Live one-line activity; a model analyzer may later enrich `summary`. */
+      activity?: SubagentActivity;
+      /** A block appended to the subagent's OWN transcript. */
+      block?: SubagentBlock;
+      at: string }
   | { type: "error"; message: string; at: string };
 
 export type NormalizedCommand =

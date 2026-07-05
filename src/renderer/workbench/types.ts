@@ -1,6 +1,32 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import type { ImageAttachment } from "../../shared/attachments";
+import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
+
+/**
+ * One in-session subagent, folded from `subagent` normalized events. Its output
+ * is kept out of the member transcript entirely — the dock lists these and the
+ * detail view drills into `blocks` (the subagent's own transcript).
+ */
+export interface Subagent {
+  id: string;
+  /** Display name / label (Claude description·subagent_type, Codex role·nickname). */
+  name: string;
+  /** Scope or identity badge (e.g. "auth/**", "#a3f2"). */
+  hint?: string;
+  role?: string;
+  phase: SubagentPhase;
+  /** The task delegated to this subagent (shown at the top of the detail view). */
+  task?: string;
+  /** Meta left/right in the dock row (e.g. "318 tests" · "2m 04s"). */
+  tools?: string;
+  dur?: string;
+  /** Latest one-line activity; the swap point for a future model analyzer. */
+  activity?: SubagentActivity;
+  /** The subagent's own transcript. */
+  blocks: SubagentBlock[];
+  updatedAt?: string;
+}
 
 /** Per-member transcript block — the rendering contract filled by agent events. */
 export type TranscriptBlock =
@@ -49,6 +75,8 @@ export interface MemberView {
   session?: SessionView;
   status: MemberStatus;
   transcript: TranscriptBlock[];
+  /** In-session subagents (dock + detail); empty when the member has none. */
+  subagents: Subagent[];
   unread: number;
   pendingApproval: boolean;
   busy: boolean;

@@ -8,6 +8,9 @@ import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
+import { SubagentDock } from "./SubagentDock";
+import { SubagentDetail } from "./SubagentDetail";
+import { buildSubDetail, buildSubDock } from "./subagentModel";
 
 interface PanelProps {
   panel: PanelState;
@@ -25,12 +28,24 @@ interface PanelProps {
   onOpenRuntime: (member: string) => void;
   onOpenMcp: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
+  /** Subagent dock/detail UI state for this panel's active member. */
+  openSubId?: string;
+  subDockCollapsed?: boolean;
+  onToggleSubDock: () => void;
+  onOpenSub: (id: string) => void;
+  onCloseSub: () => void;
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onTabPointerDown } = props;
+  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
+
+  // Subagent dock + drill-in detail, derived from the active member's subagents.
+  const subagents = view?.subagents || [];
+  const dock = subagents.length ? buildSubDock(subagents, view!.color, density, openSubId, Boolean(subDockCollapsed)) : null;
+  const openSub = openSubId ? subagents.find((sub) => sub.id === openSubId) : undefined;
+  const detail = buildSubDetail(openSub, view?.color || "");
 
   // Prewarm the visible member's session (init only, no turn) so its composer
   // palette can show the harness's real command/skill inventory before the
@@ -102,6 +117,8 @@ export function Panel(props: PanelProps) {
         </div>
       )}
 
+      {dock && <SubagentDock view={dock} onToggle={onToggleSubDock} onOpen={onOpenSub} />}
+
       {view ? (
         <>
           <Transcript view={view} density={density} actions={actions} />
@@ -109,6 +126,10 @@ export function Panel(props: PanelProps) {
         </>
       ) : (
         <div className="wb-panel-empty">No member in this panel.</div>
+      )}
+
+      {detail && view && (
+        <SubagentDetail detail={detail} parentName={view.name} parentColor={view.color} density={density} onBack={onCloseSub} />
       )}
 
       {dropTarget && (

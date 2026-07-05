@@ -159,6 +159,7 @@ window.agentParty = {
   onPartyUpdate: on("partyUpdate"),
   onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"),
+  onQaOpenSubagent: on("qaOpenSub"),
   onNavigate: on("nav"),
   onWorkspaceChoose: on("ws"),
   onNewSession: on("new"),
