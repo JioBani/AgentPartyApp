@@ -153,6 +153,17 @@ spawned remote), enforcing the shared-context rule.
   Windows over wsl.exe — real transport/routing/streaming, only the model
   *content* mocked. Holds at the app level too (seed+send via HTTP → the WSL
   session goes idle on completion).
+- **Subagents over the remote engine — verified (real model).**
+  `npm run test:wsl-subagents` (billed) spawns a REAL Claude member in the distro
+  that delegates to a REAL subagent (Agent/Task tool); the normalized `subagent`
+  events ride the same `session:events` channel and are forwarded from the distro
+  to Windows, where folding them with the renderer's `applySubagentEvents`
+  reconstructs the dock/detail — correct attribution (agentId + task), the
+  subagent's OWN transcript blocks, parent/child separation, and a real
+  working→**done** lifecycle (no perpetual spinner). Confirmed in the actual UI
+  too: `agent-party` opened the WSL workspace, a live Claude member's subagent
+  rendered in the drill-in detail (Bash card + currentAction + markdown report)
+  with a `WSL · <distro>` workspace badge.
 
 ## 8. In-distro server bootstrap (Stage 5)
 
