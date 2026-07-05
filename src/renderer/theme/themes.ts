@@ -16,9 +16,9 @@ export type ThemeColorToken =
   | "border-subtle" | "border" | "border-strong"
   | "text-0" | "text-1" | "text-2" | "text-3"
   | "accent" | "accent-dim" | "accent-bd" | "accent-fg"
-  | "live" | "live-dim"
-  | "success" | "success-dim"
-  | "danger" | "danger-dim"
+  | "live" | "live-dim" | "live-bd"
+  | "success" | "success-dim" | "success-bd"
+  | "danger" | "danger-dim" | "danger-bd"
   | "scrim";
 
 export type ThemeShapeToken =
@@ -72,10 +72,13 @@ const light: Theme = {
     "accent-fg": "#ffffff",
     "live": "#b9791d",
     "live-dim": "rgba(185,121,29,.13)",
+    "live-bd": "rgba(185,121,29,.3)",
     "success": "#2f8f5e",
     "success-dim": "rgba(47,143,94,.13)",
+    "success-bd": "rgba(47,143,94,.28)",
     "danger": "#cf4b45",
     "danger-dim": "rgba(207,75,69,.13)",
+    "danger-bd": "rgba(207,75,69,.3)",
     "scrim": "rgba(20,23,29,.42)",
   },
   shape: baseShape,
@@ -105,10 +108,13 @@ const dark: Theme = {
     "accent-fg": "#ffffff",
     "live": "#e0a14e",
     "live-dim": "rgba(224,161,78,.13)",
+    "live-bd": "rgba(224,161,78,.34)",
     "success": "#54b585",
     "success-dim": "rgba(84,181,133,.13)",
+    "success-bd": "rgba(84,181,133,.32)",
     "danger": "#e0635d",
     "danger-dim": "rgba(224,99,93,.13)",
+    "danger-bd": "rgba(224,99,93,.34)",
     "scrim": "rgba(0,0,0,.5)",
   },
   shape: baseShape,

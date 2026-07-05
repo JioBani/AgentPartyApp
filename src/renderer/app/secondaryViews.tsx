@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Copy, KeyRound, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { Check, Copy, FlaskConical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { HARNESS_IDS } from "../../shared/types";
@@ -57,6 +57,38 @@ export function SessionsView({ sessions, resumable, resumableError, onOpen, onCl
   );
 }
 
+/** Maps an auth provider status to a badge (label + tone + whether it's a check). */
+function authBadge(status: InitialAppState["auth"][number]["status"]): { label: string; tone: "success" | "muted" | "danger"; ok: boolean } {
+  switch (status) {
+    case "available": return { label: "사용 가능", tone: "success", ok: true };
+    case "configured": return { label: "설정됨", tone: "success", ok: true };
+    case "valid": return { label: "정상", tone: "success", ok: true };
+    case "missing": return { label: "미설정", tone: "muted", ok: false };
+    case "invalid": return { label: "유효하지 않음", tone: "danger", ok: false };
+    case "network_error": return { label: "네트워크 오류", tone: "danger", ok: false };
+    default: return { label: status, tone: "muted", ok: false };
+  }
+}
+
+function SetBadge({ status }: { status: InitialAppState["auth"][number]["status"] }) {
+  const badge = authBadge(status);
+  return (
+    <span className={"set-badge is-" + badge.tone}>
+      {badge.ok && <Check size={12} />}
+      {badge.label}
+    </span>
+  );
+}
+
+function SetSectionHead({ label }: { label: string }) {
+  return (
+    <div className="set-section-head">
+      <span className="set-section-label">{label}</span>
+      <span className="set-section-rule" />
+    </div>
+  );
+}
+
 export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
   auth: InitialAppState["auth"];
   draft: string;
@@ -64,24 +96,58 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
   onSave: () => void;
   onTest: () => void;
 }) {
+  const subscriptions = auth.filter((provider) => provider.kind === "subscription");
+  const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
+  const canSave = draft.trim().length > 0;
+
   return (
-    <section className="legacy-view narrow">
-      <section className="card">
-        <div className="card-title">인증</div>
-        {auth.map((provider) => (
-          <div className="auth-row" key={provider.id}>
-            <div className="auth-icon">{provider.kind === "apiKey" ? <KeyRound size={16} /> : <ShieldCheck size={16} />}</div>
-            <div className="auth-body"><strong>{provider.label}</strong><small>{provider.detail || provider.description}</small>{provider.maskedValue && <code>{provider.maskedValue}</code>}</div>
-            <span className={"tag " + provider.status}>{provider.status}</span>
+    <div className="set-page">
+      {subscriptions.length > 0 && (
+        <section className="set-section">
+          <SetSectionHead label="구독" />
+          {subscriptions.map((provider) => (
+            <div className="set-row" key={provider.id}>
+              <span className="set-row-icon"><ShieldCheck size={19} /></span>
+              <div className="set-row-body">
+                <span className="set-row-name">{provider.label}</span>
+                <span className="set-row-desc">{provider.detail || provider.description}</span>
+              </div>
+              <SetBadge status={provider.status} />
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="set-section">
+        <SetSectionHead label="Provider API 키" />
+        {apiKeys.map((provider) => (
+          <div className="set-card" key={provider.id}>
+            <div className="set-row set-row-flush">
+              <span className="set-row-icon is-accent"><KeyRound size={18} /></span>
+              <div className="set-row-body">
+                <span className="set-row-name">{provider.label}</span>
+                <span className="set-row-desc">{provider.description}</span>
+              </div>
+              <SetBadge status={provider.status} />
+            </div>
+            {provider.maskedValue && (
+              <div className="set-key-current">
+                <span>현재 키</span>
+                <code className="wb-mono">{provider.maskedValue}</code>
+              </div>
+            )}
+            <div className="set-key-input">
+              <div className="set-input">
+                <KeyRound size={14} />
+                <input value={draft} onChange={(event) => onDraft(event.target.value)} placeholder="새 OpenRouter API 키 입력 (sk-or-…)" type="password" />
+              </div>
+              <button type="button" className="set-btn-accent" disabled={!canSave} onClick={onSave}><Check size={14} /> 저장</button>
+              <button type="button" className="set-btn-soft" onClick={onTest}><FlaskConical size={14} /> 테스트</button>
+            </div>
           </div>
         ))}
-        <div className="key-box">
-          <input value={draft} onChange={(event) => onDraft(event.target.value)} placeholder="OpenRouter API 키" type="password" />
-          <button onClick={onSave} type="button" className="accent-btn"><Check size={15} /></button>
-          <button className="ghost-btn" type="button" onClick={onTest}>테스트</button>
-        </div>
       </section>
-    </section>
+    </div>
   );
 }
 
@@ -98,20 +164,45 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  function copyRouter() {
+    void navigator.clipboard?.writeText(router);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1300);
+  }
+
   return (
-    <section className="legacy-view">
-      <section className="card">
-        <div className="card-title">기본 하네스</div>
-        <div className="notice">새 멤버는 각 하네스의 기본값으로 생성됩니다. 아래에서 하네스별 기본값을 지정하세요.</div>
-        <Info label="Router" value={router} />
-        <label className="field">새 멤버 기본 하네스
-          <select value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
-            {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
-          </select>
-        </label>
-        <label className="toggle-line"><input type="checkbox" checked={settings.debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} />디버그 로그</label>
+    <div className="set-page set-page-wide">
+      {/* base harness */}
+      <section className="set-card">
+        <div className="set-card-label">기본 하네스</div>
+        <div className="set-inline-note">
+          <InfoIcon size={14} />
+          <span>새 멤버는 각 하네스의 기본값으로 생성됩니다. 아래에서 하네스별 기본값을 지정하세요.</span>
+        </div>
+        <div className="set-router-row">
+          <span className="set-router-id"><span className="set-dot is-success" /> Router</span>
+          <span className="set-router-end">
+            <span className="wb-mono">{router || "시작 중…"}</span>
+            <button type="button" className="set-icon-btn" title="복사" onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
+          </span>
+        </div>
+        <div className="set-harness-pick">
+          <label className="set-field">
+            <span className="set-field-label">새 멤버 기본 하네스</span>
+            <select className="set-select" value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
+              {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
+            </select>
+          </label>
+          <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}>
+            <span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
+            <span className="set-toggle-label">디버그 로그</span>
+          </button>
+        </div>
       </section>
-      <div className="split-grid">
+
+      {/* per-harness defaults */}
+      <div className="set-harness-grid">
         {HARNESS_IDS.map((id) => (
           <HarnessDefaultsCard
             key={id}
@@ -125,7 +216,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
           />
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -146,48 +237,78 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [reasoning, setReasoning] = useState(defaults.reasoning || "");
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
   const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
+  const [saved, setSaved] = useState(false);
+  const isCodex = harnessId === "codex";
 
   function save() {
     const patch: Partial<HarnessDefaults> = { model, effort: effort as HarnessDefaults["effort"], reasoning: reasoning || undefined };
-    if (harnessId === "codex") {
+    if (isCodex) {
       const axes = preset === "custom" ? (defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }) : CODEX_PRESETS[preset];
       patch.codexPolicy = { ...axes, guardian: defaults.codexPolicy?.guardian ?? false } as CodexPolicy;
     } else {
       patch.permissionMode = permissionMode as HarnessDefaults["permissionMode"];
     }
     onSave(patch);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
   }
 
   return (
-    <section className="card">
-      <div className="card-title">{label} 기본값</div>
-      <label className="field">모델
-        <select value={model} onChange={(event) => setModel(event.target.value)}>
+    <section className="set-harness-card">
+      <div className="set-harness-head">
+        <span className={"set-harness-icon is-" + harnessId}><SquareTerminal size={15} /></span>
+        <span className="set-harness-title">{label} 기본값</span>
+      </div>
+
+      <label className="set-field">
+        <span className="set-field-label">모델</span>
+        <select className="set-select" value={model} onChange={(event) => setModel(event.target.value)}>
           {routes.map((route) => <option key={routeKey(route)} value={route.model} disabled={route.enabled === false}>{route.label || route.model}</option>)}
         </select>
       </label>
-      {harnessId === "codex" && codexModels?.status === "pending" && (
-        <div className="notice">Codex 계정 모델 목록을 불러오는 중입니다… 지금은 기본 모델만 보이며, 완료되면 계정의 전체 모델(GPT-5.x 등)로 갱신됩니다.</div>
+      {isCodex && codexModels?.status === "pending" && (
+        <div className="set-inline-note is-soft">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 계정의 전체 모델로 갱신됩니다.</div>
       )}
-      {harnessId === "codex" && codexModels?.status === "error" && (
-        <div className="soft-error">
+      {isCodex && codexModels?.status === "error" && (
+        <div className="set-inline-note is-error">
           Codex 모델 목록을 불러오지 못해 기본 모델만 표시됩니다: {codexModels.error}
-          {onRefreshCodexModels && <button type="button" className="ghost-btn" onClick={onRefreshCodexModels}><RefreshCw size={13} /> 다시 시도</button>}
+          {onRefreshCodexModels && <button type="button" className="set-link-btn" onClick={onRefreshCodexModels}><RefreshCw size={12} /> 다시 시도</button>}
         </div>
       )}
-      <label className="field">추론 강도<select value={effort} onChange={(event) => setEffort(event.target.value as HarnessDefaults["effort"])}>{["low", "medium", "high", "xhigh", "max"].map((e) => <option key={e} value={e}>{e}</option>)}</select></label>
-      <label className="field">추론 모드<select value={reasoning} onChange={(event) => setReasoning(event.target.value)}><option value="">모델 기본</option>{["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
-      {harnessId === "codex" ? (
-        <label className="field">권한 (샌드박스 × 승인)
-          <select value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)}>
+
+      <label className="set-field">
+        <span className="set-field-label">추론 강도</span>
+        <select className="set-select" value={effort} onChange={(event) => setEffort(event.target.value as HarnessDefaults["effort"])}>
+          {["low", "medium", "high", "xhigh", "max"].map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </label>
+      <label className="set-field">
+        <span className="set-field-label">추론 모드</span>
+        <select className="set-select" value={reasoning} onChange={(event) => setReasoning(event.target.value)}>
+          <option value="">모델 기본</option>
+          {["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+        </select>
+      </label>
+      {isCodex ? (
+        <label className="set-field">
+          <span className="set-field-label">권한 (샌드박스 × 승인)</span>
+          <select className="set-select" value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)}>
             {(Object.keys(CODEX_PRESET_LABELS) as Array<keyof typeof CODEX_PRESET_LABELS>).map((p) => <option key={p} value={p}>{CODEX_PRESET_LABELS[p]}</option>)}
             {preset === "custom" && <option value="custom">Custom</option>}
           </select>
         </label>
       ) : (
-        <label className="field">권한 모드<select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}>{permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>
+        <label className="set-field">
+          <span className="set-field-label">권한 모드</span>
+          <select className="set-select" value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}>
+            {permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+          </select>
+        </label>
       )}
-      <div className="field-actions"><button type="button" className="accent-btn" onClick={save}>{label} 기본값 저장</button></div>
+      <button type="button" className={"set-harness-save" + (saved ? " is-saved" : "")} onClick={save}>
+        {saved ? <Check size={14} /> : <SlidersHorizontal size={13} />}
+        {saved ? "저장됨" : `${label} 기본값 저장`}
+      </button>
     </section>
   );
 }
