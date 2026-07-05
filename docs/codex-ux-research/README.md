@@ -39,7 +39,11 @@
   → 3군 차별). "사용자가 무엇을 하려는데 어떻게 보이는가" 기준으로 정렬.
 - `07-model-routing.md`: 모델·프로바이더 라우팅 — `model/list` 응답 스키마,
   `modelProvider/capabilities/read`, `model_providers` 스펙(wire_api=responses
-  주의), thread/turn 단위 전환 규칙, ChatGPT/API 키 인증 제약.
+  주의), thread/turn 단위 전환 규칙, ChatGPT/API 키 인증 제약, OpenRouter 확정값.
+- `08-subagent-activity.md`: 서브에이전트 활동 정보 — Codex(collabAgentToolCall/
+  subAgentActivity/thread-list) vs Claude Code(Agent tool_use + parent_tool_use_id
+  + task_progress) 비교, "몇 개·무엇을 하는지" UI를 위한 공통 추상화·최소 작업.
+  (두 하네스 공통 주제)
 
 ## 로컬 확인
 
