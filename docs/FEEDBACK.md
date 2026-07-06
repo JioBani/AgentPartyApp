@@ -69,9 +69,10 @@
 
 ---
 
-### #4 멤버 생성 시 모델 변경하면 오류 + 턴 입력해도 메시지가 계속 queue됨 🔴 진행중
+### #4 멤버 생성 시 모델 변경하면 오류 + 턴 입력해도 메시지가 계속 queue됨 ✅ 수정됨
 
-- **상태**: OPEN
+- **상태**: FIXED — **큐 데드락**이 근본 원인. 서로 다른 백엔드(구독↔OpenRouter)로 모델을 바꾸면 `ClaudeAdapter.setModel` 이 `restart()` 를 호출하는데, `restart()` 가 `sessionId`/큐 등은 초기화하면서 **`turnState`/`currentStatus` 는 리셋하지 않음**. 진행 중이던 요청은 재시작으로 `"Query closed before response received"` 로 거부되고 이 에러는 (의도적으로) 조용히 무시됨 → `turnState` 가 `"responding"`/`"submitted"` 로 **영구 고착** → `isTurnActive()` 가 계속 true → 이후 모든 턴이 dispatch 되지 못하고 큐에만 쌓임. `restart()` 에서 `turnState=undefined; currentStatus="idle"` 로 초기화하도록 수정(Codex 어댑터 `restart()` 는 이미 올바르게 초기화하고 있었음 — 동작 정합화). 실모델 e2e 로 검증: sonnet 응답 중 GLM-5.2(OpenRouter)로 교차 변경 → 재시작 → 후속 턴이 정상 dispatch 되어 응답 수신, `queuedTurnCount=0`.
+- ~~**상태**: OPEN~~
 - **심각도**: 높음 — 멤버 생성/대화 시작이 막힘
 - **재현 절차**:
   1. 파티 멤버 생성 과정에서 모델을 바꿈(변경)

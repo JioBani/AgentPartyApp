@@ -476,6 +476,15 @@ export class ClaudeAdapter extends EventEmitter {
     this.activeTools.clear();
     this.subagentTracker = new ClaudeSubagentTracker();
     this.queuedUserTurns.length = 0;
+    // A restart tears down the old query and starts a FRESH one with no turn in
+    // flight — so any in-flight turn state MUST be cleared. Otherwise a restart
+    // triggered mid-turn (e.g. a cross-backend model change) leaves `turnState`
+    // stuck at "responding"/"submitted"; `isTurnActive()` then stays true forever
+    // and every later turn queues without ever dispatching — a bricked member
+    // (feedback #4). The in-flight request rejects with a benign "Query closed"
+    // that we intentionally swallow, so nothing else resets it.
+    this.turnState = undefined;
+    this.currentStatus = "idle";
     this.start();
   }
 
