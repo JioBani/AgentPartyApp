@@ -38,18 +38,14 @@ if (process.env.AGENTPARTY_USER_DATA) {
   app.setPath("userData", process.env.AGENTPARTY_USER_DATA);
 }
 
-// One running instance owns all windows for a workspace (shared in-memory
-// source + a single engine per workspace storage). A second launch — Explorer
-// "open here", another `agent-party` call — must forward its argv to us instead
-// of starting a rival process. QA/e2e launches a single process, so the lock is
-// harmless there. Skipped when QA explicitly allows parallel instances.
-const allowMultiInstance = process.env.AGENTPARTY_ALLOW_MULTI_INSTANCE === "1";
-const gotInstanceLock = allowMultiInstance || app.requestSingleInstanceLock();
-if (!gotInstanceLock) {
-  app.quit();
-} else {
-  app.on("second-instance", (_event, argv) => handleSecondInstance(argv));
-}
+// AgentParty runs as MANY independent processes — one per launch, for the same
+// cwd or different cwds. There is NO machine-global single-instance lock (it made
+// every process share/clobber global state, and forced a second launch to defer
+// to the first). Coordination is per-workspace instead: state lives in the
+// workspace's `.agent_party_app/` and discovery is per-workspace
+// (src/main/discovery.ts). "Open this workspace in the running app rather than a
+// duplicate" is the `agent-party` CLI's job (it finds the workspace's process via
+// discovery and asks it to open a window), not a global OS lock.
 
 let router: EmbeddedRouter | undefined;
 let sessionManager: SessionManager | undefined;
@@ -109,44 +105,6 @@ function placeWindowOnDisplay(window: BrowserWindow): void {
     log("info", "window", "positioned on display", { target, x, y, width, height });
   } catch (error) {
     log("warn", "window", "display positioning failed", { error: error instanceof Error ? error.message : String(error) });
-  }
-}
-
-/** Brings an open window to the foreground (restoring it if minimized). */
-function focusWindow(window: BrowserWindow): void {
-  if (window.isMinimized()) {
-    window.restore();
-  }
-  window.show();
-  window.focus();
-}
-
-/**
- * Routes a re-launch (Explorer "open here", a second `agent-party` invocation)
- * into the already-running instance: focus the window already viewing that
- * workspace, else open a new window for it — never a duplicate engine on the
- * same workspace storage.
- */
-function handleSecondInstance(argv: string[]): void {
-  const workspace = workspaceFromArgv(argv);
-  // Diagnostic: the reported "opens the app's own folder instead of the picked
-  // one" bug lands here (a re-launch while an instance holds the single-instance
-  // lock). Log the raw argv + what we resolved so a live repro is pinpointable.
-  log("info", "window", "second-instance launch", { argv: argv.slice(1), resolvedWorkspace: workspace, fellBackToDefault: !workspace });
-  const target = workspace ? windowRegistry?.forWorkspace(workspace)[0] : undefined;
-  if (target) {
-    focusWindow(target.window);
-    return;
-  }
-  if (workspace) {
-    void createWindow(workspace);
-    return;
-  }
-  const existing = windowRegistry?.all()[0];
-  if (existing) {
-    focusWindow(existing.window);
-  } else {
-    void createWindow(defaultWorkspace());
   }
 }
 
@@ -307,19 +265,22 @@ const advertisedWorkspaces = new Map<string, string>();
  */
 function reconcileDiscovery(): void {
   const baseUrl = automationApi?.baseUrl;
-  if (!baseUrl) {
+  // The API binds an ephemeral port; before it starts, baseUrl reads `:0`. Skip
+  // until it holds the real port — `bootstrap()` calls this again post-start, and
+  // we always (re)write below so an early `:0` is never left stale.
+  if (!baseUrl || baseUrl.endsWith(":0")) {
     return;
   }
   const current = new Map<string, string>();
   for (const entry of registry().all()) {
     current.set(workspaceKey(entry.workspacePath), entry.workspacePath);
   }
+  // Always write the CURRENT baseUrl for every hosted workspace (idempotent).
   for (const [key, workspace] of current) {
-    if (!advertisedWorkspaces.has(key)) {
-      writeInstanceDiscovery(workspace, baseUrl, discoveryStartedAt);
-      advertisedWorkspaces.set(key, workspace);
-    }
+    writeInstanceDiscovery(workspace, baseUrl, discoveryStartedAt);
+    advertisedWorkspaces.set(key, workspace);
   }
+  // Drop discovery for workspaces this process no longer hosts.
   for (const [key, workspace] of [...advertisedWorkspaces]) {
     if (!current.has(key)) {
       removeInstanceDiscovery(workspace);
@@ -538,20 +499,19 @@ function registry(): WindowRegistry {
   return windowRegistry;
 }
 
+/** Preferred router port from a configured baseUrl; 0 (ephemeral) when unset. */
 function parsePort(baseUrl: string): number {
   try {
-    return Number(new URL(baseUrl).port || 3455);
+    return Number(new URL(baseUrl).port || 0);
   } catch {
-    return 3455;
+    return 0;
   }
 }
 
-if (gotInstanceLock) {
-  app.whenReady().then(bootstrap).catch((error) => {
-    dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
-    app.quit();
-  });
-}
+app.whenReady().then(bootstrap).catch((error) => {
+  dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
+  app.quit();
+});
 
 app.on("activate", () => {
   if (registry().all().length === 0) {

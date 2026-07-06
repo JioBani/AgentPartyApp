@@ -20,10 +20,14 @@ const defaults: AppSettings = {
   selectedHarnessId: "claude-code",
   harnessDefaults: HARNESS_DEFAULTS,
   debugEnabled: false,
-  routerBaseUrl: "http://127.0.0.1:3455",
+  // Ports are RUNTIME, not canonical: bind ephemeral (0) by default so multiple
+  // processes never collide on a fixed port, and advertise the live bound URL via
+  // per-workspace discovery. A dev/QA run can still pin a port via env. (An empty
+  // routerBaseUrl → preferredPort 0; consumers read the live `router.baseUrl`.)
+  routerBaseUrl: "",
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-  automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 47831,
+  automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
 };
 
 export function getSettings(): AppSettings {
