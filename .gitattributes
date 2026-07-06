@@ -1,0 +1,4 @@
+# Keep POSIX shell shims LF so they run in WSL/Linux even when checked out on
+# Windows. A CRLF `agent-party` shim breaks with `/usr/bin/env: 'sh\r'`.
+scripts/agent-party text eol=lf
+*.sh text eol=lf
