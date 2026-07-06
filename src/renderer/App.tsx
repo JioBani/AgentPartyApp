@@ -14,6 +14,19 @@ import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./a
 import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
+/**
+ * Stable per-member identity for renderer-side caches (restored transcripts).
+ * A member NAME alone is NOT unique — every party has a `main`, and a
+ * delete+recreate reuses the same name. Keying by `(partyId, name, createdAt)`
+ * isolates same-named members across parties (feedback #5: party-switch bleed)
+ * and treats a recreated member as fresh (feedback #7: recreate keeps old
+ * messages), while the on-disk store — already partitioned by (workspace, party,
+ * member) — stays the source of truth.
+ */
+function memberKey(member: { partyId?: string; name: string; createdAt?: string }): string {
+  return `${member.partyId || "default"}::${member.name}::${member.createdAt || ""}`;
+}
+
 export function App() {
   const theme = useTheme();
   const [state, setState] = useState<InitialAppState>(initialState);
@@ -65,7 +78,7 @@ export function App() {
       transcriptBySession: logsBySession,
       subagentsBySession,
       seenCount: seenLengths[member.name] ?? 0,
-      restored: restoredByMember[member.name],
+      restored: restoredByMember[memberKey(member)],
       routes,
     })),
     [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, routes],
@@ -87,7 +100,7 @@ export function App() {
         // restored history so a resumed conversation continues instead of blank.
         if (current[payload.sessionId] === undefined) {
           const member = membersRef.current.find((item) => item.sessionId === payload.sessionId);
-          const restored = member ? restoredRef.current[member.name] : undefined;
+          const restored = member ? restoredRef.current[memberKey(member)] : undefined;
           if (restored && restored.length) {
             base = { ...current, [payload.sessionId]: restored };
           }
@@ -180,14 +193,15 @@ export function App() {
   // (or a closed member) shows its past conversation. Fetched lazily per member.
   useEffect(() => {
     for (const member of members) {
-      if (restoredByMember[member.name] !== undefined) {
+      const key = memberKey(member);
+      if (restoredByMember[key] !== undefined) {
         continue;
       }
       // Mark as fetched (empty) up front so we don't refetch on every render.
-      setRestoredByMember((current) => (current[member.name] !== undefined ? current : { ...current, [member.name]: [] }));
+      setRestoredByMember((current) => (current[key] !== undefined ? current : { ...current, [key]: [] }));
       void window.agentParty.getMemberTranscript?.(member.name)?.then((blocks) => {
         if (Array.isArray(blocks) && blocks.length) {
-          setRestoredByMember((current) => ({ ...current, [member.name]: blocks as TranscriptBlock[] }));
+          setRestoredByMember((current) => ({ ...current, [key]: blocks as TranscriptBlock[] }));
         }
       }).catch(() => {});
     }
@@ -201,8 +215,9 @@ export function App() {
       for (const member of membersRef.current) {
         const blocks = member.sessionId ? logsBySession[member.sessionId] : undefined;
         if (blocks && blocks.length) {
+          const key = memberKey(member);
           void window.agentParty.saveMemberTranscript?.(member.name, blocks);
-          setRestoredByMember((current) => (current[member.name] === blocks ? current : { ...current, [member.name]: blocks }));
+          setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
         }
       }
     }, 1200);
