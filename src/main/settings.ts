@@ -106,8 +106,14 @@ export function getPublicSettings(): AppSettings {
 
 export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   const next = { ...getSettings(), ...patch };
-  fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
+  const file = settingsPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Atomic write (per-process temp + rename): shared user settings can be written
+  // by several processes now, so a plain overwrite could be read half-written by
+  // another. A unique temp name avoids two writers colliding on one temp file.
+  const tempPath = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(next, null, 2), "utf8");
+  fs.renameSync(tempPath, file);
   return next;
 }
 
