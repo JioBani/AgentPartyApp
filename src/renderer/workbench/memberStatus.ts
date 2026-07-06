@@ -1,5 +1,6 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
+import { parseContextTokens } from "../../shared/modelCatalog";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import type { RouteLike, RouteVision } from "./routes";
 
@@ -51,13 +52,37 @@ export interface BuildMemberViewInput {
   routes?: RouteLike[];
 }
 
-/** The effective model's multimodal support, resolved from the routes. */
-function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined {
-  if (!routes || !model) {
+/** Finds a route by a model's display id or runtime id. */
+function routeForModel(model: string, routes?: RouteLike[]): RouteLike | undefined {
+  if (!model || !routes) {
     return undefined;
   }
-  const route = routes.find((item) => item.model === model || item.runtimeModel === model);
-  return route?.capabilities?.vision;
+  return routes.find((item) => item.model === model || item.runtimeModel === model);
+}
+
+/** The effective model's multimodal support, resolved from the routes. */
+function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined {
+  return routeForModel(model, routes)?.capabilities?.vision;
+}
+
+/**
+ * The context-capacity meter data: live occupancy (from the snapshot) over the
+ * model's window. The USED count is always the harness's own report — never
+ * invented. The WINDOW comes from the harness (Codex reports it numerically)
+ * or the catalog `context` string; the live snapshot model can be a runtime
+ * string the catalog doesn't list (e.g. "claude-sonnet-4-6"), so we also try
+ * the member's configured model id ("sonnet") — a static family property, not
+ * an error-masking fallback. When no window resolves, the meter still shows the
+ * used count, just without a ratio (never a guessed denominator).
+ */
+function contextFor(session: SessionView | undefined, model: string, configuredModel: string, routes?: RouteLike[]): MemberView["context"] {
+  const used = session?.snapshot.contextTokens;
+  if (typeof used !== "number" || used <= 0) {
+    return undefined;
+  }
+  const route = routeForModel(model, routes) || routeForModel(configuredModel, routes);
+  const total = session?.snapshot.contextWindow || parseContextTokens(route?.meta?.context);
+  return { used, total: total && total > 0 ? total : undefined };
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
@@ -86,6 +111,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     effort: String(session?.snapshot.effort || member.effort || ""),
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
     vision: visionFor(model, routes),
+    context: contextFor(session, model, String(member.model || ""), routes),
   };
 }
 

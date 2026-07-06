@@ -21,7 +21,7 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, modelCatalog, catalogModelById, catalogModelByRuntime } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, modelCatalog, catalogModelById, catalogModelByRuntime, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -82,6 +82,21 @@ assert(!catalogModelById(legacy) && !catalogModelByRuntime(legacy), "legacy 'GLM
 assert(Boolean(catalogModelById("GLM-5.2")) && byId["GLM-5.2"].providerId === "openrouter", "clean 'GLM-5.2' is a routable OpenRouter model");
 assert(buildModelRoutes(legacy, [], []).some((r) => r.model === legacy), "an unroutable current model injects a selectable fallback route — the bug source");
 assert(!buildModelRoutes("sonnet", [], []).some((r) => r.model === legacy), "a sanitized (catalog) current model never surfaces the legacy id");
+
+// Context-window parsing feeds the per-member context-capacity meter's denominator.
+console.log("\nContext-window parse assertions:");
+assert(parseContextTokens("1M") === 1_000_000, "'1M' → 1,000,000");
+assert(parseContextTokens("200K") === 200_000, "'200K' → 200,000");
+assert(parseContextTokens("1.05M") === 1_050_000, "'1.05M' → 1,050,000");
+assert(parseContextTokens("262K") === 262_000, "'262K' → 262,000");
+assert(parseContextTokens("—") === undefined, "unknown placeholder '—' → undefined (no fabricated window)");
+assert(parseContextTokens(undefined) === undefined, "undefined input → undefined");
+assert(parseContextTokens("garbage") === undefined, "unparseable → undefined");
+// Every catalogued model either has a parseable window or the explicit unknown.
+for (const m of modelCatalog()) {
+  const ok = m.context === "—" || typeof parseContextTokens(m.context) === "number";
+  assert(ok, `catalog '${m.id}' context '${m.context}' is parseable or explicit unknown`);
+}
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nMODEL CATALOG PASSED");
 process.exit(failures.length ? 1 : 0);

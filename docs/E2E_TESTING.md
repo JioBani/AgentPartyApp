@@ -171,6 +171,19 @@ open development app. It also injects a fake `codex app-server` binary through
 `AGENTPARTY_CODEX_BIN`/`AGENTPARTY_CODEX_ARGS`, so the Codex harness path is
 verified without a real model call.
 
+For a **live context-capacity meter** e2e (real Claude + Codex calls), run:
+```
+npm run test:e2e:context-usage
+```
+It launches the real app on the LEFT monitor, creates a party with two live
+members (`claudey` on Claude Code / sonnet, `codexy` on Codex / gpt-5.4-mini),
+sends one real turn to each, and asserts each member's session snapshot carries
+`contextTokens > 0` — proving the adapters capture live context-window occupancy
+from the harness's own usage report (Claude: assistant-message
+`input + cache + output`; Codex: `tokenUsage.last`). Both panels are opened and
+captured (`context-usage.png`) so the rendered meters (`used / total` + fill bar)
+are visible. Override the Codex model with `AGENTPARTY_LIVE_CODEX_MODEL`.
+
 The app **can** be launched here. The catch that makes it look otherwise: VS Code
 / Claude Code terminals export `ELECTRON_RUN_AS_NODE=1`, which makes the Electron
 binary boot as plain Node (so `app` is undefined). `scripts/launch-electron.mjs`

@@ -92,6 +92,9 @@ export class CodexAdapter extends EventEmitter {
   private lastAssistantMessageAt: string | undefined;
   private lastError: string | undefined;
   private lastUsage: TurnUsage | undefined;
+  /** Last reported context-window occupancy (tokens) and, if Codex sends it, window size. */
+  private contextTokens: number | undefined;
+  private contextWindow: number | undefined;
   private requestSeq = 0;
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
@@ -197,6 +200,10 @@ export class CodexAdapter extends EventEmitter {
     this.status = "created";
     this.started = false;
     this.initializing = undefined;
+    // A Codex restart clears the thread id → a fresh (empty) thread, so the old
+    // occupancy is stale. The window repopulates from the next tokenUsage update.
+    this.contextTokens = undefined;
+    this.contextWindow = undefined;
     this.start();
   }
 
@@ -260,6 +267,8 @@ export class CodexAdapter extends EventEmitter {
       pendingApprovalCount: this.pendingApprovals.size,
       slashCommands: this.inventory,
       codexPolicy: this.policy,
+      contextTokens: this.contextTokens,
+      contextWindow: this.contextWindow,
     };
   }
 
@@ -728,7 +737,23 @@ export class CodexAdapter extends EventEmitter {
       if (isSub) {
         return;
       }
+      // Cost billing wants per-turn usage (falls back to cumulative `total`);
+      // the context meter instead wants CURRENT occupancy — the last turn's full
+      // prompt+generation, which is `last` only. Never fall back to `total` for
+      // the meter: cumulative session tokens overflow the window and would
+      // misreport occupancy far above 100%.
       this.lastUsage = normalizeCodexUsage(params.tokenUsage?.last || params.tokenUsage?.total);
+      const last = normalizeCodexUsage(params.tokenUsage?.last);
+      const occupancy = last?.totalTokens ?? ((last?.inputTokens ?? 0) + (last?.outputTokens ?? 0) || undefined);
+      if (occupancy && occupancy > 0) {
+        this.contextTokens = occupancy;
+      }
+      // Codex may report the model's window numerically; prefer it when present.
+      const window = numberValue(params.tokenUsage?.contextWindow) ?? numberValue(params.contextWindow);
+      if (window && window > 0) {
+        this.contextWindow = window;
+      }
+      this.emit("snapshot", this.getSnapshot());
       return;
     }
     if (method === "item/started" || method === "item/completed") {

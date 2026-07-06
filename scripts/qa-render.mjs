@@ -76,13 +76,13 @@ const on = (name) => (cb) => {
 };
 const emit = (name, payload) => (listeners[name] || []).forEach((cb) => cb(payload));
 
-function snapshot(id, model, status) {
-  return { id, cwd: "/dev/acme-api", model, effort: "high", permissionMode: "default", status, startedAt: "", debugMode: false, turnCount: 1, queuedTurnCount: 0, pendingApprovalCount: status === "approval" ? 1 : 0 };
+function snapshot(id, model, status, contextTokens) {
+  return { id, cwd: "/dev/acme-api", model, effort: "high", permissionMode: "default", status, startedAt: "", debugMode: false, turnCount: 1, queuedTurnCount: 0, pendingApprovalCount: status === "approval" ? 1 : 0, contextTokens };
 }
 
 const modelRoutes = [
   { harnessId: "claude-code", providerId: "anthropic", model: "claude-opus-4.1", label: "claude-opus-4.1" },
-  { harnessId: "claude-code", providerId: "anthropic", model: "claude-sonnet-4.5", label: "claude-sonnet-4.5" },
+  { harnessId: "claude-code", providerId: "anthropic", model: "claude-sonnet-4.5", label: "claude-sonnet-4.5", meta: { context: "1M" } },
   { harnessId: "claude-code", providerId: "anthropic", model: "claude-haiku-4", label: "claude-haiku-4" },
   { harnessId: "claude-code", providerId: "openai", model: "gpt-5", label: "gpt-5" },
   { harnessId: "claude-code", providerId: "openai", model: "o4-mini", label: "o4-mini" },
@@ -90,7 +90,7 @@ const modelRoutes = [
 ];
 
 const sessions = [
-  { id: "s-backend", title: "claude-sonnet-4.5", workspace: "/dev/acme-api", snapshot: snapshot("s-backend", "claude-sonnet-4.5", "responding") },
+  { id: "s-backend", title: "claude-sonnet-4.5", workspace: "/dev/acme-api", snapshot: snapshot("s-backend", "claude-sonnet-4.5", "responding", 320000) },
   { id: "s-reviewer", title: "o4-mini", workspace: "/dev/acme-api", snapshot: snapshot("s-reviewer", "o4-mini", "idle") },
   { id: "s-tester", title: "gpt-5", workspace: "/dev/acme-api", snapshot: snapshot("s-tester", "gpt-5", "responding") },
 ];
@@ -234,6 +234,10 @@ assert(text.includes("read_file"), "tool block rendered");
 assert(text.includes("Approval required"), "reviewer approval card rendered");
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
+const meter = document.querySelector(".wb-ctx-meter");
+assert(meter !== null, "context-capacity meter rendered for a session with usage");
+assert(Boolean(meter) && meter.textContent.includes("320K") && meter.textContent.includes("1M"), "meter shows used/total (320K/1M)");
+assert(Boolean(meter) && meter.classList.contains("is-ok") && meter.querySelector(".wb-ctx-fill") !== null, "meter shows an ok-level fill bar at 32%");
 assert(document.documentElement.getAttribute("data-theme") === "light", "default theme is light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
 

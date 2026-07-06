@@ -50,6 +50,20 @@ export interface ClaudeSessionSnapshot {
   turnCount: number;
   queuedTurnCount: number;
   pendingApprovalCount?: number;
+  /**
+   * Current context-window occupancy in tokens — the size of the last turn's
+   * prompt+generation, NOT a cumulative bill. Non-cumulative on purpose: it
+   * drops after a compaction, so paired with {@link contextWindow} it drives a
+   * "how full is my context" meter. Absent until the first turn reports usage.
+   */
+  contextTokens?: number;
+  /**
+   * The model's context-window size in tokens when the harness reports it
+   * numerically (Codex). When absent the renderer resolves the window from the
+   * model catalog's `context` string; if that too is unknown the meter shows the
+   * used count without a ratio (never a fabricated denominator).
+   */
+  contextWindow?: number;
   /** Live inventory of slash commands the harness reports for this session. */
   slashCommands?: HarnessCommand[];
   /** Codex two-axis safety model (sandbox × approval + guardian); Codex sessions only. */

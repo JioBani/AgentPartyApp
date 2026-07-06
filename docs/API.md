@@ -31,6 +31,19 @@ Returns a machine-readable list of supported endpoints.
 
 Returns settings, auth provider states, sessions, model routes, harnesses, router status, logs, and AgentParty member state.
 
+Each session's live `snapshot` carries the harness runtime status. Two fields drive
+the per-member **context-capacity meter** (both harnesses):
+
+- `contextTokens` — current context-window occupancy in tokens (the last turn's
+  prompt + generation). **Non-cumulative**: it drops after a `/compact`, so it
+  reflects "how full is the context right now", not a running bill. Absent until
+  the first turn reports usage.
+- `contextWindow` — the model's window size in tokens, when the harness reports it
+  numerically (Codex). When absent, clients resolve the window from the model
+  catalog `context` string (`"1M"`, `"200K"` → `parseContextTokens`). When neither
+  is known, the meter shows `contextTokens` alone with no ratio — never a guessed
+  denominator.
+
 ### `GET /api/logs`
 
 Returns the active log file path.

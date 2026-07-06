@@ -85,6 +85,13 @@ export interface MemberView {
   permissionMode: string;
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;
+  /**
+   * Live context-window occupancy for the capacity meter. `used` is the current
+   * footprint in tokens; `total` is the model's window (undefined when unknown —
+   * the meter then shows the raw count without a ratio). Absent until the
+   * session reports usage.
+   */
+  context?: { used: number; total?: number };
 }
 
 /** One watch-slot. Tabs time-share the slot; `active` is the visible member. */

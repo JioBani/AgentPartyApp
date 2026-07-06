@@ -97,6 +97,29 @@ export function catalogModelByOrModelId(orModelId: string): CatalogModel | undef
   return MODELS.find((m) => (m.orModelId || "").toLowerCase() === lower);
 }
 
+/**
+ * Parses a catalog `context` display string ("1M", "200K", "1.05M") into an
+ * absolute token count for the context-capacity meter. Returns undefined for
+ * the unknown placeholder ("—") or anything unparseable — the meter then shows
+ * used tokens without a ratio rather than inventing a wrong denominator (no
+ * silent fallback to a made-up window size).
+ */
+export function parseContextTokens(text: string | undefined): number | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const match = /^\s*([\d.]+)\s*([KMB]?)\s*$/i.exec(text);
+  if (!match) {
+    return undefined;
+  }
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const scale = { "": 1, K: 1e3, M: 1e6, B: 1e9 }[match[2].toUpperCase()] ?? 1;
+  return Math.round(value * scale);
+}
+
 /** OpenRouter models only (provider openrouter with a concrete OR id). */
 export function openRouterModels(): CatalogModel[] {
   return MODELS.filter((m) => m.provider === "openrouter" && Boolean(m.orModelId));

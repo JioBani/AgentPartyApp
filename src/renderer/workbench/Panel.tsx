@@ -10,6 +10,7 @@ import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
 import { SubagentDock } from "./SubagentDock";
 import { SubagentDetail } from "./SubagentDetail";
+import { ContextMeter } from "./ContextMeter";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 
 interface PanelProps {
@@ -92,6 +93,7 @@ export function Panel(props: PanelProps) {
             })()}
           </div>
           <div className="wb-toolbar-controls">
+            {view.context && <ContextMeter context={view.context} />}
             <button type="button" className="wb-pill wb-model-pill" title="Model settings" onClick={() => onOpenRuntime(view.name)}>
               <span className="wb-mono">{view.model || "model"}</span>
               <ChevronDown size={11} className="wb-pill-caret" />

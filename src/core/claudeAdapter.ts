@@ -132,6 +132,8 @@ export class ClaudeAdapter extends EventEmitter {
   /** Guards the one-shot fresh-restart recovery when a resume id is unresolvable. */
   private resumeRecoveryTried = false;
   private turnCount = 0;
+  /** Last reported context-window occupancy (tokens); see getSnapshot. */
+  private contextTokens: number | undefined;
   private lastEventAt: string | undefined;
   private lastUserMessageAt: string | undefined;
   private lastAssistantMessageAt: string | undefined;
@@ -485,6 +487,12 @@ export class ClaudeAdapter extends EventEmitter {
     // that we intentionally swallow, so nothing else resets it.
     this.turnState = undefined;
     this.currentStatus = "idle";
+    // A fresh restart (no resume id) begins an empty conversation, so the old
+    // occupancy is stale — clear it. A resume keeps the thread's context, so the
+    // last number stays valid until the next turn reports a fresh one.
+    if (!this.resumeSessionId) {
+      this.contextTokens = undefined;
+    }
     this.start();
   }
 
@@ -509,6 +517,7 @@ export class ClaudeAdapter extends EventEmitter {
       queuedTurnCount: this.queuedUserTurns.length,
       pendingApprovalCount: this.pendingApprovals.size,
       slashCommands: this.supportedSlashCommands,
+      contextTokens: this.contextTokens,
     };
   }
 
@@ -972,6 +981,17 @@ export class ClaudeAdapter extends EventEmitter {
 
   private normalizeAssistantSnapshot(message: any, parentToolUseId?: string): void {
     const subagentId = this.subagentTracker.isAgent(String(parentToolUseId)) ? String(parentToolUseId) : undefined;
+    // Track context occupancy from the PARENT assistant turn only — a subagent's
+    // usage reflects its own isolated context, not the main thread's, so folding
+    // it in would misreport the member's meter. The prompt footprint that
+    // occupies the window = fresh input + cache (read+creation) + this turn's
+    // output; non-cumulative, so it correctly drops after a /compact.
+    if (!subagentId) {
+      const contextTokens = contextTokensFromUsage((message as any)?.usage);
+      if (contextTokens !== undefined) {
+        this.contextTokens = contextTokens;
+      }
+    }
     for (const item of message?.content || []) {
       if (item?.type === "tool_use") {
         // A top-level Agent/Task spawn, or a nested tool of a known subagent.
@@ -1288,6 +1308,25 @@ function appendJsonDelta(current: unknown, delta: string | undefined): unknown {
     return delta;
   }
   return current;
+}
+
+/**
+ * The context-window footprint of one assistant turn, from its raw `usage`
+ * block: fresh input + cache read + cache creation (the prompt the model saw)
+ * plus this turn's output (which lands in the next turn's context). Returns
+ * undefined when the block carries no recognizable token counts.
+ */
+function contextTokensFromUsage(usage: unknown): number | undefined {
+  const record = asRecord(usage);
+  if (!record) {
+    return undefined;
+  }
+  const input = numberValue(record.input_tokens) ?? 0;
+  const cacheRead = numberValue(record.cache_read_input_tokens) ?? 0;
+  const cacheCreation = numberValue(record.cache_creation_input_tokens) ?? 0;
+  const output = numberValue(record.output_tokens) ?? 0;
+  const total = input + cacheRead + cacheCreation + output;
+  return total > 0 ? total : undefined;
 }
 
 function extractUsage(message: unknown): TurnUsage | undefined {
