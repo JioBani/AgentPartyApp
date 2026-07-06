@@ -13,12 +13,12 @@
  * model + reasoning, the main->reviewer message is delivered, and reviewer
  * replies back to main — the whole loop, in the actual app.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { firstBaseUrl } from "./lib/discovery.mjs";
 
-const disco = path.join(os.homedir(), "AppData", "Roaming", "AgentParty", "automation.json");
-const baseUrl = JSON.parse(fs.readFileSync(disco, "utf8")).baseUrl;
+// Drive whichever app is serving the QA workspace (per-workspace discovery).
+const workspace = process.env.QA_WS || `wsl+${process.env.QA_WSL_DISTRO || "Ubuntu-22.04"}:${process.env.QA_WSL_WS || "/home/dev/agentparty-wsl-e2e"}`;
+const baseUrl = process.env.QA_BASE || firstBaseUrl(workspace);
+if (!baseUrl) { console.error(`No running AgentParty found for ${workspace}. Open it first (agent-party) or set QA_BASE.`); process.exit(2); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };

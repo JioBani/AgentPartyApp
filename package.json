@@ -21,6 +21,8 @@
     "test:e2e:codex-diagnostics": "npm run build && node scripts/e2e-codex-diagnostics.mjs",
     "test:e2e:party-delete": "npm run build && node scripts/qa-app-party-delete-e2e.mjs",
     "test:e2e:subagents": "npm run build && node scripts/e2e-subagents.mjs",
+    "test:e2e:party-store": "npm run build && node scripts/e2e-party-store.mjs",
+    "test:e2e:discovery": "npm run build && node scripts/e2e-discovery.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
     "test:subagent-tracker": "node scripts/qa-subagent-tracker.mjs",
     "test:party-store": "node scripts/qa-party-store.mjs",

@@ -17,6 +17,7 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArg
 import { WindowRegistry } from "./windowRegistry";
 import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
+import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 
 // Let webContents.capturePage() return real pixels even when the window is
@@ -178,11 +179,15 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   const entry = registry().register(window, workspacePath);
   window.on("closed", () => {
     log("info", "window", "window closed", { id: entry.id });
-    // Last window for this workspace → tear down its engine (kills a WSL child).
+    // Last window for this workspace → tear down its engine (kills a WSL child)
+    // and drop its discovery entry.
     if (registry().forWorkspace(entry.workspacePath).length === 0) {
       engineRegistry?.dispose(entry.workspacePath);
     }
+    reconcileDiscovery();
   });
+  // Advertise this workspace as served by this process (once the API is up).
+  reconcileDiscovery();
 
   const rendererUrl = process.env.AGENTPARTY_RENDERER_URL;
   if (rendererUrl) {
@@ -271,6 +276,7 @@ async function bootstrap(): Promise<void> {
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     openWindow: (workspacePath) => createWindow(workspacePath),
     onSettingsChanged: () => applyRuntimeSettings(),
+    onWorkspacesChanged: () => reconcileDiscovery(),
   });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
@@ -283,20 +289,50 @@ async function bootstrap(): Promise<void> {
   log("info", "window", "initial launch workspace", { argv: process.argv.slice(1), resolvedWorkspace: launched, fellBackToDefault: !launched });
   await createWindow(launched || defaultWorkspace());
   await automationApi.start();
-  writeAutomationDiscovery();
+  reconcileDiscovery();
 }
 
+/** Stamp identifying this process run, written into each discovery file. */
+const discoveryStartedAt = new Date().toISOString();
+/** workspaceKey → serialized workspace path this process currently advertises. */
+const advertisedWorkspaces = new Map<string, string>();
+
 /**
- * Publishes the automation URL to <userData>/automation.json so the agent-party
- * CLI's Windows launcher can find the running app (the port may be a fallback).
- * See docs/WSL_REMOTE.md §13.
+ * Syncs per-workspace discovery files to the CURRENT set of open windows: every
+ * workspace this process hosts gets a `<workspace>/.agent_party_app/instances/
+ * <pid>.json` pointing at the automation API; workspaces no longer hosted are
+ * removed. Idempotent — safe to call after any window create/close/rebind.
+ * Replaces the old machine-global `<userData>/automation.json` (which a second
+ * process, even on a different cwd, overwrote — see docs/FEEDBACK.md).
  */
-function writeAutomationDiscovery(): void {
-  try {
-    const file = path.join(app.getPath("userData"), "automation.json");
-    fs.writeFileSync(file, `${JSON.stringify({ baseUrl: automationApi?.baseUrl, pid: process.pid }, null, 2)}\n`);
-  } catch (error) {
-    log("warn", "automation", "failed to write discovery file", { error: error instanceof Error ? error.message : String(error) });
+function reconcileDiscovery(): void {
+  const baseUrl = automationApi?.baseUrl;
+  if (!baseUrl) {
+    return;
+  }
+  const current = new Map<string, string>();
+  for (const entry of registry().all()) {
+    current.set(workspaceKey(entry.workspacePath), entry.workspacePath);
+  }
+  for (const [key, workspace] of current) {
+    if (!advertisedWorkspaces.has(key)) {
+      writeInstanceDiscovery(workspace, baseUrl, discoveryStartedAt);
+      advertisedWorkspaces.set(key, workspace);
+    }
+  }
+  for (const [key, workspace] of [...advertisedWorkspaces]) {
+    if (!current.has(key)) {
+      removeInstanceDiscovery(workspace);
+      advertisedWorkspaces.delete(key);
+    }
+  }
+}
+
+/** Removes every discovery file this process wrote (on quit). */
+function removeAllDiscovery(): void {
+  for (const [key, workspace] of [...advertisedWorkspaces]) {
+    removeInstanceDiscovery(workspace);
+    advertisedWorkspaces.delete(key);
   }
 }
 
@@ -525,6 +561,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   log("info", "app", "before quit");
+  removeAllDiscovery();
   engineRegistry?.disposeAll();
   sessionManager?.dispose();
   router?.dispose();

@@ -29,6 +29,9 @@ export interface AppControllerDeps {
   getAutomationBaseUrl: () => string;
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
   onSettingsChanged: () => void;
+  /** Called when the set of hosted workspaces changes (rebind) so per-workspace
+   *  discovery files can be reconciled. */
+  onWorkspacesChanged: () => void;
 }
 
 /**
@@ -174,6 +177,8 @@ export class AppController {
     const entry = this.deps.windowRegistry.resolve(windowId);
     if (entry) {
       this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
+      // The window now serves a different workspace → refresh discovery files.
+      this.deps.onWorkspacesChanged();
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });

@@ -73,6 +73,13 @@ asserts `supported:true`, the correct `harness` tag, and a well-formed `servers`
 array from the real SDK `mcpServerStatus()` (Claude) / app-server
 `mcpServerStatus/list` (Codex) — proving the real MCP path, not just the mock.
 
+`node scripts/e2e-discovery.mjs` launches TWO real app processes that SHARE one
+userData but open DIFFERENT cwds (the exact condition that used to clobber the
+global `<userData>/automation.json`) and asserts they are independently
+discoverable: each workspace's `instances/<pid>.json` points at its own process,
+no global file is written, a party created in one is invisible to the other, and
+discovery is cleaned up on quit. Offline.
+
 `node scripts/e2e-party-store.mjs` boots the real app on an isolated userData +
 temp workspace (offline — mock members, no model) and proves the party storage
 split end-to-end: a pre-seeded legacy `state.json` migrates on first read; new
@@ -187,12 +194,16 @@ Run it in the background. `--workspace` accepts a local path or a
 remote engine (billed on the distro's subscription).
 
 ### 3. Discover the automation API port
-The port is `47831` *unless* taken, then a fallback — never hardcode it. Read:
+The port is ephemeral — **never hardcode it**. Discovery is **per-workspace** (no
+machine-global file, so multiple processes on different cwds never shadow each
+other). Each process serving a workspace drops a file under that workspace:
 ```
-<userData>/automation.json   →  e.g. C:\Users\<you>\AppData\Roaming\AgentParty\automation.json
-                                  { "baseUrl": "http://127.0.0.1:47831", "pid": 12345 }
+<workspace>/.agent_party_app/instances/<pid>.json
+                                  { "baseUrl": "http://127.0.0.1:<port>", "pid, workspace, startedAt }
 ```
-Poll `GET <baseUrl>/api/health` until `ok`.
+Scan that dir, pick a live entry (`scripts/lib/discovery.mjs` → `firstBaseUrl(workspace)`;
+for a WSL workspace pass the `wsl+<distro>:/path` URI — the file resolves via the
+`\\wsl$` UNC view). Poll `GET <baseUrl>/api/health` until `ok`.
 
 ### 4. Drive it exactly like an external QA agent — over HTTP only
 Every capability is on the automation API (`src/shared/apiSpec.ts`, `docs/API.md`),

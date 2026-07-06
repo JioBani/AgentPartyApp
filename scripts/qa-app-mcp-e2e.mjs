@@ -15,12 +15,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { firstBaseUrl } from "./lib/discovery.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stamp = String(process.pid);
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-mcp-ws-"));
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-mcp-ud-"));
-const disco = path.join(userData, "automation.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -80,12 +80,10 @@ async function checkHarness(label, harness, runtime, model) {
 
 try {
   for (let i = 0; i < 120 && !baseUrl; i++) {
-    if (fs.existsSync(disco)) {
-      try { baseUrl = JSON.parse(fs.readFileSync(disco, "utf8")).baseUrl || ""; } catch {}
-    }
+    baseUrl = firstBaseUrl(workspace);
     if (!baseUrl) await sleep(500);
   }
-  assert(Boolean(baseUrl), `app published automation.json (${baseUrl || "MISSING"})`);
+  assert(Boolean(baseUrl), `app published per-workspace discovery (${baseUrl || "MISSING"})`);
   if (!baseUrl) throw new Error("no baseUrl");
 
   let healthy = false;

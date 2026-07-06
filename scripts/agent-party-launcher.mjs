@@ -10,7 +10,7 @@
  * Usage: node.exe agent-party-launcher.mjs <workspace-uri>
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,17 +21,31 @@ if (!uri) {
   process.exit(2);
 }
 
-function userDataDir() {
-  const appData = process.env.APPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Roaming");
-  return path.join(appData, "AgentParty");
+/**
+ * The `.agent_party_app/instances` dir for a workspace URI — where each process
+ * serving that workspace drops a `<pid>.json`. Mirrors src/main/discovery.ts.
+ * Discovery is PER-WORKSPACE (not a machine-global file), so a process on a
+ * different cwd never shadows this one.
+ */
+function instancesDir(workspaceUri) {
+  const wsl = /^wsl\+([^:]+):(.*)$/.exec(workspaceUri);
+  if (wsl) {
+    const rel = (wsl[2] || "/").replace(/^\/+/, "").replace(/\//g, "\\");
+    return path.win32.join(`\\\\wsl$\\${wsl[1].trim()}`, rel, ".agent_party_app", "instances");
+  }
+  return path.join(workspaceUri, ".agent_party_app", "instances");
 }
 
-function discoverBaseUrl() {
+/** All advertised baseUrls for this workspace (liveness is checked by reachable). */
+function discoverBaseUrls(workspaceUri) {
   try {
-    const info = JSON.parse(readFileSync(path.join(userDataDir(), "automation.json"), "utf8"));
-    return typeof info.baseUrl === "string" ? info.baseUrl : "";
+    const dir = instancesDir(workspaceUri);
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => { try { return JSON.parse(readFileSync(path.join(dir, f), "utf8")).baseUrl || ""; } catch { return ""; } })
+      .filter(Boolean);
   } catch {
-    return "";
+    return [];
   }
 }
 
@@ -72,10 +86,15 @@ function launchApp() {
 }
 
 try {
-  const baseUrl = discoverBaseUrl();
-  if (await reachable(baseUrl)) {
-    await openInRunningApp(baseUrl);
-  } else {
+  let opened = false;
+  for (const baseUrl of discoverBaseUrls(uri)) {
+    if (await reachable(baseUrl)) {
+      await openInRunningApp(baseUrl);
+      opened = true;
+      break;
+    }
+  }
+  if (!opened) {
     launchApp();
   }
 } catch (error) {

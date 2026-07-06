@@ -7,11 +7,13 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { firstBaseUrl } from "./lib/discovery.mjs";
 
-const BASE = process.env.QA_BASE || "http://127.0.0.1:47831";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distro = process.env.QA_WSL_DISTRO || "Ubuntu-22.04";
 const wslWs = process.env.QA_WSL_WS || "/home/dev/agentparty-wsl-e2e";
+// Discover the app serving this WSL workspace (per-workspace discovery).
+const BASE = process.env.QA_BASE || firstBaseUrl(`wsl+${distro}:${wslWs}`);
 
 let hasWsl = true;
 try { execFileSync("wsl.exe", ["-e", "true"], { stdio: "ignore" }); } catch { hasWsl = false; }

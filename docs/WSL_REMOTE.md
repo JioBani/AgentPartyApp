@@ -285,7 +285,9 @@ bespoke channel.
 - `scripts/agent-party` — the WSL `sh` shim: builds `wsl+$WSL_DISTRO_NAME:$(realpath .)`
   and execs the Windows launcher via interop (`node.exe`, no WSL→Win networking).
 - `scripts/agent-party-launcher.mjs` — Windows launcher: discovers the running
-  app's automation URL from `<userData>/automation.json` (written by the app on
+  app's automation URL from the target workspace's per-workspace discovery
+  (`<workspace>/.agent_party_app/instances/<pid>.json`, via the `\\wsl$` UNC view
+  for a WSL workspace) — replacing the old machine-global `<userData>/automation.json`
   startup) and POSTs `/api/windows`.
 - Verified by `npm run test:wsl-cli` (app running): typing `agent-party` in a
   distro dir opens that cwd as a workspace. Installing the shim onto the Windows
