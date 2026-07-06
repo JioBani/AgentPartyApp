@@ -3,53 +3,79 @@ import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage } from "../shared/types";
 import { log } from "./logger";
 
+/**
+ * The composed, in-memory party state — the shared party index PLUS every
+ * party's own detail. It is assembled by {@link PartyRepository.read} from the
+ * on-disk split layout (see below) and consumed exactly as before by the
+ * service, so all `requireMember`/`view` logic is unchanged.
+ *
+ * On-disk layout under `<workspace>/.agent_party_app/` (version 2):
+ *   - `parties.json`                    — SHARED index: `{ parties[], lastActivePartyId? }`
+ *   - `parties/<id>/party.json`         — PER-PARTY detail: `{ members[], messages[] }`
+ *   - `parties/<id>/members/<name>/transcript.json` — per-member transcript
+ *
+ * Splitting members/messages per party means two processes editing DIFFERENT
+ * parties of the same workspace write different files and never clobber each
+ * other. The party LIST is the only shared file, and it changes rarely
+ * (create/rename/select/delete). `currentPartyId` is NOT persisted here — it is
+ * per-process runtime; the index carries an advisory `lastActivePartyId` hint.
+ */
 export interface StoredPartyState {
-  version: 1;
+  version: 2;
   parties: PartyDefinition[];
+  /** Advisory "last active party" hint restored on load — NOT authoritative. */
   currentPartyId?: string;
   members: PartyMember[];
   messages: PartyMessage[];
 }
 
-const initialState: StoredPartyState = { version: 1, parties: [], members: [], messages: [] };
+interface PartyIndex {
+  parties: PartyDefinition[];
+  lastActivePartyId?: string;
+}
+
+interface PartyDetail {
+  members: PartyMember[];
+  messages: PartyMessage[];
+}
+
+const initialState: StoredPartyState = { version: 2, parties: [], members: [], messages: [] };
 
 export class PartyRepository {
+  /**
+   * Composes the whole party state from the shared index + each party's detail
+   * file. Migrates a legacy single-blob `state.json` (new root or the older
+   * `.agentparty/`) on first read. Never throws — a missing/corrupt store reads
+   * as empty.
+   */
   read(workspacePath: string): StoredPartyState {
-    const filePath = this.resolveReadPath(workspacePath);
     try {
-      if (!filePath || !fs.existsSync(filePath)) {
-        return { ...initialState, parties: [], members: [], messages: [] };
+      const index = this.readIndexFile(workspacePath);
+      if (index) {
+        return this.compose(workspacePath, index);
       }
-      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      const parties = Array.isArray(parsed.parties) ? parsed.parties : [];
-      const legacyPartyId = parsed.currentPartyId || parties[0]?.id || "default";
-      return {
-        version: 1,
-        parties,
-        currentPartyId: parsed.currentPartyId || parties[0]?.id,
-        members: Array.isArray(parsed.members)
-          ? parsed.members.map((member: PartyMember) => ({ ...member, partyId: member.partyId || legacyPartyId }))
-          : [],
-        messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-      };
+      const legacy = this.readLegacyBlob(workspacePath);
+      if (legacy) {
+        // First read of a pre-split workspace: split the blob into the new
+        // index + per-party files, keeping the blob as an untouched backup.
+        this.migrateFromLegacy(workspacePath, legacy);
+        return legacy;
+      }
+      return { ...initialState, parties: [], members: [], messages: [] };
     } catch (error) {
-      log("error", "party", "failed to read party state", { filePath, error: error instanceof Error ? error.message : String(error) });
+      log("error", "party", "failed to read party state", { workspacePath, error: errMsg(error) });
       return { ...initialState, parties: [], members: [], messages: [] };
     }
   }
 
-  write(workspacePath: string, state: StoredPartyState): void {
-    const filePath = this.filePath(workspacePath);
-    const tempPath = `${filePath}.tmp`;
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(tempPath, `${JSON.stringify({
-      version: 1,
-      parties: state.parties,
-      currentPartyId: state.currentPartyId,
-      members: state.members,
-      messages: state.messages.slice(-200),
-    }, null, 2)}\n`);
-    fs.renameSync(tempPath, filePath);
+  /** Writes the SHARED party index (list + advisory last-active hint). Rare. */
+  writeIndex(workspacePath: string, parties: PartyDefinition[], lastActivePartyId?: string): void {
+    this.writeJsonAtomic(this.indexPath(workspacePath), { version: 2, parties, lastActivePartyId });
+  }
+
+  /** Writes ONE party's detail file (its members + messages). Isolated per party. */
+  writeParty(workspacePath: string, partyId: string, members: PartyMember[], messages: PartyMessage[]): void {
+    this.writeJsonAtomic(this.partyFilePath(workspacePath, partyId), { version: 2, members, messages: messages.slice(-200) });
   }
 
   /** The on-disk directory holding one party's members (role files, transcripts). */
@@ -62,9 +88,8 @@ export class PartyRepository {
   }
 
   /**
-   * The persisted transcript (assembled UI blocks) for one member, so a closed
-   * member or a reopened app restores its conversation. Capped to the most recent
-   * {@link TRANSCRIPT_CAP} blocks to bound the file. Never throws — a missing or
+   * The persisted transcript (assembled UI blocks) for one member. Capped to the
+   * most recent {@link TRANSCRIPT_CAP} blocks. Never throws — a missing or
    * corrupt file reads as an empty transcript.
    */
   readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
@@ -76,7 +101,7 @@ export class PartyRepository {
       const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
       return Array.isArray(parsed?.blocks) ? parsed.blocks : [];
     } catch (error) {
-      log("warn", "party", "failed to read member transcript", { partyId, memberName, error: error instanceof Error ? error.message : String(error) });
+      log("warn", "party", "failed to read member transcript", { partyId, memberName, error: errMsg(error) });
       return [];
     }
   }
@@ -84,9 +109,134 @@ export class PartyRepository {
   writeTranscript(workspacePath: string, partyId: string, memberName: string, blocks: unknown[]): void {
     const file = this.transcriptPath(workspacePath, partyId, memberName);
     const capped = (Array.isArray(blocks) ? blocks.slice(-TRANSCRIPT_CAP) : []).map(stripAttachmentBytes);
+    this.writeJsonAtomic(file, { version: 1, blocks: capped });
+  }
+
+  // ---- internals ---------------------------------------------------------
+
+  private compose(workspacePath: string, index: PartyIndex): StoredPartyState {
+    const members: PartyMember[] = [];
+    const messages: PartyMessage[] = [];
+    for (const party of index.parties) {
+      const detail = this.readPartyFile(workspacePath, party.id);
+      // The file's location IS the party — assign `partyId` authoritatively so
+      // no downstream code ever has to guess (no `|| "default"` fallbacks).
+      for (const member of detail.members) {
+        members.push({ ...member, partyId: party.id });
+      }
+      for (const message of detail.messages) {
+        messages.push({ ...message, partyId: party.id });
+      }
+    }
+    return {
+      version: 2,
+      parties: index.parties,
+      currentPartyId: index.lastActivePartyId,
+      members,
+      messages,
+    };
+  }
+
+  private readIndexFile(workspacePath: string): PartyIndex | null {
+    const file = this.indexPath(workspacePath);
+    if (!fs.existsSync(file)) {
+      return null;
+    }
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      parties: Array.isArray(parsed.parties) ? parsed.parties : [],
+      lastActivePartyId: typeof parsed.lastActivePartyId === "string" ? parsed.lastActivePartyId : undefined,
+    };
+  }
+
+  private readPartyFile(workspacePath: string, partyId: string): PartyDetail {
+    try {
+      const file = this.partyFilePath(workspacePath, partyId);
+      if (!fs.existsSync(file)) {
+        return { members: [], messages: [] };
+      }
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      return {
+        members: Array.isArray(parsed.members) ? parsed.members : [],
+        messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+      };
+    } catch (error) {
+      log("warn", "party", "failed to read party detail", { partyId, error: errMsg(error) });
+      return { members: [], messages: [] };
+    }
+  }
+
+  /**
+   * Reads a legacy single-blob `state.json` (new root, then `.agentparty/`) and
+   * NORMALIZES it so every party that owns members is present in `parties[]` and
+   * every member/message has a `partyId` that names a real party. This one-time
+   * healing of pre-split data is logged; it is the only place a party id is ever
+   * derived rather than known, and it never runs on the live (post-split) path.
+   */
+  private readLegacyBlob(workspacePath: string): StoredPartyState | null {
+    const candidates = [
+      path.join(this.rootDir(workspacePath), "state.json"),
+      path.join(workspacePath, LEGACY_ROOT, "state.json"),
+    ];
+    for (const file of candidates) {
+      if (!fs.existsSync(file)) {
+        continue;
+      }
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      const parties: PartyDefinition[] = Array.isArray(parsed.parties) ? parsed.parties : [];
+      const rawMembers: PartyMember[] = Array.isArray(parsed.members) ? parsed.members : [];
+      const rawMessages: PartyMessage[] = Array.isArray(parsed.messages) ? parsed.messages : [];
+      // Pre-party legacy data (members but no parties) → synthesize a default party.
+      if (parties.length === 0 && rawMembers.length > 0) {
+        const now = new Date().toISOString();
+        parties.push({ id: "default", name: "Default Party", createdAt: now, updatedAt: now });
+        log("warn", "party", "legacy state had members but no party — synthesizing 'Default Party' during migration", { workspacePath, members: rawMembers.length });
+      }
+      const known = new Set(parties.map((party) => party.id));
+      const fallbackPartyId = (known.has(parsed.currentPartyId) ? parsed.currentPartyId : undefined) || parties[0]?.id;
+      const place = (ownPartyId: string | undefined): string => (ownPartyId && known.has(ownPartyId) ? ownPartyId : fallbackPartyId);
+      return {
+        version: 2,
+        parties,
+        currentPartyId: place(parsed.currentPartyId),
+        members: rawMembers.map((m) => ({ ...m, partyId: place(m.partyId) })),
+        messages: rawMessages.map((m) => ({ ...m, partyId: place(m.partyId) })),
+      };
+    }
+    return null;
+  }
+
+  /** Splits a normalized legacy blob into the new index + per-party files (blob kept as backup). */
+  private migrateFromLegacy(workspacePath: string, state: StoredPartyState): void {
+    const detailByParty = new Map<string, PartyDetail>();
+    for (const party of state.parties) {
+      detailByParty.set(party.id, { members: [], messages: [] });
+    }
+    const detailFor = (partyId: string): PartyDetail => {
+      const detail = detailByParty.get(partyId);
+      if (!detail) {
+        // Cannot happen: readLegacyBlob guaranteed every partyId names a party.
+        throw new Error(`Migration invariant violated: record references unknown party '${partyId}'.`);
+      }
+      return detail;
+    };
+    for (const member of state.members) {
+      detailFor(mustPartyId(member)).members.push(member);
+    }
+    for (const message of state.messages) {
+      detailFor(mustPartyId(message)).messages.push(message);
+    }
+    this.writeIndex(workspacePath, state.parties, state.currentPartyId);
+    for (const [partyId, detail] of detailByParty) {
+      this.writeParty(workspacePath, partyId, detail.members, detail.messages);
+    }
+    log("info", "party", "migrated legacy state.json to per-party layout", { workspacePath, parties: state.parties.length, members: state.members.length });
+  }
+
+  private writeJsonAtomic(file: string, data: unknown): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tempPath = `${file}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify({ version: 1, blocks: capped }, null, 2)}\n`);
+    fs.writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`);
     fs.renameSync(tempPath, file);
   }
 
@@ -94,18 +244,12 @@ export class PartyRepository {
     return path.join(this.memberDir(workspacePath, partyId, memberName), "transcript.json");
   }
 
-  private filePath(workspacePath: string): string {
-    return path.join(this.rootDir(workspacePath), "state.json");
+  private indexPath(workspacePath: string): string {
+    return path.join(this.rootDir(workspacePath), "parties.json");
   }
 
-  /** Prefers the new root; falls back to legacy `.agentparty/state.json` once. */
-  private resolveReadPath(workspacePath: string): string {
-    const current = this.filePath(workspacePath);
-    if (fs.existsSync(current)) {
-      return current;
-    }
-    const legacy = path.join(workspacePath, LEGACY_ROOT, "state.json");
-    return fs.existsSync(legacy) ? legacy : current;
+  private partyFilePath(workspacePath: string, partyId: string): string {
+    return path.join(this.partyDir(workspacePath, partyId), "party.json");
   }
 
   private rootDir(workspacePath: string): string {
@@ -117,6 +261,18 @@ const ROOT_DIR = ".agent_party_app";
 const LEGACY_ROOT = ".agentparty";
 /** Max transcript blocks persisted per member (bounds the on-disk file). */
 const TRANSCRIPT_CAP = 800;
+
+function errMsg(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Loud invariant: a record placed into the per-party store MUST know its party. */
+function mustPartyId(record: { partyId?: string; name?: string; id?: string }): string {
+  if (!record.partyId) {
+    throw new Error(`Party record '${record.name || record.id || "?"}' has no partyId — refusing to guess.`);
+  }
+  return record.partyId;
+}
 
 function sanitizeName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");

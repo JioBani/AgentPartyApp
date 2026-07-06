@@ -51,12 +51,18 @@ await engine.qaEmit("wsl-1", { events: [{ type: "assistant_text_delta", text: "h
 assert(true, "qaEmit accepted (mock harness alive)");
 
 // The point of Tier A: state persists to the workspace's own fs (ext4 in WSL),
-// via the engine's node:fs — not the Windows side over \\wsl$.
-const statePath = path.join(workspace, ".agent_party_app", "state.json");
-assert(existsSync(statePath), `state persisted at ${statePath}`);
-if (existsSync(statePath)) {
-  const state = JSON.parse(readFileSync(statePath, "utf8"));
-  assert((state.members || []).some((m) => m.name === "wsl-1"), "persisted state.json contains wsl-1");
+// via the engine's node:fs — not the Windows side over \\wsl$. Party state is
+// split: a shared `parties.json` index + per-party `parties/<id>/party.json`.
+const root = path.join(workspace, ".agent_party_app");
+const indexPath = path.join(root, "parties.json");
+assert(existsSync(indexPath), `party index persisted at ${indexPath}`);
+if (existsSync(indexPath)) {
+  const index = JSON.parse(readFileSync(indexPath, "utf8"));
+  const members = (index.parties || []).flatMap((party) => {
+    const file = path.join(root, "parties", party.id, "party.json");
+    return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")).members || []) : [];
+  });
+  assert(members.some((m) => m.name === "wsl-1"), "persisted per-party store contains wsl-1");
 }
 
 host.dispose();

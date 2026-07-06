@@ -42,6 +42,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 | `qa-subagents` | subagent-observation view-models (dock + drill-in detail) + the `applySubagentEvents` fold that keeps subagent output in a SEPARATE slice from the parent transcript: status→style mapping, live one-line `currentAction` selection (`deriveSubagentAction`, the swap point in `src/shared/subagentActivity.ts`), responsive dock thresholds, empty assistant/status blocks dropped so a query-less/empty item never renders as a blank "선처럼" strip. Driven by the mock scenarios in `src/shared/subagentScenarios.ts`. |
+| `qa-party-store` | party storage **split** (`PartyRepository`): the on-disk layout is a SHARED index `parties.json` + PER-PARTY `parties/<id>/party.json` (members/messages), so two processes editing different parties of one workspace never clobber. Locks in: legacy single-`state.json` → split migration (data intact, blob kept as backup, no re-migrate on the 2nd read), per-party **write isolation** (editing party A leaves party B's file byte-identical + mtime unchanged), and **authoritative partyId** (a member's party is its FILE — a missing/wrong stored `partyId` is corrected, never silently mis-routed). |
 | `qa-subagent-tracker` | subagent **attribution** replayed against RECORDED real harness traffic (`scripts/fixtures/subagents/*.jsonl`, captured live from Haiku + gpt-mini): `ClaudeSubagentTracker` (task_started/progress/updated keyed by task_id+tool_use_id; `local_bash` steps never become their own rows) and `CodexSubagentTracker` (child-`threadId` routing, `collabAgentToolCall` prompt capture, powershell/bash launcher unwrap, `web_search` card with `action.queries` fallback so an empty top-level `query` still shows). Locks correct attribution + parent/child separation against the ACTUAL protocol shapes. |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
@@ -71,6 +72,14 @@ one member per harness, warms its session, then `GET /api/sessions/:id/mcp` and
 asserts `supported:true`, the correct `harness` tag, and a well-formed `servers`
 array from the real SDK `mcpServerStatus()` (Claude) / app-server
 `mcpServerStatus/list` (Codex) — proving the real MCP path, not just the mock.
+
+`node scripts/e2e-party-store.mjs` boots the real app on an isolated userData +
+temp workspace (offline — mock members, no model) and proves the party storage
+split end-to-end: a pre-seeded legacy `state.json` migrates on first read; new
+parties/members persist to the split layout (index + per-party files, isolated);
+selecting a party persists `lastActivePartyId`; and after an app RESTART the
+parties restore with `currentPartyId` back at the last-active party (proving
+`currentPartyId` is per-process runtime seeded from the persisted hint).
 
 `node scripts/e2e-subagents.mjs` (or `npm run test:e2e:subagents`) boots the real
 app and injects the subagent scenarios through
