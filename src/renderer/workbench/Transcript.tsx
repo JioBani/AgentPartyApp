@@ -13,11 +13,44 @@ interface TranscriptProps {
   actions: WorkbenchActions;
 }
 
+// A member's transcript holds up to 800 persisted blocks. Mounting all of them
+// (each assistant block parses markdown) is what freezes the UI on a party
+// switch, so only the most recent TAIL_BLOCKS render initially — the tail is
+// what the user looks at first. Older history is revealed on demand, one page at
+// a time, without disturbing scroll position. See docs research on tail-first
+// message rendering; this bounds the switch-time render cost to a constant.
+const TAIL_BLOCKS = 150;
+
 export function Transcript({ view, density, actions }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the view is pinned to the bottom (true unless the user scrolled up).
   const stickRef = useRef(true);
   const lastText = lastBlockText(view.transcript);
+
+  // How many trailing blocks to render. Reset to the tail whenever the panel
+  // shows a different member, so switching members always opens at the latest.
+  const [limit, setLimit] = useState(TAIL_BLOCKS);
+  useEffect(() => { setLimit(TAIL_BLOCKS); }, [view.name]);
+  const total = view.transcript.length;
+  const hiddenCount = Math.max(0, total - limit);
+  const shown = hiddenCount > 0 ? view.transcript.slice(hiddenCount) : view.transcript;
+
+  // Reveal an older page while keeping the viewport anchored: capture the scroll
+  // offset from the bottom before prepending, then restore it after, so the
+  // content the user is reading stays put instead of jumping.
+  const showOlder = () => {
+    const node = scrollRef.current;
+    const prevHeight = node?.scrollHeight ?? 0;
+    const prevTop = node?.scrollTop ?? 0;
+    stickRef.current = false;
+    setLimit((n) => n + TAIL_BLOCKS);
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
+      }
+    });
+  };
 
   const stickToBottom = () => {
     const node = scrollRef.current;
@@ -57,7 +90,12 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
           <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
         </div>
       )}
-      {view.transcript.map((block) => (
+      {hiddenCount > 0 && (
+        <button type="button" className="wb-transcript-older" onClick={showOlder}>
+          이전 대화 {Math.min(hiddenCount, TAIL_BLOCKS)}개 더 보기 · {hiddenCount}개 숨김
+        </button>
+      )}
+      {shown.map((block) => (
         // Key by kind+id: an AskUserQuestion approval and its merged tool block
         // share the same tool-use id, so id alone would collide.
         <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} />

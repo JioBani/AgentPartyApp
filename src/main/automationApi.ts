@@ -147,47 +147,47 @@ export class AutomationApiServer {
         return;
       }
       if (method === "GET" && (url.pathname === "/api/party" || url.pathname === "/api/harness/party")) {
-        sendJson(res, 200, await c.listPartyMembers(workspace));
+        sendJson(res, 200, await c.listPartyMembers(workspace, windowId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/parties") {
-        sendJson(res, 200, await c.createParty(workspace, await readJson(req)));
+        sendJson(res, 200, await c.createParty(workspace, await readJson(req), windowId));
         return;
       }
       const partySelectMatch = url.pathname.match(/^\/api\/parties\/([^/]+)\/select$/);
       if (method === "POST" && partySelectMatch) {
-        sendJson(res, 200, await c.selectParty(workspace, decodeURIComponent(partySelectMatch[1])));
+        sendJson(res, 200, await c.selectParty(workspace, decodeURIComponent(partySelectMatch[1]), windowId));
         return;
       }
       const partyDeleteMatch = url.pathname.match(/^\/api\/parties\/([^/]+)\/delete$/);
       if (method === "POST" && partyDeleteMatch) {
-        sendJson(res, 200, await c.removeParty(workspace, decodeURIComponent(partyDeleteMatch[1])));
+        sendJson(res, 200, await c.removeParty(workspace, decodeURIComponent(partyDeleteMatch[1]), windowId));
         return;
       }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments)));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId));
         return;
       }
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
       if (method === "POST" && memberMessageMatch) {
         const body = await readJson(req);
-        sendJson(res, 200, await c.sendMemberMessage(workspace, decodeURIComponent(memberMessageMatch[1]), String(body.text || ""), sanitizeAttachments(body.attachments)));
+        sendJson(res, 200, await c.sendMemberMessage(workspace, decodeURIComponent(memberMessageMatch[1]), String(body.text || ""), sanitizeAttachments(body.attachments), windowId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/party/members") {
-        sendJson(res, 200, await c.createPartyMember(workspace, await readJson(req)));
+        sendJson(res, 200, await c.createPartyMember(workspace, await readJson(req), windowId));
         return;
       }
       const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
       if (method === "GET" && transcriptMatch) {
-        sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1])) });
+        sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1]), windowId) });
         return;
       }
       const partyMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && partyMatch) {
-        sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req)));
+        sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req), windowId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/window/minimize") {

@@ -73,6 +73,21 @@ export class PartyRepository {
     this.writeJsonAtomic(this.indexPath(workspacePath), { version: 2, parties, lastActivePartyId });
   }
 
+  /**
+   * mtime (ms) of the shared index file, or -1 if absent. A cheap (single stat)
+   * staleness probe for an in-memory compose cache: the index is rewritten on
+   * every party create/select/remove (and on a legacy migration), so a changed
+   * mtime signals another process altered the party LIST. Per-party detail edits
+   * do NOT bump it — the cache owner invalidates explicitly on its own writes.
+   */
+  indexMtimeMs(workspacePath: string): number {
+    try {
+      return fs.statSync(this.indexPath(workspacePath)).mtimeMs;
+    } catch {
+      return -1;
+    }
+  }
+
   /** Writes ONE party's detail file (its members + messages). Isolated per party. */
   writeParty(workspacePath: string, partyId: string, members: PartyMember[], messages: PartyMessage[]): void {
     this.writeJsonAtomic(this.partyFilePath(workspacePath, partyId), { version: 2, members, messages: messages.slice(-200) });
@@ -95,13 +110,19 @@ export class PartyRepository {
   readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
     try {
       const file = this.transcriptPath(workspacePath, partyId, memberName);
-      if (!fs.existsSync(file)) {
-        return [];
-      }
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      // Read synchronously (not fs.promises): a lingering async read handle on
+      // Windows makes a concurrent transcript SAVE fail its atomic rename with
+      // EPERM. A sync read completes before returning, so read/save never race
+      // on the same file. At ~700KB the parse is only a few ms, and the switch-
+      // time render cost (bounded by the tail-first UI) is the real lever.
+      const raw = fs.readFileSync(file, "utf8");
+      const parsed = JSON.parse(raw);
       return Array.isArray(parsed?.blocks) ? parsed.blocks : [];
     } catch (error) {
-      log("warn", "party", "failed to read member transcript", { partyId, memberName, error: errMsg(error) });
+      // ENOENT (no transcript yet) is normal — restore reads as empty, not a warning.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        log("warn", "party", "failed to read member transcript", { partyId, memberName, error: errMsg(error) });
+      }
       return [];
     }
   }
@@ -235,7 +256,11 @@ export class PartyRepository {
 
   private writeJsonAtomic(file: string, data: unknown): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tempPath = `${file}.tmp`;
+    // Per-process temp name: two processes editing the same workspace (now a
+    // supported multi-instance case) must never collide on one temp file, or
+    // one's writeFile/rename would clobber the other's mid-flight. rename onto
+    // the final path stays atomic. Mirrors settings.ts's writer.
+    const tempPath = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`);
     fs.renameSync(tempPath, file);
   }

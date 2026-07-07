@@ -137,6 +137,9 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   const entry = registry().register(window, workspacePath);
   window.on("closed", () => {
     log("info", "window", "window closed", { id: entry.id });
+    // Drop this window's per-window active-party entry so it can't leak to a
+    // future window that happens to reuse the id.
+    appController?.forgetWindow(entry.id);
     // Last window for this workspace → tear down its engine (kills a WSL child)
     // and drop its discovery entry.
     if (registry().forWorkspace(entry.workspacePath).length === 0) {
@@ -393,7 +396,7 @@ function senderWindowId(event: IpcMainInvokeEvent): string | undefined {
 }
 
 function registerIpc(): void {
-  handle("app:getInitialState", async (event) => controller().getState(senderWorkspace(event)));
+  handle("app:getInitialState", async (event) => controller().getState(senderWorkspace(event), senderWindowId(event)));
 
   handle("settings:update", async (_event, patch) => controller().updateSettings(patch || {}));
 
@@ -456,21 +459,23 @@ function registerIpc(): void {
   handle("window:new", async (_event, workspacePath?: string) => controller().openWindow(workspacePath));
   handle("window:list", async () => controller().listWindows());
 
-  handle("party:list", async (event) => controller().listPartyMembers(senderWorkspace(event)));
-  handle("party:createParty", async (event, input) => controller().createParty(senderWorkspace(event), input));
-  handle("party:select", async (event, partyId: string) => controller().selectParty(senderWorkspace(event), partyId));
-  handle("party:deleteParty", async (event, partyId: string) => controller().removeParty(senderWorkspace(event), partyId));
-  handle("party:create", async (event, input) => controller().createPartyMember(senderWorkspace(event), input));
-  handle("party:send", async (event, to: string, content: string, from?: string, attachments?: unknown) => controller().sendPartyMessage(senderWorkspace(event), to, content, from, sanitizeAttachments(attachments)));
-  handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments)));
-  handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name));
-  handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name));
-  handle("party:open", async (event, name: string) => controller().openPartyMember(senderWorkspace(event), name));
-  handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any));
-  handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId));
-  handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name));
-  handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name));
-  handle("party:transcript:save", async (event, name: string, blocks: unknown[]) => controller().saveMemberTranscript(senderWorkspace(event), name, blocks));
+  // Party ops carry the SENDER WINDOW id: each window has its own active party, so
+  // the same workspace's two windows view/act on different parties independently.
+  handle("party:list", async (event) => controller().listPartyMembers(senderWorkspace(event), senderWindowId(event)));
+  handle("party:createParty", async (event, input) => controller().createParty(senderWorkspace(event), input, senderWindowId(event)));
+  handle("party:select", async (event, partyId: string) => controller().selectParty(senderWorkspace(event), partyId, senderWindowId(event)));
+  handle("party:deleteParty", async (event, partyId: string) => controller().removeParty(senderWorkspace(event), partyId, senderWindowId(event)));
+  handle("party:create", async (event, input) => controller().createPartyMember(senderWorkspace(event), input, senderWindowId(event)));
+  handle("party:send", async (event, to: string, content: string, from?: string, attachments?: unknown) => controller().sendPartyMessage(senderWorkspace(event), to, content, from, sanitizeAttachments(attachments), senderWindowId(event)));
+  handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event)));
+  handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:open", async (event, name: string) => controller().openPartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any, senderWindowId(event)));
+  handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
+  handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:transcript:save", async (event, name: string, blocks: unknown[]) => controller().saveMemberTranscript(senderWorkspace(event), name, blocks, senderWindowId(event)));
 }
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown): void {

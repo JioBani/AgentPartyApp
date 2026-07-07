@@ -54,6 +54,31 @@ try {
   // Each is a live, independent automation endpoint.
   const h = await post(shared[0], "/api/health", {}).catch(() => null);
   assert(Boolean(h?.ok ?? true), "same-cwd process #1 answers its own automation API");
+
+  // --- The ACTIVE PARTY is per-process ------------------------------------
+  // Regression: two same-cwd windows switched parties in lock-step because a
+  // window with no explicit selection resolved its active party from the SHARED
+  // on-disk `lastActivePartyId` hint live — so one window's select yanked the
+  // other. The active party is now seeded from the hint ONCE, then held locally.
+  const get = async (baseUrl, u) => (await fetch(`${baseUrl}${u}`)).json();
+  const currentOf = async (baseUrl) => (await get(baseUrl, "/api/party")).currentPartyId;
+  const a = await post(shared[0], "/api/parties", { name: "ISO-A" });
+  const b = await post(shared[0], "/api/parties", { name: "ISO-B" });
+  const idA = a?.currentPartyId; // createParty makes the new party active → its id
+  const idB = b?.currentPartyId;
+  assert(Boolean(idA && idB && idA !== idB), "created two distinct parties for the isolation check");
+  // Let the OTHER process settle on its own active party, then toggle #1's
+  // selection A→B; #2 must not move with it.
+  const p2seed = await currentOf(shared[1]);
+  await post(shared[0], `/api/parties/${idA}/select`, {});
+  const p2afterA = await currentOf(shared[1]);
+  await post(shared[0], `/api/parties/${idB}/select`, {});
+  const p2afterB = await currentOf(shared[1]);
+  assert(
+    p2afterA === p2seed && p2afterB === p2seed,
+    `selecting a party in one process does NOT change the other's current party (per-process; #2 held ${p2seed})`,
+  );
+  assert((await currentOf(shared[0])) === idB, "the selecting process #1 DID move to its own chosen party");
 } catch (error) {
   console.error(error);
   failures.push(String(error?.message || error));

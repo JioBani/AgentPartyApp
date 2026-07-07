@@ -44,6 +44,50 @@ export interface AppControllerDeps {
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
 
+  /**
+   * The active party PER WINDOW (`windowId → partyId`). One engine serves every
+   * window of a workspace (two `agent-party` runs on the same cwd open two windows
+   * of ONE process), so "which party is active" cannot live on the shared engine —
+   * it lives here, keyed by window. Every party view/op resolves the calling
+   * window's entry and passes it to the engine, so windows stay independent.
+   */
+  private readonly activePartyByWindow = new Map<string, string>();
+
+  private partyForWindow(windowId?: string): string | undefined {
+    return windowId ? this.activePartyByWindow.get(windowId) : undefined;
+  }
+
+  /**
+   * The window's active party, PINNING it on first resolve. A window that has not
+   * explicitly selected must still get a STABLE party: without pinning it would
+   * resolve through the engine's shared advisory hint, and another window's select
+   * (which moves that hint) would then drag this window along. Pinning at load —
+   * the first `getState`/`listParty` for the window — captures the party it opens
+   * on, so later selects elsewhere never move it. Absent `windowId` (HTTP with no
+   * `?window`) there is nothing to pin: fall back to the shared hint.
+   */
+  private async pinnedPartyForWindow(workspacePath: string, windowId?: string): Promise<string | undefined> {
+    if (!windowId) {
+      return undefined;
+    }
+    const existing = this.activePartyByWindow.get(windowId);
+    if (existing) {
+      return existing;
+    }
+    const current = (await this.engineFor(workspacePath).listParty(undefined)).currentPartyId;
+    if (current) {
+      this.activePartyByWindow.set(windowId, current);
+    }
+    return current;
+  }
+
+  /** Drops a closed window's active-party entry (called from the window `closed` hook). */
+  forgetWindow(windowId?: string): void {
+    if (windowId) {
+      this.activePartyByWindow.delete(windowId);
+    }
+  }
+
   private engineFor(workspacePath: string): EngineConnection {
     return this.deps.engineRegistry.forWorkspace(workspacePath);
   }
@@ -59,8 +103,11 @@ export class AppController {
   }
 
   private async broadcastParty(workspacePath: string): Promise<void> {
-    const payload = await this.engineFor(workspacePath).listParty();
+    // Each window gets ITS OWN party's view (per-window active party), so one
+    // window selecting a party never switches another window of the same workspace.
+    const engine = this.engineFor(workspacePath);
     for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
+      const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
   }
@@ -79,7 +126,7 @@ export class AppController {
   }
 
   // --- Global state -------------------------------------------------------
-  async getState(workspacePath: string): Promise<InitialAppState> {
+  async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
     const codexModels = await this.engineFor(workspacePath).listCodexModels();
     return {
@@ -97,7 +144,7 @@ export class AppController {
         spec: `${this.deps.getAutomationBaseUrl()}/api/spec`,
       },
       logs: { logFilePath: getLogFilePath() },
-      party: await this.engineFor(workspacePath).listParty(),
+      party: await this.engineFor(workspacePath).listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
     };
@@ -274,72 +321,95 @@ export class AppController {
     }
   }
 
-  // --- Party (scoped to a workspace) --------------------------------------
-  listPartyMembers(workspacePath: string): Promise<ReturnType<PartyApplicationService["list"]>> {
-    return this.engineFor(workspacePath).listParty();
+  // --- Party (scoped to a workspace + the CALLING WINDOW's active party) ---
+  // `windowId` selects which window's active party the op resolves against, so
+  // two windows of one workspace act on different parties independently. When
+  // absent (HTTP with no `?window`), the engine falls back to its advisory hint.
+  async listPartyMembers(workspacePath: string, windowId?: string): Promise<ReturnType<PartyApplicationService["list"]>> {
+    return this.engineFor(workspacePath).listParty(await this.pinnedPartyForWindow(workspacePath, windowId));
   }
 
-  createParty(workspacePath: string, input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.createParty(input));
-  }
-
-  selectParty(workspacePath: string, partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.selectParty(partyId));
-  }
-
-  removeParty(workspacePath: string, partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.removeParty(partyId));
-  }
-
-  createPartyMember(workspacePath: string, input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.createMember(input));
-  }
-
-  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments));
-  }
-
-  /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
-  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments));
-  }
-
-  async handlePartyAction(workspacePath: string, name: string, action: string, body: any): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    const result = await this.engineFor(workspacePath).partyAction(name, action, body || {});
+  async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
+    const result = await this.engineFor(workspacePath).createParty(input);
+    // The window that created the party switches to it (others are untouched).
+    if (windowId && result.currentPartyId) {
+      this.activePartyByWindow.set(windowId, result.currentPartyId);
+    }
     await this.broadcastParty(workspacePath);
     return result;
   }
 
-  closePartyMember(workspacePath: string, name: string): Promise<ReturnType<PartyApplicationService["closeMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.closeMember(name));
+  async selectParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["selectParty"]>> {
+    const result = await this.engineFor(workspacePath).selectParty(partyId); // validates the id
+    if (windowId) {
+      this.activePartyByWindow.set(windowId, partyId);
+    }
+    await this.broadcastParty(workspacePath);
+    return result;
   }
 
-  resumePartyMember(workspacePath: string, name: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.resumeMember(name));
+  async removeParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeParty"]>> {
+    const result = await this.engineFor(workspacePath).removeParty(partyId);
+    // Any window that was viewing the deleted party falls back to the default.
+    for (const [wid, pid] of this.activePartyByWindow) {
+      if (pid === partyId) {
+        this.activePartyByWindow.delete(wid);
+      }
+    }
+    await this.broadcastParty(workspacePath);
+    return result;
   }
 
-  openPartyMember(workspacePath: string, name: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.openMember(name));
+  createPartyMember(workspacePath: string, input: CreateMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createMember"]>> {
+    // The member lands in the party the renderer names, else the window's party.
+    return this.mutateParty(workspacePath, (engine) => engine.createMember({ ...input, partyId: input.partyId || this.partyForWindow(windowId) }));
   }
 
-  startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput): Promise<ReturnType<PartyApplicationService["startMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.startMember(name, input));
+  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, this.partyForWindow(windowId)));
   }
 
-  bindPartyMember(workspacePath: string, name: string, sessionId: string): Promise<ReturnType<PartyApplicationService["bindMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.bindMember(name, sessionId));
+  /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
+  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId)));
   }
 
-  removePartyMember(workspacePath: string, name: string): Promise<ReturnType<PartyApplicationService["removeMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.removeMember(name));
+  async handlePartyAction(workspacePath: string, name: string, action: string, body: any, windowId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    const result = await this.engineFor(workspacePath).partyAction(name, action, body || {}, this.partyForWindow(windowId));
+    await this.broadcastParty(workspacePath);
+    return result;
   }
 
-  getMemberTranscript(workspacePath: string, name: string): Promise<unknown[]> {
-    return this.engineFor(workspacePath).getMemberTranscript(name);
+  closePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.closeMember(name, this.partyForWindow(windowId)));
   }
 
-  saveMemberTranscript(workspacePath: string, name: string, blocks: unknown[]): Promise<void> {
-    return this.engineFor(workspacePath).saveMemberTranscript(name, blocks);
+  resumePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.resumeMember(name, this.partyForWindow(windowId)));
+  }
+
+  openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
+  }
+
+  startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.startMember(name, input, this.partyForWindow(windowId)));
+  }
+
+  bindPartyMember(workspacePath: string, name: string, sessionId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["bindMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.bindMember(name, sessionId, this.partyForWindow(windowId)));
+  }
+
+  removePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.removeMember(name, this.partyForWindow(windowId)));
+  }
+
+  getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {
+    return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
+  }
+
+  saveMemberTranscript(workspacePath: string, name: string, blocks: unknown[], windowId?: string): Promise<void> {
+    return this.engineFor(workspacePath).saveMemberTranscript(name, blocks, this.partyForWindow(windowId));
   }
 
   // --- Window actions (addressed by window id) ----------------------------

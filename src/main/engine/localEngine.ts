@@ -35,8 +35,8 @@ export class LocalEngine implements EngineConnection {
   }
 
   // --- Party --------------------------------------------------------------
-  async listParty(): Promise<PartyListing> {
-    return this.party.list();
+  async listParty(viewPartyId?: string): Promise<PartyListing> {
+    return this.party.list(viewPartyId);
   }
 
   async createParty(input: CreatePartyInput) {
@@ -55,48 +55,48 @@ export class LocalEngine implements EngineConnection {
     return this.party.createMember(input);
   }
 
-  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<PartyMutationResult> {
-    return this.party.sendMessage(name, content, from, attachments);
+  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string): Promise<PartyMutationResult> {
+    return this.party.sendMessage(name, content, from, attachments, partyId);
   }
 
-  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]) {
-    return this.party.sendUserMessage(name, text, attachments);
+  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) {
+    return this.party.sendUserMessage(name, text, attachments, partyId);
   }
 
-  async closeMember(name: string) {
-    return this.party.closeMember(name);
+  async closeMember(name: string, partyId?: string) {
+    return this.party.closeMember(name, partyId);
   }
 
-  async resumeMember(name: string) {
-    return this.party.resumeMember(name);
+  async resumeMember(name: string, partyId?: string) {
+    return this.party.resumeMember(name, partyId);
   }
 
-  async openMember(name: string) {
-    return this.party.openMember(name);
+  async openMember(name: string, partyId?: string) {
+    return this.party.openMember(name, partyId);
   }
 
-  async startMember(name: string, input?: StartPartyMemberInput) {
-    return this.party.startMember(name, input);
+  async startMember(name: string, input?: StartPartyMemberInput, partyId?: string) {
+    return this.party.startMember(name, input, {}, partyId);
   }
 
-  async bindMember(name: string, sessionId: string) {
-    return this.party.bindMember(name, sessionId);
+  async bindMember(name: string, sessionId: string, partyId?: string) {
+    return this.party.bindMember(name, sessionId, partyId);
   }
 
-  async removeMember(name: string) {
-    return this.party.removeMember(name);
+  async removeMember(name: string, partyId?: string) {
+    return this.party.removeMember(name, partyId);
   }
 
-  async partyAction(name: string, action: string, body: any): Promise<PartyMutationResult> {
-    return runPartyAction(this.party, name, action, body);
+  async partyAction(name: string, action: string, body: any, partyId?: string): Promise<PartyMutationResult> {
+    return runPartyAction(this.party, name, action, body, partyId);
   }
 
-  async getMemberTranscript(name: string) {
-    return this.party.getMemberTranscript(name);
+  async getMemberTranscript(name: string, partyId?: string) {
+    return this.party.getMemberTranscript(name, partyId);
   }
 
-  async saveMemberTranscript(name: string, blocks: unknown[]): Promise<void> {
-    this.party.saveMemberTranscript(name, blocks);
+  async saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): Promise<void> {
+    this.party.saveMemberTranscript(name, blocks, partyId);
   }
 
   // --- Models ---------------------------------------------------------------

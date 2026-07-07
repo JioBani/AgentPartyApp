@@ -96,22 +96,22 @@ export class RemoteEngineClient implements EngineConnection {
     );
   }
 
-  listParty() { return this.call<Result<"listParty">>("listParty"); }
+  listParty(viewPartyId?: string) { return this.call<Result<"listParty">>("listParty", viewPartyId); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }
   removeParty(partyId: string) { return this.call<Result<"removeParty">>("removeParty", partyId); }
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
-  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments); }
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments); }
-  closeMember(name: string) { return this.call<Result<"closeMember">>("closeMember", name); }
-  resumeMember(name: string) { return this.call<Result<"resumeMember">>("resumeMember", name); }
-  openMember(name: string) { return this.call<Result<"openMember">>("openMember", name); }
-  startMember(name: string, input?: StartPartyMemberInput) { return this.call<Result<"startMember">>("startMember", name, input); }
-  bindMember(name: string, sessionId: string) { return this.call<Result<"bindMember">>("bindMember", name, sessionId); }
-  removeMember(name: string) { return this.call<Result<"removeMember">>("removeMember", name); }
-  partyAction(name: string, action: string, body: any) { return this.call<Result<"partyAction">>("partyAction", name, action, body); }
-  getMemberTranscript(name: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name); }
-  saveMemberTranscript(name: string, blocks: unknown[]) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, blocks); }
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId); }
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments, partyId); }
+  closeMember(name: string, partyId?: string) { return this.call<Result<"closeMember">>("closeMember", name, partyId); }
+  resumeMember(name: string, partyId?: string) { return this.call<Result<"resumeMember">>("resumeMember", name, partyId); }
+  openMember(name: string, partyId?: string) { return this.call<Result<"openMember">>("openMember", name, partyId); }
+  startMember(name: string, input?: StartPartyMemberInput, partyId?: string) { return this.call<Result<"startMember">>("startMember", name, input, partyId); }
+  bindMember(name: string, sessionId: string, partyId?: string) { return this.call<Result<"bindMember">>("bindMember", name, sessionId, partyId); }
+  removeMember(name: string, partyId?: string) { return this.call<Result<"removeMember">>("removeMember", name, partyId); }
+  partyAction(name: string, action: string, body: any, partyId?: string) { return this.call<Result<"partyAction">>("partyAction", name, action, body, partyId); }
+  getMemberTranscript(name: string, partyId?: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name, partyId); }
+  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, blocks, partyId); }
   listCodexModels(refresh?: boolean) { return this.call<Result<"listCodexModels">>("listCodexModels", refresh); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }

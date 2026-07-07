@@ -190,11 +190,19 @@ export function App() {
   }, [visibleMembers, logsBySession, members]);
 
   // Restore each member's persisted transcript from disk once, so a reopened app
-  // (or a closed member) shows its past conversation. Fetched lazily per member.
+  // (or a closed member) shows its past conversation. Visible members are fetched
+  // FIRST so the panels on screen fill in immediately on a party switch; the rest
+  // still prefetch right after, keeping a switch to a backgrounded member instant.
+  // Each fetch now reuses the engine's cached composed state to locate the member
+  // (no full re-compose per member). (restoredRef guards against refetching, so
+  // re-running on a visibility change never re-fetches an already-restored member.)
   useEffect(() => {
-    for (const member of members) {
+    const ordered = [...members].sort(
+      (a, b) => Number(!visibleMembers.includes(a.name)) - Number(!visibleMembers.includes(b.name)),
+    );
+    for (const member of ordered) {
       const key = memberKey(member);
-      if (restoredByMember[key] !== undefined) {
+      if (restoredRef.current[key] !== undefined) {
         continue;
       }
       // Mark as fetched (empty) up front so we don't refetch on every render.
@@ -205,7 +213,7 @@ export function App() {
         }
       }).catch(() => {});
     }
-  }, [members]);
+  }, [members, visibleMembers]);
 
   // Persist each active member's transcript to disk (debounced), and keep the
   // restored copy in sync so closing the member (or the app) preserves it. The

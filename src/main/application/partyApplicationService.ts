@@ -39,20 +39,45 @@ export class PartyApplicationService {
   private readonly repository = new PartyRepository();
 
   /**
-   * The active party is **per-process runtime**, not shared on disk — so two
-   * processes on the same workspace never fight over "which party is current".
-   * It is restored from the index's advisory `lastActivePartyId` on first use
-   * and updated in memory; only explicit party create/select persist the hint.
+   * "Which party is active" is NOT a property of this service — it is per-WINDOW
+   * state owned by the desktop (AppController), because one engine serves every
+   * window of a workspace (two windows opened by running `agent-party` twice share
+   * this instance). So every view / member operation takes an EXPLICIT `partyId`
+   * from the calling window; the service never resolves the active party from a
+   * single shared field (that made two windows switch in lock-step).
+   *
+   * {@link lastHint} is the ONLY residual "current party" here, and it is purely
+   * ADVISORY: it seeds the party a brand-new window (or an HTTP caller that names
+   * no window) opens to, and is what gets persisted as `lastActivePartyId`. It is
+   * never consulted when an explicit `partyId` is supplied, so it cannot yank a
+   * window that has made its own selection.
    */
-  private activeParty?: string;
+  private lastHint?: string;
+  /**
+   * Whether {@link lastHint} has been seeded from the persisted `lastActivePartyId`.
+   * Seeding happens EXACTLY once per process, so the advisory default is stable:
+   * after it, another process rewriting the shared hint on disk can't drag this
+   * process's unselected/HTTP resolution along with it.
+   */
+  private seededHint = false;
 
   constructor(private readonly deps: PartyApplicationDeps) {}
 
-  /** Resolves the active party id: the in-memory choice if still valid, else the
-   *  persisted last-active hint, else the first party. */
-  private activePartyId(state: StoredPartyState): string | undefined {
+  /**
+   * Resolves a party id to view/act on: the explicit choice if valid, else this
+   * process's advisory hint (the last party created/selected here, seeded once
+   * from disk), else the first party. An INVALID explicit id is caught by
+   * {@link requireParty}, not here. The live shared `state.currentPartyId` is read
+   * only to SEED the hint once — never consulted again, so it cannot yank this
+   * process between another process's selections.
+   */
+  private resolvePartyId(state: StoredPartyState, partyId?: string): string | undefined {
     const valid = (id?: string) => (id && state.parties.some((party) => party.id === id) ? id : undefined);
-    return valid(this.activeParty) || valid(state.currentPartyId) || state.parties[0]?.id;
+    if (!this.seededHint) {
+      this.seededHint = true;
+      this.lastHint = valid(this.lastHint) || valid(state.currentPartyId);
+    }
+    return valid(partyId) || valid(this.lastHint) || state.parties[0]?.id;
   }
 
   /** A record's party id — thrown if absent. Every in-memory member/message
@@ -73,20 +98,50 @@ export class PartyApplicationService {
     return state.messages.filter((message) => this.partyIdOf(message) === partyId);
   }
 
+  /**
+   * The composed party state, memoized per process. A single party switch drives
+   * several reads (the broadcast `list()` plus one `getMemberTranscript()` per
+   * member being restored); recomposing from disk each time — reparsing every
+   * `party.json` — is pure waste. Cache the composed state and reuse it until
+   * THIS process writes (explicit {@link invalidate}) or ANOTHER process changes
+   * the party LIST (the index mtime moves — a one-stat probe). A concurrent
+   * per-party DETAIL edit by another process is the known same-party
+   * last-writer-wins limitation, deliberately not covered by the mtime probe.
+   * Read-only callers use {@link readState}; mutating methods read fresh so they
+   * never alias (and thus mutate) the shared cached object.
+   */
+  private cache?: { workspace: string; mtimeMs: number; state: StoredPartyState };
+
+  private readState(): StoredPartyState {
+    const workspace = this.workspacePath();
+    const mtimeMs = this.repository.indexMtimeMs(workspace);
+    const hit = this.cache;
+    if (hit && hit.workspace === workspace && hit.mtimeMs === mtimeMs) {
+      return hit.state;
+    }
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    this.cache = { workspace, mtimeMs, state };
+    return state;
+  }
+
+  private invalidate(): void {
+    this.cache = undefined;
+  }
+
   /** Persists ONE party's detail file (its members + messages) — isolated write. */
   private persistParty(workspace: string, state: StoredPartyState, partyId: string): void {
     this.repository.writeParty(workspace, partyId, this.membersOf(state, partyId), this.messagesOf(state, partyId));
+    this.invalidate();
   }
 
   /** Persists the SHARED party index (list + advisory last-active hint). */
   private persistIndex(workspace: string, state: StoredPartyState): void {
-    this.repository.writeIndex(workspace, state.parties, this.activePartyId(state));
+    this.repository.writeIndex(workspace, state.parties, this.resolvePartyId(state));
+    this.invalidate();
   }
 
-  list(): { parties: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages: PartyMessage[] } {
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    return this.view(state);
+  list(viewPartyId?: string): { parties: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages: PartyMessage[] } {
+    return this.view(this.readState(), viewPartyId);
   }
 
   createParty(input: CreatePartyInput): PartyCommandResult {
@@ -95,7 +150,7 @@ export class PartyApplicationService {
     const name = String(input.name || "").trim() || "New Party";
     const party = createPartyDefinition(name);
     state.parties.push(party);
-    this.activeParty = party.id;
+    this.lastHint = party.id;
     // `main` is born from the default creation profile (harness/model/reasoning).
     const main = buildPartyMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party." }, getSettings());
     state.members.push(main);
@@ -107,7 +162,7 @@ export class PartyApplicationService {
     // immediately. Non-fatal: a start failure (auth/executable) must not block
     // party creation, but it is surfaced rather than swallowed.
     try {
-      const started = this.startMember("main");
+      const started = this.startMember("main", {}, {}, party.id);
       return { ...started, message: `Party '${party.name}' created with main member.` };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -120,10 +175,12 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, partyId);
-    this.activeParty = party.id;
+    // Advisory only: seeds the party a brand-new window opens to. The selecting
+    // window's own current party is tracked per-window by the desktop layer.
+    this.lastHint = party.id;
     party.updatedAt = new Date().toISOString();
     this.persistIndex(workspace, state);
-    return this.result(`Party '${party.name}' selected.`, state);
+    return this.result(`Party '${party.name}' selected.`, state, undefined, party.id);
   }
 
   createMember(input: CreateMemberInput): PartyCommandResult {
@@ -143,10 +200,10 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' created.`, state, member);
   }
 
-  openMember(name: string): PartyCommandResult {
+  openMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     if (!member.sessionId) {
       member.status = "opened";
       member.updatedAt = new Date().toISOString();
@@ -155,10 +212,10 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' opened.`, state, member);
   }
 
-  startMember(name: string, input: StartPartyMemberInput = {}, options: { mock?: boolean; autoReply?: boolean } = {}): PartyCommandResult {
+  startMember(name: string, input: StartPartyMemberInput = {}, options: { mock?: boolean; autoReply?: boolean } = {}, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     this.applyRuntimeDefaults(member, input);
     const session = this.createMemberSession(workspace, member, input, options);
     member.sessionId = session.id;
@@ -169,8 +226,8 @@ export class PartyApplicationService {
     return { ...this.result(`Member '${member.name}' session started.`, state, member), session };
   }
 
-  resumeMember(name: string): PartyCommandResult {
-    return this.startMember(name);
+  resumeMember(name: string, partyId?: string): PartyCommandResult {
+    return this.startMember(name, {}, {}, partyId);
   }
 
   /**
@@ -182,14 +239,14 @@ export class PartyApplicationService {
    * attachments. Distinct from {@link sendMessage}, which wraps inter-member
    * channel messages.
    */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]): PartyCommandResult {
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     let session: SessionView | undefined;
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
     if (!sessionId) {
-      const started = this.startMember(member.name);
+      const started = this.startMember(member.name, {}, {}, this.partyIdOf(member));
       session = started.session;
       sessionId = session?.id;
     }
@@ -199,15 +256,20 @@ export class PartyApplicationService {
     this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
     // Re-read: startMember wrote the new sessionId/status; reflect it back.
     const fresh = this.ensureMigrated(this.repository.read(workspace));
-    const target = this.requireMember(fresh, member.name);
+    const target = this.requireMember(fresh, member.name, this.partyIdOf(member));
     log("info", "party", "user turn sent", { workspace, partyId: target.partyId, member: target.name, sessionId, images: attachments?.length || 0 });
     return { ...this.result(`Message sent to '${target.name}'.`, fresh, target), session };
   }
 
-  /** The persisted transcript (assembled UI blocks) for a member, restored on load. */
-  getMemberTranscript(name: string): unknown[] {
-    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
-    const member = this.requireMember(state, name);
+  /**
+   * The persisted transcript (assembled UI blocks) for a member, restored on load.
+   * Locating the member uses the CACHED composed state (no extra disk parse), so
+   * restoring every member of a party on a switch no longer recomposes the whole
+   * store per member — the dominant redundant cost this path used to pay.
+   */
+  getMemberTranscript(name: string, partyId?: string): unknown[] {
+    const state = this.readState();
+    const member = this.requireMember(state, name, partyId);
     return this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
   }
 
@@ -216,10 +278,10 @@ export class PartyApplicationService {
    * transcript's assembler). Also captures the member's live harness thread id so
    * a later reopen resumes that thread — keeping the record and the model context.
    */
-  saveMemberTranscript(name: string, blocks: unknown[]): void {
+  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): void {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     this.repository.writeTranscript(workspace, this.partyIdOf(member), member.name, blocks);
     const harnessId = member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined;
     if (harnessId && harnessId !== member.harnessSessionId) {
@@ -229,10 +291,10 @@ export class PartyApplicationService {
     }
   }
 
-  bindMember(name: string, sessionId: string): PartyCommandResult {
+  bindMember(name: string, sessionId: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     if (!this.deps.sessionManager.hasSession(sessionId)) {
       throw new Error(`Session '${sessionId}' is not active.`);
     }
@@ -244,10 +306,10 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' bound to active session.`, state, member);
   }
 
-  closeMember(name: string): PartyCommandResult {
+  closeMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     if (member.sessionId) {
       this.deps.sessionManager.closeSession(member.sessionId);
     }
@@ -259,10 +321,10 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' closed.`, state, member);
   }
 
-  removeMember(name: string): PartyCommandResult {
+  removeMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = this.requireMember(state, name);
+    const member = this.requireMember(state, name, partyId);
     if (member.name === "main") {
       throw new Error("Main member cannot be removed. Remove or recreate the party instead.");
     }
@@ -297,9 +359,10 @@ export class PartyApplicationService {
     state.parties = state.parties.filter((item) => item.id !== party.id);
     state.members = state.members.filter((item) => item.partyId !== party.id);
     state.messages = state.messages.filter((message) => message.partyId !== party.id);
-    if (this.activeParty === party.id) {
-      // The active party was deleted — fall to another (genuinely no selection now).
-      this.activeParty = state.parties[0]?.id;
+    if (this.lastHint === party.id) {
+      // The advisory hint pointed at the deleted party — fall to another. (Each
+      // window's own current party is cleaned up separately by the desktop layer.)
+      this.lastHint = state.parties[0]?.id;
     }
     fs.rmSync(this.repository.partyDir(workspace, party.id), { recursive: true, force: true });
     // Party removed from the shared list → index write only (its detail dir is gone).
@@ -308,10 +371,10 @@ export class PartyApplicationService {
     return this.result(`Party '${party.name}' removed.`, state);
   }
 
-  sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[]): PartyCommandResult {
+  sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[], partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
-    const target = this.requireMember(state, to);
+    const target = this.requireMember(state, to, partyId);
     const message = createPartyMessage(target, content, from);
     if (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId)) {
       this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);
@@ -388,13 +451,19 @@ export class PartyApplicationService {
     };
   }
 
-  private result(message: string, state: StoredPartyState, member?: PartyMember): PartyCommandResult {
-    const view = this.view(state);
+  /**
+   * Builds a command result. The returned view is scoped to `viewPartyId` when
+   * given, else to the acted-on member's OWN party (so a member op reflects the
+   * party that member lives in), else the default. This keeps the payload a
+   * caller/window receives aligned with the party it is operating on.
+   */
+  private result(message: string, state: StoredPartyState, member?: PartyMember, viewPartyId?: string): PartyCommandResult {
+    const view = this.view(state, viewPartyId ?? (member ? this.partyIdOf(member) : undefined));
     return { ok: true, message, ...view, member: member ? this.withLiveStatus(member) : undefined };
   }
 
-  private view(state: StoredPartyState): { parties: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages: PartyMessage[] } {
-    const currentPartyId = this.activePartyId(state);
+  private view(state: StoredPartyState, viewPartyId?: string): { parties: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages: PartyMessage[] } {
+    const currentPartyId = this.resolvePartyId(state, viewPartyId);
     return {
       parties: state.parties,
       currentPartyId,
@@ -406,8 +475,9 @@ export class PartyApplicationService {
   /**
    * Resolves a party. An EXPLICIT id must name a real party (no silent fall-back
    * to the first party — a bad id surfaces as an error). With no id, resolves the
-   * active party (which itself defaults to the first only when nothing is
-   * selected — a genuine default, not a masked error). Sets it active in memory.
+   * advisory default (hint, else first) — a genuine default, not a masked error.
+   * NO side effects: the caller's window owns "which party is active", so this
+   * never mutates shared state (that made two windows track each other).
    */
   private requireParty(state: StoredPartyState, explicitPartyId?: string): PartyDefinition {
     if (explicitPartyId) {
@@ -415,20 +485,18 @@ export class PartyApplicationService {
       if (!party) {
         throw new Error(`Party '${explicitPartyId}' does not exist.`);
       }
-      this.activeParty = party.id;
       return party;
     }
-    const activeId = this.activePartyId(state);
+    const activeId = this.resolvePartyId(state);
     const party = state.parties.find((item) => item.id === activeId);
     if (!party) {
       throw new Error("Create a party before creating members or sessions.");
     }
-    this.activeParty = party.id;
     return party;
   }
 
-  private requireMember(state: StoredPartyState, name: string): PartyMember {
-    const party = this.requireParty(state);
+  private requireMember(state: StoredPartyState, name: string, partyId?: string): PartyMember {
+    const party = this.requireParty(state, partyId);
     const normalized = normalizeMemberName(name);
     const member = state.members.find((item) => item.partyId === party.id && item.name === normalized);
     if (!member) {
@@ -467,14 +535,15 @@ export class PartyApplicationService {
   // The in-process capability surface handed to a member's session. Every method
   // routes through the same service methods the UI/HTTP use, never throws (tool
   // handlers stay trivial), and re-broadcasts party state so the UI updates.
-  // `from` is closure-bound to the calling member; operations resolve against
-  // the active party (the app is single-active-party — see §12 limitation).
+  // `from` is closure-bound to the calling member; every operation is scoped to
+  // the caller's OWN party (`party`), never a shared/default one — an agent's
+  // party tools must act inside its party regardless of what any window is viewing.
   private partyBridgeFor(party: string, selfMember: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {
       send: async (from, to, content) => {
         try {
-          const result = this.sendMessage(to, content, from || selfMember);
+          const result = this.sendMessage(to, content, from || selfMember, undefined, party);
           notify();
           if (!result.partyMessage?.delivered) {
             return { ok: false, error: `Member '${to}' is not running. Start it (or member-create it) before sending.` };
@@ -501,7 +570,7 @@ export class PartyApplicationService {
             reasoning: request.reasoning,
             reasoningBudget: request.reasoningBudget,
           });
-          const started = this.startMember(request.name);
+          const started = this.startMember(request.name, {}, {}, party);
           notify();
           return { ok: true, data: { ok: true, name: request.name, status: started.member?.status ?? "running" } };
         } catch (error) {
@@ -510,7 +579,7 @@ export class PartyApplicationService {
       },
       removeMember: async (name) => {
         try {
-          this.removeMember(name);
+          this.removeMember(name, party);
           notify();
           return { ok: true };
         } catch (error) {
@@ -518,7 +587,7 @@ export class PartyApplicationService {
         }
       },
       list: async () => {
-        const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+        const state = this.readState();
         const members = state.members
           .filter((member) => this.partyIdOf(member) === party)
           .map((member) => this.withLiveStatus(member))

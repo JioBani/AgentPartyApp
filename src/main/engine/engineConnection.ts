@@ -80,27 +80,30 @@ export interface QaInteractionInput {
 export interface EngineConnection {
   readonly workspacePath: string;
 
-  // --- Party (workspace-scoped) ------------------------------------------
-  listParty(): Promise<PartyListing>;
+  // --- Party (workspace-scoped; `partyId` scopes to the CALLING WINDOW's party) --
+  // One engine serves every window of a workspace, so which party is active is a
+  // per-window fact the desktop passes in via `partyId`. When omitted (HTTP with
+  // no window, or first load), the engine falls back to its advisory hint.
+  listParty(viewPartyId?: string): Promise<PartyListing>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;
   createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
-  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[]): Promise<PartyMutationResult>;
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string): Promise<PartyMutationResult>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[]): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
-  closeMember(name: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
-  resumeMember(name: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
-  openMember(name: string): Promise<ReturnType<PartyApplicationService["openMember"]>>;
-  startMember(name: string, input?: StartPartyMemberInput): Promise<ReturnType<PartyApplicationService["startMember"]>>;
-  bindMember(name: string, sessionId: string): Promise<ReturnType<PartyApplicationService["bindMember"]>>;
-  removeMember(name: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
+  closeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
+  resumeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
+  openMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>>;
+  startMember(name: string, input?: StartPartyMemberInput, partyId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>>;
+  bindMember(name: string, sessionId: string, partyId?: string): Promise<ReturnType<PartyApplicationService["bindMember"]>>;
+  removeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
   /** Dispatches one of the named party actions (HTTP `/api/party/members/:name/:action`). */
-  partyAction(name: string, action: string, body: any): Promise<PartyMutationResult>;
+  partyAction(name: string, action: string, body: any, partyId?: string): Promise<PartyMutationResult>;
   /** The member's persisted transcript (assembled UI blocks), restored on load. */
-  getMemberTranscript(name: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
+  getMemberTranscript(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
   /** Persists the member's transcript (renderer-driven, debounced) + captures its resumable thread id. */
-  saveMemberTranscript(name: string, blocks: unknown[]): Promise<void>;
+  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): Promise<void>;
 
   // --- Models (engine-scoped) ----------------------------------------------
   /**

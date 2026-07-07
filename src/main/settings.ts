@@ -105,17 +105,84 @@ export function getPublicSettings(): AppSettings {
 }
 
 export function updateSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = { ...getSettings(), ...patch };
   const file = settingsPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  // Atomic write (per-process temp + rename): shared user settings can be written
-  // by several processes now, so a plain overwrite could be read half-written by
-  // another. A unique temp name avoids two writers colliding on one temp file.
-  const tempPath = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tempPath, JSON.stringify(next, null, 2), "utf8");
-  fs.renameSync(tempPath, file);
-  return next;
+  // settings.json is ONE file shared by every process/workspace. An atomic
+  // temp+rename stops a torn read, but not a lost update: if A and B each
+  // read → merge a different patch → write, the later writer silently drops the
+  // earlier's change. Serialize the whole read-modify-write behind a cross-
+  // process lock, and re-read INSIDE it so the patch merges onto the freshest
+  // on-disk values.
+  return withSettingsLock(file, () => {
+    const next = { ...getSettings(), ...patch };
+    // Per-process temp name: two writers must never collide on one temp file.
+    const tempPath = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(next, null, 2), "utf8");
+    fs.renameSync(tempPath, file);
+    return next;
+  });
 }
+
+/**
+ * Runs `fn` while holding an exclusive lockfile next to `file`, serializing the
+ * settings read-modify-write across processes. Uses `open(..., "wx")` (atomic
+ * exclusive create) as the mutex; spins with a real synchronous sleep until the
+ * lock frees or a short deadline passes. A lock older than {@link LOCK_STALE_MS}
+ * is treated as abandoned (a crashed holder) and stolen, so a dead process can
+ * never wedge every future write. Best-effort: on timeout it proceeds anyway
+ * (a rare lost update beats blocking the UI), and the lock is always released.
+ */
+function withSettingsLock<T>(file: string, fn: () => T): T {
+  const lock = `${file}.lock`;
+  const deadline = nowMs() + LOCK_WAIT_MS;
+  let held = false;
+  while (!held) {
+    try {
+      fs.closeSync(fs.openSync(lock, "wx"));
+      held = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        break; // unexpected fs error — don't block the write on locking
+      }
+      if (lockAgeMs(lock) > LOCK_STALE_MS) {
+        try { fs.rmSync(lock, { force: true }); } catch { /* raced with another stealer */ }
+        continue;
+      }
+      if (nowMs() >= deadline) {
+        break; // give up waiting; proceed best-effort rather than hang the UI
+      }
+      sleepMs(LOCK_RETRY_MS);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    if (held) {
+      try { fs.rmSync(lock, { force: true }); } catch { /* already gone */ }
+    }
+  }
+}
+
+function lockAgeMs(lock: string): number {
+  try {
+    return nowMs() - fs.statSync(lock).mtimeMs;
+  } catch {
+    return 0; // vanished under us — treat as fresh, next open() will settle it
+  }
+}
+
+function nowMs(): number {
+  return Date.now();
+}
+
+/** Blocks the calling thread for `ms` without a busy-loop (main-process writes are rare). */
+function sleepMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const LOCK_WAIT_MS = 2000;
+const LOCK_RETRY_MS = 25;
+const LOCK_STALE_MS = 10_000;
 
 export function maskSecret(value: string | undefined): string | undefined {
   if (!value) {
