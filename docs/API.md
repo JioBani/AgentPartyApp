@@ -62,6 +62,11 @@ Captures the current Electron window and stores it as a PNG. If `path` is omitte
 
 Updates app settings.
 
+`transcriptFontScale` is the session/transcript text zoom (1 = 100%, clamped
+0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it
+is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
+window load (or immediately in the window that changed it).
+
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
 permission config (`permissionMode` for Claude Code, `codexPolicy` two-axis for

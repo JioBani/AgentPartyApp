@@ -29,6 +29,7 @@ export const initialState: InitialAppState = {
     routerAuthToken: "dummy",
     openRouterApiKey: "",
     automationApiPort: 47831,
+    transcriptFontScale: 1,
   },
   auth: [],
   sessions: [],

@@ -66,6 +66,49 @@ export function App() {
   const restoredRef = useRef(restoredByMember);
   restoredRef.current = restoredByMember;
 
+  // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
+  const fontScale = state.settings.transcriptFontScale ?? 1;
+  const fontScaleRef = useRef(fontScale);
+  fontScaleRef.current = fontScale;
+  const fontScalePersist = useRef<ReturnType<typeof setTimeout>>();
+
+  // Reflect the zoom as a CSS variable every transcript reads (`zoom: var(...)`).
+  useEffect(() => {
+    document.documentElement.style.setProperty("--wb-font-scale", String(fontScale));
+  }, [fontScale]);
+
+  // Ctrl+wheel over a transcript grows/shrinks its text. Handled at the window
+  // (non-passive) so we can preventDefault the browser's native ctrl+wheel zoom.
+  // The value is a persisted, HTTP-drivable setting (survives restart), applied
+  // locally at once for a responsive feel and persisted debounced.
+  useEffect(() => {
+    const MIN = 0.6;
+    const MAX = 2.0;
+    const STEP = 0.1;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest?.(".wb-transcript")) {
+        return;
+      }
+      event.preventDefault();
+      const delta = event.deltaY < 0 ? STEP : -STEP;
+      const next = Math.round(Math.min(MAX, Math.max(MIN, fontScaleRef.current + delta)) * 100) / 100;
+      if (next === fontScaleRef.current) {
+        return;
+      }
+      fontScaleRef.current = next;
+      setState((current) => ({ ...current, settings: { ...current.settings, transcriptFontScale: next } }));
+      setPartyNotice(`글씨 크기 ${Math.round(next * 100)}%`);
+      clearTimeout(fontScalePersist.current);
+      fontScalePersist.current = setTimeout(() => { void window.agentParty.updateSettings?.({ transcriptFontScale: next }); }, 400);
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, []);
+
   const selectedParty = useMemo(
     () => (state.party.parties || []).find((party) => party.id === state.party.currentPartyId) || (state.party.parties || [])[0],
     [state.party.currentPartyId, state.party.parties],
@@ -150,6 +193,13 @@ export function App() {
         setCurrentView("workbench");
       }
     });
+    // Settings are global; a change here or in another window / over HTTP pushes
+    // the full settings. Preserve THIS window's own workspacePath on merge (each
+    // window may view a different workspace).
+    const offSettingsUpdate = window.agentParty.onSettingsUpdate?.((payload) => {
+      const incoming = payload as InitialAppState["settings"];
+      setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
+    });
     const offNavigate = window.agentParty.onNavigate((view) => {
       if (isViewId(view)) setCurrentView(view);
     });
@@ -162,6 +212,7 @@ export function App() {
       offSessions();
       offPartyUpdate();
       offModelsUpdate();
+      offSettingsUpdate?.();
       offQaLayout();
       offQaOpenSub();
       offNavigate();

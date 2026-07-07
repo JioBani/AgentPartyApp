@@ -51,6 +51,8 @@ export interface AppSettings {
   routerAuthToken: string;
   openRouterApiKey: string;
   automationApiPort: number;
+  /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
+  transcriptFontScale: number;
 }
 
 /** All harnesses that have defaults, in a stable order. */

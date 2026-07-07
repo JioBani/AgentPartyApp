@@ -28,7 +28,21 @@ const defaults: AppSettings = {
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
+  transcriptFontScale: 1,
 };
+
+/** Transcript zoom bounds — keep in sync with the renderer's Ctrl+wheel step. */
+export const TRANSCRIPT_FONT_SCALE_MIN = 0.6;
+export const TRANSCRIPT_FONT_SCALE_MAX = 2.0;
+
+/** Clamps an arbitrary stored/HTTP value to a sane zoom, defaulting to 1. */
+function clampFontScale(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return 1;
+  }
+  return Math.min(TRANSCRIPT_FONT_SCALE_MAX, Math.max(TRANSCRIPT_FONT_SCALE_MIN, n));
+}
 
 export function getSettings(): AppSettings {
   const stored = migrateSettings(readSettingsFile());
@@ -92,7 +106,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
       harnessDefaults[id] = { ...harnessDefaults[id], model: HARNESS_DEFAULTS[id].model };
     }
   }
-  return { ...withRuntimeOverrides, harnessDefaults };
+  return { ...withRuntimeOverrides, harnessDefaults, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

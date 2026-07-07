@@ -25,6 +25,8 @@
     "test:e2e:discovery": "npm run build && node scripts/e2e-discovery.mjs",
     "test:e2e:multiprocess": "npm run build && node scripts/e2e-multiprocess.mjs",
     "test:e2e:context-usage": "npm run build && node scripts/e2e-context-usage.mjs",
+    "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
+    "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
     "test:subagent-tracker": "node scripts/qa-subagent-tracker.mjs",
     "test:party-store": "node scripts/qa-party-store.mjs",

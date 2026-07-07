@@ -1150,6 +1150,9 @@ body.wb-resizing {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  /* Ctrl+wheel text zoom: App sets --wb-font-scale from the persisted setting.
+     `zoom` scales the transcript content proportionally within its scroll area. */
+  zoom: var(--wb-font-scale, 1);
 }
 
 /* Keep each message/card at its natural height: when the pane shrinks (e.g. the

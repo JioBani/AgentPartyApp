@@ -187,7 +187,14 @@ export class AppController {
     if (typeof patch?.debugEnabled === "boolean" && patch.debugEnabled !== previous.debugEnabled) {
       this.deps.sessionManager.setDebugMode(patch.debugEnabled);
     }
-    return getPublicSettings();
+    const settings = getPublicSettings();
+    // Settings are global — push to EVERY window so a change made over HTTP or in
+    // another window reflects live (e.g. transcript zoom), not only on next load.
+    // (The renderer preserves each window's own workspacePath on merge.)
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("settings:update", settings);
+    }
+    return settings;
   }
 
   listAuthProviders(): ReturnType<typeof getAuthState> {
@@ -224,12 +231,16 @@ export class AppController {
     const entry = this.deps.windowRegistry.resolve(windowId);
     if (entry) {
       this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
+      // The window's active party belonged to the PREVIOUS workspace — drop it so
+      // the fresh getState below re-pins it to a party of the NEW workspace (else
+      // member ops would carry a party id that doesn't exist here).
+      this.forgetWindow(entry.id);
       // The window now serves a different workspace → refresh discovery files.
       this.deps.onWorkspacesChanged();
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });
-    return this.getState(workspacePath);
+    return this.getState(workspacePath, entry?.id);
   }
 
   // --- Sessions (addressed globally by session id) ------------------------

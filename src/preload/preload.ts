@@ -74,6 +74,11 @@ const api = {
     ipcRenderer.on("models:update", listener);
     return () => ipcRenderer.off("models:update", listener);
   },
+  onSettingsUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("settings:update", listener);
+    return () => ipcRenderer.off("settings:update", listener);
+  },
   onQaLayout: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("qa:layout", listener);
