@@ -156,6 +156,9 @@ export class LocalEngine implements EngineConnection {
 
   async setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
     this.deps.sessionManager.setPermissionMode(sessionId, permissionMode);
+    // Capture the runtime change on the owning member so a reopen/restart
+    // restores the user's chosen mode instead of reverting to the start-time value.
+    this.party.syncMemberPermissionMode(sessionId, permissionMode);
   }
 
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {

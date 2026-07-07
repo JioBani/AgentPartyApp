@@ -1,5 +1,6 @@
 import type { ModelRoute } from "./modelRegistry";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../shared/subagentActivity";
+import type { UsageProviderId, UsageWindow } from "../shared/usageLimits";
 
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -92,6 +93,11 @@ export type ClaudeNormalizedEvent =
   | { type: "tool_call"; id: string; name: string; input?: unknown; status: "started" | "completed" | "failed"; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; outputDelta?: string; at: string }
   | { type: "plan"; steps: import("../shared/codexItems").CodexPlanStep[]; explanation?: string; at: string }
   | { type: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; at: string }
+  // Account/provider-scoped rate-limit usage (NOT per-session context). Emitted
+  // when a harness reports its rolling-window utilization; the main process
+  // aggregates the latest per provider and pushes it to every window. See
+  // src/shared/usageLimits.ts.
+  | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; at: string }
   | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }

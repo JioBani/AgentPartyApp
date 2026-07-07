@@ -228,6 +228,13 @@ async function bootstrap(): Promise<void> {
   sessionManager.on("codex-models", () => {
     void appController?.notifyCodexModelsChanged();
   });
+  // Provider rate-limit usage changed. These limits are ACCOUNT-global (shared by
+  // every workspace/window using that provider), so push to ALL windows.
+  sessionManager.on("usage", (snapshot: unknown) => {
+    for (const entry of registry().all()) {
+      entry.window.webContents.send("usage:update", snapshot);
+    }
+  });
 
   appController = new AppController({
     sessionManager,
@@ -422,6 +429,8 @@ function registerIpc(): void {
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
+
+  handle("usage:get", async () => controller().getUsageLimits());
 
   handle("session:create", async (event, input?: unknown) => controller().createSession(senderWorkspace(event), input as any));
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));

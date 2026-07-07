@@ -10,6 +10,7 @@ export const automationEndpoints = [
   "POST /api/auth/openrouter/test",
   "GET /api/models",
   "POST /api/models/codex/refresh",
+  "GET /api/usage",
   "POST /api/sessions",
   "GET /api/sessions/history",
   "POST /api/sessions/resume",
@@ -59,6 +60,7 @@ export const automationEndpoints = [
   "POST /api/qa/members/:name/subagents/open",
   "POST /api/qa/members/:name/interaction",
   "POST /api/qa/open",
+  "POST /api/qa/usage",
   "POST /api/qa/reset",
 ] as const;
 

@@ -8,6 +8,7 @@ import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
+import type { UsageLimitsSnapshot, UsageWindow } from "../../shared/usageLimits";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
@@ -178,6 +179,16 @@ export class AppController {
       const payload = await this.listModels(entry.workspacePath);
       entry.window.webContents.send("models:update", payload);
     }
+  }
+
+  /**
+   * Current account/provider-scoped rate-limit usage. Global (not workspace- or
+   * window-scoped): these limits are shared by every agent using that provider,
+   * so the single titlebar indicator reads from the one merged snapshot. Live
+   * updates arrive via the "usage:update" push (wired in main.ts).
+   */
+  getUsageLimits(): { ok: true; usage: UsageLimitsSnapshot } {
+    return { ok: true, usage: this.deps.sessionManager.getUsageLimits() };
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
@@ -508,6 +519,32 @@ export class AppController {
     this.requireQa();
     const { requestId } = await this.engineFor(workspacePath).qaInteraction(name, body);
     return { ok: true, requestId };
+  }
+
+  /**
+   * Test-only: inject a provider usage-limit snapshot so the titlebar indicator
+   * can be QA'd without consuming a real quota. Routes through the SAME
+   * aggregation + broadcast path a real harness event takes.
+   */
+  qaEmitUsage(body: { provider?: string; windows?: Array<{ kind?: string; utilization?: number; resetsAt?: number }>; available?: boolean }): { ok: true; usage: UsageLimitsSnapshot } {
+    this.requireQa();
+    const provider = body?.provider === "codex" ? "codex" : body?.provider === "claude" ? "claude" : undefined;
+    if (!provider) {
+      throw new Error("usage injection requires provider 'claude' or 'codex'.");
+    }
+    const windows: UsageWindow[] = [];
+    for (const w of Array.isArray(body?.windows) ? body.windows : []) {
+      const kind = w?.kind === "weekly" ? "weekly" : w?.kind === "five_hour" ? "five_hour" : undefined;
+      const utilization = Number(w?.utilization);
+      if (kind && isFinite(utilization)) {
+        windows.push({ kind, utilization, resetsAt: typeof w?.resetsAt === "number" ? w.resetsAt : undefined });
+      }
+    }
+    if (!windows.length) {
+      throw new Error("usage injection requires at least one window { kind: 'five_hour'|'weekly', utilization }.");
+    }
+    this.deps.sessionManager.injectUsageLimit({ type: "usage_limit", provider, windows, available: body?.available, at: new Date().toISOString() });
+    return { ok: true, usage: this.deps.sessionManager.getUsageLimits() };
   }
 
   qaOpen(windowId: string | undefined, panels: string[][]): { ok: true; panels: string[][] } {

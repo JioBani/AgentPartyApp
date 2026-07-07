@@ -155,6 +155,39 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
 Re-runs Codex model discovery and returns the same shape as `GET /api/models`
 after the fresh discovery settles.
 
+### `GET /api/usage`
+
+Current account/provider-scoped rate-limit usage — the data behind the titlebar
+usage indicator. These limits are **account-global** (shared by every agent using
+that provider), not per-session or per-workspace, so this endpoint takes no
+parameters. Data arrives from each harness's own event stream (Claude
+`rate_limit_event`, Codex `account/rateLimits/updated`) and is merged per
+provider; a provider absent from the response simply hasn't reported yet (show an
+unknown/loading state, never a fabricated 0%).
+
+```json
+{
+  "ok": true,
+  "usage": {
+    "claude": {
+      "provider": "claude",
+      "available": true,
+      "updatedAt": 1751900000000,
+      "windows": [
+        { "kind": "five_hour", "utilization": 63, "resetsAt": 1751907200000 },
+        { "kind": "weekly", "utilization": 41, "resetsAt": 1752300000000 }
+      ]
+    },
+    "codex": { "provider": "codex", "available": true, "updatedAt": 1751900000000, "windows": [ ... ] }
+  }
+}
+```
+
+`utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
+didn't report a reset). `available:false` means the provider reported limits are
+not applicable (Claude API key / Bedrock / Vertex) — render "해당 없음", not 0%.
+Windows update live over the `usage:update` IPC push to every window.
+
 ## Sessions
 
 ### `POST /api/sessions`
@@ -253,7 +286,9 @@ session (resumed) to apply.
 
 ### `POST /api/sessions/:id/permission`
 
-Changes permission mode.
+Changes permission mode. When the session belongs to a party member, the new mode
+is also persisted back to that member, so reopening the member (or restarting the
+app) restores the mode last chosen rather than the start-time value.
 
 ```json
 { "permissionMode": "default" }
@@ -705,6 +740,29 @@ Workbench panel, the names are that panel's tabs left-to-right, and the **first
 name is the active tab**. Names that don't match a current member are dropped,
 and empty panels are skipped. The renderer switches to the Workbench view and
 applies the layout.
+
+### `POST /api/qa/usage`
+
+Injects a provider usage-limit snapshot through the same aggregation + broadcast
+path a real harness event takes, so the titlebar indicator can be driven without
+consuming a real quota. Returns the merged snapshot (same shape as
+`GET /api/usage`).
+
+```json
+{
+  "provider": "claude",
+  "available": true,
+  "windows": [
+    { "kind": "five_hour", "utilization": 63, "resetsAt": 1751907200000 },
+    { "kind": "weekly", "utilization": 41 }
+  ]
+}
+```
+
+`provider` must be `"claude"` or `"codex"`; each window needs a `kind`
+(`"five_hour"` | `"weekly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
+ms) is optional. Windows merge by kind, so repeated calls update one window at a
+time — mirroring how real providers report.
 
 ### `POST /api/qa/reset`
 

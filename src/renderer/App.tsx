@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, UsersRound, X } from "lucide-react";
+import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
+import type { UsageLimitsSnapshot, UsageProviderId } from "../shared/usageLimits";
+import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
@@ -39,6 +41,9 @@ export function App() {
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
   const [openRouterDraft, setOpenRouterDraft] = useState("");
+  // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
+  // by main; fetched once on mount and kept live via the "usage:update" channel.
+  const [usageLimits, setUsageLimits] = useState<UsageLimitsSnapshot>({});
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
@@ -200,6 +205,9 @@ export function App() {
       const incoming = payload as InitialAppState["settings"];
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
     });
+    // The push sends the raw snapshot; the initial fetch wraps it in `{ usage }`.
+    const offUsageUpdate = window.agentParty.onUsageUpdate?.((payload) => setUsageLimits((payload as UsageLimitsSnapshot) || {}));
+    void window.agentParty.getUsageLimits?.().then((res) => { if (res?.usage) setUsageLimits(res.usage); });
     const offNavigate = window.agentParty.onNavigate((view) => {
       if (isViewId(view)) setCurrentView(view);
     });
@@ -213,6 +221,7 @@ export function App() {
       offPartyUpdate();
       offModelsUpdate();
       offSettingsUpdate?.();
+      offUsageUpdate?.();
       offQaLayout();
       offQaOpenSub();
       offNavigate();
@@ -625,6 +634,23 @@ export function App() {
 
   const isDark = theme.themeId === "dark";
 
+  // Party members driving each provider account (claude-code → Claude, codex →
+  // Codex) — the popover's "N명 사용" sub-labels.
+  const membersByProvider = useMemo<Partial<Record<UsageProviderId, number>>>(() => {
+    const counts: Partial<Record<UsageProviderId, number>> = {};
+    for (const member of members) {
+      const provider: UsageProviderId | undefined = member.runtime === "codex" ? "codex" : member.runtime === "claude-code" ? "claude" : undefined;
+      if (provider) {
+        counts[provider] = (counts[provider] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [members]);
+
+  // Global usage indicator — lives under the "작업공간" button in each screen
+  // header (reused across views), not the titlebar.
+  const usagePill = <UsageLimitPill usage={usageLimits} membersByProvider={membersByProvider} onOpenSettings={() => setCurrentView("automation")} />;
+
   return (
     <div className="app-shell">
       <div className="app-titlebar">
@@ -670,7 +696,7 @@ export function App() {
                 </div>
                 <div className="screen-actions">
                   <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> 작업공간</button>
-                  <button className="accent-btn" onClick={() => createParty()}><UsersRound size={15} /> 새 파티</button>
+                  {usagePill}
                 </div>
               </header>
               <Workbench
@@ -706,6 +732,7 @@ export function App() {
                 </div>
                 <div className="screen-actions">
                   <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> 작업공간</button>
+                  {usagePill}
                 </div>
               </header>
               {currentView === "sessions" && (

@@ -19,6 +19,7 @@ import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId,
 import type { ImageAttachment } from "../shared/attachments";
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
 import { deriveSubagentAction } from "../shared/subagentActivity";
+import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
@@ -834,7 +835,14 @@ export class ClaudeAdapter extends EventEmitter {
     }
 
     if (message.type === "rate_limit_event") {
-      this.emitStatus("rate_limit", JSON.stringify((message as any).rate_limit_info));
+      const info = (message as any).rate_limit_info;
+      // Keep the raw status for debugging/diagnostics, and ALSO surface it as a
+      // structured usage-limit event the titlebar indicator can consume.
+      this.emitStatus("rate_limit", JSON.stringify(info));
+      const window = rateLimitWindowFrom(info);
+      if (window) {
+        this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now() });
+      }
     }
   }
 
@@ -1445,6 +1453,24 @@ function scrubPermissionOptions(options: Parameters<CanUseTool>[2]): Record<stri
 
 function asModelProviderId(value: unknown): ModelProviderId | undefined {
   return value === "anthropic" || value === "openrouter" || value === "openai" || value === "custom" ? value : undefined;
+}
+
+/**
+ * Maps a Claude `SDKRateLimitInfo` (one window per event) to a {@link UsageWindow}.
+ * `five_hour` → 5-hour window; any `seven_day*` variant → weekly. The `overage`
+ * type and events without a numeric utilization/type carry no meter and are
+ * skipped (returns undefined) rather than fabricating a value.
+ */
+function rateLimitWindowFrom(info: any): UsageWindow | undefined {
+  if (!info || typeof info.utilization !== "number" || !isFinite(info.utilization)) {
+    return undefined;
+  }
+  const type = String(info.rateLimitType || "");
+  const kind: UsageWindowKind | undefined = type === "five_hour" ? "five_hour" : type.startsWith("seven_day") ? "weekly" : undefined;
+  if (!kind) {
+    return undefined;
+  }
+  return { kind, utilization: Math.max(0, Math.min(100, info.utilization)), resetsAt: toEpochMs(info.resetsAt) };
 }
 
 /**

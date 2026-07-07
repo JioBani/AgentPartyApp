@@ -13,6 +13,7 @@ import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
+import { mergeProviderUsage, type UsageLimitsSnapshot } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { isE2E } from "./runtimeMode";
@@ -40,6 +41,12 @@ export interface SessionPartyBinding {
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  /**
+   * Latest account/provider-scoped rate-limit usage, merged across every session
+   * (rate limits are account-global, not per-session). Fed by `usage_limit`
+   * events; broadcast to all windows via the "usage" emit. See usageLimits.ts.
+   */
+  private usageLimits: UsageLimitsSnapshot = {};
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
   /**
@@ -89,6 +96,34 @@ export class SessionManager extends EventEmitter {
    * emits `"codex-models"` so the app can push updated model routes to windows —
    * a failure stays visible in the state, never silently reverts the UI.
    */
+  /** The current merged usage-limit snapshot (all providers). */
+  getUsageLimits(): UsageLimitsSnapshot {
+    return this.usageLimits;
+  }
+
+  /** Merges one provider's reported windows and broadcasts the new snapshot. */
+  private applyUsageLimit(event: Extract<ClaudeNormalizedEvent, { type: "usage_limit" }>): void {
+    this.usageLimits = {
+      ...this.usageLimits,
+      [event.provider]: mergeProviderUsage(this.usageLimits[event.provider], {
+        provider: event.provider,
+        windows: event.windows,
+        available: event.available,
+        updatedAt: Date.now(),
+      }),
+    };
+    this.emit("usage", this.usageLimits);
+  }
+
+  /**
+   * Test-only: inject a usage-limit event through the SAME aggregation path a
+   * real harness event takes, so QA/e2e can drive the indicator deterministically
+   * without hitting a provider quota.
+   */
+  injectUsageLimit(event: Extract<ClaudeNormalizedEvent, { type: "usage_limit" }>): void {
+    this.applyUsageLimit(event);
+  }
+
   getCodexModelState(): CodexModelDiscoveryState {
     if (!this.codexDiscovery) {
       // E2E must not reach user-owned provider APIs; discovery only runs when
@@ -473,6 +508,12 @@ export class SessionManager extends EventEmitter {
         return;
       }
       this.trackTurnActivity(session, event);
+      if (event.type === "usage_limit") {
+        // Account-scoped, not a transcript block: aggregate globally and push,
+        // rather than queueing it into this session's event stream.
+        this.applyUsageLimit(event);
+        return;
+      }
       this.queueEvent(session, event);
       if (event.type === "session" || event.type === "turn_complete" || event.type === "error" || event.type === "status") {
         this.emit("sessions", this.listSessions());

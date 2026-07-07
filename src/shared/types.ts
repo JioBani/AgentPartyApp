@@ -2,7 +2,11 @@ import type { ClaudeSessionSnapshot } from "../core/events";
 import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
 
-export type PermissionModeSetting = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
+export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
+export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
+export function isPermissionModeSetting(value: unknown): value is PermissionModeSetting {
+  return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
+}
 export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
 export type HarnessId = "claude-code" | "codex";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "custom";

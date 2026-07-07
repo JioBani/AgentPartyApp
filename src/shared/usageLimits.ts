@@ -1,0 +1,262 @@
+/**
+ * Provider usage-limit model + pure view logic for the titlebar usage indicator.
+ *
+ * These are ACCOUNT/provider-scoped rate limits (shared by every agent using that
+ * provider), NOT per-session context occupancy — see `ContextMeter` for the
+ * latter. The real data arrives through each harness's own event stream
+ * (Claude's `rate_limit_event`, Codex's `account/rateLimits/updated`); the main
+ * process merges those into one {@link UsageLimitsSnapshot} per provider and
+ * pushes it to every window.
+ *
+ * Everything here is pure (no DOM, no Electron) so the renderer and the QA/jsdom
+ * suites build the identical view from the same code.
+ */
+
+export type UsageProviderId = "claude" | "codex";
+
+/** The two rolling windows the indicator shows per provider. */
+export type UsageWindowKind = "five_hour" | "weekly";
+
+export interface UsageWindow {
+  kind: UsageWindowKind;
+  /** Percent of the window consumed, 0–100 (provider-reported). */
+  utilization: number;
+  /** When the window resets, epoch ms. Absent when the provider didn't report it. */
+  resetsAt?: number;
+}
+
+export interface ProviderUsage {
+  provider: UsageProviderId;
+  /**
+   * `false` when the provider reported that limits are not applicable (Claude API
+   * key / Bedrock / Vertex — `rate_limits_available:false`). Undefined = unknown
+   * (no report yet). Drives an explicit "해당 없음/불러오는 중" state instead of a
+   * fabricated 0%.
+   */
+  available?: boolean;
+  windows: UsageWindow[];
+  /** Epoch ms of the last update, for staleness / debugging. */
+  updatedAt: number;
+}
+
+export type UsageLimitsSnapshot = {
+  claude?: ProviderUsage;
+  codex?: ProviderUsage;
+};
+
+/** Provider display metadata. Brand colors are design literals, not theme tokens. */
+export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: string }> = {
+  claude: { label: "Claude", brand: "#c5835f" },
+  codex: { label: "Codex", brand: "#2bb67e" },
+};
+
+/** Fixed display order (matches the design). */
+export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex"];
+const WINDOW_ORDER: UsageWindowKind[] = ["five_hour", "weekly"];
+const WINDOW_LABELS: Record<UsageWindowKind, string> = { five_hour: "5시간 한도", weekly: "주간 한도" };
+
+/**
+ * Normalizes a provider-reported reset timestamp to epoch **ms**. Providers vary:
+ * Codex reports epoch seconds, Claude epoch (seconds or ms). Values below 1e12 are
+ * treated as seconds. Non-positive / non-finite → undefined (never a fake reset).
+ */
+export function toEpochMs(value: number | undefined | null): number | undefined {
+  if (typeof value !== "number" || !isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value < 1e12 ? Math.round(value * 1000) : Math.round(value);
+}
+
+/** Level escalation color as a CSS value. Unknown pct → muted text color. */
+export function usageLevelColor(pct: number | undefined, brand: string): string {
+  if (pct == null || !isFinite(pct)) {
+    return "var(--text-3)";
+  }
+  if (pct >= 90) {
+    return "var(--danger)";
+  }
+  if (pct >= 75) {
+    return "var(--live)";
+  }
+  return brand;
+}
+
+/**
+ * Human reset countdown, e.g. "2시간 12분" or "4일 6시간" — the top two non-zero
+ * units among day/hour/minute. Absent reset → undefined; already elapsed → "곧".
+ */
+export function formatResetCountdown(resetsAt: number | undefined, nowMs: number): string | undefined {
+  if (!resetsAt) {
+    return undefined;
+  }
+  let secs = Math.round((resetsAt - nowMs) / 1000);
+  if (secs <= 0) {
+    return "곧";
+  }
+  const days = Math.floor(secs / 86400);
+  secs -= days * 86400;
+  const hours = Math.floor(secs / 3600);
+  secs -= hours * 3600;
+  const minutes = Math.floor(secs / 60);
+  const units: Array<[number, string]> = [
+    [days, "일"],
+    [hours, "시간"],
+    [minutes, "분"],
+  ];
+  const shown = units.filter(([v]) => v > 0).slice(0, 2).map(([v, u]) => `${v}${u}`);
+  return shown.length ? shown.join(" ") : "1분";
+}
+
+/** Merges incoming windows onto prior ones by kind (latest per kind wins). */
+export function mergeWindows(prev: UsageWindow[] | undefined, incoming: UsageWindow[]): UsageWindow[] {
+  const byKind = new Map<UsageWindowKind, UsageWindow>();
+  for (const w of prev || []) {
+    byKind.set(w.kind, w);
+  }
+  for (const w of incoming) {
+    byKind.set(w.kind, w);
+  }
+  return WINDOW_ORDER.map((k) => byKind.get(k)).filter((w): w is UsageWindow => Boolean(w));
+}
+
+/**
+ * Folds a provider's freshly-reported windows into the prior snapshot. A report
+ * usually carries only the window that changed (Claude sends one `rateLimitType`
+ * per event), so unreported windows are preserved rather than dropped.
+ */
+export function mergeProviderUsage(
+  prev: ProviderUsage | undefined,
+  incoming: { provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; updatedAt: number },
+): ProviderUsage {
+  return {
+    provider: incoming.provider,
+    available: incoming.available ?? prev?.available,
+    windows: mergeWindows(prev?.windows, incoming.windows),
+    updatedAt: incoming.updatedAt,
+  };
+}
+
+// --- View model (consumed by the renderer + QA) ----------------------------
+
+export interface UsagePillSegment {
+  key: UsageProviderId;
+  label: string;
+  /** "63%" or "—" when the 5-hour window is unknown. */
+  pctLabel: string;
+  /** conic-gradient donut background. */
+  ring: string;
+  holeBg: string;
+  labelCol: string;
+  pctCol: string;
+}
+
+export interface UsageMeterView {
+  kind: UsageWindowKind;
+  name: string;
+  /** CSS width, e.g. "63%" (0% when unknown). */
+  pctWidth: string;
+  col: string;
+  /** Right-hand label, e.g. "63% · 2시간 12분 후 리셋" or "데이터 없음". */
+  right: string;
+  known: boolean;
+}
+
+export interface UsageRowView {
+  key: UsageProviderId;
+  label: string;
+  brand: string;
+  /** e.g. "3명 사용". */
+  sub: string;
+  meters: UsageMeterView[];
+}
+
+export interface UsageView {
+  pills: UsagePillSegment[];
+  rows: UsageRowView[];
+  /** Any provider's 5h OR weekly usage ≥ 75 — drives the pill's warning border. */
+  anyHigh: boolean;
+  /** True when no provider has any usage data yet (loading/empty). */
+  empty: boolean;
+}
+
+function windowOf(usage: ProviderUsage | undefined, kind: UsageWindowKind): UsageWindow | undefined {
+  return usage?.windows.find((w) => w.kind === kind);
+}
+
+/**
+ * Builds the full pill + popover view. A provider is shown when it has usage data
+ * OR at least one active member; providers with neither are omitted so the pill
+ * stays relevant. `membersByProvider` counts party members driving each provider.
+ */
+export function buildUsageView(
+  snapshot: UsageLimitsSnapshot,
+  membersByProvider: Partial<Record<UsageProviderId, number>>,
+  nowMs: number,
+): UsageView {
+  const pills: UsagePillSegment[] = [];
+  const rows: UsageRowView[] = [];
+  let anyHigh = false;
+  let anyData = false;
+
+  for (const provider of USAGE_PROVIDER_ORDER) {
+    const usage = snapshot[provider];
+    const members = membersByProvider[provider] || 0;
+    if (!usage && members <= 0) {
+      continue;
+    }
+    const { label, brand } = USAGE_PROVIDERS[provider];
+    const notApplicable = usage?.available === false;
+
+    const five = windowOf(usage, "five_hour");
+    const weekly = windowOf(usage, "weekly");
+    if (five || weekly) {
+      anyData = true;
+    }
+    if ((five && five.utilization >= 75) || (weekly && weekly.utilization >= 75)) {
+      anyHigh = true;
+    }
+
+    const fivePct = notApplicable ? undefined : five?.utilization;
+    const fiveCol = usageLevelColor(fivePct, brand);
+    pills.push({
+      key: provider,
+      label,
+      pctLabel: notApplicable ? "N/A" : fivePct == null ? "—" : `${Math.round(fivePct)}%`,
+      ring:
+        fivePct == null
+          ? "var(--bg-4)"
+          : `conic-gradient(${fiveCol} 0 ${fivePct}%, var(--bg-4) ${fivePct}% 100%)`,
+      holeBg: "var(--bg-2)",
+      labelCol: "var(--text-1)",
+      pctCol: fivePct == null ? "var(--text-3)" : fiveCol,
+    });
+
+    const meters: UsageMeterView[] = WINDOW_ORDER.map((kind) => {
+      const w = notApplicable ? undefined : windowOf(usage, kind);
+      if (!w) {
+        return {
+          kind,
+          name: WINDOW_LABELS[kind],
+          pctWidth: "0%",
+          col: "var(--text-3)",
+          right: notApplicable ? "해당 없음 (API 키)" : usage ? "데이터 없음" : "불러오는 중…",
+          known: false,
+        };
+      }
+      const pct = Math.round(w.utilization);
+      const countdown = formatResetCountdown(w.resetsAt, nowMs);
+      return {
+        kind,
+        name: WINDOW_LABELS[kind],
+        pctWidth: `${w.utilization}%`,
+        col: usageLevelColor(w.utilization, brand),
+        right: countdown ? `${pct}% · ${countdown} 후 리셋` : `${pct}%`,
+        known: true,
+      };
+    });
+
+    rows.push({ key: provider, label, brand, sub: `${members}명 사용`, meters });
+  }
+
+  return { pills, rows, anyHigh, empty: !anyData };
+}

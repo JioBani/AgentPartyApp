@@ -10,7 +10,7 @@ import type {
   StartPartyMemberInput,
   SessionView,
 } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
+import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { ImageAttachment } from "../../shared/attachments";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
@@ -289,6 +289,36 @@ export class PartyApplicationService {
       member.updatedAt = new Date().toISOString();
       this.persistParty(workspace, state, this.partyIdOf(member));
     }
+  }
+
+  /**
+   * Persists a runtime permission-mode change back to the member that owns the
+   * live session, so reopening the member (or restarting the app) restores the
+   * mode the user last chose — the analogue of {@link saveMemberTranscript}
+   * capturing the live harness thread id. A no-op when no member is bound to the
+   * session (e.g. a non-party session) or the value is unchanged, so the setter
+   * path stays universal and writes only when something actually moved.
+   */
+  syncMemberPermissionMode(sessionId: string, permissionMode: string): void {
+    if (!sessionId) {
+      return;
+    }
+    if (!isPermissionModeSetting(permissionMode)) {
+      // Surface rather than silently drop: an unknown mode reaching here means an
+      // upstream contract drifted, and persisting it would corrupt the member.
+      log("warn", "party", "ignoring unknown permission mode for member persistence", { sessionId, permissionMode });
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || member.permissionMode === permissionMode) {
+      return;
+    }
+    member.permissionMode = permissionMode;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member permission mode persisted", { workspace, partyId: member.partyId, member: member.name, permissionMode });
   }
 
   bindMember(name: string, sessionId: string, partyId?: string): PartyCommandResult {

@@ -10,6 +10,7 @@ const api = {
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
+  getUsageLimits: () => ipcRenderer.invoke("usage:get"),
   createSession: (input?: unknown) => ipcRenderer.invoke("session:create", input),
   listResumableSessions: (workspacePath?: string) => ipcRenderer.invoke("session:listResumable", workspacePath),
   resumeSession: (sessionId: string, workspacePath?: string) => ipcRenderer.invoke("session:resume", sessionId, workspacePath),
@@ -78,6 +79,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("settings:update", listener);
     return () => ipcRenderer.off("settings:update", listener);
+  },
+  onUsageUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("usage:update", listener);
+    return () => ipcRenderer.off("usage:update", listener);
   },
   onQaLayout: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

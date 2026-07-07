@@ -22,6 +22,7 @@ import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuesti
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
+import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 
@@ -838,6 +839,15 @@ export class CodexAdapter extends EventEmitter {
       if (diagnostic) {
         this.emitEvent({ type: "diagnostic", ...diagnostic, at: now() });
       }
+      // The diagnostic above surfaces ONLY at (near-)exhaustion (no noise); the
+      // titlebar indicator needs every tick, so emit a structured usage-limit
+      // event on each rate-limit update regardless of level.
+      if (method === "account/rateLimits/updated") {
+        const windows = codexRateLimitWindows(params?.rateLimits);
+        if (windows.length) {
+          this.emitEvent({ type: "usage_limit", provider: "codex", windows, available: true, at: now() });
+        }
+      }
       return;
     }
   }
@@ -1130,6 +1140,31 @@ function normalizeCodexUsage(value: unknown): TurnUsage | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+/**
+ * Maps a Codex `RateLimitSnapshot` to {@link UsageWindow}s. Codex reports two
+ * rolling windows — `primary` and `secondary`. Codex/ChatGPT plans use a 5-hour
+ * primary and a weekly secondary, so we map primary→5-hour, secondary→weekly.
+ * ASSUMPTION: the protocol carries no explicit window-duration field this code
+ * reads; if a future Codex version adds one, prefer it. `resetsAt` is epoch
+ * seconds. Windows without a numeric `usedPercent` are skipped (never faked).
+ */
+function codexRateLimitWindows(snapshot: any): UsageWindow[] {
+  if (!snapshot || typeof snapshot !== "object") {
+    return [];
+  }
+  const pairs: Array<[UsageWindowKind, any]> = [
+    ["five_hour", snapshot.primary],
+    ["weekly", snapshot.secondary],
+  ];
+  const windows: UsageWindow[] = [];
+  for (const [kind, w] of pairs) {
+    if (w && typeof w.usedPercent === "number" && isFinite(w.usedPercent)) {
+      windows.push({ kind, utilization: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: toEpochMs(w.resetsAt) });
+    }
+  }
+  return windows;
 }
 
 function stringArray(value: unknown): string[] {

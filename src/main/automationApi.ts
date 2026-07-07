@@ -113,6 +113,10 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.refreshCodexModels(workspace));
         return;
       }
+      if (method === "GET" && url.pathname === "/api/usage") {
+        sendJson(res, 200, c.getUsageLimits());
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/sessions") {
         sendJson(res, 200, await c.createSession(workspace, await readJson(req)));
         return;
@@ -235,6 +239,10 @@ export class AutomationApiServer {
     if (method === "POST" && url.pathname === "/api/qa/open") {
       const body = await readJson(req);
       sendJson(res, 200, c.qaOpen(windowId, Array.isArray(body.panels) ? body.panels : []));
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/qa/usage") {
+      sendJson(res, 200, c.qaEmitUsage(await readJson(req)));
       return;
     }
     if (method === "POST" && url.pathname === "/api/qa/reset") {
