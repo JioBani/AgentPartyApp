@@ -76,6 +76,7 @@
     "start:dev": "cross-env AGENTPARTY_RENDERER_URL=http://127.0.0.1:5173 node scripts/launch-electron.mjs",
     "qa:seed": "node scripts/qa-frontend.mjs",
     "dist:win": "npm run build && electron-builder --win --x64",
+    "package:win": "node scripts/package-win.mjs",
     "test:member-start-model": "node scripts/qa-member-start-model.mjs"
   },
   "build": {

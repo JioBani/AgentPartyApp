@@ -10,6 +10,20 @@
 
 ## 이슈 목록
 
+### #9 Codex 하네스에서 agent-party-app MCP 도구가 노출되지 않음 🔴 OPEN
+
+- **상태**: OPEN (원인 조사 필요)
+- **심각도**: 높음 — Codex 멤버가 파티/앱 자동화(agent-party-app MCP) 도구를 전혀 쓰지 못함 → Claude 멤버와 기능 비대칭
+- **증상**: Claude 하네스 멤버에게는 `agent-party-app` MCP 서버의 도구가 정상 노출되는데, **Codex 하네스 멤버에게는 같은 도구가 도구 목록에 나타나지 않음**. Codex 멤버가 파티 조작/앱 제어 도구를 호출할 수 없음.
+- **기대 결과**: Codex 하네스에서도 `agent-party-app` MCP 도구가 동일하게 노출되어, 하네스 종류와 무관하게 같은 파티/앱 자동화 도구를 쓸 수 있어야 함
+- **추정 원인 후보** (미확정):
+  - MCP 서버 주입/등록 경로가 Claude 어댑터에만 배선되어 있고 Codex 어댑터에는 누락 (하네스별 MCP 구성 비대칭)
+  - Codex는 MCP 서버 구성 형식/전달 방식이 달라(예: `codex` config의 `mcp_servers` 테이블) 앱이 넘긴 서버 정의가 반영되지 않음
+- **확인 필요**: Claude vs Codex 어댑터의 MCP 서버 구성 코드 경로 비교(`src/core/claudeAdapter.ts` / `src/core/codexAdapter.ts`), Codex 실행 시 실제 전달되는 MCP 설정 로그
+- **연관**: AGENTS.md의 "모든 사용자 기능은 로컬 자동화 HTTP API로 노출" 원칙 — MCP 도구 비대칭은 하네스 간 QA/자동화 커버리지 불일치를 만듦
+
+---
+
 ### #8 한 프로젝트에 대해 창 여러 개(멀티 인스턴스 또는 워크벤치 창 분리) 지원 요청 ✅ (a) 구현됨
 
 - **상태**: (a) 멀티 인스턴스 = **구현됨** (멀티프로세스 재설계). (b) 워크벤치 창 분리(detach)는 별개 후속 항목으로 유지.
