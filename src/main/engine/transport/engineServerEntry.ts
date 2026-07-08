@@ -47,6 +47,11 @@ async function main(): Promise<void> {
   // Codex model discovery settled inside this engine — signal the client so it
   // re-fetches routes and pushes models:update (same rule: no silent state).
   host.sessionManager.on("codex-models", (payload) => writeLine(process.stdout, { kind: "event", channel: "codex-models:changed", payload }));
+  // Provider rate-limit usage changed inside this engine (Claude rate_limit_event
+  // / Codex account/rateLimits/updated). These limits are account-global, so the
+  // client merges them into its own snapshot — without this the desktop's usage
+  // indicator for a WSL workspace is stuck on "불러오는 중…" forever.
+  host.sessionManager.on("usage", (payload) => writeLine(process.stdout, { kind: "event", channel: "usage", payload }));
 
   const shutdown = () => {
     host.dispose();

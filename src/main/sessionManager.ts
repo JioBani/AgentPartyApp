@@ -124,6 +124,38 @@ export class SessionManager extends EventEmitter {
     this.applyUsageLimit(event);
   }
 
+  /**
+   * Folds a remote engine's account-usage snapshot into this process's aggregate
+   * and rebroadcasts. In WSL mode the harness adapters — and thus the
+   * `usage_limit` events — live in the distro's engine-server, so its usage never
+   * reaches these desktop windows unless the transport forwards it (see
+   * engineServerEntry's "usage" channel + main's forwardRemoteEvent). Usage
+   * limits are account-global, so a remote workspace's Claude/Codex reports merge
+   * into the same snapshot local sessions feed, latest-per-provider winning.
+   */
+  mergeRemoteUsage(snapshot: UsageLimitsSnapshot): void {
+    let changed = false;
+    for (const provider of ["claude", "codex"] as const) {
+      const incoming = snapshot?.[provider];
+      if (!incoming) {
+        continue;
+      }
+      this.usageLimits = {
+        ...this.usageLimits,
+        [provider]: mergeProviderUsage(this.usageLimits[provider], {
+          provider,
+          windows: incoming.windows,
+          available: incoming.available,
+          updatedAt: incoming.updatedAt,
+        }),
+      };
+      changed = true;
+    }
+    if (changed) {
+      this.emit("usage", this.usageLimits);
+    }
+  }
+
   getCodexModelState(): CodexModelDiscoveryState {
     if (!this.codexDiscovery) {
       // E2E must not reach user-owned provider APIs; discovery only runs when

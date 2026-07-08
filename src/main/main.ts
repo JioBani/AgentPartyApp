@@ -19,6 +19,7 @@ import type { WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
+import type { UsageLimitsSnapshot } from "../shared/usageLimits";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -334,6 +335,13 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
   if (channel === "codex-models:changed") {
     // The remote engine's codex catalog settled: rebuild and push model routes.
     void appController?.notifyCodexModelsChanged();
+    return;
+  }
+  if (channel === "usage") {
+    // Account-global provider rate limits from a WSL engine. Merge into this
+    // process's aggregate; the "usage" listener above then pushes usage:update to
+    // every window (NOT workspace-stamped — these limits are not per-workspace).
+    sessionManager?.mergeRemoteUsage(payload as UsageLimitsSnapshot);
     return;
   }
   const stamped = payload && typeof payload === "object" ? { ...payload, workspace: workspacePath } : payload;
