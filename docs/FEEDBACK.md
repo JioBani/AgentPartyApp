@@ -10,9 +10,12 @@
 
 ## 이슈 목록
 
-### #9 Codex 하네스에서 agent-party-app MCP 도구가 노출되지 않음 🔴 OPEN
+### #9 Codex 하네스에서 agent-party-app MCP 도구가 노출되지 않음 ✅ FIXED
 
-- **상태**: OPEN (원인 조사 필요)
+- **FIXED 요약**: Codex 세션 시작 시 `mcp_servers.agentparty-app` stdio MCP 서버를 인라인 config로 주입하고, 해당 서버가 로컬 자동화 HTTP API를 통해 같은 AppController/PartyApplicationService 경로를 호출하도록 구현. 사용자 `~/.codex/config.toml`은 수정하지 않음.
+- **검증**: `npm run test:party-bridge`, `npm run test:codex-party-tools`, `npm run test:e2e:live-codex-party-tools`, `npm run typecheck`
+
+- **상태**: FIXED
 - **심각도**: 높음 — Codex 멤버가 파티/앱 자동화(agent-party-app MCP) 도구를 전혀 쓰지 못함 → Claude 멤버와 기능 비대칭
 - **증상**: Claude 하네스 멤버에게는 `agent-party-app` MCP 서버의 도구가 정상 노출되는데, **Codex 하네스 멤버에게는 같은 도구가 도구 목록에 나타나지 않음**. Codex 멤버가 파티 조작/앱 제어 도구를 호출할 수 없음.
 - **기대 결과**: Codex 하네스에서도 `agent-party-app` MCP 도구가 동일하게 노출되어, 하네스 종류와 무관하게 같은 파티/앱 자동화 도구를 쓸 수 있어야 함

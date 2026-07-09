@@ -44,6 +44,7 @@ export function App() {
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
   const [usageLimits, setUsageLimits] = useState<UsageLimitsSnapshot>({});
+  const [usageRefreshing, setUsageRefreshing] = useState(false);
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
@@ -647,9 +648,29 @@ export function App() {
     return counts;
   }, [members]);
 
+  async function refreshUsageLimits() {
+    setUsageRefreshing(true);
+    try {
+      const res = await window.agentParty.refreshUsageLimits?.();
+      if (res?.usage) {
+        setUsageLimits(res.usage);
+      }
+    } finally {
+      setUsageRefreshing(false);
+    }
+  }
+
   // Global usage indicator — lives under the "작업공간" button in each screen
   // header (reused across views), not the titlebar.
-  const usagePill = <UsageLimitPill usage={usageLimits} membersByProvider={membersByProvider} onOpenSettings={() => setCurrentView("automation")} />;
+  const usagePill = (
+    <UsageLimitPill
+      usage={usageLimits}
+      membersByProvider={membersByProvider}
+      onOpenSettings={() => setCurrentView("automation")}
+      onRefresh={() => { void refreshUsageLimits(); }}
+      refreshing={usageRefreshing}
+    />
+  );
 
   return (
     <div className="app-shell">

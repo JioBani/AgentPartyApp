@@ -160,10 +160,12 @@ after the fresh discovery settles.
 Current account/provider-scoped rate-limit usage — the data behind the titlebar
 usage indicator. These limits are **account-global** (shared by every agent using
 that provider), not per-session or per-workspace, so this endpoint takes no
-parameters. Data arrives from each harness's own event stream (Claude
-`rate_limit_event`, Codex `account/rateLimits/updated`) and is merged per
-provider; a provider absent from the response simply hasn't reported yet (show an
-unknown/loading state, never a fabricated 0%).
+parameters. AgentParty first asks a newly-started harness for its current usage
+when the harness exposes a read API (Claude SDK `/usage`, Codex
+`account/rateLimits/read`), then keeps the snapshot fresh from each harness's own
+event stream (Claude `rate_limit_event`, Codex `account/rateLimits/updated`).
+Reports are merged per provider; a provider absent from the response simply
+hasn't reported yet (show an unknown/loading state, never a fabricated 0%).
 
 ```json
 {
@@ -186,7 +188,18 @@ unknown/loading state, never a fabricated 0%).
 `utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
 didn't report a reset). `available:false` means the provider reported limits are
 not applicable (Claude API key / Bedrock / Vertex) — render "해당 없음", not 0%.
-Windows update live over the `usage:update` IPC push to every window.
+The titlebar indicator always shows Claude and Codex; missing provider data is
+rendered as loading/unknown until a read or push update arrives. Windows update
+live over the `usage:update` IPC push to every window.
+
+AgentParty refreshes live harness usage once per minute while a session is
+running. Users or automation can request an immediate refresh:
+
+### `POST /api/usage/refresh`
+
+Asks every live harness that exposes usage reads to refresh now, then returns the
+same shape as `GET /api/usage`. Failures are surfaced as session status events
+instead of silently clearing existing usage.
 
 ## Sessions
 
@@ -335,10 +348,12 @@ extras:
 
 ### `GET /api/sessions/:id/mcp`
 
-Lists the **external MCP servers** this session's member connects to (as a
-client), with live status + tools. Backed by the same `AppController` path the
-workbench MCP panel uses, so an agent sees exactly what a user sees. Requires a
-live session (start the member first).
+Lists the MCP servers this session's member connects to (as a client), with live
+status + tools. For AgentParty party members this can include the app-hosted
+`agentparty-app` tool surface; Codex receives it as a per-session stdio MCP
+server configured inline, and the server routes back through the local
+automation API to the same AppController path as the UI. Requires a live session
+(start the member first).
 
 ```json
 {

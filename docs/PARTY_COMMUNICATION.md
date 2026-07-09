@@ -56,11 +56,12 @@ Claude Code exposes party operations through the in-process SDK MCP server in
 src/core/partyBridge.ts. Tool handlers are identity-bound closures created by
 PartyApplicationService.
 
-Codex currently uses persistent codex app-server JSON-RPC sessions. Party identity
-and routing instructions are injected as session context/turn content, and
-channel messages arrive through the same sendUserTurn boundary. A direct
-Codex-native tool binding can be added later without changing party state or
-message routing.
+Codex uses persistent codex app-server JSON-RPC sessions. Current Codex builds
+load model-visible tools through `mcp_servers.*`, so AgentParty starts each
+Codex party session with an inline `mcp_servers.agentparty-app` stdio MCP
+configuration. That local MCP server routes every tool call back into the app's
+local automation HTTP API, which reaches the same AppController /
+PartyApplicationService paths as the UI.
 
 ## Codex Harness
 
@@ -68,6 +69,12 @@ Codex is available through src/core/codexAdapter.ts.
 
 - One codex app-server process is kept alive per AgentParty session.
 - The adapter calls initialize, then starts or resumes one app-server thread.
+- Party tools are registered as a per-session `agentparty-app` MCP server via
+  Codex inline `-c mcp_servers.agentparty-app.*` config, without editing the
+  user's `~/.codex/config.toml`.
+- The `agentparty-app` MCP server is a local stdio process that calls the app's
+  automation API, so UI, HTTP, Claude tools, and Codex tools converge on the
+  same controller/service methods.
 - Each user turn is sent with turn/start on that existing thread.
 - App-server notifications are normalized into the shared renderer event stream.
 - Delta notifications that duplicate completed items are opted out during

@@ -101,6 +101,19 @@ export class SessionManager extends EventEmitter {
     return this.usageLimits;
   }
 
+  /** Requests every live harness to refresh account/provider usage now. */
+  async refreshUsageLimits(): Promise<UsageLimitsSnapshot> {
+    const tasks: Promise<void>[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.closed || typeof session.adapter.refreshUsageLimits !== "function") {
+        continue;
+      }
+      tasks.push(session.adapter.refreshUsageLimits());
+    }
+    await Promise.allSettled(tasks);
+    return this.usageLimits;
+  }
+
   /** Merges one provider's reported windows and broadcasts the new snapshot. */
   private applyUsageLimit(event: Extract<ClaudeNormalizedEvent, { type: "usage_limit" }>): void {
     this.usageLimits = {
@@ -500,7 +513,9 @@ export class SessionManager extends EventEmitter {
         debugEnabled: settings.debugEnabled,
         storageDir: path.join(this.userDataDir, "logs"),
         resumeSessionId,
+        partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,
+        automationBaseUrl: `http://127.0.0.1:${process.env.AGENTPARTY_AUTOMATION_PORT || settings.automationApiPort}`,
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,

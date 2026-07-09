@@ -20,6 +20,8 @@ export interface HarnessSession extends EventEmitter {
   setEffort(effort: string): void;
   setThinking(mode: string, budget?: number): void;
   setPermissionMode(permissionMode: string): void;
+  /** Refresh provider/account-scoped usage limits now, if the harness exposes them. */
+  refreshUsageLimits?(): Promise<void>;
   /** Codex-only: update the two-axis safety model live. Absent on Claude. */
   setCodexPolicy?(policy: CodexPolicy): void;
   /**

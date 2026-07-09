@@ -117,6 +117,10 @@ export class AutomationApiServer {
         sendJson(res, 200, c.getUsageLimits());
         return;
       }
+      if (method === "POST" && url.pathname === "/api/usage/refresh") {
+        sendJson(res, 200, await c.refreshUsageLimits());
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/sessions") {
         sendJson(res, 200, await c.createSession(workspace, await readJson(req)));
         return;

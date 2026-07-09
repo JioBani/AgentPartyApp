@@ -11,6 +11,7 @@ export const automationEndpoints = [
   "GET /api/models",
   "POST /api/models/codex/refresh",
   "GET /api/usage",
+  "POST /api/usage/refresh",
   "POST /api/sessions",
   "GET /api/sessions/history",
   "POST /api/sessions/resume",

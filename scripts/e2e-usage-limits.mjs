@@ -4,7 +4,9 @@
  * proves, in the actual app path, that provider rate-limit usage injected over
  * `POST /api/qa/usage` is aggregated per provider (merging separate window
  * reports), served by `GET /api/usage`, and pushed to the window so the titlebar
- * pill paints. A screenshot of the pill + open popover is captured for reference.
+ * pill paints. The renderer's always-visible Claude/Codex empty state is locked
+ * by qa-usage-limits; this full-process test captures the real window for visual
+ * review and verifies the injected data path end to end.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -28,11 +30,13 @@ async function main() {
   try {
     await waitApi();
 
-    // Seed a party with one claude-code member so the pill has a provider to show.
+    // Seed one member to exercise member counts; the pill itself shows both
+    // providers even when no provider has members or data.
     await post("/api/qa/reset").catch(() => {});
     await post("/api/qa/seed", { party: "usage", members: [{ name: "worker", role: "r" }] });
 
-    // Empty until the first report — never a fabricated 0%.
+    // Empty until the first report: the API never fabricates 0%; the renderer
+    // still shows Claude/Codex as loading from the shared view model.
     let usage = (await get("/api/usage")).usage;
     assert(!usage.claude && !usage.codex, "no usage reported yet → empty snapshot (not 0%)");
 

@@ -3,8 +3,10 @@
  * the fake codex app-server. Launches the REAL app on the LEFT monitor, creates a
  * Codex member, and sends a turn whose fake response emits model/rerouted + a
  * sandbox warning + a near-exhausted rate-limit. Asserts the turn completes
- * cleanly (the real adapter classified/surfaced each notification without error)
- * and captures a screenshot of the rendered diagnostic banners + header badge.
+ * cleanly (the real adapter classified/surfaced each notification without error),
+ * proves session-start `account/rateLimits/read` fills `/api/usage` before the
+ * provider's later push notification, and captures a screenshot of the rendered
+ * diagnostic banners + header badge.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -49,11 +51,15 @@ async function main() {
     const name = "codey";
     await post("/api/party/members", { name, requirement: "diagnostics e2e", runtime: "codex", model: "gpt-5.4-mini", permissionMode: "default" });
     await post(`/api/party/members/${name}/open`, {});
+    const initialUsage = await waitForCodexUsage(21);
+    assert(initialUsage === 21, "codex session start reads account/rateLimits into /api/usage before a turn");
     await post(`/api/party/members/${name}/send`, { content: "KIND=diagnostics 진단을 보여줘" });
 
     const session = await waitForTurn();
     assert(session.snapshot.turnCount >= 1, "turn completed (adapter surfaced reroute/warning/rate-limit without error)");
     assert(session.snapshot.status !== "error", `session did not error (status=${session.snapshot.status})`);
+    const refreshed = await post("/api/usage/refresh", {});
+    assert(refreshed.usage?.codex?.windows?.find((w) => w.kind === "five_hour")?.utilization === 21, "manual usage refresh re-reads Codex account limits through the automation API");
 
     const shot = path.join(os.tmpdir(), "codex-diagnostics.png");
     const cap = await post("/api/capture", { path: shot });
@@ -82,6 +88,19 @@ async function waitForTurn() {
     await delay(400);
   }
   throw new Error("turn did not complete within 30s");
+}
+
+async function waitForCodexUsage(expected) {
+  const started = Date.now();
+  while (Date.now() - started < 10000) {
+    const usage = (await getJson("/api/usage")).usage;
+    const five = usage?.codex?.windows?.find((w) => w.kind === "five_hour");
+    if (five?.utilization === expected) {
+      return five.utilization;
+    }
+    await delay(300);
+  }
+  return undefined;
 }
 
 async function waitForApi() {

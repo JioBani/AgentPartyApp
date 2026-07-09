@@ -163,6 +163,8 @@ export class ClaudeAdapter extends EventEmitter {
   // output out of the parent transcript.
   private subagentTracker = new ClaudeSubagentTracker();
   private readonly startedAt = new Date().toISOString();
+  private usageRefreshTimer: NodeJS.Timeout | undefined;
+  private lastUsageStatus = "";
 
   constructor(private readonly options: ClaudeAdapterOptions) {
     super();
@@ -523,6 +525,7 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   dispose(): void {
+    this.stopUsagePolling();
     this.input.close();
     this.abortController?.abort();
     this.query?.close();
@@ -654,6 +657,7 @@ export class ClaudeAdapter extends EventEmitter {
     } catch (error) {
       this.emitError(error);
     } finally {
+      this.stopUsagePolling();
       this.started = false;
       this.logger?.close();
     }
@@ -762,9 +766,66 @@ export class ClaudeAdapter extends EventEmitter {
       // this `session` event. Without this the command palette stays on its
       // static fallback until the next status-change snapshot.
       this.emit("snapshot", this.getSnapshot());
+      this.startUsagePolling();
+      void this.refreshUsageLimits();
     } catch (error) {
       this.emitError(error);
     }
+  }
+
+  /**
+   * Reads the `/usage` data once at session initialization. Claude also emits
+   * `rate_limit_event` updates later; this prevents the global usage indicator
+   * from waiting indefinitely on a passive event when the SDK can answer now.
+   */
+  async refreshUsageLimits(): Promise<void> {
+    if (!this.query) {
+      return;
+    }
+    const usageFn = (this.query as any).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (typeof usageFn !== "function") {
+      this.emitUsageStatus("Claude SDK usage read is not available in this version.");
+      return;
+    }
+    try {
+      const usage = await usageFn.call(this.query);
+      const rateLimitsAvailable = usage?.rate_limits_available;
+      const windows = claudeUsageWindows(usage?.rate_limits);
+      this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: rateLimitsAvailable !== false, at: now() });
+      this.lastUsageStatus = "";
+      if (rateLimitsAvailable === false) {
+        this.emitUsageStatus("Claude plan rate limits are not available for this auth mode.");
+      } else if (!windows.length) {
+        this.emitUsageStatus("Claude usage read returned no usable rate-limit windows.");
+      }
+    } catch (error) {
+      this.emitUsageStatus(`Claude usage read failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private emitUsageStatus(detail: string): void {
+    if (detail === this.lastUsageStatus) {
+      return;
+    }
+    this.lastUsageStatus = detail;
+    this.emitEvent({ type: "status", status: "usage", detail, at: now() });
+  }
+
+  private startUsagePolling(): void {
+    if (this.usageRefreshTimer) {
+      return;
+    }
+    this.usageRefreshTimer = setInterval(() => {
+      void this.refreshUsageLimits();
+    }, 60_000);
+  }
+
+  private stopUsagePolling(): void {
+    if (!this.usageRefreshTimer) {
+      return;
+    }
+    clearInterval(this.usageRefreshTimer);
+    this.usageRefreshTimer = undefined;
   }
 
   private async normalize(message: SDKMessage): Promise<void> {
@@ -1471,6 +1532,38 @@ function rateLimitWindowFrom(info: any): UsageWindow | undefined {
     return undefined;
   }
   return { kind, utilization: Math.max(0, Math.min(100, info.utilization)), resetsAt: toEpochMs(info.resetsAt) };
+}
+
+/** Maps the Claude SDK `/usage` response's rate_limits object to display windows. */
+function claudeUsageWindows(rateLimits: any): UsageWindow[] {
+  if (!rateLimits || typeof rateLimits !== "object") {
+    return [];
+  }
+  const windows: UsageWindow[] = [];
+  const five = claudeUsageWindow("five_hour", rateLimits.five_hour);
+  if (five) {
+    windows.push(five);
+  }
+  const weekly =
+    claudeUsageWindow("weekly", rateLimits.seven_day) ||
+    claudeUsageWindow("weekly", rateLimits.seven_day_sonnet) ||
+    claudeUsageWindow("weekly", rateLimits.seven_day_opus) ||
+    claudeUsageWindow("weekly", rateLimits.seven_day_oauth_apps);
+  if (weekly) {
+    windows.push(weekly);
+  }
+  return windows;
+}
+
+function claudeUsageWindow(kind: UsageWindowKind, value: any): UsageWindow | undefined {
+  if (!value || typeof value !== "object" || typeof value.utilization !== "number" || !isFinite(value.utilization)) {
+    return undefined;
+  }
+  return {
+    kind,
+    utilization: Math.max(0, Math.min(100, value.utilization)),
+    resetsAt: toEpochMs(Date.parse(String(value.resets_at || ""))),
+  };
 }
 
 /**

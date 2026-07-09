@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Settings } from "lucide-react";
+import { ChevronDown, RefreshCw, Settings } from "lucide-react";
 import { buildUsageView, type UsageLimitsSnapshot, type UsageProviderId } from "../../shared/usageLimits";
 
 interface UsageLimitPillProps {
@@ -7,6 +7,8 @@ interface UsageLimitPillProps {
   /** Party members currently driving each provider (Claude/Codex account). */
   membersByProvider: Partial<Record<UsageProviderId, number>>;
   onOpenSettings: () => void;
+  onRefresh: () => void;
+  refreshing?: boolean;
 }
 
 /**
@@ -17,7 +19,7 @@ interface UsageLimitPillProps {
  * shared {@link buildUsageView} so QA renders the identical output. See
  * docs/디자인 핸드오프/design_handoff_usage_limits.
  */
-export function UsageLimitPill({ usage, membersByProvider, onOpenSettings }: UsageLimitPillProps) {
+export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRefresh, refreshing }: UsageLimitPillProps) {
   const [open, setOpen] = useState(false);
   // Re-tick so reset countdowns count down between server pushes.
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -107,10 +109,16 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings }: Usa
               ))}
             </div>
           ))}
-          <button type="button" className="usage-settings-btn" onClick={() => { setOpen(false); onOpenSettings(); }}>
-            <Settings size={12} />
-            Settings에서 상세 보기
-          </button>
+          <div className="usage-pop-actions">
+            <button type="button" className="usage-settings-btn" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw size={12} />
+              {refreshing ? "새로고침 중" : "새로고침"}
+            </button>
+            <button type="button" className="usage-settings-btn" onClick={() => { setOpen(false); onOpenSettings(); }}>
+              <Settings size={12} />
+              Settings에서 상세 보기
+            </button>
+          </div>
         </div>
       )}
     </div>

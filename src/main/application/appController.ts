@@ -191,6 +191,10 @@ export class AppController {
     return { ok: true, usage: this.deps.sessionManager.getUsageLimits() };
   }
 
+  async refreshUsageLimits(): Promise<{ ok: true; usage: UsageLimitsSnapshot }> {
+    return { ok: true, usage: await this.deps.sessionManager.refreshUsageLimits() };
+  }
+
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     const previous = getSettings();
     updateSettings(patch || {});

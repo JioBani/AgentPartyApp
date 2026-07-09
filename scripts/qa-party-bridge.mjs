@@ -34,7 +34,7 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { buildPartyToolDefs, buildPartyPrimer, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, invokePartyTool, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -147,6 +147,18 @@ const out = await sendTool.handler({ to: "buddy", content: "ping" });
 assert(Array.isArray(out.content) && out.content[0].type === "text", "send tool returns an MCP text envelope");
 assert(out.isError === false, "successful send is not flagged as error");
 assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "tool handler stamps from=main (identity, not args)");
+
+// --- Codex dynamic tool glue: same bridge, Codex protocol shape --------------
+console.log("\nCodex dynamic tool assertions:");
+const dynamic = buildPartyDynamicToolSpec();
+assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
+assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same five party tools");
+const beforeDynamic = sentTurns.length;
+const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
+assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
+assert(sentTurns.length === beforeDynamic + 1 && /from="main"/.test(sentTurns[beforeDynamic].text), "Codex dispatcher stamps from=main through the same bridge identity");
+const unknownDynamic = await invokePartyTool(bridge, mainBinding.identity, "mcp__agentparty__send", {});
+assert(!unknownDynamic.ok && /Unknown AgentParty tool/.test(unknownDynamic.error || ""), "Codex dispatcher rejects legacy agentparty tool names");
 
 // --- session primer: deterministic surface knowledge (no model memory) -------
 console.log("\nParty primer assertions:");

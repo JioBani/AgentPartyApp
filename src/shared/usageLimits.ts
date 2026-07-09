@@ -184,9 +184,10 @@ function windowOf(usage: ProviderUsage | undefined, kind: UsageWindowKind): Usag
 }
 
 /**
- * Builds the full pill + popover view. A provider is shown when it has usage data
- * OR at least one active member; providers with neither are omitted so the pill
- * stays relevant. `membersByProvider` counts party members driving each provider.
+ * Builds the full pill + popover view. Claude and Codex are always shown so the
+ * user can see whether a provider is still loading, unavailable, or reporting
+ * data even before a member exists. `membersByProvider` counts party members
+ * driving each provider.
  */
 export function buildUsageView(
   snapshot: UsageLimitsSnapshot,
@@ -201,9 +202,6 @@ export function buildUsageView(
   for (const provider of USAGE_PROVIDER_ORDER) {
     const usage = snapshot[provider];
     const members = membersByProvider[provider] || 0;
-    if (!usage && members <= 0) {
-      continue;
-    }
     const { label, brand } = USAGE_PROVIDERS[provider];
     const notApplicable = usage?.available === false;
 

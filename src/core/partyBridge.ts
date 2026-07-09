@@ -59,6 +59,128 @@ export interface PartyBridge {
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "list", "list-models"] as const;
+export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
+
+const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
+  send: "Send a message to another member of your party. Fire-and-forget; errors if the recipient is not running or does not exist.",
+  "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
+  "member-remove": "Remove a member from your party. Cannot remove 'main'.",
+  list: "List your party's members and their current status.",
+  "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
+};
+
+const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
+  send: {
+    type: "object",
+    properties: {
+      to: { type: "string", description: "Recipient member name in your party." },
+      content: { type: "string", description: "Message body." },
+    },
+    required: ["to", "content"],
+    additionalProperties: false,
+  },
+  "member-create": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "New member name (letters, digits, _ or -)." },
+      role: { type: "string", description: "Short role description for the new member." },
+      harness: { type: "string", description: "Harness id, e.g. claude-code or codex. Defaults to claude-code." },
+      model: { type: "string", description: "Model id from list-models." },
+      reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
+      reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
+      effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+    },
+    required: ["name", "role"],
+    additionalProperties: false,
+  },
+  "member-remove": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Member name to remove." },
+    },
+    required: ["name"],
+    additionalProperties: false,
+  },
+  list: { type: "object", properties: {}, additionalProperties: false },
+  "list-models": { type: "object", properties: {}, additionalProperties: false },
+};
+
+export interface PartyDynamicToolSpec {
+  type: "namespace";
+  name: string;
+  description: string;
+  tools: Array<{
+    type: "function";
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }>;
+}
+
+export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
+  return {
+    type: "namespace",
+    name: PARTY_MCP_SERVER,
+    description: "AgentParty app party controls for messaging and member management.",
+    tools: PARTY_TOOL_NAMES.map((name) => ({
+      type: "function",
+      name,
+      description: partyDynamicToolDescriptions[name],
+      inputSchema: partyDynamicToolSchemas[name],
+    })),
+  };
+}
+
+export function partyToolNameOf(tool: string): PartyToolName | undefined {
+  const plain = tool.startsWith(PARTY_TOOL_PREFIX) ? tool.slice(PARTY_TOOL_PREFIX.length) : tool;
+  return (PARTY_TOOL_NAMES as readonly string[]).includes(plain) ? plain as PartyToolName : undefined;
+}
+
+export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdentity, tool: string, args: unknown): Promise<PartyToolResult> {
+  const name = partyToolNameOf(tool);
+  if (!name) {
+    return { ok: false, error: `Unknown AgentParty tool '${tool}'.` };
+  }
+  const input = args && typeof args === "object" ? args as Record<string, unknown> : {};
+  switch (name) {
+    case "send": {
+      const to = typeof input.to === "string" ? input.to : "";
+      const content = typeof input.content === "string" ? input.content : "";
+      if (!to || !content) {
+        return { ok: false, error: "send requires string arguments: to, content." };
+      }
+      return bridge.send(identity.member, to, content);
+    }
+    case "member-create": {
+      const memberName = typeof input.name === "string" ? input.name : "";
+      const role = typeof input.role === "string" ? input.role : "";
+      if (!memberName || !role) {
+        return { ok: false, error: "member-create requires string arguments: name, role." };
+      }
+      return bridge.createMember({
+        name: memberName,
+        role,
+        harness: typeof input.harness === "string" ? input.harness : undefined,
+        model: typeof input.model === "string" ? input.model : undefined,
+        reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
+        reasoningBudget: typeof input.reasoningBudget === "number" ? input.reasoningBudget : undefined,
+        effort: typeof input.effort === "string" ? input.effort : undefined,
+      });
+    }
+    case "member-remove": {
+      const memberName = typeof input.name === "string" ? input.name : "";
+      if (!memberName) {
+        return { ok: false, error: "member-remove requires string argument: name." };
+      }
+      return bridge.removeMember(memberName);
+    }
+    case "list":
+      return bridge.list();
+    case "list-models":
+      return bridge.listModels();
+  }
+}
 
 /**
  * Session-start primer injected into a member's system prompt. Gives the model

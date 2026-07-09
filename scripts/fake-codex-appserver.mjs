@@ -17,7 +17,9 @@ import readline from "node:readline";
 import fs from "node:fs";
 
 const APPROVAL_ID = "srv-approval-1";
+const TOOL_ID = "srv-tool-1";
 const outFile = process.env.AGENTPARTY_FAKE_CODEX_OUT || "";
+const toolOutFile = process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT || "";
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -51,6 +53,18 @@ rl.on("line", (line) => {
   }
 
   // Client → server requests (have id + method).
+  if (msg.id !== undefined && msg.result !== undefined && String(msg.id) === TOOL_ID) {
+    if (toolOutFile) {
+      try {
+        fs.writeFileSync(toolOutFile, JSON.stringify(msg.result));
+      } catch {
+        // best effort
+      }
+    }
+    send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+    return;
+  }
+
   if (msg.id !== undefined && msg.method) {
     if (msg.method === "initialize") {
       send({ id: msg.id, result: { userAgent: "fake-codex/0.0.0" } });
@@ -102,6 +116,10 @@ rl.on("line", (line) => {
       ] }], marketplaceLoadErrors: [] } });
       return;
     }
+    if (msg.method === "account/rateLimits/read") {
+      send({ id: msg.id, result: { rateLimits: { primary: { usedPercent: 21, resetsAt: Math.floor(Date.now() / 1000) + 3600 }, secondary: { usedPercent: 12 } } } });
+      return;
+    }
     if (msg.method === "turn/start") {
       send({ id: msg.id, result: { turn: { id: "turn-1" } } });
       send({ method: "turn/started", params: { turn: { id: "turn-1" } } });
@@ -118,6 +136,21 @@ rl.on("line", (line) => {
         send({ method: "warning", params: { threadId: "thr-fake", message: "sandbox is read-only despite --write" } });
         send({ method: "account/rateLimits/updated", params: { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } } });
         send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+        return;
+      }
+      if (inputText.includes("KIND=partyTool")) {
+        send({
+          id: TOOL_ID,
+          method: "item/tool/call",
+          params: {
+            threadId: "thr-fake",
+            turnId: "turn-1",
+            callId: "tool-call-1",
+            namespace: "agentparty-app",
+            tool: "list",
+            arguments: {},
+          },
+        });
         return;
       }
       const kind = inputText.includes("KIND=fileChange") ? "fileChange" : "command";

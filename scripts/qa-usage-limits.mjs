@@ -85,9 +85,9 @@ const high = buildUsageView({ claude: { provider: "claude", available: true, upd
 assert(high.anyHigh === true, "a window ≥75 sets anyHigh (pill warning border)");
 assert(high.pills[0].pctCol === "var(--live)", "82% pill percent uses warning color");
 
-// buildUsageView — unknown (member, no data yet)
+// buildUsageView — unknown (no data yet)
 const unknown = buildUsageView({}, { claude: 1 }, now);
-assert(unknown.pills.length === 1 && unknown.pills[0].pctLabel === "—", "member with no data → pill shows — (not 0%)");
+assert(unknown.pills.length === 2 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
 assert(unknown.pills[0].ring === "var(--bg-4)", "unknown ring is a muted track, no fabricated fill");
 assert(unknown.rows[0].meters[0].known === false && unknown.rows[0].meters[0].right === "불러오는 중…", "unknown meter reads loading, not a number");
 assert(unknown.empty === true, "no window data anywhere → empty");
@@ -97,8 +97,9 @@ const na = buildUsageView({ claude: { provider: "claude", available: false, upda
 assert(na.pills[0].pctLabel === "N/A", "available:false → N/A pill");
 assert(na.rows[0].meters[0].right === "해당 없음 (API 키)", "available:false meter says 해당 없음");
 
-// buildUsageView — fully empty
-assert(buildUsageView({}, {}, now).pills.length === 0, "no data + no members → no pill at all");
+// buildUsageView — fully empty still shows both providers as loading
+const empty = buildUsageView({}, {}, now);
+assert(empty.pills.length === 2 && empty.rows.length === 2, "no data + no members → Claude and Codex still visible");
 
 // --- 2) jsdom render of <UsageLimitPill> ----------------------------------
 const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
@@ -123,8 +124,9 @@ import { UsageLimitPill } from "../workbench/UsageLimitPill";
 export function mount(el, props) {
   const root = createRoot(el);
   let settingsOpened = 0;
-  root.render(React.createElement(UsageLimitPill, { ...props, onOpenSettings: () => { settingsOpened++; } }));
-  return { getSettingsOpened: () => settingsOpened };
+  let refreshed = 0;
+  root.render(React.createElement(UsageLimitPill, { ...props, onOpenSettings: () => { settingsOpened++; }, onRefresh: () => { refreshed++; } }));
+  return { getSettingsOpened: () => settingsOpened, getRefreshed: () => refreshed };
 }
 `;
 const result = await build({
@@ -153,7 +155,7 @@ const renderSnapshot = {
 };
 let crashed = null;
 try {
-  mount(window.document.getElementById("root"), { usage: renderSnapshot, membersByProvider: { claude: 3, codex: 2 } });
+  var mounted = mount(window.document.getElementById("root"), { usage: renderSnapshot, membersByProvider: { claude: 3, codex: 2 } });
   await new Promise((r) => setTimeout(r, 120));
 } catch (e) { crashed = e; }
 assert(!crashed, `render did not throw${crashed ? `: ${crashed.stack || crashed}` : ""}`);
@@ -171,6 +173,10 @@ assert(Boolean(pop), "clicking the pill opens the popover");
 assert(root.querySelectorAll(".usage-meter").length === 4, "popover shows 5h + weekly meter per provider (2×2)");
 assert((pop?.textContent || "").includes("5시간 한도") && (pop?.textContent || "").includes("주간 한도"), "both window labels rendered");
 assert((pop?.textContent || "").includes("2시간 12분 후 리셋"), "reset countdown rendered in the meter");
+const refreshBtn = [...root.querySelectorAll(".usage-settings-btn")].find((button) => /새로고침/.test(button.textContent || ""));
+assert(Boolean(refreshBtn), "popover includes a usage refresh button");
+refreshBtn?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+assert(mounted.getRefreshed() === 1, "clicking refresh calls the usage refresh handler");
 
 // warning border when high (fresh container — avoid double-rooting #root)
 const highHost = window.document.createElement("div");

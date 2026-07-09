@@ -10,8 +10,8 @@ import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, Harnes
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
-import type { PartyIdentity } from "./partyBridge";
-import { buildPartyPrimer } from "./partyBridge";
+import type { PartyBridge, PartyIdentity } from "./partyBridge";
+import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import { CODEX_OPENROUTER_PROVIDER, codexProviderConfigArgs, codexProviderForModel, type CodexCustomProvider } from "../shared/codexProviders";
@@ -40,7 +40,9 @@ export interface CodexAdapterOptions {
   executablePath?: string;
   executableArgs?: string[];
   resumeSessionId?: string;
+  partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  automationBaseUrl?: string;
   /**
    * OpenRouter API key. When the model routes through a custom provider whose
    * env var is this key, it is placed on the app-server process env so the
@@ -113,6 +115,8 @@ export class CodexAdapter extends EventEmitter {
   private inventory: HarnessCommand[] = CODEX_COMMANDS;
   /** Live per-server MCP startup state (name → state) from startupStatus/updated. */
   private readonly mcpStartup = new Map<string, { status: string; error?: string; failureReason?: string }>();
+  private usageRefreshTimer: NodeJS.Timeout | undefined;
+  private lastUsageStatus = "";
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
@@ -235,6 +239,7 @@ export class CodexAdapter extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
+    this.stopUsagePolling();
     this.logger?.close();
     this.logger = undefined;
     this.shutdownProcess();
@@ -322,7 +327,12 @@ export class CodexAdapter extends EventEmitter {
   // live enable/disable RPC (config-file driven), so canToggle is false.
 
   async listMcpServers(): Promise<McpServerSnapshot> {
+    const partyServer = this.partyMcpServerInfo();
     if (!this.process) {
+      if (partyServer) {
+        const snapshot = emptyMcpSnapshot("codex", "Codex session has not started yet.");
+        return { ...snapshot, servers: [partyServer] };
+      }
       return emptyMcpSnapshot("codex", "세션이 아직 시작되지 않았습니다 — 멤버를 시작한 뒤 확인하세요.");
     }
     try {
@@ -333,10 +343,30 @@ export class CodexAdapter extends EventEmitter {
       const response = await this.request("mcpServerStatus/list", params);
       const data: any[] = Array.isArray(response?.data) ? response.data : [];
       const servers = data.map((entry) => this.toNeutralMcpServer(entry));
+      if (partyServer && !servers.some((server) => server.name === PARTY_MCP_SERVER)) {
+        servers.unshift(partyServer);
+      }
       return { supported: true, harness: "codex", servers };
     } catch (error) {
-      return { supported: true, harness: "codex", servers: [], error: error instanceof Error ? error.message : String(error) };
+      return { supported: true, harness: "codex", servers: partyServer ? [partyServer] : [], error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  private partyMcpServerInfo(): McpServerInfo | undefined {
+    if (!this.options.partyBridge || !this.options.partyIdentity) {
+      return undefined;
+    }
+    return {
+      name: PARTY_MCP_SERVER,
+      state: "connected",
+      transport: "unknown",
+      scope: "session",
+      version: "0.1.0",
+      tools: PARTY_TOOL_NAMES.map((name) => ({ name: `${PARTY_TOOL_PREFIX}${name}` })),
+      canReconnect: false,
+      canToggle: false,
+      canAuthenticate: false,
+    };
   }
 
   async reconnectMcpServer(name: string): Promise<void> {
@@ -424,10 +454,13 @@ export class CodexAdapter extends EventEmitter {
     // process env, so any thread whose model is an OpenRouter slug can route to
     // it (selected per-thread via modelProvider). See codexProviders.ts.
     const providerArgs = this.options.openRouterApiKey ? codexProviderConfigArgs(CODEX_OPENROUTER_PROVIDER) : [];
-    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...providerArgs, "app-server"];
-    const env = this.options.openRouterApiKey
-      ? { ...process.env, [CODEX_OPENROUTER_PROVIDER.envKey]: this.options.openRouterApiKey }
-      : process.env;
+    const partyArgs = this.partyMcpConfigArgs();
+    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...providerArgs, ...partyArgs, "app-server"];
+    const env = {
+      ...process.env,
+      ...(this.options.openRouterApiKey ? { [CODEX_OPENROUTER_PROVIDER.envKey]: this.options.openRouterApiKey } : {}),
+      ...this.partyMcpEnv(),
+    };
     this.process = spawn(resolved.command, spawnArgs, {
       cwd: this.options.cwd,
       env,
@@ -442,6 +475,37 @@ export class CodexAdapter extends EventEmitter {
     this.process.on("error", (error) => this.finishWithError(error));
     this.process.on("exit", (code, signal) => this.handleExit(code, signal));
     this.emitEvent({ type: "status", status: "spawned", detail: [resolved.command, ...spawnArgs].join(" "), at: now() });
+  }
+
+  private partyMcpConfigArgs(): string[] {
+    if (!this.options.partyBridge || !this.options.partyIdentity || !this.options.automationBaseUrl) {
+      return [];
+    }
+    const serverScript = path.resolve(__dirname, "../../scripts/agentparty-codex-mcp-server.mjs");
+    const nodeCommand = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
+    return [
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.command=${tomlString(nodeCommand)}`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.args=[${tomlString(serverScript)}]`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.enabled=true`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.startup_timeout_sec=10`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.tool_timeout_sec=30`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.default_tools_approval_mode="approve"`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_AUTOMATION_BASE_URL=${tomlString(this.options.automationBaseUrl || "")}`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_MEMBER=${tomlString(this.options.partyIdentity.member)}`,
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_PARTY=${tomlString(this.options.partyIdentity.party)}`,
+      ...(process.env.AGENTPARTY_CODEX_MCP_OUT ? ["-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_CODEX_MCP_OUT=${tomlString(process.env.AGENTPARTY_CODEX_MCP_OUT)}`] : []),
+    ];
+  }
+
+  private partyMcpEnv(): NodeJS.ProcessEnv {
+    if (!this.options.partyBridge || !this.options.partyIdentity || !this.options.automationBaseUrl) {
+      return {};
+    }
+    return {
+      AGENTPARTY_MEMBER: this.options.partyIdentity.member,
+      AGENTPARTY_PARTY: this.options.partyIdentity.party,
+      AGENTPARTY_AUTOMATION_BASE_URL: this.options.automationBaseUrl || "",
+    };
   }
 
   private async initializeServer(): Promise<void> {
@@ -475,6 +539,7 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
+      config: this.partyToolConfig(),
     });
     this.applyThreadResult(result);
   }
@@ -488,8 +553,16 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
+      config: this.partyToolConfig(),
     });
     this.applyThreadResult(result);
+  }
+
+  private partyToolConfig(): Record<string, unknown> | undefined {
+    if (!this.options.partyBridge || !this.options.partyIdentity) {
+      return undefined;
+    }
+    return { dynamic_tools: [buildPartyDynamicToolSpec()] };
   }
 
   /**
@@ -525,6 +598,57 @@ export class CodexAdapter extends EventEmitter {
     });
     // Discover the real command/skill/plugin inventory (async, best-effort).
     void this.refreshInventory();
+    this.startUsagePolling();
+    void this.refreshUsageLimits();
+  }
+
+  /**
+   * Reads the current account rate-limit snapshot once at session start. The
+   * app-server also pushes `account/rateLimits/updated`; this closes the gap
+   * where the UI otherwise sits on "loading" until the first provider tick.
+   */
+  async refreshUsageLimits(): Promise<void> {
+    if (!this.process?.stdin.writable) {
+      return;
+    }
+    try {
+      const result = await this.request("account/rateLimits/read", {});
+      const rateLimits = result?.rateLimits || result;
+      const windows = codexRateLimitWindows(rateLimits);
+      if (windows.length) {
+        this.emitEvent({ type: "usage_limit", provider: "codex", windows, available: true, at: now() });
+        this.lastUsageStatus = "";
+      } else {
+        this.emitUsageStatus("Codex rate limit read returned no usable windows.");
+      }
+    } catch (error) {
+      this.emitUsageStatus(`Codex rate limit read failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private emitUsageStatus(detail: string): void {
+    if (detail === this.lastUsageStatus) {
+      return;
+    }
+    this.lastUsageStatus = detail;
+    this.emitEvent({ type: "status", status: "usage", detail, at: now() });
+  }
+
+  private startUsagePolling(): void {
+    if (this.usageRefreshTimer) {
+      return;
+    }
+    this.usageRefreshTimer = setInterval(() => {
+      void this.refreshUsageLimits();
+    }, 60_000);
+  }
+
+  private stopUsagePolling(): void {
+    if (!this.usageRefreshTimer) {
+      return;
+    }
+    clearInterval(this.usageRefreshTimer);
+    this.usageRefreshTimer = undefined;
   }
 
   /**
@@ -620,7 +744,9 @@ export class CodexAdapter extends EventEmitter {
     if (!this.process?.stdin.writable) {
       return;
     }
-    this.process.stdin.write(`${JSON.stringify({ id, result })}\n`);
+    const message = { id, result };
+    this.log("out", message);
+    this.process.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private readMessage(line: string): void {
@@ -665,6 +791,10 @@ export class CodexAdapter extends EventEmitter {
     const requestId = String(message.id);
     const method = String(message.method);
     const params = message.params || {};
+    if (method === "item/tool/call") {
+      void this.handleDynamicToolCall(requestId, params);
+      return;
+    }
     this.pendingApprovals.set(requestId, { method, input: params });
     const meta = approvalMeta(method, params);
     // A tool asking for a value reuses the interactive question card; its answers
@@ -679,6 +809,72 @@ export class CodexAdapter extends EventEmitter {
       description: meta.reason,
       codex: meta,
       at: now(),
+    });
+  }
+
+  private async handleDynamicToolCall(requestId: string, params: any): Promise<void> {
+    const namespace = typeof params?.namespace === "string" ? params.namespace : undefined;
+    const rawTool = String(params?.tool || "");
+    const toolName = partyToolNameOf(rawTool);
+    const isPartyTool = namespace === PARTY_MCP_SERVER || Boolean(toolName);
+    if (!isPartyTool) {
+      const result = { ok: false, error: `Unknown dynamic tool '${namespace ? `${namespace}/` : ""}${rawTool}'.` };
+      this.respondDynamicTool(requestId, false, result);
+      this.emitEvent({ type: "error", message: result.error, at: now() });
+      return;
+    }
+    const bridge = this.options.partyBridge;
+    const identity = this.options.partyIdentity;
+    if (!bridge || !identity) {
+      const result = { ok: false, error: "AgentParty tool call received, but this Codex session has no party binding." };
+      this.respondDynamicTool(requestId, false, result);
+      this.emitEvent({ type: "error", message: result.error, at: now() });
+      return;
+    }
+    const normalized = toolName || partyToolNameOf(rawTool.replace(`${PARTY_MCP_SERVER}/`, "")) || rawTool;
+    this.emitEvent({
+      type: "tool_call",
+      id: String(params?.callId || requestId),
+      name: `${PARTY_TOOL_PREFIX}${normalized}`,
+      input: params?.arguments,
+      status: "started",
+      source: "mcp",
+      at: now(),
+    });
+    try {
+      const result = await invokePartyTool(bridge, identity, String(normalized), params?.arguments);
+      this.respondDynamicTool(requestId, result.ok, result.data ?? { ok: result.ok, error: result.error });
+      this.emitEvent({
+        type: "tool_call",
+        id: String(params?.callId || requestId),
+        name: `${PARTY_TOOL_PREFIX}${normalized}`,
+        input: params?.arguments,
+        status: result.ok ? "completed" : "failed",
+        result: result.data ?? result.error,
+        source: "mcp",
+        at: now(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const result = { ok: false, error: message };
+      this.respondDynamicTool(requestId, false, result);
+      this.emitEvent({
+        type: "tool_call",
+        id: String(params?.callId || requestId),
+        name: `${PARTY_TOOL_PREFIX}${normalized}`,
+        input: params?.arguments,
+        status: "failed",
+        result,
+        source: "mcp",
+        at: now(),
+      });
+    }
+  }
+
+  private respondDynamicTool(requestId: string, success: boolean, payload: unknown): void {
+    this.respond(requestId, {
+      success,
+      contentItems: [{ type: "inputText", text: JSON.stringify(payload) }],
     });
   }
 
@@ -1048,6 +1244,7 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private handleExit(code: number | null, signal: NodeJS.Signals | null): void {
+    this.stopUsagePolling();
     this.process = undefined;
     this.lineReader?.close();
     this.lineReader = undefined;
@@ -1061,6 +1258,7 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private shutdownProcess(): void {
+    this.stopUsagePolling();
     this.lineReader?.close();
     this.lineReader = undefined;
     this.process?.kill();
@@ -1169,6 +1367,10 @@ function codexRateLimitWindows(snapshot: any): UsageWindow[] {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
 }
 
 function now(): string {
