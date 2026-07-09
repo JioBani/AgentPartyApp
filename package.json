@@ -105,6 +105,10 @@
       {
         "from": "scripts/agent-party-launcher.mjs",
         "to": "bin/agent-party-launcher.mjs"
+      },
+      {
+        "from": "scripts/agentparty-codex-mcp-server.mjs",
+        "to": "bin/agentparty-codex-mcp-server.mjs"
       }
     ],
     "win": {

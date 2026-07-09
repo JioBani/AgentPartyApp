@@ -108,6 +108,7 @@ export class CodexAdapter extends EventEmitter {
    *  written only in debug mode — the Codex counterpart to ClaudeAdapter's log. */
   private logger: RawLogger | undefined;
   private debugMode: boolean;
+  private stderrTail = "";
   /** Attributes collab-agent activity: each child runs on its own thread and its
    *  `item/*` notifications carry that `threadId` (verified against recordings). */
   private readonly subagentTracker = new CodexSubagentTracker();
@@ -447,6 +448,7 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.ensureLogger();
+    this.stderrTail = "";
     const requested = codexExecutable(this.options.executablePath);
     const resolved = resolveCodexExecutable(requested);
     // When an OpenRouter key is available, define the OpenRouter custom provider
@@ -481,7 +483,7 @@ export class CodexAdapter extends EventEmitter {
     if (!this.options.partyBridge || !this.options.partyIdentity || !this.options.automationBaseUrl) {
       return [];
     }
-    const serverScript = path.resolve(__dirname, "../../scripts/agentparty-codex-mcp-server.mjs");
+    const serverScript = resolvePartyMcpServerScript();
     const nodeCommand = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
     return [
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.command=${tomlString(nodeCommand)}`,
@@ -1164,6 +1166,7 @@ export class CodexAdapter extends EventEmitter {
         continue;
       }
       this.log("stderr", text);
+      this.stderrTail = `${this.stderrTail}${this.stderrTail ? "\n" : ""}${text}`.slice(-4000);
       // The app-server is very chatty on stderr (rmcp transport logs, tool-router
       // lines, even echoed command output). Dumping every line floods the parent
       // transcript, so only surface it in debug; genuine failures arrive via turn
@@ -1248,13 +1251,19 @@ export class CodexAdapter extends EventEmitter {
     this.process = undefined;
     this.lineReader?.close();
     this.lineReader = undefined;
+    const message = this.codexExitMessage(code, signal);
     for (const pending of this.pendingRequests.values()) {
-      pending.reject(new Error(`Codex app-server exited with code ${code ?? "null"}${signal ? ` (${signal})` : ""}.`));
+      pending.reject(new Error(message));
     }
     this.pendingRequests.clear();
     if (!this.disposed && this.status !== "idle" && this.status !== "initialized") {
-      this.finishWithError(new Error(`Codex app-server exited with code ${code ?? "null"}${signal ? ` (${signal})` : ""}.`));
+      this.finishWithError(new Error(message));
     }
+  }
+
+  private codexExitMessage(code: number | null, signal: NodeJS.Signals | null): string {
+    const base = `Codex app-server exited with code ${code ?? "null"}${signal ? ` (${signal})` : ""}.`;
+    return this.stderrTail ? `${base}\n${this.stderrTail}` : base;
   }
 
   private shutdownProcess(): void {
@@ -1369,7 +1378,27 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function resolvePartyMcpServerScript(): string {
+  const scriptName = "agentparty-codex-mcp-server.mjs";
+  const override = process.env.AGENTPARTY_CODEX_MCP_SERVER;
+  if (override) {
+    return override;
+  }
+  const devPath = path.resolve(__dirname, "../../scripts", scriptName);
+  if (fs.existsSync(devPath)) {
+    return devPath;
+  }
+  const packagedPath = process.resourcesPath ? path.join(process.resourcesPath, "bin", scriptName) : "";
+  if (packagedPath && fs.existsSync(packagedPath)) {
+    return packagedPath;
+  }
+  return devPath;
+}
+
 function tomlString(value: string): string {
+  if (!value.includes("'") && !/[\r\n]/.test(value)) {
+    return `'${value}'`;
+  }
   return JSON.stringify(value);
 }
 
