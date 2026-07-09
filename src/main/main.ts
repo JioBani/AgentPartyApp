@@ -497,7 +497,7 @@ function registerIpc(): void {
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown): void {
   ipcMain.handle(channel, async (event, ...args) => {
-    log("info", "ipc", channel, { args });
+    log("info", "ipc", channel, { args: summarizeIpcArgs(args) });
     try {
       return await listener(event, ...args);
     } catch (error) {
@@ -505,6 +505,58 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
       throw error;
     }
   });
+}
+
+/**
+ * Produces a compact, bounded description of IPC arguments for logging.
+ *
+ * The generic {@link handle} wrapper used to log the raw `args`, so channels
+ * that carry bulk payloads — above all `party:transcript:save`, whose second
+ * arg is the member's entire transcript array — dumped tens to hundreds of MB
+ * per call into the synchronous log file (see the 2026-07-09 handoff). This
+ * describes shape and size WITHOUT deep-serializing large payloads: an array of
+ * 100k transcript blocks becomes `"[array 100000 items]"`, never 150 MB of JSON.
+ * Diagnostic value (which channel, arg shapes, sizes) is preserved; the raw
+ * request/response content lives in the per-session RawLogger, not here.
+ */
+function summarizeIpcArgs(args: unknown[]): unknown[] {
+  return args.map((arg) => describeForLog(arg, 0));
+}
+
+const LOG_MAX_STRING = 200;
+const LOG_MAX_ARRAY = 20;
+const LOG_MAX_KEYS = 30;
+const LOG_MAX_DEPTH = 2;
+
+function describeForLog(value: unknown, depth: number): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value.length > LOG_MAX_STRING ? `[string ${value.length} chars]` : value;
+  }
+  if (typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.length > LOG_MAX_ARRAY
+      ? `[array ${value.length} items]`
+      : value.map((item) => describeForLog(item, depth + 1));
+  }
+  if (depth >= LOG_MAX_DEPTH) {
+    return "[object]";
+  }
+  const output: Record<string, unknown> = {};
+  let count = 0;
+  for (const [key, item] of Object.entries(value)) {
+    if (count >= LOG_MAX_KEYS) {
+      output["…"] = "[more]";
+      break;
+    }
+    count += 1;
+    output[key] = describeForLog(item, depth + 1);
+  }
+  return output;
 }
 
 function controller(): AppController {
