@@ -60,7 +60,11 @@ const withCatalog = buildModelRoutes("sonnet", [], [], models);
 // Account-catalog codex routes (from model/list) are the openai-provider ones;
 // OpenRouter codex routes are asserted separately below (Layer 2b).
 const codexRoutes = withCatalog.filter((route) => route.harnessId === "codex" && route.providerId === "openai");
-assert(codexRoutes.length === 3, "every discovered account model becomes a codex route");
+// 3 discovered + the static catalog account models NOT in the discovery (the
+// GPT-5.6 trio) — discovered slugs dedupe against their static catalog twins.
+assert(codexRoutes.length === 6, `discovered models + undiscovered static catalog models, deduped (got ${codexRoutes.length})`);
+assert(codexRoutes.filter((route) => route.model === "gpt-5.5").length === 1, "a discovered slug supersedes its static catalog twin (no duplicate gpt-5.5)");
+assert(codexRoutes.some((route) => route.model === "gpt-5.6-sol" && route.label === "GPT-5.6 Sol"), "an undiscovered catalog model (gpt-5.6-sol) stays selectable");
 assert(codexRoutes[0].model === "gpt-5.5" && codexRoutes[0].label === "GPT-5.5", "route model/label come from the discovered slug/displayName");
 assert(codexRoutes.every((route) => !route.modelProvider), "account-catalog codex routes have no custom provider (built-in openai)");
 const gpt54 = codexRoutes.find((route) => route.model === "gpt-5.4");
@@ -84,6 +88,7 @@ assert(glm?.meta?.perf === 4 && glm?.meta?.costTier === 2, "leaderboard meta pre
 // Account catalog + OpenRouter both present without discovery too.
 const noDiscovery = buildModelRoutes("sonnet", [], []).filter((route) => route.harnessId === "codex");
 assert(noDiscovery.some((r) => r.model === "gpt-5.4") && noDiscovery.some((r) => r.modelProvider === "openrouter"), "without discovery: static account fallback + OpenRouter routes both present");
+assert(noDiscovery.filter((r) => r.providerId === "openai").length === 6, "without discovery: every catalog codexModel entry is a static codex route");
 
 // ---- Layer 2c: codexProviders (Phase 2 pure model) ----------------------------
 const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
@@ -122,7 +127,7 @@ const readyHost = mount(React.createElement(MemberWizard, { routes: withCatalog,
 await tick();
 await openModelStep(readyHost);
 const rows = [...readyHost.querySelectorAll(".wb-model-row")];
-assert(rows.length === 3 + orCodex.length, `codex harness lists account models (3) + OpenRouter models (${orCodex.length}), not one hardcoded route`);
+assert(rows.length === 6 + orCodex.length, `codex harness lists account models (3 discovered + 3 static) + OpenRouter models (${orCodex.length}), not one hardcoded route`);
 assert(rows.some((row) => row.textContent.includes("GPT-5.4-Mini")), "gpt-5.4-mini is selectable");
 assert(rows.some((row) => row.textContent.includes("GLM-5.2")), "an OpenRouter model (GLM-5.2) is selectable on the codex harness");
 assert(!readyHost.querySelector(".wb-wizard-error"), "no error banner when discovery is ready");

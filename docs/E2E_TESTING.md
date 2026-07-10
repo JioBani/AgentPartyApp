@@ -36,6 +36,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-items` | Codex ThreadItem coverage: pure model (diff stats, fileChange normalization, plan steps, tool source mcp:<server>/plugin/namespace) + event pipeline (plan upserts one evolving card, command output deltas append, cwd/exit/duration merge, fileChange→diff block) + Transcript DOM (plan checklist, fileChange +/- stats, tool source badge + exit/duration, live output) |
 | `qa-codex-discovery` | Codex `/` palette discovery: skills/list + plugin/installed → palette commands by source with disabled reasons (disabled skill / admin-disabled plugin; not-installed excluded), palette grouping (Skills/Plugins/Commands) + disabled badge, and CommandPalette DOM (source badges, dimmed disabled rows, preview reason) |
 | `qa-codex-diagnostics` | Codex no-silent-fallback surfacing: classifier (reroute/rate-limit/guardian/config/deprecation/sandbox/mcp → severity+category, sandbox recovery hint; noisy rate-limit ticks + healthy MCP return null) + event pipeline (diagnostic→block, latestDiagnostic header pick) + Transcript DOM (severity banner, reroute detail, recovery hint) |
+| `qa-codex-compact` | Codex compact control: `/compact`/toolbar compact during an active turn is queued with a visible status, sent as `thread/compact/start` after root turn completion, compact completion clears stale context occupancy, and compact failures surface as errors. |
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
 | `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; the three text-only models (GLM-5.2 / Qwen3.7 Max / DeepSeek V4 Pro) are `image:false`, the rest `true`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the router shim translates an Anthropic image block into an OpenAI `image_url` part **without silently dropping it** (text-only messages stay plain strings) |
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
@@ -181,9 +182,12 @@ correct protocol decision (`acceptForSession` /
 decision it received to a sidecar file so the assertion sees the real end-to-end
 result.
 The smoke driver launches its own Electron process with
-`AGENTPARTY_ALLOW_MULTI_INSTANCE=1` and a dedicated automation port
-(`AGENTPARTY_E2E_PORT`, default `48931`) so it does not attach to an already
-open development app. It also injects a fake `codex app-server` binary through
+`AGENTPARTY_ALLOW_MULTI_INSTANCE=1`, an **isolated `AGENTPARTY_USER_DATA`**, and
+discovers it via the **per-workspace instance file** (never a fixed port). Both
+are load-bearing: a fixed-port poll once attached the driver to the USER'S
+running app (which had that port persisted in settings) and drove real sessions
+there, and a shared userData let e2e writes pollute the real settings/parties.
+It also injects a fake `codex app-server` binary through
 `AGENTPARTY_CODEX_BIN`/`AGENTPARTY_CODEX_ARGS`, so the Codex harness path is
 verified without a real model call.
 

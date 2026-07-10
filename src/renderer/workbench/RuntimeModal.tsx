@@ -19,6 +19,12 @@ export interface RouteEntry {
   meta: ModelView;
 }
 
+/** The two selectable harnesses — mirrors MemberWizard's HARNESSES list. */
+const HARNESS_CHOICES = [
+  { id: "claude-code", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+];
+
 /**
  * Per-member model settings. Changes are staged and only committed on Apply,
  * which restarts the member's session (hence the dirty note in the footer).
@@ -75,17 +81,34 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     (thinkingCap?.supported && thinkingMode !== (thinkingCap.defaultValue || "")) ||
     debug !== debugEnabled;
 
-  const grouped = useMemo(() => groupByProvider(entries), [entries]);
-
   // Harness is fixed once a turn has run: switching harness means a fresh
   // session, which would discard the conversation. Before the first turn it is
-  // free to change (prewarm/init only). So models of a *different* harness than
-  // the member's current one are locked once turnCount > 0.
+  // free to change (prewarm/init only). The model list always shows ONE harness
+  // at a time — the same underlying model may be reachable from both harnesses,
+  // and listing both routes would show it twice.
   const currentHarness = useMemo(() => {
     const route = routes.find((item) => routeKey(item) === currentKey);
     return (route?.harnessId as string) || "claude-code";
   }, [routes, currentKey]);
   const harnessLocked = (view.session?.snapshot.turnCount ?? 0) > 0;
+  const [harness, setHarness] = useState(currentHarness);
+  useEffect(() => {
+    setHarness(currentHarness);
+  }, [currentHarness]);
+
+  const harnessEntries = useMemo(
+    () => entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness),
+    [entries, harness],
+  );
+  const grouped = useMemo(() => groupByProvider(harnessEntries), [harnessEntries]);
+
+  // Switching harness moves the selection into that harness's list (first entry)
+  // so the detail pane and Apply never point at a hidden other-harness route.
+  useEffect(() => {
+    if (selected && (selected.route.harnessId || "claude-code") !== harness && harnessEntries[0]) {
+      setSelectedKey(routeKey(harnessEntries[0].route));
+    }
+  }, [harness, selected, harnessEntries]);
 
   function apply() {
     actions.applyRuntime(view.name, {
@@ -115,7 +138,25 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
 
         <div className="wb-modal-body">
           <section className="wb-model-list">
-            <div className="wb-modal-label">Model <span className="wb-mono">{entries.length} available</span>{harnessLocked && <span className="wb-mono wb-modal-note"> · 하네스 잠금 ({currentHarness})</span>}</div>
+            <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note"> · 잠금 (턴 시작됨)</span>}</div>
+            <div className="wb-segmented">
+              {HARNESS_CHOICES.map((choice) => {
+                const locked = harnessLocked && choice.id !== currentHarness;
+                return (
+                  <button
+                    type="button"
+                    key={choice.id}
+                    disabled={locked}
+                    title={locked ? "턴이 시작된 뒤에는 하네스를 바꿀 수 없습니다 (새 세션 필요)" : undefined}
+                    className={"wb-segment" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
+                    onClick={() => { if (!locked) setHarness(choice.id); }}
+                  >
+                    {choice.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="wb-modal-label">Model <span className="wb-mono">{harnessEntries.length} available</span></div>
             {grouped.map((group) => (
               <div className="wb-model-group" key={group.provider}>
                 <div className="wb-model-provider">
@@ -125,15 +166,12 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                 </div>
                 {group.entries.map((entry) => {
                   const key = routeKey(entry.route);
-                  const locked = harnessLocked && (entry.route.harnessId || "claude-code") !== currentHarness;
                   return (
                     <button
                       type="button"
                       key={key}
-                      disabled={locked}
-                      title={locked ? "턴이 시작된 뒤에는 하네스를 바꿀 수 없습니다 (새 세션 필요)" : undefined}
-                      className={"wb-model-row" + (key === selectedKey ? " is-selected" : "") + (locked ? " is-locked" : "")}
-                      onClick={() => { if (!locked) setSelectedKey(key); }}
+                      className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
+                      onClick={() => setSelectedKey(key)}
                     >
                       <span className="wb-model-name">
                         <span className="wb-mono">{entry.route.label || entry.meta.name}</span>

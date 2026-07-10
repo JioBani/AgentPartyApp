@@ -58,6 +58,8 @@ export interface CatalogModel {
   provider: CatalogProvider;
   /** Model id sent to the harness; for OpenRouter models this is the `claude-*` alias. */
   runtimeModel?: string;
+  /** Codex account slug sent to thread/turn (e.g. "gpt-5.6-sol"). Presence = the model runs on the codex harness. */
+  codexModel?: string;
   /** Concrete OpenRouter model id the router forwards to. */
   orModelId?: string;
   subscription: boolean;
@@ -88,7 +90,7 @@ export function catalogModelById(id: string): CatalogModel | undefined {
 
 export function catalogModelByRuntime(runtimeModel: string): CatalogModel | undefined {
   const lower = runtimeModel.toLowerCase();
-  return MODELS.find((m) => (m.runtimeModel || m.id).toLowerCase() === lower);
+  return MODELS.find((m) => (m.runtimeModel || m.id).toLowerCase() === lower || m.codexModel?.toLowerCase() === lower);
 }
 
 /** Finds a catalog entry by its concrete OpenRouter model id (`orModelId`). */
@@ -123,6 +125,21 @@ export function parseContextTokens(text: string | undefined): number | undefined
 /** OpenRouter models only (provider openrouter with a concrete OR id). */
 export function openRouterModels(): CatalogModel[] {
   return MODELS.filter((m) => m.provider === "openrouter" && Boolean(m.orModelId));
+}
+
+/** Codex account models (provider openai with a codex slug) — run on the codex harness. */
+export function codexAccountModels(): CatalogModel[] {
+  return MODELS.filter((m) => m.provider === "openai" && Boolean(m.codexModel));
+}
+
+/**
+ * Every model with a concrete OpenRouter id, ANY provider — the set the codex
+ * harness routes through its OpenRouter custom provider. Superset of
+ * openRouterModels(): anthropic entries with an orModelId (Opus/Sonnet/Haiku)
+ * are OpenRouter-routable on codex while staying native on claude-code.
+ */
+export function orRoutedModels(): CatalogModel[] {
+  return MODELS.filter((m) => Boolean(m.orModelId));
 }
 
 /** runtimeModel/id -> OpenRouter model id, for the embedded router. */

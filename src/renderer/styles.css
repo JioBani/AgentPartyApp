@@ -2474,8 +2474,8 @@ body.wb-resizing {
   background: var(--accent);
 }
 
-/* Harness-locked model row (turn already started). */
-.wb-model-row.is-locked {
+/* Harness locked to the member's current one (turn already started). */
+.wb-segment.is-locked {
   opacity: .4;
   cursor: not-allowed;
 }

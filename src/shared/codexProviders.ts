@@ -1,4 +1,4 @@
-import { openRouterModels } from "./modelCatalog";
+import { orRoutedModels } from "./modelCatalog";
 
 /**
  * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
@@ -40,13 +40,14 @@ export function codexCustomProvider(id: string | undefined): CodexCustomProvider
 
 /**
  * The custom provider a Codex model slug routes through, or undefined for the
- * built-in `openai` account catalog. Catalog-driven: an OpenRouter model's
- * `orModelId` (e.g. "z-ai/glm-5.2") maps to the OpenRouter provider; a bare
- * account slug (e.g. "gpt-5.5") maps to nothing (built-in openai).
+ * built-in `openai` account catalog. Catalog-driven: any catalog `orModelId`
+ * (e.g. "z-ai/glm-5.2", "anthropic/claude-opus-4.8") maps to the OpenRouter
+ * provider; a bare account slug (e.g. "gpt-5.5") maps to nothing (built-in
+ * openai).
  */
 export function codexProviderForModel(model: string): CodexCustomProvider | undefined {
   const lower = model.toLowerCase();
-  const isOpenRouterSlug = openRouterModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
+  const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;
 }
 

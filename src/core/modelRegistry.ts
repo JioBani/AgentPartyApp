@@ -2,8 +2,9 @@ import {
   catalogModelById,
   catalogModelByRuntime,
   catalogModelByOrModelId,
+  codexAccountModels,
   modelCatalog,
-  openRouterModels,
+  orRoutedModels,
   type CatalogModel,
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
@@ -156,22 +157,31 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   const routes: ModelRoute[] = [];
   const seen = new Set<string>();
 
-  // The catalog is authoritative for the exposed model list (leaderboard-aligned).
-  for (const model of modelCatalog()) {
-    addRoute(routes, seen, routeFromCatalog(model));
-  }
-  // Codex harness: the live account catalog (model/list) when discovered; the
-  // static default keeps the harness usable before/without discovery.
+  // Codex harness, account models: the live catalog (model/list) wins — it
+  // carries the account's real effort options (incl. levels the static catalog
+  // cannot transport, e.g. GPT-5.6 "ultra"). The static catalog entries below
+  // dedupe against it and only fill in models not (yet) discovered, so the
+  // harness stays usable before/without discovery.
   for (const model of codexModels || []) {
     addRoute(routes, seen, codexRouteFromModel(model));
   }
-  if (!codexModels?.length) {
-    addRoute(routes, seen, codexDefaultRoute());
+  for (const model of codexAccountModels()) {
+    addRoute(routes, seen, codexRouteFromCatalog(model));
   }
-  // Codex harness (Phase 2): every OpenRouter catalog model, routed through the
-  // OpenRouter custom provider. These extend the account catalog so a Codex
-  // member can run non-OpenAI models (docs/codex-ux-research/07-model-routing.md).
-  for (const model of openRouterModels()) {
+  // The catalog is authoritative for the claude-code model list (leaderboard-
+  // aligned). This includes the codex account models (provider openai): their
+  // claude-* runtimeModel alias routes them through the AgentParty router
+  // backend, which is the harness×model cross feature — the same model is
+  // selectable from either harness (once per harness, no duplicates).
+  for (const model of modelCatalog()) {
+    addRoute(routes, seen, routeFromCatalog(model));
+  }
+  // Codex harness (Phase 2): every catalog model with a concrete OpenRouter id,
+  // routed through the OpenRouter custom provider — including the Anthropic
+  // models (Opus/Sonnet/Haiku), which is the codex-side half of the
+  // harness×model cross feature (docs/codex-ux-research/07-model-routing.md §6;
+  // billed to the OpenRouter key, not the Claude subscription).
+  for (const model of orRoutedModels()) {
     addRoute(routes, seen, codexOpenRouterRoute(model));
   }
 
@@ -240,10 +250,16 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
 
 /**
  * Finds the shared-catalog entry describing the same underlying model as a
- * Codex slug, tolerating spelling variants ("gpt-5.4-mini" vs "GPT-5.4 mini")
- * by comparing ids with separators stripped.
+ * Codex slug — by its explicit codexModel first, then tolerating spelling
+ * variants ("gpt-5.4-mini" vs "GPT-5.4 mini") by comparing ids with
+ * separators stripped.
  */
 function catalogMetaForCodexModel(slug: string): CatalogModel | undefined {
+  const lower = slug.toLowerCase();
+  const explicit = modelCatalog().find((model) => model.codexModel?.toLowerCase() === lower);
+  if (explicit) {
+    return explicit;
+  }
   const wanted = comparableModelId(slug);
   return modelCatalog().find((model) => comparableModelId(model.id) === wanted);
 }
@@ -264,13 +280,19 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
   const effort = model.reasoning?.effort;
   return {
     harnessId: "codex",
-    providerId: "openrouter",
+    // Grouped under the model's HOME provider (Opus under Anthropic, GLM under
+    // OpenRouter); the transport/billing identity is `modelProvider` below —
+    // the UI billing note and the codex adapter's cost path key off that, not
+    // off this display grouping.
+    providerId: model.provider,
     model: model.orModelId || model.id,
     runtimeModel: model.orModelId || model.id,
     modelProvider: CODEX_OPENROUTER_PROVIDER.id,
     label: model.label,
     description: `${model.description || ""} Runs on the Codex harness via OpenRouter (billed to your OpenRouter key).`.trim(),
-    pricing: pricingFromCatalog(model),
+    // Always token-billed: this route pays the OpenRouter key even when the
+    // model's native home is a subscription (e.g. Opus on the codex harness).
+    pricing: { ...pricingFromCatalog(model), billing: "token" },
     capabilities: {
       effort: effort
         ? {
@@ -296,17 +318,44 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
   };
 }
 
-function codexDefaultRoute(): ModelRoute {
-  const capabilities = { ...disabledCapabilities(), vision: visionForModel("gpt-5.4") };
+/**
+ * A codex-harness route for a catalog account model (provider openai with a
+ * codexModel slug) — the static fallback that keeps every known account model
+ * selectable before/without live discovery. Effort options are the catalog's
+ * transportable subset; a live model/list route for the same slug supersedes
+ * this one (added first in buildModelRoutes) with the account's real options.
+ */
+export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
+  const effort = model.reasoning?.effort;
   return {
     harnessId: "codex",
     providerId: "openai",
-    model: "gpt-5.4",
-    runtimeModel: "gpt-5.4",
-    label: "GPT-5.4 (Codex)",
-    description: "Default Codex app-server model route.",
-    pricing: { billing: "subscription", directPrice: "Codex subscription" },
-    capabilities,
+    model: model.codexModel || model.id,
+    runtimeModel: model.codexModel || model.id,
+    label: model.label,
+    description: model.description,
+    pricing: { billing: "subscription", directPrice: "Codex subscription", context: model.context },
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: visionFromCatalog(model),
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
     enabled: true,
   };
 }

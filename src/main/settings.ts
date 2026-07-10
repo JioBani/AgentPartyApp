@@ -7,9 +7,8 @@ import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog"
 
 const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },
-  // Matches codexDefaultRoute() so the default is selectable before account
-  // discovery runs (a bare "gpt-5.5" has no codex route until model/list lands,
-  // so the wizard would quietly create the member with a different model).
+  // A catalog codexModel slug (codexRouteFromCatalog), so the default is
+  // selectable even before live model/list discovery lands.
   codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { ...DEFAULT_CODEX_POLICY } },
 };
 

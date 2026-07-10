@@ -1590,8 +1590,16 @@ function isNativeClaudeModel(model: string): boolean {
 }
 
 function isRoutableRouterModel(model: string): boolean {
-  // OpenRouter-backed models are those the catalog maps to a concrete OR id.
-  return Boolean(openRouterAliasMap()[model.toLowerCase()]) || catalogModelByRuntime(model)?.provider === "openrouter";
+  // A model may go to the router backend when the catalog maps it to a concrete
+  // OpenRouter id, OR when it is a codex account model with a claude-* runtime
+  // alias (provider openai) — the AgentParty router backend translates that
+  // alias to the Codex backend (the harness×model cross feature; regressed once
+  // when this check was narrowed to OpenRouter-only).
+  if (openRouterAliasMap()[model.toLowerCase()]) {
+    return true;
+  }
+  const catalogued = catalogModelByRuntime(model);
+  return catalogued?.provider === "openrouter" || (catalogued?.provider === "openai" && Boolean(catalogued.runtimeModel));
 }
 
 async function assertRouterReachable(baseUrl: string): Promise<void> {

@@ -2,9 +2,10 @@
  * Default creation profile + harness lock.
  *   1. defaultMemberProfileOf (pure): the single member-creation default is
  *      derived from the runtime defaults on AppSettings.
- *   2. RuntimeModal (DOM): a model of a different harness than the member's
- *      current one is locked once a turn has run (turnCount > 0), and free to
- *      pick before the first turn.
+ *   2. RuntimeModal (DOM): the model list shows ONE harness at a time (the same
+ *      model may be reachable from both harnesses — no duplicate rows); the
+ *      harness switcher is locked to the current harness once a turn has run
+ *      (turnCount > 0), and free to switch before the first turn.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -71,20 +72,27 @@ function render(view) {
   return host;
 }
 const codexRow = (host) => [...host.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes("GPT-5"));
+const codexSegment = (host) => [...host.querySelectorAll(".wb-segment")].find((b) => (b.textContent || "") === "Codex");
+const click = (el) => el?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 
-console.log("\nRuntimeModal harness lock:");
+console.log("\nRuntimeModal single-harness list + harness lock:");
 const locked = render(mkView(1));
 await new Promise((r) => setTimeout(r, 80));
-const lockedCodex = codexRow(locked);
-assert(Boolean(lockedCodex), "codex model row is rendered");
-assert(lockedCodex?.disabled === true && lockedCodex?.className.includes("is-locked"), "cross-harness model is LOCKED after a turn (turnCount=1)");
+assert(!codexRow(locked), "other-harness models are NOT listed (one harness at a time, no duplicates)");
+assert([...locked.querySelectorAll(".wb-model-row")].some((b) => (b.textContent || "").includes("Claude Sonnet")), "the member's own harness models are listed");
+assert(codexSegment(locked)?.disabled === true && codexSegment(locked)?.className.includes("is-locked"), "the harness switcher is LOCKED after a turn (turnCount=1)");
 assert(Boolean(locked.querySelector(".wb-modal-note")), "a harness-lock note is shown");
 
 const free = render(mkView(0));
 await new Promise((r) => setTimeout(r, 80));
-const freeCodex = codexRow(free);
-assert(freeCodex?.disabled === false && !freeCodex?.className.includes("is-locked"), "cross-harness model is selectable before the first turn (turnCount=0)");
+assert(codexSegment(free)?.disabled === false && !codexSegment(free)?.className.includes("is-locked"), "the harness switcher is free before the first turn (turnCount=0)");
 assert(!free.querySelector(".wb-modal-note"), "no lock note before any turn");
+click(codexSegment(free));
+await new Promise((r) => setTimeout(r, 80));
+const switchedRow = codexRow(free);
+assert(Boolean(switchedRow), "switching harness swaps the model list to that harness");
+assert(switchedRow?.className.includes("is-selected"), "the selection moves onto the switched harness's list");
+assert(![...free.querySelectorAll(".wb-model-row")].some((b) => (b.textContent || "").includes("Claude Sonnet")), "the previous harness's models leave the list (no cross-harness duplicates)");
 
 console.log(failures.length ? `\nDEFAULT PROFILE FAILED (${failures.length})` : "\nDEFAULT PROFILE PASSED");
 process.exit(failures.length ? 1 : 0);

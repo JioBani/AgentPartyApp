@@ -35,7 +35,8 @@ const visionOf = (model) => routes.find((r) => r.model === model || r.runtimeMod
 
 assert(routes.every((r) => r.capabilities && r.capabilities.vision), "every route carries a capabilities.vision object");
 assert(visionOf("sonnet")?.image === true, "Anthropic Sonnet supports images");
-assert(visionOf("GPT-5.4")?.image === true, "GPT-5.4 supports images");
+assert(visionOf("gpt-5.4")?.image === true, "GPT-5.4 (codex slug route) supports images");
+assert(visionOf("gpt-5.6-sol")?.image === true, "GPT-5.6 Sol (codex slug route) supports images");
 assert(visionOf("GLM-5.2")?.image === false, "GLM-5.2 is text-only (image:false)");
 assert(visionOf("Qwen3.7 Max")?.image === false, "Qwen3.7 Max is text-only");
 assert(visionOf("DeepSeek V4 Pro")?.image === false, "DeepSeek V4 Pro is text-only");

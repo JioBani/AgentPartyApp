@@ -21,7 +21,7 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, modelCatalog, catalogModelById, catalogModelByRuntime, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, orRoutedModels, modelCatalog, catalogModelById, catalogModelByRuntime, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -38,9 +38,19 @@ const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 P
 const orClaudeRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "claude-code");
 assert(orClaudeRoutes.length === expectedOr.length, `exactly ${expectedOr.length} OpenRouter models on the claude-code harness (got ${orClaudeRoutes.length})`);
 assert(expectedOr.every((id) => byId[id]), "all leaderboard OR-O models are present");
-const orCodexRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "codex");
-assert(orCodexRoutes.length === expectedOr.length, `all ${expectedOr.length} OpenRouter models also exposed as codex routes (got ${orCodexRoutes.length})`);
-assert(orCodexRoutes.every((r) => r.modelProvider === "openrouter" && /.+\/.+/.test(r.model)), "codex OR routes pin modelProvider=openrouter + carry the orModelId slug");
+// Codex OR routes = the 11 OpenRouter models + the Anthropic models with an
+// orModelId (Opus/Sonnet/Haiku — the codex-side half of the cross feature).
+// Transport identity = modelProvider ("openrouter"); providerId is the model's
+// HOME provider for UI grouping (Opus under Anthropic, GLM under OpenRouter).
+const orCodexRoutes = routes.filter((r) => r.modelProvider === "openrouter" && r.harnessId === "codex");
+assert(orCodexRoutes.length === orRoutedModels().length, `all ${orRoutedModels().length} OR-routable models exposed as codex routes (got ${orCodexRoutes.length})`);
+assert(orCodexRoutes.every((r) => /.+\/.+/.test(r.model)), "codex OR routes carry the orModelId slug");
+for (const [slug, label] of [["anthropic/claude-opus-4.8", "Opus"], ["anthropic/claude-sonnet-4.6", "Sonnet"], ["anthropic/claude-haiku-4.5", "Haiku"]]) {
+  const r = orCodexRoutes.find((route) => route.model === slug);
+  assert(r?.label === label, `Anthropic '${label}' is a codex route via OpenRouter (${slug}) — cross feature`);
+  assert(r?.providerId === "anthropic", `codex '${label}' route is grouped under Anthropic (home provider), not OpenRouter`);
+  assert(r?.pricing?.billing === "token", `codex '${label}' route is token-billed (OpenRouter key, not the Claude subscription)`);
+}
 
 // Junk/duplicate OR models from the old hardcoded list are gone.
 for (const gone of ["Qwen3 Coder", "MiniMax M2.7", "Qwen3 Coder Plus", "GLM-5.2 (OpenRouter)", "openrouter/<provider>/<model>"]) {
@@ -70,9 +80,29 @@ assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Gro
 assert(!eff("haiku").supported && Boolean(th("haiku").budget), "Haiku has no effort but a thinking budget");
 
 assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
-// Routes = every catalog entry (claude-code) + the static Codex account fallback
-// + one codex OpenRouter route per OpenRouter catalog model (Phase 2).
-assert(modelCatalog().length + 1 + openRouterModels().length === routes.length, "catalog + Codex default + codex OpenRouter routes all produced");
+
+// One catalog entry per MODEL; harness×model cross-routing is derived from its
+// fields: every entry is a claude-code route (openai entries via their
+// claude-gpt-* router alias — the cross feature), entries with a codexModel are
+// ALSO static codex routes, and each OR model adds a codex OpenRouter route.
+console.log("\nHarness×model cross-routing (one catalog entry per model):");
+const codexAccountCount = modelCatalog().filter((m) => m.provider === "openai" && m.codexModel).length;
+assert(modelCatalog().length + codexAccountCount + orRoutedModels().length === routes.length, "claude-code catalog routes + codex account routes + codex OpenRouter routes all produced");
+for (const [id, slug, perf, costTier] of [["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
+  const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
+  assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
+  assert(codexRoute?.meta?.perf === perf && codexRoute?.meta?.costTier === costTier, `'${slug}' carries leaderboard meta perf ${perf} / cost ${costTier}`);
+  assert(codexRoute?.capabilities.effort.supported && codexRoute.capabilities.effort.options.some((o) => o.id === "max"), `'${slug}' exposes effort up to max (transportable subset)`);
+  const claudeRoute = routes.find((route) => route.harnessId === "claude-code" && route.model === id);
+  assert(claudeRoute?.runtimeModel === `claude-${slug}`, `'${id}' is ALSO a claude-code route via the claude-${slug} router alias (cross feature)`);
+}
+assert(routes.some((r) => r.harnessId === "claude-code" && r.runtimeModel === "claude-gpt-5.5"), "GPT-5.5 keeps its claude-code router route (cross feature regression guard)");
+// No model label appears twice within one harness (the duplicate-exposure bug);
+// the SAME label on both harnesses is the cross feature, not a duplicate.
+for (const harness of ["claude-code", "codex"]) {
+  const labels = routes.filter((r) => r.harnessId === harness).map((r) => r.label);
+  assert(new Set(labels).size === labels.length, `no duplicate model labels on the ${harness} harness`);
+}
 
 // Stale-model healing (guards the member-create bug where a legacy persisted
 // model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).

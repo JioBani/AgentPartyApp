@@ -5,23 +5,28 @@ const path = require("node:path");
 
 const root = "C:\\Project\\AgentPartyApp";
 const qaWorkspace = path.join(os.tmpdir(), "agentparty-app-e2e-workspace");
-const automationPort = Number(process.env.AGENTPARTY_E2E_PORT || "") || 48931;
+// Isolated userData: the smoke app must NEVER share the real app's settings/
+// parties (a shared userData once let this driver mutate the user's live app).
+let qaUserData = "";
 
 async function main() {
   await removeQaWorkspace();
   fs.mkdirSync(qaWorkspace, { recursive: true });
+  qaUserData = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-e2e-ud-"));
   const fakeCodex = writeFakeCodex();
-  const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
+  const env = {
+    ...process.env,
+    AGENTPARTY_E2E: "1",
+    AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
+    AGENTPARTY_USER_DATA: qaUserData,
+    AGENTPARTY_CODEX_BIN: process.execPath,
+    AGENTPARTY_CODEX_ARGS: JSON.stringify([fakeCodex]),
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", qaWorkspace], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      AGENTPARTY_E2E: "1",
-      AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
-      AGENTPARTY_AUTOMATION_PORT: String(automationPort),
-      AGENTPARTY_CODEX_BIN: process.execPath,
-      AGENTPARTY_CODEX_ARGS: JSON.stringify([fakeCodex]),
-    },
+    env,
     windowsHide: true,
   });
   child.stdout.on("data", (chunk) => process.stdout.write(chunk));
@@ -123,6 +128,7 @@ async function main() {
     await postJson(`${baseUrl}/api/window/maximize`, {});
     await postJson(`${baseUrl}/api/window/close`, {});
     await waitForExit(child);
+    try { fs.rmSync(qaUserData, { recursive: true, force: true }); } catch {}
     console.log("E2E smoke passed");
   } catch (error) {
     killProcessTree(child.pid);
@@ -194,21 +200,48 @@ async function removeQaWorkspace() {
   }
 }
 
+/**
+ * Discovers the spawned app via ITS per-workspace instance file
+ * (`<qaWorkspace>/.agent_party_app/instances/<pid>.json`) — never a fixed port.
+ * A fixed-port poll once attached this driver to the USER'S running app (which
+ * had persisted that port) and drove real sessions there. The temp workspace is
+ * created fresh above, so any instance advertised in it is ours.
+ */
 async function waitForApi() {
+  const instancesDir = path.join(qaWorkspace, ".agent_party_app", "instances");
   const started = Date.now();
-  while (Date.now() - started < 30000) {
-    const baseUrl = `http://127.0.0.1:${automationPort}`;
-    try {
-      const health = await getJson(`${baseUrl}/api/health`);
-      if (health?.ok) {
-        return baseUrl;
+  while (Date.now() - started < 60000) {
+    for (const baseUrl of discoverBaseUrls(instancesDir)) {
+      try {
+        const health = await getJson(`${baseUrl}/api/health`);
+        if (health?.ok) {
+          return baseUrl;
+        }
+      } catch {
+        // stale instance file or app still booting — keep polling
       }
-    } catch {
-      // keep polling
     }
     await delay(500);
   }
-  throw new Error("Automation API did not start.");
+  throw new Error("Automation API did not start (no live per-workspace instance).");
+}
+
+function discoverBaseUrls(instancesDir) {
+  try {
+    return fs
+      .readdirSync(instancesDir)
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => {
+        try {
+          return JSON.parse(fs.readFileSync(path.join(instancesDir, file), "utf8")).baseUrl || "";
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 async function getJson(url) {
