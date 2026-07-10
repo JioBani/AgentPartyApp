@@ -100,6 +100,53 @@ export function catalogModelByOrModelId(orModelId: string): CatalogModel | undef
 }
 
 /**
+ * Canonical comparison key for one spelling of a model id: lowercase, the
+ * optional "<provider>/" prefix and "[1m]" long-context suffix stripped, and
+ * separator characters removed — so "claude-opus-4-8[1m]" (the id the Claude
+ * harness reports at session init), "claude-opus-4.8" (version-dot spelling)
+ * and "anthropic/claude-opus-4.8" (OpenRouter id) all collapse to one key.
+ */
+function canonicalModelKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^[a-z0-9-]+\//, "")
+    .replace(/\[1m\]$/, "")
+    .replace(/[\s._-]+/g, "");
+}
+
+/**
+ * Resolves ANY spelling of a model to its catalog entry: catalog id, runtime
+ * alias, codex slug, concrete OpenRouter id, display label, or the harness's
+ * canonical id ("claude-opus-4-8[1m]" → opus[1m]). One resolver so a live
+ * session's self-reported model always finds its way back to the entry that
+ * carries capabilities (reasoning/vision), pricing, and leaderboard meta —
+ * a session echoing "claude-opus-4-8[1m]" used to resolve to NO entry, which
+ * silently dropped the Runtime modal's thinking (Adaptive) control.
+ */
+export function resolveCatalogModel(model: string): CatalogModel | undefined {
+  if (!model) {
+    return undefined;
+  }
+  const direct = catalogModelById(model) || catalogModelByRuntime(model) || catalogModelByOrModelId(model);
+  if (direct) {
+    return direct;
+  }
+  const lower = model.toLowerCase();
+  const byLabel = MODELS.find((m) => m.label.toLowerCase() === lower);
+  if (byLabel) {
+    return byLabel;
+  }
+  const key = canonicalModelKey(model);
+  return MODELS.find(
+    (m) =>
+      canonicalModelKey(m.id) === key ||
+      (m.orModelId ? canonicalModelKey(m.orModelId) === key : false) ||
+      (m.runtimeModel ? canonicalModelKey(m.runtimeModel) === key : false) ||
+      (m.codexModel ? canonicalModelKey(m.codexModel) === key : false),
+  );
+}
+
+/**
  * Parses a catalog `context` display string ("1M", "200K", "1.05M") into an
  * absolute token count for the context-capacity meter. Returns undefined for
  * the unknown placeholder ("—") or anything unparseable — the meter then shows

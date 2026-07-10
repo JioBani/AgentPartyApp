@@ -1,3 +1,5 @@
+import { resolveCatalogModel } from "../../shared/modelCatalog";
+
 export interface RouteOption {
   id: string;
   label: string;
@@ -59,17 +61,29 @@ export function routeKey(route: RouteLike): string {
  * reports the adapter's DISPLAY value — a label ("Opus"), in any casing.
  * Exact case-sensitive id matching silently missed the route (losing the
  * context window, vision info, and the modal's current selection) for every
- * native Anthropic model.
+ * native Anthropic model. As a last resort the string is resolved through the
+ * catalog's canonical-spelling resolver: a session echoing the harness id
+ * "claude-opus-4-8[1m]" matched NO route, which silently dropped the Runtime
+ * modal's thinking (Adaptive) control and the context-meter denominator.
  */
 export function findRoute(model: string | undefined, routes: RouteLike[]): RouteLike | undefined {
   if (!model) {
     return undefined;
   }
   const lower = model.toLowerCase();
-  return (
+  const raw =
     routes.find((item) => item.model.toLowerCase() === lower || item.runtimeModel?.toLowerCase() === lower) ||
-    routes.find((item) => item.label?.toLowerCase() === lower)
-  );
+    routes.find((item) => item.label?.toLowerCase() === lower);
+  if (raw) {
+    return raw;
+  }
+  const entry = resolveCatalogModel(model);
+  if (!entry) {
+    return undefined;
+  }
+  const id = entry.id.toLowerCase();
+  const runtime = (entry.runtimeModel || entry.id).toLowerCase();
+  return routes.find((item) => item.model.toLowerCase() === id || item.runtimeModel?.toLowerCase() === runtime);
 }
 
 export function routeKeyForModel(model: string, routes: RouteLike[]): string {

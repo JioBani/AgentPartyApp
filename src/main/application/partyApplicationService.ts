@@ -19,6 +19,7 @@ import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import type { PartyBridge } from "../../core/partyBridge";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
+import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
 import {
   buildChannelPayload,
@@ -337,16 +338,22 @@ export class PartyApplicationService {
     if (!sessionId || !model) {
       return;
     }
+    // Persist the catalog id for Anthropic models regardless of the spelling
+    // the setter received (harness canonical id, OpenRouter slug, label) — a
+    // raw "anthropic/claude-opus-4.8" here later resolved to the codex
+    // OpenRouter route and re-billed a subscription model to the OR key.
+    const entry = resolveCatalogModel(model);
+    const value = entry && entry.provider === "anthropic" ? entry.id : model;
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || member.model === model) {
+    if (!member || member.model === value) {
       return;
     }
-    member.model = model;
+    member.model = value;
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member model persisted", { workspace, partyId: member.partyId, member: member.name, model });
+    log("info", "party", "member model persisted", { workspace, partyId: member.partyId, member: member.name, model: value });
   }
 
   /** Persists a runtime effort change back to the owning member (same rationale as {@link syncMemberModel}). */
@@ -631,6 +638,7 @@ export class PartyApplicationService {
   }
 
   private ensureMigrated(state: StoredPartyState): StoredPartyState {
+    this.healMemberModels(state);
     if (state.parties.length > 0) {
       return state;
     }
@@ -646,6 +654,30 @@ export class PartyApplicationService {
       members: state.members.map((member) => ({ ...member, partyId: party.id })),
       messages: state.messages.map((message) => ({ ...message, partyId: party.id })),
     };
+  }
+
+  /**
+   * Rewrites a member's persisted model to its catalog id when it was stored
+   * under a different spelling of the SAME Anthropic model — e.g. the
+   * OpenRouter slug "anthropic/claude-opus-4.8" or the harness canonical id
+   * "claude-opus-4-8[1m]" instead of "opus[1m]". Such a value inferred provider
+   * "custom" and silently routed a subscription model through the router →
+   * OpenRouter (token-billed), and the Runtime modal lost the model's
+   * capabilities (the vanished thinking/Adaptive control). Healed in memory on
+   * every read (persists with the next write); logged, never silent. Non-
+   * Anthropic ids are left alone — codex members legitimately store slugs.
+   */
+  private healMemberModels(state: StoredPartyState): void {
+    for (const member of state.members) {
+      if (!member.model || member.runtime === "codex") {
+        continue;
+      }
+      const entry = resolveCatalogModel(member.model);
+      if (entry && entry.provider === "anthropic" && member.model !== entry.id) {
+        log("warn", "party", "healed member model spelling", { member: member.name, from: member.model, to: entry.id });
+        member.model = entry.id;
+      }
+    }
   }
 
   /**

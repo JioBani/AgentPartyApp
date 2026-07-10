@@ -1,10 +1,10 @@
 import {
   catalogModelById,
   catalogModelByRuntime,
-  catalogModelByOrModelId,
   codexAccountModels,
   modelCatalog,
   orRoutedModels,
+  resolveCatalogModel,
   type CatalogModel,
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
@@ -187,7 +187,9 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
 
   // Keep the currently selected model visible even if it is not catalogued
   // (e.g. a user-configured custom route), so it never silently disappears.
-  if (currentModel && !catalogModelById(currentModel) && !catalogModelByRuntime(currentModel)) {
+  // Resolution is canonical-spelling aware: a session echoing
+  // "claude-opus-4-8[1m]" is the opus[1m] entry, not a new fallback route.
+  if (currentModel && !resolveCatalogModel(currentModel)) {
     addRoute(routes, seen, {
       harnessId: "claude-code",
       providerId: inferModelProvider(currentModel, customRoutes),
@@ -387,7 +389,12 @@ export function inferModelProvider(model: string, customRoutes: ModelRouteConfig
   if (configured?.providerId) {
     return configured.providerId;
   }
-  const catalogued = catalogModelById(model) || catalogModelByRuntime(model);
+  // Any spelling of a catalogued model (incl. the harness canonical id and the
+  // OpenRouter slug) resolves to its HOME provider. Without this, a claude
+  // member whose model was persisted as "anthropic/claude-opus-4.8" inferred
+  // provider "custom" and silently routed through the router → OpenRouter,
+  // token-billing an Anthropic subscription model.
+  const catalogued = resolveCatalogModel(model);
   if (catalogued) {
     return catalogued.provider;
   }
@@ -440,7 +447,7 @@ function pricingFromCatalog(model: CatalogModel): ModelPricing {
 }
 
 export function pricingForModel(model: string): ModelPricing | undefined {
-  const catalogued = catalogModelById(model) || catalogModelByRuntime(model) || catalogModelByOrModelId(model);
+  const catalogued = resolveCatalogModel(model);
   return catalogued ? pricingFromCatalog(catalogued) : undefined;
 }
 
@@ -450,12 +457,15 @@ export function runtimeModelFor(model: string, customRoutes: ModelRouteConfig[] 
   if (configured?.runtimeModel) {
     return configured.runtimeModel;
   }
-  const catalogued = catalogModelById(model);
-  return catalogued?.runtimeModel || model;
+  // Resolve any spelling back to the catalog entry and send ITS harness id:
+  // "anthropic/claude-opus-4.8" must reach the Claude harness as "opus[1m]"
+  // (native), never be forwarded verbatim into the router path.
+  const catalogued = resolveCatalogModel(model);
+  return catalogued ? catalogued.runtimeModel || catalogued.id : model;
 }
 
 export function displayModelFor(model: string): string {
-  const catalogued = catalogModelById(model) || catalogModelByRuntime(model);
+  const catalogued = resolveCatalogModel(model);
   return catalogued?.label || model;
 }
 
@@ -500,11 +510,7 @@ function visionFromCatalog(model: CatalogModel): VisionCapability {
  * as a text-only safety net and by the UI to gate/annotate attachments.
  */
 export function visionForModel(model: string): VisionCapability {
-  const found =
-    catalogModelById(model) ||
-    catalogModelByRuntime(model) ||
-    catalogModelByOrModelId(model) ||
-    catalogMetaForCodexModel(model);
+  const found = resolveCatalogModel(model) || catalogMetaForCodexModel(model);
   return found ? visionFromCatalog(found) : {};
 }
 

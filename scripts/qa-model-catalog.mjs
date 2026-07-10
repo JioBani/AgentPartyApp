@@ -20,8 +20,9 @@ async function load(entry, name) {
   return import(pathToFileURL(out).href);
 }
 
-const { buildModelRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, orRoutedModels, modelCatalog, catalogModelById, catalogModelByRuntime, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider } = await load("src/core/modelRegistry.ts", "mr.mjs");
+const { openRouterAliasMap, openRouterModels, orRoutedModels, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -111,6 +112,27 @@ for (const harness of ["claude-code", "codex"]) {
   const labels = routes.filter((r) => r.harnessId === harness).map((r) => r.label);
   assert(new Set(labels).size === labels.length, `no duplicate model labels on the ${harness} harness`);
 }
+
+// Canonical-spelling resolution (the vanished-Adaptive bug). A live session
+// echoes the harness canonical id ("claude-opus-4-8[1m]") and a member once
+// persisted the OpenRouter slug ("anthropic/claude-opus-4.8"); every spelling
+// must resolve to the SAME catalog entry, or the Runtime modal silently loses
+// the model's capabilities (thinking/Adaptive control, context denominator)
+// and the adapter routes a subscription model through the router → OpenRouter.
+console.log("\nCanonical model-spelling resolution:");
+assert(resolveCatalogModel("claude-opus-4-8[1m]")?.id === "opus[1m]", "harness canonical 'claude-opus-4-8[1m]' → opus[1m]");
+assert(resolveCatalogModel("claude-sonnet-4-6")?.id === "sonnet", "harness canonical 'claude-sonnet-4-6' → sonnet");
+assert(resolveCatalogModel("anthropic/claude-opus-4.8")?.id === "opus[1m]", "OpenRouter slug → opus[1m]");
+assert(resolveCatalogModel("Opus")?.id === "opus[1m]", "display label → opus[1m]");
+assert(resolveCatalogModel("claude-fable-5")?.id === "claude-fable-5[1m]", "bare fable id → the [1m] catalog entry");
+assert(resolveCatalogModel("totally-unknown-model") === undefined, "unknown model stays unresolved (no silent guess)");
+assert(displayModelFor("claude-opus-4-8[1m]") === "Opus", "displayModelFor resolves the canonical id to the label");
+assert(runtimeModelFor("anthropic/claude-opus-4.8") === "opus[1m]", "runtimeModelFor sends the NATIVE id to the harness (never the slug → router/OR billing)");
+assert(inferModelProvider("anthropic/claude-opus-4.8") === "anthropic", "OR slug infers the HOME provider, not 'custom'");
+const canonicalRoute = findRoute("claude-opus-4-8[1m]", routes);
+assert(canonicalRoute?.harnessId === "claude-code" && canonicalRoute?.model === "opus[1m]", "findRoute maps the canonical id to the claude-code opus route");
+assert(canonicalRoute?.capabilities.thinking.modes.map((o) => o.id).join() === "adaptive,disabled", "…which still carries the Adaptive thinking control");
+assert(!buildModelRoutes("claude-opus-4-8[1m]", [], []).some((r) => r.model === "claude-opus-4-8[1m]"), "a canonical spelling never injects a duplicate fallback route");
 
 // Stale-model healing (guards the member-create bug where a legacy persisted
 // model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).
