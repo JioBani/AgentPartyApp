@@ -1,10 +1,11 @@
 /*
- * Full-process e2e for runtime permission-mode persistence — offline (mock
- * member, no model). Launches the REAL app on an isolated userData + temp
- * workspace and proves, in the actual app path, that a permission mode changed
- * DURING a session is written back to the owning member and survives an app
- * RESTART (previously the runtime change reached only the live adapter and was
- * lost on restart, reverting to the start-time value).
+ * Full-process e2e for runtime setting persistence — offline (mock member, no
+ * model calls). Launches the REAL app on an isolated userData + temp workspace
+ * and proves, in the actual app path, that a permission mode, MODEL, and EFFORT
+ * changed DURING a session are written back to the owning member and survive an
+ * app RESTART (previously these runtime changes reached only the live adapter
+ * and were lost on restart, reverting to the start-time values — e.g. an opus
+ * session reopening as sonnet, or "auto" permission reverting to default).
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -41,12 +42,16 @@ async function main() {
     const detailFile = path.join(partyRoot, "parties", member.partyId, "party.json");
     const memberIn = (file) => readJson(file).members.find((m) => m.name === "worker");
 
-    // Change the permission mode DURING the session, via the same HTTP endpoint
-    // the UI toggle drives.
-    await post(`/api/sessions/${member.sessionId}/permission`, { permissionMode: "bypassPermissions" });
+    // Change permission mode ("auto" — the mode reported to revert), model, and
+    // effort DURING the session, via the same HTTP endpoints the UI drives.
+    await post(`/api/sessions/${member.sessionId}/permission`, { permissionMode: "auto" });
+    await post(`/api/sessions/${member.sessionId}/model`, { model: "opus[1m]" });
+    await post(`/api/sessions/${member.sessionId}/effort`, { effort: "high" });
 
-    // It must be persisted to the member's on-disk record immediately.
-    assert(memberIn(detailFile)?.permissionMode === "bypassPermissions", "runtime change persisted to member's party.json");
+    // All three must be persisted to the member's on-disk record immediately.
+    assert(memberIn(detailFile)?.permissionMode === "auto", "runtime permission change persisted to member's party.json");
+    assert(memberIn(detailFile)?.model === "opus[1m]", "runtime model change persisted to member's party.json");
+    assert(memberIn(detailFile)?.effort === "high", "runtime effort change persisted to member's party.json");
 
     // --- RESTART the app, same userData + workspace -------------------------
     await post("/api/window/close").catch(() => {});
@@ -56,7 +61,9 @@ async function main() {
 
     party = await get("/api/party");
     const restored = party.members.find((m) => m.name === "worker");
-    assert(restored?.permissionMode === "bypassPermissions", "permission mode restored to the runtime-chosen value after restart");
+    assert(restored?.permissionMode === "auto", "permission mode restored to the runtime-chosen value after restart");
+    assert(restored?.model === "opus[1m]", "model restored to the runtime-chosen value after restart");
+    assert(restored?.effort === "high", "effort restored to the runtime-chosen value after restart");
 
     await post("/api/window/close").catch(() => {});
     await waitExit(child);
@@ -67,7 +74,7 @@ async function main() {
 
   console.log("");
   if (failures.length) { console.log(`PERMISSION PERSIST E2E FAILED: ${failures.length}`); process.exit(1); }
-  console.log("PERMISSION PERSIST E2E PASSED (runtime permission-mode change persists across restart, in the real app)");
+  console.log("RUNTIME PERSIST E2E PASSED (runtime permission/model/effort changes persist across restart, in the real app)");
 }
 
 function launch() {

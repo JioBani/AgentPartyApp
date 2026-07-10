@@ -321,6 +321,47 @@ export class PartyApplicationService {
     log("info", "party", "member permission mode persisted", { workspace, partyId: member.partyId, member: member.name, permissionMode });
   }
 
+  /**
+   * Persists a runtime model change back to the owning member — the model
+   * analogue of {@link syncMemberPermissionMode}. Without this, a member whose
+   * model was switched mid-session (e.g. sonnet → opus) silently reverted to the
+   * stale start-time model on the next app restart, because resume reads
+   * `member.model`. Expects the catalog/route id (what the setter APIs receive),
+   * never a display label.
+   */
+  syncMemberModel(sessionId: string, model: string): void {
+    if (!sessionId || !model) {
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || member.model === model) {
+      return;
+    }
+    member.model = model;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member model persisted", { workspace, partyId: member.partyId, member: member.name, model });
+  }
+
+  /** Persists a runtime effort change back to the owning member (same rationale as {@link syncMemberModel}). */
+  syncMemberEffort(sessionId: string, effort: string): void {
+    if (!sessionId || !effort) {
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || member.effort === effort) {
+      return;
+    }
+    member.effort = effort;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member effort persisted", { workspace, partyId: member.partyId, member: member.name, effort });
+  }
+
   bindMember(name: string, sessionId: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));

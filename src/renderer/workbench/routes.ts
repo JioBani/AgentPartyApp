@@ -53,7 +53,26 @@ export function routeKey(route: RouteLike): string {
   return [route.harnessId || "claude-code", route.providerId || "anthropic", route.model].join("::");
 }
 
+/**
+ * Finds a route by a model string, tolerantly. The string may be a route id
+ * ("opus[1m]"), a runtime id ("claude-gpt-5.5"), or — because a live snapshot
+ * reports the adapter's DISPLAY value — a label ("Opus"), in any casing.
+ * Exact case-sensitive id matching silently missed the route (losing the
+ * context window, vision info, and the modal's current selection) for every
+ * native Anthropic model.
+ */
+export function findRoute(model: string | undefined, routes: RouteLike[]): RouteLike | undefined {
+  if (!model) {
+    return undefined;
+  }
+  const lower = model.toLowerCase();
+  return (
+    routes.find((item) => item.model.toLowerCase() === lower || item.runtimeModel?.toLowerCase() === lower) ||
+    routes.find((item) => item.label?.toLowerCase() === lower)
+  );
+}
+
 export function routeKeyForModel(model: string, routes: RouteLike[]): string {
-  const route = routes.find((item) => item.model === model || item.runtimeModel === model) || routes[0];
+  const route = findRoute(model, routes) || routes[0];
   return route ? routeKey(route) : "";
 }

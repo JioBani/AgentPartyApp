@@ -2,7 +2,7 @@ import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
 import { parseContextTokens } from "../../shared/modelCatalog";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
-import type { RouteLike, RouteVision } from "./routes";
+import { findRoute, type RouteLike, type RouteVision } from "./routes";
 
 const BUSY_STATUSES = new Set(["requesting", "responding", "interrupting"]);
 
@@ -52,12 +52,9 @@ export interface BuildMemberViewInput {
   routes?: RouteLike[];
 }
 
-/** Finds a route by a model's display id or runtime id. */
+/** Finds a route by a model's route id, runtime id, or display label. */
 function routeForModel(model: string, routes?: RouteLike[]): RouteLike | undefined {
-  if (!model || !routes) {
-    return undefined;
-  }
-  return routes.find((item) => item.model === model || item.runtimeModel === model);
+  return routes ? findRoute(model, routes) : undefined;
 }
 
 /** The effective model's multimodal support, resolved from the routes. */

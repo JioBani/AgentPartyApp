@@ -165,6 +165,7 @@ export class ClaudeAdapter extends EventEmitter {
   private readonly startedAt = new Date().toISOString();
   private usageRefreshTimer: NodeJS.Timeout | undefined;
   private lastUsageStatus = "";
+  private lastRateLimitNotice = "";
 
   constructor(private readonly options: ClaudeAdapterOptions) {
     super();
@@ -808,7 +809,33 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
     this.lastUsageStatus = detail;
-    this.emitEvent({ type: "status", status: "usage", detail, at: now() });
+    this.emitEvent({ type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail, at: now() });
+  }
+
+  /**
+   * Chat-visible rate-limit notice, mirroring the Codex classifier's policy:
+   * surface only at ≥90% or when the limit is hit, once per level change.
+   */
+  private maybeEmitRateLimitDiagnostic(info: any, window: UsageWindow): void {
+    const pct = Math.round(window.utilization);
+    const exhausted = String(info?.status || "") === "rejected" || pct >= 100;
+    if (!exhausted && pct < 90) {
+      this.lastRateLimitNotice = "";
+      return;
+    }
+    const title = exhausted ? "사용량 한도 도달" : `사용량 한도 임박 (${pct}%)`;
+    if (title === this.lastRateLimitNotice) {
+      return;
+    }
+    this.lastRateLimitNotice = title;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: exhausted ? "error" : "warning",
+      category: "rate-limit",
+      title,
+      detail: window.resetsAt ? `${window.kind === "weekly" ? "주간" : "5시간"} 한도 · ${new Date(window.resetsAt).toLocaleString()} 초기화` : undefined,
+      at: now(),
+    });
   }
 
   private startUsagePolling(): void {
@@ -897,12 +924,14 @@ export class ClaudeAdapter extends EventEmitter {
 
     if (message.type === "rate_limit_event") {
       const info = (message as any).rate_limit_info;
-      // Keep the raw status for debugging/diagnostics, and ALSO surface it as a
-      // structured usage-limit event the titlebar indicator can consume.
-      this.emitStatus("rate_limit", JSON.stringify(info));
+      // The raw payload already lands in the debug log via log("sdk_message");
+      // the transcript only gets a diagnostic at (near-)exhaustion — every-tick
+      // JSON dumps in the chat were the "rate-limit logs in chat" bug. The
+      // titlebar meter consumes the structured usage_limit event on every tick.
       const window = rateLimitWindowFrom(info);
       if (window) {
         this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now() });
+        this.maybeEmitRateLimitDiagnostic(info, window);
       }
     }
   }
@@ -914,7 +943,14 @@ export class ClaudeAdapter extends EventEmitter {
       this.model = displayModelFor(this.runtimeModel);
       this.providerId = inferModelProvider(this.runtimeModel, this.options.customModelRoutes);
       this.currentRoute = this.resolveCurrentRoute();
-      this.permissionMode = message.permissionMode || this.permissionMode;
+      // The app-side permission mode is authoritative: a RESUMED session's init
+      // reports the SDK's own recorded mode (often "default"), which used to
+      // clobber the mode the user last chose (e.g. "auto") on every restart.
+      // Instead of adopting the reported value, re-assert ours to the SDK.
+      const reportedPermissionMode = message.permissionMode as PermissionMode | undefined;
+      if (reportedPermissionMode && reportedPermissionMode !== this.permissionMode && this.query) {
+        void this.query.setPermissionMode(this.permissionMode).catch((error) => this.emitError(error));
+      }
       this.currentStatus = "initialized";
       this.emitEvent({
         type: "session",

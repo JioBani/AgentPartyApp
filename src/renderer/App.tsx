@@ -10,7 +10,7 @@ import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
-import { RouteLike, routeKey } from "./workbench/routes";
+import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, routeKeyForModel, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
@@ -432,7 +432,7 @@ export function App() {
     try {
       const draft = runtimeDrafts[name];
       const member = members.find((item) => item.name === name);
-      const memberRoute = routes.find((route) => route.model === member?.model || route.runtimeModel === member?.model);
+      const memberRoute = findRoute(member?.model, routes);
       // The member already carries its harness's model/effort/permission (set at
       // creation from that harness's defaults); fall back to the same harness's
       // defaults if somehow unset. Provider is inferred from the model route.

@@ -144,10 +144,14 @@ export class LocalEngine implements EngineConnection {
 
   async setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
     this.deps.sessionManager.setModel(sessionId, model, providerId, runtimeModel);
+    // Capture the runtime change on the owning member so a reopen/restart
+    // restores the model the user last chose (same as permission mode below).
+    this.party.syncMemberModel(sessionId, model);
   }
 
   async setSessionEffort(sessionId: string, effort: string): Promise<void> {
     this.deps.sessionManager.setEffort(sessionId, effort);
+    this.party.syncMemberEffort(sessionId, effort);
   }
 
   async setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void> {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Lightbulb, SlidersHorizontal, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
-import { RouteCapabilities, RouteLike, routeKey } from "./routes";
+import { findRoute, RouteCapabilities, RouteLike, routeKey } from "./routes";
 import { VisionTag } from "./VisionTag";
 import { ModelView, PROVIDER_DOTS, PROVIDER_LABELS, ProviderId, modelView, routeProvider } from "./modelCatalog";
 
@@ -33,7 +33,9 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
 
   const currentKey = useMemo(() => {
-    const match = routes.find((route) => route.model === view.model || route.runtimeModel === view.model);
+    // findRoute tolerates the snapshot's display value (label) so the modal
+    // opens on the member's ACTUAL model instead of falling back to entries[0].
+    const match = findRoute(view.model, routes);
     return match ? routeKey(match) : entries[0] ? routeKey(entries[0].route) : "";
   }, [routes, entries, view.model]);
 

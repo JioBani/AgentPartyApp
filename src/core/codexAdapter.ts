@@ -633,7 +633,7 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.lastUsageStatus = detail;
-    this.emitEvent({ type: "status", status: "usage", detail, at: now() });
+    this.emitEvent({ type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail, at: now() });
   }
 
   private startUsagePolling(): void {
@@ -679,7 +679,14 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private noteDiscoveryError(kind: string, error: unknown): undefined {
-    this.emitEvent({ type: "status", status: "discovery", detail: `${kind}: ${error instanceof Error ? error.message : String(error)}`, at: now() });
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "info",
+      category: "config",
+      title: `${kind === "skills" ? "스킬" : "플러그인"} 목록을 불러오지 못했습니다`,
+      detail: error instanceof Error ? error.message : String(error),
+      at: now(),
+    });
     return undefined;
   }
 
@@ -759,7 +766,13 @@ export class CodexAdapter extends EventEmitter {
     try {
       message = JSON.parse(line);
     } catch {
-      this.emitEvent({ type: "status", status: "stdout", detail: line, at: now() });
+      // Non-JSON stdout is JSON-RPC framing noise, not conversation content:
+      // always capture it in the debug log, but only show it in the transcript
+      // when debug mode is on (it used to flood the chat unconditionally).
+      this.log("stdout", line);
+      if (this.debugMode) {
+        this.emitEvent({ type: "status", status: "stdout", detail: line, at: now() });
+      }
       return;
     }
     this.log("in", message);

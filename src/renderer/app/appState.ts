@@ -1,5 +1,5 @@
 import type { InitialAppState } from "../../shared/types";
-import { RouteLike, routeKey } from "../workbench/routes";
+import { findRoute, RouteLike, routeKey } from "../workbench/routes";
 
 export type ViewId = "workbench" | "sessions" | "auth" | "runtime" | "automation";
 
@@ -70,7 +70,7 @@ export function displayPath(value: string | undefined): string {
 }
 
 export function routeKeyForModel(model: string, routes: RouteLike[]): string {
-  const route = routes.find((item) => item.model === model || item.runtimeModel === model) || routes[0];
+  const route = findRoute(model, routes) || routes[0];
   return route ? routeKey(route) : "";
 }
 
