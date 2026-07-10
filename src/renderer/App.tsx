@@ -254,27 +254,54 @@ export function App() {
   // (or a closed member) shows its past conversation. Visible members are fetched
   // FIRST so the panels on screen fill in immediately on a party switch; the rest
   // still prefetch right after, keeping a switch to a backgrounded member instant.
-  // Each fetch now reuses the engine's cached composed state to locate the member
-  // (no full re-compose per member). (restoredRef guards against refetching, so
-  // re-running on a visibility change never re-fetches an already-restored member.)
+  // `restoredByMember[key]` stays UNDEFINED until the fetch settles — it is the
+  // "restore completed" signal the save effect below gates on. The old version
+  // wrote a `[]` sentinel up front, so a session whose first events arrived
+  // before the (slow, e.g. WSL-remote) fetch resolved was never seeded, and the
+  // debounced save then overwrote the on-disk transcript with just the new
+  // session's blocks — losing the member's whole history (SEL-6910 incident).
+  const [restoreRetryNonce, setRestoreRetryNonce] = useState(0);
+  const restoreRequestedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const ordered = [...members].sort(
       (a, b) => Number(!visibleMembers.includes(a.name)) - Number(!visibleMembers.includes(b.name)),
     );
     for (const member of ordered) {
       const key = memberKey(member);
-      if (restoredRef.current[key] !== undefined) {
+      if (restoredRef.current[key] !== undefined || restoreRequestedRef.current.has(key)) {
         continue;
       }
-      // Mark as fetched (empty) up front so we don't refetch on every render.
-      setRestoredByMember((current) => (current[key] !== undefined ? current : { ...current, [key]: [] }));
-      void window.agentParty.getMemberTranscript?.(member.name)?.then((blocks) => {
-        if (Array.isArray(blocks) && blocks.length) {
-          setRestoredByMember((current) => ({ ...current, [key]: blocks as TranscriptBlock[] }));
+      restoreRequestedRef.current.add(key);
+      void window.agentParty.getMemberTranscript?.(member.name)?.then((raw) => {
+        const blocks = Array.isArray(raw) ? (raw as TranscriptBlock[]) : [];
+        // Always record the result (even empty): it marks the restore as done.
+        setRestoredByMember((current) => ({ ...current, [key]: blocks }));
+        if (!blocks.length) {
+          return;
         }
-      }).catch(() => {});
+        // Retro-seed: if this member's live session already produced transcript
+        // blocks while the fetch was in flight (so the first-event seeding was
+        // skipped), prepend the restored history now instead of dropping it.
+        const live = membersRef.current.find((item) => memberKey(item) === key);
+        const sid = live?.sessionId;
+        if (sid) {
+          setLogsBySession((current) => {
+            const existing = current[sid];
+            if (existing === undefined || existing.some((block) => block.id === blocks[0]?.id)) {
+              return current;
+            }
+            return { ...current, [sid]: [...blocks, ...existing] };
+          });
+        }
+      }).catch(() => {
+        // Surface and retry — silently treating a failed read as "no history"
+        // is what let the save path clobber the on-disk transcript.
+        restoreRequestedRef.current.delete(key);
+        setPartyNotice(`'${member.name}' 대화 기록 복원 실패 — 다시 시도합니다.`);
+        setTimeout(() => setRestoreRetryNonce((n) => n + 1), 2000);
+      });
     }
-  }, [members, visibleMembers]);
+  }, [members, visibleMembers, restoreRetryNonce]);
 
   // Persist each active member's transcript to disk (debounced), and keep the
   // restored copy in sync so closing the member (or the app) preserves it. The
@@ -283,8 +310,15 @@ export function App() {
     const timer = setTimeout(() => {
       for (const member of membersRef.current) {
         const blocks = member.sessionId ? logsBySession[member.sessionId] : undefined;
+        const key = memberKey(member);
+        // NEVER save before this member's restore has settled: the live blocks
+        // are not yet seeded with the on-disk history, and a wholesale save here
+        // would overwrite (lose) it. Once restored resolves, the retro-seed above
+        // folds the history in and saving becomes safe.
+        if (restoredRef.current[key] === undefined) {
+          continue;
+        }
         if (blocks && blocks.length) {
-          const key = memberKey(member);
           void window.agentParty.saveMemberTranscript?.(member.name, blocks);
           setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
         }
