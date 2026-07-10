@@ -165,6 +165,12 @@ export interface StartPartyMemberInput {
   effort?: EffortSetting;
   permissionMode?: PermissionModeSetting;
   selectedProviderId?: ProviderId;
+  /**
+   * Opportunistic start (renderer prewarm on panel open) — must NOT resurrect a
+   * member that is closed by the time it executes. A deliberate start/resume
+   * omits this and reopens a closed member as always.
+   */
+  auto?: boolean;
 }
 
 export interface SessionView {

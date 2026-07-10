@@ -454,7 +454,7 @@ export function App() {
   // straight to the global model here overwrote a member's model (e.g. a Kimi
   // member flipped to the global Sonnet on first chat). `startingRef` guards
   // against concurrent starts for the same member.
-  async function ensureSession(name: string): Promise<string | undefined> {
+  async function ensureSession(name: string, opts: { auto?: boolean } = {}): Promise<string | undefined> {
     const existing = sessionIdFor(name);
     if (existing) {
       return existing;
@@ -472,12 +472,19 @@ export function App() {
       // defaults if somehow unset. Provider is inferred from the model route.
       const harnessDefaults = harnessDefaultsOf(state.settings, (member?.runtime === "codex" ? "codex" : "claude-code"));
       const result = await window.agentParty.startPartyMember(name, {
+        // Opportunistic starts must not resurrect a member closed meanwhile.
+        auto: opts.auto,
         selectedProviderId: draft?.providerId || (memberRoute?.providerId as any),
         model: draft?.model || member?.model || harnessDefaults.model,
         effort: (draft?.effort as any) || (member?.effort as any) || harnessDefaults.effort,
         permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || harnessDefaults.permissionMode,
       });
       await applyPartyResult(result);
+      // The engine deliberately skipped an auto-start on a closed member — an
+      // intentional no-op, not a failure worth a notice.
+      if (opts.auto && result.member?.status === "closed") {
+        return undefined;
+      }
       // Seed the (resumed) session's transcript with the member's restored history
       // so the conversation continues visibly, matching the harness thread resume.
       const sid = result.session?.id;
@@ -523,12 +530,14 @@ export function App() {
       // At-most-once per member: init the session ahead of the first turn so the
       // palette can show the harness's real command/skill inventory. A failure is
       // surfaced (not silently swallowed) and not retried in a loop — sending a
-      // message later goes through ensureSession again.
-      if (sessionIdFor(name) || prewarmedRef.current.has(name)) {
+      // message later goes through ensureSession again. Prewarm is OPPORTUNISTIC
+      // (auto): a member closed before — or while — it runs must stay closed.
+      const member = members.find((item) => item.name === name);
+      if (sessionIdFor(name) || prewarmedRef.current.has(name) || member?.status === "closed") {
         return;
       }
       prewarmedRef.current.add(name);
-      void ensureSession(name).then((id) => {
+      void ensureSession(name, { auto: true }).then((id) => {
         if (!id) {
           setPartyNotice(`'${name}' 세션을 미리 준비하지 못했습니다. 메시지를 보내면 다시 시도합니다.`);
         }

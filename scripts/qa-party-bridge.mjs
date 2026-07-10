@@ -190,9 +190,17 @@ assert(sentTurns.length === beforeBc + bc.data.delivered.length, "broadcast inje
 assert(sentTurns.slice(beforeBc).every((t) => /from="main"/.test(t.text) && /전체 공지/.test(t.text)), "broadcast payloads are channel-wrapped with from=main");
 // A member without a live session lands in failed, never silently dropped.
 svc.closeMember("worker1", partyId);
+// Auto-start (renderer prewarm) must NOT resurrect a closed member — the
+// prewarm-vs-close race silently reopened a just-closed member with a fresh
+// session (and a queued message then got delivered to it).
+const autoStart = svc.startMember("worker1", { auto: true }, {}, partyId);
+assert(autoStart.ok && autoStart.member?.status === "closed" && !autoStart.session, "auto-start on a closed member is skipped (stays closed, no session)");
 const bc2 = await bridge.broadcast("두번째 공지", true);
 assert(bc2.ok && bc2.data.failed.some((f) => f.name === "worker1"), "broadcast reports undeliverable members in failed");
 assert(!bc2.data.delivered.includes("worker1"), "closed member is not counted as delivered");
+const deliberate = svc.startMember("worker1", {}, {}, partyId);
+assert(Boolean(deliberate.session?.id) && deliberate.member?.status === "running", "a deliberate start still reopens a closed member");
+svc.closeMember("worker1", partyId);
 
 // --- MCP glue: buildPartyToolDefs wires real SDK tools to the bridge ----------
 console.log("\nMCP tool surface assertions:");

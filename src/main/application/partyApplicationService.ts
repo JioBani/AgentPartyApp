@@ -221,6 +221,15 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    // An OPPORTUNISTIC start (renderer prewarm on panel open) races member
+    // close: the prewarm could execute after the close and silently resurrect
+    // the member with a fresh session (the smoke-e2e "queued message was
+    // delivered" flake). Closed is an explicit user decision — only a
+    // deliberate start/resume (no `auto`) may reopen it.
+    if (input.auto && member.status === "closed") {
+      log("info", "party", "auto-start skipped: member is closed", { workspace, partyId: member.partyId, member: member.name });
+      return this.result(`Member '${member.name}' is closed; auto-start skipped.`, state, member);
+    }
     this.applyRuntimeDefaults(member, input);
     const session = this.createMemberSession(workspace, member, input, options);
     member.sessionId = session.id;
