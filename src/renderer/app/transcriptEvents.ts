@@ -34,7 +34,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         next = upsertToolBlock(next, sessionId, event);
       }
     } else if (event.type === "diagnostic") {
-      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "diagnostic", severity: event.severity, category: event.category, title: event.title, detail: event.detail, recovery: event.recovery, at: nowTime() });
+      next = appendDiagnosticBlock(next, sessionId, event);
     } else if (event.type === "plan") {
       next = upsertPlanBlock(next, sessionId, event);
     } else if (event.type === "file_change") {
@@ -57,6 +57,32 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
 
 export function appendBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, item: TranscriptBlock): Record<string, TranscriptBlock[]> {
   return { ...current, [sessionId]: [...(current[sessionId] || []), item] };
+}
+
+/**
+ * The SAME diagnostic re-firing back-to-back (a polled read failing each tick,
+ * a watchdog re-flagging) must not stack a new banner per occurrence — the
+ * transcript filled with identical rate-limit blocks. When the newest block is
+ * an identical diagnostic, tick its `repeat` counter (rendered as ×N) and
+ * refresh the timestamp instead of appending. A different diagnostic — or any
+ * other block in between — still appends normally.
+ */
+function appendDiagnosticBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, event: any): Record<string, TranscriptBlock[]> {
+  const items = current[sessionId] || [];
+  const last = items[items.length - 1];
+  if (
+    last &&
+    last.kind === "diagnostic" &&
+    last.severity === event.severity &&
+    last.category === event.category &&
+    last.title === event.title &&
+    (last.detail || "") === (event.detail || "")
+  ) {
+    const next = items.slice();
+    next[next.length - 1] = { ...last, repeat: (last.repeat || 1) + 1, at: nowTime() };
+    return { ...current, [sessionId]: next };
+  }
+  return appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "diagnostic", severity: event.severity, category: event.category, title: event.title, detail: event.detail, recovery: event.recovery, at: nowTime() });
 }
 
 /**

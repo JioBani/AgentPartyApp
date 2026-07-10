@@ -128,10 +128,15 @@ export function mergeProviderUsage(
   prev: ProviderUsage | undefined,
   incoming: { provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; updatedAt: number },
 ): ProviderUsage {
+  const windows = mergeWindows(prev?.windows, incoming.windows);
   return {
     provider: incoming.provider,
-    available: incoming.available ?? prev?.available,
-    windows: mergeWindows(prev?.windows, incoming.windows),
+    // Reported windows are ground truth that limits ARE observable. Claude's
+    // proactive usage read can answer "not available for this auth mode" on the
+    // very account whose live rate_limit_events feed real meters; letting that
+    // read stamp available:false hid a real 30%/14% reading behind "N/A".
+    available: windows.length > 0 ? true : incoming.available ?? prev?.available,
+    windows,
     updatedAt: incoming.updatedAt,
   };
 }

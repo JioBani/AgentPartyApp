@@ -60,6 +60,23 @@ assert(merged.windows.find((w) => w.kind === "five_hour").utilization === 63, "m
 assert(merged.windows.find((w) => w.kind === "weekly").utilization === 40, "merge preserves the unreported weekly window");
 assert(mergeWindows(undefined, [{ kind: "weekly", utilization: 5 }]).length === 1, "mergeWindows tolerates no prior state");
 
+// available derivation: reported windows are ground truth. Claude's proactive
+// usage read can answer "not available for this auth mode" on the very account
+// whose live rate_limit_events feed real meters — that report must not stamp
+// N/A over the real data (the "사용량 정보를 읽을 수 없습니다 over 30%" bug).
+const masked = mergeProviderUsage(
+  { provider: "claude", available: true, windows: [{ kind: "five_hour", utilization: 30 }], updatedAt: 1 },
+  { provider: "claude", available: false, windows: [], updatedAt: 2 },
+);
+assert(masked.available === true && masked.windows.length === 1, "an available:false report with no windows does NOT mask real windows");
+const firstNa = mergeProviderUsage(undefined, { provider: "claude", available: false, windows: [], updatedAt: 1 });
+assert(firstNa.available === false, "a first available:false report with no windows still reads N/A (honest for API-key auth)");
+const windowsWin = mergeProviderUsage(
+  { provider: "claude", available: false, windows: [], updatedAt: 1 },
+  { provider: "claude", windows: [{ kind: "weekly", utilization: 14 }], updatedAt: 2 },
+);
+assert(windowsWin.available === true, "real windows arriving later flip available back to true");
+
 // buildUsageView — normal
 const now = 1_000_000_000_000;
 const snapshot = {

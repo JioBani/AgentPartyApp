@@ -73,6 +73,18 @@ assert(blocks.filter((b) => b.kind === "diagnostic").length === 3, "each diagnos
 const worst = M.latestDiagnostic(blocks);
 assert(worst.severity === "error" && worst.category === "rate-limit", "latestDiagnostic picks the most severe recent one");
 
+// The SAME diagnostic re-firing back-to-back (e.g. a polled usage read failing
+// every tick) folds into ONE block with a ×N counter instead of stacking.
+const repeated = T.applyEvents({}, "s2", [
+  { type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail: "auth mode" },
+  { type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail: "auth mode" },
+  { type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail: "auth mode" },
+  { type: "diagnostic", severity: "warning", category: "rate-limit", title: "사용량 한도 임박 (90%)" },
+])["s2"];
+assert(repeated.filter((b) => b.kind === "diagnostic").length === 2, "identical consecutive diagnostics fold into one block");
+assert(repeated[0].repeat === 3, "folded block carries the repeat counter (×3)");
+assert(repeated[1].repeat === undefined, "a different diagnostic still appends as its own block");
+
 // ---- Layer 3: Transcript DOM ------------------------------------------------
 const { Transcript } = await bundle("src/renderer/workbench/Transcript.tsx", "codex-diag-transcript.mjs", ["react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
 const React = await import("react");
@@ -84,7 +96,7 @@ console.log("\nTranscript DOM:");
 const view = {
   name: "codey", color: "#888", member: { name: "codey", runtime: "codex" }, status: "idle", unread: 0, pendingApproval: false, busy: false, model: "x", effort: "medium", permissionMode: "default",
   transcript: [
-    { id: "d1", kind: "diagnostic", severity: "warning", category: "reroute", title: "모델이 gpt-5.4-mini로 라우팅됨", detail: "gpt-5.4 → gpt-5.4-mini" },
+    { id: "d1", kind: "diagnostic", severity: "warning", category: "reroute", title: "모델이 gpt-5.4-mini로 라우팅됨", detail: "gpt-5.4 → gpt-5.4-mini", repeat: 3 },
     { id: "d2", kind: "diagnostic", severity: "warning", category: "sandbox", title: "샌드박스 경고", detail: "read-only", recovery: "/codex-fix-sandbox 로 복구하세요." },
   ],
 };
@@ -94,6 +106,7 @@ assert(host.querySelectorAll(".wb-diagnostic").length === 2, "both diagnostics r
 assert(Boolean(host.querySelector(".wb-diagnostic.is-warning")), "severity drives the banner style");
 assert(host.textContent.includes("gpt-5.4 → gpt-5.4-mini"), "reroute detail shown");
 assert(Boolean(host.querySelector(".wb-diagnostic-recovery")) && host.textContent.includes("/codex-fix-sandbox"), "sandbox recovery hint rendered");
+assert(host.querySelector(".wb-diagnostic-repeat")?.textContent === "×3", "repeat counter renders as ×3 badge");
 
 console.log(failures.length ? `\nCODEX DIAGNOSTICS FAILED (${failures.length})` : "\nCODEX DIAGNOSTICS PASSED");
 process.exit(failures.length ? 1 : 0);

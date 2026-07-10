@@ -362,6 +362,7 @@ function DiagnosticBlock({ block }: { block: Extract<TranscriptBlock, { kind: "d
       <div className="wb-diagnostic-head">
         <span className="wb-diagnostic-ic">{icon}</span>
         <strong>{block.title}</strong>
+        {(block.repeat || 1) > 1 && <span className="wb-diagnostic-repeat">×{block.repeat}</span>}
         <span className="wb-diagnostic-cat">{block.category}</span>
       </div>
       {block.detail && <div className="wb-diagnostic-detail">{block.detail}</div>}

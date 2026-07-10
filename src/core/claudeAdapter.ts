@@ -121,6 +121,8 @@ export class ClaudeAdapter extends EventEmitter {
   private started = false;
   private currentStatus = "created";
   private turnState: string | undefined;
+  /** True once a live rate_limit_event has fed the usage meter (real windows). */
+  private hasLiveUsageWindows = false;
   private sessionId = "";
   private permissionMode: PermissionMode = "default";
   private model: string;
@@ -537,6 +539,7 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   private async run(): Promise<void> {
+    let activeQuery: Query | undefined;
     try {
       const sdk = await loadSdk();
       const executable = resolveClaudeExecutable(this.options.executablePath);
@@ -645,6 +648,7 @@ export class ClaudeAdapter extends EventEmitter {
         router: this.usesRouterBackend() ? { baseUrl: this.options.routerBaseUrl } : undefined,
       });
       this.query = sdk.query({ prompt: this.input, options });
+      activeQuery = this.query;
       this.currentStatus = "spawned";
       this.emitEvent({ type: "status", status: "spawned", detail: executable, at: now() });
 
@@ -655,13 +659,33 @@ export class ClaudeAdapter extends EventEmitter {
       }
       this.currentStatus = "closed";
       this.emitEvent({ type: "status", status: "closed", at: now() });
+      this.clearInFlightTurn(activeQuery);
     } catch (error) {
       this.emitError(error);
+      this.clearInFlightTurn(activeQuery);
     } finally {
       this.stopUsagePolling();
       this.started = false;
       this.logger?.close();
     }
+  }
+
+  /**
+   * A terminated query has no turn in flight. When the CLI kills a turn (e.g.
+   * it believes the plan limit is exhausted) the loop exits with `turnState`
+   * still "submitted"/"responding" and possibly unresolved approvals — both keep
+   * isTurnActive() true forever, so every later send queued without dispatching:
+   * input was effectively blocked. Rate limits must never gate input; clear the
+   * in-flight state so the next send restarts the session and dispatches. The
+   * instance guard keeps a slow teardown of an OLD query from clobbering the
+   * state of an already-restarted one.
+   */
+  private clearInFlightTurn(query: Query | undefined): void {
+    if (query !== this.query) {
+      return;
+    }
+    this.turnState = undefined;
+    this.pendingApprovals.clear();
   }
 
   /**
@@ -792,13 +816,25 @@ export class ClaudeAdapter extends EventEmitter {
       const usage = await usageFn.call(this.query);
       const rateLimitsAvailable = usage?.rate_limits_available;
       const windows = claudeUsageWindows(usage?.rate_limits);
-      this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: rateLimitsAvailable !== false, at: now() });
-      this.lastUsageStatus = "";
-      if (rateLimitsAvailable === false) {
-        this.emitUsageStatus("Claude plan rate limits are not available for this auth mode.");
-      } else if (!windows.length) {
-        this.emitUsageStatus("Claude usage read returned no usable rate-limit windows.");
+      if (windows.length) {
+        this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: true, at: now() });
+        this.lastUsageStatus = "";
+        return;
       }
+      // The proactive read answered without usable windows. Once live
+      // rate_limit_events have fed the meter this read adds nothing — stay
+      // quiet. (Clearing lastUsageStatus unconditionally before this branch
+      // used to defeat the dedupe, so the same "not available for this auth
+      // mode" info block re-posted on every 60s poll tick.)
+      if (this.hasLiveUsageWindows) {
+        return;
+      }
+      this.emitEvent({ type: "usage_limit", provider: "claude", windows: [], available: rateLimitsAvailable !== false, at: now() });
+      this.emitUsageStatus(
+        rateLimitsAvailable === false
+          ? "Claude plan rate limits are not available for this auth mode."
+          : "Claude usage read returned no usable rate-limit windows.",
+      );
     } catch (error) {
       this.emitUsageStatus(`Claude usage read failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -930,6 +966,7 @@ export class ClaudeAdapter extends EventEmitter {
       // titlebar meter consumes the structured usage_limit event on every tick.
       const window = rateLimitWindowFrom(info);
       if (window) {
+        this.hasLiveUsageWindows = true;
         this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now() });
         this.maybeEmitRateLimitDiagnostic(info, window);
       }

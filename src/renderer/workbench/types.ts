@@ -37,7 +37,9 @@ export type TranscriptBlock =
   // A Codex fileChange item: per-file diff with +/- stats.
   | { id: string; kind: "fileChange"; changes: import("../../shared/codexItems").CodexFileEdit[]; status?: string; at?: string }
   // A surfaced Codex diagnostic (reroute / rate-limit / warning); never silently dropped.
-  | { id: string; kind: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; at?: string }
+  // `repeat` counts consecutive identical occurrences folded into one block
+  // (≥2 renders a ×N badge) — a re-firing diagnostic ticks a counter, never stacks.
+  | { id: string; kind: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; repeat?: number; at?: string }
   // Inter-member (agentparty channel) message. `direction` is relative to the
   // member whose transcript this is: "in" = received, "out" = this member sent.
   | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string }

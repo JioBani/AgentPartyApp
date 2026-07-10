@@ -17,12 +17,16 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { firstBaseUrl } from "./lib/discovery.mjs";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-ctx-usage-e2e-workspace");
 const userData = path.join(os.tmpdir(), "agentparty-ctx-usage-e2e-user-data");
-const port = Number(process.env.AGENTPARTY_CTX_E2E_PORT || "") || 48939;
-const base = `http://127.0.0.1:${port}`;
+// Discovered from the spawned app's per-workspace instance file — NEVER a fixed
+// port. The user's installed app persists `automationApiPort` in its settings,
+// so a fixed-port driver once attached to THAT app and rewired its workspace.
+let base = "";
 const codexJs = process.env.AGENTPARTY_CODEX_JS || "C:\\Users\\Dev\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
 const codexModel = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
 
@@ -31,14 +35,13 @@ async function main() {
   await removePath(userData);
   fs.mkdirSync(ws, { recursive: true });
 
-  const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
+  const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", ws], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       AGENTPARTY_QA: "1",
       AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
-      AGENTPARTY_AUTOMATION_PORT: String(port),
       AGENTPARTY_USER_DATA: userData,
       AGENTPARTY_WINDOW_DISPLAY: "left",
       AGENTPARTY_CODEX_BIN: process.execPath,
@@ -53,9 +56,8 @@ async function main() {
     await waitForApi();
     assert((await getJson("/api/health")).ok, "health ok");
     const windows = await getJson("/api/windows");
-    const windowId = windows.windows?.[0]?.id;
-    assert(windowId, "test window discovered");
-    await post(`/api/windows/${encodeURIComponent(windowId)}/workspace`, { workspacePath: ws });
+    const winWs = windows.windows?.[0]?.workspacePath || windows.windows?.[0]?.workspace;
+    assert(String(winWs).toLowerCase() === ws.toLowerCase(), `spawned app serves the e2e workspace (${winWs}) — not someone else's instance`);
 
     // A party is required before any member (no silent default party).
     await post("/api/parties", { name: "context-usage e2e" });
@@ -117,11 +119,14 @@ async function waitForContext(memberName) {
 
 async function waitForApi() {
   const started = Date.now();
-  while (Date.now() - started < 30000) {
-    try { if ((await getJson("/api/health")).ok) return; } catch {}
+  while (Date.now() - started < 60000) {
+    base = firstBaseUrl(ws);
+    if (base) {
+      try { if ((await getJson("/api/health")).ok) return; } catch {}
+    }
     await delay(500);
   }
-  throw new Error("Automation API did not start.");
+  throw new Error("Automation API did not start (no live instance file under the e2e workspace).");
 }
 
 async function getJson(u) {
