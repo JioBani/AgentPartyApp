@@ -391,8 +391,8 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.createMember({ ...input, partyId: input.partyId || this.partyForWindow(windowId) }));
   }
 
-  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, this.partyForWindow(windowId)));
+  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, this.partyForWindow(windowId), options));
   }
 
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */

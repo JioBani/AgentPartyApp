@@ -35,6 +35,10 @@ export interface PartyApplicationDeps {
   getWorkspacePath: () => string;
 }
 
+// Mirrors the renderer's BUSY_STATUSES (src/renderer/workbench/memberStatus.ts):
+// a session in one of these snapshot states is mid-turn ("working" in the UI).
+const BUSY_SESSION_STATUSES = new Set(["requesting", "responding", "interrupting"]);
+
 export class PartyApplicationService {
   private readonly repository = new PartyRepository();
 
@@ -442,12 +446,18 @@ export class PartyApplicationService {
     return this.result(`Party '${party.name}' removed.`, state);
   }
 
-  sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[], partyId?: string): PartyCommandResult {
+  sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const target = this.requireMember(state, to, partyId);
     const message = createPartyMessage(target, content, from);
     if (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId)) {
+      // interrupt-and-inject: stop the in-flight turn first so the message is
+      // handled immediately; the adapters' queued-turn drain delivers it once
+      // the interrupt settles. Without the flag it queues behind the turn.
+      if (options?.interrupt && this.isSessionBusy(target.sessionId)) {
+        this.deps.sessionManager.interrupt(target.sessionId);
+      }
       this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);
       message.delivered = true;
       target.status = "running";
@@ -463,6 +473,122 @@ export class PartyApplicationService {
       ...this.result(message.delivered ? `Message delivered to '${target.name}'.` : `Message queued for '${target.name}', but no active session is bound.`, state, target),
       partyMessage: message,
     };
+  }
+
+  /**
+   * Turn state of one member (or, with no name, every member of the party).
+   * `turnActive` mirrors the UI's "working" derivation: the session snapshot
+   * status is one of the busy states. Backs the `member-status` party tool and
+   * the `/api/party/members/{name}/status` endpoint.
+   */
+  memberTurnStatus(name?: string, partyId?: string): { ok: true; members: Array<Record<string, unknown>> } {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const members = name ? [this.requireMember(state, name, partyId)] : this.membersOf(state, this.requireParty(state, partyId).id);
+    return { ok: true, members: members.map((member) => this.turnStatusOf(member)) };
+  }
+
+  /**
+   * Stops a member's in-flight turn. Throws if the member has no live session;
+   * an idle member is reported (interrupted: false), not an error — "make sure
+   * it is stopped" is a legitimate call.
+   */
+  interruptMember(name: string, partyId?: string): PartyCommandResult & { interrupted: boolean } {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const member = this.requireMember(state, name, partyId);
+    if (!member.sessionId || !this.deps.sessionManager.hasSession(member.sessionId)) {
+      throw new Error(`Member '${member.name}' has no active session to interrupt.`);
+    }
+    const wasBusy = this.isSessionBusy(member.sessionId);
+    if (wasBusy) {
+      this.deps.sessionManager.interrupt(member.sessionId);
+    }
+    log("info", "party", "member interrupt requested", { partyId: member.partyId, member: member.name, wasBusy });
+    return {
+      ...this.result(wasBusy ? `Interrupt requested for '${member.name}'.` : `Member '${member.name}' is not in a turn (idle).`, state, member),
+      interrupted: wasBusy,
+    };
+  }
+
+  /** Stops every busy member of the party (optionally excluding the caller). */
+  interruptAllMembers(partyId?: string, exclude?: string): PartyCommandResult & { interrupted: string[]; idle: string[] } {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const party = this.requireParty(state, partyId);
+    const interrupted: string[] = [];
+    const idle: string[] = [];
+    for (const member of this.membersOf(state, party.id)) {
+      if (exclude && member.name === exclude) {
+        continue;
+      }
+      if (member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) && this.isSessionBusy(member.sessionId)) {
+        this.deps.sessionManager.interrupt(member.sessionId);
+        interrupted.push(member.name);
+      } else {
+        idle.push(member.name);
+      }
+    }
+    log("info", "party", "party-wide interrupt requested", { partyId: party.id, interrupted, exclude });
+    return { ...this.result(`Interrupt requested for ${interrupted.length} member(s).`, state, undefined, party.id), interrupted, idle };
+  }
+
+  /**
+   * Sends one message to every member of the party except the sender. Each
+   * delivery goes through {@link sendMessage} (same routing, persistence, and
+   * optional interrupt-and-inject); per-member failures are collected, never
+   * silently dropped.
+   */
+  broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult & { delivered: string[]; failed: Array<{ name: string; error: string }> } {
+    if (!content.trim()) {
+      throw new Error("broadcast requires a non-empty content.");
+    }
+    const initial = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const party = this.requireParty(initial, partyId);
+    const targets = this.membersOf(initial, party.id).filter((member) => member.name !== from);
+    if (!targets.length) {
+      throw new Error("No other members in the party to broadcast to.");
+    }
+    const delivered: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+    for (const target of targets) {
+      try {
+        const result = this.sendMessage(target.name, content, from, undefined, party.id, options);
+        if (result.partyMessage?.delivered) {
+          delivered.push(target.name);
+        } else {
+          failed.push({ name: target.name, error: result.partyMessage?.error || "not_delivered" });
+        }
+      } catch (error) {
+        failed.push({ name: target.name, error: errorMessage(error) });
+      }
+    }
+    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    return { ...this.result(`Broadcast delivered to ${delivered.length}/${targets.length} member(s).`, state, undefined, party.id), delivered, failed };
+  }
+
+  private turnStatusOf(member: PartyMember): Record<string, unknown> {
+    const view = this.sessionViewOf(member.sessionId);
+    const status = view ? String(view.snapshot.status) : member.sessionId ? "missing_session" : "not_started";
+    return {
+      name: member.name,
+      running: Boolean(view),
+      turnActive: Boolean(view && BUSY_SESSION_STATUSES.has(status)),
+      status,
+      turnCount: view?.snapshot.turnCount,
+      pendingApprovalCount: view?.snapshot.pendingApprovalCount,
+      model: view?.snapshot.model ?? member.model,
+    };
+  }
+
+  private sessionViewOf(sessionId?: string): SessionView | undefined {
+    if (!sessionId) {
+      return undefined;
+    }
+    return this.deps.sessionManager.listSessions().find((session) => session.id === sessionId);
+  }
+
+  private isSessionBusy(sessionId?: string): boolean {
+    const view = this.sessionViewOf(sessionId);
+    return Boolean(view && BUSY_SESSION_STATUSES.has(String(view.snapshot.status)));
   }
 
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
@@ -612,9 +738,9 @@ export class PartyApplicationService {
   private partyBridgeFor(party: string, selfMember: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {
-      send: async (from, to, content) => {
+      send: async (from, to, content, interrupt) => {
         try {
-          const result = this.sendMessage(to, content, from || selfMember, undefined, party);
+          const result = this.sendMessage(to, content, from || selfMember, undefined, party, { interrupt });
           notify();
           if (!result.partyMessage?.delivered) {
             return { ok: false, error: `Member '${to}' is not running. Start it (or member-create it) before sending.` };
@@ -672,6 +798,40 @@ export class PartyApplicationService {
         return { ok: true, data: { members } };
       },
       listModels: async () => ({ ok: true, data: partyModelDiscovery(this.deps.sessionManager.getCodexModelState()) }),
+      status: async (name) => {
+        try {
+          return { ok: true, data: { members: this.memberTurnStatus(name, party).members } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      interrupt: async (target) => {
+        // Self-interrupt would abort the very turn executing this tool call.
+        if (target === selfMember) {
+          return { ok: false, error: "You cannot interrupt yourself. Target another member, or 'all' (which excludes you)." };
+        }
+        try {
+          if (target === "all" || target === "*") {
+            const result = this.interruptAllMembers(party, selfMember);
+            notify();
+            return { ok: true, data: { interrupted: result.interrupted, idle: result.idle } };
+          }
+          const result = this.interruptMember(target, party);
+          notify();
+          return { ok: true, data: { interrupted: result.interrupted ? [target] : [], idle: result.interrupted ? [] : [target] } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      broadcast: async (content, interrupt) => {
+        try {
+          const result = this.broadcastMessage(content, selfMember, party, { interrupt });
+          notify();
+          return { ok: true, data: { delivered: result.delivered, failed: result.failed } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
     };
   }
 

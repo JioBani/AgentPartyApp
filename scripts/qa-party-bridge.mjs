@@ -42,22 +42,28 @@ const workspace = mkdtempSync(path.join(os.tmpdir(), "agentparty-qa-"));
 const live = new Set();
 const captured = [];
 const sentTurns = [];
+const interrupted = [];
+const snapshots = new Map();
 let notifyCount = 0;
 let seq = 0;
 const sessionManager = {
   createSession(input, _resume, binding) {
     const id = `sess-${++seq}`;
     live.add(id);
+    snapshots.set(id, { status: "idle", turnCount: 0, pendingApprovalCount: 0, model: input.model });
     captured.push(binding);
-    return { id, title: "t", workspace: input.workspacePath, snapshot: {} };
+    return { id, title: "t", workspace: input.workspacePath, snapshot: snapshots.get(id) };
   },
   createMockSession(input) {
     const id = `mock-${++seq}`; live.add(id);
-    return { id, title: "t", workspace: input.workspacePath, snapshot: {} };
+    snapshots.set(id, { status: "idle", turnCount: 0, pendingApprovalCount: 0, model: input.model });
+    return { id, title: "t", workspace: input.workspacePath, snapshot: snapshots.get(id) };
   },
   hasSession(id) { return live.has(id); },
   sendUserTurn(id, text) { sentTurns.push({ id, text }); },
   closeSession(id) { live.delete(id); },
+  interrupt(id) { interrupted.push(id); },
+  listSessions() { return [...live].map((id) => ({ id, title: "t", workspace, snapshot: snapshots.get(id) || {} })); },
   notifyPartyChanged() { notifyCount += 1; },
   // Live codex catalog: discovered, so list-models must expose it per-harness.
   getCodexModelState() {
@@ -132,13 +138,69 @@ assert(!svc.list().members.some((m) => m.name === "reviewer"), "removed member i
 
 assert(notifyCount >= 3, `party broadcasts fired on bridge mutations (got ${notifyCount})`);
 
+// --- member-status / interrupt / broadcast (agent coordination tools) ---------
+console.log("\nCoordination tool assertions:");
+await bridge.createMember({ name: "worker1", role: "r", harness: "claude-code" });
+await bridge.createMember({ name: "worker2", role: "r", harness: "claude-code" });
+const memberSession = (name) => svc.list().members.find((m) => m.name === name)?.sessionId;
+
+// member-status: idle members read as not turnActive; a busy one flips.
+const allStatus = await bridge.status();
+assert(allStatus.ok && allStatus.data.members.length >= 3, "member-status without a name returns every member");
+assert(allStatus.data.members.every((m) => m.turnActive === false && m.running === true), "idle members report turnActive=false, running=true");
+snapshots.get(memberSession("worker1")).status = "responding";
+const oneStatus = await bridge.status("worker1");
+assert(oneStatus.ok && oneStatus.data.members.length === 1 && oneStatus.data.members[0].turnActive === true && oneStatus.data.members[0].status === "responding", "a mid-turn member reports turnActive=true");
+const ghostStatus = await bridge.status("ghost");
+assert(!ghostStatus.ok && /does not exist/i.test(ghostStatus.error || ""), "member-status for a nonexistent member errors");
+
+// interrupt: self is refused; a busy member is stopped; an idle one is a no-op report.
+const selfInterrupt = await bridge.interrupt("main");
+assert(!selfInterrupt.ok && /yourself/i.test(selfInterrupt.error || ""), "interrupt refuses the caller itself");
+const stopBusy = await bridge.interrupt("worker1");
+assert(stopBusy.ok && stopBusy.data.interrupted.includes("worker1") && interrupted.includes(memberSession("worker1")), "interrupting a busy member stops its session");
+const stopIdle = await bridge.interrupt("worker2");
+assert(stopIdle.ok && stopIdle.data.interrupted.length === 0 && stopIdle.data.idle.includes("worker2"), "interrupting an idle member reports idle (not an error, no adapter call)");
+
+// interrupt all: stops every busy member EXCEPT the caller.
+snapshots.get(memberSession("worker1")).status = "responding";
+snapshots.get(memberSession("worker2")).status = "requesting";
+snapshots.get(memberSession("main")).status = "responding";
+const beforeAll = interrupted.length;
+const stopAll = await bridge.interrupt("all");
+assert(stopAll.ok && stopAll.data.interrupted.sort().join() === "worker1,worker2", "interrupt 'all' stops every busy member except the caller");
+assert(interrupted.length === beforeAll + 2 && !interrupted.slice(beforeAll).includes(memberSession("main")), "the caller's own session is never interrupted by 'all'");
+snapshots.get(memberSession("main")).status = "idle";
+
+// send with interrupt: a busy recipient's turn is stopped, then the turn queues.
+snapshots.get(memberSession("worker2")).status = "responding";
+const beforeInj = { interrupts: interrupted.length, turns: sentTurns.length };
+const inject = await bridge.send("main", "worker2", "urgent: stop and read this", true);
+assert(inject.ok && interrupted.length === beforeInj.interrupts + 1 && sentTurns.length === beforeInj.turns + 1, "send(interrupt=true) stops the busy recipient then delivers");
+const beforeQueue = interrupted.length;
+snapshots.get(memberSession("worker2")).status = "idle";
+await bridge.send("main", "worker2", "normal follow-up", true);
+assert(interrupted.length === beforeQueue, "send(interrupt=true) to an idle recipient skips the interrupt");
+
+// broadcast: every other member gets the channel-wrapped message; self excluded.
+const beforeBc = sentTurns.length;
+const bc = await bridge.broadcast("전체 공지");
+assert(bc.ok && bc.data.delivered.length >= 3 && !bc.data.delivered.includes("main"), "broadcast delivers to every member except the caller");
+assert(sentTurns.length === beforeBc + bc.data.delivered.length, "broadcast injected one turn per recipient");
+assert(sentTurns.slice(beforeBc).every((t) => /from="main"/.test(t.text) && /전체 공지/.test(t.text)), "broadcast payloads are channel-wrapped with from=main");
+// A member without a live session lands in failed, never silently dropped.
+svc.closeMember("worker1", partyId);
+const bc2 = await bridge.broadcast("두번째 공지", true);
+assert(bc2.ok && bc2.data.failed.some((f) => f.name === "worker1"), "broadcast reports undeliverable members in failed");
+assert(!bc2.data.delivered.includes("worker1"), "closed member is not counted as delivered");
+
 // --- MCP glue: buildPartyToolDefs wires real SDK tools to the bridge ----------
 console.log("\nMCP tool surface assertions:");
 assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app");
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "list", "list-models"]), "exposes the five party tools in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the eight party tools in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
@@ -152,7 +214,7 @@ assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "t
 console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
-assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same five party tools");
+assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same eight party tools");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
@@ -166,6 +228,8 @@ const primer = buildPartyPrimer({ party: "team-qa", member: "reviewer", role: "C
 assert(/AgentParty/.test(primer), "primer introduces the AgentParty app");
 assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.includes("Code reviewer"), "primer states the member's identity (party + name + role)");
 assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
+assert(primer.includes("mcp__agentparty-app__broadcast") && primer.includes("mcp__agentparty-app__member-status") && primer.includes("mcp__agentparty-app__interrupt"), "primer teaches the coordination tools (broadcast/status/interrupt)");
+assert(/interrupt: true/.test(primer), "primer explains the interrupt-and-inject send option");
 assert(/LEGACY/.test(primer) && /mcp__agentparty__\*/.test(primer) && /mcp__plugin_\*_agentparty__\*/.test(primer), "primer warns off the legacy agentparty surfaces by name");
 assert(/<channel source="agentparty"/.test(primer), "primer documents the channel communication protocol");
 const noRole = buildPartyPrimer({ party: "p", member: "m" });

@@ -101,7 +101,7 @@ export class RemoteEngineClient implements EngineConnection {
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }
   removeParty(partyId: string) { return this.call<Result<"removeParty">>("removeParty", partyId); }
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
-  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId); }
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId, options); }
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments, partyId); }
   closeMember(name: string, partyId?: string) { return this.call<Result<"closeMember">>("closeMember", name, partyId); }
   resumeMember(name: string, partyId?: string) { return this.call<Result<"resumeMember">>("resumeMember", name, partyId); }

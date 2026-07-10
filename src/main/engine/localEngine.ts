@@ -55,8 +55,8 @@ export class LocalEngine implements EngineConnection {
     return this.party.createMember(input);
   }
 
-  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string): Promise<PartyMutationResult> {
-    return this.party.sendMessage(name, content, from, attachments, partyId);
+  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<PartyMutationResult> {
+    return this.party.sendMessage(name, content, from, attachments, partyId, options);
   }
 
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) {

@@ -523,6 +523,52 @@ Closes the member's active session while keeping its registry/scaffold.
 
 Fully removes a member. This is destructive.
 
+### `POST /api/party/members/:name/status`
+
+Turn state of one member. `name` `*` (or `all`) returns every member of the
+party. `turnActive` mirrors the UI's "working" derivation (snapshot status is
+`requesting`/`responding`/`interrupting`). Agents reach the same data via the
+`member-status` party tool.
+
+```json
+{ "ok": true, "members": [ { "name": "impl", "running": true, "turnActive": true, "status": "responding", "turnCount": 3, "pendingApprovalCount": 0, "model": "Sonnet" } ] }
+```
+
+### `POST /api/party/members/:name/interrupt`
+
+Stops the member's in-flight turn (the same adapter interrupt the toolbar stop
+button uses). An idle member is reported with `interrupted: false`, not an
+error; a member with no live session errors. `name` `*` (or `all`) stops every
+busy member — `{ "exclude": "main" }` optionally skips one (the agents'
+`interrupt` tool passes themselves). Agents reach this via the `interrupt`
+party tool.
+
+### `GET /api/party/status`
+
+Convenience alias for `POST /api/party/members/*/status` — every member's turn state.
+
+### `POST /api/party/interrupt`
+
+Convenience alias for `POST /api/party/members/*/interrupt` — stops every busy
+member. Body: `{ "exclude": "main" }` (optional).
+
+### `POST /api/party/broadcast`
+
+Sends one message to EVERY member of the party except the sender.
+
+```json
+{ "from": "user", "content": "전체 공지: 지금 작업을 마무리하고 상태를 보고하세요.", "interrupt": false }
+```
+
+Returns per-member delivery: `{ "delivered": ["impl", "test"], "failed": [{ "name": "survey1", "error": "target_member_has_no_active_session" }] }`.
+With `"interrupt": true` each busy recipient's turn is stopped first so the
+message is handled immediately. Agents reach this via the `broadcast` party tool.
+
+> **Interrupt-and-inject**: `POST /api/party/messages`, `/members/:name/send`,
+> and `/broadcast` all accept `"interrupt": true` — the recipient's in-flight
+> turn is stopped first so the message is handled immediately instead of
+> queueing behind it (agents: the `send`/`broadcast` tools' `interrupt` flag).
+
 ### `GET /api/party/members/:name/transcript`
 
 The member's persisted transcript (assembled UI blocks), restored on app/member

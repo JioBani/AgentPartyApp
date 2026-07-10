@@ -23,6 +23,7 @@
     "test:e2e:party-delete": "npm run build && node scripts/qa-app-party-delete-e2e.mjs",
     "test:e2e:subagents": "npm run build && node scripts/e2e-subagents.mjs",
     "test:e2e:party-store": "npm run build && node scripts/e2e-party-store.mjs",
+    "test:e2e:party-coordination": "npm run build && node scripts/e2e-party-coordination.mjs",
     "test:e2e:discovery": "npm run build && node scripts/e2e-discovery.mjs",
     "test:e2e:multiprocess": "npm run build && node scripts/e2e-multiprocess.mjs",
     "test:e2e:context-usage": "npm run build && node scripts/e2e-context-usage.mjs",

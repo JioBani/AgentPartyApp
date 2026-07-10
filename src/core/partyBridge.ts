@@ -43,8 +43,10 @@ export interface PartyCreateMemberRequest {
 // the same `AppController`/`PartyApplicationService` path the UI and HTTP use,
 // and resolves to a plain result (never throws) so tool handlers stay trivial.
 export interface PartyBridge {
-  /** Fire-and-forget send to another member; errors if target is off/missing. */
-  send(from: string, to: string, content: string): Promise<PartyToolResult>;
+  /** Fire-and-forget send to another member; errors if target is off/missing.
+   *  `interrupt: true` stops the recipient's in-flight turn first so the message
+   *  is handled immediately instead of queueing behind it. */
+  send(from: string, to: string, content: string, interrupt?: boolean): Promise<PartyToolResult>;
   /** Create a member in the caller's own party and auto-start its session. */
   createMember(request: PartyCreateMemberRequest): Promise<PartyToolResult>;
   /** Remove a member from the caller's own party (cannot remove `main`). */
@@ -53,21 +55,30 @@ export interface PartyBridge {
   list(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options. */
   listModels(): Promise<PartyToolResult>;
+  /** Turn state of one member (or, with no name, every member) in the caller's party. */
+  status(name?: string): Promise<PartyToolResult>;
+  /** Stop a member's in-flight turn; target "all" stops every member except the caller. */
+  interrupt(target: string): Promise<PartyToolResult>;
+  /** Send a message to every other member of the caller's party. */
+  broadcast(content: string, interrupt?: boolean): Promise<PartyToolResult>;
 }
 
 /** MCP server name for the in-process party tool surface. */
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "list", "list-models"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
-  send: "Send a message to another member of your party. Fire-and-forget; errors if the recipient is not running or does not exist.",
+  send: "Send a message to another member of your party. Fire-and-forget; errors if the recipient is not running or does not exist. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   list: "List your party's members and their current status.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
+  "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
+  interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
+  broadcast: "Send a message to EVERY other member of your party at once. Set interrupt=true to stop their current turns so the message is handled immediately.",
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
@@ -76,6 +87,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     properties: {
       to: { type: "string", description: "Recipient member name in your party." },
       content: { type: "string", description: "Message body." },
+      interrupt: { type: "boolean", description: "Stop the recipient's in-flight turn first so the message is handled immediately (default false: it queues behind the current turn)." },
     },
     required: ["to", "content"],
     additionalProperties: false,
@@ -104,6 +116,30 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
   },
   list: { type: "object", properties: {}, additionalProperties: false },
   "list-models": { type: "object", properties: {}, additionalProperties: false },
+  "member-status": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Member name to check. Omit to get every member's turn state." },
+    },
+    additionalProperties: false,
+  },
+  interrupt: {
+    type: "object",
+    properties: {
+      target: { type: "string", description: "Member name to stop, or 'all' for every member except yourself." },
+    },
+    required: ["target"],
+    additionalProperties: false,
+  },
+  broadcast: {
+    type: "object",
+    properties: {
+      content: { type: "string", description: "Message body sent to every other member." },
+      interrupt: { type: "boolean", description: "Stop each recipient's in-flight turn first (default false: the message queues behind their current turn)." },
+    },
+    required: ["content"],
+    additionalProperties: false,
+  },
 };
 
 export interface PartyDynamicToolSpec {
@@ -150,7 +186,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!to || !content) {
         return { ok: false, error: "send requires string arguments: to, content." };
       }
-      return bridge.send(identity.member, to, content);
+      return bridge.send(identity.member, to, content, input.interrupt === true);
     }
     case "member-create": {
       const memberName = typeof input.name === "string" ? input.name : "";
@@ -179,6 +215,22 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       return bridge.list();
     case "list-models":
       return bridge.listModels();
+    case "member-status":
+      return bridge.status(typeof input.name === "string" && input.name ? input.name : undefined);
+    case "interrupt": {
+      const target = typeof input.target === "string" ? input.target : "";
+      if (!target) {
+        return { ok: false, error: "interrupt requires string argument: target (a member name, or 'all')." };
+      }
+      return bridge.interrupt(target);
+    }
+    case "broadcast": {
+      const content = typeof input.content === "string" ? input.content : "";
+      if (!content) {
+        return { ok: false, error: "broadcast requires string argument: content." };
+      }
+      return bridge.broadcast(content, input.interrupt === true);
+    }
   }
 }
 
@@ -205,7 +257,10 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     "",
     "## Party tools — use ONLY this surface",
     "All party actions go through the `agentparty-app` server. These are the only party tools you may call:",
-    `- \`${tool("send")}\` — message another member of your party (fire-and-forget; errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it.`,
+    `- \`${tool("send")}\` — message another member of your party (fire-and-forget; errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. Pass \`interrupt: true\` to stop the recipient's current turn so your message is handled immediately (default: it queues behind their turn).`,
+    `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same optional \`interrupt\`).`,
+    `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
+    `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
     `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
     `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
@@ -245,9 +300,13 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
   return [
     tool(
       "send",
-      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). Errors if the recipient is not running or does not exist.",
-      { to: z.string().describe("Recipient member name in your party."), content: z.string().describe("Message body.") },
-      async (args: { to: string; content: string }) => envelope(await bridge.send(identity.member, args.to, args.content)),
+      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). Errors if the recipient is not running or does not exist. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
+      {
+        to: z.string().describe("Recipient member name in your party."),
+        content: z.string().describe("Message body."),
+        interrupt: z.boolean().optional().describe("Stop the recipient's in-flight turn first (default false: the message queues behind it)."),
+      },
+      async (args: { to: string; content: string; interrupt?: boolean }) => envelope(await bridge.send(identity.member, args.to, args.content, args.interrupt === true)),
     ),
     tool(
       "member-create",
@@ -276,6 +335,27 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "Discover the harnesses and models available for member-create, including each model's reasoning options, performance, cost, and context window.",
       {},
       async () => envelope(await bridge.listModels()),
+    ),
+    tool(
+      "member-status",
+      "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
+      { name: z.string().optional().describe("Member name to check. Omit for all members.") },
+      async (args: { name?: string }) => envelope(await bridge.status(args.name || undefined)),
+    ),
+    tool(
+      "interrupt",
+      "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
+      { target: z.string().describe("Member name to stop, or 'all'.") },
+      async (args: { target: string }) => envelope(await bridge.interrupt(args.target)),
+    ),
+    tool(
+      "broadcast",
+      "Send a message to EVERY other member of your party at once. Set interrupt=true to stop their current turns so the message is handled immediately.",
+      {
+        content: z.string().describe("Message body sent to every other member."),
+        interrupt: z.boolean().optional().describe("Stop each recipient's in-flight turn first (default false)."),
+      },
+      async (args: { content: string; interrupt?: boolean }) => envelope(await bridge.broadcast(args.content, args.interrupt === true)),
     ),
   ];
 }

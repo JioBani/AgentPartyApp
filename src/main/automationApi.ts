@@ -175,7 +175,7 @@ export class AutomationApiServer {
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true }));
         return;
       }
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
@@ -191,6 +191,20 @@ export class AutomationApiServer {
       const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
       if (method === "GET" && transcriptMatch) {
         sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1]), windowId) });
+        return;
+      }
+      // Party-wide conveniences (agents' broadcast / stop-all / status-all):
+      // routed through the same party-action dispatch with the "*" member name.
+      if (method === "POST" && url.pathname === "/api/party/broadcast") {
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "broadcast", await readJson(req), windowId));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/party/interrupt") {
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "interrupt", await readJson(req), windowId));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/party/status") {
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "status", {}, windowId));
         return;
       }
       const partyMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/([^/]+)$/);
