@@ -45,17 +45,44 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   const effortCap = capabilities.effort;
   const thinkingCap = capabilities.thinking;
 
-  const [effort, setEffort] = useState(view.effort || effortCap?.defaultValue || "medium");
-  const [thinkingMode, setThinkingMode] = useState<string>(thinkingCap?.defaultValue || "");
-  const [budget, setBudget] = useState<number>(thinkingCap?.budget?.default ?? 0);
+  // Baseline reasoning values for a selection: the member's CURRENT values when
+  // the selection is its current model (and they are valid options there), else
+  // that model's own defaults. Resetting to the model default unconditionally —
+  // which the mount effect below also did — made the modal open on the default
+  // ("Low" for GPT-5.6 Sol) instead of the member's saved effort, so a saved
+  // change looked reverted, and applying any OTHER change actually downgraded
+  // the live session to the default.
+  const baselineEffort = (key: string): string => {
+    if (!effortCap?.supported) {
+      return "medium";
+    }
+    const current = key === currentKey && effortCap.options.some((option) => option.id === view.effort) ? view.effort : "";
+    return current || effortCap.defaultValue || "medium";
+  };
+  const baselineThinking = (key: string): string => {
+    if (!thinkingCap?.supported) {
+      return "";
+    }
+    const current = key === currentKey && (thinkingCap.modes || []).some((option) => option.id === view.thinkingMode) ? view.thinkingMode || "" : "";
+    return current || thinkingCap.defaultValue || "";
+  };
+  const baselineBudget = (key: string): number => {
+    const current = key === currentKey && typeof view.thinkingBudget === "number" ? view.thinkingBudget : undefined;
+    return current ?? thinkingCap?.budget?.default ?? 0;
+  };
+
+  const [effort, setEffort] = useState(() => baselineEffort(currentKey));
+  const [thinkingMode, setThinkingMode] = useState<string>(() => baselineThinking(currentKey));
+  const [budget, setBudget] = useState<number>(() => baselineBudget(currentKey));
   const [debug, setDebug] = useState(debugEnabled);
 
-  // Reset staged reasoning values when the selected model (and thus its
-  // capabilities) changes, so controls always reflect that model's spec.
+  // Re-stage reasoning values when the selected model (and thus its
+  // capabilities) changes, so controls always reflect that model's spec —
+  // and selecting the member's current model back restores ITS values.
   useEffect(() => {
-    setEffort(effortCap?.supported ? effortCap.defaultValue || "medium" : "medium");
-    setThinkingMode(thinkingCap?.supported ? thinkingCap.defaultValue || "" : "");
-    setBudget(thinkingCap?.budget?.default ?? 0);
+    setEffort(baselineEffort(selectedKey));
+    setThinkingMode(baselineThinking(selectedKey));
+    setBudget(baselineBudget(selectedKey));
   }, [selectedKey]);
 
   useEffect(() => {
@@ -77,10 +104,13 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
 
+  // Dirty = the staged values differ from the member's CURRENT state (not from
+  // the model defaults — comparing to defaults marked an unchanged modal dirty
+  // and an actually-changed value clean).
   const dirty =
     selectedKey !== currentKey ||
-    (effortCap?.supported && effort !== (effortCap.defaultValue || "medium")) ||
-    (thinkingCap?.supported && thinkingMode !== (thinkingCap.defaultValue || "")) ||
+    (effortCap?.supported && effort !== baselineEffort(selectedKey)) ||
+    (thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
     debug !== debugEnabled;
 
   // Harness is fixed once a turn has run: switching harness means a fresh

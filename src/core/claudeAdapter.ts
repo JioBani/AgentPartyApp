@@ -509,6 +509,8 @@ export class ClaudeAdapter extends EventEmitter {
       sessionId: this.sessionId || undefined,
       model: this.model,
       effort: this.effort,
+      thinkingMode: this.thinkingMode,
+      thinkingBudget: this.thinkingBudget,
       permissionMode: this.permissionMode,
       status: this.currentStatus,
       turnState: this.turnState,

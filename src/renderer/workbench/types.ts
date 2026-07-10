@@ -84,6 +84,10 @@ export interface MemberView {
   busy: boolean;
   model: string;
   effort: string;
+  /** Current thinking mode (live snapshot first, else the member's persisted reasoning). */
+  thinkingMode?: string;
+  /** Current thinking token budget, when set. */
+  thinkingBudget?: number;
   permissionMode: string;
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;

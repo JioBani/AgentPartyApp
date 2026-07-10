@@ -156,6 +156,10 @@ export class LocalEngine implements EngineConnection {
 
   async setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void> {
     this.deps.sessionManager.setThinking(sessionId, mode, budget);
+    // Capture the runtime change on the owning member (same rationale as
+    // effort/permission): without it a thinking change silently reverted to the
+    // start-time value on the next reopen/restart.
+    this.party.syncMemberThinking(sessionId, mode, budget);
   }
 
   async setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void> {

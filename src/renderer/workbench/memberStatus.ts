@@ -106,6 +106,8 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     busy: status === "working",
     model,
     effort: String(session?.snapshot.effort || member.effort || ""),
+    thinkingMode: session?.snapshot.thinkingMode || member.reasoning || undefined,
+    thinkingBudget: session?.snapshot.thinkingBudget ?? member.reasoningBudget,
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
     vision: visionFor(model, routes),
     context: contextFor(session, model, String(member.model || ""), routes),

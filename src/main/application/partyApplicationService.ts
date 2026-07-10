@@ -356,6 +356,26 @@ export class PartyApplicationService {
     log("info", "party", "member model persisted", { workspace, partyId: member.partyId, member: member.name, model: value });
   }
 
+  /** Persists a runtime thinking change back to the owning member (same rationale as {@link syncMemberModel}). */
+  syncMemberThinking(sessionId: string, reasoning: string, reasoningBudget?: number): void {
+    if (!sessionId || !reasoning) {
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || (member.reasoning === reasoning && (reasoningBudget === undefined || member.reasoningBudget === reasoningBudget))) {
+      return;
+    }
+    member.reasoning = reasoning;
+    if (reasoningBudget !== undefined) {
+      member.reasoningBudget = reasoningBudget;
+    }
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member thinking persisted", { workspace, partyId: member.partyId, member: member.name, reasoning, reasoningBudget });
+  }
+
   /** Persists a runtime effort change back to the owning member (same rationale as {@link syncMemberModel}). */
   syncMemberEffort(sessionId: string, effort: string): void {
     if (!sessionId || !effort) {

@@ -94,5 +94,43 @@ assert(Boolean(switchedRow), "switching harness swaps the model list to that har
 assert(switchedRow?.className.includes("is-selected"), "the selection moves onto the switched harness's list");
 assert(![...free.querySelectorAll(".wb-model-row")].some((b) => (b.textContent || "").includes("Claude Sonnet")), "the previous harness's models leave the list (no cross-harness duplicates)");
 
+// ---- Layer 3: staged reasoning baseline --------------------------------------
+// Opening the modal must show the member's CURRENT effort/thinking, not the
+// model's catalog default (the "saved medium reverted to low" bug on GPT-5.6
+// Sol, whose default is low): the mount effect reset staged values to the
+// default, and applying any OTHER change then pushed that default for real.
+console.log("\nRuntimeModal staged reasoning baseline:");
+const solRoutes = [
+  {
+    harnessId: "codex", providerId: "openai", model: "gpt-5.6-sol", label: "GPT-5.6 Sol", meta: { perf: 5, costTier: 5, context: "1M" },
+    capabilities: { effort: { supported: true, defaultValue: "low", options: ["low", "medium", "high"].map((id) => ({ id, label: id })) }, thinking: { supported: false } },
+  },
+  {
+    harnessId: "codex", providerId: "openai", model: "gpt-5.4", label: "GPT-5.4", meta: { perf: 4, costTier: 4, context: "1M" },
+    capabilities: { effort: { supported: true, defaultValue: "low", options: ["low", "medium", "high"].map((id) => ({ id, label: id })) }, thinking: { supported: false } },
+  },
+];
+const solView = {
+  name: "impl-gpt", color: "#888", member: { name: "impl-gpt", partyId: "p1", status: "running", runtime: "codex", role: "" },
+  status: "idle", unread: 0, pendingApproval: false, busy: false, model: "gpt-5.6-sol", effort: "medium", permissionMode: "default", transcript: [],
+  session: { id: "s2", title: "t", workspace: "/w", snapshot: { id: "s2", cwd: "/w", model: "gpt-5.6-sol", effort: "medium", status: "idle", startedAt: "", debugMode: false, turnCount: 3, queuedTurnCount: 0 } },
+};
+const solHost = document.createElement("div"); document.body.appendChild(solHost);
+reactDom.createRoot(solHost).render(React.createElement(RuntimeModal, { view: solView, routes: solRoutes, debugEnabled: false, actions: {}, onClose: () => {} }));
+await new Promise((r) => setTimeout(r, 80));
+const activeEffort = () => [...solHost.querySelectorAll(".wb-segment.is-active")].map((b) => b.textContent).filter((t) => ["low", "medium", "high"].includes(t))[0];
+assert(activeEffort() === "medium", `modal opens on the member's CURRENT effort (medium), not the model default (got ${activeEffort()})`);
+const applyBtn = () => [...solHost.querySelectorAll("button")].find((b) => b.textContent === "Apply");
+assert(applyBtn()?.disabled === true, "an untouched modal is NOT dirty (Apply disabled)");
+// Selecting another model stages ITS default; selecting back restores the member's value.
+const rowOf = (label) => [...solHost.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes(label));
+click(rowOf("GPT-5.4"));
+await new Promise((r) => setTimeout(r, 80));
+assert(activeEffort() === "low", "a DIFFERENT model stages its own default effort");
+click(rowOf("GPT-5.6 Sol"));
+await new Promise((r) => setTimeout(r, 80));
+assert(activeEffort() === "medium", "selecting the current model back restores the member's effort");
+assert(applyBtn()?.disabled === true, "…and the modal is clean again");
+
 console.log(failures.length ? `\nDEFAULT PROFILE FAILED (${failures.length})` : "\nDEFAULT PROFILE PASSED");
 process.exit(failures.length ? 1 : 0);

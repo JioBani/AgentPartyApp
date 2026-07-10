@@ -38,6 +38,10 @@ export interface ClaudeSessionSnapshot {
   sessionId?: string;
   model: string;
   effort: ClaudeEffort;
+  /** Live thinking mode (adaptive | enabled | disabled), when the harness has one. */
+  thinkingMode?: string;
+  /** Live thinking token budget, when set. */
+  thinkingBudget?: number;
   permissionMode?: string;
   status: string;
   turnState?: string;
