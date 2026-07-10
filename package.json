@@ -27,6 +27,7 @@
     "test:e2e:discovery": "npm run build && node scripts/e2e-discovery.mjs",
     "test:e2e:multiprocess": "npm run build && node scripts/e2e-multiprocess.mjs",
     "test:e2e:context-usage": "npm run build && node scripts/e2e-context-usage.mjs",
+    "test:e2e:live-fable": "npm run build && node scripts/e2e-live-fable.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",

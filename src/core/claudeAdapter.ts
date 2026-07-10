@@ -1621,7 +1621,9 @@ function isNativeClaudeModel(model: string): boolean {
     lower === "haiku" ||
     lower.startsWith("claude-sonnet") ||
     lower.startsWith("claude-opus") ||
-    lower.startsWith("claude-haiku")
+    lower.startsWith("claude-haiku") ||
+    lower.startsWith("claude-fable") ||
+    lower.startsWith("claude-mythos")
   );
 }
 

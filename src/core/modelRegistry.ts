@@ -608,7 +608,9 @@ function inferClaudeCodeProvider(model: string): ModelProviderId {
     lower.startsWith("haiku") ||
     lower.startsWith("claude-sonnet") ||
     lower.startsWith("claude-opus") ||
-    lower.startsWith("claude-haiku")
+    lower.startsWith("claude-haiku") ||
+    lower.startsWith("claude-fable") ||
+    lower.startsWith("claude-mythos")
   ) {
     return "anthropic";
   }

@@ -204,6 +204,19 @@ from the harness's own usage report (Claude: assistant-message
 captured (`context-usage.png`) so the rendered meters (`used / total` + fill bar)
 are visible. Override the Codex model with `AGENTPARTY_LIVE_CODEX_MODEL`.
 
+For a **live Fable 5 catalog/routing** e2e (one real Claude Fable turn), run:
+```
+npm run test:e2e:live-fable
+```
+It launches the real app (discovered via the per-workspace instance file — never
+a fixed port; the persisted `automationApiPort` in a user's installed app once
+made a fixed-port driver hijack that app and rewire its workspace), asserts
+`GET /api/models` exposes `claude-fable-5[1m]` with the right shape (native
+anthropic, adaptive-only thinking, effort to max, image vision, and NO `fable`
+short alias — the CLI rejects it), then starts a live member on that model,
+sends one real turn, and asserts the reply + live `contextTokens` prove the id
+routes natively through the claude-code harness.
+
 The app **can** be launched here. The catch that makes it look otherwise: VS Code
 / Claude Code terminals export `ELECTRON_RUN_AS_NODE=1`, which makes the Electron
 binary boot as plain Node (so `app` is undefined). `scripts/launch-electron.mjs`

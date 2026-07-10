@@ -45,7 +45,7 @@ assert(expectedOr.every((id) => byId[id]), "all leaderboard OR-O models are pres
 const orCodexRoutes = routes.filter((r) => r.modelProvider === "openrouter" && r.harnessId === "codex");
 assert(orCodexRoutes.length === orRoutedModels().length, `all ${orRoutedModels().length} OR-routable models exposed as codex routes (got ${orCodexRoutes.length})`);
 assert(orCodexRoutes.every((r) => /.+\/.+/.test(r.model)), "codex OR routes carry the orModelId slug");
-for (const [slug, label] of [["anthropic/claude-opus-4.8", "Opus"], ["anthropic/claude-sonnet-4.6", "Sonnet"], ["anthropic/claude-haiku-4.5", "Haiku"]]) {
+for (const [slug, label] of [["anthropic/claude-fable-5", "Fable"], ["anthropic/claude-opus-4.8", "Opus"], ["anthropic/claude-sonnet-4.6", "Sonnet"], ["anthropic/claude-haiku-4.5", "Haiku"]]) {
   const r = orCodexRoutes.find((route) => route.model === slug);
   assert(r?.label === label, `Anthropic '${label}' is a codex route via OpenRouter (${slug}) — cross feature`);
   assert(r?.providerId === "anthropic", `codex '${label}' route is grouped under Anthropic (home provider), not OpenRouter`);
@@ -68,6 +68,14 @@ for (const m of openRouterModels()) {
 assert(byId["MiniMax M3"].meta?.perf === 2 && byId["MiniMax M3"].meta?.costTier === 1, "MiniMax M3 perf/cost from leaderboard");
 assert(byId["MiniMax M3"].meta?.ioPerM === 0.53, "MiniMax M3 io price present");
 assert(byId["Claude Opus 4.8"] === undefined && byId["opus[1m]"].meta?.perf === 5, "Opus mapped to opus[1m] with perf 5");
+// Fable 5: full model id (no short CLI alias exists), top perf tier, and an
+// adaptive-only thinking control — reasoning cannot be turned off, so the
+// catalog must not offer a 'disabled' mode (no silent lie in the UI).
+const fable = byId["claude-fable-5[1m]"];
+assert(fable?.label === "Fable" && fable?.providerId === "anthropic" && fable?.meta?.perf === 5, "Fable 5 is a native anthropic route (claude-fable-5[1m], perf 5)");
+assert(byId["fable[1m]"] === undefined && byId["fable"] === undefined, "no 'fable' short alias route (the CLI rejects it — full id only)");
+assert(fable?.capabilities.thinking.supported && fable.capabilities.thinking.modes.map((o) => o.id).join() === "adaptive", "Fable 5 thinking is adaptive-only (no 'disabled' mode offered)");
+assert(fable?.capabilities.effort.options.some((o) => o.id === "max"), "Fable 5 exposes effort up to max");
 
 // Reasoning controls match the spec per model.
 const eff = (id) => byId[id].capabilities.effort;
