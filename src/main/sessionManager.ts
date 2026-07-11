@@ -66,6 +66,13 @@ export class SessionManager extends EventEmitter {
   private desiredUsageProviders = new Set<UsageProviderId>();
   private usageReconcileTimer?: NodeJS.Timeout;
   private static readonly USAGE_BACKOFF_MS = 10 * 60_000;
+  /**
+   * Resolves the LIVE automation-API base URL (the ACTUAL bound port) for a Codex
+   * member's party MCP server. Injected by the desktop host once the API server
+   * binds; absent in the headless engine-server / tests, where the configured
+   * port is used instead. See {@link codexAutomationBaseUrl}.
+   */
+  private automationBaseUrlProvider?: () => string | undefined;
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
   /**
@@ -668,6 +675,33 @@ export class SessionManager extends EventEmitter {
     this.sessions.clear();
   }
 
+  /**
+   * Wires the live automation-API base-URL source (see {@link automationBaseUrlProvider}).
+   * The desktop host calls this after the API server binds, passing a getter over
+   * the server's real base URL so it always reflects the actual (possibly
+   * ephemeral) port, not the configured one.
+   */
+  setAutomationBaseUrlProvider(provider: () => string | undefined): void {
+    this.automationBaseUrlProvider = provider;
+  }
+
+  /**
+   * The URL a Codex member's party MCP server fetches for every party tool. It
+   * MUST be the ACTUAL bound automation-API URL: the server falls back to an
+   * ephemeral port when the preferred one is taken (a second app instance or a
+   * leftover process), and a Codex member baked with the stale configured port
+   * fails every send/list with "fetch failed". The live provider reports the real
+   * port; the env/configured port is only the headless (engine-server/test)
+   * fallback. A pre-bind `:0` is ignored so a bad URL is never baked.
+   */
+  private codexAutomationBaseUrl(configuredPort: number): string {
+    const live = this.automationBaseUrlProvider?.();
+    if (live && !live.endsWith(":0")) {
+      return live;
+    }
+    return `http://127.0.0.1:${process.env.AGENTPARTY_AUTOMATION_PORT || configuredPort}`;
+  }
+
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
     const settings = getSettings();
     const harnessId = request.selectedHarnessId || settings.selectedHarnessId;
@@ -685,7 +719,7 @@ export class SessionManager extends EventEmitter {
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,
-        automationBaseUrl: `http://127.0.0.1:${process.env.AGENTPARTY_AUTOMATION_PORT || settings.automationApiPort}`,
+        automationBaseUrl: this.codexAutomationBaseUrl(settings.automationApiPort),
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,

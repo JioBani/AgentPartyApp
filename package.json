@@ -16,6 +16,7 @@
     "test:e2e": "npm run build && node scripts/e2e-smoke.js",
     "test:e2e:live-codex": "npm run build && node scripts/e2e-live-codex.mjs",
     "test:e2e:live-codex-party-tools": "npm run build && node scripts/e2e-live-codex-party-tools.mjs",
+    "test:e2e:codex-party-port-fallback": "npm run build && node scripts/e2e-codex-party-port-fallback.mjs",
     "test:e2e:codex-approval": "npm run build && node scripts/e2e-codex-approval.mjs",
     "test:e2e:codex-items": "npm run build && node scripts/e2e-codex-items.mjs",
     "test:e2e:codex-discovery": "npm run build && node scripts/e2e-codex-discovery.mjs",

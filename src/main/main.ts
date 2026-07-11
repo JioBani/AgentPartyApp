@@ -252,6 +252,11 @@ async function bootstrap(): Promise<void> {
     controller: appController,
     windowRegistry,
   });
+  // Codex members' party MCP server fetches the automation API by URL; give the
+  // SessionManager the ACTUAL bound base URL (lazy — resolved when a member
+  // starts, after the API binds) so a port fallback never leaves it fetching a
+  // dead configured port ("-32603: fetch failed" on send/list).
+  sessionManager.setAutomationBaseUrlProvider(() => automationApi?.baseUrl);
   registerIpc();
   registerApplicationMenu();
   const launched = launchWorkspace();
