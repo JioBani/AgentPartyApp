@@ -2,7 +2,7 @@ import type { PartyMutationResult } from "./engineConnection";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import { sanitizeAttachments } from "../../shared/attachments";
 
-export type PartyActionName = "send" | "close" | "resume" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "broadcast";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "broadcast";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult;
 
@@ -10,6 +10,7 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   send: (party, name, body, partyId) => party.sendMessage(name, String(body.content || ""), body.from, sanitizeAttachments(body.attachments), partyId, { interrupt: body.interrupt === true }),
   close: (party, name, _body, partyId) => party.closeMember(name, partyId),
   resume: (party, name, _body, partyId) => party.resumeMember(name, partyId),
+  respawn: (party, name, body, partyId) => party.respawnMember(name, body, partyId),
   open: (party, name, _body, partyId) => party.openMember(name, partyId),
   start: (party, name, body, partyId) => party.startMember(name, body, {}, partyId),
   bind: (party, name, body, partyId) => party.bindMember(name, String(body.sessionId || ""), partyId),

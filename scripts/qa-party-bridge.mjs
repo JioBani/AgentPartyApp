@@ -46,14 +46,20 @@ const interrupted = [];
 const snapshots = new Map();
 let notifyCount = 0;
 let seq = 0;
+// Captures the resume id passed to createSession, so respawn's conversation-
+// continuity (resume the harness thread) can be asserted. A session's harness
+// thread id is deterministic (`thread-<sessionId>`).
+const resumedWith = [];
 const sessionManager = {
-  createSession(input, _resume, binding) {
+  createSession(input, resume, binding) {
     const id = `sess-${++seq}`;
     live.add(id);
     snapshots.set(id, { status: "idle", turnCount: 0, pendingApprovalCount: 0, model: input.model });
     captured.push(binding);
+    resumedWith.push(resume);
     return { id, title: "t", workspace: input.workspacePath, snapshot: snapshots.get(id) };
   },
+  harnessSessionId(id) { return live.has(id) ? `thread-${id}` : undefined; },
   createMockSession(input) {
     const id = `mock-${++seq}`; live.add(id);
     snapshots.set(id, { status: "idle", turnCount: 0, pendingApprovalCount: 0, model: input.model });
@@ -246,6 +252,29 @@ assert(/LEGACY/.test(primer) && /mcp__agentparty__\*/.test(primer) && /mcp__plug
 assert(/<channel source="agentparty"/.test(primer), "primer documents the channel communication protocol");
 const noRole = buildPartyPrimer({ party: "p", member: "m" });
 assert(/none specified/.test(noRole), "primer handles a missing role gracefully");
+
+// --- respawn: reload the session, CONTINUING the conversation ----------------
+// The tab toolbar's primary reset. Unlike a hard restart (fresh conversation),
+// respawn tears the old session down and starts a new one that RESUMES the same
+// harness thread — so the conversation continues (model context intact) while
+// new config (e.g. a just-added MCP server) is applied. The app session id
+// changes, but the fresh session is created WITH the old session's harness
+// thread id as its resume target.
+console.log("\nRespawn (reload, keep conversation) assertions:");
+await bridge.createMember({ name: "respawner", role: "r", harness: "claude-code", model: "sonnet" });
+const beforeSession = svc.list().members.find((m) => m.name === "respawner")?.sessionId;
+const beforeThread = sessionManager.harnessSessionId(beforeSession);
+assert(Boolean(beforeSession) && live.has(beforeSession), "respawner starts with a live session");
+resumedWith.length = 0;
+const respawned = svc.respawnMember("respawner", {}, partyId);
+const afterSession = respawned.member?.sessionId;
+assert(respawned.member?.status === "running", "respawned member is running again");
+assert(Boolean(afterSession) && afterSession !== beforeSession, "respawn mints a NEW app session id (the old one is torn down)");
+assert(!live.has(beforeSession), "respawn closed the previous session (old app session no longer live)");
+assert(live.has(afterSession), "the reloaded session is live");
+assert(resumedWith.includes(beforeThread), "respawn RESUMES the old harness thread (conversation continues, not a fresh chat)");
+assert(svc.list().members.find((m) => m.name === "respawner")?.harnessSessionId === beforeThread, "the live harness thread id was captured onto the member before teardown");
+assert(svc.list().members.find((m) => m.name === "respawner")?.model === "sonnet", "respawn preserves the member's persisted config (model)");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nPARTY BRIDGE PASSED");
 process.exit(failures.length ? 1 : 0);

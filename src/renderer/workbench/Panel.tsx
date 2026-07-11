@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect } from "react";
-import { ChevronDown, ChevronsDownUp, Plug, RotateCcw, Square } from "lucide-react";
+import { ChevronDown, ChevronsDownUp, Plug, RefreshCw, Square } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -103,17 +103,16 @@ export function Panel(props: PanelProps) {
               <>
                 <span className="wb-toolbar-divider" />
                 <button type="button" className="wb-tool-btn" title="Compact context" onClick={() => actions.compact(view.name)} disabled={!view.session}><ChevronsDownUp size={14} /></button>
-                <button type="button" className="wb-tool-btn" title="Restart session" onClick={() => actions.restart(view.name)} disabled={!view.session}><RotateCcw size={14} /></button>
               </>
             )}
             <button
               type="button"
               className={"wb-tool-btn wb-stop" + (view.busy ? " is-danger" : "")}
-              title={view.busy ? "Stop" : "Restart session"}
-              onClick={() => (view.busy ? actions.interrupt(view.name) : actions.restart(view.name))}
+              title={view.busy ? "Stop" : "세션 재시작 · 대화 유지 (MCP/설정 적용)"}
+              onClick={() => (view.busy ? actions.interrupt(view.name) : actions.respawn(view.name))}
               disabled={!view.session}
             >
-              {view.busy ? <Square size={12} /> : <RotateCcw size={14} />}
+              {view.busy ? <Square size={12} /> : <RefreshCw size={14} />}
             </button>
           </div>
         </div>

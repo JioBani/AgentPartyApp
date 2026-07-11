@@ -527,6 +527,18 @@ Starts a fresh harness session for an opened member. `main` is init-started when
 
 Starts a new active session using the stored member profile.
 
+### `POST /api/party/members/:name/respawn`
+
+Reloads the member's session while CONTINUING the conversation: it tears the
+current session down and starts a new one that resumes the same harness thread
+(model context intact). The new session is rebuilt from the stored member
+profile and re-reads the harness's MCP config, so this is how you apply changes
+that need a session restart — e.g. a just-added MCP server — without losing the
+conversation. This is what the tab toolbar's reset button calls. Contrast with a
+hard restart (the member's right-click menu), which begins an EMPTY conversation.
+Optional body fields override the profile for the new session (same shape as
+`start`).
+
 ### `POST /api/party/members/:name/bind`
 
 Binds an existing active session to a member.

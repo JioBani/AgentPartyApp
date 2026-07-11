@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, Plus, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MemberView } from "./types";
@@ -37,6 +37,8 @@ interface PartySidebarProps {
   onCreateParty: (name: string) => void;
   onCreateMember: (input: CreateMemberInput) => void;
   onOpenMember: (member: string) => void;
+  /** Hard restart (in-place harness restart); enabled only with a live session. */
+  onRestartMember: (member: string) => void;
   onRemoveMember: (member: string) => void;
   onRemoveParty: (partyId: string) => void;
   onCollapse: () => void;
@@ -49,7 +51,7 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRemoveMember, onRemoveParty, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onRemoveParty, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   // Right-click context menu, at the cursor, for a member or party row.
@@ -166,8 +168,11 @@ export function PartySidebar(props: PartySidebarProps) {
                 onClick={() => onOpenMember(view.name)}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
                 onContextMenu={(event) => {
-                  if (!removable) {
-                    return; // 'main' cannot be removed — no menu.
+                  // Menu is worth showing if anything is actionable: hard restart
+                  // (needs a live session) or delete (removable). 'main' with no
+                  // session has neither → no menu.
+                  if (!removable && !view.session) {
+                    return;
                   }
                   event.preventDefault();
                   event.stopPropagation();
@@ -189,13 +194,26 @@ export function PartySidebar(props: PartySidebarProps) {
         // Fixed to the viewport at the cursor; click handlers above close it.
         <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
           {menu.kind === "member" ? (
-            <button
-              type="button"
-              className="wb-ctx-item is-danger"
-              onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
-            >
-              <Trash2 size={13} /> 삭제하기
-            </button>
+            <>
+              <button
+                type="button"
+                className="wb-ctx-item"
+                disabled={!views.find((v) => v.name === menu.name)?.session}
+                title="하네스를 그 자리에서 재시작합니다(대화 맥락 초기화, 세션 유지)"
+                onClick={() => { onRestartMember(menu.name); setMenu(null); }}
+              >
+                <RotateCcw size={13} /> 하드 리스타트
+              </button>
+              {menu.name !== "main" && (
+                <button
+                  type="button"
+                  className="wb-ctx-item is-danger"
+                  onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
+                >
+                  <Trash2 size={13} /> 삭제하기
+                </button>
+              )}
+            </>
           ) : confirmParty ? (
             <button
               type="button"

@@ -31,8 +31,27 @@ export interface WorkbenchActions {
    */
   answerQuestion(memberName: string, requestId: string, input: unknown, answers: Record<string, string>): void;
   interrupt(memberName: string): void;
+  /**
+   * Hard restart: tears down the running harness and restarts it in place with
+   * an EMPTY conversation (model context reset). Exposed via the member's
+   * right-click menu.
+   */
   restart(memberName: string): void;
+  /**
+   * Respawn (reload): restarts the member's session but RESUMES the same
+   * conversation (model context intact). The new session is rebuilt from the
+   * member's current config and re-reads MCP, so this applies changes that need
+   * a session restart — e.g. a just-added MCP server — without losing the chat.
+   * The tab toolbar's primary reset button.
+   */
+  respawn(memberName: string): void;
   compact(memberName: string): void;
+  /**
+   * Closes the member's live session (tears down the harness, frees its context
+   * + provider usage) and marks the member `closed`. Reopening the tab and
+   * sending a message starts a fresh session. Bound to the tab's close (×).
+   */
+  closeSession(memberName: string): void;
   applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
   setEffort(memberName: string, effort: string): void;
   setThinking(memberName: string, mode: string, budget?: number): void;

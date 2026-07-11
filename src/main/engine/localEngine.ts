@@ -71,6 +71,10 @@ export class LocalEngine implements EngineConnection {
     return this.party.resumeMember(name, partyId);
   }
 
+  async respawnMember(name: string, input?: StartPartyMemberInput, partyId?: string) {
+    return this.party.respawnMember(name, input, partyId);
+  }
+
   async openMember(name: string, partyId?: string) {
     return this.party.openMember(name, partyId);
   }

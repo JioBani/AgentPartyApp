@@ -94,6 +94,8 @@ export interface EngineConnection {
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   closeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
   resumeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
+  /** Reloads the member's session, resuming the same conversation (respawn). */
+  respawnMember(name: string, input?: StartPartyMemberInput, partyId?: string): Promise<ReturnType<PartyApplicationService["respawnMember"]>>;
   openMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>>;
   startMember(name: string, input?: StartPartyMemberInput, partyId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>>;
   bindMember(name: string, sessionId: string, partyId?: string): Promise<ReturnType<PartyApplicationService["bindMember"]>>;

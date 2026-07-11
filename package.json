@@ -28,6 +28,7 @@
     "test:e2e:discovery": "npm run build && node scripts/e2e-discovery.mjs",
     "test:e2e:multiprocess": "npm run build && node scripts/e2e-multiprocess.mjs",
     "test:e2e:context-usage": "npm run build && node scripts/e2e-context-usage.mjs",
+    "test:e2e:member-respawn": "npm run build && node scripts/e2e-member-respawn.mjs",
     "test:e2e:usage-poller": "npm run build && node scripts/e2e-usage-poller.mjs",
     "test:e2e:live-fable": "npm run build && node scripts/e2e-live-fable.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",

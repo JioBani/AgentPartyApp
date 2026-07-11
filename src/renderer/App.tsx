@@ -568,9 +568,26 @@ export function App() {
       const sessionId = sessionIdFor(name);
       if (sessionId) void window.agentParty.restart(sessionId);
     },
+    respawn(name) {
+      // Reload the member's session while continuing the conversation
+      // (respawnMember: restart + resume the same harness thread). Rebuilds from
+      // the member's current config and re-reads MCP, so newly-added servers
+      // take effect without losing context. Clear the prewarm mark so the new
+      // session isn't mistaken for an already-prewarmed one.
+      prewarmedRef.current.delete(name);
+      void window.agentParty.respawnPartyMember(name);
+    },
     compact(name) {
       const sessionId = sessionIdFor(name);
       if (sessionId) void window.agentParty.compact(sessionId);
+    },
+    closeSession(name) {
+      // Closing the tab tears down the member's session and marks it closed, so
+      // it stops occupying context / provider usage. Addressed by member name
+      // (not sessionId): a prewarmed-but-not-yet-bound member still gets closed,
+      // and the closed status blocks auto-prewarm from resurrecting it.
+      prewarmedRef.current.delete(name);
+      void window.agentParty.closePartyMember(name);
     },
     async applyRuntime(name, runtime) {
       if (runtime.debug !== state.settings.debugEnabled) {

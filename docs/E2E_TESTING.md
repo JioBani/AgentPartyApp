@@ -204,6 +204,25 @@ from the harness's own usage report (Claude: assistant-message
 captured (`context-usage.png`) so the rendered meters (`used / total` + fill bar)
 are visible. Override the Codex model with `AGENTPARTY_LIVE_CODEX_MODEL`.
 
+For **member respawn** — the tab toolbar's reset button (reload the session while
+CONTINUING the conversation) and `POST /api/party/members/:name/respawn` — run
+(real Claude):
+```
+npm run test:e2e:member-respawn
+```
+Respawn is the button you press after adding an MCP server so it takes effect
+without losing the chat. The test launches the real app, creates a Claude member,
+starts it (session A, id `session-…`), sends one real turn to commit the harness
+thread, then respawns and asserts the new session id is a RESUME session
+(`resume-…`) — proving the fresh session was created WITH the old thread as its
+resume target (conversation continues), not a fresh chat — that B ≠ A, the member
+is running bound to B with the SAME harness thread id, the old app session A is
+gone from `/api/state`, and the persisted model survived. Proves the whole
+reload+resume chain through the real main process + HTTP + real session lifecycle
+(qa-party-bridge proves the same service composition against a fake SessionManager;
+qa-render proves the toolbar button and the right-click "하드 리스타트" menu wiring).
+Override the model with `AGENTPARTY_LIVE_CLAUDE_MODEL`.
+
 For the **background usage poller** — account usage staying fresh with NO open
 session — run (real Claude):
 ```

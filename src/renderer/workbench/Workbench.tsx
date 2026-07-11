@@ -403,6 +403,7 @@ export function Workbench(props: WorkbenchProps) {
             onCreateParty={onCreateParty}
             onCreateMember={handleCreateMember}
             onOpenMember={handleOpenMember}
+            onRestartMember={(member) => actions.restart(member)}
             onRemoveMember={onRemoveMember}
             onRemoveParty={onRemoveParty}
             onCollapse={() => onToggleSidebar(false)}
@@ -439,7 +440,12 @@ export function Workbench(props: WorkbenchProps) {
               actions={actions}
               onFocus={() => setLayout((current) => focusPanel(current, panel.id))}
               onSelectTab={(member) => setLayout((current) => setActiveTab(current, panel.id, member))}
-              onCloseTab={(member) => setLayout((current) => closeTab(current, panel.id, member))}
+              onCloseTab={(member) => {
+                // Closing the tab also closes the member's session (frees its
+                // context + provider usage); it stays reopenable via the sidebar.
+                actions.closeSession(member);
+                setLayout((current) => closeTab(current, panel.id, member));
+              }}
               onAdd={() => addFirstAvailable(panel.id)}
               onSplit={() => setLayout((current) => splitPanel(current, panel.id))}
               onOpenRuntime={setRuntimeTarget}

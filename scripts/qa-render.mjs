@@ -119,6 +119,12 @@ const initialState = {
 };
 
 const noop = async () => ({ ok: true });
+// Records members whose session was closed via the tab × (close-tab-closes-session).
+const closedMembers = [];
+// Records members respawned via the toolbar reset button (reload, keep convo).
+const respawnedMembers = [];
+// Records session ids hard-restarted via the member right-click menu.
+const restartedSessions = [];
 window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
@@ -133,7 +139,7 @@ window.agentParty = {
   closeSession: noop,
   sendMessage: noop,
   interrupt: noop,
-  restart: noop,
+  restart: async (sessionId) => { restartedSessions.push(sessionId); return { ok: true }; },
   compact: noop,
   setModel: noop,
   setEffort: noop,
@@ -149,8 +155,9 @@ window.agentParty = {
   sendPartyMessage: async () => ({ ok: true, message: "", ...initialState.party }),
   bindPartyMember: noop,
   openPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
-  closePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  closePartyMember: async (name) => { closedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
   resumePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  respawnPartyMember: async (name) => { respawnedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
   startPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   removePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   listModels: async () => ({ ok: true, modelRoutes: initialState.modelRoutes, codexModels: initialState.codexModels }),
@@ -247,6 +254,53 @@ assert(staleMeter !== null, "stale (last-known) meter rendered from persisted oc
 assert(Boolean(staleMeter) && staleMeter.textContent.includes("~150K") && staleMeter.textContent.includes("200K"), "stale meter shows ~used/total (~150K/200K)");
 assert(document.documentElement.getAttribute("data-theme") === "light", "default theme is light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
+
+// The toolbar's primary reset button is now Respawn (reload session, keep the
+// conversation) for a non-busy member. Panel pb's active member (reviewer) is
+// idle; a busy member (backend, "responding") shows "Stop" — so select by title.
+const respawnBtn = document.querySelector('[data-panel-id="pb"] .wb-stop[title*="대화 유지"]');
+assert(respawnBtn !== null, "toolbar respawn (reload, keep conversation) button rendered for a non-busy member");
+const busyStopBtn = document.querySelector('[data-panel-id="pa"] .wb-stop[title="Stop"]');
+assert(busyStopBtn !== null, "a busy member's toolbar shows Stop (not respawn)");
+if (respawnBtn) {
+  respawnBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+assert(respawnedMembers.includes("reviewer"), "toolbar reset respawned the active member (respawnPartyMember called)");
+
+// Closing a tab (×) must ALSO close that member's session, not just hide the view.
+const closeBtn = document.querySelector('[data-panel-id="pa"] .wb-tab-close');
+assert(closeBtn !== null, "tab close (×) button rendered");
+const tabsBefore = document.querySelectorAll('[data-panel-id="pa"] .wb-tab').length;
+if (closeBtn) {
+  closeBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+assert(closedMembers.includes("backend"), "tab × closed the 'backend' member session (closePartyMember called)");
+const tabsAfter = document.querySelectorAll('[data-panel-id="pa"] .wb-tab').length;
+assert(tabsAfter === tabsBefore - 1, "tab × removed the tab from the panel");
+
+// Hard restart moved to the member's right-click menu. Right-clicking reviewer's
+// sidebar row opens a context menu offering "하드 리스타트"; clicking it restarts
+// that member's live session (window.agentParty.restart with its session id).
+const memberRows = [...document.querySelectorAll(".wb-member-row")];
+const reviewerRow = memberRows.find((row) => row.querySelector(".wb-member-name")?.textContent === "reviewer");
+assert(reviewerRow != null, "reviewer row present in the party sidebar");
+if (reviewerRow) {
+  reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const ctxMenu = document.querySelector(".wb-ctx-menu");
+assert(ctxMenu != null, "right-click opens the member context menu");
+const ctxItems = ctxMenu ? [...ctxMenu.querySelectorAll(".wb-ctx-item")] : [];
+const restartItem = ctxItems.find((b) => /하드 리스타트/.test(b.textContent || ""));
+assert(restartItem != null, "context menu offers 하드 리스타트");
+assert(ctxItems.some((b) => /삭제하기/.test(b.textContent || "")), "context menu still offers 삭제하기 for a removable member");
+if (restartItem) {
+  restartItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(restartedSessions.includes("s-reviewer"), "하드 리스타트 restarted the member's live session (restart called with its session id)");
 
 // React surfaces render errors via console.error; treat those as failures.
 const realErrors = consoleErrors.filter((line) => !line.includes("not wrapped in act"));

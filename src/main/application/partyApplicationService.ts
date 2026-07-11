@@ -245,6 +245,35 @@ export class PartyApplicationService {
   }
 
   /**
+   * Reloads the member's session while CONTINUING the conversation: it tears the
+   * current session down and starts a new one that resumes the same harness
+   * thread (model context intact). Because the new session is rebuilt from the
+   * member's current config and re-reads the harness's MCP config, this is how
+   * you apply changes that need a session restart — e.g. a just-added MCP server —
+   * without losing the conversation. Contrast with a hard restart (adapter
+   * restart with no resume), which begins an EMPTY conversation.
+   *
+   * The live harness thread id is captured from the running session BEFORE
+   * teardown (not read from the debounced-persisted value), so the resume always
+   * targets the exact current conversation.
+   */
+  respawnMember(name: string, input: StartPartyMemberInput = {}, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (member.sessionId) {
+      const harnessId = this.deps.sessionManager.harnessSessionId(member.sessionId);
+      if (harnessId && harnessId !== member.harnessSessionId) {
+        member.harnessSessionId = harnessId;
+        member.updatedAt = new Date().toISOString();
+        this.persistParty(workspace, state, this.partyIdOf(member));
+      }
+    }
+    this.closeMember(name, partyId);
+    return this.startMember(name, input, {}, partyId);
+  }
+
+  /**
    * Sends a user turn to a member — the SINGLE path behind both the UI Send
    * button and the HTTP API, so an agent drives the exact same route a user
    * does. Idempotently ensures the member has a live session (starting it with
