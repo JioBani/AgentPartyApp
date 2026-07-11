@@ -238,6 +238,10 @@ assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.inclu
 assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
 assert(primer.includes("mcp__agentparty-app__broadcast") && primer.includes("mcp__agentparty-app__member-status") && primer.includes("mcp__agentparty-app__interrupt"), "primer teaches the coordination tools (broadcast/status/interrupt)");
 assert(/interrupt: true/.test(primer), "primer explains the interrupt-and-inject send option");
+// A sent message QUEUES behind the recipient's current turn (Codex: next tool
+// call) — the primer must teach this so agents stop expecting instant delivery.
+assert(/QUEUED/.test(primer) && /next tool call/.test(primer), "primer teaches queued delivery + Codex next-tool-call timing");
+assert(/ONE turn at a time/.test(primer) && /tangled/.test(primer), "primer explains the one-turn-at-a-time model that causes perceived turn tangling");
 assert(/LEGACY/.test(primer) && /mcp__agentparty__\*/.test(primer) && /mcp__plugin_\*_agentparty__\*/.test(primer), "primer warns off the legacy agentparty surfaces by name");
 assert(/<channel source="agentparty"/.test(primer), "primer documents the channel communication protocol");
 const noRole = buildPartyPrimer({ party: "p", member: "m" });

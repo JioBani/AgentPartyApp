@@ -50,6 +50,22 @@ AppController.sendPartyMessage(...)
 
 This is why Codex support did not require a new party-routing layer.
 
+#### Delivery timing (queued vs interrupt)
+
+A member handles ONE turn at a time. A party message delivered while the recipient
+is mid-turn is **queued**: it is only read after the current turn finishes — for a
+Codex member, at its next tool call. This is the single most common source of an
+agent feeling its turns are "tangled": it sends a message and expects an instant
+reply, but the recipient is still finishing earlier work and picks the message up
+in order once free. The message is not lost.
+
+When a message genuinely cannot wait, `send`/`broadcast` accept `interrupt: true`
+(and the `interrupt` tool exists standalone) to stop the recipient's current turn
+first so the message is handled immediately. `member-status` reports whether a
+member is busy, so an agent can decide between queueing and interrupting. The
+agent-facing primer (`buildPartyPrimer`) teaches all of this so the behavior does
+not depend on model memory; it is locked by `scripts/qa-party-bridge.mjs`.
+
 ### Boundary 2: agent-driven party tools
 
 Claude Code exposes party operations through the in-process SDK MCP server in

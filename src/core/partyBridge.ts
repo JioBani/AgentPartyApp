@@ -71,14 +71,14 @@ export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "list
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
-  send: "Send a message to another member of your party. Fire-and-forget; errors if the recipient is not running or does not exist. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
+  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Delivery is QUEUED, not instant: if the recipient is mid-turn, your message is only picked up AFTER their current turn finishes (for a Codex member, at its next tool call), so do not expect an immediate reply — a delayed response means they are still finishing earlier work, not that the message was lost. Set interrupt=true ONLY when the message cannot wait: it stops the recipient's current turn so the message is handled right away.",
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   list: "List your party's members and their current status.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
-  broadcast: "Send a message to EVERY other member of your party at once. Set interrupt=true to stop their current turns so the message is handled immediately.",
+  broadcast: "Send a message to EVERY other member of your party at once. Like send, each delivery is QUEUED: a member that is mid-turn only picks it up after its current turn finishes (for a Codex member, at its next tool call). Set interrupt=true to stop their current turns so the message is handled right away.",
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
@@ -87,7 +87,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     properties: {
       to: { type: "string", description: "Recipient member name in your party." },
       content: { type: "string", description: "Message body." },
-      interrupt: { type: "boolean", description: "Stop the recipient's in-flight turn first so the message is handled immediately (default false: it queues behind the current turn)." },
+      interrupt: { type: "boolean", description: "Stop the recipient's in-flight turn first so the message is handled immediately. Default false: the message QUEUES and is only seen after the recipient finishes its current turn (a Codex member picks it up at its next tool call). Set true only when the message cannot wait for the current turn to end." },
     },
     required: ["to", "content"],
     additionalProperties: false,
@@ -135,7 +135,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       content: { type: "string", description: "Message body sent to every other member." },
-      interrupt: { type: "boolean", description: "Stop each recipient's in-flight turn first (default false: the message queues behind their current turn)." },
+      interrupt: { type: "boolean", description: "Stop each recipient's in-flight turn first so the message is handled immediately. Default false: the message QUEUES behind each recipient's current turn and is only seen once that turn finishes (a Codex member picks it up at its next tool call)." },
     },
     required: ["content"],
     additionalProperties: false,
@@ -257,8 +257,8 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     "",
     "## Party tools — use ONLY this surface",
     "All party actions go through the `agentparty-app` server. These are the only party tools you may call:",
-    `- \`${tool("send")}\` — message another member of your party (fire-and-forget; errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. Pass \`interrupt: true\` to stop the recipient's current turn so your message is handled immediately (default: it queues behind their turn).`,
-    `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same optional \`interrupt\`).`,
+    `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. **Delivery is QUEUED, not instant**: if the recipient is mid-turn, your message is only picked up AFTER their current turn finishes (a Codex member at its next tool call), so do not expect an immediate reply. Pass \`interrupt: true\` ONLY when it cannot wait — that stops their current turn so the message is handled right away.`,
+    `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same QUEUE-then-current-turn timing, and the same optional \`interrupt\`).`,
     `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
     `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
     `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
@@ -271,6 +271,8 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     "## Communication protocol",
     "- Messages from other members arrive as a user turn wrapped in `<channel source=\"agentparty\" from=\"…\" to=\"…\">…</channel>`.",
     `- To reply or initiate, call \`${tool("send")}\` with the recipient's member name. Replies are asynchronous: the other member's response arrives later as its own incoming message.`,
+    "- **Turn timing (read this to avoid \"tangled\" turns).** Each member handles ONE turn at a time. A message you send lands in the recipient's queue and is only read when their CURRENT turn ends — for a Codex member, at its next tool call. So right after you send: they have NOT seen it yet if they were busy, and a slow reply means they are still finishing earlier work, not that your message was dropped. It will be handled in order once their turn completes.",
+    `- Before assuming a message was missed, check \`${tool("member-status")}\` (or \`${tool("list")}\`) to see if the member is busy. When a message genuinely cannot wait for their current turn, use \`interrupt: true\` on \`${tool("send")}\`/\`${tool("broadcast")}\`, or call \`${tool("interrupt")}\` — this stops their turn so your message is seen immediately.`,
   ].join("\n");
 }
 
