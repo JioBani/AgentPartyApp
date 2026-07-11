@@ -44,6 +44,14 @@ the per-member **context-capacity meter** (both harnesses):
   is known, the meter shows `contextTokens` alone with no ratio — never a guessed
   denominator.
 
+For a member with **no live session yet** (a closed member, or a freshly reopened
+app), the live `snapshot` is absent, so the meter falls back to the member's
+persisted **last-known occupancy** — `member.lastContextTokens` /
+`member.lastContextWindow`, captured from its previous turn. Clients render this
+as **stale** (dimmed, `~`-prefixed) so a user can gauge what an old chat will cost
+before sending the first message, without mistaking it for a live reading. The
+next turn overwrites it with the fresh `snapshot` value.
+
 ### `GET /api/logs`
 
 Returns the active log file path.
@@ -166,6 +174,18 @@ when the harness exposes a read API (Claude SDK `/usage`, Codex
 event stream (Claude `rate_limit_event`, Codex `account/rateLimits/updated`).
 Reports are merged per provider; a provider absent from the response simply
 hasn't reported yet (show an unknown/loading state, never a fabricated 0%).
+
+**Fresh even with no open session.** Because those event streams only exist while
+a session runs, the indicator used to go stale once every member was closed (e.g.
+right after reopening the app). To fix this at the source, the SessionManager
+keeps a lightweight **background usage connection** alive for every provider the
+user actually has members for — a turn-less harness connection that self-polls
+usage every 60s. It is reused, not duplicated: when a provider already has a live
+member session, that session feeds usage and the background connection for it is
+dropped; when the last session closes, the background poller revives within 60s.
+A provider with no members spawns nothing. A background connection that fails to
+connect (e.g. the provider's CLI is not logged in) backs off and the pill honestly
+stays at "no data" — never a fabricated number.
 
 ```json
 {

@@ -84,6 +84,14 @@ async function main() {
     const codexCtx = await waitForContext("codexy");
     assert(codexCtx > 0, `Codex member snapshot carries live contextTokens (${codexCtx})`);
 
+    // The live occupancy must be PERSISTED onto the member so a reopened app shows
+    // the meter before the first new turn. The renderer saves the transcript
+    // (which also captures occupancy) debounced, so poll until it lands.
+    const claudeLast = await waitForPersistedContext("claudey");
+    assert(claudeLast > 0, `Claude member persists lastContextTokens for reopen (${claudeLast})`);
+    const codexLast = await waitForPersistedContext("codexy");
+    assert(codexLast > 0, `Codex member persists lastContextTokens for reopen (${codexLast})`);
+
     await delay(600);
     const shot = path.join(os.tmpdir(), "context-usage.png");
     const cap = await post("/api/capture", { path: shot });
@@ -115,6 +123,20 @@ async function waitForContext(memberName) {
     await delay(1000);
   }
   throw new Error(`${memberName} never reported contextTokens within 120s.`);
+}
+
+/** Polls /api/state until the named member has PERSISTED lastContextTokens (survives reopen). */
+async function waitForPersistedContext(memberName) {
+  const started = Date.now();
+  while (Date.now() - started < 30000) {
+    const state = await getJson("/api/state");
+    const member = (state.party?.members || []).find((m) => m.name === memberName);
+    if (typeof member?.lastContextTokens === "number" && member.lastContextTokens > 0) {
+      return member.lastContextTokens;
+    }
+    await delay(1000);
+  }
+  throw new Error(`${memberName} never persisted lastContextTokens within 30s.`);
 }
 
 async function waitForApi() {

@@ -13,16 +13,20 @@ import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
-import { mergeProviderUsage, type UsageLimitsSnapshot } from "../shared/usageLimits";
+import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
+import { log } from "./logger";
 
 interface ManagedSession {
   id: string;
   workspace: string;
   adapter: HarnessSession;
+  /** The account-usage provider this session draws from — lets the background
+   *  usage poller reuse a live session instead of spawning a duplicate. */
+  provider?: UsageProviderId;
   queuedEvents: ClaudeNormalizedEvent[];
   flushTimer?: NodeJS.Timeout;
   closed?: boolean;
@@ -47,6 +51,21 @@ export class SessionManager extends EventEmitter {
    * events; broadcast to all windows via the "usage" emit. See usageLimits.ts.
    */
   private usageLimits: UsageLimitsSnapshot = {};
+  /**
+   * Background usage poller: one lightweight, turn-less harness connection per
+   * provider, kept alive so the account-usage indicator stays fresh EVEN WITH NO
+   * open member session (the adapters self-poll every 60s). Only providers the
+   * user actually uses (they have members) and that lack a live session are
+   * polled — a live session already reports usage, so it is reused not duplicated.
+   * See {@link setUsageProviders} / {@link reconcileUsageAdapters}.
+   */
+  private usageAdapters = new Map<UsageProviderId, HarnessSession>();
+  /** Per-provider "don't retry a failed background connect before this epoch ms". */
+  private usageBackoffUntil = new Map<UsageProviderId, number>();
+  /** Providers whose usage should stay fresh (union of party-member providers). */
+  private desiredUsageProviders = new Set<UsageProviderId>();
+  private usageReconcileTimer?: NodeJS.Timeout;
+  private static readonly USAGE_BACKOFF_MS = 10 * 60_000;
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
   /**
@@ -77,7 +96,8 @@ export class SessionManager extends EventEmitter {
     const request = normalizeCreateSessionInput(input);
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
     const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding);
-    return this.registerSession(id, workspace, adapter);
+    const provider = providerOfHarness(request.selectedHarnessId || settings.selectedHarnessId);
+    return this.registerSession(id, workspace, adapter, provider);
   }
 
   /**
@@ -110,6 +130,13 @@ export class SessionManager extends EventEmitter {
       }
       tasks.push(session.adapter.refreshUsageLimits());
     }
+    // Also poke the background usage adapters, so a manual refresh works even
+    // when no member session is open (the whole point of the background poller).
+    for (const adapter of this.usageAdapters.values()) {
+      if (typeof adapter.refreshUsageLimits === "function") {
+        tasks.push(adapter.refreshUsageLimits());
+      }
+    }
     await Promise.allSettled(tasks);
     return this.usageLimits;
   }
@@ -126,6 +153,132 @@ export class SessionManager extends EventEmitter {
       }),
     };
     this.emit("usage", this.usageLimits);
+  }
+
+  // --- Background usage poller ---------------------------------------------
+
+  /**
+   * Declares which providers the user actually uses (their party members'
+   * providers), so their account usage stays fresh even with no open session.
+   * Idempotent: reconciles the background adapters and (re)arms the periodic
+   * reconcile that revives a poller after its provider's last session closes.
+   */
+  setUsageProviders(providers: UsageProviderId[]): void {
+    this.desiredUsageProviders = new Set(providers);
+    this.reconcileUsageAdapters();
+    if (!this.usageReconcileTimer) {
+      // A live session's polling stops when it closes; this tick brings the
+      // background poller back within 60s so an idle provider never goes stale.
+      this.usageReconcileTimer = setInterval(() => this.reconcileUsageAdapters(), 60_000);
+      this.usageReconcileTimer.unref?.();
+    }
+  }
+
+  /** True when a non-closed session already reports this provider's usage. */
+  private hasLiveSessionForProvider(provider: UsageProviderId): boolean {
+    for (const session of this.sessions.values()) {
+      if (!session.closed && session.provider === provider) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Starts/disposes background usage adapters to match desire + live sessions. */
+  private reconcileUsageAdapters(): void {
+    // Real harness subprocesses would destabilize the deterministic e2e/mock
+    // suites (extra processes, ports); those drive usage via injectUsageLimit.
+    if (isE2E()) {
+      return;
+    }
+    const backoffUntil: Partial<Record<UsageProviderId, number>> = {};
+    for (const [provider, until] of this.usageBackoffUntil) {
+      backoffUntil[provider] = until;
+    }
+    const liveProviders: UsageProviderId[] = [];
+    for (const p of ["claude", "codex"] as UsageProviderId[]) {
+      if (this.hasLiveSessionForProvider(p)) {
+        liveProviders.push(p);
+      }
+    }
+    const { start, dispose } = reconcileUsageTargets({
+      desired: [...this.desiredUsageProviders],
+      liveProviders,
+      running: [...this.usageAdapters.keys()],
+      backoffUntil,
+      now: Date.now(),
+    });
+    for (const provider of dispose) {
+      this.disposeUsageAdapter(provider);
+    }
+    for (const provider of start) {
+      this.startUsageAdapter(provider);
+    }
+  }
+
+  /**
+   * Spins up ONE turn-less harness connection for a provider, wired to feed only
+   * usage into the shared aggregation. It is NOT registered in `this.sessions`,
+   * so it stays invisible to the workbench, session list, and stall watchdog. A
+   * failure (e.g. the provider is not logged in) backs the provider off rather
+   * than respawning a doomed subprocess every reconcile tick.
+   */
+  private startUsageAdapter(provider: UsageProviderId): void {
+    const settings = getSettings();
+    const id = `usage-${provider}-${Date.now()}`;
+    const cwd = settings.workspacePath || process.cwd();
+    let adapter: HarnessSession;
+    try {
+      adapter = this.createAdapter(id, cwd, undefined, { selectedHarnessId: provider === "codex" ? "codex" : "claude-code" });
+    } catch (error) {
+      this.noteUsageAdapterFailure(provider, error);
+      return;
+    }
+    this.usageAdapters.set(provider, adapter);
+    adapter.on("event", (event: ClaudeNormalizedEvent) => {
+      if (event.type === "usage_limit") {
+        this.applyUsageLimit(event);
+        return;
+      }
+      const failed = event.type === "error" || (event.type === "status" && event.status === "closed");
+      // Only a spontaneous death is a failure. Ignore teardown WE initiated
+      // (disposeUsageAdapter already swapped this adapter out of the map), or a
+      // stale backoff would block recreating the poller after a live session ends.
+      if (failed && this.usageAdapters.get(provider) === adapter) {
+        this.noteUsageAdapterFailure(provider, event.type === "error" ? event.message : "background usage connection closed");
+      }
+    });
+    try {
+      adapter.start();
+    } catch (error) {
+      this.noteUsageAdapterFailure(provider, error);
+    }
+  }
+
+  private disposeUsageAdapter(provider: UsageProviderId): void {
+    const adapter = this.usageAdapters.get(provider);
+    if (!adapter) {
+      return;
+    }
+    this.usageAdapters.delete(provider);
+    try {
+      adapter.dispose();
+    } catch {
+      // Best-effort teardown; a dispose error must not break reconciliation.
+    }
+  }
+
+  private noteUsageAdapterFailure(provider: UsageProviderId, error: unknown): void {
+    this.usageBackoffUntil.set(provider, Date.now() + SessionManager.USAGE_BACKOFF_MS);
+    this.disposeUsageAdapter(provider);
+    // Surfaced, not swallowed: the pill honestly shows "데이터 없음" (never fake
+    // numbers), and the reason is logged for diagnosis. Common cause: the
+    // provider's CLI is not logged in.
+    log("warn", "usage", "background usage poller failed; backing off", {
+      provider,
+      backoffMs: SessionManager.USAGE_BACKOFF_MS,
+      error: error instanceof Error ? error.message : String(error ?? "unknown"),
+    });
   }
 
   /**
@@ -247,13 +400,18 @@ export class SessionManager extends EventEmitter {
     return session.adapter;
   }
 
-  private registerSession(id: string, workspace: string, adapter: HarnessSession): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
+  private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId): SessionView {
+    const session: ManagedSession = { id, workspace, adapter, provider, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
     adapter.start();
     this.emit("sessions", this.listSessions());
+    // A live session self-polls usage; drop the now-redundant background poller
+    // for its provider (recreated when the session closes — see reconcile timer).
+    if (provider) {
+      this.reconcileUsageAdapters();
+    }
     return this.toView(session);
   }
 
@@ -401,6 +559,11 @@ export class SessionManager extends EventEmitter {
     session.adapter.dispose();
     this.sessions.delete(id);
     this.emit("sessions", this.listSessions());
+    // The closed session may have been a provider's only live usage source;
+    // revive its background poller so the indicator does not go stale.
+    if (session.provider) {
+      this.reconcileUsageAdapters();
+    }
     return true;
   }
 
@@ -488,6 +651,13 @@ export class SessionManager extends EventEmitter {
     if (this.watchdog) {
       clearInterval(this.watchdog);
       this.watchdog = undefined;
+    }
+    if (this.usageReconcileTimer) {
+      clearInterval(this.usageReconcileTimer);
+      this.usageReconcileTimer = undefined;
+    }
+    for (const provider of [...this.usageAdapters.keys()]) {
+      this.disposeUsageAdapter(provider);
     }
     for (const session of this.sessions.values()) {
       if (session.flushTimer) {

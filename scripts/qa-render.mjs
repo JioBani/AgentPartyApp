@@ -98,7 +98,9 @@ const sessions = [
 const members = [
   { partyId: "p1", name: "backend", status: "running", runtime: "claude-code", role: "API", sessionId: "s-backend", model: "claude-sonnet-4.5" },
   { partyId: "p1", name: "frontend", status: "idle", runtime: "claude-code", role: "UI", model: "claude-sonnet-4.5" },
-  { partyId: "p1", name: "reviewer", status: "running", runtime: "claude-code", role: "Review", sessionId: "s-reviewer", model: "o4-mini" },
+  // Idle session with no live contextTokens BUT persisted occupancy from a prior
+  // turn — exercises the "last known" (stale) meter a reopened app shows.
+  { partyId: "p1", name: "reviewer", status: "running", runtime: "claude-code", role: "Review", sessionId: "s-reviewer", model: "o4-mini", lastContextTokens: 150000, lastContextWindow: 200000 },
   { partyId: "p1", name: "tester", status: "running", runtime: "claude-code", role: "QA", sessionId: "s-tester", model: "gpt-5" },
 ];
 
@@ -238,6 +240,11 @@ const meter = document.querySelector(".wb-ctx-meter");
 assert(meter !== null, "context-capacity meter rendered for a session with usage");
 assert(Boolean(meter) && meter.textContent.includes("320K") && meter.textContent.includes("1M"), "meter shows used/total (320K/1M)");
 assert(Boolean(meter) && meter.classList.contains("is-ok") && meter.querySelector(".wb-ctx-fill") !== null, "meter shows an ok-level fill bar at 32%");
+// Reviewer's live session reports no usage, but its persisted last-known occupancy
+// drives a STALE meter — the value a reopened app shows before the first turn.
+const staleMeter = document.querySelector(".wb-ctx-meter.is-stale");
+assert(staleMeter !== null, "stale (last-known) meter rendered from persisted occupancy");
+assert(Boolean(staleMeter) && staleMeter.textContent.includes("~150K") && staleMeter.textContent.includes("200K"), "stale meter shows ~used/total (~150K/200K)");
 assert(document.documentElement.getAttribute("data-theme") === "light", "default theme is light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
 

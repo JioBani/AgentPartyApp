@@ -107,6 +107,16 @@ export interface PartyMember {
   permissionMode?: PermissionModeSetting;
   /** Codex two-axis safety model (sandbox × approval + guardian); Codex members only. */
   codexPolicy?: CodexPolicy;
+  /**
+   * Context-window occupancy (tokens) captured from the member's last live turn,
+   * persisted so a reopened member — or a reopened app — shows its context meter
+   * IMMEDIATELY, before any new turn re-reports usage. Restored, never invented;
+   * the meter marks it "last known" until a live session refreshes it. Paired
+   * with {@link lastContextWindow} to drive the ratio.
+   */
+  lastContextTokens?: number;
+  /** The model's window size (tokens) captured alongside {@link lastContextTokens}. */
+  lastContextWindow?: number;
   createdAt?: string;
   updatedAt?: string;
 }

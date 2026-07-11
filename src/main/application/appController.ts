@@ -8,7 +8,7 @@ import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
-import type { UsageLimitsSnapshot, UsageWindow } from "../../shared/usageLimits";
+import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
 import { harnesses } from "../harness/types";
@@ -111,6 +111,32 @@ export class AppController {
       const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
+    void this.reconcileUsageProviders();
+  }
+
+  /**
+   * Tells the SessionManager which providers to keep account-usage fresh for even
+   * with no open session: the union of every window's active-party member
+   * providers. Driven off party changes (and window loads) so the background
+   * usage poller tracks what the user actually uses. Best-effort — a listParty
+   * failure for one window must not stop the others from counting.
+   */
+  private async reconcileUsageProviders(): Promise<void> {
+    const providers = new Set<UsageProviderId>();
+    for (const entry of this.deps.windowRegistry.all()) {
+      try {
+        const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
+        for (const member of party.members || []) {
+          const provider = providerOfRuntime(member.runtime);
+          if (provider) {
+            providers.add(provider);
+          }
+        }
+      } catch {
+        // A single window's party read failing must not blank the whole set.
+      }
+    }
+    this.deps.sessionManager.setUsageProviders([...providers]);
   }
 
   /**
@@ -130,7 +156,7 @@ export class AppController {
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
     const codexModels = await this.engineFor(workspacePath).listCodexModels();
-    return {
+    const state: InitialAppState = {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
@@ -149,6 +175,9 @@ export class AppController {
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
     };
+    // Keep the background usage poller tracking this window's providers.
+    void this.reconcileUsageProviders();
+    return state;
   }
 
   getLogs(): { logFilePath: string } {

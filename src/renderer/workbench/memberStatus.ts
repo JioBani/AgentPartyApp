@@ -71,15 +71,23 @@ function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined
  * the member's configured model id ("sonnet") — a static family property, not
  * an error-masking fallback. When no window resolves, the meter still shows the
  * used count, just without a ratio (never a guessed denominator).
+ *
+ * When no live session reports usage yet (a closed member, or a freshly reopened
+ * app), it falls back to the member's PERSISTED last-known occupancy so the meter
+ * appears immediately — flagged `stale` so the UI marks it not-yet-refreshed
+ * instead of pretending it is live. This is why an old chat's cost is visible
+ * before you send the first message.
  */
-function contextFor(session: SessionView | undefined, model: string, configuredModel: string, routes?: RouteLike[]): MemberView["context"] {
-  const used = session?.snapshot.contextTokens;
+function contextFor(session: SessionView | undefined, member: PartyMember, model: string, configuredModel: string, routes?: RouteLike[]): MemberView["context"] {
+  const live = session?.snapshot.contextTokens;
+  const stale = !(typeof live === "number" && live > 0);
+  const used = stale ? member.lastContextTokens : live;
   if (typeof used !== "number" || used <= 0) {
     return undefined;
   }
   const route = routeForModel(model, routes) || routeForModel(configuredModel, routes);
-  const total = session?.snapshot.contextWindow || parseContextTokens(route?.meta?.context);
-  return { used, total: total && total > 0 ? total : undefined };
+  const total = session?.snapshot.contextWindow || (stale ? member.lastContextWindow : undefined) || parseContextTokens(route?.meta?.context);
+  return { used, total: total && total > 0 ? total : undefined, stale };
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
@@ -110,7 +118,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     thinkingBudget: session?.snapshot.thinkingBudget ?? member.reasoningBudget,
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
     vision: visionFor(model, routes),
-    context: contextFor(session, model, String(member.model || ""), routes),
+    context: contextFor(session, member, model, String(member.model || ""), routes),
   };
 }
 

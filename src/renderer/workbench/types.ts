@@ -92,12 +92,14 @@ export interface MemberView {
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;
   /**
-   * Live context-window occupancy for the capacity meter. `used` is the current
+   * Context-window occupancy for the capacity meter. `used` is the current
    * footprint in tokens; `total` is the model's window (undefined when unknown —
-   * the meter then shows the raw count without a ratio). Absent until the
-   * session reports usage.
+   * the meter then shows the raw count without a ratio). `stale` is true when the
+   * value is the persisted "last known" occupancy from a prior turn (no live
+   * session running yet) — so a reopened member/app shows the meter immediately
+   * and marks it as not-yet-refreshed rather than showing nothing.
    */
-  context?: { used: number; total?: number };
+  context?: { used: number; total?: number; stale?: boolean };
 }
 
 /** One watch-slot. Tabs time-share the slot; `active` is the visible member. */

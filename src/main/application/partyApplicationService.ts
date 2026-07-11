@@ -297,12 +297,43 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     this.repository.writeTranscript(workspace, this.partyIdOf(member), member.name, blocks);
+    let changed = false;
     const harnessId = member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined;
     if (harnessId && harnessId !== member.harnessSessionId) {
       member.harnessSessionId = harnessId;
+      changed = true;
+    }
+    // Capture the live context-window occupancy alongside the thread id, so a
+    // reopened member/app can show its context meter before the first new turn.
+    changed = this.captureContextOccupancy(member) || changed;
+    if (changed) {
       member.updatedAt = new Date().toISOString();
       this.persistParty(workspace, state, this.partyIdOf(member));
     }
+  }
+
+  /**
+   * Copies the member's live session context occupancy (tokens + window) onto the
+   * persisted member. Returns whether anything changed. Only positive numbers are
+   * captured — an absent/zero live report leaves the last-known value intact
+   * rather than wiping the meter (the occupancy is non-cumulative and briefly
+   * unreported between turns; the persisted value is the honest "last known").
+   */
+  private captureContextOccupancy(member: PartyMember): boolean {
+    const snap = this.sessionViewOf(member.sessionId)?.snapshot;
+    if (!snap) {
+      return false;
+    }
+    let changed = false;
+    if (typeof snap.contextTokens === "number" && snap.contextTokens > 0 && member.lastContextTokens !== snap.contextTokens) {
+      member.lastContextTokens = snap.contextTokens;
+      changed = true;
+    }
+    if (typeof snap.contextWindow === "number" && snap.contextWindow > 0 && member.lastContextWindow !== snap.contextWindow) {
+      member.lastContextWindow = snap.contextWindow;
+      changed = true;
+    }
+    return changed;
   }
 
   /**

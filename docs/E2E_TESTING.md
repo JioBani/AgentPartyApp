@@ -204,6 +204,19 @@ from the harness's own usage report (Claude: assistant-message
 captured (`context-usage.png`) so the rendered meters (`used / total` + fill bar)
 are visible. Override the Codex model with `AGENTPARTY_LIVE_CODEX_MODEL`.
 
+For the **background usage poller** — account usage staying fresh with NO open
+session — run (real Claude):
+```
+npm run test:e2e:usage-poller
+```
+It creates a Claude member, closes every session (defeating the workbench prewarm,
+including any orphan session) to reach a genuine zero-session state, then asserts
+`GET /api/usage` still reports `claude` — sourced by the background poller, which
+is deliberately absent from `state.sessions` (so "zero sessions + usage present"
+isolates it). It then starts a live session (poller is reused, not duplicated) and
+closes it (poller revives) to prove reconciliation never wedges. Capture:
+`usage-poller.png`.
+
 For a **live Fable 5 catalog/routing** e2e (one real Claude Fable turn), run:
 ```
 npm run test:e2e:live-fable

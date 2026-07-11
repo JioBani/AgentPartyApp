@@ -52,6 +52,56 @@ export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: st
 
 /** Fixed display order (matches the design). */
 export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex"];
+
+/** The usage provider a party member's runtime draws its account quota from. */
+export function providerOfRuntime(runtime: string | undefined): UsageProviderId | undefined {
+  if (runtime === "codex") {
+    return "codex";
+  }
+  if (runtime === "claude-code" || runtime === "claude") {
+    return "claude";
+  }
+  return undefined;
+}
+
+/** The usage provider a harness id belongs to (codex vs the Claude family). */
+export function providerOfHarness(harnessId: string | undefined): UsageProviderId {
+  return harnessId === "codex" ? "codex" : "claude";
+}
+
+/**
+ * Pure decision for the background usage poller: given which providers we WANT
+ * kept fresh (they have members), which already have a live session (self-poll),
+ * which background adapters are already running, and any per-provider retry
+ * backoff, returns the providers to start and to dispose. A provider is polled in
+ * the background only when it is wanted AND has no live session — so an open
+ * member session is reused rather than duplicated, and an unused provider spawns
+ * nothing. Kept pure (no processes) so the reconciliation is unit-testable.
+ */
+export function reconcileUsageTargets(input: {
+  desired: UsageProviderId[];
+  liveProviders: UsageProviderId[];
+  running: UsageProviderId[];
+  backoffUntil?: Partial<Record<UsageProviderId, number>>;
+  now: number;
+}): { start: UsageProviderId[]; dispose: UsageProviderId[] } {
+  const desired = new Set(input.desired);
+  const live = new Set(input.liveProviders);
+  const running = new Set(input.running);
+  const start: UsageProviderId[] = [];
+  const dispose: UsageProviderId[] = [];
+  for (const provider of USAGE_PROVIDER_ORDER) {
+    const wanted = desired.has(provider) && !live.has(provider);
+    if (wanted && !running.has(provider)) {
+      if (input.now >= (input.backoffUntil?.[provider] || 0)) {
+        start.push(provider);
+      }
+    } else if (!wanted && running.has(provider)) {
+      dispose.push(provider);
+    }
+  }
+  return { start, dispose };
+}
 const WINDOW_ORDER: UsageWindowKind[] = ["five_hour", "weekly"];
 const WINDOW_LABELS: Record<UsageWindowKind, string> = { five_hour: "5시간 한도", weekly: "주간 한도" };
 

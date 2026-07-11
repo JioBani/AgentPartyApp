@@ -29,7 +29,7 @@ async function loadModule(entry, name) {
 
 // --- 1) pure logic --------------------------------------------------------
 const U = await loadModule("src/shared/usageLimits.ts", "usage-limits.mjs");
-const { mergeWindows, mergeProviderUsage, usageLevelColor, formatResetCountdown, toEpochMs, buildUsageView } = U;
+const { mergeWindows, mergeProviderUsage, usageLevelColor, formatResetCountdown, toEpochMs, buildUsageView, providerOfRuntime, providerOfHarness, reconcileUsageTargets } = U;
 
 console.log("\nUsage-limit pure logic:");
 
@@ -59,6 +59,32 @@ const merged = mergeProviderUsage(
 assert(merged.windows.find((w) => w.kind === "five_hour").utilization === 63, "merge updates the reported window");
 assert(merged.windows.find((w) => w.kind === "weekly").utilization === 40, "merge preserves the unreported weekly window");
 assert(mergeWindows(undefined, [{ kind: "weekly", utilization: 5 }]).length === 1, "mergeWindows tolerates no prior state");
+
+// provider mapping (runtime + harness → usage provider)
+console.log("\nBackground usage poller — provider mapping:");
+assert(providerOfRuntime("codex") === "codex", "codex runtime → codex");
+assert(providerOfRuntime("claude-code") === "claude", "claude-code runtime → claude");
+assert(providerOfRuntime("claude") === "claude", "claude runtime → claude");
+assert(providerOfRuntime("mock") === undefined, "unknown runtime → no provider");
+assert(providerOfHarness("codex") === "codex" && providerOfHarness("claude-code") === "claude", "harness id → provider");
+
+// reconcileUsageTargets — the pure background-poller decision
+console.log("\nBackground usage poller — reconcile decision:");
+const R = (o) => reconcileUsageTargets({ backoffUntil: {}, now: 1000, ...o });
+let d = R({ desired: ["claude", "codex"], liveProviders: [], running: [] });
+assert(d.start.join() === "claude,codex" && d.dispose.length === 0, "desired providers with no session → start both");
+d = R({ desired: ["claude"], liveProviders: ["claude"], running: [] });
+assert(d.start.length === 0 && d.dispose.length === 0, "a live session for the provider → no background poller (reused)");
+d = R({ desired: ["claude"], liveProviders: ["claude"], running: ["claude"] });
+assert(d.dispose.join() === "claude" && d.start.length === 0, "session opened while bg poller ran → dispose the duplicate");
+d = R({ desired: ["claude"], liveProviders: [], running: ["claude", "codex"] });
+assert(d.dispose.join() === "codex" && d.start.length === 0, "provider no longer used (no members) → dispose its poller");
+d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { codex: 5000 }, now: 1000 });
+assert(d.start.length === 0, "a backed-off provider is not restarted before its retry time");
+d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { codex: 5000 }, now: 6000 });
+assert(d.start.join() === "codex", "past the backoff window → restart is allowed");
+d = R({ desired: [], liveProviders: [], running: [] });
+assert(d.start.length === 0 && d.dispose.length === 0, "no members anywhere → nothing spawned (idle app stays quiet)");
 
 // available derivation: reported windows are ground truth. Claude's proactive
 // usage read can answer "not available for this auth mode" on the very account

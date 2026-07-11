@@ -39,6 +39,12 @@ function contextOf(snapshotModel, memberModel, extra = {}) {
   return buildMemberView({ member, sessions: [session], transcriptBySession: { s1: [] }, seenCount: 0, routes }).context;
 }
 
+/** No live session — the meter must fall back to the member's persisted occupancy. */
+function restoredContextOf(memberExtra = {}) {
+  const member = { name: "w", status: "closed", runtime: "claude-code", model: "opus[1m]", ...memberExtra };
+  return buildMemberView({ member, sessions: [], transcriptBySession: {}, seenCount: 0, routes }).context;
+}
+
 console.log("\nfindRoute tolerant matching:");
 assert(findRoute("opus[1m]", routes)?.label === "Opus", "matches by exact route id");
 assert(findRoute("Opus", routes)?.model === "opus[1m]", "matches by display label (the live snapshot's value)");
@@ -56,6 +62,14 @@ assert(contextOf("claude-opus-4-8-20260115", "opus")?.total === 1_000_000, "lowe
 assert(contextOf("claude-opus-4-8-20260115", "totally-unknown")?.total === undefined, "no resolvable window → no fabricated denominator");
 assert(contextOf("claude-opus-4-8-20260115", "totally-unknown")?.used === 266_000, "used count still shown without a window");
 assert(contextOf("gpt-x", "gpt-x", { contextWindow: 272_000 })?.total === 272_000, "a harness-reported numeric window wins over the catalog");
+assert(contextOf("Opus", "opus[1m]")?.stale === false, "a live snapshot reading is not stale");
+
+console.log("\npersisted (last-known) occupancy — reopened app before first turn:");
+assert(restoredContextOf({ lastContextTokens: 266_000 })?.used === 266_000, "no live session → falls back to member.lastContextTokens");
+assert(restoredContextOf({ lastContextTokens: 266_000 })?.stale === true, "restored occupancy is flagged stale (meter marks it 'last known')");
+assert(restoredContextOf({ lastContextTokens: 266_000 })?.total === 1_000_000, "restored used still resolves the window from the member's model catalog");
+assert(restoredContextOf({ lastContextTokens: 266_000, lastContextWindow: 190_000 })?.total === 190_000, "a persisted numeric window wins over the catalog");
+assert(restoredContextOf({})?.used === undefined && restoredContextOf({}) === undefined, "no live session AND no persisted occupancy → no meter (nothing invented)");
 
 console.log(failures.length ? `\nCONTEXT METER FAILED (${failures.length})` : "\nCONTEXT METER PASSED");
 process.exit(failures.length ? 1 : 0);
