@@ -397,8 +397,12 @@ export function App() {
     setState((current) => ({ ...current, party }));
   }
 
-  async function applyPartyResult(result: PartyCommandResult) {
-    setPartyNotice(result.message);
+  async function applyPartyResult(result: PartyCommandResult, notify = true) {
+    // `notify` is off for routine sends: a toast on every message ("Message sent
+    // to 'X'.") is noise. State still updates; real send failures surface below.
+    if (notify) {
+      setPartyNotice(result.message);
+    }
     if (result.members) {
       setState((current) => ({
         ...current,
@@ -511,7 +515,7 @@ export function App() {
       // (starting it with the member's own config if needed) and delivers the
       // user turn. UI and agents go through the identical AppController method.
       const result = await window.agentParty.sendMemberMessage(name, text, attachments);
-      await applyPartyResult(result);
+      await applyPartyResult(result, false);
       const sessionId = result.member?.sessionId || known;
       if (!sessionId) {
         setPartyNotice(`'${name}' 세션을 시작하지 못했습니다.`);
