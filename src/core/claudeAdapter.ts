@@ -17,7 +17,7 @@ import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
-import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
+import { catalogModelById, catalogModelByRuntime, openRouterAliasMap, resolveCatalogModel } from "../shared/modelCatalog";
 import { deriveSubagentAction } from "../shared/subagentActivity";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
@@ -284,8 +284,8 @@ export class ClaudeAdapter extends EventEmitter {
   setModel(model: string, providerId?: string, runtimeModel?: string): void {
     const previousUsesRouter = this.usesRouterBackend();
     this.model = displayModelFor(model);
-    this.runtimeModel = runtimeModel || runtimeModelFor(model, this.options.customModelRoutes);
     this.providerId = asModelProviderId(providerId) || inferModelProvider(model, this.options.customModelRoutes);
+    this.runtimeModel = claudeRuntimeModelFor(model, this.providerId, runtimeModel, this.options.customModelRoutes);
     this.currentRoute = this.resolveCurrentRoute();
     if (this.query && previousUsesRouter !== this.usesRouterBackend()) {
       this.emitEvent({
@@ -1328,6 +1328,30 @@ export class ClaudeAdapter extends EventEmitter {
       maxBytes: 2 * 1024 * 1024,
     });
   }
+}
+
+/**
+ * Resolves the model id that is safe to hand to the Claude harness.
+ *
+ * Renderer/API callers include `runtimeModel` so router-backed aliases can be
+ * selected explicitly. That value is transport metadata, though, and must not
+ * override the native id of a catalogued Anthropic model. In particular an old
+ * or cross-harness route can carry `anthropic/claude-opus-4.8`; forwarding that
+ * verbatim makes the Claude adapter enter router mode and reject Opus even
+ * though the user selected the native Claude Code route. Codex->OpenRouter is
+ * handled by CodexAdapter and is intentionally unaffected by this boundary.
+ */
+export function claudeRuntimeModelFor(
+  model: string,
+  providerId: ModelProviderId,
+  requestedRuntimeModel: string | undefined,
+  customRoutes: ModelRouteConfig[] = [],
+): string {
+  const catalogued = resolveCatalogModel(model) || (requestedRuntimeModel ? resolveCatalogModel(requestedRuntimeModel) : undefined);
+  if (providerId === "anthropic" && catalogued?.provider === "anthropic") {
+    return catalogued.runtimeModel || catalogued.id;
+  }
+  return requestedRuntimeModel || runtimeModelFor(model, customRoutes);
 }
 
 async function loadSdk(): Promise<SdkModule> {

@@ -23,6 +23,7 @@ async function load(entry, name) {
 const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider } = await load("src/core/modelRegistry.ts", "mr.mjs");
 const { openRouterAliasMap, openRouterModels, orRoutedModels, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
+const { claudeRuntimeModelFor } = await load("src/core/claudeAdapter.ts", "claude-adapter.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -142,6 +143,14 @@ assert(!catalogModelById(legacy) && !catalogModelByRuntime(legacy), "legacy 'GLM
 assert(Boolean(catalogModelById("GLM-5.2")) && byId["GLM-5.2"].providerId === "openrouter", "clean 'GLM-5.2' is a routable OpenRouter model");
 assert(buildModelRoutes(legacy, [], []).some((r) => r.model === legacy), "an unroutable current model injects a selectable fallback route — the bug source");
 assert(!buildModelRoutes("sonnet", [], []).some((r) => r.model === legacy), "a sanitized (catalog) current model never surfaces the legacy id");
+
+// A caller can carry transport metadata from a stale/cross-harness route. The
+// Claude adapter must keep native Anthropic selections on their subscription
+// ids; Codex handles its own OpenRouter route independently.
+console.log("\nClaude native runtime boundary assertions:");
+assert(claudeRuntimeModelFor("opus[1m]", "anthropic", "anthropic/claude-opus-4.8") === "opus[1m]", "Claude Opus ignores an OpenRouter runtime slug and stays native");
+assert(claudeRuntimeModelFor("Opus", "anthropic", "anthropic/claude-opus-4.8") === "opus[1m]", "display-label Opus also normalizes to the native 1M id");
+assert(claudeRuntimeModelFor("GLM-5.2", "openrouter", "claude-glm-5.2") === "claude-glm-5.2", "router-backed Claude aliases remain explicit");
 
 // Context-window parsing feeds the per-member context-capacity meter's denominator.
 console.log("\nContext-window parse assertions:");
