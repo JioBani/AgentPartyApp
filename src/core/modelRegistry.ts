@@ -224,7 +224,11 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
     providerId: "openai",
     model: model.model,
     runtimeModel: model.model,
-    label: model.displayName,
+    // Transport discovery may spell/case the same model differently. The
+    // shared catalog owns the user-facing identity so Claude Code, Codex and
+    // OpenRouter routes render one stable name; only model/runtimeModel carry
+    // harness-specific slugs.
+    label: catalogTwin?.label || model.displayName,
     description: model.description,
     pricing: { billing: "subscription", directPrice: "Codex subscription", context: catalogTwin?.context },
     capabilities: {

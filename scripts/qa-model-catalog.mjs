@@ -31,6 +31,9 @@ const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`);
 console.log("\nModel catalog / registry assertions:");
 const routes = buildModelRoutes("sonnet", [], []);
 const byId = Object.fromEntries(routes.map((r) => [r.model, r]));
+const liveSolRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-5.6-sol", displayName: "gpt-5.6-sol", isDefault: false, hidden: false, reasoningEfforts: [], serviceTiers: [] }])
+  .find((r) => r.harnessId === "codex" && r.model === "gpt-5.6-sol");
+assert(liveSolRoute?.label === "GPT-5.6 Sol", "live Codex discovery keeps the shared catalog label (transport slug stays internal)");
 
 // Leaderboard OR-O set must be exactly these, with concrete OR ids.
 const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 Pro", "MiniMax M3", "Gemini 3.x Pro", "Kimi K2.7 Code", "Kimi K2.6", "Grok Build 0.1", "Qwen3.7 Plus", "Grok 4.3"];

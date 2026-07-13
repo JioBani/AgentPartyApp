@@ -35,9 +35,13 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   const currentKey = useMemo(() => {
     // findRoute tolerates the snapshot's display value (label) so the modal
     // opens on the member's ACTUAL model instead of falling back to entries[0].
-    const match = findRoute(view.model, routes);
-    return match ? routeKey(match) : entries[0] ? routeKey(entries[0].route) : "";
-  }, [routes, entries, view.model]);
+    // Scope by the persisted harness first: labels are intentionally identical
+    // across harnesses, so a global label lookup is ambiguous.
+    const memberHarness = view.member.runtime === "codex" ? "codex" : "claude-code";
+    const match = findRoute(view.model, routes.filter((route) => (route.harnessId || "claude-code") === memberHarness));
+    const fallback = routes.find((route) => (route.harnessId || "claude-code") === memberHarness);
+    return match ? routeKey(match) : fallback ? routeKey(fallback) : "";
+  }, [routes, entries, view.model, view.member.runtime]);
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
   const selected = entries.find((entry) => routeKey(entry.route) === selectedKey) || entries[0];
@@ -118,11 +122,13 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   // free to change (prewarm/init only). The model list always shows ONE harness
   // at a time — the same underlying model may be reachable from both harnesses,
   // and listing both routes would show it twice.
-  const currentHarness = useMemo(() => {
-    const route = routes.find((item) => routeKey(item) === currentKey);
-    return (route?.harnessId as string) || "claude-code";
-  }, [routes, currentKey]);
-  const harnessLocked = (view.session?.snapshot.turnCount ?? 0) > 0;
+  // The persisted member runtime is authoritative. Inferring the harness from
+  // a model name is ambiguous because every catalog model intentionally has a
+  // route on both harnesses.
+  const currentHarness = view.member.runtime === "codex" ? "codex" : "claude-code";
+  const harnessLocked =
+    (view.session?.snapshot.turnCount ?? 0) > 0 ||
+    view.transcript.some((block) => block.kind === "user" || block.kind === "assistant");
   const [harness, setHarness] = useState(currentHarness);
   useEffect(() => {
     setHarness(currentHarness);

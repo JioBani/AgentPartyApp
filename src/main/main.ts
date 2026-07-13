@@ -15,7 +15,7 @@ import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { WindowInfo } from "../shared/types";
+import type { StartPartyMemberInput, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
@@ -493,7 +493,7 @@ function registerIpc(): void {
   handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event)));
   handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name, senderWindowId(event)));
-  handle("party:respawn", async (event, name: string) => controller().respawnPartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:respawn", async (event, name: string, input?: StartPartyMemberInput) => controller().respawnPartyMember(senderWorkspace(event), name, input, senderWindowId(event)));
   handle("party:open", async (event, name: string) => controller().openPartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any, senderWindowId(event)));
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));

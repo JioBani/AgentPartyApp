@@ -60,10 +60,56 @@ async function main() {
     const session = await waitForTurn(created.id);
     assert(String(session.snapshot.model).toLowerCase() === "opus", `snapshot reports Opus (${session.snapshot.model})`);
     assert(!/router mapping|refusing to fall back/i.test(session.snapshot.lastError || ""), "no AgentParty router-mapping error");
-    console.log("CLAUDE OPUS ROUTING LIVE E2E PASSED (real process, real turn)");
+
+    // Harness switching is a pre-turn adapter replacement, not setModel on the
+    // old adapter. Exercise the same /respawn controller path used by the UI.
+    const catalog = await get("/api/models");
+    const solRoutes = (catalog.modelRoutes || []).filter((route) => route.label === "GPT-5.6 Sol");
+    assert(solRoutes.some((route) => route.harnessId === "claude-code"), "Sol has a Claude Code transport route");
+    assert(solRoutes.some((route) => route.harnessId === "codex"), "Sol has a Codex transport route");
+    assert(solRoutes.every((route) => route.label === "GPT-5.6 Sol"), "both transports expose the same user-facing model name");
+
+    await post("/api/parties", { name: "harness switch e2e" });
+    await post("/api/party/members", { name: "switcher", requirement: "harness persistence check", runtime: "claude-code", model: "sonnet" });
+    await post("/api/party/members/switcher/start", { selectedHarnessId: "claude-code", model: "sonnet", permissionMode: "plan" });
+    const switched = await post("/api/party/members/switcher/respawn", {
+      selectedHarnessId: "codex",
+      selectedProviderId: "openai",
+      model: "gpt-5.6-sol",
+      effort: "high",
+    });
+    assert(switched.member?.runtime === "codex", `member runtime persisted as Codex (${switched.member?.runtime})`);
+    assert(switched.session?.snapshot?.model === "gpt-5.6-sol", `real Codex adapter started with Sol (${switched.session?.snapshot?.model})`);
+    await post("/api/party/members/switcher/message", { text: "Reply with exactly SOL_CODEX_PONG. Do not use tools." });
+    await waitForMemberReply("switcher", "SOL_CODEX_PONG");
+    const afterTurn = await get("/api/state");
+    const persisted = afterTurn.party?.members?.find((member) => member.name === "switcher");
+    assert(persisted?.runtime === "codex", "catalog reopen state remains on the selected Codex harness");
+    let lockError = "";
+    try {
+      await post("/api/party/members/switcher/respawn", { selectedHarnessId: "claude-code", model: "sonnet" });
+    } catch (error) {
+      lockError = String(error);
+    }
+    assert(/cannot change harness.*after.*first turn/i.test(lockError), "HTTP API also rejects a harness change after the first turn");
+    console.log("NATIVE ROUTING LIVE E2E PASSED (real Claude Opus + real Codex Sol processes)");
   } finally {
     killTree(child.pid);
   }
+}
+
+async function waitForMemberReply(memberName, marker) {
+  const started = Date.now();
+  while (Date.now() - started < 180000) {
+    const state = await get("/api/state");
+    const member = state.party?.members?.find((item) => item.name === memberName);
+    const session = member?.sessionId ? state.sessions?.find((item) => item.id === member.sessionId) : undefined;
+    if (session?.snapshot?.status === "error") throw new Error(session.snapshot.lastError || `${memberName} errored`);
+    const transcript = await get(`/api/party/members/${encodeURIComponent(memberName)}/transcript`);
+    if (JSON.stringify(transcript.blocks || []).includes(marker)) return session;
+    await delay(1000);
+  }
+  throw new Error(`${memberName} did not reply with ${marker}`);
 }
 
 async function waitForTurn(sessionId) {

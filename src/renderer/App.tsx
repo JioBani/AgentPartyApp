@@ -598,14 +598,32 @@ export function App() {
         await toggleDebug(runtime.debug);
       }
       const sessionId = sessionIdFor(name);
-      if (runtime.route && sessionId) {
-        await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
-      }
-      if (sessionId && runtime.effort) {
-        await window.agentParty.setEffort(sessionId, runtime.effort);
-      }
-      if (sessionId && runtime.thinkingMode) {
-        await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
+      const member = members.find((item) => item.name === name);
+      const selectedHarness = runtime.route?.harnessId === "codex" ? "codex" : "claude-code";
+      const currentHarness = member?.runtime === "codex" ? "codex" : "claude-code";
+      if (runtime.route && selectedHarness !== currentHarness) {
+        // A harness is the adapter PROCESS, not model metadata. Recreate the
+        // prewarmed session on the selected adapter and persist member.runtime;
+        // setModel on the old adapter caused Codex selections to launch Claude.
+        const result = await window.agentParty.respawnPartyMember(name, {
+          selectedHarnessId: selectedHarness,
+          selectedProviderId: runtime.route.providerId,
+          model: runtime.route.model,
+          effort: runtime.effort,
+          thinking: runtime.thinkingMode,
+          thinkingBudget: runtime.thinkingBudget,
+        });
+        await applyPartyResult(result);
+      } else {
+        if (runtime.route && sessionId) {
+          await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
+        }
+        if (sessionId && runtime.effort) {
+          await window.agentParty.setEffort(sessionId, runtime.effort);
+        }
+        if (sessionId && runtime.thinkingMode) {
+          await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
+        }
       }
       setRuntimeDrafts((current) => ({
         ...current,

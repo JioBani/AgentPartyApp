@@ -94,6 +94,12 @@ assert(Boolean(switchedRow), "switching harness swaps the model list to that har
 assert(switchedRow?.className.includes("is-selected"), "the selection moves onto the switched harness's list");
 assert(![...free.querySelectorAll(".wb-model-row")].some((b) => (b.textContent || "").includes("Claude Sonnet")), "the previous harness's models leave the list (no cross-harness duplicates)");
 
+const restoredView = mkView(0);
+restoredView.transcript = [{ id: "u1", kind: "user", text: "restored turn", at: "" }];
+const restoredLocked = render(restoredView);
+await new Promise((r) => setTimeout(r, 80));
+assert(codexSegment(restoredLocked)?.disabled === true, "restored conversation keeps the harness locked after app/session restart");
+
 // ---- Layer 3: staged reasoning baseline --------------------------------------
 // Opening the modal must show the member's CURRENT effort/thinking, not the
 // model's catalog default (the "saved medium reverted to low" bug on GPT-5.6

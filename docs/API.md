@@ -288,6 +288,7 @@ Changes the session model.
 
 ```json
 {
+  "selectedHarnessId": "claude-code",
   "model": "MiniMax M3",
   "providerId": "openrouter",
   "runtimeModel": "claude-minimax"
@@ -537,7 +538,10 @@ that need a session restart — e.g. a just-added MCP server — without losing 
 conversation. This is what the tab toolbar's reset button calls. Contrast with a
 hard restart (the member's right-click menu), which begins an EMPTY conversation.
 Optional body fields override the profile for the new session (same shape as
-`start`).
+`start`). Passing `selectedHarnessId` (`"claude-code"` or `"codex"`) changes
+and persists the member's harness before recreating the session. A cross-harness
+change intentionally starts a fresh harness thread because Claude conversation
+IDs and Codex thread IDs are not compatible.
 
 ### `POST /api/party/members/:name/bind`
 
