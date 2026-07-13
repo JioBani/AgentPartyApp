@@ -1,4 +1,4 @@
-import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, execFileSync, ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import * as fs from "node:fs";
@@ -484,7 +484,7 @@ export class CodexAdapter extends EventEmitter {
       return [];
     }
     const serverScript = resolvePartyMcpServerScript();
-    const nodeCommand = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
+    const nodeCommand = spawnableNodeCommand();
     return [
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.command=${tomlString(nodeCommand)}`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.args=[${tomlString(serverScript)}]`,
@@ -1389,6 +1389,31 @@ function codexRateLimitWindows(snapshot: any): UsageWindow[] {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/**
+ * The node executable codex should spawn for the party MCP server. On Windows,
+ * codex-cli fails to launch a `command` whose path contains spaces — the default
+ * node lives at "C:\\Program Files\\nodejs\\node.exe" — surfacing "MCP startup
+ * failed: ... (os error 2)" and leaving the member with zero party tools. Convert
+ * such a path to its space-free 8.3 short form; if 8.3 names are unavailable, fall
+ * back to bare "node" (PATH-resolved). Off Windows the resolved path is used
+ * verbatim (the WSL/Linux spawn is verified and must stay unchanged).
+ */
+function spawnableNodeCommand(): string {
+  const resolved = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
+  if (process.platform !== "win32" || !resolved.includes(" ")) {
+    return resolved;
+  }
+  try {
+    const short = execFileSync("cmd", ["/d", "/c", `for %I in ("${resolved}") do @echo %~sI`], { encoding: "utf8", windowsHide: true }).trim();
+    if (short && !short.includes(" ")) {
+      return short;
+    }
+  } catch {
+    // 8.3 lookup failed; fall through to PATH resolution.
+  }
+  return "node";
 }
 
 function resolvePartyMcpServerScript(): string {
