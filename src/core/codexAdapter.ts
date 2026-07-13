@@ -1397,7 +1397,11 @@ function resolvePartyMcpServerScript(): string {
   if (override) {
     return override;
   }
-  const devPath = path.resolve(__dirname, "../../scripts", scriptName);
+  // This adapter is also bundled into the WSL engine as ESM, where the
+  // CommonJS global __dirname does not exist. WSL deployment supplies an
+  // explicit override; this fallback remains for local dev/CommonJS builds.
+  const moduleDir = typeof __dirname === "string" ? __dirname : process.cwd();
+  const devPath = path.resolve(moduleDir, "../../scripts", scriptName);
   if (fs.existsSync(devPath)) {
     return devPath;
   }

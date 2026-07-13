@@ -32,11 +32,18 @@ const { spawnWslEngine } = await import(pathToFileURL(wslBundle).href);
 const distro = process.env.QA_WSL_DISTRO || "Ubuntu-22.04";
 const wslWs = process.env.QA_WSL_WS || "/home/dev/agentparty-wsl-e2e";
 const model = process.env.QA_MODEL || "sonnet";
+const harness = process.env.QA_HARNESS || "claude-code";
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-console.log(`REAL model call via WSL engine (${distro} @ ${wslWs}) — model=${model}:`);
-const handle = spawnWslEngine({ distro, workspacePosix: wslWs, serverBundleWinPath: serverBundle, openRouterApiKey });
+console.log(`REAL model call via WSL engine (${distro} @ ${wslWs}) — harness=${harness}, model=${model}:`);
+const handle = spawnWslEngine({
+  distro,
+  workspacePosix: wslWs,
+  serverBundleWinPath: serverBundle,
+  codexMcpServerWinPath: path.join(projectRoot, "scripts", "agentparty-codex-mcp-server.mjs"),
+  openRouterApiKey,
+});
 const client = new RemoteEngineClient(handle.transport, wslWs, handle.dispose);
 
 const texts = [];
@@ -54,7 +61,13 @@ client.onEvent((channel, payload) => {
 });
 
 try {
-  const session = await client.createSession({ model, effort: process.env.QA_EFFORT || "low", permissionMode: "bypassPermissions" });
+  const session = await client.createSession({
+    selectedHarnessId: harness,
+    selectedProviderId: harness === "codex" ? "openai" : undefined,
+    model,
+    effort: process.env.QA_EFFORT || "low",
+    permissionMode: "bypassPermissions",
+  });
   console.log(`  session created in WSL engine: ${session.id} (${session.snapshot?.status})`);
 
   await client.sendUserTurn(session.id, "Reply with exactly the word PONG and nothing else.");
@@ -71,7 +84,7 @@ try {
     console.log(`  ERROR from harness: ${errored}`);
     process.exitCode = 1;
   } else if (/pong/i.test(answer)) {
-    console.log("REAL WSL MODEL CALL PASSED (live Claude response streamed from the WSL engine)");
+    console.log(`REAL WSL MODEL CALL PASSED (live ${harness} response streamed from the WSL engine)`);
   } else if (completed) {
     console.log("turn completed but no PONG — see text above");
   } else {

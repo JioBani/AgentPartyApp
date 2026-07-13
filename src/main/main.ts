@@ -184,10 +184,14 @@ async function bootstrap(): Promise<void> {
       const serverBundle = path
         .join(__dirname, "../engine-server.mjs")
         .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+      const codexMcpServer = app.isPackaged
+        ? path.join(process.resourcesPath, "bin", "agentparty-codex-mcp-server.mjs")
+        : path.join(app.getAppPath(), "scripts", "agentparty-codex-mcp-server.mjs");
       const handle = spawnWslEngine({
         distro: location.host.distro,
         workspacePosix: location.path,
         serverBundleWinPath: serverBundle,
+        codexMcpServerWinPath: codexMcpServer,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       });
       const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose);
