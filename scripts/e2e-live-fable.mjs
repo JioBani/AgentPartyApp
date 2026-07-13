@@ -5,8 +5,8 @@
  * up to max, image vision), then creates a live member on that model, sends
  * one real turn, and asserts the reply comes back from a session whose
  * snapshot reports the Fable model and live contextTokens — proving the id
- * routes NATIVELY through the claude-code harness (isNativeClaudeModel), not
- * into the router/custom fallback. Captures the workbench for review.
+ * routes NATIVELY through the claude-code harness (backendFor → claude-native),
+ * not into the router/custom fallback. Captures the workbench for review.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";

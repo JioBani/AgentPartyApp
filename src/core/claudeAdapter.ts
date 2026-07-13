@@ -18,6 +18,7 @@ import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessComm
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
 import { catalogModelById, catalogModelByRuntime, openRouterAliasMap, resolveCatalogModel } from "../shared/modelCatalog";
+import { backendFor } from "../shared/modelIdentity";
 import { deriveSubagentAction } from "../shared/subagentActivity";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
@@ -1259,7 +1260,14 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   private usesRouterBackend(): boolean {
-    return this.providerId !== "anthropic" || !isNativeClaudeModel(this.runtimeModel);
+    // Native vs router is DATA, derived from the catalog entry — not a hardcoded
+    // model-name list. Any Anthropic catalog entry (present or future) resolves
+    // to `claude-native` automatically; only an uncatalogued custom route falls
+    // back to the explicit providerId. This is the seam where adding a model
+    // used to require editing a parallel string list (and routing broke when it
+    // was missed).
+    const backend = backendFor(this.runtimeModel, "claude-code") ?? backendFor(this.model, "claude-code");
+    return backend ? backend.kind !== "claude-native" : this.providerId !== "anthropic";
   }
 
   private routerEnv(): Record<string, string> {
@@ -1672,22 +1680,6 @@ function claudeUsageWindow(kind: UsageWindowKind, value: any): UsageWindow | und
  */
 function isResumeNotFound(message: string): boolean {
   return /no conversation found|conversation not found|session .*not found|resume.*not found|unknown session/i.test(message);
-}
-
-function isNativeClaudeModel(model: string): boolean {
-  const lower = model.toLowerCase();
-  return (
-    lower === "default" ||
-    lower === "opus" ||
-    lower === "opus[1m]" ||
-    lower === "sonnet" ||
-    lower === "haiku" ||
-    lower.startsWith("claude-sonnet") ||
-    lower.startsWith("claude-opus") ||
-    lower.startsWith("claude-haiku") ||
-    lower.startsWith("claude-fable") ||
-    lower.startsWith("claude-mythos")
-  );
 }
 
 function isRoutableRouterModel(model: string): boolean {
