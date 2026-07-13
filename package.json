@@ -31,6 +31,7 @@
     "test:e2e:member-respawn": "npm run build && node scripts/e2e-member-respawn.mjs",
     "test:e2e:usage-poller": "npm run build && node scripts/e2e-usage-poller.mjs",
     "test:e2e:live-fable": "npm run build && node scripts/e2e-live-fable.mjs",
+    "test:e2e:live-claude-opus-routing": "npm run build && node scripts/e2e-live-claude-opus-routing.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",
