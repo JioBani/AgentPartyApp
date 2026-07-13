@@ -1,5 +1,8 @@
 import { setConsoleLogging } from "../../logger";
 import { createEngineHost } from "../engineHost";
+import { AppController } from "../../application/appController";
+import { AutomationApiServer } from "../../automationApi";
+import { WindowRegistry } from "../../windowRegistry";
 import { serveEngine } from "./engineServer";
 import { writeLine } from "./rpc";
 
@@ -33,6 +36,33 @@ async function main(): Promise<void> {
   await host.startRouter();
   const engine = host.engineRegistry.forWorkspace(workspace);
 
+  // Codex party tools reach the app through the local automation HTTP API. In a
+  // headless engine (e.g. inside a WSL distro), the desktop's automation API is
+  // NOT reachable across the process/network boundary — 127.0.0.1 there is the
+  // distro loopback, not the Windows host — so a Codex member's party MCP server
+  // gets "-32603: fetch failed" on every tool. Serve the SAME automation surface
+  // locally on the distro's loopback, backed by this engine (which owns this
+  // workspace's party state), and hand its real URL to the harness. An empty
+  // WindowRegistry is correct headless: there are no windows to broadcast to, and
+  // `defaultWorkspace` resolves every request to the one workspace served here.
+  const windowRegistry = new WindowRegistry();
+  let automationApi: AutomationApiServer | undefined;
+  const appController = new AppController({
+    sessionManager: host.sessionManager,
+    engineRegistry: host.engineRegistry,
+    windowRegistry,
+    getRouterBaseUrl: () => host.router.baseUrl,
+    getAutomationBaseUrl: () => automationApi?.baseUrl || "",
+    openWindow: () => Promise.reject(new Error("openWindow is not supported in the headless engine server")),
+    onSettingsChanged: () => undefined,
+    onWorkspacesChanged: () => undefined,
+  });
+  automationApi = new AutomationApiServer({ port: 0, controller: appController, windowRegistry, defaultWorkspace: workspace });
+  await automationApi.start();
+  // Bake the ACTUAL bound URL into every Codex session this engine spawns, so the
+  // in-distro party MCP server fetches a live local endpoint (never 127.0.0.1:0).
+  host.sessionManager.setAutomationBaseUrlProvider(() => automationApi?.baseUrl);
+
   serveEngine(engine, process.stdin, process.stdout);
 
   // Push this workspace's live session activity to the client over the same
@@ -54,6 +84,7 @@ async function main(): Promise<void> {
   host.sessionManager.on("usage", (payload) => writeLine(process.stdout, { kind: "event", channel: "usage", payload }));
 
   const shutdown = () => {
+    automationApi?.dispose();
     host.dispose();
     process.exit(0);
   };
@@ -61,8 +92,10 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.stdin.on("close", shutdown);
 
-  // Readiness handshake on stderr (stdout is reserved for RPC).
-  process.stderr.write("ENGINE_SERVER_READY\n");
+  // Readiness handshake on stderr (stdout is reserved for RPC). The in-distro
+  // automation base URL is appended for diagnostics/tests; existing readers match
+  // the token with `includes()`, so the suffix is backwards-compatible.
+  process.stderr.write(`ENGINE_SERVER_READY ${automationApi.baseUrl}\n`);
 }
 
 main().catch((error) => {

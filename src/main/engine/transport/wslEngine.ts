@@ -50,6 +50,14 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
       env.OPENROUTER_API_KEY = options.openRouterApiKey;
       env.WSLENV = appendWslEnv(env.WSLENV, "OPENROUTER_API_KEY");
     }
+    // Forward the Codex party-tool call-log path (a distro path) into the distro
+    // so the in-distro party MCP server can record its tool calls where a test
+    // (or a debugging session) can read them back with `wsl.exe cat`. Verbatim
+    // (no WSLENV `/p` translation): the value is already a Linux path. Unset in
+    // normal use, so this is a no-op outside diagnostics.
+    if (process.env.AGENTPARTY_CODEX_MCP_OUT) {
+      env.WSLENV = appendWslEnv(env.WSLENV, "AGENTPARTY_CODEX_MCP_OUT");
+    }
     child = spawn(
       "wsl.exe",
       [
