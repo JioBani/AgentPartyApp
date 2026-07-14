@@ -85,8 +85,3 @@ export function findRoute(model: string | undefined, routes: RouteLike[]): Route
   const runtime = (entry.runtimeModel || entry.id).toLowerCase();
   return routes.find((item) => item.model.toLowerCase() === id || item.runtimeModel?.toLowerCase() === runtime);
 }
-
-export function routeKeyForModel(model: string, routes: RouteLike[]): string {
-  const route = findRoute(model, routes) || routes[0];
-  return route ? routeKey(route) : "";
-}

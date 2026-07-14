@@ -1,5 +1,4 @@
 import type { InitialAppState } from "../../shared/types";
-import { findRoute, RouteLike, routeKey } from "../workbench/routes";
 
 export type ViewId = "workbench" | "sessions" | "auth" | "runtime" | "automation";
 
@@ -67,11 +66,6 @@ export function viewSubtitle(view: ViewId, workspacePath: string): string {
 
 export function displayPath(value: string | undefined): string {
   return (value || "").replace(/\\/g, "/");
-}
-
-export function routeKeyForModel(model: string, routes: RouteLike[]): string {
-  const route = findRoute(model, routes) || routes[0];
-  return route ? routeKey(route) : "";
 }
 
 export function isViewId(value: string): value is ViewId {
