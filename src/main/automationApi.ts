@@ -10,6 +10,15 @@ export interface AutomationApiDeps {
   port: number;
   controller: AppController;
   windowRegistry: WindowRegistry;
+  /**
+   * Workspace to serve when no window resolves the request (no `?window` and no
+   * registered windows). The desktop always has windows, so it omits this; the
+   * headless engine-server (e.g. inside a WSL distro) serves exactly one
+   * workspace and passes it here so its in-distro Codex party MCP server reaches
+   * the right party state instead of falling back to `process.cwd()` (the
+   * engine's server dir, not the workspace).
+   */
+  defaultWorkspace?: string;
 }
 
 export class AutomationApiServer {
@@ -46,7 +55,7 @@ export class AutomationApiServer {
   }
 
   private targetWorkspace(windowId: string | undefined): string {
-    return this.deps.windowRegistry.resolve(windowId)?.workspacePath || process.cwd();
+    return this.deps.windowRegistry.resolve(windowId)?.workspacePath || this.deps.defaultWorkspace || process.cwd();
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

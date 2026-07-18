@@ -184,8 +184,11 @@ export interface CreateMemberInput {
 }
 
 export interface StartPartyMemberInput {
+  selectedHarnessId?: HarnessId;
   model?: string;
   effort?: EffortSetting;
+  thinking?: string;
+  thinkingBudget?: number;
   permissionMode?: PermissionModeSetting;
   selectedProviderId?: ProviderId;
   /**

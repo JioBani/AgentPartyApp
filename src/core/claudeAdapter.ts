@@ -17,7 +17,8 @@ import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
-import { catalogModelById, catalogModelByRuntime, openRouterAliasMap } from "../shared/modelCatalog";
+import { catalogModelById, catalogModelByRuntime, openRouterAliasMap, resolveCatalogModel } from "../shared/modelCatalog";
+import { backendFor } from "../shared/modelIdentity";
 import { deriveSubagentAction } from "../shared/subagentActivity";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
@@ -284,8 +285,8 @@ export class ClaudeAdapter extends EventEmitter {
   setModel(model: string, providerId?: string, runtimeModel?: string): void {
     const previousUsesRouter = this.usesRouterBackend();
     this.model = displayModelFor(model);
-    this.runtimeModel = runtimeModel || runtimeModelFor(model, this.options.customModelRoutes);
     this.providerId = asModelProviderId(providerId) || inferModelProvider(model, this.options.customModelRoutes);
+    this.runtimeModel = claudeRuntimeModelFor(model, this.providerId, runtimeModel, this.options.customModelRoutes);
     this.currentRoute = this.resolveCurrentRoute();
     if (this.query && previousUsesRouter !== this.usesRouterBackend()) {
       this.emitEvent({
@@ -1273,7 +1274,14 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   private usesRouterBackend(): boolean {
-    return this.providerId !== "anthropic" || !isNativeClaudeModel(this.runtimeModel);
+    // Native vs router is DATA, derived from the catalog entry — not a hardcoded
+    // model-name list. Any Anthropic catalog entry (present or future) resolves
+    // to `claude-native` automatically; only an uncatalogued custom route falls
+    // back to the explicit providerId. This is the seam where adding a model
+    // used to require editing a parallel string list (and routing broke when it
+    // was missed).
+    const backend = backendFor(this.runtimeModel, "claude-code") ?? backendFor(this.model, "claude-code");
+    return backend ? backend.kind !== "claude-native" : this.providerId !== "anthropic";
   }
 
   private routerEnv(): Record<string, string> {
@@ -1342,6 +1350,30 @@ export class ClaudeAdapter extends EventEmitter {
       maxBytes: 2 * 1024 * 1024,
     });
   }
+}
+
+/**
+ * Resolves the model id that is safe to hand to the Claude harness.
+ *
+ * Renderer/API callers include `runtimeModel` so router-backed aliases can be
+ * selected explicitly. That value is transport metadata, though, and must not
+ * override the native id of a catalogued Anthropic model. In particular an old
+ * or cross-harness route can carry `anthropic/claude-opus-4.8`; forwarding that
+ * verbatim makes the Claude adapter enter router mode and reject Opus even
+ * though the user selected the native Claude Code route. Codex->OpenRouter is
+ * handled by CodexAdapter and is intentionally unaffected by this boundary.
+ */
+export function claudeRuntimeModelFor(
+  model: string,
+  providerId: ModelProviderId,
+  requestedRuntimeModel: string | undefined,
+  customRoutes: ModelRouteConfig[] = [],
+): string {
+  const catalogued = resolveCatalogModel(model) || (requestedRuntimeModel ? resolveCatalogModel(requestedRuntimeModel) : undefined);
+  if (providerId === "anthropic" && catalogued?.provider === "anthropic") {
+    return catalogued.runtimeModel || catalogued.id;
+  }
+  return requestedRuntimeModel || runtimeModelFor(model, customRoutes);
 }
 
 async function loadSdk(): Promise<SdkModule> {
@@ -1662,22 +1694,6 @@ function claudeUsageWindow(kind: UsageWindowKind, value: any): UsageWindow | und
  */
 function isResumeNotFound(message: string): boolean {
   return /no conversation found|conversation not found|session .*not found|resume.*not found|unknown session/i.test(message);
-}
-
-function isNativeClaudeModel(model: string): boolean {
-  const lower = model.toLowerCase();
-  return (
-    lower === "default" ||
-    lower === "opus" ||
-    lower === "opus[1m]" ||
-    lower === "sonnet" ||
-    lower === "haiku" ||
-    lower.startsWith("claude-sonnet") ||
-    lower.startsWith("claude-opus") ||
-    lower.startsWith("claude-haiku") ||
-    lower.startsWith("claude-fable") ||
-    lower.startsWith("claude-mythos")
-  );
 }
 
 function isRoutableRouterModel(model: string): boolean {

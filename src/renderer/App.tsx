@@ -12,7 +12,7 @@ import type { WorkbenchActions } from "./workbench/actions";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
-import { displayPath, initialState, isViewId, MemberRuntimeDraft, routeKeyForModel, ViewId, viewSubtitle, viewTitle } from "./app/appState";
+import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
@@ -668,14 +668,32 @@ export function App() {
         await toggleDebug(runtime.debug);
       }
       const sessionId = sessionIdFor(name);
-      if (runtime.route && sessionId) {
-        await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
-      }
-      if (sessionId && runtime.effort) {
-        await window.agentParty.setEffort(sessionId, runtime.effort);
-      }
-      if (sessionId && runtime.thinkingMode) {
-        await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
+      const member = members.find((item) => item.name === name);
+      const selectedHarness = runtime.route?.harnessId === "codex" ? "codex" : "claude-code";
+      const currentHarness = member?.runtime === "codex" ? "codex" : "claude-code";
+      if (runtime.route && selectedHarness !== currentHarness) {
+        // A harness is the adapter PROCESS, not model metadata. Recreate the
+        // prewarmed session on the selected adapter and persist member.runtime;
+        // setModel on the old adapter caused Codex selections to launch Claude.
+        const result = await window.agentParty.respawnPartyMember(name, {
+          selectedHarnessId: selectedHarness,
+          selectedProviderId: runtime.route.providerId,
+          model: runtime.route.model,
+          effort: runtime.effort,
+          thinking: runtime.thinkingMode,
+          thinkingBudget: runtime.thinkingBudget,
+        });
+        await applyPartyResult(result);
+      } else {
+        if (runtime.route && sessionId) {
+          await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
+        }
+        if (sessionId && runtime.effort) {
+          await window.agentParty.setEffort(sessionId, runtime.effort);
+        }
+        if (sessionId && runtime.thinkingMode) {
+          await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
+        }
       }
       setRuntimeDrafts((current) => ({
         ...current,

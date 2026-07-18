@@ -281,13 +281,29 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    const requestedHarness = input.selectedHarnessId ? normalizeHarnessId(input.selectedHarnessId) : undefined;
+    const currentHarness = normalizeHarnessId(member.runtime);
+    const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
+    if (changesHarness && this.memberHasStartedTurn(member)) {
+      throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
+    }
     if (member.sessionId) {
       const harnessId = this.deps.sessionManager.harnessSessionId(member.sessionId);
-      if (harnessId && harnessId !== member.harnessSessionId) {
+      if (!changesHarness && harnessId && harnessId !== member.harnessSessionId) {
         member.harnessSessionId = harnessId;
         member.updatedAt = new Date().toISOString();
         this.persistParty(workspace, state, this.partyIdOf(member));
       }
+    }
+    if (changesHarness) {
+      // Claude conversation ids and Codex thread ids are not interchangeable.
+      // RuntimeModal only permits this before the first turn, so discard the
+      // prewarm thread rather than handing its id to the other adapter.
+      member.harnessSessionId = undefined;
+      member.runtime = requestedHarness;
+      member.updatedAt = new Date().toISOString();
+      this.persistParty(workspace, state, this.partyIdOf(member));
+      log("info", "party", "member harness changed", { workspace, partyId: member.partyId, member: member.name, from: currentHarness, to: requestedHarness });
     }
     this.closeMember(name, partyId);
     return this.startMember(name, input, {}, partyId);
@@ -711,11 +727,33 @@ export class PartyApplicationService {
   }
 
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
+    if (input.selectedHarnessId) {
+      const requested = normalizeHarnessId(input.selectedHarnessId);
+      if (requested !== normalizeHarnessId(member.runtime)) {
+        if (this.memberHasStartedTurn(member)) {
+          throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
+        }
+        member.runtime = requested;
+        member.harnessSessionId = undefined;
+      }
+    }
     // Fill unset fields from the member's own harness defaults (not one global).
     const defaults = harnessDefaultsOf(getSettings(), normalizeHarnessId(member.runtime));
     member.model = input.model || member.model || defaults.model;
     member.effort = input.effort || member.effort || defaults.effort;
     member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
+    member.reasoning = input.thinking || member.reasoning;
+    member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget;
+  }
+
+  /** Live turn count wins; persisted transcript keeps the lock after restart. */
+  private memberHasStartedTurn(member: PartyMember): boolean {
+    const snapshot = this.sessionViewOf(member.sessionId)?.snapshot;
+    if ((snapshot?.turnCount || 0) > 0 || Boolean(snapshot?.lastUserMessageAt)) {
+      return true;
+    }
+    const blocks = this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
+    return blocks.some((block: any) => block?.kind === "user" || block?.kind === "assistant");
   }
 
   private createMemberSession(

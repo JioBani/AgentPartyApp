@@ -444,8 +444,8 @@ export class AppController {
   }
 
   /** Reloads the member's session, resuming the same conversation — the tab toolbar's respawn. */
-  respawnPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["respawnMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.respawnMember(name, undefined, this.partyForWindow(windowId)));
+  respawnPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["respawnMember"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.respawnMember(name, input, this.partyForWindow(windowId)));
   }
 
   openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {

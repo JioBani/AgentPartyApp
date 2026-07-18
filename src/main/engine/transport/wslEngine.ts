@@ -8,6 +8,8 @@ export interface WslEngineOptions {
   workspacePosix: string;
   /** Windows path to the bundled engine server (dist/engine-server.mjs). */
   serverBundleWinPath: string;
+  /** Windows path to the Codex-facing AgentParty MCP stdio server. */
+  codexMcpServerWinPath?: string;
   /** Forwarded to the distro engine's router for router-backed models. */
   openRouterApiKey?: string;
 }
@@ -35,6 +37,10 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     const serverDir = "$HOME/.agent_party_app/server";
     const serverPath = `${serverDir}/engine-server.mjs`;
     await runBash(options.distro, `mkdir -p "${serverDir}" && cp "${wslBundle}" "${serverPath}"`);
+    if (options.codexMcpServerWinPath) {
+      const wslMcpScript = await wslpath(options.distro, options.codexMcpServerWinPath);
+      await runBash(options.distro, `cp "${wslMcpScript}" "${serverDir}/agentparty-codex-mcp-server.mjs"`);
+    }
     await ensureSdk(options.distro, serverDir);
 
     // Forward the OpenRouter key into the distro via WSLENV (not on the command
@@ -44,13 +50,21 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
       env.OPENROUTER_API_KEY = options.openRouterApiKey;
       env.WSLENV = appendWslEnv(env.WSLENV, "OPENROUTER_API_KEY");
     }
+    // Forward the Codex party-tool call-log path (a distro path) into the distro
+    // so the in-distro party MCP server can record its tool calls where a test
+    // (or a debugging session) can read them back with `wsl.exe cat`. Verbatim
+    // (no WSLENV `/p` translation): the value is already a Linux path. Unset in
+    // normal use, so this is a no-op outside diagnostics.
+    if (process.env.AGENTPARTY_CODEX_MCP_OUT) {
+      env.WSLENV = appendWslEnv(env.WSLENV, "AGENTPARTY_CODEX_MCP_OUT");
+    }
     child = spawn(
       "wsl.exe",
       [
         "-d", options.distro, "-e", "bash", "-lc",
         // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
         // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
-        `cd "${serverDir}" && exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
+        `cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );

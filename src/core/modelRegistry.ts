@@ -218,13 +218,17 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
  * same model exists there under a spelling variant (e.g. "GPT-5.4 mini").
  */
 export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
-  const catalogTwin = catalogMetaForCodexModel(model.model);
+  const catalogTwin = resolveCatalogModel(model.model);
   return {
     harnessId: "codex",
     providerId: "openai",
     model: model.model,
     runtimeModel: model.model,
-    label: model.displayName,
+    // Transport discovery may spell/case the same model differently. The
+    // shared catalog owns the user-facing identity so Claude Code, Codex and
+    // OpenRouter routes render one stable name; only model/runtimeModel carry
+    // harness-specific slugs.
+    label: catalogTwin?.label || model.displayName,
     description: model.description,
     pricing: { billing: "subscription", directPrice: "Codex subscription", context: catalogTwin?.context },
     capabilities: {
@@ -248,26 +252,6 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
       : undefined,
     enabled: true,
   };
-}
-
-/**
- * Finds the shared-catalog entry describing the same underlying model as a
- * Codex slug — by its explicit codexModel first, then tolerating spelling
- * variants ("gpt-5.4-mini" vs "GPT-5.4 mini") by comparing ids with
- * separators stripped.
- */
-function catalogMetaForCodexModel(slug: string): CatalogModel | undefined {
-  const lower = slug.toLowerCase();
-  const explicit = modelCatalog().find((model) => model.codexModel?.toLowerCase() === lower);
-  if (explicit) {
-    return explicit;
-  }
-  const wanted = comparableModelId(slug);
-  return modelCatalog().find((model) => comparableModelId(model.id) === wanted);
-}
-
-function comparableModelId(id: string): string {
-  return id.toLowerCase().replace(/[\s._-]+/g, "");
 }
 
 /**
@@ -506,11 +490,12 @@ function visionFromCatalog(model: CatalogModel): VisionCapability {
 /**
  * Resolves the multimodal support of an effective model id, tolerating every id
  * form the app uses (catalog id, runtime alias, concrete OpenRouter id, and the
- * Codex account slug spelling variants). Empty = unknown. Used by the adapters
+ * Codex account slug spelling variants — all handled by the single
+ * {@link resolveCatalogModel} resolver). Empty = unknown. Used by the adapters
  * as a text-only safety net and by the UI to gate/annotate attachments.
  */
 export function visionForModel(model: string): VisionCapability {
-  const found = resolveCatalogModel(model) || catalogMetaForCodexModel(model);
+  const found = resolveCatalogModel(model);
   return found ? visionFromCatalog(found) : {};
 }
 
@@ -599,25 +584,27 @@ function thinkingLabel(mode: string): string {
   return labels[mode] || mode;
 }
 
+/** An Anthropic-family model spelling (native on the claude-code harness). */
+const ANTHROPIC_FAMILY = /^(claude-(sonnet|opus|haiku|fable|mythos)|sonnet|opus|haiku|fable|mythos)/;
+
+/**
+ * Provider for a model that is NOT in the catalog — a user custom route or an
+ * id not yet catalogued. The catalog owns every KNOWN model (resolved before
+ * this fallback runs, see {@link inferModelProvider}); this makes only the one
+ * routing-relevant distinction: native Anthropic vs router-backed. It never
+ * guesses a specific token provider (openai vs custom) from the bare name —
+ * both route through the router backend identically, so an "openai" guess would
+ * be indistinguishable in transport yet claim knowledge the id does not carry.
+ * Only "anthropic" changes the transport (to the native path), so only the
+ * Anthropic family and the native `default` alias are singled out — a new
+ * Anthropic model id therefore works natively before it is catalogued.
+ */
 function inferClaudeCodeProvider(model: string): ModelProviderId {
   const lower = model.toLowerCase();
   if (lower.startsWith("openrouter/") || lower.startsWith("openrouter:")) {
     return "openrouter";
   }
-  if (lower.startsWith("gpt-") || lower.startsWith("o")) {
-    return "openai";
-  }
-  if (
-    lower === "default" ||
-    lower.startsWith("sonnet") ||
-    lower.startsWith("opus") ||
-    lower.startsWith("haiku") ||
-    lower.startsWith("claude-sonnet") ||
-    lower.startsWith("claude-opus") ||
-    lower.startsWith("claude-haiku") ||
-    lower.startsWith("claude-fable") ||
-    lower.startsWith("claude-mythos")
-  ) {
+  if (lower === "default" || ANTHROPIC_FAMILY.test(lower)) {
     return "anthropic";
   }
   return "custom";

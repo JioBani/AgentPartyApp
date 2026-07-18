@@ -128,7 +128,10 @@ await tick();
 await openModelStep(readyHost);
 const rows = [...readyHost.querySelectorAll(".wb-model-row")];
 assert(rows.length === 6 + orCodex.length, `codex harness lists account models (3 discovered + 3 static) + OpenRouter models (${orCodex.length}), not one hardcoded route`);
-assert(rows.some((row) => row.textContent.includes("GPT-5.4-Mini")), "gpt-5.4-mini is selectable");
+// The shared catalog owns the display identity: a discovered slug with a
+// catalog twin (gpt-5.4-mini → "GPT-5.4 mini") renders the catalog label, not
+// the raw model/list displayName. Selectability is asserted on that label.
+assert(rows.some((row) => row.textContent.includes("GPT-5.4 mini")), "gpt-5.4-mini is selectable (renders its catalog label)");
 assert(rows.some((row) => row.textContent.includes("GLM-5.2")), "an OpenRouter model (GLM-5.2) is selectable on the codex harness");
 assert(!readyHost.querySelector(".wb-wizard-error"), "no error banner when discovery is ready");
 
