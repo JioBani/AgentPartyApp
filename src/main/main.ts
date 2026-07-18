@@ -498,6 +498,7 @@ function registerIpc(): void {
   handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any, senderWindowId(event)));
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:autoCompact", async (event, name: string, autoCompact: unknown) => controller().setMemberAutoCompact(senderWorkspace(event), name, autoCompact, senderWindowId(event)));
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:transcript:save", async (event, name: string, blocks: unknown[]) => controller().saveMemberTranscript(senderWorkspace(event), name, blocks, senderWindowId(event)));
 }

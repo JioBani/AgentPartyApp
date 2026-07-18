@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
+import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import type { UsageLimitsSnapshot, UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
@@ -48,10 +49,14 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar open/closed persists across launches (README Electron note #6);
+  // width is persisted separately in Workbench.
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
+  // Members with a compaction in flight (transient toolbar spinner).
+  const [compactingByMember, setCompactingByMember] = useState<Record<string, boolean>>({});
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
   // QA-driven "open this subagent's detail" request (mock-driven detail QA).
   const [subagentOpenRequest, setSubagentOpenRequest] = useState<{ member: string; subId: string; nonce: number } | null>(null);
@@ -61,6 +66,11 @@ export function App() {
   // Members with an in-flight session start, and members already prewarmed once.
   const startingRef = useRef<Set<string>>(new Set());
   const prewarmedRef = useRef<Set<string>>(new Set());
+  // Auto-compact hysteresis: a member is "armed" while below its threshold; a
+  // crossing fires ONE compaction and disarms it, re-arming only once occupancy
+  // drops back below the threshold. This stops a member whose context can't be
+  // reduced (Claude's "nothing to compact") from re-firing every snapshot.
+  const autoArmedRef = useRef<Record<string, boolean>>({});
 
   const members = state.party.members;
   const sessions = state.sessions;
@@ -129,9 +139,33 @@ export function App() {
       seenCount: seenLengths[member.name] ?? 0,
       restored: restoredByMember[memberKey(member)],
       routes,
+      compactDefault: state.settings.compactDefault,
+      compacting: compactingByMember[member.name],
     })),
-    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, routes],
+    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, routes, state.settings.compactDefault, compactingByMember],
   );
+
+  // Auto-compaction trigger: when a member's live occupancy crosses its
+  // threshold, fire ONE compaction (hysteresis via autoArmedRef so it never
+  // loops on a context that can't shrink). Only when idle — we compact between
+  // turns, not mid-response; the crossing stays latched until the turn ends.
+  useEffect(() => {
+    for (const view of views) {
+      const { name } = view;
+      const used = view.context?.used;
+      const total = view.context?.total;
+      const crossed = shouldAutoCompact(view.autoCompact, used, total);
+      if (!crossed) {
+        autoArmedRef.current[name] = true;
+        continue;
+      }
+      const armed = autoArmedRef.current[name] !== false;
+      if (armed && !view.busy && view.status !== "approval" && !view.compacting && sessionIdFor(name)) {
+        autoArmedRef.current[name] = false;
+        runCompact(name);
+      }
+    }
+  }, [views]);
 
   useEffect(() => {
     void window.agentParty.getInitialState().then((next) => {
@@ -445,10 +479,40 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  async function saveCompactDefault(setting: AutoCompactSetting) {
+    const settings = await window.agentParty.updateSettings({ compactDefault: setting });
+    setState((current) => ({ ...current, settings }));
+  }
+
   // --- Workbench actions (addressed by member name) -----------------------
   function sessionIdFor(name: string): string | undefined {
     const sessionId = members.find((member) => member.name === name)?.sessionId;
     return sessionId && sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
+  }
+
+  /**
+   * Runs a compaction for a member and shows the transient toolbar spinner
+   * (~1.4s, matching the design's icon swap). The spinner is cosmetic — the
+   * actual context drop arrives via the snapshot; the auto-compact re-fire guard
+   * is the arm/disarm ref, not this flag. A no-op without a live session (nothing
+   * to compact), surfaced as a notice rather than a silent nothing.
+   */
+  function runCompact(name: string): void {
+    const sessionId = sessionIdFor(name);
+    if (!sessionId) {
+      setPartyNotice(`'${name}' 세션이 없어 압축할 컨텍스트가 없습니다.`);
+      return;
+    }
+    void window.agentParty.compact(sessionId);
+    setCompactingByMember((current) => ({ ...current, [name]: true }));
+    window.setTimeout(() => {
+      setCompactingByMember((current) => {
+        if (!current[name]) return current;
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+    }, 1400);
   }
 
   // Starts a member's session if one isn't already active, returning its id.
@@ -582,8 +646,14 @@ export function App() {
       void window.agentParty.respawnPartyMember(name);
     },
     compact(name) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) void window.agentParty.compact(sessionId);
+      runCompact(name);
+    },
+    setAutoCompact(name, setting) {
+      // Persist through the shared party-action path; the party:update broadcast
+      // reflects it back into every member view (toolbar pill + sidebar badge).
+      // Re-arm the trigger so a fresh threshold takes effect immediately.
+      autoArmedRef.current[name] = true;
+      void window.agentParty.setMemberAutoCompact(name, setting ?? null);
     },
     closeSession(name) {
       // Closing the tab tears down the member's session and marks it closed, so
@@ -805,7 +875,10 @@ export function App() {
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}
-                onToggleSidebar={setSidebarOpen}
+                onToggleSidebar={(open) => {
+                  setSidebarOpen(open);
+                  try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
+                }}
               />
             </>
           ) : (
@@ -813,13 +886,23 @@ export function App() {
               <header className="screen-header">
                 <div className="screen-title">
                   <h1>{viewTitle(currentView)}</h1>
-                  <p>{viewSubtitle(currentView, state.settings.workspacePath)}</p>
+                  <p>{viewSubtitle(currentView)}</p>
+                  <div className="screen-chips">
+                    <span className="screen-chip">
+                      <FolderOpen size={13} />
+                      <span className="wb-mono">
+                        {state.workspace?.kind === "wsl" && <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>}
+                        {state.workspace?.path || displayPath(state.settings.workspacePath) || "작업공간 없음"}
+                      </span>
+                    </span>
+                  </div>
                 </div>
                 <div className="screen-actions">
                   <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> 작업공간</button>
                   {usagePill}
                 </div>
               </header>
+              <div className="program-scroll">
               {currentView === "sessions" && (
                 <SessionsView
                   sessions={sessions}
@@ -851,11 +934,13 @@ export function App() {
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
+                  onSaveCompactDefault={saveCompactDefault}
                 />
               )}
               {currentView === "automation" && (
                 <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} onToggleDebug={toggleDebug} />
               )}
+              </div>
             </>
           )}
         </main>

@@ -1007,7 +1007,21 @@ export class ClaudeAdapter extends EventEmitter {
     if (message.subtype === "status" || message.subtype === "session_state_changed") {
       this.currentStatus = message.status || message.state || "idle";
       this.turnState = message.state || this.turnState;
-      this.emitStatus(this.currentStatus, message.permissionMode || message.compact_result || message.compact_error);
+      // A compaction outcome must be ATTRIBUTED, not folded into a generic
+      // "idle: failed" line where it reads like a turn failure. Surface the
+      // harness's own result/error verbatim (never dropped) under a clear label:
+      // success → a "compacted" status, failure → a warning diagnostic that names
+      // compaction and carries whatever reason the harness gave (even a terse
+      // "failed" — e.g. nothing to compact on a short session).
+      if (message.compact_error) {
+        this.emitEvent({ type: "diagnostic", severity: "warning", category: "compact", title: "Compaction failed", detail: String(message.compact_error), at: now() });
+        return;
+      }
+      if (message.compact_result) {
+        this.emitStatus("compacted", String(message.compact_result));
+        return;
+      }
+      this.emitStatus(this.currentStatus, message.permissionMode);
       return;
     }
 

@@ -1,4 +1,5 @@
 import type { PartyMember, SessionView } from "../../shared/types";
+import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
@@ -91,6 +92,8 @@ export interface MemberView {
   permissionMode: string;
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;
+  /** The effective model's selectable effort options (empty when the model has none). */
+  effortOptions: { id: string; label: string }[];
   /**
    * Context-window occupancy for the capacity meter. `used` is the current
    * footprint in tokens; `total` is the model's window (undefined when unknown —
@@ -100,6 +103,14 @@ export interface MemberView {
    * and marks it as not-yet-refreshed rather than showing nothing.
    */
   context?: { used: number; total?: number; stale?: boolean };
+  /**
+   * Effective auto-compaction setting (the member's own, else the global
+   * default). Drives the toolbar pill, the sidebar badge, and the crossing
+   * trigger. Always resolved — never undefined.
+   */
+  autoCompact: AutoCompactSetting;
+  /** True while a manual/automatic compaction is in flight (transient spinner). */
+  compacting: boolean;
 }
 
 /** One watch-slot. Tabs time-share the slot; `active` is the visible member. */

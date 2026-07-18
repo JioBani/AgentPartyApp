@@ -1,6 +1,7 @@
 import type { ClaudeSessionSnapshot } from "../core/events";
 import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
+import type { AutoCompactSetting } from "./autoCompact";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -57,6 +58,12 @@ export interface AppSettings {
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
+  /**
+   * Global auto-compaction default inherited by any member without its own
+   * {@link PartyMember.autoCompact}. Edited in Settings → Runtime. See
+   * `shared/autoCompact.ts`.
+   */
+  compactDefault: AutoCompactSetting;
 }
 
 /** All harnesses that have defaults, in a stable order. */
@@ -117,6 +124,12 @@ export interface PartyMember {
   lastContextTokens?: number;
   /** The model's window size (tokens) captured alongside {@link lastContextTokens}. */
   lastContextWindow?: number;
+  /**
+   * Per-member auto-compaction threshold. Undefined = inherit
+   * {@link AppSettings.compactDefault}. When on, the session auto-compacts once
+   * context crosses `at`% of the window. See `shared/autoCompact.ts`.
+   */
+  autoCompact?: AutoCompactSetting;
   createdAt?: string;
   updatedAt?: string;
 }

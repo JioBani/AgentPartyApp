@@ -1,8 +1,9 @@
 import type { PartyMutationResult } from "./engineConnection";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import { sanitizeAttachments } from "../../shared/attachments";
+import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "broadcast";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "broadcast" | "auto-compact";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult;
 
@@ -12,6 +13,9 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   resume: (party, name, _body, partyId) => party.resumeMember(name, partyId),
   respawn: (party, name, body, partyId) => party.respawnMember(name, body, partyId),
   open: (party, name, _body, partyId) => party.openMember(name, partyId),
+  // Per-member auto-compaction threshold. `body.autoCompact = {on,at}` sets it;
+  // null/omitted clears the override (member falls back to the global default).
+  "auto-compact": (party, name, body, partyId) => party.setMemberAutoCompact(name, normalizeAutoCompact(body?.autoCompact), partyId),
   start: (party, name, body, partyId) => party.startMember(name, body, {}, partyId),
   bind: (party, name, body, partyId) => party.bindMember(name, String(body.sessionId || ""), partyId),
   remove: (party, name, _body, partyId) => party.removeMember(name, partyId),

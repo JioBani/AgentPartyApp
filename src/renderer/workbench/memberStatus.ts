@@ -1,6 +1,7 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
 import { parseContextTokens } from "../../shared/modelCatalog";
+import { resolveAutoCompact, type AutoCompactSetting } from "../../shared/autoCompact";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import { findRoute, type RouteLike, type RouteVision } from "./routes";
 
@@ -50,6 +51,10 @@ export interface BuildMemberViewInput {
   restored?: TranscriptBlock[];
   /** Model routes, to resolve the effective model's vision (image) support. */
   routes?: RouteLike[];
+  /** Global auto-compact default a member without its own setting inherits. */
+  compactDefault?: AutoCompactSetting;
+  /** True while this member is mid-compaction (transient toolbar spinner). */
+  compacting?: boolean;
 }
 
 /** Finds a route by a model's route id, runtime id, or display label. */
@@ -60,6 +65,12 @@ function routeForModel(model: string, routes?: RouteLike[]): RouteLike | undefin
 /** The effective model's multimodal support, resolved from the routes. */
 function visionFor(model: string, routes?: RouteLike[]): RouteVision | undefined {
   return routeForModel(model, routes)?.capabilities?.vision;
+}
+
+/** The effective model's selectable effort options (empty when unsupported). */
+function effortOptionsFor(model: string, routes?: RouteLike[]): { id: string; label: string }[] {
+  const cap = routeForModel(model, routes)?.capabilities?.effort;
+  return cap?.supported ? cap.options : [];
 }
 
 /**
@@ -91,7 +102,7 @@ function contextFor(session: SessionView | undefined, member: PartyMember, model
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, routes }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, routes, compactDefault, compacting }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
   const subagents = session ? (subagentsBySession?.[session.id] || []) : [];
   // A live session's transcript wins (it is seeded from the restored history on
@@ -118,7 +129,10 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     thinkingBudget: session?.snapshot.thinkingBudget ?? member.reasoningBudget,
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
     vision: visionFor(model, routes),
+    effortOptions: effortOptionsFor(model, routes),
     context: contextFor(session, member, model, String(member.model || ""), routes),
+    autoCompact: resolveAutoCompact(member.autoCompact, compactDefault),
+    compacting: Boolean(compacting),
   };
 }
 

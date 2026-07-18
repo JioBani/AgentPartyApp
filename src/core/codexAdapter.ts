@@ -218,7 +218,13 @@ export class CodexAdapter extends EventEmitter {
       this.sendUserTurn("/compact");
       return;
     }
-    void this.request("thread/compact/start", { threadId: this.sessionId }).catch((error) => this.finishWithError(error));
+    // Surface the compaction — otherwise the app-server compacts silently and the
+    // only visible effect is a context number that quietly drops, which reads as
+    // unexplained. Announce start, then the outcome (done / failed), never dropped.
+    this.emitEvent({ type: "status", status: "compacting", detail: "compacting context", at: now() });
+    void this.request("thread/compact/start", { threadId: this.sessionId })
+      .then(() => this.emitEvent({ type: "status", status: "compacted", detail: "context compacted", at: now() }))
+      .catch((error) => this.emitEvent({ type: "diagnostic", severity: "warning", category: "compact", title: "Compaction failed", detail: String(error?.message || error), at: now() }));
   }
 
   /** Writes one raw JSON-RPC frame to the debug trace (no-op unless debug on). */

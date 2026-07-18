@@ -50,6 +50,7 @@ const api = {
   respawnPartyMember: (name: string) => ipcRenderer.invoke("party:respawn", name),
   startPartyMember: (name: string, input?: unknown) => ipcRenderer.invoke("party:start", name, input),
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
+  setMemberAutoCompact: (name: string, autoCompact: unknown) => ipcRenderer.invoke("party:autoCompact", name, autoCompact),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
   saveMemberTranscript: (name: string, blocks: unknown[]) => ipcRenderer.invoke("party:transcript:save", name, blocks),
   onSessionEvents: (callback: (payload: unknown) => void) => {

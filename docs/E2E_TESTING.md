@@ -42,6 +42,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
 | `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
+| `qa-auto-compact` | per-member auto-compaction pure logic (`src/shared/autoCompact.ts`): threshold clamp/step-snap (50–95), OFF-by-default, stored/HTTP `normalizeAutoCompact`, inheritance (member setting → global `compactDefault` → built-in), token estimate (never against an unknown window), and `shouldAutoCompact` crossing test the renderer trigger fires on (off / unknown-window / unknown-usage never fire). |
 | `qa-usage-limits` | account/provider-scoped rate-limit indicator (titlebar). Pure logic in `src/shared/usageLimits.ts` — window merge by kind (unreported windows preserved), level-color escalation (brand <75 → `--live` ≥75 → `--danger` ≥90; unknown → muted, never brand), reset-countdown formatting, epoch-seconds→ms normalization, and the full `buildUsageView` view model across known / unknown-loading / N/A (API key) / empty states (no fabricated 0%). Plus a jsdom render of `<UsageLimitPill>`: segments paint, click opens the popover with 5h + weekly meters + countdown, and ≥75% paints the warning border. |
 | `qa-subagents` | subagent-observation view-models (dock + drill-in detail) + the `applySubagentEvents` fold that keeps subagent output in a SEPARATE slice from the parent transcript: status→style mapping, live one-line `currentAction` selection (`deriveSubagentAction`, the swap point in `src/shared/subagentActivity.ts`), responsive dock thresholds, empty assistant/status blocks dropped so a query-less/empty item never renders as a blank "선처럼" strip. Driven by the mock scenarios in `src/shared/subagentScenarios.ts`. |
 | `qa-party-store` | party storage **split** (`PartyRepository`): the on-disk layout is a SHARED index `parties.json` + PER-PARTY `parties/<id>/party.json` (members/messages), so two processes editing different parties of one workspace never clobber. Locks in: legacy single-`state.json` → split migration (data intact, blob kept as backup, no re-migrate on the 2nd read), per-party **write isolation** (editing party A leaves party B's file byte-identical + mtime unchanged), and **authoritative partyId** (a member's party is its FILE — a missing/wrong stored `partyId` is corrected, never silently mis-routed). |
@@ -97,6 +98,23 @@ over `POST /api/qa/usage` is aggregated per provider (separate 5-hour + weekly
 reports MERGE, and a re-report replaces only its own window), served by
 `GET /api/usage`, and pushed to the titlebar pill (a `usage-limits.png` capture
 shows the live Claude/Codex rings). Starts empty (no fabricated 0%).
+
+`node scripts/e2e-auto-compact.mjs` (or `npm run test:e2e:auto-compact`) boots the
+real app on an isolated userData + temp workspace (offline — mock members, no
+model) and proves per-member auto-compaction end-to-end: `POST /api/party/members/
+:name/auto-compact` persists a member's threshold both on `GET /api/state` AND in
+the on-disk `party.json` (snapping 77 → 75), `{ autoCompact: null }` clears the
+override, `POST /api/settings { compactDefault }` persists the global default, and
+the workbench renders with the member open — the capture (`auto-compact-e2e.png`)
+shows the toolbar compact pill + the sidebar `⇲ NN%` badges (members without their
+own setting inheriting the global default). The crossing-trigger + inheritance
+logic is locked deterministically by `qa-auto-compact` (in `test:ui`).
+
+`node scripts/e2e-compact.mjs` is a BILLED manual-compaction probe (live Claude +
+Codex): it sends one real turn to each, then `POST /api/sessions/:id/compact` and
+surfaces the harness outcome (Claude reports "compact failed / nothing to compact"
+on a short session; Codex actually reduces occupancy). Used to verify the compact
+result/error is ATTRIBUTED, not folded into a generic "idle: failed" status.
 
 `node scripts/e2e-permission-persist.mjs` (or `npm run test:e2e:permission-persist`)
 boots the real app on an isolated userData + temp workspace (offline — mock member,

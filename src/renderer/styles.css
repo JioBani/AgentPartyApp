@@ -194,6 +194,16 @@
   background: var(--bg-1);
 }
 
+/* Secondary views (sessions / auth / runtime / automation) scroll under their
+   fixed screen-header when the content outgrows the window. */
+.program-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .screen-header {
   min-height: 60px;
   display: flex;
@@ -245,6 +255,30 @@
   font-size: 12px;
   color: var(--text-2);
 }
+
+/* Workspace path shown as its own chip under the subtitle (design mockup) rather
+   than crammed into the subtitle text. */
+.screen-chips {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+.screen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 11px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: var(--text-1);
+}
+.screen-chip svg { color: var(--text-3); flex: none; }
+.screen-chip .wb-mono { display: inline-flex; align-items: center; gap: 6px; }
 
 .screen-actions {
   display: flex;
@@ -643,6 +677,22 @@
   color: var(--text-3);
 }
 
+/* Auto-compact-on badge on a member row (⇲ NN%), so the state is visible
+   without opening the panel. Live-tinted, mono. */
+.wb-member-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--live);
+  background: var(--live-dim);
+  border: var(--border-width) solid var(--live-bd);
+  border-radius: var(--radius-badge);
+  padding: 1px 4px;
+  flex: none;
+}
+
 /* Right-click context menu (member / party delete). */
 .wb-member-row.is-menu,
 .wb-party-row.is-menu {
@@ -1038,6 +1088,116 @@ body.wb-resizing {
   background: var(--border);
   margin: 0 1px;
   flex: none;
+}
+
+/* Segmented auto-compact pill: [ compact-now │ NN% / OFF ]. One rounded
+   container, a 1px center divider, uniform border/tint. `is-on` = live tint,
+   `is-off` = neutral. */
+.wb-compact-pill {
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  border: var(--border-width) solid var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.wb-compact-pill.is-on {
+  border-color: var(--live-bd);
+  background: var(--live-dim);
+}
+.wb-compact-pill button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+.wb-compact-pill.is-on button { color: var(--live); }
+.wb-compact-pill button:hover:not(:disabled) { background: var(--bg-3); color: var(--text-0); }
+.wb-compact-pill.is-on button:hover:not(:disabled) { background: var(--live-dim); color: var(--live); }
+.wb-compact-pill button:disabled { opacity: 0.45; }
+.wb-compact-run { padding-left: var(--space-3) !important; }
+.wb-compact-th { padding-right: var(--space-3) !important; }
+.wb-compact-div {
+  width: 1px;
+  background: var(--border);
+  flex: none;
+}
+.wb-compact-pill.is-on .wb-compact-div { background: var(--live-bd); }
+.wb-spin { animation: wb-spin 1s linear infinite; }
+
+/* Auto-compact editor (threshold modal / runtime block / settings). */
+.wb-compact-editor { display: flex; flex-direction: column; gap: var(--space-4); }
+.wb-compact-slider { display: flex; flex-direction: column; gap: var(--space-3); }
+.wb-compact-readout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.wb-compact-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--live);
+  font-weight: 600;
+}
+.wb-compact-input {
+  width: 3.2em;
+  text-align: right;
+  font-size: 13px;
+  color: var(--live);
+  background: var(--bg-input);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  padding: 2px 4px;
+}
+.wb-compact-input:focus { outline: none; border-color: var(--live-bd); }
+/* Hide the native number spinners (we clamp/step ourselves). */
+.wb-compact-input::-webkit-inner-spin-button,
+.wb-compact-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.wb-compact-tokens { color: var(--text-3); margin-left: auto; }
+
+/* Full 0–100% gauge slider: thin track (the fill/blocked zones come from an
+   inline gradient background), round live thumb. */
+.wb-compact-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.wb-compact-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+.wb-compact-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--live);
+  border: 2px solid var(--bg-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.wb-compact-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.wb-compact-limit {
+  font-size: 10.5px;
+  color: var(--text-3);
 }
 
 /* Context-capacity meter: how full the member's context window is. */
@@ -2830,6 +2990,15 @@ body.wb-resizing {
   overflow: hidden;
 }
 
+/* Small single-column modal (threshold editor). */
+.wb-modal.wb-modal-sm { width: min(430px, 92vw); }
+.wb-modal-body-col {
+  display: block;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+.wb-modal-foot-end { justify-content: flex-end; }
+
 .wb-model-list {
   border-right: var(--border-width) solid var(--border-subtle);
   padding: var(--space-5);
@@ -4270,9 +4439,52 @@ body.wb-resizing {
 /* fields + selects */
 .set-field { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 7px; }
 .set-field-label { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
-.set-select { height: 38px; padding: 0 12px; background: var(--bg-input); border: var(--border-width) solid var(--border); border-radius: 9px; color: var(--text-0); font-size: 12.5px; font-family: inherit; cursor: pointer; }
+/* Custom-styled select: strip the native OS chevron/appearance and paint our own
+   chevron so the closed control matches the workbench design (native selects were
+   the biggest tell that settings hadn't been designed). */
+.set-select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  height: 38px; padding: 0 34px 0 12px;
+  background-color: var(--bg-input);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b90a0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 15px;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-input);
+  color: var(--text-0); font-size: 12.5px; font-family: inherit; cursor: pointer;
+  transition: border-color 0.12s;
+}
+.set-select.is-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
 .set-select:hover { border-color: var(--border-strong); }
-.set-select:focus { outline: none; border-color: var(--accent-bd); }
+.set-select:focus { outline: none; border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* segmented single-choice control inside a set-field (effort / reasoning mode) */
+.set-segmented { background: var(--bg-input); }
+.set-segmented .wb-segment { padding: 7px 4px; font-size: 11.5px; font-weight: 500; color: var(--text-2); text-transform: none; transition: background 0.12s, color 0.12s; }
+/* Explicit active colour: without it the equal-specificity `.set-segmented
+   .wb-segment` rule (later in source) overrode the base active colour, leaving
+   the selected label in muted --text-2 on the accent fill — nearly invisible. */
+.set-segmented .wb-segment.is-active { font-weight: 600; color: var(--accent-fg); }
+.set-segmented .wb-segment:hover:not(.is-active) { color: var(--text-0); }
+
+/* Settings → Runtime · global Auto-compact default (matches the design mockup):
+   an amber-badged toggle card + a separate slider sub-card with an NN% readout. */
+.set-compact { display: flex; flex-direction: column; gap: 12px; margin: 14px 20px 18px; }
+.set-compact-toggle { display: flex; align-items: center; gap: 13px; padding: 14px 15px; background: var(--bg-2); border: var(--border-width) solid var(--border-subtle); border-radius: 11px; cursor: pointer; }
+.set-compact-toggle:hover { border-color: var(--border); }
+.set-compact-badge { width: 36px; height: 36px; flex: none; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--live-dim); border: var(--border-width) solid var(--live-bd); color: var(--live); }
+.set-compact-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.set-compact-copy strong { font-size: 13px; font-weight: 600; color: var(--text-0); }
+.set-compact-copy small { font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+/* amber toggle (auto-compact is colour-coded --live throughout the app) */
+.set-compact-switch { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; flex: none; border-radius: 11px; background: var(--bg-4); position: relative; cursor: pointer; transition: background 0.15s; }
+.set-compact-switch::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: left 0.15s; }
+.set-compact-switch:checked { background: var(--live); }
+.set-compact-switch:checked::after { left: 20.5px; }
+.set-compact-slider { display: flex; flex-direction: column; gap: 11px; padding: 15px 16px 14px; background: var(--bg-2); border: var(--border-width) solid var(--border-subtle); border-radius: 11px; }
+.set-compact-readout { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-compact-readout span { font-size: 12px; color: var(--text-2); }
+.set-compact-readout strong { font-size: 15px; font-weight: 700; color: var(--live); }
+.set-compact-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); }
+.set-compact-limit { font-size: 11px; color: var(--text-3); }
 
 /* toggle switch */
 .set-toggle { display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 4px; background: none; border: none; cursor: pointer; }

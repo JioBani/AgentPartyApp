@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Check, Copy, FlaskConical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { HARNESS_IDS } from "../../shared/types";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
+import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { RouteLike, routeKey } from "../workbench/routes";
 
 const permissionModes = [
@@ -89,6 +90,88 @@ function SetSectionHead({ label }: { label: string }) {
   );
 }
 
+/**
+ * A segmented single-choice control — the same design language as the Runtime
+ * modal's Effort/Thinking pickers, so settings and the modal read as one system
+ * instead of the modal being polished and settings falling back to raw selects.
+ */
+function SetSegmented<T extends string>({ value, options, onChange }: {
+  value: T;
+  options: Array<{ id: T; label: string }>;
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div className="wb-segmented set-segmented">
+      {options.map((option) => (
+        <button
+          type="button"
+          key={option.id || "_default"}
+          className={"wb-segment" + (option.id === value ? " is-active" : "")}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The global-default Auto-compact block on the Settings → Runtime screen. This is
+ * a settings-tuned presentation (amber badge, "inherited default" copy, a clean
+ * NN% readout) — distinct from the per-member `AutoCompactEditor` used in the
+ * workbench, which carries member-scoped copy and the editable token estimate.
+ * The slider matches the shared editor's gauge exactly: a full 0–100% track with
+ * the un-settable ends (≤10% / ≥95%) painted as blocked zones.
+ */
+function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSetting; onChange: (setting: AutoCompactSetting) => void }) {
+  const track = `linear-gradient(90deg,
+    var(--danger-dim) 0 ${AUTO_COMPACT_FLOOR}%,
+    var(--live) ${AUTO_COMPACT_FLOOR}% ${setting.at}%,
+    var(--bg-4) ${setting.at}% ${AUTO_COMPACT_CEIL}%,
+    var(--danger-dim) ${AUTO_COMPACT_CEIL}% 100%)`;
+  return (
+    <div className="set-compact">
+      <label className="set-compact-toggle">
+        <span className="set-compact-badge"><FoldVertical size={18} /></span>
+        <span className="set-compact-copy">
+          <strong>컨텍스트 임계치 초과 시 자동 압축</strong>
+          <small>새 멤버는 이 기본값으로 생성됩니다. 멤버별로 런타임에서 개별 조정할 수 있습니다.</small>
+        </span>
+        <input
+          type="checkbox"
+          className="set-compact-switch"
+          checked={setting.on}
+          onChange={(event) => onChange({ ...setting, on: event.target.checked })}
+        />
+      </label>
+      {setting.on && (
+        <div className="set-compact-slider">
+          <div className="set-compact-readout">
+            <span>기본 압축 임계치 · 컨텍스트 사용률</span>
+            <strong className="wb-mono">{setting.at}%</strong>
+          </div>
+          <input
+            type="range"
+            className="wb-compact-range"
+            min={AUTO_COMPACT_GAUGE_MIN}
+            max={AUTO_COMPACT_GAUGE_MAX}
+            step={AUTO_COMPACT_STEP}
+            value={setting.at}
+            style={{ background: track }}
+            onChange={(event) => onChange({ ...setting, at: clampAutoCompactAt(event.target.value) })}
+          />
+          <div className="set-compact-ends">
+            <span>{AUTO_COMPACT_GAUGE_MIN}%</span>
+            <span>{AUTO_COMPACT_GAUGE_MAX}%</span>
+          </div>
+          <div className="set-compact-limit">{AUTO_COMPACT_FLOOR}% 미만 · {AUTO_COMPACT_CEIL}% 초과는 설정할 수 없습니다.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
   auth: InitialAppState["auth"];
   draft: string;
@@ -153,7 +236,7 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
 
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -163,6 +246,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
+  onSaveCompactDefault: (setting: AutoCompactSetting) => void;
 }) {
   const [copied, setCopied] = useState(false);
   function copyRouter() {
@@ -199,6 +283,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             <span className="set-toggle-label">디버그 로그</span>
           </button>
         </div>
+      </section>
+
+      {/* global auto-compact default (inherited by members without their own) */}
+      <section className="set-card">
+        <div className="set-card-label">Auto-compact</div>
+        <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
       </section>
 
       {/* per-harness defaults */}
@@ -262,7 +352,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
 
       <label className="set-field">
         <span className="set-field-label">모델</span>
-        <select className="set-select" value={model} onChange={(event) => setModel(event.target.value)}>
+        <select className="set-select is-mono" value={model} onChange={(event) => setModel(event.target.value)}>
           {routes.map((route) => <option key={routeKey(route)} value={route.model} disabled={route.enabled === false}>{route.label || route.model}</option>)}
         </select>
       </label>
@@ -276,19 +366,22 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
         </div>
       )}
 
-      <label className="set-field">
+      <div className="set-field">
         <span className="set-field-label">추론 강도</span>
-        <select className="set-select" value={effort} onChange={(event) => setEffort(event.target.value as HarnessDefaults["effort"])}>
-          {["low", "medium", "high", "xhigh", "max"].map((e) => <option key={e} value={e}>{e}</option>)}
-        </select>
-      </label>
-      <label className="set-field">
+        <SetSegmented
+          value={effort as string}
+          options={["low", "medium", "high", "xhigh", "max"].map((e) => ({ id: e, label: e }))}
+          onChange={(id) => setEffort(id as HarnessDefaults["effort"])}
+        />
+      </div>
+      <div className="set-field">
         <span className="set-field-label">추론 모드</span>
-        <select className="set-select" value={reasoning} onChange={(event) => setReasoning(event.target.value)}>
-          <option value="">모델 기본</option>
-          {["adaptive", "enabled", "disabled"].map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-        </select>
-      </label>
+        <SetSegmented
+          value={reasoning}
+          options={[{ id: "", label: "모델 기본" }, { id: "adaptive", label: "adaptive" }, { id: "enabled", label: "enabled" }, { id: "disabled", label: "disabled" }]}
+          onChange={(id) => setReasoning(id)}
+        />
+      </div>
       {isCodex ? (
         <label className="set-field">
           <span className="set-field-label">권한 (샌드박스 × 승인)</span>

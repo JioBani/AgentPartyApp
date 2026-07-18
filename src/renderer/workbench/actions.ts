@@ -1,5 +1,6 @@
 import type { RouteLike } from "./routes";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
@@ -45,7 +46,14 @@ export interface WorkbenchActions {
    * The tab toolbar's primary reset button.
    */
   respawn(memberName: string): void;
+  /** Runs a manual compaction now (toolbar pill icon / runtime). Shows a transient spinner. */
   compact(memberName: string): void;
+  /**
+   * Sets the member's per-member auto-compaction threshold; `undefined` clears
+   * the override so the member inherits the global default. Persisted through the
+   * party-action path (works with or without a live session).
+   */
+  setAutoCompact(memberName: string, setting: AutoCompactSetting | undefined): void;
   /**
    * Closes the member's live session (tears down the harness, frees its context
    * + provider usage) and marks the member `closed`. Reopening the tab and

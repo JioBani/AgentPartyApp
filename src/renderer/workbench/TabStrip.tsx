@@ -42,7 +42,7 @@ export function TabStrip({ panel, views, density, draggingMember, canAdd, onSele
               title={member}
             >
               <span className="wb-tab-accent" />
-              <span className="wb-dot" />
+              <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
               <span className="wb-tab-name">{member}</span>
               {view.pendingApproval && <span className="wb-tab-badge">승인</span>}
               {!view.pendingApproval && view.unread > 0 && <span className="wb-tab-unread">{view.unread}</span>}

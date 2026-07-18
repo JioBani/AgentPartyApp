@@ -47,6 +47,7 @@ export const automationEndpoints = [
   "POST /api/party/members/:name/remove",
   "POST /api/party/members/:name/status",
   "POST /api/party/members/:name/interrupt",
+  "POST /api/party/members/:name/auto-compact",
   "GET /api/party/status",
   "POST /api/party/interrupt",
   "POST /api/party/broadcast",

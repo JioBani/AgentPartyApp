@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { getUserDataDir } from "./userDataDir";
 import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/types";
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
+import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 
 const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
@@ -28,6 +29,7 @@ const defaults: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
+  compactDefault: { ...DEFAULT_AUTO_COMPACT },
 };
 
 /** Transcript zoom bounds — keep in sync with the renderer's Ctrl+wheel step. */
@@ -105,7 +107,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
       harnessDefaults[id] = { ...harnessDefaults[id], model: HARNESS_DEFAULTS[id].model };
     }
   }
-  return { ...withRuntimeOverrides, harnessDefaults, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const compactDefault = normalizeAutoCompact(withRuntimeOverrides.compactDefault) || { ...DEFAULT_AUTO_COMPACT };
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

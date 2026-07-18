@@ -575,6 +575,19 @@ busy member — `{ "exclude": "main" }` optionally skips one (the agents'
 `interrupt` tool passes themselves). Agents reach this via the `interrupt`
 party tool.
 
+### `POST /api/party/members/:name/auto-compact`
+
+Sets the member's per-member auto-compaction threshold, persisted to the member
+(works with or without a live session). Body `{ "autoCompact": { "on": true,
+"at": 65 } }` sets it (`at` = % of the model's context window; 10% and below /
+95% and above can't be set, so it clamps to the 11–94 integer band);
+`{ "autoCompact": null }` clears the override so the member
+inherits the global `compactDefault` (see `POST /api/settings`). When on, the
+session auto-compacts once occupancy crosses `at`%. Backs the toolbar compact
+pill, the threshold modal, the runtime modal's auto-compact block, and the
+sidebar `⇲ NN%` badge. The global default is set via `POST /api/settings`
+`{ "compactDefault": { "on": true, "at": 80 } }`.
+
 ### `GET /api/party/status`
 
 Convenience alias for `POST /api/party/members/*/status` — every member's turn state.

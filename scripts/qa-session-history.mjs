@@ -52,6 +52,7 @@ const sessionManager = {
   createMockSession() { throw new Error("mock not used"); },
   harnessSessionId() { return "harness-thread-9"; },
   hasSession() { return true; },
+  listSessions() { return []; },
   closeSession() { return true; },
   notifyPartyChanged() {},
   getCodexModelState() { return { status: "ready", models: [] }; },

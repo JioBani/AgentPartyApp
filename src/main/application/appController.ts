@@ -464,6 +464,11 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.removeMember(name, this.partyForWindow(windowId)));
   }
 
+  /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */
+  setMemberAutoCompact(workspacePath: string, name: string, autoCompact: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>> {
+    return this.handlePartyAction(workspacePath, name, "auto-compact", { autoCompact }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>>;
+  }
+
   getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {
     return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
   }

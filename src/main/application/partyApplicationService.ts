@@ -11,6 +11,7 @@ import type {
   SessionView,
 } from "../../shared/types";
 import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
+import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
@@ -215,6 +216,25 @@ export class PartyApplicationService {
       this.persistParty(workspace, state, this.partyIdOf(member));
     }
     return this.result(`Member '${member.name}' opened.`, state, member);
+  }
+
+  /**
+   * Persists a member's per-member auto-compaction threshold. Addressed by NAME
+   * (not sessionId) so it works with or without a live session — the threshold is
+   * a member config, edited from the toolbar pill / runtime modal / settings even
+   * when the member is idle. `undefined` clears the override so the member falls
+   * back to the global {@link AppSettings.compactDefault}. Broadcasts so the
+   * sidebar badge + toolbar pill update live.
+   */
+  setMemberAutoCompact(name: string, autoCompact: AutoCompactSetting | undefined, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    member.autoCompact = autoCompact ? { ...autoCompact } : undefined;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member auto-compact persisted", { workspace, partyId: this.partyIdOf(member), member: member.name, autoCompact });
+    return this.result(`Member '${member.name}' auto-compact updated.`, state, member);
   }
 
   startMember(name: string, input: StartPartyMemberInput = {}, options: { mock?: boolean; autoReply?: boolean } = {}, partyId?: string): PartyCommandResult {

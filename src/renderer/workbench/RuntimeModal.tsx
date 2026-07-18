@@ -3,6 +3,8 @@ import { Check, Lightbulb, SlidersHorizontal, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { findRoute, RouteCapabilities, RouteLike, routeKey } from "./routes";
+import { AutoCompactEditor } from "./AutoCompactEditor";
+import { DEFAULT_AUTO_COMPACT, type AutoCompactSetting } from "../../shared/autoCompact";
 import { VisionTag } from "./VisionTag";
 import { ModelView, PROVIDER_DOTS, PROVIDER_LABELS, ProviderId, modelView, routeProvider } from "./modelCatalog";
 
@@ -75,6 +77,9 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
   const [thinkingMode, setThinkingMode] = useState<string>(() => baselineThinking(currentKey));
   const [budget, setBudget] = useState<number>(() => baselineBudget(currentKey));
   const [debug, setDebug] = useState(debugEnabled);
+  // Resolved (never-undefined) member setting; fixtures may omit it.
+  const memberCompact = view.autoCompact ?? DEFAULT_AUTO_COMPACT;
+  const [compact, setCompact] = useState<AutoCompactSetting>(memberCompact);
 
   // Re-stage reasoning values when the selected model (and thus its
   // capabilities) changes, so controls always reflect that model's spec —
@@ -89,6 +94,10 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     setSelectedKey(currentKey);
     setDebug(debugEnabled);
   }, [currentKey, debugEnabled]);
+
+  useEffect(() => {
+    setCompact(memberCompact);
+  }, [memberCompact.on, memberCompact.at]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -111,7 +120,9 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     selectedKey !== currentKey ||
     (effortCap?.supported && effort !== baselineEffort(selectedKey)) ||
     (thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
-    debug !== debugEnabled;
+    debug !== debugEnabled ||
+    compact.on !== memberCompact.on ||
+    compact.at !== memberCompact.at;
 
   // Harness is fixed once a turn has run: switching harness means a fresh
   // session, which would discard the conversation. Before the first turn it is
@@ -150,6 +161,9 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
       thinkingBudget: showBudget ? budget : undefined,
       debug,
     });
+    if (compact.on !== memberCompact.on || compact.at !== memberCompact.at) {
+      actions.setAutoCompact(view.name, compact);
+    }
     onClose();
   }
 
@@ -309,6 +323,15 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
                   </span>
                   <input type="checkbox" className="wb-switch" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
                 </label>
+
+                <div className="wb-detail-section">
+                  <div className="wb-detail-section-head"><strong>Auto-compact</strong> <span>컨텍스트 자동 압축</span></div>
+                  <AutoCompactEditor
+                    setting={compact}
+                    contextWindow={view.context?.total || view.member.lastContextWindow}
+                    onChange={setCompact}
+                  />
+                </div>
               </>
             )}
           </section>

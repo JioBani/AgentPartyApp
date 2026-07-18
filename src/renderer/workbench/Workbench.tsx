@@ -27,6 +27,7 @@ import { Panel } from "./Panel";
 import { CreateMemberInput, PartySidebar } from "./PartySidebar";
 import { RuntimeModal } from "./RuntimeModal";
 import { McpModal } from "./McpModal";
+import { CompactModal } from "./AutoCompactEditor";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 
 interface WorkbenchProps {
@@ -110,6 +111,7 @@ export function Workbench(props: WorkbenchProps) {
   const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
+  const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
@@ -377,6 +379,7 @@ export function Workbench(props: WorkbenchProps) {
   const activePartyName = parties.find((party) => party.id === activePartyId)?.name || "No Party";
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
   const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
+  const compactView = compactTarget ? viewMap.get(compactTarget) : undefined;
   const canAddAny = views.some((view) => !openMembers.has(view.name));
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
@@ -450,6 +453,7 @@ export function Workbench(props: WorkbenchProps) {
               onSplit={() => setLayout((current) => splitPanel(current, panel.id))}
               onOpenRuntime={setRuntimeTarget}
               onOpenMcp={setMcpTarget}
+              onOpenCompact={setCompactTarget}
               onTabPointerDown={onTabPointerDown}
               openSubId={subUi.open[panel.active]}
               subDockCollapsed={subUi.collapsed[panel.active]}
@@ -488,6 +492,14 @@ export function Workbench(props: WorkbenchProps) {
           view={mcpView}
           actions={actions}
           onClose={() => setMcpTarget(null)}
+        />
+      )}
+
+      {compactView && (
+        <CompactModal
+          view={compactView}
+          actions={actions}
+          onClose={() => setCompactTarget(null)}
         />
       )}
     </div>

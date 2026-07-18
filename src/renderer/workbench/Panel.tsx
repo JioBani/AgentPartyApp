@@ -1,9 +1,10 @@
 import { PointerEvent, useEffect } from "react";
-import { ChevronDown, ChevronsDownUp, Plug, RefreshCw, Square } from "lucide-react";
+import { ChevronDown, ChevronsDownUp, Gauge, Plug, RefreshCw, Square } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
 import { latestDiagnostic, statusLabel } from "./memberStatus";
+import { Dropdown } from "./Dropdown";
 import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
@@ -28,6 +29,7 @@ interface PanelProps {
   onSplit: () => void;
   onOpenRuntime: (member: string) => void;
   onOpenMcp: (member: string) => void;
+  onOpenCompact: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
   /** Subagent dock/detail UI state for this panel's active member. */
   openSubId?: string;
@@ -38,7 +40,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
 
@@ -84,7 +86,7 @@ export function Panel(props: PanelProps) {
       {view && density !== "narrow" && (
         <div className="wb-toolbar">
           <div className="wb-toolbar-id">
-            <span className="wb-dot" />
+            <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
             <strong>{view.name}</strong>
             <span className={"wb-status-pill is-" + view.status}>{statusLabel(view.status)}</span>
             {(() => {
@@ -98,11 +100,41 @@ export function Panel(props: PanelProps) {
               <span className="wb-mono">{view.model || "model"}</span>
               <ChevronDown size={11} className="wb-pill-caret" />
             </button>
+            {density === "wide" && (view.effortOptions?.length ?? 0) > 0 && (
+              <Dropdown
+                value={view.effort}
+                options={view.effortOptions.map((option) => ({ id: option.id, label: option.label, icon: <Gauge size={13} /> }))}
+                onChange={(id) => actions.setEffort(view.name, id)}
+                title="Effort"
+              />
+            )}
             <button type="button" className="wb-tool-btn" title="MCP 서버" onClick={() => onOpenMcp(view.name)} disabled={!view.session}><Plug size={14} /></button>
             {density === "wide" && (
               <>
                 <span className="wb-toolbar-divider" />
-                <button type="button" className="wb-tool-btn" title="Compact context" onClick={() => actions.compact(view.name)} disabled={!view.session}><ChevronsDownUp size={14} /></button>
+                {/* Segmented auto-compact pill: [ compact-now │ NN% / OFF ]. Left half
+                    runs a manual compaction (icon spins while in flight); right half
+                    opens the threshold editor. `is-on` tints it live; `is-off` neutral. */}
+                <div className={"wb-compact-pill" + (view.autoCompact?.on ? " is-on" : " is-off")}>
+                  <button
+                    type="button"
+                    className="wb-compact-run"
+                    title="지금 압축"
+                    onClick={() => actions.compact(view.name)}
+                    disabled={!view.session}
+                  >
+                    {view.compacting ? <RefreshCw size={13} className="wb-spin" /> : <ChevronsDownUp size={13} />}
+                  </button>
+                  <span className="wb-compact-div" />
+                  <button
+                    type="button"
+                    className="wb-compact-th wb-mono"
+                    title="자동 압축 임계치"
+                    onClick={() => onOpenCompact(view.name)}
+                  >
+                    {view.autoCompact?.on ? `${view.autoCompact.at}%` : "OFF"}
+                  </button>
+                </div>
               </>
             )}
             <button

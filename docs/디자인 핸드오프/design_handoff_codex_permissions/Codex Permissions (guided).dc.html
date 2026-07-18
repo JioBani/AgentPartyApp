@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-0:#0a0b0e; --bg-1:#0e1014; --bg-2:#14171d; --bg-3:#1b1f27; --bg-4:#222731;
+  --bg-input:#0c0e12;
+  --border-subtle:#1c2028; --border:#262b35; --border-strong:#333a46;
+  --text-0:#e7e9ee; --text-1:#aeb4c0; --text-2:#79808d; --text-3:#535965;
+  --accent:#5b8cff; --accent-dim:rgba(91,140,255,.13); --accent-bd:rgba(91,140,255,.32); --accent-fg:#fff;
+  --live:#e0a14e; --live-dim:rgba(224,161,78,.13);
+  --success:#54b585; --success-dim:rgba(84,181,133,.13);
+  --danger:#e0635d; --danger-dim:rgba(224,99,93,.13);
+  --sans:'Geist','Geist Fallback',sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+}
+[data-theme="light"]{
+  --bg-0:#e7e8eb; --bg-1:#f3f4f6; --bg-2:#ffffff; --bg-3:#eef0f3; --bg-4:#e6e9ed;
+  --bg-input:#ffffff;
+  --border-subtle:#e2e5ea; --border:#d3d7df; --border-strong:#c0c5ce;
+  --text-0:#171a1f; --text-1:#454b56; --text-2:#6c7480; --text-3:#9aa1ac;
+  --accent:#3f6fe6; --accent-dim:rgba(63,111,230,.1); --accent-bd:rgba(63,111,230,.28); --accent-fg:#fff;
+  --live:#b9791d; --live-dim:rgba(185,121,29,.1);
+  --success:#2f8f5e; --success-dim:rgba(47,143,94,.1);
+  --danger:#cf4b45; --danger-dim:rgba(207,75,69,.1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--border-strong);background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+@keyframes ap-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes ap-pop{0%{opacity:0;transform:translateY(-4px) scale(.98)}100%{opacity:1;transform:none}}
+a{color:var(--accent)}a:hover{color:var(--accent);filter:brightness(1.1)}
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" data-screen-label="Codex Permissions" style="min-height:100vh;background:var(--bg-0);color:var(--text-0);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:26px 30px 60px">
+
+  <!-- TOPBAR -->
+  <div style="display:flex;align-items:center;justify-content:space-between;max-width:1120px;margin:0 auto 26px">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:17px;height:17px;border-radius:5px;background:linear-gradient(150deg,var(--accent),#7a5bff);display:flex;align-items:center;justify-content:center;flex:none"><div style="width:5px;height:5px;border-radius:1px;background:#fff"></div></div>
+      <span style="font-size:14px;font-weight:600;letter-spacing:-.1px">Codex 권한 설정</span>
+      <span style="font-size:11px;color:var(--text-3);font-family:var(--mono)">CodexPolicy · redesign</span>
+    </div>
+    <button onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-size:11.5px;font-weight:500;cursor:pointer;font-family:var(--sans)" style-hover="border-color:var(--border-strong);color:var(--text-0)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      {{ themeLabel }}
+    </button>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:34px;justify-content:center;align-items:flex-start;max-width:1120px;margin:0 auto">
+
+    <!-- ============ COLUMN A: PERMISSION POPOVER ============ -->
+    <div style="width:468px;flex:none;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent)">① 권한 설정</span>
+        <span style="font-size:11.5px;color:var(--text-2)">라이트닝 버튼을 누르면 뜨는 팝오버</span>
+      </div>
+
+      <!-- mock panel toolbar -->
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#5b8cff;flex:none"></span>
+        <span style="font-size:12.5px;font-weight:600">backend</span>
+        <span style="font-size:10.5px;font-family:var(--mono);color:var(--text-3);padding:2px 6px;background:var(--bg-3);border-radius:5px">sonnet-4.5</span>
+        <div style="flex:1"></div>
+        <button style="display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;background:var(--danger-dim);border:1px solid transparent;border-radius:7px;color:var(--danger);font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--sans)">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop
+        </button>
+        <button style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:7px;color:var(--accent);font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--sans)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>
+          <span style="width:6px;height:6px;border-radius:50%;background:{{ pillDot }}"></span>{{ pillLabel }}
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <!-- POPOVER -->
+      <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 60px -20px rgba(0,0,0,.6);overflow:hidden;animation:ap-pop .18s ease">
+        <!-- header -->
+        <div style="display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" style="flex:none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:700">이 Codex가 할 수 있는 일</div>
+            <div style="font-size:10.5px;color:var(--text-3);font-family:var(--mono)">backend · 실행 권한 (permissions)</div>
+          </div>
+        </div>
+
+        <div style="padding:15px 16px;display:flex;flex-direction:column;gap:16px">
+
+          <!-- PRESETS -->
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-3)">빠른 선택 · 프리셋</div>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ presetCards }}" as="c" hint-placeholder-count="3">
+                <div onClick="{{ c.onPick }}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;padding:11px 11px 12px;border-radius:10px;cursor:pointer;background:{{ c.cardBg }};border:1px solid {{ c.cardBd }};box-shadow:{{ c.ring }};transition:background .12s,border-color .12s" style-hover="border-color:var(--border-strong)">
+                  <div style="display:flex;align-items:center;justify-content:space-between;height:14px">
+                    <span style="width:9px;height:9px;border-radius:3px;background:{{ c.dotCol }}"></span>
+                    <sc-if value="{{ c.sel }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{ c.dotCol }}" stroke-width="2.6"><path d="M5 12l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+                  </div>
+                  <span style="font-size:13.5px;font-weight:700;color:var(--text-0)">{{ c.name }}</span>
+                  <span style="font-size:9px;font-family:var(--mono);color:var(--text-3);text-transform:uppercase;letter-spacing:.4px">{{ c.term }}</span>
+                  <span style="font-size:11px;line-height:1.45;color:var(--text-2)">{{ c.sub }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- divider + custom badge -->
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+            <span style="font-size:10.5px;color:var(--text-3)">또는 두 가지를 직접 조정</span>
+            <sc-if value="{{ isCustom }}" hint-placeholder-val="{{ false }}"><span style="font-size:9.5px;font-weight:700;font-family:var(--mono);color:var(--live);background:var(--live-dim);padding:2px 7px;border-radius:5px">CUSTOM</span></sc-if>
+            <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+          </div>
+
+          <!-- AXIS 1: SANDBOX -->
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-size:12.5px;font-weight:600;color:var(--text-0)">무엇을 만질 수 있나요?</span>
+              <span style="font-size:10px;font-family:var(--mono);color:var(--text-3)">Sandbox</span>
+            </div>
+            <div style="display:flex;gap:4px;padding:4px;background:var(--bg-input);border:1px solid var(--border);border-radius:9px">
+              <sc-for list="{{ sbSegs }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onPick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;border:1px solid {{ s.bd }};border-radius:6px;background:{{ s.bg }};cursor:pointer;font-family:var(--sans);transition:background .12s,border-color .12s">
+                  <span style="font-size:12px;font-weight:600;color:{{ s.col }}">{{ s.label }}</span>
+                  <span style="font-size:8.5px;font-family:var(--mono);color:{{ s.termCol }}">{{ s.term }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;padding:9px 11px;background:var(--bg-1);border-left:2px solid {{ sbReachCol }};border-radius:0 7px 7px 0;font-size:11.5px;line-height:1.5;color:var(--text-1)">{{ sbReach }}</div>
+          </div>
+
+          <!-- AXIS 2: APPROVAL -->
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-size:12.5px;font-weight:600;color:var(--text-0)">언제 당신에게 물어보나요?</span>
+              <span style="font-size:10px;font-family:var(--mono);color:var(--text-3)">Approval</span>
+            </div>
+            <div style="display:flex;gap:4px;padding:4px;background:var(--bg-input);border:1px solid var(--border);border-radius:9px">
+              <sc-for list="{{ apSegs }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onPick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;border:1px solid {{ s.bd }};border-radius:6px;background:{{ s.bg }};cursor:pointer;font-family:var(--sans);transition:background .12s,border-color .12s">
+                  <span style="font-size:12px;font-weight:600;color:{{ s.col }}">{{ s.label }}</span>
+                  <span style="font-size:8.5px;font-family:var(--mono);color:{{ s.termCol }}">{{ s.term }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;padding:9px 11px;background:var(--bg-1);border-left:2px solid {{ apReachCol }};border-radius:0 7px 7px 0;font-size:11.5px;line-height:1.5;color:var(--text-1)">{{ apReach }}</div>
+          </div>
+
+          <!-- RESULT SENTENCE + RISK -->
+          <div style="display:flex;flex-direction:column;gap:11px;padding:13px 14px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:10px">
+            <div style="font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-3)">이렇게 동작해요</div>
+            <div style="font-size:13px;line-height:1.75;color:var(--text-1)">이 Codex는 <b style="color:{{ resSbCol }};font-weight:700">{{ resSb }}</b>, <b style="color:{{ resApCol }};font-weight:700">{{ resAp }}</b></div>
+            <div style="display:flex;align-items:center;gap:9px;padding-top:2px">
+              <span style="font-size:10px;font-weight:600;color:var(--text-2)">위험도</span>
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ riskSegs }}" as="g" hint-placeholder-count="4">
+                  <div style="width:26px;height:5px;border-radius:2px;background:{{ g.col }}"></div>
+                </sc-for>
+              </div>
+              <span style="font-size:11.5px;font-weight:700;color:{{ riskCol }}">{{ riskLabel }}</span>
+            </div>
+            <sc-if value="{{ guardianReassure }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--success)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                가디언이 위험한 요청을 먼저 걸러줘요.
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- WARNING -->
+          <sc-if value="{{ warnShow }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:10px;padding:12px 13px;border-radius:10px;background:{{ warnDim }};border:1px solid {{ warnCol }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ warnCol }}" stroke-width="1.9" style="flex:none;margin-top:1px"><path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:700;color:{{ warnCol }}">{{ warnTitle }}</div>
+                <div style="font-size:11.5px;line-height:1.5;color:var(--text-1);margin-top:3px">{{ warnBody }}</div>
+                <sc-if value="{{ warnCta }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ enableGuardian }}" style="margin-top:9px;display:flex;align-items:center;gap:6px;height:28px;padding:0 11px;background:var(--accent);border:none;border-radius:7px;color:var(--accent-fg);font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--sans)" style-hover="filter:brightness(1.08)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                    가디언 켜서 보호막 두기
+                  </button>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- GUARDIAN -->
+          <div style="display:flex;align-items:flex-start;gap:11px;padding:13px 14px;border-radius:10px;background:var(--bg-1);border:1px solid {{ gdBd }};transition:border-color .12s">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="{{ gdIconCol }}" stroke-width="1.7" style="flex:none;margin-top:1px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:7px">
+                <span style="font-size:13px;font-weight:700">가디언</span>
+                <span style="font-size:9px;font-family:var(--mono);color:var(--text-3)">Guardian · 두 축과 무관한 별도 장치</span>
+              </div>
+              <div style="font-size:11.5px;line-height:1.5;color:var(--text-2);margin-top:4px">{{ gdDesc }}</div>
+            </div>
+            <button onClick="{{ toggleGuardian }}" style="flex:none;width:40px;height:22px;border-radius:999px;border:none;background:{{ gdTrackBg }};position:relative;cursor:pointer;transition:background .16s;margin-top:1px">
+              <span style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4);transform:translateX({{ gdKnobX }});transition:transform .16s"></span>
+            </button>
+          </div>
+
+          <!-- footer -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding-top:2px">
+            <span style="font-size:10px;font-family:var(--mono);color:var(--text-3)">변경은 다음 동작부터 적용돼요</span>
+            <sc-if value="{{ notDefault }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ resetDefault }}" style="display:flex;align-items:center;gap:5px;height:26px;padding:0 10px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--text-1);font-size:11px;cursor:pointer;font-family:var(--sans)" style-hover="background:var(--bg-3);color:var(--text-0)">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                기본값(Auto)으로
+              </button>
+            </sc-if>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ COLUMN B: APPROVAL CARD ============ -->
+    <div style="width:520px;flex:none;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent)">② 승인 카드</span>
+        <span style="font-size:11.5px;color:var(--text-2)">Codex가 멈춰서 물어보는 순간</span>
+      </div>
+
+      <!-- request type switcher -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-3)">요청 종류를 바꿔보세요 — 버튼이 달라져요</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ reqChips }}" as="r" hint-placeholder-count="6">
+            <button onClick="{{ r.onPick }}" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;cursor:pointer;font-family:var(--sans);font-size:11.5px;font-weight:500;background:{{ r.bg }};border:1px solid {{ r.bd }};color:{{ r.col }};transition:background .12s,border-color .12s">
+              {{ r.label }}<span style="font-size:9px;font-family:var(--mono);color:{{ r.termCol }}">{{ r.term }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- transcript-ish frame -->
+      <div style="background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <!-- assistant preface -->
+        <div style="display:flex;gap:9px">
+          <span style="width:20px;height:20px;border-radius:6px;background:rgba(91,140,255,.14);display:flex;align-items:center;justify-content:center;flex:none"><span style="width:7px;height:7px;border-radius:50%;background:#5b8cff"></span></span>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px"><span style="font-size:12px;font-weight:600;color:#5b8cff">backend</span><span style="font-size:10px;font-family:var(--mono);color:var(--text-3)">14:02</span></div>
+            <div style="font-size:12.5px;line-height:1.6;color:var(--text-1)">계속 진행하려면 다음 동작에 당신의 승인이 필요해요.</div>
+          </div>
+        </div>
+
+        <!-- APPROVAL CARD -->
+        <div style="border:1px solid rgba(91,140,255,.42);border-radius:11px;background:var(--bg-2);overflow:hidden;box-shadow:0 0 0 3px rgba(91,140,255,.1)">
+
+          <!-- guardian strip -->
+          <div style="display:flex;align-items:center;gap:7px;padding:8px 13px;background:{{ cardGdDim }};border-bottom:1px solid var(--border-subtle)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="{{ cardGdCol }}" stroke-width="1.8" style="flex:none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+            <span style="font-size:10.5px;line-height:1.4;color:{{ cardGdCol }}">{{ cardGdText }}</span>
+          </div>
+
+          <!-- header -->
+          <div style="display:flex;align-items:center;gap:9px;padding:12px 13px 0">
+            <span style="width:22px;height:22px;border-radius:6px;background:rgba(91,140,255,.14);color:#5b8cff;display:flex;align-items:center;justify-content:center;flex:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></span>
+            <span style="font-size:13px;font-weight:700;flex:1">승인이 필요해요</span>
+            <span style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--text-2);background:var(--bg-3);padding:3px 8px;border-radius:5px">{{ reqTypeLabel }} · {{ reqTypeTerm }}</span>
+          </div>
+
+          <!-- desc -->
+          <div style="padding:9px 13px 0;font-size:12.5px;line-height:1.55;color:var(--text-1)">{{ reqDesc }}</div>
+
+          <!-- DETAIL: command -->
+          <sc-if value="{{ isCmd }}" hint-placeholder-val="{{ true }}">
+            <pre style="margin:11px 13px 0;padding:10px 12px;background:var(--bg-0);border:1px solid var(--border-subtle);border-radius:7px;font-family:var(--mono);font-size:11.5px;color:var(--text-0);white-space:pre-wrap;word-break:break-all">$ {{ reqCmd }}</pre>
+            <div style="padding:7px 13px 0;font-size:10.5px;font-family:var(--mono);color:var(--text-3)">작업 위치 {{ reqCwd }}</div>
+          </sc-if>
+
+          <!-- DETAIL: diff -->
+          <sc-if value="{{ isDiff }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:11px 13px 0;border:1px solid var(--border-subtle);border-radius:7px;overflow:hidden">
+              <div style="padding:6px 10px;background:var(--bg-3);font-family:var(--mono);font-size:10.5px;color:var(--text-2)">src/auth/refresh.ts</div>
+              <div style="font-family:var(--mono);font-size:11.5px;line-height:1.7;background:var(--bg-0)">
+                <div style="padding:0 10px;color:var(--text-3)">&nbsp;&nbsp;} catch (e) {</div>
+                <div style="padding:0 10px;color:var(--danger);background:var(--danger-dim)">-&nbsp;&nbsp;&nbsp;return null</div>
+                <div style="padding:0 10px;color:var(--success);background:var(--success-dim)">+&nbsp;&nbsp;&nbsp;if (e instanceof TokenExpiredError) return null</div>
+                <div style="padding:0 10px;color:var(--success);background:var(--success-dim)">+&nbsp;&nbsp;&nbsp;throw e</div>
+                <div style="padding:0 10px;color:var(--text-3)">&nbsp;&nbsp;}</div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- DETAIL: permissions -->
+          <sc-if value="{{ isPerm }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:11px 13px 0;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--bg-0);border:1px solid var(--border-subtle);border-radius:7px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--live)" stroke-width="1.7" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+                <span style="font-size:11.5px;color:var(--text-1);flex:1">네트워크 접근 <span style="color:var(--text-3)">(샌드박스 밖)</span></span>
+                <span style="font-size:11px;font-family:var(--mono);color:var(--text-0)">api.stripe.com</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--bg-0);border:1px solid var(--border-subtle);border-radius:7px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--live)" stroke-width="1.7" style="flex:none"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-8L9 4H5a2 2 0 0 0-2 2Z"/></svg>
+                <span style="font-size:11.5px;color:var(--text-1);flex:1">외부 경로 쓰기 <span style="color:var(--text-3)">(작업 폴더 밖)</span></span>
+                <span style="font-size:11px;font-family:var(--mono);color:var(--text-0)">/etc/hosts</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- DETAIL: input -->
+          <sc-if value="{{ isInput }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:11px 13px 0;display:flex;flex-direction:column;gap:6px">
+              <span style="font-size:10.5px;font-weight:600;color:var(--text-2)">{{ inputLabel }}</span>
+              <div style="height:34px;display:flex;align-items:center;padding:0 11px;background:var(--bg-input);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--text-3);font-family:var(--mono)">값을 입력하세요…</div>
+            </div>
+          </sc-if>
+
+          <!-- DECISION AREA -->
+          <sc-if value="{{ decisionMade }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:13px;display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:8px">
+              <span style="width:22px;height:22px;border-radius:50%;background:{{ decisionDotDim }};color:{{ decisionDotCol }};display:flex;align-items:center;justify-content:center;flex:none">
+                <sc-if value="{{ decisionDecline }}" hint-placeholder-val="{{ false }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></sc-if>
+                <sc-if value="{{ decisionAllow }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></sc-if>
+              </span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;font-weight:600;color:var(--text-0)">{{ decisionTitle }}</div>
+                <sc-if value="{{ decisionRule }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:var(--text-3);margin-top:1px">이 명령 패턴이 규칙으로 저장돼 이후 자동 승인돼요.</div></sc-if>
+              </div>
+              <button onClick="{{ clearDecision }}" style="flex:none;height:26px;padding:0 11px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--text-1);font-size:11px;cursor:pointer;font-family:var(--sans)" style-hover="background:var(--bg-3);color:var(--text-0)">되돌리기</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showButtons }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:13px;display:flex;flex-wrap:wrap;gap:7px;align-items:center">
+              <sc-for list="{{ aprBtns }}" as="b" hint-placeholder-count="4">
+                <button onClick="{{ b.onPick }}" style="height:34px;padding:0 14px;border-radius:8px;cursor:pointer;font-family:var(--sans);font-size:12px;font-weight:600;background:{{ b.bg }};border:1px solid {{ b.bd }};color:{{ b.col }};margin-{{ b.mr }};display:flex;align-items:center;gap:6px;transition:filter .12s" style-hover="filter:brightness(1.08)">
+                  {{ b.label }}<span style="font-size:9px;font-family:var(--mono);opacity:.7;font-weight:500">{{ b.term }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <sc-if value="{{ hasAlways }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:0 13px 13px;font-size:10.5px;line-height:1.5;color:var(--text-3);margin-top:-4px">‘항상 허용’을 고르면 같은 명령 패턴을 영구 규칙으로 저장해, 다음부터는 묻지 않고 자동 승인해요.</div>
+            </sc-if>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- decision legend -->
+      <div style="display:flex;flex-direction:column;gap:6px;padding:13px 14px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:10px">
+        <div style="font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-3);margin-bottom:2px">결정 선택지</div>
+        <sc-for list="{{ legend }}" as="l" hint-placeholder-count="4">
+          <div style="display:flex;gap:9px;align-items:baseline">
+            <span style="font-size:11.5px;font-weight:700;color:{{ l.col }};min-width:62px;flex:none">{{ l.label }}</span>
+            <span style="font-size:9px;font-family:var(--mono);color:var(--text-3);min-width:52px;flex:none">{{ l.term }}</span>
+            <span style="font-size:11.5px;line-height:1.45;color:var(--text-2)">{{ l.desc }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1120,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { theme:'dark', sandbox:'workspace-write', approval:'on-request', guardian:false, reqType:'command-rule', decision:null };
+
+  SB = {
+    'read-only':{label:'읽기 전용',term:'read-only',tone:'ok',reach:'파일을 읽고 답만 해요. 편집·명령 실행·인터넷은 막혀 있어요(하려면 승인이 필요).',sent:'워크스페이스 파일을 읽기만 하고'},
+    'workspace-write':{label:'작업 폴더',term:'workspace-write',tone:'mid',reach:'이 작업 폴더 안에서 읽고 쓰고, 일상 명령을 자동 실행해요. 폴더 밖이나 인터넷은 막혀 있어요(승인 필요).',sent:'작업 폴더 안에서 읽고 쓰며'},
+    'danger-full-access':{label:'전체 접근',term:'danger-full-access',tone:'bad',reach:'샌드박스가 없어요. 컴퓨터 전체 파일과 인터넷에 그대로 접근할 수 있어요.',sent:'컴퓨터 전체 파일과 인터넷에 접근하며'},
+  };
+  AP = {
+    'untrusted':{label:'자주 확인',term:'untrusted',tone:'ok',reach:'안전하다고 알려진 읽기만 자동이에요. 뭔가 바꾸거나 위험한 명령은 매번 물어봐요.',sent:'무언가 바꿀 때마다 당신에게 물어봐요.'},
+    'on-request':{label:'필요할 때만',term:'on-request',tone:'mid',reach:'평소엔 알아서 진행하고, 샌드박스 벽에 막힐 때만 물어봐요.',sent:'벽에 막힐 때만 당신에게 물어봐요.'},
+    'never':{label:'안 물어봄',term:'never',tone:'bad',reach:'승인을 절대 요청하지 않아요. 벽에 막히는 동작은 요청 없이 그냥 실패해요.',sent:'절대 묻지 않아요(막히면 그냥 실패).'},
+  };
+  SBORDER=['read-only','workspace-write','danger-full-access'];
+  APORDER=['untrusted','on-request','never'];
+  PRESETS=[
+    {key:'read-only',name:'읽기만',term:'Read Only',sub:'구경만 해요. 아무것도 바꾸지 않아요.',sandbox:'read-only',approval:'on-request',tone:'ok'},
+    {key:'auto',name:'자동',term:'Auto · 기본',sub:'작업 폴더 안에서 알아서 작업해요.',sandbox:'workspace-write',approval:'on-request',tone:'mid'},
+    {key:'full',name:'전체 허용',term:'Full Access',sub:'제한 없이 실행하고 안 물어봐요.',sandbox:'danger-full-access',approval:'never',tone:'bad'},
+  ];
+  SBRISK={'read-only':0,'workspace-write':1,'danger-full-access':2};
+  APRISK={'untrusted':0,'on-request':1,'never':2};
+
+  REQ = {
+    'command-rule':{typeLabel:'명령 실행',typeTerm:'command',kind:'cmd',rule:true,desc:'인증 테스트를 돌려 만료 토큰 경로가 이제 401을 반환하는지 확인하려고 해요.',cmd:'npm test -- auth/refresh.spec.ts',cwd:'~/refactor-auth'},
+    'command':{typeLabel:'명령 실행',typeTerm:'command',kind:'cmd',rule:false,desc:'빌드 캐시를 지우고 처음부터 다시 빌드하려고 해요.',cmd:'rm -rf ./dist && npm run build',cwd:'~/refactor-auth'},
+    'fileChange':{typeLabel:'파일 변경',typeTerm:'fileChange',kind:'diff',rule:false,desc:'refresh.ts의 catch 블록을 좁혀, 만료 토큰만 잡고 나머지 에러는 다시 던지도록 고쳐요.'},
+    'permissions':{typeLabel:'권한 상승',typeTerm:'permissions',kind:'perm',rule:false,desc:'샌드박스 밖 자원에 접근해야 해서 권한 상승을 요청하고 있어요.'},
+    'userInput':{typeLabel:'입력 요청',typeTerm:'userInput',kind:'input',rule:false,desc:'도구가 진행에 필요한 값 하나를 요청하고 있어요.',inputLabel:'배포 대상 환경 이름'},
+    'elicitation':{typeLabel:'MCP 입력 요청',typeTerm:'elicitation',kind:'input',rule:false,desc:'MCP 서버(github)가 계속하려면 입력값이 필요하다고 알려왔어요.',inputLabel:'GitHub 저장소 (owner/repo)'},
+  };
+  BTN = {
+    decline:{label:'거부',term:'decline'},
+    once:{label:'이번만',term:'once'},
+    session:{label:'세션 동안',term:'session'},
+    always:{label:'항상 허용',term:'always'},
+  };
+
+  MC = '#5b8cff';
+  toneCol(t){ return t==='ok'?'var(--success)':t==='bad'?'var(--danger)':'var(--accent)'; }
+  toneDim(t){ return t==='ok'?'var(--success-dim)':t==='bad'?'var(--danger-dim)':'var(--accent-dim)'; }
+
+  activePreset(){ const s=this.state; return this.PRESETS.find(p=>p.sandbox===s.sandbox && p.approval===s.approval) || null; }
+  toggleTheme(){ this.setState(s=>({theme:s.theme==='dark'?'light':'dark'})); }
+
+  btnKeys(t){
+    if(t==='command-rule') return ['decline','once','session','always'];
+    if(t==='userInput') return ['decline','once'];
+    return ['decline','once','session'];
+  }
+  btnStyle(k){
+    const mc=this.MC;
+    if(k==='once') return {bg:mc,col:'#fff',bd:mc};
+    if(k==='decline') return {bg:'transparent',col:'var(--danger)',bd:'var(--border)'};
+    if(k==='session') return {bg:'transparent',col:'var(--text-1)',bd:'var(--border)'};
+    return {bg:'rgba(91,140,255,.12)',col:mc,bd:'rgba(91,140,255,.42)'};
+  }
+
+  renderVals(){
+    const s=this.state;
+    const active=this.activePreset();
+    const sbM=this.SB[s.sandbox], apM=this.AP[s.approval];
+
+    // presets
+    const presetCards=this.PRESETS.map(p=>{
+      const sel=active && active.key===p.key;
+      const col=this.toneCol(p.tone);
+      return { name:p.name, term:p.term, sub:p.sub, sel, dotCol:col,
+        cardBg: sel?this.toneDim(p.tone):'var(--bg-2)',
+        cardBd: sel?col:'var(--border)',
+        ring: sel?('0 0 0 1px '+col):'none',
+        onPick:()=>this.setState({sandbox:p.sandbox, approval:p.approval}) };
+    });
+
+    // axis segments
+    const seg=(order,meta,cur,field)=>order.map(k=>{
+      const m=meta[k], sel=cur===k, col=this.toneCol(m.tone);
+      return { label:m.label, term:m.term, sel,
+        bg: sel?this.toneDim(m.tone):'transparent',
+        bd: sel?col:'transparent',
+        col: sel?col:'var(--text-1)',
+        termCol: sel?col:'var(--text-3)',
+        onPick:()=>this.setState({[field]:k}) };
+    });
+
+    // risk
+    const sum=this.SBRISK[s.sandbox]+this.APRISK[s.approval];
+    const level = sum<=1?'ok':sum===2?'mid':sum===3?'live':'bad';
+    const riskCol = level==='ok'?'var(--success)':level==='mid'?'var(--accent)':level==='live'?'var(--live)':'var(--danger)';
+    const riskLabel = level==='ok'?'안전':level==='mid'?'보통':level==='live'?'주의':'위험';
+    const fill=Math.max(sum,1);
+    const riskSegs=[0,1,2,3].map(i=>({col: i<fill?riskCol:'var(--bg-4)'}));
+
+    // warning
+    const full = s.sandbox==='danger-full-access';
+    const strong = full && s.approval==='never' && !s.guardian;
+    const warnShow = full || sum>=4;
+    let warnTitle='', warnBody='', warnCol='var(--live)', warnDim='var(--live-dim)';
+    if(strong){ warnTitle='막아줄 장치가 하나도 없어요'; warnBody='전체 접근 + 절대 안 물어봄 + 가디언 꺼짐. 실수나 위험한 동작을 걸러낼 방어선이 전혀 없는 상태예요.'; warnCol='var(--danger)'; warnDim='var(--danger-dim)'; }
+    else if(full){ warnTitle='샌드박스가 꺼져요'; warnBody='전체 접근은 컴퓨터의 모든 파일과 인터넷을 열어줘요. 정말 필요할 때만 쓰세요.'; warnCol='var(--danger)'; warnDim='var(--danger-dim)'; }
+    else { warnTitle='위험한 조합이에요'; warnBody='접근 범위가 넓은데 승인도 거의 요청하지 않아요. 가디언을 켜두는 걸 권해요.'; }
+    const warnCta = warnShow && !s.guardian;
+
+    // guardian
+    const gdOn=s.guardian;
+    const gdDesc = gdOn
+      ? '승인 요청을 리뷰어 AI가 먼저 심사해요. 안전하면 자동 통과, 위험하면 차단(1회 예외 가능). 당신이 직접 볼 요청이 줄어들어요.'
+      : '승인 요청이 당신에게 곧바로 전달돼요. 모든 결정을 직접 내려요.';
+
+    const notDefault = !(s.sandbox==='workspace-write' && s.approval==='on-request' && !s.guardian);
+
+    // pill
+    const pillLabel = active? active.name : '직접 설정';
+    const pillDot = riskCol;
+
+    // approval card
+    const rq=this.REQ[s.reqType];
+    const CHIPLBL={'command-rule':'명령 · 규칙 제안','command':'명령 · 규칙 없음'};
+    const chips=Object.keys(this.REQ).map(k=>{
+      const r=this.REQ[k], sel=s.reqType===k;
+      return { label:(CHIPLBL[k]||r.typeLabel), term:r.typeTerm, sel,
+        bg: sel?'var(--accent-dim)':'var(--bg-2)',
+        bd: sel?'var(--accent-bd)':'var(--border)',
+        col: sel?'var(--accent)':'var(--text-1)',
+        termCol: sel?'var(--accent)':'var(--text-3)',
+        onPick:()=>this.setState({reqType:k, decision:null}) };
+    });
+    const keys=this.btnKeys(s.reqType);
+    const aprBtns=keys.map(k=>{
+      const st=this.btnStyle(k), meta=this.BTN[k];
+      return { label:meta.label, term:meta.term, bg:st.bg, col:st.col, bd:st.bd,
+        mr: k==='decline'?'right:auto':'right:0',
+        onPick:()=>this.setState({decision:{key:k, label:meta.label}}) };
+    });
+    const decisionMade=!!s.decision;
+    const dkey = decisionMade? s.decision.key : '';
+    const declineD = dkey==='decline';
+
+    // card guardian strip
+    const cardGdCol = gdOn? 'var(--success)' : 'var(--text-2)';
+    const cardGdDim = gdOn? 'var(--success-dim)' : 'var(--bg-3)';
+    const cardGdText = gdOn
+      ? '가디언이 먼저 심사했어요 — 안전 판정으로 통과. 최종 결정은 여전히 당신 몫이에요.'
+      : '가디언 꺼짐 — 이 요청이 곧바로 당신에게 왔어요.';
+
+    const legend=[
+      {label:'이번만',term:'once',col:this.MC,desc:'이 요청 한 번만 허용해요.'},
+      {label:'세션 동안',term:'session',col:'var(--text-1)',desc:'이 세션이 끝날 때까지 다시 묻지 않아요.'},
+      {label:'항상 허용',term:'always',col:'var(--accent)',desc:'같은 명령 패턴을 규칙으로 저장해 이후 자동 승인해요.'},
+      {label:'거부',term:'decline',col:'var(--danger)',desc:'이 동작을 거절해요.'},
+    ];
+
+    return {
+      theme:s.theme, themeLabel: s.theme==='dark'?'라이트':'다크', toggleTheme:()=>this.toggleTheme(),
+      pillLabel, pillDot,
+      presetCards, isCustom: !active,
+      sbSegs: seg(this.SBORDER,this.SB,s.sandbox,'sandbox'),
+      apSegs: seg(this.APORDER,this.AP,s.approval,'approval'),
+      sbReach: sbM.reach, sbReachCol: this.toneCol(sbM.tone),
+      apReach: apM.reach, apReachCol: this.toneCol(apM.tone),
+      resSb: sbM.sent, resSbCol: this.toneCol(sbM.tone),
+      resAp: apM.sent, resApCol: this.toneCol(apM.tone),
+      riskSegs, riskCol, riskLabel,
+      guardianReassure: gdOn && sum>=3,
+      warnShow, warnTitle, warnBody, warnCol, warnDim, warnCta,
+      enableGuardian:()=>this.setState({guardian:true}),
+      gdBd: gdOn?'var(--accent-bd)':'var(--border)', gdIconCol: gdOn?'var(--accent)':'var(--text-3)',
+      gdTrackBg: gdOn?'var(--accent)':'var(--bg-4)', gdKnobX: gdOn?'18px':'0px',
+      gdDesc, toggleGuardian:()=>this.setState(st=>({guardian:!st.guardian})),
+      notDefault, resetDefault:()=>this.setState({sandbox:'workspace-write',approval:'on-request',guardian:false}),
+      // approval card
+      reqChips: chips,
+      reqTypeLabel: rq.typeLabel, reqTypeTerm: rq.typeTerm, reqDesc: rq.desc,
+      isCmd: rq.kind==='cmd', isDiff: rq.kind==='diff', isPerm: rq.kind==='perm', isInput: rq.kind==='input',
+      reqCmd: rq.cmd||'', reqCwd: rq.cwd||'', inputLabel: rq.inputLabel||'',
+      aprBtns, showButtons: !decisionMade,
+      hasAlways: keys.includes('always'),
+      decisionMade, decisionTitle: decisionMade? ('‘'+s.decision.label+'’ 로 처리했어요') : '',
+      decisionRule: dkey==='always',
+      decisionDecline: declineD, decisionAllow: decisionMade && !declineD,
+      decisionDotCol: declineD?'var(--danger)':'var(--success)',
+      decisionDotDim: declineD?'var(--danger-dim)':'var(--success-dim)',
+      clearDecision:()=>this.setState({decision:null}),
+      cardGdCol, cardGdDim, cardGdText,
+      legend,
+    };
+  }
+}
+</script>
+</body>
+</html>

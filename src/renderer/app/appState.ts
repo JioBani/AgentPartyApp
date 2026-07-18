@@ -30,6 +30,7 @@ export const initialState: InitialAppState = {
     openRouterApiKey: "",
     automationApiPort: 47831,
     transcriptFontScale: 1,
+    compactDefault: { on: false, at: 80 },
   },
   auth: [],
   sessions: [],
@@ -53,8 +54,9 @@ export function viewTitle(view: ViewId): string {
   return titles[view];
 }
 
-export function viewSubtitle(view: ViewId, workspacePath: string): string {
-  const workspace = displayPath(workspacePath) || "선택된 작업공간 없음";
+export function viewSubtitle(view: ViewId): string {
+  // Description only — the workspace path is surfaced as its own chip in the
+  // screen header (matching the runtime design mockup), not crammed inline here.
   const subtitles: Record<ViewId, string> = {
     workbench: "패널과 탭으로 멤버 세션을 나누어 실행합니다.",
     sessions: "활성 세션을 열거나 이전 작업을 이어서 진행합니다.",
@@ -62,7 +64,7 @@ export function viewSubtitle(view: ViewId, workspacePath: string): string {
     runtime: "하네스, provider, 모델, 디버깅 기본값을 관리합니다.",
     automation: "AI 자동화와 E2E 테스트용 로컬 API 및 로그를 확인합니다.",
   };
-  return `${subtitles[view]} - ${workspace}`;
+  return subtitles[view];
 }
 
 export function displayPath(value: string | undefined): string {

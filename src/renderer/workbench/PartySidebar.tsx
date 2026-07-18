@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsDownUp, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MemberView } from "./types";
@@ -181,9 +181,14 @@ export function PartySidebar(props: PartySidebarProps) {
               >
                 <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
                 <span className="wb-member-name">{view.name}</span>
+                {view.autoCompact?.on && (
+                  <span className="wb-member-compact wb-mono" title={`자동 압축 ${view.autoCompact.at}%`}>
+                    <ChevronsDownUp size={10} />{view.autoCompact.at}%
+                  </span>
+                )}
                 {view.pendingApproval && <span className="wb-member-badge">승인</span>}
-                {!view.pendingApproval && view.unread > 0 && <span className="wb-member-unread">{view.unread}</span>}
-                {!view.pendingApproval && view.unread === 0 && <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>}
+                {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
+                {!view.pendingApproval && <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>}
               </div>
             );
           })}
