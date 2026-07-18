@@ -7,11 +7,11 @@
  *     reflected on GET /api/state AND written to the on-disk party.json,
  *   - clearing it (autoCompact:null) removes the override,
  *   - POST /api/settings { compactDefault } persists the global default,
- *   - the workbench renders with the member open (toolbar pill + sidebar badge)
- *     — captured for visual review.
+ *   - the workbench renders with the member open (header context donut, whose
+ *     click opens the Auto-compact dialog) — captured for visual review.
  * The crossing-trigger + inheritance logic is locked deterministically by
  * scripts/qa-auto-compact.mjs (in test:ui). Not billed. See
- * docs/디자인 핸드오프/design_handoff_workbench.
+ * docs/디자인 핸드오프/design_handoff_auto_compact.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -81,13 +81,21 @@ async function main() {
     const state = await getJson("/api/state");
     assert(state.settings?.compactDefault?.on === true && state.settings.compactDefault.at === 75, `global compactDefault persists (${JSON.stringify(state.settings?.compactDefault)})`);
 
-    // 4) Render the workbench with the member open (toolbar pill + sidebar badge).
+    // 4) Render the workbench with the member open and drive live context
+    //    occupancy so the header context DONUT shows a real ring: 130K/200K = 65%,
+    //    with the threshold at 65% the tick + compaction-zone arc are visible.
+    await post("/api/party/members/backend/auto-compact", { autoCompact: { on: true, at: 65 } });
+    await post("/api/qa/members/backend/emit", { events: [{ type: "status", status: "idle", contextTokens: 130000, contextWindow: 200000 }] });
     await post("/api/navigation", { view: "workbench" });
     await post("/api/qa/open", { panels: [["backend"]] });
     await delay(700);
+    // Confirm the donut has data to render (used/total resolved on the view).
+    const donutMember = await memberOf("backend");
+    const liveCtx = (await getJson("/api/state")).sessions?.find((s) => s.id === donutMember?.sessionId)?.snapshot?.contextTokens;
+    assert(liveCtx === 130000, `mock context drives the donut (snapshot contextTokens=${liveCtx})`);
     const shot = path.join(os.tmpdir(), "auto-compact-e2e.png");
     const cap = await post("/api/capture", { path: shot });
-    assert(cap.ok && cap.bytes > 0, `captured workbench with auto-compact UI → ${cap.path} (${cap.bytes} bytes)`);
+    assert(cap.ok && cap.bytes > 0, `captured workbench with context donut → ${cap.path} (${cap.bytes} bytes)`);
 
     await post("/api/window/close", {});
     await waitForExit(child);

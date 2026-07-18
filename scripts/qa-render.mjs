@@ -243,30 +243,41 @@ assert(text.includes("read_file"), "tool block rendered");
 assert(text.includes("Approval required"), "reviewer approval card rendered");
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
-const meter = document.querySelector(".wb-ctx-meter");
-assert(meter !== null, "context-capacity meter rendered for a session with usage");
-assert(Boolean(meter) && meter.textContent.includes("320K") && meter.textContent.includes("1M"), "meter shows used/total (320K/1M)");
-assert(Boolean(meter) && meter.classList.contains("is-ok") && meter.querySelector(".wb-ctx-fill") !== null, "meter shows an ok-level fill bar at 32%");
+// The context indicator is now a DONUT (ring), not a bar. Clicking it opens the
+// Auto-compact dialog (covered by qa-compact-dialog); here we lock that it renders
+// with the live K/K range + % on a wide panel.
+const donut = document.querySelector('[data-panel-id="pa"] .wb-ctx-donut');
+assert(donut !== null, "context donut rendered for a session with usage");
+assert(Boolean(donut) && donut.textContent.includes("320K") && donut.textContent.includes("1M"), "donut shows used/total (320K / 1M)");
+assert(Boolean(donut) && donut.querySelector(".wb-donut-ring") !== null, "donut is a ring, not a fill bar");
 // Reviewer's live session reports no usage, but its persisted last-known occupancy
-// drives a STALE meter — the value a reopened app shows before the first turn.
-const staleMeter = document.querySelector(".wb-ctx-meter.is-stale");
-assert(staleMeter !== null, "stale (last-known) meter rendered from persisted occupancy");
-assert(Boolean(staleMeter) && staleMeter.textContent.includes("~150K") && staleMeter.textContent.includes("200K"), "stale meter shows ~used/total (~150K/200K)");
+// still resolves the donut (stale) — the value a reopened app shows before turn 1.
+const staleDonut = document.querySelector('[data-panel-id="pb"] .wb-ctx-donut');
+assert(Boolean(staleDonut) && staleDonut.textContent.includes("150K") && staleDonut.textContent.includes("200K"), "stale donut shows used/total (150K / 200K)");
 assert(document.documentElement.getAttribute("data-theme") === "light", "default theme is light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
 
-// The toolbar's primary reset button is now Respawn (reload session, keep the
-// conversation) for a non-busy member. Panel pb's active member (reviewer) is
-// idle; a busy member (backend, "responding") shows "Stop" — so select by title.
-const respawnBtn = document.querySelector('[data-panel-id="pb"] .wb-stop[title*="대화 유지"]');
-assert(respawnBtn !== null, "toolbar respawn (reload, keep conversation) button rendered for a non-busy member");
-const busyStopBtn = document.querySelector('[data-panel-id="pa"] .wb-stop[title="Stop"]');
-assert(busyStopBtn !== null, "a busy member's toolbar shows Stop (not respawn)");
-if (respawnBtn) {
-  respawnBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+// Session restart moved OFF the toolbar into the header ⋯ menu (Stop now lives in
+// the composer). Open panel pb's (reviewer, idle) ⋯ menu and click 세션 재시작.
+const moreBtn = document.querySelector('[data-panel-id="pb"] .wb-header-more');
+assert(moreBtn !== null, "header ⋯ (more) button rendered");
+if (moreBtn) {
+  moreBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const menuItems = [...document.querySelectorAll('[data-panel-id="pb"] .wb-menu-item')];
+const restartMenuItem = menuItems.find((b) => /세션 재시작/.test(b.textContent || ""));
+const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
+assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
+assert(mcpMenuItem != null && menuItems.length === 2, "⋯ menu has exactly two items (세션 재시작 · MCP 서버)");
+// A busy member's composer shows Stop (not Send) — the interrupt affordance.
+const busyStop = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop, [data-panel-id="pa"] .wb-send.is-stop');
+assert(busyStop !== null, "a busy member's composer shows Stop");
+if (restartMenuItem) {
+  restartMenuItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
-assert(respawnedMembers.includes("reviewer"), "toolbar reset respawned the active member (respawnPartyMember called)");
+assert(respawnedMembers.includes("reviewer"), "⋯ 세션 재시작 respawned the active member (respawnPartyMember called)");
 
 // Closing a tab (×) must ALSO close that member's session, not just hide the view.
 const closeBtn = document.querySelector('[data-panel-id="pa"] .wb-tab-close');

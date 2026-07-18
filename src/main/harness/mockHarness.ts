@@ -75,6 +75,16 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       return;
     }
     const event = { ...partial, at: partial.at || now() } as ClaudeNormalizedEvent;
+    // Mirror the real adapters: any event may carry live context occupancy. This
+    // is what lets QA drive the context donut / capacity readouts offline (no
+    // model, no billing) — inject a status event with contextTokens/contextWindow.
+    const withCtx = partial as { contextTokens?: number; contextWindow?: number };
+    if (typeof withCtx.contextTokens === "number") {
+      this.snapshot.contextTokens = withCtx.contextTokens;
+    }
+    if (typeof withCtx.contextWindow === "number") {
+      this.snapshot.contextWindow = withCtx.contextWindow;
+    }
     switch (event.type) {
       case "session":
         if (event.slashCommands) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronsDownUp, X } from "lucide-react";
+import { ChevronsDownUp, FoldVertical, X } from "lucide-react";
 import {
   AUTO_COMPACT_CEIL,
   AUTO_COMPACT_FLOOR,
@@ -14,6 +14,18 @@ import {
 } from "../../shared/autoCompact";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
+
+// The Auto-compact dialog's threshold slider band. Deliberately narrower + coarser
+// than the shared editor's full gauge (a value below 50% is rarely useful as a
+// quick per-member toggle, and 5-point steps keep the drag legible on the donut).
+const DIALOG_MIN = 50;
+const DIALOG_MAX = 95;
+const DIALOG_STEP = 5;
+
+/** Compact token count for the dialog readouts: 128000 → "128K". */
+function toK(value: number): string {
+  return value >= 1000 ? `${Math.round(value / 1000)}K` : String(value);
+}
 
 interface EditorProps {
   setting: AutoCompactSetting;
@@ -111,10 +123,14 @@ interface ModalProps {
 }
 
 /**
- * The per-member threshold-edit modal, opened from the toolbar compact pill's
- * number half. Local state keeps the slider snappy; the persist (through the
- * party-action path) is debounced so a drag isn't a write storm. Edits apply
- * live to the member — "완료" just closes.
+ * The Auto-compact dialog — the single entry point for compaction, opened by
+ * clicking a member's context donut. It shows the live usage against the window,
+ * an enable toggle, the threshold slider (only when enabled), and — in the footer
+ * — "지금 압축 실행" (run a manual compaction now) beside "완료".
+ *
+ * Local state keeps the slider snappy; the persist (through the shared
+ * party-action path) is debounced so a drag isn't a write storm. Edits apply live
+ * to the member — "완료" just closes.
  */
 export function CompactModal({ view, actions, onClose }: ModalProps) {
   const [local, setLocal] = useState<AutoCompactSetting>(view.autoCompact);
@@ -136,12 +152,29 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
     persistTimer.current = setTimeout(() => actions.setAutoCompact(view.name, next), delay);
   }
 
+  // Live occupancy for the usage card. Unknown window → no ratio/bar (never a
+  // fabricated denominator); the threshold token estimate falls back too.
+  const used = view.context?.used ?? 0;
+  const total = view.context?.total;
+  const pct = total ? Math.min(100, Math.round((used / total) * 100)) : undefined;
+  const usedCol = pct != null && pct >= 90 ? "var(--danger)" : pct != null && pct >= 75 ? "var(--live)" : view.color;
+  const atTokens = thresholdTokens(local.at, contextWindow);
+
+  function commitAt(value: number) {
+    update({ ...local, at: Math.min(DIALOG_MAX, Math.max(DIALOG_MIN, value)) });
+  }
+
+  // Filled-left track: live up to the thumb, neutral after, over the 50–95 band.
+  const atInBand = Math.min(DIALOG_MAX, Math.max(DIALOG_MIN, local.at));
+  const fillPct = ((atInBand - DIALOG_MIN) / (DIALOG_MAX - DIALOG_MIN)) * 100;
+  const dialogTrack = `linear-gradient(90deg, var(--live) 0 ${fillPct}%, var(--bg-4) ${fillPct}% 100%)`;
+
   return (
     <div className="wb-modal-scrim" onMouseDown={onClose}>
-      <div className="wb-modal wb-modal-sm" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="wb-modal wb-compact-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="wb-modal-head">
           <div className="wb-modal-title">
-            <ChevronsDownUp size={16} />
+            <FoldVertical size={16} className="wb-compact-glyph" />
             <strong>Auto-compact</strong>
             <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
               <span className="wb-dot" /> {view.name}
@@ -149,10 +182,77 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
           </div>
           <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
         </header>
-        <div className="wb-modal-body wb-modal-body-col">
-          <AutoCompactEditor setting={local} contextWindow={contextWindow} onChange={update} />
+
+        <div className="wb-compact-body">
+          {/* Current-usage card */}
+          <div className="wb-compact-usage">
+            <div className="wb-compact-usage-row">
+              <span>현재 컨텍스트 사용량</span>
+              <span className="wb-mono wb-compact-usage-val" style={{ color: usedCol }}>
+                {total ? <>{toK(used)} / {toK(total)}<span className="wb-compact-usage-pct"> · {pct}%</span></> : <>{toK(used)} 토큰</>}
+              </span>
+            </div>
+            {total != null && pct != null && (
+              <div className="wb-compact-usage-track">
+                <span className="wb-compact-usage-fill" style={{ width: `${Math.max(2, pct)}%`, background: usedCol }} />
+                {local.on && <span className="wb-compact-usage-th" style={{ left: `${local.at}%` }} />}
+              </div>
+            )}
+            {local.on && total != null && (
+              <div className="wb-mono wb-compact-usage-cap">막대 위 세로선 = 자동 압축이 실행되는 임계치</div>
+            )}
+          </div>
+
+          {/* Enable toggle */}
+          <label className="wb-toggle-card">
+            <span className="wb-toggle-text">
+              <ChevronsDownUp size={15} />
+              <span><strong>임계치 초과 시 자동 압축</strong><small>끄면 입력창의 압축 버튼으로 수동 실행만 됩니다.</small></span>
+            </span>
+            <input
+              type="checkbox"
+              className="wb-switch"
+              checked={local.on}
+              onChange={(event) => update({ ...local, on: event.target.checked })}
+            />
+          </label>
+
+          {/* Threshold slider (only when enabled) */}
+          {local.on && (
+            <div className="wb-compact-thcard">
+              <div className="wb-compact-readout">
+                <span>압축 임계치 · 컨텍스트 사용률</span>
+                <strong className="wb-mono wb-compact-thval">
+                  {local.at}%{atTokens != null && <span className="wb-compact-thtokens"> · ≈ {toK(atTokens)} 토큰</span>}
+                </strong>
+              </div>
+              <input
+                type="range"
+                className="wb-compact-range"
+                min={DIALOG_MIN}
+                max={DIALOG_MAX}
+                step={DIALOG_STEP}
+                value={atInBand}
+                style={{ background: dialogTrack }}
+                onChange={(event) => commitAt(Number(event.target.value))}
+              />
+              <div className="wb-compact-ends wb-mono">
+                <span>{DIALOG_MIN}%</span>
+                <span>{DIALOG_MAX}%</span>
+              </div>
+            </div>
+          )}
         </div>
-        <footer className="wb-modal-foot wb-modal-foot-end">
+
+        <footer className="wb-compact-foot">
+          <button
+            type="button"
+            className="wb-btn wb-compact-run-now"
+            disabled={!view.session || view.compacting}
+            onClick={() => { actions.compact(view.name); onClose(); }}
+          >
+            <FoldVertical size={14} className={"wb-compact-glyph" + (view.compacting ? " wb-spin" : "")} /> 지금 압축 실행
+          </button>
           <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}>완료</button>
         </footer>
       </div>

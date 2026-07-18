@@ -1,5 +1,5 @@
-import { PointerEvent, useEffect } from "react";
-import { ChevronDown, ChevronsDownUp, Gauge, Plug, RefreshCw, Square } from "lucide-react";
+import { PointerEvent, useEffect, useState } from "react";
+import { ChevronDown, Gauge, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -11,7 +11,7 @@ import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
 import { SubagentDock } from "./SubagentDock";
 import { SubagentDetail } from "./SubagentDetail";
-import { ContextMeter } from "./ContextMeter";
+import { ContextDonut } from "./ContextDonut";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 
 interface PanelProps {
@@ -43,6 +43,8 @@ export function Panel(props: PanelProps) {
   const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
+  // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Subagent dock + drill-in detail, derived from the active member's subagents.
   const subagents = view?.subagents || [];
@@ -60,6 +62,9 @@ export function Panel(props: PanelProps) {
       actions.prewarm(activeName);
     }
   }, [activeName, hasSession, actions]);
+
+  const wide = density === "wide";
+  const narrow = density === "narrow";
 
   return (
     <div
@@ -83,24 +88,33 @@ export function Panel(props: PanelProps) {
         onTabPointerDown={onTabPointerDown}
       />
 
-      {view && density !== "narrow" && (
+      {view && (
+        // The panel header is present at EVERY width (it no longer disappears
+        // when narrow). Density only trims what's inside: the status pill + K/K
+        // range are wide-only, and effort is hidden when narrow — but the ⋯
+        // button is always visible.
         <div className="wb-toolbar">
           <div className="wb-toolbar-id">
             <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
             <strong>{view.name}</strong>
-            <span className={"wb-status-pill is-" + view.status}>{statusLabel(view.status)}</span>
-            {(() => {
+            {wide && <span className={"wb-status-pill is-" + view.status}>{statusLabel(view.status)}</span>}
+            {wide && (() => {
               const diag = latestDiagnostic(view.transcript);
               return diag ? <span className={"wb-diag-badge is-" + diag.severity} title={diag.title}>{diag.category}</span> : null;
             })()}
           </div>
           <div className="wb-toolbar-controls">
-            {view.context && <ContextMeter context={view.context} />}
-            <button type="button" className="wb-pill wb-model-pill" title="Model settings" onClick={() => onOpenRuntime(view.name)}>
-              <span className="wb-mono">{view.model || "model"}</span>
+            <button
+              type="button"
+              className="wb-pill wb-model-pill"
+              style={{ maxWidth: narrow ? 116 : 240 }}
+              title="모델 설정"
+              onClick={() => onOpenRuntime(view.name)}
+            >
+              <span className="wb-mono">{modelLabel(view.model)}</span>
               <ChevronDown size={11} className="wb-pill-caret" />
             </button>
-            {density === "wide" && (view.effortOptions?.length ?? 0) > 0 && (
+            {!narrow && (view.effortOptions?.length ?? 0) > 0 && (
               <Dropdown
                 value={view.effort}
                 options={view.effortOptions.map((option) => ({ id: option.id, label: option.label, icon: <Gauge size={13} /> }))}
@@ -108,44 +122,43 @@ export function Panel(props: PanelProps) {
                 title="Effort"
               />
             )}
-            <button type="button" className="wb-tool-btn" title="MCP 서버" onClick={() => onOpenMcp(view.name)} disabled={!view.session}><Plug size={14} /></button>
-            {density === "wide" && (
-              <>
-                <span className="wb-toolbar-divider" />
-                {/* Segmented auto-compact pill: [ compact-now │ NN% / OFF ]. Left half
-                    runs a manual compaction (icon spins while in flight); right half
-                    opens the threshold editor. `is-on` tints it live; `is-off` neutral. */}
-                <div className={"wb-compact-pill" + (view.autoCompact?.on ? " is-on" : " is-off")}>
-                  <button
-                    type="button"
-                    className="wb-compact-run"
-                    title="지금 압축"
-                    onClick={() => actions.compact(view.name)}
-                    disabled={!view.session}
-                  >
-                    {view.compacting ? <RefreshCw size={13} className="wb-spin" /> : <ChevronsDownUp size={13} />}
-                  </button>
-                  <span className="wb-compact-div" />
-                  <button
-                    type="button"
-                    className="wb-compact-th wb-mono"
-                    title="자동 압축 임계치"
-                    onClick={() => onOpenCompact(view.name)}
-                  >
-                    {view.autoCompact?.on ? `${view.autoCompact.at}%` : "OFF"}
-                  </button>
-                </div>
-              </>
+            {view.context && (
+              <ContextDonut
+                context={view.context}
+                autoCompact={view.autoCompact}
+                color={view.color}
+                showRange={wide}
+                onClick={() => onOpenCompact(view.name)}
+              />
             )}
-            <button
-              type="button"
-              className={"wb-tool-btn wb-stop" + (view.busy ? " is-danger" : "")}
-              title={view.busy ? "Stop" : "세션 재시작 · 대화 유지 (MCP/설정 적용)"}
-              onClick={() => (view.busy ? actions.interrupt(view.name) : actions.respawn(view.name))}
-              disabled={!view.session}
-            >
-              {view.busy ? <Square size={12} /> : <RefreshCw size={14} />}
-            </button>
+            <div className="wb-header-menu-wrap">
+              <button type="button" className="wb-header-more" title="더보기" onClick={() => setMenuOpen((open) => !open)}>
+                <MoreHorizontal size={15} />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="wb-menu-catcher" onClick={() => setMenuOpen(false)} />
+                  <div className="wb-header-menu" role="menu">
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      title="세션을 다시 시작합니다(대화 유지 · MCP/설정 적용)"
+                      onClick={() => { setMenuOpen(false); actions.respawn(view.name); }}
+                    >
+                      <RefreshCw size={14} /> 세션 재시작
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      disabled={!view.session}
+                      onClick={() => { setMenuOpen(false); onOpenMcp(view.name); }}
+                    >
+                      <Plug size={14} /> MCP 서버
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -172,4 +185,9 @@ export function Panel(props: PanelProps) {
       )}
     </div>
   );
+}
+
+/** Model button label: strip a leading `claude-` (e.g. `sonnet-4.5`). */
+function modelLabel(model: string | undefined): string {
+  return (model || "model").replace(/^claude-/, "");
 }

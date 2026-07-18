@@ -677,22 +677,6 @@
   color: var(--text-3);
 }
 
-/* Auto-compact-on badge on a member row (⇲ NN%), so the state is visible
-   without opening the panel. Live-tinted, mono. */
-.wb-member-compact {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--live);
-  background: var(--live-dim);
-  border: var(--border-width) solid var(--live-bd);
-  border-radius: var(--radius-badge);
-  padding: 1px 4px;
-  flex: none;
-}
-
 /* Right-click context menu (member / party delete). */
 .wb-member-row.is-menu,
 .wb-party-row.is-menu {
@@ -996,14 +980,17 @@ body.wb-resizing {
 
 /* ---------- Panel toolbar ---------- */
 .wb-toolbar {
+  position: relative;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
+  gap: 7px;
+  padding: 0 6px 0 11px;
+  background: var(--bg-1);
   border-bottom: var(--border-width) solid var(--border-subtle);
   flex: none;
+  z-index: 6;
 }
 
 .wb-toolbar-id {
@@ -1022,7 +1009,13 @@ body.wb-resizing {
 .wb-toolbar-controls {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 7px;
+}
+
+.wb-model-pill .wb-mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wb-status-pill {
@@ -1082,53 +1075,99 @@ body.wb-resizing {
   color: var(--text-3);
 }
 
-.wb-toolbar-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--border);
-  margin: 0 1px;
-  flex: none;
-}
+.wb-spin { animation: wb-spin 1s linear infinite; }
 
-/* Segmented auto-compact pill: [ compact-now │ NN% / OFF ]. One rounded
-   container, a 1px center divider, uniform border/tint. `is-on` = live tint,
-   `is-off` = neutral. */
-.wb-compact-pill {
-  display: inline-flex;
-  align-items: stretch;
-  height: 26px;
-  border-radius: var(--radius-pill);
-  border: var(--border-width) solid var(--border);
-  overflow: hidden;
-  flex: none;
-}
-.wb-compact-pill.is-on {
-  border-color: var(--live-bd);
-  background: var(--live-dim);
-}
-.wb-compact-pill button {
+/* Context donut (Tier-2 control): an 18px conic ring + optional K/K range + %.
+   Clicking opens the Auto-compact dialog. The hole matches the button bg so the
+   ring reads as a ring in both rest and hover states. */
+.wb-ctx-donut {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
-  background: transparent;
-  border: none;
-  color: var(--text-3);
-  font-size: 10.5px;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px 0 7px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-1);
+  flex: none;
+  transition: background .15s ease, border-color .15s ease;
 }
-.wb-compact-pill.is-on button { color: var(--live); }
-.wb-compact-pill button:hover:not(:disabled) { background: var(--bg-3); color: var(--text-0); }
-.wb-compact-pill.is-on button:hover:not(:disabled) { background: var(--live-dim); color: var(--live); }
-.wb-compact-pill button:disabled { opacity: 0.45; }
-.wb-compact-run { padding-left: var(--space-3) !important; }
-.wb-compact-th { padding-right: var(--space-3) !important; }
-.wb-compact-div {
-  width: 1px;
-  background: var(--border);
+.wb-ctx-donut:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.wb-donut-ring {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   flex: none;
 }
-.wb-compact-pill.is-on .wb-compact-div { background: var(--live-bd); }
-.wb-spin { animation: wb-spin 1s linear infinite; }
+.wb-donut-hole {
+  position: absolute;
+  inset: 3.5px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  transition: background .15s ease;
+}
+.wb-ctx-donut:hover .wb-donut-hole { background: var(--bg-3); }
+.wb-donut-tick-wrap { position: absolute; inset: 0; }
+.wb-donut-tick {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 6px;
+  background: var(--live);
+  border-radius: 1px;
+}
+.wb-donut-range { font-size: 10.5px; color: var(--text-3); }
+.wb-donut-pct { font-size: 11.5px; font-weight: 600; }
+
+/* Header ⋯ overflow menu (session restart / MCP). Always-visible trigger; the
+   menu is anchored to the toolbar and dismissed by a full-screen catcher. */
+.wb-header-menu-wrap { position: relative; flex: none; }
+.wb-header-more {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  transition: background .15s ease, color .15s ease;
+}
+.wb-header-more:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-menu-catcher { position: fixed; inset: 0; z-index: 44; }
+.wb-header-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: 200px;
+  z-index: 45;
+  padding: 5px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.5);
+}
+.wb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 33px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12px;
+  text-align: left;
+}
+.wb-menu-item:hover:not(:disabled) { background: var(--bg-3); color: var(--text-0); }
+.wb-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.wb-menu-item svg { color: var(--text-3); flex: none; }
 
 /* Auto-compact editor (threshold modal / runtime block / settings). */
 .wb-compact-editor { display: flex; flex-direction: column; gap: var(--space-4); }
@@ -1200,123 +1239,90 @@ body.wb-resizing {
   color: var(--text-3);
 }
 
-/* Context-capacity meter: how full the member's context window is. */
-.wb-ctx-meter {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 26px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  border: var(--border-width) solid var(--border);
-  background: var(--bg-2);
+/* ---------- Auto-compact dialog (opened by clicking the context donut) ------- */
+.wb-compact-dialog { width: 430px; max-width: calc(100vw - 40px); }
+.wb-compact-glyph { color: var(--live); }
+.wb-compact-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Current-usage card */
+.wb-compact-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px 14px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+.wb-compact-usage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 11.5px;
   color: var(--text-2);
-  cursor: default;
 }
-
-.wb-ctx-bar {
+.wb-compact-usage-val { font-size: 13px; font-weight: 600; }
+.wb-compact-usage-pct { color: var(--text-3); font-weight: 400; }
+.wb-compact-usage-track {
   position: relative;
-  width: 34px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--bg-3);
-  overflow: hidden;
-  flex: none;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--bg-4);
 }
-
-.wb-ctx-fill {
+.wb-compact-usage-fill {
   position: absolute;
   inset: 0 auto 0 0;
   height: 100%;
-  border-radius: 999px;
-  background: var(--success);
+  border-radius: 4px;
   transition: width 0.3s ease;
 }
-
-.wb-ctx-meter.is-warn .wb-ctx-fill {
-  background: var(--warning, #d9a441);
-}
-
-.wb-ctx-meter.is-critical .wb-ctx-fill {
-  background: var(--danger, #d9534f);
-}
-
-.wb-ctx-meter.is-warn {
-  color: var(--warning, #d9a441);
-}
-
-.wb-ctx-meter.is-critical {
-  color: var(--danger, #d9534f);
-}
-
-/* Persisted last-known occupancy (no live session yet, e.g. just after reopening
-   the app): dimmed and dashed so it reads as an estimate to be refreshed on the
-   next turn, never a live reading. */
-.wb-ctx-meter.is-stale {
-  opacity: 0.62;
-  border-style: dashed;
-}
-
-.wb-ctx-meter.is-stale .wb-ctx-fill {
-  opacity: 0.7;
-}
-
-.wb-ctx-text {
-  font-size: 10.5px;
-  letter-spacing: -0.01em;
-}
-
-.wb-ctx-sep {
-  opacity: 0.5;
-  margin: 0 1px;
-}
-
-.wb-tool-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 26px;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-2);
-  flex: none;
-  transition: background .15s ease, color .15s ease;
-}
-
-.wb-tool-btn:hover {
-  background: var(--bg-3);
-  color: var(--text-0);
-}
-
-.wb-tool-btn:disabled {
-  opacity: .4;
-  cursor: not-allowed;
-}
-
-.wb-tool-btn.wb-stop.is-danger {
-  color: var(--danger);
-  background: var(--danger-dim);
-  border-color: transparent;
-}
-
-.wb-pill-select {
-  position: relative;
-  cursor: pointer;
-}
-
-.wb-pill-select select {
+.wb-compact-usage-th {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  border: none;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--live);
+  border-radius: 1px;
 }
+.wb-compact-usage-cap { font-size: 10.5px; color: var(--text-3); }
 
-.wb-stop.is-danger {
-  color: var(--danger);
-  background: var(--danger-dim);
+/* Threshold slider card */
+.wb-compact-thcard {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 14px 15px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
 }
+.wb-compact-thval { font-size: 14px; color: var(--live); margin-left: auto; }
+.wb-compact-thtokens { color: var(--live); font-weight: 400; }
+
+/* Footer: run-now (left) beside 완료 (right) */
+.wb-compact-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  background: var(--bg-1);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+.wb-compact-run-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  color: var(--text-1);
+}
+.wb-compact-run-now:hover:not(:disabled) { background: var(--bg-3); color: var(--text-0); }
+.wb-compact-run-now:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---------- Transcript ---------- */
 .wb-transcript {

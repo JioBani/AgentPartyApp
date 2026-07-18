@@ -11,8 +11,10 @@
  * before/after context occupancy so we can see what the harness actually did on a
  * near-empty session (expected: little/nothing to compact).
  *
- * NOTE: this exercises MANUAL compaction. Per-member auto-compact-by-threshold is
- * NOT implemented in the app — there is no context-limit knob to trigger it.
+ * NOTE: this exercises MANUAL compaction (the dialog's "지금 압축 실행" / the
+ * threshold-crossing auto-trigger both route through this same /compact path).
+ * Per-member auto-compact-by-threshold IS implemented — its persistence + crossing
+ * are covered offline by e2e-auto-compact.mjs / qa-auto-compact.mjs.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";

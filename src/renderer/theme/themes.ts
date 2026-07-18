@@ -17,6 +17,7 @@ export type ThemeColorToken =
   | "text-0" | "text-1" | "text-2" | "text-3"
   | "accent" | "accent-dim" | "accent-bd" | "accent-fg"
   | "live" | "live-dim" | "live-bd"
+  | "compact-zone"
   | "success" | "success-dim" | "success-bd"
   | "danger" | "danger-dim" | "danger-bd"
   | "scrim";
@@ -73,6 +74,9 @@ const light: Theme = {
     "live": "#b9791d",
     "live-dim": "rgba(185,121,29,.13)",
     "live-bd": "rgba(185,121,29,.3)",
+    // The donut's "compaction zone" arc (threshold → full). Warmer/denser than
+    // live-dim so the runway-before-compact reads at 18px. See ContextDonut.
+    "compact-zone": "rgba(185,121,29,.26)",
     "success": "#2f8f5e",
     "success-dim": "rgba(47,143,94,.13)",
     "success-bd": "rgba(47,143,94,.28)",
@@ -109,6 +113,7 @@ const dark: Theme = {
     "live": "#e0a14e",
     "live-dim": "rgba(224,161,78,.13)",
     "live-bd": "rgba(224,161,78,.34)",
+    "compact-zone": "rgba(224,161,78,.32)",
     "success": "#54b585",
     "success-dim": "rgba(84,181,133,.13)",
     "success-bd": "rgba(84,181,133,.32)",
