@@ -1,5 +1,6 @@
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import { requireCodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
@@ -174,7 +175,9 @@ export class LocalEngine implements EngineConnection {
   }
 
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {
-    this.deps.sessionManager.setCodexPolicy(sessionId, policy);
+    const validated = requireCodexPolicy(policy);
+    this.deps.sessionManager.setCodexPolicy(sessionId, validated);
+    this.party.syncMemberCodexPolicy(sessionId, validated);
   }
 
   async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {

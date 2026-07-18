@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Check, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { PermissionModeSetting } from "../../shared/types";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
 import { memberColorVars } from "../theme/memberColors";
@@ -16,6 +18,8 @@ export interface CreateMemberInput {
   effort?: string;
   reasoning?: string;
   reasoningBudget?: number;
+  permissionMode?: PermissionModeSetting;
+  codexPolicy?: CodexPolicy;
 }
 
 interface PartySidebarProps {

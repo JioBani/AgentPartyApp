@@ -6,11 +6,12 @@ import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInp
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
-import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
+import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
-import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey } from "../authService";
+import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -21,11 +22,17 @@ import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engi
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowInfo, WindowRegistry } from "../windowRegistry";
 import { runSessionAction } from "./sessionActions";
+import { MODEL_PROVIDERS } from "../../shared/modelProviders";
+import type { SubscriptionProxyController } from "../subscriptionProxyService";
+import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
+import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
   engineRegistry: EngineRegistry;
   windowRegistry: WindowRegistry;
+  /** Desktop-owned lifecycle. Absent only in the headless remote engine. */
+  subscriptionProxy?: SubscriptionProxyController;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
@@ -33,6 +40,31 @@ export interface AppControllerDeps {
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
   onWorkspacesChanged: () => void;
+}
+
+/** Public model discovery shared by the UI and automation/member-tool clients. */
+function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
+  modelRoutes: unknown[];
+  modelProviders: typeof MODEL_PROVIDERS;
+  harnesses: unknown[];
+  codexModels: CodexModelDiscoveryState;
+} {
+  const settings = getSettings();
+  const modelRoutes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models).map((route) => {
+    const harnessId = route.harnessId === "codex" ? "codex" : "claude-code";
+    return { ...route, executionHarness: harnessId, permission: permissionDiscoveryFor(settings, harnessId) };
+  });
+  return {
+    modelRoutes,
+    modelProviders: MODEL_PROVIDERS,
+    harnesses: harnesses.map((harness) => ({
+      id: harness.id,
+      label: harness.label,
+      status: harness.status,
+      permission: permissionDiscoveryFor(settings, harness.id),
+    })),
+    codexModels,
+  };
 }
 
 /**
@@ -127,7 +159,8 @@ export class AppController {
       try {
         const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
         for (const member of party.members || []) {
-          const provider = providerOfRuntime(member.runtime);
+          const harnessId = member.runtime === "codex" ? "codex" : "claude-code";
+          const provider = providerOfHarness(harnessId);
           if (provider) {
             providers.add(provider);
           }
@@ -160,9 +193,10 @@ export class AppController {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
-      auth: getAuthState(),
+      auth: await this.listAuthProviders(),
       sessions: await this.engineFor(workspacePath).listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
+      modelProviders: [...MODEL_PROVIDERS],
       codexModels,
       harnesses,
       router: { baseUrl: this.deps.getRouterBaseUrl() },
@@ -186,15 +220,15 @@ export class AppController {
 
   // --- Model routes ---------------------------------------------------------
   /** Current selectable model routes + Codex catalog discovery state. */
-  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; codexModels: CodexModelDiscoveryState }> {
+  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState }> {
     const codexModels = await this.engineFor(workspacePath).listCodexModels();
-    return { ok: true, modelRoutes: buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels.models), codexModels };
+    return { ok: true, ...publicModelDiscovery(codexModels) };
   }
 
   /** Re-runs Codex catalog discovery and returns the fresh state. */
-  async refreshCodexModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; codexModels: CodexModelDiscoveryState }> {
+  async refreshCodexModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState }> {
     const codexModels = await this.engineFor(workspacePath).listCodexModels(true);
-    return { ok: true, modelRoutes: buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels.models), codexModels };
+    return { ok: true, ...publicModelDiscovery(codexModels) };
   }
 
   /**
@@ -241,24 +275,54 @@ export class AppController {
     return settings;
   }
 
-  listAuthProviders(): ReturnType<typeof getAuthState> {
-    return getAuthState();
+  async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
+    return withSubscriptionProxyAuth(getAuthState(), await this.getSubscriptionStatus());
   }
 
-  setOpenRouterKey(key: string): ReturnType<typeof setOpenRouterKey> {
+  async setOpenRouterKey(key: string): Promise<ReturnType<typeof getAuthState>> {
     const state = setOpenRouterKey(key || "");
     this.deps.onSettingsChanged();
-    return state;
+    return this.broadcastAuth(withSubscriptionProxyAuth(state, await this.getSubscriptionStatus()));
   }
 
-  clearOpenRouterKey(): ReturnType<typeof clearOpenRouterKey> {
+  async clearOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
     const state = clearOpenRouterKey();
     this.deps.onSettingsChanged();
-    return state;
+    return this.broadcastAuth(withSubscriptionProxyAuth(state, await this.getSubscriptionStatus()));
   }
 
-  testOpenRouterKey(): ReturnType<typeof testOpenRouterKey> {
-    return testOpenRouterKey();
+  async testOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await testOpenRouterKey(), await this.getSubscriptionStatus()));
+  }
+
+  /** Live OAuth-backed model availability from the local CLIProxyAPI. */
+  getSubscriptionAuthState(): ReturnType<SubscriptionProxyController["getStatus"]> {
+    return this.getSubscriptionStatus();
+  }
+
+  /** Starts one browser OAuth flow and returns the same auth state the UI uses. */
+  async loginSubscriptionProvider(provider: SubscriptionProxyProvider) {
+    if (!this.deps.subscriptionProxy) {
+      throw new Error("Subscription OAuth must be started from the AgentParty desktop Authentication screen, not a remote workspace engine.");
+    }
+    const result = await this.deps.subscriptionProxy.login(provider);
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(getAuthState(), result.subscriptions));
+    return {
+      ...result,
+      auth,
+    };
+  }
+
+  private getSubscriptionStatus(): ReturnType<SubscriptionProxyController["getStatus"]> {
+    return this.deps.subscriptionProxy?.getStatus() || getSubscriptionProxyStatus();
+  }
+
+  /** Keeps every window in sync when Authentication is driven over HTTP. */
+  private broadcastAuth(auth: ReturnType<typeof getAuthState>): ReturnType<typeof getAuthState> {
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("auth:update", auth);
+    }
+    return auth;
   }
 
   // --- Windows + workspace ------------------------------------------------
@@ -380,8 +444,10 @@ export class AppController {
   // `windowId` selects which window's active party the op resolves against, so
   // two windows of one workspace act on different parties independently. When
   // absent (HTTP with no `?window`), the engine falls back to its advisory hint.
-  async listPartyMembers(workspacePath: string, windowId?: string): Promise<ReturnType<PartyApplicationService["list"]>> {
-    return this.engineFor(workspacePath).listParty(await this.pinnedPartyForWindow(workspacePath, windowId));
+  // A member tool can pass its spawning `partyId` explicitly; it wins over a
+  // later desktop selection so the member never crosses party boundaries.
+  async listPartyMembers(workspacePath: string, windowId?: string, partyId?: string): Promise<ReturnType<PartyApplicationService["list"]>> {
+    return this.engineFor(workspacePath).listParty(partyId || await this.pinnedPartyForWindow(workspacePath, windowId));
   }
 
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
@@ -420,8 +486,8 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.createMember({ ...input, partyId: input.partyId || this.partyForWindow(windowId) }));
   }
 
-  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, this.partyForWindow(windowId), options));
+  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, partyId || this.partyForWindow(windowId), options));
   }
 
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
@@ -429,8 +495,8 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId)));
   }
 
-  async handlePartyAction(workspacePath: string, name: string, action: string, body: any, windowId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    const result = await this.engineFor(workspacePath).partyAction(name, action, body || {}, this.partyForWindow(windowId));
+  async handlePartyAction(workspacePath: string, name: string, action: string, body: any, windowId?: string, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+    const result = await this.engineFor(workspacePath).partyAction(name, action, body || {}, partyId || this.partyForWindow(windowId));
     await this.broadcastParty(workspacePath);
     return result;
   }

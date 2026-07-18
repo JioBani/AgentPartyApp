@@ -28,8 +28,8 @@ const { buildMemberView } = await load("src/renderer/workbench/memberStatus.ts",
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "ctx-routes.mjs");
 
 const routes = [
-  { harnessId: "claude-code", providerId: "anthropic", model: "opus[1m]", label: "Opus", meta: { context: "1M" }, capabilities: { vision: { image: true } } },
-  { harnessId: "claude-code", providerId: "anthropic", model: "sonnet", label: "Sonnet", meta: { context: "1M" } },
+  { harnessId: "claude-code", providerId: "anthropic", model: "opus[1m]", label: "Opus 4.8", meta: { context: "1M" }, capabilities: { vision: { image: true } } },
+  { harnessId: "claude-code", providerId: "anthropic", model: "sonnet", label: "Sonnet 4.6", meta: { context: "1M" } },
   { harnessId: "claude-code", providerId: "openai", model: "GPT-5.5", runtimeModel: "claude-gpt-5.5", label: "GPT-5.5", meta: { context: "400K" } },
 ];
 
@@ -46,7 +46,7 @@ function restoredContextOf(memberExtra = {}) {
 }
 
 console.log("\nfindRoute tolerant matching:");
-assert(findRoute("opus[1m]", routes)?.label === "Opus", "matches by exact route id");
+assert(findRoute("opus[1m]", routes)?.label === "Opus 4.8", "matches by exact route id with the versioned display label");
 assert(findRoute("Opus", routes)?.model === "opus[1m]", "matches by display label (the live snapshot's value)");
 assert(findRoute("opus", routes)?.model === "opus[1m]", "matches label case-insensitively ('opus')");
 assert(findRoute("claude-gpt-5.5", routes)?.model === "GPT-5.5", "matches by runtime id");

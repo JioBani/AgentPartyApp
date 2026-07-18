@@ -39,6 +39,7 @@ const bridge = {
   async send() { return { ok: true }; },
   async createMember() { return { ok: true }; },
   async removeMember() { return { ok: true }; },
+  async setPermission() { return { ok: true }; },
   async list() {
     listCalls += 1;
     return { ok: true, data: { members: [{ name: "main", status: "running", harness: "codex" }] } };
@@ -70,7 +71,7 @@ try {
   const mcp = await adapter.listMcpServers();
   const partyServer = mcp.servers.find((server) => server.name === "agentparty-app");
   assert(Boolean(partyServer), "Codex MCP snapshot includes the app-hosted agentparty-app surface");
-  assert(partyServer?.tools?.length === 8, "agentparty-app exposes the eight party tools (incl. member-status/interrupt/broadcast)");
+  assert(partyServer?.tools?.length === 9, "agentparty-app exposes the nine party tools (incl. member-permission/status/interrupt/broadcast)");
   assert(partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__list"), "party tool names use the same mcp__agentparty-app__ prefix");
 
   adapter.sendUserTurn("KIND=partyTool call list");

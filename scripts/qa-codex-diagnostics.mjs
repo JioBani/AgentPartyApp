@@ -54,8 +54,14 @@ assert(classifyDiagnostic("warning", { message: "일반 경고" }).category === 
 // reassurance leading so it doesn't read as a fault.
 const meta = classifyDiagnostic("warning", { message: "Model metadata for `minimax/minimax-m3` not found. Defaulting to fallback metadata; this can degrade performance and cause issues." });
 assert(meta?.severity === "info", "codex 'model metadata not found' → info severity (calm accent banner, not warning/error)");
-assert(/에러가 아닙니다/.test(meta.detail) && /정상/.test(meta.detail), "metadata info leads with 'not an error' + says the response is normal");
+assert(/not a reroute/i.test(meta.detail) && /remain unchanged/i.test(meta.detail), "metadata info states there was no reroute and the selection is unchanged");
 assert(!meta.recovery, "the metadata info carries no alarming recovery step");
+const claudeMeta = classifyDiagnostic(
+  "warning",
+  { message: "Model metadata for `claude-sonnet-4-6` not found. Defaulting to fallback metadata." },
+  { modelProvider: "claude-subscription" },
+);
+assert(claudeMeta.title.includes("Claude subscription") && !claudeMeta.title.includes("OpenRouter"), "Claude subscription metadata note never claims OpenRouter billing");
 assert(classifyDiagnostic("windows/worldWritableWarning", { path: "C:/x" }).recovery?.includes("/codex-fix-sandbox"), "world-writable warning → sandbox recovery");
 assert(classifyDiagnostic("mcpServer/startupStatus/updated", { server: "brave", status: "running" }) === null, "healthy MCP status is NOT surfaced");
 assert(classifyDiagnostic("mcpServer/startupStatus/updated", { server: "brave", status: "failed", error: "boom" }).severity === "error", "failed MCP status → error");

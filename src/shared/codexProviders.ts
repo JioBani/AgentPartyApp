@@ -1,4 +1,5 @@
-import { orRoutedModels } from "./modelCatalog";
+import { catalogModelByClaudeSubscriptionModel, orRoutedModels } from "./modelCatalog";
+import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
 
 /**
  * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
@@ -30,8 +31,17 @@ export const CODEX_OPENROUTER_PROVIDER: CodexCustomProvider = {
   envKey: "OPENROUTER_API_KEY",
 };
 
+export const CODEX_CLAUDE_SUBSCRIPTION_PROVIDER: CodexCustomProvider = {
+  id: "claude-subscription",
+  name: "Claude subscription (local CLIProxyAPI)",
+  baseUrl: DEFAULT_SUBSCRIPTION_PROXY_BASE_URL,
+  wireApi: "responses",
+  envKey: SUBSCRIPTION_PROXY_KEY_ENV,
+};
+
 const PROVIDERS: Record<string, CodexCustomProvider> = {
   [CODEX_OPENROUTER_PROVIDER.id]: CODEX_OPENROUTER_PROVIDER,
+  [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id]: CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
 };
 
 export function codexCustomProvider(id: string | undefined): CodexCustomProvider | undefined {
@@ -47,6 +57,9 @@ export function codexCustomProvider(id: string | undefined): CodexCustomProvider
  */
 export function codexProviderForModel(model: string): CodexCustomProvider | undefined {
   const lower = model.toLowerCase();
+  if (catalogModelByClaudeSubscriptionModel(model)) {
+    return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
+  }
   const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;
 }

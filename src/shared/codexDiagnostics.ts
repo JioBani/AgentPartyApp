@@ -34,7 +34,11 @@ export interface CodexDiagnostic {
 /** The recovery step for the known Windows sandbox ACL drift (openai/codex#9062). */
 const WINDOWS_SANDBOX_RECOVERY = "Windows 샌드박스 문제일 수 있습니다 — /codex-fix-sandbox 로 복구를 시도하세요.";
 
-export function classifyDiagnostic(method: string, params: any): CodexDiagnostic | null {
+export function classifyDiagnostic(
+  method: string,
+  params: any,
+  context: { modelProvider?: string } = {},
+): CodexDiagnostic | null {
   switch (method) {
     case "model/rerouted":
       // A silent model swap is exactly what the no-fallback rule forbids: always show it.
@@ -60,17 +64,24 @@ export function classifyDiagnostic(method: string, params: any): CodexDiagnostic
     case "warning": {
       const message = str(params?.message);
       // Informational, not a fault: Codex has no built-in metadata entry for
-      // arbitrary OpenRouter model slugs, so it uses a default context window.
+      // arbitrary custom-provider model slugs, so it uses a default context
+      // window. Preserve the selected provider identity: Claude subscription
+      // models must never be presented as OpenRouter billing.
       // The model runs normally and the selected model does NOT change (this is
       // not the model-selection fallback the no-silent-fallback rule guards).
       // Surface it as a calm info note (accent-colored, Info icon) with the
       // reassurance leading, so it reads as FYI rather than an error.
       if (/model metadata.*not found|fallback metadata/i.test(message || "")) {
+        const provider = context.modelProvider === "claude-subscription"
+          ? "Claude subscription"
+          : context.modelProvider === "openrouter"
+            ? "OpenRouter"
+            : "custom provider";
         return {
           severity: "info",
           category: "config",
-          title: "참고: OpenRouter 모델 (Codex 내장 정보 없음)",
-          detail: "에러가 아닙니다. Codex에 이 모델의 내장 메타데이터가 없어 기본 컨텍스트 창으로 실행합니다 — 응답은 정상입니다. 아주 긴 세션에서 auto-compaction 시점만 근사치가 됩니다.",
+          title: `Model metadata note · ${provider}`,
+          detail: `This is not a reroute. Codex has no built-in metadata for this ${provider} model, so context-window estimates may be approximate. The selected model and provider remain unchanged.`,
         };
       }
       const sandbox = /sandbox|read-only|acl|world-?writable/i.test(message || "");

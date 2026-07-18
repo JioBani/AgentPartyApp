@@ -85,20 +85,28 @@ assert(glm?.providerId === "openrouter" && glm?.modelProvider === "openrouter", 
 assert(glm?.capabilities.effort.supported && glm.capabilities.effort.options.some((o) => o.id === "max"), "effort options come from the catalog reasoning spec");
 assert((glm?.description || "").includes("OpenRouter"), "description warns the model bills via OpenRouter");
 assert(glm?.meta?.perf === 4 && glm?.meta?.costTier === 2, "leaderboard meta preserved from the catalog");
+const claudeCodex = withCatalog.filter((route) => route.harnessId === "codex" && route.modelProvider === "claude-subscription");
+assert(claudeCodex.length === 4, "Claude catalog models are exposed on Codex through Claude OAuth");
+const sonnet = claudeCodex.find((route) => route.model === "claude-sonnet-4-6");
+assert(sonnet?.pricing?.billing === "subscription" && sonnet?.providerId === "anthropic", "Codex Sonnet is an Anthropic subscription route");
 // Account catalog + OpenRouter both present without discovery too.
 const noDiscovery = buildModelRoutes("sonnet", [], []).filter((route) => route.harnessId === "codex");
 assert(noDiscovery.some((r) => r.model === "gpt-5.4") && noDiscovery.some((r) => r.modelProvider === "openrouter"), "without discovery: static account fallback + OpenRouter routes both present");
 assert(noDiscovery.filter((r) => r.providerId === "openai").length === 6, "without discovery: every catalog codexModel entry is a static codex route");
 
 // ---- Layer 2c: codexProviders (Phase 2 pure model) ----------------------------
-const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
+const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
 console.log("\ncodexProviders mapping:");
 assert(codexProviderForModel("z-ai/glm-5.2")?.id === "openrouter", "an OpenRouter slug maps to the openrouter provider");
 assert(codexProviderForModel("gpt-5.5") === undefined, "a bare account slug maps to no custom provider (built-in openai)");
+assert(codexProviderForModel("claude-sonnet-4-6")?.id === "claude-subscription", "a Claude OAuth model maps to the local subscription provider");
 const providerArgs = codexProviderConfigArgs(CODEX_OPENROUTER_PROVIDER);
 assert(providerArgs.includes("model_providers.openrouter.wire_api=\"responses\""), "provider config args pin wire_api=responses (chat is removed)");
 assert(providerArgs.some((a) => a.includes('base_url="https://openrouter.ai/api/v1"')), "provider config args set the OpenRouter base_url");
 assert(providerArgs.some((a) => a.includes("env_key=\"OPENROUTER_API_KEY\"")), "provider config args read the key from OPENROUTER_API_KEY");
+const claudeProviderArgs = codexProviderConfigArgs(CODEX_CLAUDE_SUBSCRIPTION_PROVIDER);
+assert(claudeProviderArgs.some((a) => a.includes('base_url="http://127.0.0.1:8317/v1"')), "Claude provider config uses local CLIProxyAPI");
+assert(claudeProviderArgs.some((a) => a.includes('env_key="AGENTPARTY_SUBSCRIPTION_PROXY_KEY"')), "Claude provider reads the local proxy key env var");
 assert(codexProviderConfigArgs(undefined).length === 0, "no override args for the built-in provider");
 
 // ---- Layer 3: MemberWizard DOM ------------------------------------------------
@@ -127,7 +135,7 @@ const readyHost = mount(React.createElement(MemberWizard, { routes: withCatalog,
 await tick();
 await openModelStep(readyHost);
 const rows = [...readyHost.querySelectorAll(".wb-model-row")];
-assert(rows.length === 6 + orCodex.length, `codex harness lists account models (3 discovered + 3 static) + OpenRouter models (${orCodex.length}), not one hardcoded route`);
+assert(rows.length === 6 + orCodex.length + claudeCodex.length, `Codex harness lists account, OpenRouter, and Claude-subscription models`);
 // The shared catalog owns the display identity: a discovered slug with a
 // catalog twin (gpt-5.4-mini → "GPT-5.4 mini") renders the catalog label, not
 // the raw model/list displayName. Selectability is asserted on that label.

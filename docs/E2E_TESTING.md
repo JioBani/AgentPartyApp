@@ -19,9 +19,9 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-askq` | AskUserQuestion choice-card rendering |
 | `qa-interaction-api` | QA interaction API (inject AskUserQuestion) |
 | `qa-model-catalog` | model catalog / routing |
-| `qa-party-bridge` | in-process party bridge (send/create/remove/list) + the session **primer** |
+| `qa-party-bridge` | in-process party bridge (send/create/remove/permission/list), explicit initial permissions, concrete execution-harness discovery, idempotent start + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
-| `qa-member-wizard` | member-create step wizard + model detail |
+| `qa-member-wizard` | member-create step wizard + model detail + explicit initial permission step |
 | `qa-member-remove` | sidebar delete via right-click context menu: **member** delete (`삭제하기`, `main` protected) **and party** delete (two-step confirm `파티 삭제…` → `한 번 더 클릭` → `onRemoveParty`) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
@@ -111,18 +111,44 @@ shows the toolbar compact pill + the sidebar `⇲ NN%` badges (members without t
 own setting inheriting the global default). The crossing-trigger + inheritance
 logic is locked deterministically by `qa-auto-compact` (in `test:ui`).
 
-`node scripts/e2e-compact.mjs` is a BILLED manual-compaction probe (live Claude +
-Codex): it sends one real turn to each, then `POST /api/sessions/:id/compact` and
+`node scripts/e2e-compact.mjs` is a BILLED manual-compaction probe (Sonnet low +
+GPT mini low): it sends one real turn to each, then `POST /api/sessions/:id/compact` and
 surfaces the harness outcome (Claude reports "compact failed / nothing to compact"
-on a short session; Codex actually reduces occupancy). Used to verify the compact
+on a short session; Codex reports its actual compact lifecycle). Used to verify the compact
 result/error is ATTRIBUTED, not folded into a generic "idle: failed" status.
 
 `node scripts/e2e-permission-persist.mjs` (or `npm run test:e2e:permission-persist`)
-boots the real app on an isolated userData + temp workspace (offline — mock member,
-no model) and proves that a permission mode changed DURING a session via
-`POST /api/sessions/:id/permission` is written back to the owning member's
-`party.json` and restored after an app RESTART (previously the runtime change
-reached only the live adapter and was lost on restart).
+boots the real app on an isolated userData + temp workspace (offline — mock members,
+no model) and proves that Claude `permissionMode` and Codex `codexPolicy` changes
+made DURING a session are written back to each owning member's `party.json` and
+restored after an app RESTART. It also verifies the name-addressed member
+permission endpoint works while the target is idle, and that a member-tool
+party header still targets its spawning party after the desktop selects another
+party.
+
+`node scripts/e2e-live-codex-party-tools.mjs` (or
+`npm run test:e2e:live-codex-party-tools`) is a billed one-turn GPT mini check of
+the actual Codex stdio MCP surface. It requires the model to call
+`mcp__agentparty-app__member-permission` and verifies the other member's
+permission changed on the app/API side.
+
+`node scripts/e2e-live-session-reopen.mjs` (or
+`npm run test:e2e:live-session-reopen`) is the billed, minimal regression for
+member conversations closing after menu navigation or an app restart. It runs a
+real Electron process twice with the same workspace and userData, using native
+Claude Sonnet at low effort. Two short turns prove that a visible panel
+auto-creates a `resume-*` session without an explicit `/start`, retains the
+persisted transcript, keeps the same harness thread, and preserves model context.
+Cross-provider routing is tested separately so local OAuth/proxy state cannot
+mask this lifecycle regression.
+
+`node scripts/e2e-live-cross-harness.mjs` (or
+`npm run test:e2e:live-cross-harness`) is the billed two-turn proof of true
+harness/model cross-routing. It verifies from real harness debug traffic that
+GPT-5.4 mini low is spawned by Claude Code with `claude-gpt-5.4-mini`, while
+Claude Sonnet low is started by Codex app-server with
+`modelProvider: "claude-subscription"`. GPT uses Codex/ChatGPT OAuth and Claude
+uses Claude OAuth; OpenRouter credit is not involved.
 
 `node scripts/e2e-subagents.mjs` (or `npm run test:e2e:subagents`) boots the real
 app and injects the subagent scenarios through

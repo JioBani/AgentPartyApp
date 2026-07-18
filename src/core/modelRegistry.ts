@@ -1,6 +1,7 @@
 import {
   catalogModelById,
   catalogModelByRuntime,
+  claudeSubscriptionModels,
   codexAccountModels,
   modelCatalog,
   orRoutedModels,
@@ -9,7 +10,7 @@ import {
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
-import { CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
+import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 
 export type HarnessId = "claude-code" | "codex";
 export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "custom";
@@ -168,21 +169,19 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of codexAccountModels()) {
     addRoute(routes, seen, codexRouteFromCatalog(model));
   }
-  // The catalog is authoritative for the claude-code model list (leaderboard-
-  // aligned). This includes the codex account models (provider openai): their
-  // claude-* runtimeModel alias routes them through the AgentParty router
-  // backend, which is the harness×model cross feature — the same model is
-  // selectable from either harness (once per harness, no duplicates).
+  // The catalog is authoritative for the claude-code model list. OpenAI models
+  // retain the Claude SDK process while the embedded router forwards them to
+  // the local Codex/ChatGPT subscription proxy.
   for (const model of modelCatalog()) {
     addRoute(routes, seen, routeFromCatalog(model));
   }
-  // Codex harness (Phase 2): every catalog model with a concrete OpenRouter id,
-  // routed through the OpenRouter custom provider — including the Anthropic
-  // models (Opus/Sonnet/Haiku), which is the codex-side half of the
-  // harness×model cross feature (docs/codex-ux-research/07-model-routing.md §6;
-  // billed to the OpenRouter key, not the Claude subscription).
+  // True OpenRouter catalog models stay token-billed on the OpenRouter custom
+  // provider. Anthropic cross-routes are added separately through Claude OAuth.
   for (const model of orRoutedModels()) {
     addRoute(routes, seen, codexOpenRouterRoute(model));
+  }
+  for (const model of claudeSubscriptionModels()) {
+    addRoute(routes, seen, codexClaudeSubscriptionRoute(model));
   }
 
   // Keep the currently selected model visible even if it is not catalogued
@@ -304,6 +303,43 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
   };
 }
 
+/** Codex app-server route backed by the user's Claude OAuth subscription. */
+export function codexClaudeSubscriptionRoute(model: CatalogModel): ModelRoute {
+  const effort = model.reasoning?.effort;
+  return {
+    harnessId: "codex",
+    providerId: "anthropic",
+    model: model.claudeSubscriptionModel || model.id,
+    runtimeModel: model.claudeSubscriptionModel || model.id,
+    modelProvider: CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id,
+    label: model.label,
+    description: `${model.description || ""} Runs on the Codex harness through your Claude subscription (local CLIProxyAPI).`.trim(),
+    pricing: { billing: "subscription", directPrice: "Claude subscription", context: model.context },
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: visionFromCatalog(model),
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: true,
+  };
+}
+
 /**
  * A codex-harness route for a catalog account model (provider openai with a
  * codexModel slug) — the static fallback that keeps every known account model
@@ -347,14 +383,24 @@ export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
 }
 
 function routeFromCatalog(model: CatalogModel): ModelRoute {
+  const routed = model.provider !== "anthropic";
+  const subscriptionRouted = model.provider === "openai" && Boolean(model.codexModel);
   return {
     harnessId: "claude-code",
     providerId: model.provider,
     model: model.id,
     runtimeModel: model.runtimeModel,
     label: model.label,
-    description: model.description,
-    pricing: pricingFromCatalog(model),
+    description: routed
+      ? subscriptionRouted
+        ? `${model.description || ""} Runs on the Claude Code harness through your Codex/ChatGPT subscription (local CLIProxyAPI).`.trim()
+        : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
+      : model.description,
+    pricing: subscriptionRouted
+      ? { billing: "subscription", directPrice: "Codex subscription", context: model.context }
+      : routed
+        ? { ...pricingFromCatalog(model), billing: "token" }
+        : pricingFromCatalog(model),
     capabilities: capabilitiesFromCatalog(model),
     meta: {
       perf: model.perf,

@@ -30,6 +30,7 @@ const MAX_TOOL_CHIPS = 16;
  * (canReconnect / canToggle / canAuthenticate) — never a button that no-ops.
  */
 export function McpModal({ view, actions, onClose }: McpModalProps) {
+  const fallbackHarness = view.member.runtime === "codex" ? "codex" : "claude-code";
   const [snapshot, setSnapshot] = useState<McpServerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -44,11 +45,11 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
     try {
       setSnapshot(await actions.listMcp(view.name));
     } catch (error) {
-      setSnapshot({ supported: true, harness: view.member.runtime === "codex" ? "codex" : "claude-code", servers: [], error: error instanceof Error ? error.message : String(error) });
+      setSnapshot({ supported: true, harness: fallbackHarness, servers: [], error: error instanceof Error ? error.message : String(error) });
     } finally {
       setLoading(false);
     }
-  }, [actions, view.name, view.member.runtime]);
+  }, [actions, view.name, fallbackHarness]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -155,7 +156,7 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
               <span className="mcp-mem-dot" style={{ background: view.color }} />
               <span className="mcp-mem-name">{view.name}</span>
               <span className="mcp-sep" />
-              <span className="wb-mono mcp-harness">{view.member.runtime === "codex" ? "Codex" : "Claude Code"}</span>
+              <span className="wb-mono mcp-harness">{(snapshot?.harness || fallbackHarness) === "codex" ? "Codex" : "Claude Code"}</span>
             </span>
           </div>
           <div className="mcp-head-actions">
@@ -224,7 +225,7 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
               {servers.length === 0 ? (
                 <>
                   <span>연결된 MCP 서버가 없습니다</span>
-                  <small>{view.member.runtime === "codex" ? "~/.codex/config.toml 의 [mcp_servers.*] 에 서버를 추가하면 표시됩니다." : ".mcp.json 또는 사용자 설정에 MCP 서버를 추가하면 표시됩니다."}</small>
+                  <small>{(snapshot?.harness || fallbackHarness) === "codex" ? "~/.codex/config.toml 의 [mcp_servers.*] 에 서버를 추가하면 표시됩니다." : ".mcp.json 또는 사용자 설정에 MCP 서버를 추가하면 표시됩니다."}</small>
                 </>
               ) : (
                 <span>조건에 맞는 서버가 없습니다</span>

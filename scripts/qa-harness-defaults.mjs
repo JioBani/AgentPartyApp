@@ -55,6 +55,25 @@ assert(codexMember.codexPolicy?.sandbox === "read-only", "codex member starts wi
 // Explicit input still overrides the harness default.
 const override = D.buildPartyMember({ partyId: "p1", name: "cx2", role: "r", runtime: "codex", model: "z-ai/glm-5.2" }, settings);
 assert(override.model === "z-ai/glm-5.2", "explicit input model overrides the harness default");
+const explicitPolicy = { sandbox: "danger-full-access", approval: "never", guardian: true };
+const explicitCodex = D.buildPartyMember({ partyId: "p1", name: "cx3", role: "r", runtime: "codex", codexPolicy: explicitPolicy }, settings);
+assert(JSON.stringify(explicitCodex.codexPolicy) === JSON.stringify(explicitPolicy), "explicit initial Codex policy overrides the runtime default");
+const crossRouted = D.buildPartyMember({ partyId: "p1", name: "gpt", role: "r", runtime: "claude-code", model: "GPT-5.4 mini" }, settings);
+assert(crossRouted.runtime === "claude-code" && crossRouted.permissionMode === "plan" && !crossRouted.codexPolicy, "Claude Code + GPT keeps Claude permission semantics");
+let invalidPermissionError = "";
+try {
+  D.buildPartyMember({ partyId: "p1", name: "bad-claude", role: "r", permissionMode: "invented" }, settings);
+} catch (error) {
+  invalidPermissionError = error instanceof Error ? error.message : String(error);
+}
+assert(invalidPermissionError.includes("Unknown Claude permission mode"), "invalid initial Claude permission is rejected at the domain boundary");
+let invalidPolicyError = "";
+try {
+  D.buildPartyMember({ partyId: "p1", name: "bad-codex", role: "r", runtime: "codex", codexPolicy: { sandbox: "read-only" } }, settings);
+} catch (error) {
+  invalidPolicyError = error instanceof Error ? error.message : String(error);
+}
+assert(invalidPolicyError.includes("Codex policy requires"), "incomplete initial Codex policy is rejected at the domain boundary");
 // A member with no runtime falls back to the selected default harness.
 const fallback = D.buildPartyMember({ partyId: "p1", name: "m", role: "r" }, settings);
 assert(fallback.runtime === "claude-code" && fallback.model === "sonnet", "a runtime-less member uses the selected default harness");

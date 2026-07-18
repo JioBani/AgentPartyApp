@@ -2,7 +2,7 @@
  * Full-process e2e for the REAL /compact path, both harnesses, with REAL model
  * calls. Launches the app (QA), creates a party with two live members —
  *   - claudey (Claude Code, sonnet, effort low) and
- *   - codexy  (Codex, gpt-5.5, effort low)
+ *   - codexy  (Codex, gpt-5.4-mini, effort low)
  * — starts a real session for each, sends one tiny real turn (so there IS some
  * context), records contextTokens, then calls POST /api/sessions/:id/compact and
  * surfaces whatever the harness reports back (Claude sends `/compact`; Codex
@@ -29,7 +29,7 @@ const userData = path.join(os.tmpdir(), "agentparty-compact-e2e-user-data");
 let base = "";
 const codexJs = process.env.AGENTPARTY_CODEX_JS || "C:\\Users\\Dev\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
 const claudeModel = process.env.AGENTPARTY_LIVE_CLAUDE_MODEL || "sonnet";
-const codexModel = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.5";
+const codexModel = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
 
 async function main() {
   await removePath(ws);

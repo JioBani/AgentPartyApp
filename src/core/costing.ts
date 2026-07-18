@@ -75,7 +75,7 @@ class ClaudeCodeCostProvider implements CostProvider {
 
 class CodexSubscriptionCostProvider implements CostProvider {
   supports(context: TurnCostContext): boolean {
-    return context.providerId === "openai" && context.pricing?.billing === "subscription";
+    return context.pricing?.billing === "subscription";
   }
 
   async resolve(context: TurnCostContext): Promise<TurnCost> {
@@ -83,7 +83,7 @@ class CodexSubscriptionCostProvider implements CostProvider {
       source: "codex",
       basis: "subscription",
       label: context.pricing?.directPrice || "subscription",
-      detail: "Subscription-backed route; no per-turn token bill is available from this harness.",
+      detail: `${context.pricing?.directPrice || "Subscription"}-backed route; no per-turn token bill is available from this harness.`,
     };
   }
 }

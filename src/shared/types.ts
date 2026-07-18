@@ -2,6 +2,7 @@ import type { ClaudeSessionSnapshot } from "../core/events";
 import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
+import type { ModelProviderDescriptor } from "./modelProviders";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -85,11 +86,17 @@ export interface AuthProviderState {
   id: string;
   label: string;
   kind: "subscription" | "apiKey";
-  status: "available" | "configured" | "missing" | "valid" | "invalid" | "network_error";
+  status: "available" | "configured" | "missing" | "pending" | "valid" | "invalid" | "network_error";
   description: string;
   source?: string;
   maskedValue?: string;
   detail?: string;
+  /** Optional action rendered by Authentication and exposed over automation. */
+  action?: {
+    type: "subscriptionOAuth";
+    provider: "codex" | "claude";
+    label: string;
+  };
 }
 
 export interface PartyMember {
@@ -181,6 +188,8 @@ export interface CreateMemberInput {
   reasoning?: string;
   reasoningBudget?: number;
   permissionMode?: PermissionModeSetting;
+  /** Explicit initial Codex safety policy for members using the Codex harness. */
+  codexPolicy?: CodexPolicy;
 }
 
 export interface StartPartyMemberInput {
@@ -190,6 +199,8 @@ export interface StartPartyMemberInput {
   thinking?: string;
   thinkingBudget?: number;
   permissionMode?: PermissionModeSetting;
+  /** Explicit Codex safety policy for members using the Codex harness. */
+  codexPolicy?: CodexPolicy;
   selectedProviderId?: ProviderId;
   /**
    * Opportunistic start (renderer prewarm on panel open) — must NOT resurrect a
@@ -197,6 +208,12 @@ export interface StartPartyMemberInput {
    * omits this and reopens a closed member as always.
    */
   auto?: boolean;
+}
+
+/** Party-member permission mutation used by UI, HTTP, and member tools. */
+export interface MemberPermissionInput {
+  permissionMode?: PermissionModeSetting;
+  codexPolicy?: CodexPolicy;
 }
 
 export interface SessionView {
@@ -243,6 +260,8 @@ export interface InitialAppState {
   auth: AuthProviderState[];
   sessions: SessionView[];
   modelRoutes: unknown[];
+  /** The three provider groups used to partition modelRoutes in Workbench. */
+  modelProviders: ModelProviderDescriptor[];
   /** Live Codex account-catalog discovery state (pending/ready/error). */
   codexModels?: CodexModelDiscoveryState;
   harnesses: unknown[];

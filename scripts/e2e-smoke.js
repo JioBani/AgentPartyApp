@@ -161,6 +161,7 @@ function writeFakeCodex() {
     "    out({ id: msg.id, result: { turn: { id: turnId, items: [], itemsView: 'notLoaded', status: 'inProgress', error: null, startedAt: null, completedAt: null, durationMs: null } } });",
     "    out({ method: 'thread/started', params: { thread: { id: threadId, sessionId: threadId, status: { type: 'idle' }, cwd: process.cwd(), turns: [] } } });",
     "    out({ method: 'turn/started', params: { threadId, turn: { id: turnId, items: [], itemsView: 'notLoaded', status: 'inProgress', error: null, startedAt: 1, completedAt: null, durationMs: null } } });",
+    "    out({ method: 'error', params: { threadId, turnId, willRetry: true, error: { message: 'Reconnecting... 1/5', additionalDetails: 'Synthetic transient provider disconnect.' } } });",
     "    out({ method: 'item/started', params: { threadId, turnId, item: { type: 'commandExecution', id: 'cmd-1', command: 'echo PONG', cwd: process.cwd(), processId: null, source: 'exec', status: 'inProgress', commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null } } });",
     "    out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'commandExecution', id: 'cmd-1', command: 'echo PONG', cwd: process.cwd(), processId: null, source: 'exec', status: 'completed', commandActions: [], aggregatedOutput: 'PONG', exitCode: 0, durationMs: 1 } } });",
     "    out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', id: `msg-${turn}`, text: 'PONG', phase: 'final_answer', memoryCitation: null } } });",

@@ -19,6 +19,7 @@ import { MockHarnessSession } from "./harness/mockHarness";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
 import { log } from "./logger";
+import { executionModelFor } from "../shared/modelIdentity";
 
 interface ManagedSession {
   id: string;
@@ -111,7 +112,8 @@ export class SessionManager extends EventEmitter {
     const request = normalizeCreateSessionInput(input);
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
     const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding);
-    const provider = providerOfHarness(request.selectedHarnessId || settings.selectedHarnessId);
+    const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    const provider = providerOfHarness(requestedHarness);
     return this.registerSession(id, workspace, adapter, provider);
   }
 
@@ -381,15 +383,19 @@ export class SessionManager extends EventEmitter {
     const settings = getSettings();
     const id = `mock-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
     const request = normalizeCreateSessionInput(input);
+    const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    const selectedDefaults = harnessDefaultsOf(settings, selectedHarness);
+    const selectedModel = request.model || selectedDefaults.model;
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
     const adapter = new MockHarnessSession({
       id,
       cwd: workspace,
-      model: request.model || harnessDefaultsOf(settings).model,
-      effort: request.effort || harnessDefaultsOf(settings).effort,
-      permissionMode: request.permissionMode || harnessDefaultsOf(settings).permissionMode || "default",
+      model: selectedModel,
+      effort: request.effort || selectedDefaults.effort,
+      permissionMode: request.permissionMode || selectedDefaults.permissionMode || "default",
+      codexPolicy: request.codexPolicy || selectedDefaults.codexPolicy,
       autoReply: options?.autoReply,
-      harness: request.selectedHarnessId || settings.selectedHarnessId,
+      harness: selectedHarness,
     });
     return this.registerSession(id, workspace, adapter);
   }
@@ -604,7 +610,13 @@ export class SessionManager extends EventEmitter {
   }
 
   setModel(id: string, model: string, providerId?: string, runtimeModel?: string): void {
-    this.sessions.get(id)?.adapter.setModel(model, providerId as any, runtimeModel);
+    const adapter = this.sessions.get(id)?.adapter;
+    if (!adapter) {
+      return;
+    }
+    const adapterHarness = adapter instanceof CodexAdapter ? "codex" : "claude-code";
+    const effectiveModel = adapterHarness === "codex" ? executionModelFor(model, "codex") : model;
+    adapter.setModel(effectiveModel, providerId as any, runtimeModel);
   }
 
   setEffort(id: string, effort: string): void {
@@ -733,13 +745,14 @@ export class SessionManager extends EventEmitter {
 
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
     const settings = getSettings();
-    const harnessId = request.selectedHarnessId || settings.selectedHarnessId;
-    const harnessDefaults = harnessDefaultsOf(settings, harnessId);
-    if (harnessId === "codex") {
+    const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    const harnessDefaults = harnessDefaultsOf(settings, selectedHarness);
+    const selectedModel = request.model || harnessDefaults.model;
+    if (selectedHarness === "codex") {
       return new CodexAdapter({
         id,
         cwd,
-        model: request.model || harnessDefaults.model,
+        model: executionModelFor(selectedModel, "codex"),
         effort: request.effort || harnessDefaults.effort,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         policy: request.codexPolicy || harnessDefaults.codexPolicy,
@@ -756,7 +769,7 @@ export class SessionManager extends EventEmitter {
     }
     const storageDir = path.join(this.userDataDir, "logs");
     const routerAccountingKey = `agentparty-native-session:${id}`;
-    const model = request.model || harnessDefaults.model;
+    const model = selectedModel;
     return new ClaudeAdapter({
       id,
       cwd,

@@ -6,13 +6,16 @@
  * unknown route never disappears.
  */
 import type { RouteLike } from "./routes";
+import { modelProviderLabel } from "../../shared/modelProviders";
 
 export type ProviderId = "anthropic" | "openai" | "openrouter" | "custom";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
+  // Internal catalog ids name API vendors; the product surface names the
+  // credentials users actually connect in Authentication.
+  anthropic: modelProviderLabel("anthropic"),
+  openai: modelProviderLabel("openai"),
+  openrouter: modelProviderLabel("openrouter"),
   custom: "Custom",
 };
 

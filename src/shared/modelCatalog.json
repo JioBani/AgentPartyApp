@@ -1,29 +1,29 @@
 {
-  "_about": "Single source of truth for model routing, leaderboard metrics (리더보드-최종, AA지수통합 27 Jun '26; GPT-5.6 = docs/model research/GPT-5.6-Sol-Terra-Luna-2026.md, 10 Jul '26; Fable 5 = platform.claude.com introducing-claude-fable-5 + openrouter.ai/anthropic/claude-fable-5, 10 Jul '26) and per-model reasoning control (Reasoning제어). One entry per MODEL; harness×model cross-routing is derived from its fields — anthropic entries run natively on claude-code; a codexModel slug runs it on the codex harness (OpenAI account); a claude-* runtimeModel runs it on the claude-code harness through the AgentParty router backend (external router, e.g. :3455, translates the claude-gpt-* alias to the Codex backend); an orModelId runs it on both harnesses via OpenRouter. Add a model = add one entry. perf 0-5 = leaderboard '칸'; costTier 1-5 = leaderboard '비용'; in/out/io = $/1M. reasoning: omit/null = no reasoning control. Only effort values low/medium/high/xhigh/max and thinking modes adaptive/enabled/disabled are transportable to the harness/router today, so option sets are the transportable subset of each model's native spec (GPT-5.6 Sol/Terra also support 'ultra' natively — surfaced only via live codex model/list discovery, not transportable here yet). vision: image=true accepts image input; image=false is text-only (attaching is refused with a visible error, never silently dropped); omit = unknown (image vision verified 2026-07 web check).",
+  "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry.",
   "models": [
     {
-      "id": "claude-fable-5[1m]", "label": "Fable", "provider": "anthropic", "subscription": true, "orModelId": "anthropic/claude-fable-5",
+      "id": "claude-fable-5[1m]", "label": "Fable", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-fable-5", "orModelId": "anthropic/claude-fable-5",
       "description": "Fable 5, Anthropic's most capable model (Mythos-class, above Opus). Adaptive thinking is always on (cannot be disabled); safety classifiers may refuse a request. No short 'fable' CLI alias exists yet — the full id is required (verified 10 Jul '26).",
       "context": "1M", "perf": 5, "costTier": 5, "inPerM": 10, "outPerM": 50, "ioPerM": 20,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive"], "default": "adaptive" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
-      "id": "opus[1m]", "label": "Opus", "provider": "anthropic", "subscription": true, "orModelId": "anthropic/claude-opus-4.8",
+      "id": "opus[1m]", "label": "Opus 4.8", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-opus-4-8", "orModelId": "anthropic/claude-opus-4.8",
       "description": "Opus with 1M context. Best for complex work.",
       "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 25, "ioPerM": 10,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "disabled" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
-      "id": "sonnet", "label": "Sonnet", "provider": "anthropic", "subscription": true, "orModelId": "anthropic/claude-sonnet-4.6",
+      "id": "sonnet", "label": "Sonnet 4.6", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-sonnet-4-6", "orModelId": "anthropic/claude-sonnet-4.6",
       "description": "Sonnet. Efficient default for routine coding tasks.",
       "context": "1M", "perf": 3, "costTier": 5, "inPerM": 3, "outPerM": 15, "ioPerM": 6,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
-      "id": "haiku", "label": "Haiku", "provider": "anthropic", "subscription": true, "orModelId": "anthropic/claude-haiku-4.5",
+      "id": "haiku", "label": "Haiku", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-haiku-4-5-20251001", "orModelId": "anthropic/claude-haiku-4.5",
       "description": "Haiku. Fastest for quick answers.",
       "context": "200K", "perf": 0, "costTier": 3, "inPerM": 1, "outPerM": 5, "ioPerM": 2,
       "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "disabled" }, "budget": { "default": 4096, "min": 1024, "max": 32000 } },
@@ -31,42 +31,42 @@
     },
     {
       "id": "GPT-5.6 Sol", "label": "GPT-5.6 Sol", "provider": "openai", "codexModel": "gpt-5.6-sol", "runtimeModel": "claude-gpt-5.6-sol", "subscription": true,
-      "description": "Latest frontier agentic coding model. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Latest frontier agentic coding model. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 30, "ioPerM": 11.25,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "low" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.6 Terra", "label": "GPT-5.6 Terra", "provider": "openai", "codexModel": "gpt-5.6-terra", "runtimeModel": "claude-gpt-5.6-terra", "subscription": true,
-      "description": "Balanced agentic coding model for everyday work. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Balanced agentic coding model for everyday work. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "1M", "perf": 4, "costTier": 4, "inPerM": 2.5, "outPerM": 15, "ioPerM": 5.63,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.6 Luna", "label": "GPT-5.6 Luna", "provider": "openai", "codexModel": "gpt-5.6-luna", "runtimeModel": "claude-gpt-5.6-luna", "subscription": true,
-      "description": "Fast and affordable agentic coding model. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Fast and affordable agentic coding model. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "1M", "perf": 3, "costTier": 3, "inPerM": 1, "outPerM": 6, "ioPerM": 2.25,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.5", "label": "GPT-5.5", "provider": "openai", "codexModel": "gpt-5.5", "runtimeModel": "claude-gpt-5.5", "subscription": true,
-      "description": "Frontier model for complex coding, research, and real-world work. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Frontier model for complex coding, research, and real-world work. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "1.05M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 30, "ioPerM": 11.25,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.4", "label": "GPT-5.4", "provider": "openai", "codexModel": "gpt-5.4", "runtimeModel": "claude-gpt-5.4", "subscription": true,
-      "description": "Strong model for everyday coding. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Strong model for everyday coding. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "1M", "perf": 4, "costTier": 4, "inPerM": 2.5, "outPerM": 15, "ioPerM": 5.63,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.4 mini", "label": "GPT-5.4 mini", "provider": "openai", "codexModel": "gpt-5.4-mini", "runtimeModel": "claude-gpt-5.4-mini", "subscription": true,
-      "description": "Small, fast, and cost-efficient model for simpler coding tasks. Codex harness: OpenAI account. Claude Code harness: via the AgentParty router backend.",
+      "description": "Small, fast, and cost-efficient model for simpler coding tasks. Both harnesses use the signed-in Codex/ChatGPT subscription.",
       "context": "400K", "perf": 1, "costTier": 3, "inPerM": 0.75, "outPerM": 4.5, "ioPerM": 1.69,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }

@@ -43,6 +43,7 @@ const live = new Set();
 const captured = [];
 const sentTurns = [];
 const interrupted = [];
+const permissionChanges = [];
 const snapshots = new Map();
 let notifyCount = 0;
 let seq = 0;
@@ -69,6 +70,8 @@ const sessionManager = {
   sendUserTurn(id, text) { sentTurns.push({ id, text }); },
   closeSession(id) { live.delete(id); },
   interrupt(id) { interrupted.push(id); },
+  setPermissionMode(id, permissionMode) { permissionChanges.push({ id, permissionMode }); },
+  setCodexPolicy(id, codexPolicy) { permissionChanges.push({ id, codexPolicy }); },
   // A session is "compacting" while its id is in this set (the real manager sets it
   // in compact() and clears it on the outcome). Interrupt-on-send must respect it.
   compacting: new Set(),
@@ -105,22 +108,37 @@ assert(Array.isArray(models.data.models) && models.data.models.length > 5, "list
 assert(models.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one model exposes reasoning options");
 assert(models.data.models.some((m) => typeof m.perf === "number" && m.context), "models carry rich meta (perf + context)");
 assert(models.data.models.every((m) => m.harness === "claude-code" || m.harness === "codex"), "every model states its harness (member-create needs it)");
+assert(models.data.models.every((m) => m.executionHarness === "claude-code" || m.executionHarness === "codex"), "every model states its concrete execution harness");
+assert(models.data.harnesses.every((h) => h.permission?.kind), "each harness exposes its member-create permission contract + default");
+assert(models.data.models.find((m) => m.harness === "claude-code" && m.id === "GPT-5.4 mini")?.executionHarness === "claude-code", "Claude Code + GPT discovery preserves the Claude Code harness");
 const codexListed = models.data.models.filter((m) => m.harness === "codex");
 assert(codexListed.some((m) => m.id === "gpt-5.5"), "the live codex catalog rides into list-models");
 assert(codexListed.find((m) => m.id === "gpt-5.5")?.reasoning?.effort?.options?.length === 4, "codex models expose effort options (effort-only reasoning)");
 
 // --- member-create: codex accepted ------------------------------------------
-const codex = await bridge.createMember({ name: "cx", role: "x", harness: "codex" });
+const initialCodexPolicy = { sandbox: "read-only", approval: "on-request", guardian: false };
+const codex = await bridge.createMember({ name: "cx", role: "x", harness: "codex", codexPolicy: initialCodexPolicy });
 assert(codex.ok && svc.list().members.find((m) => m.name === "cx")?.runtime === "codex", "member-create accepts codex harness");
 assert(captured.length === 2, "codex member-create starts a codex session");
+assert(JSON.stringify(svc.list().members.find((m) => m.name === "cx")?.codexPolicy) === JSON.stringify(initialCodexPolicy), "member-create persists an explicit initial Codex policy");
+const changedCodexPolicy = { sandbox: "workspace-write", approval: "never", guardian: true };
+const changedCx = await bridge.setPermission("cx", { codexPolicy: changedCodexPolicy });
+assert(changedCx.ok && JSON.stringify(svc.list().members.find((m) => m.name === "cx")?.codexPolicy) === JSON.stringify(changedCodexPolicy), "one member can change another Codex member's policy");
+assert(permissionChanges.some((change) => change.codexPolicy?.guardian === true), "live Codex permission change reaches the target adapter");
 
 // --- member-create: claude-code auto-starts + persists reasoning -------------
-const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", harness: "claude-code", model: "sonnet", reasoning: "enabled" });
+const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", harness: "claude-code", model: "sonnet", reasoning: "enabled", permissionMode: "plan" });
 assert(make.ok, "member-create (claude-code) succeeds");
 assert(captured.length === 3, "member-create auto-starts the new member's session");
 const reviewer = svc.list().members.find((m) => m.name === "reviewer");
 assert(reviewer?.reasoning === "enabled", "reasoning is persisted on the created member");
 assert(reviewer?.status === "running", "created member is live");
+assert(reviewer?.permissionMode === "plan", "member-create persists an explicit initial Claude permission");
+const beforeDuplicateStart = captured.length;
+const reusedReviewer = svc.startMember("reviewer", { auto: true }, {}, partyId);
+assert(reusedReviewer.session?.id === reviewer?.sessionId && captured.length === beforeDuplicateStart, "concurrent/prewarm start reuses the live session instead of orphaning a duplicate");
+const changedReviewer = await bridge.setPermission("reviewer", { permissionMode: "auto" });
+assert(changedReviewer.ok && svc.list().members.find((m) => m.name === "reviewer")?.permissionMode === "auto", "one member can change another Claude member's permission");
 
 // --- send: delivered, with from stamped to the caller (not agent input) ------
 const before = sentTurns.length;
@@ -228,7 +246,7 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the eight party tools in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "member-permission", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the nine party tools in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
@@ -242,13 +260,15 @@ assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "t
 console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
-assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same eight party tools");
+assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same nine party tools");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
 assert(sentTurns.length === beforeDynamic + 1 && /from="main"/.test(sentTurns[beforeDynamic].text), "Codex dispatcher stamps from=main through the same bridge identity");
 const unknownDynamic = await invokePartyTool(bridge, mainBinding.identity, "mcp__agentparty__send", {});
 assert(!unknownDynamic.ok && /Unknown AgentParty tool/.test(unknownDynamic.error || ""), "Codex dispatcher rejects legacy agentparty tool names");
+const dynamicPermission = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-permission`, { name: "buddy", permissionMode: "plan" });
+assert(dynamicPermission.ok && svc.list().members.find((m) => m.name === "buddy")?.permissionMode === "plan", "Codex dispatcher routes member-permission through the shared bridge");
 
 // --- session primer: deterministic surface knowledge (no model memory) -------
 console.log("\nParty primer assertions:");
@@ -257,6 +277,7 @@ assert(/AgentParty/.test(primer), "primer introduces the AgentParty app");
 assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.includes("Code reviewer"), "primer states the member's identity (party + name + role)");
 assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
 assert(primer.includes("mcp__agentparty-app__broadcast") && primer.includes("mcp__agentparty-app__member-status") && primer.includes("mcp__agentparty-app__interrupt"), "primer teaches the coordination tools (broadcast/status/interrupt)");
+assert(primer.includes("mcp__agentparty-app__member-permission"), "primer teaches agents how to change another member's permission");
 assert(/interrupt: true/.test(primer), "primer explains the interrupt-and-inject send option");
 // A sent message QUEUES behind the recipient's current turn (Codex: next tool
 // call) — the primer must teach this so agents stop expecting instant delivery.

@@ -1,6 +1,6 @@
 import type { AppSettings, CreateMemberInput, HarnessId, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
-import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
+import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
+import { DEFAULT_CODEX_POLICY, requireCodexPolicy } from "../../shared/codexPolicy";
 
 export function createPartyDefinition(name: string, now = new Date().toISOString()): PartyDefinition {
   return {
@@ -20,25 +20,33 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
   if (!name || !role) {
     throw new Error("Member name and role are required.");
   }
+  if (input.permissionMode !== undefined && !isPermissionModeSetting(input.permissionMode)) {
+    throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
+  }
+  const requestedCodexPolicy = input.codexPolicy === undefined ? undefined : requireCodexPolicy(input.codexPolicy);
 
   // A member is created from ITS harness's defaults (not one global profile), so
   // e.g. a Codex member starts with the Codex default model + sandbox policy.
   const runtime = normalizeRuntime(input.runtime || settings.selectedHarnessId);
   const harnessId: HarnessId = runtime === "codex" ? "codex" : "claude-code";
   const profile = harnessDefaultsOf(settings, harnessId);
+  const model = input.model || profile.model;
   return {
     partyId: input.partyId,
     name,
     role,
     runtime,
     status: "idle",
-    model: input.model || profile.model,
+    model,
     effort: input.effort || profile.effort,
     reasoning: input.reasoning ?? profile.reasoning,
     reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
     permissionMode: input.permissionMode || profile.permissionMode || "default",
-    // Codex members carry the harness's two-axis policy default; Claude members don't use it.
-    codexPolicy: harnessId === "codex" ? { ...(profile.codexPolicy || DEFAULT_CODEX_POLICY) } : undefined,
+    // Permission semantics belong to the selected harness. Cross-routed models
+    // do not replace the Claude Code SDK or Codex app-server process.
+    codexPolicy: harnessId === "codex"
+      ? { ...(requestedCodexPolicy || profile.codexPolicy || DEFAULT_CODEX_POLICY) }
+      : undefined,
     createdAt: now,
     updatedAt: now,
   };

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CodexPolicy } from "../shared/codexPolicy";
 
 // Boundary 2 of the party-communication design (docs/PARTY_COMMUNICATION.md):
 // the seam through which an app-hosted member session reaches the app's party
@@ -37,6 +38,15 @@ export interface PartyCreateMemberRequest {
   reasoning?: string;
   reasoningBudget?: number;
   effort?: string;
+  /** Initial single-mode permission for the Claude Code harness. */
+  permissionMode?: string;
+  /** Initial two-axis permission for the Codex harness. */
+  codexPolicy?: CodexPolicy;
+}
+
+export interface PartyPermissionRequest {
+  permissionMode?: string;
+  codexPolicy?: CodexPolicy;
 }
 
 // The capability surface a hosted member can drive. Every method routes through
@@ -51,6 +61,8 @@ export interface PartyBridge {
   createMember(request: PartyCreateMemberRequest): Promise<PartyToolResult>;
   /** Remove a member from the caller's own party (cannot remove `main`). */
   removeMember(name: string): Promise<PartyToolResult>;
+  /** Change another member's permission policy in the caller's own party. */
+  setPermission(name: string, request: PartyPermissionRequest): Promise<PartyToolResult>;
   /** List the caller's party members and their status. */
   list(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options. */
@@ -67,13 +79,14 @@ export interface PartyBridge {
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Delivery is QUEUED, not instant: if the recipient is mid-turn, your message is only picked up AFTER their current turn finishes (for a Codex member, at its next tool call), so do not expect an immediate reply — a delayed response means they are still finishing earlier work, not that the message was lost. Set interrupt=true ONLY when the message cannot wait: it stops the recipient's current turn so the message is handled right away.",
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
+  "member-permission": "Change another member's permission. Use permissionMode for a Claude Code member, or codexPolicy for a Codex member. Call list-models to inspect each route's harness and permission contract.",
   list: "List your party's members and their current status.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
@@ -102,6 +115,18 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
       reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
       effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+      permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
+      codexPolicy: {
+        type: "object",
+        description: "Initial Codex permission policy.",
+        properties: {
+          sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"] },
+          approval: { type: "string", enum: ["untrusted", "on-request", "never"] },
+          guardian: { type: "boolean" },
+        },
+        required: ["sandbox", "approval", "guardian"],
+        additionalProperties: false,
+      },
     },
     required: ["name", "role"],
     additionalProperties: false,
@@ -110,6 +135,26 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       name: { type: "string", description: "Member name to remove." },
+    },
+    required: ["name"],
+    additionalProperties: false,
+  },
+  "member-permission": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Target member name in your party." },
+      permissionMode: { type: "string", description: "Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
+      codexPolicy: {
+        type: "object",
+        description: "Codex permission policy (all fields required).",
+        properties: {
+          sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"] },
+          approval: { type: "string", enum: ["untrusted", "on-request", "never"] },
+          guardian: { type: "boolean" },
+        },
+        required: ["sandbox", "approval", "guardian"],
+        additionalProperties: false,
+      },
     },
     required: ["name"],
     additionalProperties: false,
@@ -202,6 +247,8 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
         reasoningBudget: typeof input.reasoningBudget === "number" ? input.reasoningBudget : undefined,
         effort: typeof input.effort === "string" ? input.effort : undefined,
+        permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
+        codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
       });
     }
     case "member-remove": {
@@ -210,6 +257,16 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         return { ok: false, error: "member-remove requires string argument: name." };
       }
       return bridge.removeMember(memberName);
+    }
+    case "member-permission": {
+      const memberName = typeof input.name === "string" ? input.name : "";
+      if (!memberName) {
+        return { ok: false, error: "member-permission requires string argument: name." };
+      }
+      return bridge.setPermission(memberName, {
+        permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
+        codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
+      });
     }
     case "list":
       return bridge.list();
@@ -263,6 +320,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
     `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
     `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
+    `- \`${tool("member-permission")}\` — change another member's permission; use the member's harness from \`${tool("list-models")}\` to choose \`permissionMode\` (Claude Code) or \`codexPolicy\` (Codex).`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
     `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
     "",
@@ -321,8 +379,14 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
         reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
         effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
+        permissionMode: z.string().optional().describe("Initial Claude permission mode."),
+        codexPolicy: z.object({
+          sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
+          approval: z.enum(["untrusted", "on-request", "never"]),
+          guardian: z.boolean(),
+        }).optional().describe("Initial Codex permission policy."),
       },
-      async (args: { name: string; role: string; harness?: string; model?: string; reasoning?: string; reasoningBudget?: number; effort?: string }) =>
+      async (args: PartyCreateMemberRequest) =>
         envelope(await bridge.createMember(args)),
     ),
     tool(
@@ -330,6 +394,20 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "Remove a member from your party (cannot remove 'main'). Closes its session if running.",
       { name: z.string().describe("Member name to remove.") },
       async (args: { name: string }) => envelope(await bridge.removeMember(args.name)),
+    ),
+    tool(
+      "member-permission",
+      "Change another member's permission. Use permissionMode for a Claude Code member or codexPolicy for a Codex member; list-models reports each harness's permission contract.",
+      {
+        name: z.string().describe("Target member name in your party."),
+        permissionMode: z.string().optional().describe("Claude permission mode."),
+        codexPolicy: z.object({
+          sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
+          approval: z.enum(["untrusted", "on-request", "never"]),
+          guardian: z.boolean(),
+        }).optional().describe("Codex permission policy."),
+      },
+      async (args: { name: string } & PartyPermissionRequest) => envelope(await bridge.setPermission(args.name, args)),
     ),
     tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
     tool(

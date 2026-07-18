@@ -12,7 +12,18 @@ import fs from "node:fs";
 
 const baseUrl = process.env.AGENTPARTY_AUTOMATION_BASE_URL || "";
 const member = process.env.AGENTPARTY_MEMBER || "agent";
+const party = process.env.AGENTPARTY_PARTY || "";
 const callLog = process.env.AGENTPARTY_CODEX_MCP_OUT || "";
+const codexPolicySchema = {
+  type: "object",
+  properties: {
+    sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"] },
+    approval: { type: "string", enum: ["untrusted", "on-request", "never"] },
+    guardian: { type: "boolean" },
+  },
+  required: ["sandbox", "approval", "guardian"],
+  additionalProperties: false,
+};
 
 const tools = [
   {
@@ -23,6 +34,7 @@ const tools = [
       properties: {
         to: { type: "string", description: "Recipient member name." },
         content: { type: "string", description: "Message body." },
+        interrupt: { type: "boolean", description: "Stop the recipient's current turn before delivery." },
       },
       required: ["to", "content"],
       additionalProperties: false,
@@ -41,6 +53,8 @@ const tools = [
         reasoning: { type: "string" },
         reasoningBudget: { type: "number" },
         effort: { type: "string" },
+        permissionMode: { type: "string" },
+        codexPolicy: codexPolicySchema,
       },
       required: ["name", "role"],
       additionalProperties: false,
@@ -57,6 +71,16 @@ const tools = [
     },
   },
   {
+    name: "member-permission",
+    description: "Change another AgentParty member's persisted permission.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string" }, permissionMode: { type: "string" }, codexPolicy: codexPolicySchema },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "list",
     description: "List AgentParty members and their current status.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -65,6 +89,26 @@ const tools = [
     name: "list-models",
     description: "List available AgentParty harnesses and model routes.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "member-status",
+    description: "Check one member's turn status, or every member when name is omitted.",
+    inputSchema: { type: "object", properties: { name: { type: "string" } }, additionalProperties: false },
+  },
+  {
+    name: "interrupt",
+    description: "Stop another member's in-flight turn; target may be a member name or all.",
+    inputSchema: { type: "object", properties: { target: { type: "string" } }, required: ["target"], additionalProperties: false },
+  },
+  {
+    name: "broadcast",
+    description: "Send a message to every other member in the party.",
+    inputSchema: {
+      type: "object",
+      properties: { content: { type: "string" }, interrupt: { type: "boolean" } },
+      required: ["content"],
+      additionalProperties: false,
+    },
   },
 ];
 
@@ -129,9 +173,10 @@ async function callTool(name, args) {
   assertBaseUrl();
   switch (name) {
     case "send":
-      return post("/api/harness/party/messages", { to: String(args.to || ""), from: member, content: String(args.content || "") }, { "x-agentparty-member": member });
+      return post("/api/harness/party/messages", { to: String(args.to || ""), from: member, content: String(args.content || ""), interrupt: args.interrupt === true }, { "x-agentparty-member": member });
     case "member-create": {
       const created = await post("/api/party/members", {
+        partyId: party || undefined,
         name: String(args.name || ""),
         requirement: String(args.role || ""),
         role: String(args.role || ""),
@@ -140,21 +185,39 @@ async function callTool(name, args) {
         reasoning: typeof args.reasoning === "string" ? args.reasoning : undefined,
         reasoningBudget: typeof args.reasoningBudget === "number" ? args.reasoningBudget : undefined,
         effort: typeof args.effort === "string" ? args.effort : undefined,
+        permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
+        codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
       });
       if (created?.member?.name) {
         await post(`/api/party/members/${encodeURIComponent(created.member.name)}/start`, {
           model: typeof args.model === "string" ? args.model : undefined,
           effort: typeof args.effort === "string" ? args.effort : undefined,
+          permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
+          codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
         }).catch((error) => ({ ok: false, error: error.message }));
       }
       return created;
     }
     case "member-remove":
       return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/remove`, {});
+    case "member-permission":
+      return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/permission`, {
+        permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
+        codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
+      });
     case "list":
       return get("/api/harness/party");
     case "list-models":
       return get("/api/models");
+    case "member-status":
+      return post(`/api/party/members/${encodeURIComponent(String(args.name || "*"))}/status`, {});
+    case "interrupt": {
+      const target = String(args.target || "");
+      if (target === member) return { ok: false, error: "You cannot interrupt yourself." };
+      return post(`/api/party/members/${encodeURIComponent(target === "all" ? "*" : target)}/interrupt`, target === "all" ? { exclude: member } : {});
+    }
+    case "broadcast":
+      return post("/api/party/broadcast", { from: member, content: String(args.content || ""), interrupt: args.interrupt === true });
     default:
       return { ok: false, error: `Unknown AgentParty tool '${name}'.` };
   }
@@ -167,17 +230,24 @@ function assertBaseUrl() {
 }
 
 async function get(path) {
-  const response = await fetch(baseUrl + path, { headers: { "x-agentparty-member": member } });
+  const response = await fetch(baseUrl + path, { headers: partyHeaders() });
   return readResponse(response, path);
 }
 
 async function post(path, body, headers = {}) {
   const response = await fetch(baseUrl + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json", ...partyHeaders(), ...headers },
     body: JSON.stringify(body || {}),
   });
   return readResponse(response, path);
+}
+
+function partyHeaders() {
+  return {
+    "x-agentparty-member": member,
+    ...(party ? { "x-agentparty-party": party } : {}),
+  };
 }
 
 async function readResponse(response, path) {

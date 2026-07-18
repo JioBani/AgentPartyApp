@@ -43,6 +43,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const harness = view.member.runtime === "codex" ? "codex" : "claude-code";
 
   // Effective-model vision gating. image: true = allowed, false = text-only
   // (block with a reason), undefined = unknown (allow, model surfaces errors).
@@ -53,7 +54,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   // Command/skill palette — harness-aware (`/` for claude-code/codex, etc.).
   const palette = useCommandPalette({
-    runtime: view.member.runtime,
+    runtime: harness,
     discovered: view.session?.snapshot.slashCommands,
     draft,
     setDraft,
@@ -199,7 +200,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   );
   // Permission control next to Send: Codex members get the two-axis
   // (sandbox × approval + guardian) control; Claude members get the single mode.
-  const permission = harnessCapabilities(view.member.runtime).twoAxisPermission ? (
+  const permission = harnessCapabilities(harness).twoAxisPermission ? (
     <CodexPermissionControl
       policy={view.session?.snapshot.codexPolicy || view.member.codexPolicy || DEFAULT_CODEX_POLICY}
       onChange={(policy) => actions.setCodexPolicy(view.name, policy)}

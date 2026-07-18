@@ -20,6 +20,7 @@ import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 import type { UsageLimitsSnapshot } from "../shared/usageLimits";
+import { SubscriptionProxyService } from "./subscriptionProxyService";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -55,6 +56,7 @@ let windowRegistry: WindowRegistry | undefined;
 let automationApi: AutomationApiServer | undefined;
 let appController: AppController | undefined;
 let engineRegistry: EngineRegistry | undefined;
+let subscriptionProxyService: SubscriptionProxyService | undefined;
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -167,6 +169,18 @@ async function bootstrap(): Promise<void> {
   initLogger();
   const settings = getSettings();
   setDebugLoggingEnabled(settings.debugEnabled);
+  subscriptionProxyService = new SubscriptionProxyService({
+    storageDir: app.getPath("userData"),
+    resourcesPath: process.resourcesPath,
+    packaged: app.isPackaged,
+  });
+  const subscriptionStatus = await subscriptionProxyService.ensureRunning();
+  subscriptionProxyService.startMonitoring();
+  log(subscriptionStatus.ok ? "info" : "error", "subscription-proxy", "automatic subscription bridge check completed", {
+    ok: subscriptionStatus.ok,
+    baseUrl: subscriptionStatus.baseUrl,
+    detail: subscriptionStatus.service?.detail || subscriptionStatus.detail,
+  });
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
     router: {
@@ -245,6 +259,7 @@ async function bootstrap(): Promise<void> {
     sessionManager,
     engineRegistry: host.engineRegistry,
     windowRegistry,
+    subscriptionProxy: subscriptionProxyService,
     getRouterBaseUrl: () => router?.baseUrl || getSettings().routerBaseUrl,
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     openWindow: (workspacePath) => createWindow(workspacePath),
@@ -443,6 +458,12 @@ function registerIpc(): void {
   handle("auth:setOpenRouterKey", async (_event, value: string) => controller().setOpenRouterKey(value || ""));
   handle("auth:clearOpenRouterKey", async () => controller().clearOpenRouterKey());
   handle("auth:testOpenRouterKey", async () => controller().testOpenRouterKey());
+  handle("auth:loginSubscription", async (_event, provider: string) => {
+    if (provider !== "codex" && provider !== "claude") {
+      throw new Error(`Unsupported subscription provider '${provider}'.`);
+    }
+    return controller().loginSubscriptionProvider(provider);
+  });
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
@@ -612,6 +633,7 @@ app.on("before-quit", () => {
   sessionManager?.dispose();
   router?.dispose();
   automationApi?.dispose();
+  subscriptionProxyService?.dispose();
 });
 
 app.on("window-all-closed", () => {

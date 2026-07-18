@@ -37,6 +37,7 @@ export type Backend =
   | { kind: "claude-native"; id: string } // native Anthropic model on the claude-code harness
   | { kind: "claude-router"; alias: string } // claude-* alias translated by the AgentParty router backend
   | { kind: "codex-account"; slug: string } // Codex built-in account model
+  | { kind: "codex-claude-subscription"; model: string } // Codex app-server through local Claude OAuth
   | { kind: "codex-openrouter"; orModelId: string }; // Codex routed through the OpenRouter custom provider
 
 /** A typed handle to a model on a specific harness — the app-internal reference. */
@@ -89,7 +90,10 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
   if (entry.codexModel) {
     return { kind: "codex-account", slug: entry.codexModel };
   }
-  if (entry.orModelId) {
+  if (entry.claudeSubscriptionModel) {
+    return { kind: "codex-claude-subscription", model: entry.claudeSubscriptionModel };
+  }
+  if (entry.provider === "openrouter" && entry.orModelId) {
     return { kind: "codex-openrouter", orModelId: entry.orModelId };
   }
   return undefined;
@@ -104,6 +108,8 @@ export function backendSlug(backend: Backend): string {
       return backend.alias;
     case "codex-account":
       return backend.slug;
+    case "codex-claude-subscription":
+      return backend.model;
     case "codex-openrouter":
       return backend.orModelId;
   }
@@ -112,4 +118,21 @@ export function backendSlug(backend: Backend): string {
 /** Whether a claude-code (model, ...) resolves to the native Anthropic path. */
 export function isClaudeNative(backend: Backend | undefined): boolean {
   return backend?.kind === "claude-native";
+}
+
+/**
+ * Concrete harness process that executes a user-selected harness/model pair.
+ * Cross-routing changes the model provider/transport, never the harness: GPT on
+ * Claude Code remains a Claude Code SDK process through the embedded router;
+ * Claude on Codex remains a Codex app-server process through its custom provider.
+ */
+export function executionHarnessFor(_model: string | undefined, selectedHarness: HarnessId): HarnessId {
+  return selectedHarness;
+}
+
+/** Exact model slug handed to the concrete execution harness. */
+export function executionModelFor(model: string, selectedHarness: HarnessId): string {
+  const executionHarness = executionHarnessFor(model, selectedHarness);
+  const backend = backendFor(model, executionHarness);
+  return backend ? backendSlug(backend) : model;
 }

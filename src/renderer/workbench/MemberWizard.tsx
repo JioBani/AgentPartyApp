@@ -8,6 +8,10 @@ import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./RuntimeModa
 import type { CreateMemberInput } from "./PartySidebar";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
+import type { PermissionModeSetting } from "../../shared/types";
+import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
+import { CodexPermissionControl } from "./CodexPermissionControl";
+import { PERMISSION_OPTIONS } from "./controls";
 
 interface MemberWizardProps {
   routes: RouteLike[];
@@ -36,7 +40,7 @@ const HARNESSES: HarnessChoice[] = [
   { id: "codex", label: "Codex", status: "available", icon: <TerminalSquare size={16} />, hint: "Codex CLI exec 기반 로컬 하네스" },
 ];
 
-const STEPS = ["이름", "하네스", "모델", "추론", "역할"] as const;
+const STEPS = ["이름", "하네스", "모델", "추론", "권한", "역할"] as const;
 const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
 /**
@@ -71,6 +75,12 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const [effort, setEffort] = useState("");
   const [thinkingMode, setThinkingMode] = useState("");
   const [budget, setBudget] = useState(0);
+  const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(
+    harnessDefaults["claude-code"]?.permissionMode || "default",
+  );
+  const [codexPolicy, setCodexPolicy] = useState<CodexPolicy>(
+    harnessDefaults.codex?.codexPolicy || DEFAULT_CODEX_POLICY,
+  );
 
   // When the chosen harness changes, seed the model to THAT harness's default
   // (so switching to Codex prefills the Codex default model, not just the first
@@ -108,11 +118,21 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
   const selectedHarness = HARNESSES.find((item) => item.id === harness);
+  const executionHarness = harness === "codex" ? "codex" : "claude-code";
+
+  useEffect(() => {
+    if (executionHarness === "codex") {
+      setCodexPolicy({ ...(harnessDefaults.codex?.codexPolicy || DEFAULT_CODEX_POLICY) });
+    } else {
+      setPermissionMode(harnessDefaults["claude-code"]?.permissionMode || "default");
+    }
+  }, [executionHarness, harnessDefaults]);
 
   const stepValid = [
     NAME_PATTERN.test(name.trim()),
     selectedHarness?.status === "available",
     Boolean(selected),
+    true,
     true,
     role.trim().length > 0,
   ];
@@ -130,6 +150,8 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         effort: effortCap?.supported ? effort : undefined,
         reasoning: thinkingCap?.supported ? thinkingMode : undefined,
         reasoningBudget: showBudget ? budget : undefined,
+        permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,
+        codexPolicy: executionHarness === "codex" ? codexPolicy : undefined,
       });
       return;
     }
@@ -319,6 +341,29 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
           {step === 4 && (
             <div className="wb-wizard-pane">
+              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : "Claude Code"}</span></div>
+              {executionHarness === "codex" ? (
+                <>
+                  <CodexPermissionControl policy={codexPolicy} onChange={setCodexPolicy} />
+                  <p className="wb-wizard-hint">Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.</p>
+                </>
+              ) : (
+                <>
+                  <select
+                    className="wb-wizard-input"
+                    value={permissionMode}
+                    onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}
+                  >
+                    {PERMISSION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <p className="wb-wizard-hint">새 멤버가 첫 작업부터 사용할 Claude Code 권한 모드입니다.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="wb-wizard-pane">
               <div className="wb-modal-label">역할</div>
               <textarea
                 className="wb-wizard-input wb-wizard-textarea"
@@ -335,6 +380,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   <div><dt>하네스</dt><dd>{selectedHarness?.label}</dd></div>
                   <div><dt>모델</dt><dd className="wb-mono">{selected?.route.label || selectedMeta?.name || "—"}</dd></div>
                   <div><dt>추론</dt><dd className="wb-mono">{reasoningSummary(effortCap?.supported ? effort : "", thinkingCap?.supported ? thinkingMode : "", showBudget ? budget : undefined)}</dd></div>
+                  <div><dt>권한</dt><dd className="wb-mono">{executionHarness === "codex" ? `${codexPolicy.sandbox} / ${codexPolicy.approval}${codexPolicy.guardian ? " / guardian" : ""}` : permissionMode}</dd></div>
                 </dl>
               </div>
             </div>

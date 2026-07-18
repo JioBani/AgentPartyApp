@@ -64,6 +64,7 @@ function authBadge(status: InitialAppState["auth"][number]["status"]): { label: 
     case "available": return { label: "사용 가능", tone: "success", ok: true };
     case "configured": return { label: "설정됨", tone: "success", ok: true };
     case "valid": return { label: "정상", tone: "success", ok: true };
+    case "pending": return { label: "인증 대기", tone: "muted", ok: false };
     case "missing": return { label: "미설정", tone: "muted", ok: false };
     case "invalid": return { label: "유효하지 않음", tone: "danger", ok: false };
     case "network_error": return { label: "네트워크 오류", tone: "danger", ok: false };
@@ -172,12 +173,13 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
   );
 }
 
-export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
+export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscription }: {
   auth: InitialAppState["auth"];
   draft: string;
   onDraft: (value: string) => void;
   onSave: () => void;
   onTest: () => void;
+  onConnectSubscription: (provider: "codex" | "claude") => void;
 }) {
   const subscriptions = auth.filter((provider) => provider.kind === "subscription");
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
@@ -195,6 +197,17 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest }: {
                 <span className="set-row-name">{provider.label}</span>
                 <span className="set-row-desc">{provider.detail || provider.description}</span>
               </div>
+              {provider.action?.type === "subscriptionOAuth" && (
+                <button
+                  type="button"
+                  className="set-btn-soft"
+                  disabled={provider.status === "pending"}
+                  onClick={() => onConnectSubscription(provider.action!.provider)}
+                >
+                  <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
+                  {provider.action.label}
+                </button>
+              )}
               <SetBadge status={provider.status} />
             </div>
           ))}

@@ -1,10 +1,13 @@
 import * as http from "node:http";
 import * as net from "node:net";
-import { openRouterAliasMap } from "../shared/modelCatalog";
+import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
+import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
 export interface EmbeddedRouterOptions {
   preferredPort: number;
   openRouterApiKey?: string;
+  subscriptionProxyBaseUrl?: string;
+  subscriptionProxyApiKey?: string;
   authToken: string;
 }
 
@@ -23,9 +26,15 @@ interface CostBucket {
   hasCost: boolean;
 }
 
-// runtimeModel/model id -> OpenRouter model id, sourced from the shared catalog
-// so the router and the model registry never drift apart.
-const aliasToOpenRouterModel: Record<string, string> = openRouterAliasMap();
+class RouterUpstreamError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RouterUpstreamError";
+  }
+}
 
 export class EmbeddedRouter {
   private server: http.Server | undefined;
@@ -91,7 +100,13 @@ export class EmbeddedRouter {
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       if (req.method === "GET" && req.url === "/health") {
-        sendJson(res, 200, { ok: true, router: "agentparty-native", openRouterConfigured: Boolean(this.openRouterApiKey()) });
+        sendJson(res, 200, {
+          ok: true,
+          router: "agentparty-native",
+          openRouterConfigured: Boolean(this.openRouterApiKey()),
+          subscriptionProxyConfigured: Boolean(this.subscriptionProxy().apiKey),
+          subscriptionProxyBaseUrl: this.subscriptionProxy().baseUrl,
+        });
         return;
       }
       if (req.method !== "POST" || !req.url?.startsWith("/v1/messages")) {
@@ -106,26 +121,68 @@ export class EmbeddedRouter {
       }
       const accountingKey = actual || expected;
       const body = await readJson(req);
-      const response = await this.forwardToOpenRouter(body, accountingKey);
+      const response = await this.forward(body, accountingKey);
       if (body.stream) {
         sendAnthropicSse(res, response);
       } else {
         sendJson(res, 200, response);
       }
     } catch (error) {
-      sendJson(res, 500, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
+      const status = error instanceof RouterUpstreamError ? error.status : 500;
+      sendJson(res, status, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
     }
   }
 
-  private async forwardToOpenRouter(body: any, accountingKey: string): Promise<any> {
+  private async forward(body: any, accountingKey: string): Promise<any> {
+    const requestedModel = String(body.model || process.env.ANTHROPIC_CUSTOM_MODEL_OPTION || "");
+    const target = routerTargetForModel(requestedModel);
+    if (!target) {
+      throw new Error(`No explicit AgentParty router target for '${requestedModel}'. Refusing to guess or fall back.`);
+    }
+    return target.kind === "codex-subscription"
+      ? this.forwardToCodexSubscription(body, requestedModel, target)
+      : this.forwardToOpenRouter(body, accountingKey, requestedModel, target);
+  }
+
+  private async forwardToCodexSubscription(body: any, requestedModel: string, target: RouterTarget & { kind: "codex-subscription" }): Promise<any> {
+    const config = this.subscriptionProxy();
+    await assertSubscriptionModelAvailable(target.model, "codex", config);
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: target.model,
+        messages: toOpenAiMessages(body),
+        tools: Array.isArray(body.tools) ? body.tools.map(toOpenAiTool) : undefined,
+        tool_choice: toOpenAiToolChoice(body.tool_choice),
+        temperature: body.temperature,
+        max_tokens: body.max_tokens,
+        reasoning_effort: toCodexReasoningEffort(body),
+        stream: false,
+      }),
+    });
+    const payload = await readUpstreamPayload(response);
+    if (!response.ok) {
+      throw new RouterUpstreamError(
+        response.status,
+        `Codex subscription request failed (${response.status}): ${payload?.error?.message || JSON.stringify(payload)}`,
+      );
+    }
+    return toAnthropicMessage(payload, requestedModel);
+  }
+
+  private async forwardToOpenRouter(
+    body: any,
+    accountingKey: string,
+    requestedModel: string,
+    target: RouterTarget & { kind: "openrouter" },
+  ): Promise<any> {
     const apiKey = this.openRouterApiKey();
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is not configured. Set agentpartyNative.router.openRouterApiKey or the OPENROUTER_API_KEY environment variable.");
-    }
-    const requestedModel = String(body.model || process.env.ANTHROPIC_CUSTOM_MODEL_OPTION || "");
-    const model = aliasToOpenRouterModel[requestedModel.toLowerCase()] || requestedModel;
-    if (!model || model.startsWith("claude-")) {
-      throw new Error(`No embedded OpenRouter mapping for '${requestedModel}'.`);
     }
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -137,7 +194,7 @@ export class EmbeddedRouter {
         "X-Title": "AgentParty Native",
       },
       body: JSON.stringify({
-        model,
+        model: target.model,
         messages: toOpenAiMessages(body),
         tools: Array.isArray(body.tools) ? body.tools.map(toOpenAiTool) : undefined,
         tool_choice: toOpenAiToolChoice(body.tool_choice),
@@ -147,9 +204,12 @@ export class EmbeddedRouter {
         stream: false,
       }),
     });
-    const payload = await response.json().catch(async () => ({ error: { message: await response.text() } }));
+    const payload = await readUpstreamPayload(response);
     if (!response.ok) {
-      throw new Error(`OpenRouter request failed (${response.status}): ${payload?.error?.message || JSON.stringify(payload)}`);
+      throw new RouterUpstreamError(
+        response.status,
+        `OpenRouter request failed (${response.status}): ${payload?.error?.message || JSON.stringify(payload)}`,
+      );
     }
     payload.__openrouter = await fetchOpenRouterGenerationStats(apiKey, payload.id);
     this.recordOpenRouterCost(accountingKey, payload);
@@ -158,6 +218,13 @@ export class EmbeddedRouter {
 
   private openRouterApiKey(): string {
     return this.options.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
+  }
+
+  private subscriptionProxy() {
+    return subscriptionProxyConfig({
+      baseUrl: this.options.subscriptionProxyBaseUrl,
+      apiKey: this.options.subscriptionProxyApiKey,
+    });
   }
 
   private recordOpenRouterCost(accountingKey: string, payload: any): void {
@@ -209,6 +276,15 @@ function toOpenRouterReasoning(body: any): Record<string, unknown> | undefined {
     return thinkingType === "enabled" ? { enabled: true } : undefined;
   }
   return reasoning;
+}
+
+/** Claude Code effort -> OpenAI/Codex chat-completions reasoning effort. */
+function toCodexReasoningEffort(body: any): string | undefined {
+  const effort = typeof body?.output_config?.effort === "string" ? body.output_config.effort : undefined;
+  if (!effort || effort === "none") {
+    return undefined;
+  }
+  return effort === "max" ? "high" : effort;
 }
 
 /** OpenRouter accepts minimal|low|medium|high; clamp the harness's wider scale. */
@@ -481,6 +557,15 @@ function writeSse(res: http.ServerResponse, event: string, data: unknown): void 
 function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(payload));
+}
+
+async function readUpstreamPayload(response: Response): Promise<any> {
+  const responseText = await response.text();
+  try {
+    return responseText ? JSON.parse(responseText) : {};
+  } catch {
+    return { error: { message: responseText || response.statusText } };
+  }
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {

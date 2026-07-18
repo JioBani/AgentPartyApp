@@ -7,6 +7,7 @@ import type {
   PartyDefinition,
   PartyMember,
   PartyMessage,
+  MemberPermissionInput,
   StartPartyMemberInput,
   SessionView,
 } from "../../shared/types";
@@ -22,6 +23,8 @@ import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
+import { DEFAULT_CODEX_POLICY, isCodexPolicy, requireCodexPolicy, type CodexPolicy } from "../../shared/codexPolicy";
+import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import {
   buildChannelPayload,
   buildPartyMember,
@@ -237,6 +240,49 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' auto-compact updated.`, state, member);
   }
 
+  /**
+   * Updates the target member's persisted permission through the same service
+   * used by HTTP and member tools. If the member is live, the adapter is changed
+   * first; persistence happens only after that succeeds, so disk and runtime do
+   * not claim different policies. Permission shape follows the concrete
+   * selected harness. Cross-routed models retain that harness's permission type.
+   */
+  setMemberPermission(name: string, input: MemberPermissionInput, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    const harnessId = normalizeHarnessId(member.runtime);
+    const liveSessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
+
+    if (harnessId === "codex") {
+      const policy = requireCodexPolicy(input.codexPolicy);
+      if (liveSessionId) {
+        this.deps.sessionManager.setCodexPolicy(liveSessionId, policy);
+      }
+      member.codexPolicy = policy;
+    } else {
+      if (!isPermissionModeSetting(input.permissionMode)) {
+        throw new Error("Claude Code permission requires a valid permissionMode.");
+      }
+      if (liveSessionId) {
+        this.deps.sessionManager.setPermissionMode(liveSessionId, input.permissionMode);
+      }
+      member.permissionMode = input.permissionMode;
+    }
+
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member permission updated", {
+      workspace,
+      partyId: member.partyId,
+      member: member.name,
+      harnessId,
+      permissionMode: member.permissionMode,
+      codexPolicy: member.codexPolicy,
+    });
+    return this.result(`Member '${member.name}' permission updated.`, state, member);
+  }
+
   startMember(name: string, input: StartPartyMemberInput = {}, options: { mock?: boolean; autoReply?: boolean } = {}, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
@@ -249,6 +295,21 @@ export class PartyApplicationService {
     if (input.auto && member.status === "closed") {
       log("info", "party", "auto-start skipped: member is closed", { workspace, partyId: member.partyId, member: member.name });
       return this.result(`Member '${member.name}' is closed; auto-start skipped.`, state, member);
+    }
+    // Start is an idempotent ensure operation. UI prewarm, HTTP automation, and
+    // a send can arrive in adjacent event-loop turns; creating again used to
+    // orphan the first live adapter while overwriting member.sessionId, yielding
+    // exactly the "session is active but the member doesn't recognize it"
+    // failure. Runtime changes belong to respawn/setters, not a duplicate start.
+    const existing = this.sessionViewOf(member.sessionId);
+    if (existing) {
+      log("info", "party", "member start reused live session", {
+        workspace,
+        partyId: member.partyId,
+        member: member.name,
+        sessionId: existing.id,
+      });
+      return { ...this.result(`Member '${member.name}' session is already running.`, state, member), session: existing };
     }
     this.applyRuntimeDefaults(member, input);
     const session = this.createMemberSession(workspace, member, input, options);
@@ -284,6 +345,7 @@ export class PartyApplicationService {
     const requestedHarness = input.selectedHarnessId ? normalizeHarnessId(input.selectedHarnessId) : undefined;
     const currentHarness = normalizeHarnessId(member.runtime);
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
+    const nextHarness = requestedHarness || currentHarness;
     if (changesHarness && this.memberHasStartedTurn(member)) {
       throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
     }
@@ -300,10 +362,10 @@ export class PartyApplicationService {
       // RuntimeModal only permits this before the first turn, so discard the
       // prewarm thread rather than handing its id to the other adapter.
       member.harnessSessionId = undefined;
-      member.runtime = requestedHarness;
+      member.runtime = requestedHarness || member.runtime;
       member.updatedAt = new Date().toISOString();
       this.persistParty(workspace, state, this.partyIdOf(member));
-      log("info", "party", "member harness changed", { workspace, partyId: member.partyId, member: member.name, from: currentHarness, to: requestedHarness });
+      log("info", "party", "member harness changed", { workspace, partyId: member.partyId, member: member.name, from: currentHarness, to: nextHarness });
     }
     this.closeMember(name, partyId);
     return this.startMember(name, input, {}, partyId);
@@ -429,6 +491,31 @@ export class PartyApplicationService {
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, this.partyIdOf(member));
     log("info", "party", "member permission mode persisted", { workspace, partyId: member.partyId, member: member.name, permissionMode });
+  }
+
+  /** Persists a live Codex policy change on the owning party member. */
+  syncMemberCodexPolicy(sessionId: string, policy: CodexPolicy): void {
+    if (!sessionId) {
+      return;
+    }
+    if (!isCodexPolicy(policy)) {
+      log("warn", "party", "invalid Codex policy reached member persistence", { sessionId, policy });
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || (
+      member.codexPolicy?.sandbox === policy.sandbox
+      && member.codexPolicy?.approval === policy.approval
+      && member.codexPolicy?.guardian === policy.guardian
+    )) {
+      return;
+    }
+    member.codexPolicy = { ...policy };
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member Codex policy persisted", { workspace, partyId: member.partyId, member: member.name, policy });
   }
 
   /**
@@ -727,6 +814,10 @@ export class PartyApplicationService {
   }
 
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
+    if (input.permissionMode !== undefined && !isPermissionModeSetting(input.permissionMode)) {
+      throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
+    }
+    const requestedCodexPolicy = input.codexPolicy === undefined ? undefined : requireCodexPolicy(input.codexPolicy);
     if (input.selectedHarnessId) {
       const requested = normalizeHarnessId(input.selectedHarnessId);
       if (requested !== normalizeHarnessId(member.runtime)) {
@@ -744,6 +835,17 @@ export class PartyApplicationService {
     member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
     member.reasoning = input.thinking || member.reasoning;
     member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget;
+    const harnessId = normalizeHarnessId(member.runtime);
+    if (harnessId === "codex") {
+      const executionDefaults = harnessDefaultsOf(getSettings(), "codex");
+      member.codexPolicy = {
+        ...(requestedCodexPolicy
+          ? requestedCodexPolicy
+          : member.codexPolicy || executionDefaults.codexPolicy || DEFAULT_CODEX_POLICY),
+      };
+    } else {
+      member.codexPolicy = undefined;
+    }
   }
 
   /** Live turn count wins; persisted transcript keeps the lock after restart. */
@@ -937,6 +1039,9 @@ export class PartyApplicationService {
         if (harness !== "claude-code" && harness !== "codex") {
           return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code' or 'codex'.` };
         }
+        if (request.permissionMode !== undefined && !isPermissionModeSetting(request.permissionMode)) {
+          return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
+        }
         try {
           this.createMember({
             partyId: party,
@@ -948,6 +1053,8 @@ export class PartyApplicationService {
             effort: request.effort,
             reasoning: request.reasoning,
             reasoningBudget: request.reasoningBudget,
+            permissionMode: request.permissionMode,
+            codexPolicy: request.codexPolicy,
           });
           const started = this.startMember(request.name, {}, {}, party);
           notify();
@@ -965,6 +1072,29 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
+      setPermission: async (name, request) => {
+        if (request.permissionMode !== undefined && !isPermissionModeSetting(request.permissionMode)) {
+          return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
+        }
+        try {
+          const result = this.setMemberPermission(name, {
+            permissionMode: request.permissionMode,
+            codexPolicy: request.codexPolicy,
+          }, party);
+          notify();
+          return {
+            ok: true,
+            data: {
+              ok: true,
+              name,
+              permissionMode: result.member?.permissionMode,
+              codexPolicy: result.member?.codexPolicy,
+            },
+          };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       list: async () => {
         const state = this.readState();
         const members = state.members
@@ -975,7 +1105,10 @@ export class PartyApplicationService {
             role: member.role ?? "",
             status: member.status,
             harness: member.runtime ?? "claude-code",
+            executionHarness: normalizeHarnessId(member.runtime),
             model: member.model ?? "",
+            permissionMode: member.permissionMode,
+            codexPolicy: member.codexPolicy,
           }));
         return { ok: true, data: { members } };
       },
@@ -1030,13 +1163,21 @@ export class PartyApplicationService {
  * along as `codexModelsError` instead of being dropped.
  */
 function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
-  harnesses: Array<{ id: string; label: string; status: string }>;
+  harnesses: Array<Record<string, unknown>>;
   models: Array<Record<string, unknown>>;
   codexModelsError?: string;
 } {
-  const routes = buildModelRoutes(harnessDefaultsOf(getSettings()).model, [], [], codexModels?.models);
+  const settings = getSettings();
+  const routes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels?.models);
   return {
-    harnesses: harnesses.map((harness) => ({ id: harness.id, label: harness.label, status: harness.status })),
+    harnesses: harnesses.map((harness) => {
+      return {
+        id: harness.id,
+        label: harness.label,
+        status: harness.status,
+        permission: permissionDiscoveryFor(settings, harness.id),
+      };
+    }),
     codexModelsError: codexModels?.status === "error" ? codexModels.error : undefined,
     models: routes.map((route) => {
       const thinking = route.capabilities.thinking;
@@ -1052,6 +1193,7 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
         id: route.model,
         label: route.label,
         harness: route.harnessId,
+        executionHarness: route.harnessId || "claude-code",
         provider: route.providerId,
         perf: route.meta?.perf,
         costTier: route.meta?.costTier,

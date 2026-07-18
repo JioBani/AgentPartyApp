@@ -2,8 +2,8 @@
  * Live GPT-mini e2e for #9: a real Codex party member must see and call the
  * app-hosted agentparty-app tool surface. This launches the real app, creates a
  * Codex member, asserts /api/sessions/:id/mcp exposes agentparty-app, then sends
- * a real model turn requiring mcp__agentparty-app__list and verifies the
- * transcript contains the completed tool call.
+ * one real mini-model turn requiring member-permission. This proves a member can
+ * change another member's persisted permission through the actual MCP/API path.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -18,6 +18,9 @@ const base = `http://127.0.0.1:${port}`;
 const codexJs = process.env.AGENTPARTY_CODEX_JS || "C:\\Users\\Dev\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
 const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
 const memberName = "codexparty";
+const targetName = "permission-target";
+const createdName = "agent-created-codex";
+const createdPolicy = { sandbox: "read-only", approval: "never", guardian: true };
 const mcpCallLog = path.join(os.tmpdir(), `agentparty-live-codex-party-tools-${process.pid}.jsonl`);
 
 async function main() {
@@ -56,6 +59,13 @@ async function main() {
 
     await post("/api/parties", { name: "live codex party tools e2e" });
     await post("/api/party/members", {
+      name: targetName,
+      requirement: "Permission mutation target.",
+      runtime: "claude-code",
+      model: "sonnet",
+      permissionMode: "default",
+    });
+    await post("/api/party/members", {
       name: memberName,
       requirement: "Call AgentParty app party tools when instructed.",
       role: "Codex party tool live e2e member",
@@ -73,19 +83,31 @@ async function main() {
     const mcp = await waitForPartyMcp(sessionId);
     const partyServer = mcp.servers?.find((server) => server.name === "agentparty-app");
     assert(partyServer, "Codex MCP snapshot exposes agentparty-app");
-    assert(partyServer.tools?.some((tool) => tool.name === "list" || tool.name === "mcp__agentparty-app__list"), "Codex MCP snapshot exposes the list tool");
+    assert(partyServer.tools?.some((tool) => tool.name === "member-permission" || tool.name === "mcp__agentparty-app__member-permission"), "Codex MCP snapshot exposes member-permission");
+    assert(partyServer.tools?.some((tool) => tool.name === "member-create" || tool.name === "mcp__agentparty-app__member-create"), "Codex MCP snapshot exposes member-create");
+    assert(partyServer.tools?.some((tool) => tool.name === "list-models" || tool.name === "mcp__agentparty-app__list-models"), "Codex MCP snapshot exposes list-models");
 
     await post(`/api/party/members/${memberName}/message`, {
       text: [
         "This is a live AgentParty tool test.",
-        "You must call the party tool `mcp__agentparty-app__list` exactly once before answering.",
+        "Perform these three party-tool calls in order, exactly once each:",
+        "(1) call `mcp__agentparty-app__list-models` with {}.",
+        `(2) call \`mcp__agentparty-app__member-create\` with name=${createdName}, role='AI-created initial permission QA', harness=codex, model=${model}, effort=low, and codexPolicy=${JSON.stringify(createdPolicy)}.`,
+        `(3) call \`mcp__agentparty-app__member-permission\` with name=${targetName} and permissionMode=plan.`,
         "After the tool result arrives, reply with exactly LIVE_CODEX_PARTY_TOOL_OK.",
         "Do not edit files and do not run shell commands.",
       ].join(" "),
     });
 
-    const calls = await waitForPartyListTool(sessionId);
-    assert(calls.some((call) => call.member === memberName && call.name === "list"), "MCP call log contains a real agentparty-app list call from the Codex member");
+    const calls = await waitForPartyTools(sessionId);
+    assert(calls.some((call) => call.member === memberName && call.name === "list-models"), "MCP call log contains a real list-models call from the Codex member");
+    assert(calls.some((call) => call.member === memberName && call.name === "member-create"), "MCP call log contains a real member-create call from the Codex member");
+    assert(calls.some((call) => call.member === memberName && call.name === "member-permission"), "MCP call log contains a real member-permission call from the Codex member");
+    const changed = await getJson("/api/party");
+    const agentCreated = changed.members?.find((item) => item.name === createdName);
+    assert(agentCreated?.runtime === "codex" && agentCreated?.model === model && agentCreated?.effort === "low", "real model created the requested Codex member through the product tool path");
+    assert(JSON.stringify(agentCreated?.codexPolicy) === JSON.stringify(createdPolicy), "AI-created member keeps its explicit initial Codex permission policy");
+    assert(changed.members?.find((item) => item.name === targetName)?.permissionMode === "plan", "real model tool call persisted the other member's permission");
 
     await post(`/api/party/members/${memberName}/close`, {});
     console.log(`LIVE CODEX PARTY TOOLS E2E PASSED (${model})`);
@@ -121,7 +143,7 @@ async function waitForPartyMcp(sessionId) {
   while (Date.now() - started < 30000) {
     last = await getJson(`/api/sessions/${encodeURIComponent(sessionId)}/mcp`);
     const partyServer = last.servers?.find((server) => server.name === "agentparty-app");
-    if (partyServer?.tools?.some((tool) => tool.name === "list" || tool.name === "mcp__agentparty-app__list")) {
+    if (partyServer?.tools?.some((tool) => tool.name === "member-permission" || tool.name === "mcp__agentparty-app__member-permission")) {
       return last;
     }
     await delay(1000);
@@ -129,7 +151,7 @@ async function waitForPartyMcp(sessionId) {
   throw new Error(`agentparty-app MCP tools did not become ready: ${JSON.stringify(last)}`);
 }
 
-async function waitForPartyListTool(sessionId) {
+async function waitForPartyTools(sessionId) {
   const started = Date.now();
   let lastCalls = [];
   while (Date.now() - started < 180000) {
@@ -139,7 +161,8 @@ async function waitForPartyListTool(sessionId) {
       throw new Error(session.snapshot.lastError || "Live Codex party tool session entered error state.");
     }
     lastCalls = readCallLog();
-    if (lastCalls.some((call) => call.member === memberName && call.name === "list") && session?.snapshot?.status === "idle") {
+    const memberCalls = lastCalls.filter((call) => call.member === memberName);
+    if (["list-models", "member-create", "member-permission"].every((name) => memberCalls.some((call) => call.name === name)) && session?.snapshot?.status === "idle") {
       return lastCalls;
     }
     await delay(1000);

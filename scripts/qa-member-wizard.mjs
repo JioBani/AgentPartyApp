@@ -1,7 +1,7 @@
 /*
- * Renders the real MemberWizard in jsdom and walks the 5 steps
- * (name → harness → model → reasoning → role), asserting step gating and that
- * the final onCreate payload carries the chosen harness, model and reasoning —
+ * Renders the real MemberWizard in jsdom and walks the 6 steps
+ * (name → harness → model → reasoning → permission → role), asserting step
+ * gating and that the final payload carries runtime and initial permission —
  * the contract the party member-create relies on.
  */
 import { JSDOM } from "jsdom";
@@ -68,7 +68,7 @@ const nextBtn = () => all(".wb-wizard-foot .wb-btn-accent")[0];
 const text = () => document.body.textContent || "";
 
 console.log("\nMember wizard assertions:");
-assert(all(".wb-wizard-step").length === 5, "5 step indicators rendered");
+assert(all(".wb-wizard-step").length === 6, "6 step indicators rendered (including initial permission)");
 
 // Step 1 — name
 assert(nextBtn().disabled, "Next disabled with empty name");
@@ -107,7 +107,16 @@ const highEffort = all(".wb-segment").find((s) => s.textContent.trim() === "High
 click(highEffort); await tick(30);
 click(nextBtn()); await tick(40);
 
-// Step 5 — role + confirm
+// Step 5 — initial permission
+assert(text().includes("초기 권한"), "permission step is shown before creation");
+const permissionSelect = q("select.wb-wizard-input");
+assert(permissionSelect?.value === "default", "Claude permission is seeded from its harness default");
+permissionSelect.value = "plan";
+permissionSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+await tick(30);
+click(nextBtn()); await tick(40);
+
+// Step 6 — role + confirm
 assert(text().includes("확인"), "final step shows a confirm summary");
 const createBtn = nextBtn();
 assert(createBtn.disabled, "Create disabled until a role is given");
@@ -123,6 +132,7 @@ assert(created?.requirement === "Reviews backend APIs", "payload carries the rol
 assert(created?.effort === "high", "payload carries the chosen effort");
 assert(created?.reasoning === "enabled", "payload carries the thinking mode");
 assert(created?.reasoningBudget === 8192, "payload carries the thinking budget");
+assert(created?.permissionMode === "plan", "payload carries the chosen initial permission");
 
 console.log(failures.length ? `\nMEMBER WIZARD FAILED (${failures.length})` : "\nMEMBER WIZARD PASSED");
 process.exit(failures.length ? 1 : 0);

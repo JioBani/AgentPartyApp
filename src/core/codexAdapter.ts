@@ -14,8 +14,16 @@ import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
-import { CODEX_OPENROUTER_PROVIDER, codexProviderConfigArgs, codexProviderForModel, type CodexCustomProvider } from "../shared/codexProviders";
+import {
+  CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
+  CODEX_OPENROUTER_PROVIDER,
+  codexProviderConfigArgs,
+  codexProviderForModel,
+  type CodexCustomProvider,
+} from "../shared/codexProviders";
+import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 import { pricingForModel, visionForModel } from "./modelRegistry";
+import { resolveCatalogModel } from "../shared/modelCatalog";
 import type { ImageAttachment } from "../shared/attachments";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
@@ -50,6 +58,9 @@ export interface CodexAdapterOptions {
    * catalog (openai) only.
    */
   openRouterApiKey?: string;
+  /** Local CLIProxyAPI connection used for Claude OAuth cross-routing. */
+  subscriptionProxyBaseUrl?: string;
+  subscriptionProxyApiKey?: string;
 }
 
 type JsonRpcId = string;
@@ -133,7 +144,11 @@ export class CodexAdapter extends EventEmitter {
    * session layers. See codexProviders.ts.
    */
   private currentProvider(): CodexCustomProvider | undefined {
-    return codexProviderForModel(this.options.model);
+    const provider = codexProviderForModel(this.options.model);
+    if (provider?.id !== CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
+      return provider;
+    }
+    return { ...provider, baseUrl: this.subscriptionProxy().baseUrl };
   }
 
   start(): void {
@@ -297,7 +312,19 @@ export class CodexAdapter extends EventEmitter {
   }
 
   setModel(model: string): void {
+    const previousProvider = this.currentProvider()?.id;
     (this.options as { model: string }).model = model;
+    const nextProvider = this.currentProvider()?.id;
+    if (previousProvider !== nextProvider && this.started) {
+      this.emitEvent({
+        type: "status",
+        status: "model-provider",
+        detail: `provider changed from ${previousProvider || "openai-account"} to ${nextProvider || "openai-account"}; restarting Codex app-server with a fresh thread`,
+        at: now(),
+      });
+      this.restart();
+      return;
+    }
     this.emitEvent({ type: "status", status: "model", detail: model, at: now() });
   }
 
@@ -440,6 +467,9 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private async ensureThread(): Promise<void> {
+    if (this.currentProvider()?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
+      await assertSubscriptionModelAvailable(this.options.model, "claude", this.subscriptionProxy());
+    }
     this.ensureProcess();
     await this.initializeServer();
     if (this.sessionId) {
@@ -457,16 +487,20 @@ export class CodexAdapter extends EventEmitter {
     this.stderrTail = "";
     const requested = codexExecutable(this.options.executablePath);
     const resolved = resolveCodexExecutable(requested);
-    // When an OpenRouter key is available, define the OpenRouter custom provider
-    // inline (never touching ~/.codex/config.toml) and expose the key on the
-    // process env, so any thread whose model is an OpenRouter slug can route to
-    // it (selected per-thread via modelProvider). See codexProviders.ts.
-    const providerArgs = this.options.openRouterApiKey ? codexProviderConfigArgs(CODEX_OPENROUTER_PROVIDER) : [];
+    // Define only the selected custom provider inline (never touching the
+    // user's ~/.codex/config.toml). Provider changes restart this process.
+    const provider = this.currentProvider();
+    const providerArgs = codexProviderConfigArgs(provider);
     const partyArgs = this.partyMcpConfigArgs();
     const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...providerArgs, ...partyArgs, "app-server"];
     const env = {
       ...process.env,
-      ...(this.options.openRouterApiKey ? { [CODEX_OPENROUTER_PROVIDER.envKey]: this.options.openRouterApiKey } : {}),
+      ...(provider?.id === CODEX_OPENROUTER_PROVIDER.id && this.options.openRouterApiKey
+        ? { [CODEX_OPENROUTER_PROVIDER.envKey]: this.options.openRouterApiKey }
+        : {}),
+      ...(provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
+        ? { [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.envKey]: this.subscriptionProxy().apiKey }
+        : {}),
       ...this.partyMcpEnv(),
     };
     this.process = spawn(resolved.command, spawnArgs, {
@@ -590,6 +624,13 @@ export class CodexAdapter extends EventEmitter {
       );
     }
     return provider.id;
+  }
+
+  private subscriptionProxy() {
+    return subscriptionProxyConfig({
+      baseUrl: this.options.subscriptionProxyBaseUrl,
+      apiKey: this.options.subscriptionProxyApiKey,
+    });
   }
 
   private applyThreadResult(result: any): void {
@@ -726,7 +767,7 @@ export class CodexAdapter extends EventEmitter {
         approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
         sandboxPolicy: sandboxPolicyObject(this.policy.sandbox),
         model: this.options.model,
-        effort: effortFor(this.options.effort),
+        effort: effortFor(this.options.model, this.options.effort),
       });
       this.activeTurnId = String(result?.turn?.id || this.activeTurnId || "");
     } catch (error) {
@@ -1020,7 +1061,23 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (method === "error") {
-      this.finishWithError(new Error(String(params.error?.message || params.error || "Codex app-server error.")));
+      const message = String(params.error?.message || params.error || "Codex app-server error.");
+      if (params.willRetry === true) {
+        const additionalDetails = typeof params.error?.additionalDetails === "string"
+          ? params.error.additionalDetails
+          : undefined;
+        this.emitEvent({
+          type: "diagnostic",
+          severity: "warning",
+          category: "provider",
+          title: "Model provider reconnecting",
+          detail: additionalDetails ? `${message} ${additionalDetails}` : message,
+          recovery: "The active turn is still running and will continue automatically if the provider reconnects.",
+          at: now(),
+        });
+        return;
+      }
+      this.finishWithError(new Error(message));
       return;
     }
     if (method === "skills/changed" || method === "app/list/updated") {
@@ -1052,7 +1109,9 @@ export class CodexAdapter extends EventEmitter {
           });
         }
       }
-      const diagnostic = classifyDiagnostic(method, params);
+      const diagnostic = classifyDiagnostic(method, params, {
+        modelProvider: this.currentProvider()?.id,
+      });
       if (diagnostic) {
         this.emitEvent({ type: "diagnostic", ...diagnostic, at: now() });
       }
@@ -1219,13 +1278,21 @@ export class CodexAdapter extends EventEmitter {
             pricing: pricingForModel(this.options.model),
             usage: this.lastUsage,
           }
-        : {
+        : provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
+          ? {
+              providerId: "anthropic",
+              model: this.options.model,
+              runtimeModel: this.options.model,
+              pricing: { billing: "subscription", directPrice: "Claude subscription" },
+              usage: this.lastUsage,
+            }
+          : {
             providerId: "openai",
             model: this.options.model,
             runtimeModel: this.options.model,
             pricing: { billing: "subscription", directPrice: "Codex subscription" },
             usage: this.lastUsage,
-          },
+            },
     );
     this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, at: now() });
     this.drainQueuedTurn();
@@ -1331,8 +1398,12 @@ function sandboxPolicyObject(mode: SandboxMode): unknown {
   return { type: "readOnly", networkAccess: false };
 }
 
-function effortFor(effort: ClaudeEffort): string | null {
-  return effort === "xhigh" || effort === "max" ? "high" : effort;
+function effortFor(model: string, effort: ClaudeEffort): string | null {
+  const catalogModel = resolveCatalogModel(model);
+  if (catalogModel && !catalogModel.reasoning?.effort) {
+    return null;
+  }
+  return effort;
 }
 
 function approvalTitle(kind: CodexApprovalKind): string {

@@ -1,5 +1,6 @@
 import { getSettings, maskSecret, updateSettings } from "./settings";
 import { AuthProviderState } from "../shared/types";
+import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core/subscriptionProxy";
 import { isE2E } from "./runtimeMode";
 
 export function getAuthState(): AuthProviderState[] {
@@ -7,8 +8,8 @@ export function getAuthState(): AuthProviderState[] {
   const openRouterKey = settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
   return [
     {
-      id: "claude-code",
-      label: "Claude Code Subscription",
+      id: "claude",
+      label: "Claude",
       kind: "subscription",
       status: "available",
       description: "Uses the Claude Code login and subscription managed by Claude Code.",
@@ -17,7 +18,7 @@ export function getAuthState(): AuthProviderState[] {
     },
     {
       id: "codex",
-      label: "Codex Subscription",
+      label: "Codex",
       kind: "subscription",
       status: "available",
       description: "Uses the local Codex CLI login or CODEX_API_KEY for Codex app-server.",
@@ -26,7 +27,7 @@ export function getAuthState(): AuthProviderState[] {
     },
     {
       id: "openrouter",
-      label: "OpenRouter API Key",
+      label: "OpenRouter",
       kind: "apiKey",
       status: openRouterKey ? "configured" : "missing",
       description: "Used by router-backed models such as MiniMax and Qwen.",
@@ -34,6 +35,68 @@ export function getAuthState(): AuthProviderState[] {
       maskedValue: maskSecret(openRouterKey),
       detail: openRouterKey ? "Configured. Use Test to verify provider access." : "Missing. Router-backed models need this key.",
     },
+  ];
+}
+
+/**
+ * Presents one user-facing account per subscription. The local bridge and its
+ * cross-harness OAuth are implementation details: connecting Claude Code makes
+ * Claude usable from both harnesses; connecting Codex does the same for GPT.
+ */
+export function withSubscriptionProxyAuth(
+  states: AuthProviderState[],
+  subscriptions: SubscriptionProxyStatus,
+): AuthProviderState[] {
+  const subscriptionProviders: Array<{ provider: SubscriptionProxyProvider; id: string; label: string; description: string }> = [
+    {
+      provider: "claude",
+      id: "claude",
+      label: "Claude",
+      description: "Connect once to use Claude models from both Claude Code and Codex harnesses.",
+    },
+    {
+      provider: "codex",
+      id: "codex",
+      label: "Codex",
+      description: "Connect once to use GPT models from both Codex and Claude Code harnesses.",
+    },
+  ];
+  return [
+    ...subscriptionProviders.map(({ provider, id, label, description }): AuthProviderState => {
+      const providerStatus = subscriptions[provider];
+      const authentication = subscriptions.authentication?.[provider];
+      const status: AuthProviderState["status"] = providerStatus.available
+        ? "available"
+        : authentication?.status === "pending"
+          ? "pending"
+          : authentication?.status === "error"
+            ? "invalid"
+            : subscriptions.service?.status === "error" || !subscriptions.ok
+              ? "network_error"
+              : "missing";
+      const detail = providerStatus.available
+        ? `${provider === "codex" ? "Codex" : "Claude Code"} subscription is connected for both harnesses.`
+        : authentication?.detail
+          || ((subscriptions.service?.status === "error" || !subscriptions.ok) ? subscriptions.service?.detail || subscriptions.detail : undefined)
+          || `Connect ${provider === "codex" ? "Codex" : "Claude Code"} once to enable it in both harnesses.`;
+      return {
+        id,
+        label,
+        kind: "subscription",
+        status,
+        description,
+        source: provider === "codex" ? "Codex subscription" : "Claude Code subscription",
+        detail,
+        ...(providerStatus.available ? {} : {
+          action: {
+            type: "subscriptionOAuth" as const,
+            provider,
+            label: authentication?.status === "pending" ? "인증 대기 중" : "구독 연결",
+          },
+        }),
+      };
+    }),
+    ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && state.id !== "codex" && !state.id.startsWith("cross-")),
   ];
 }
 

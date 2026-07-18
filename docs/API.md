@@ -81,7 +81,10 @@ permission config (`permissionMode` for Claude Code, `codexPolicy` two-axis for
 Codex). `selectedHarnessId` is the harness a brand-new member defaults to. A new
 member is created from ITS harness's defaults (a Codex member gets the Codex
 default model + sandbox policy, a Claude member the Claude default + permission
-mode). A legacy settings.json with flat `claudeModel`/`claudeEffort`/
+mode). Selecting a GPT model on Claude Code keeps the Claude Code harness and
+its `permissionMode`; only the model transport is routed through the local
+Codex/ChatGPT subscription proxy.
+A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
 
 Example:
@@ -126,16 +129,77 @@ Calls OpenRouter's model endpoint to verify the configured key.
 
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call OpenRouter.
 
-## Models
+### `GET /api/auth/subscriptions`
 
-### `GET /api/models`
-
-Returns the selectable model routes and the Codex catalog discovery state.
+Ensures the local subscription bridge is running, queries its authoritative
+model surface (default `http://127.0.0.1:8317/v1/models`), and reports
+Codex/ChatGPT and Claude OAuth availability separately. AgentParty starts the
+bridge on launch and monitors it after launch. Provider refresh tokens remain in
+CLIProxyAPI's persistent auth directory, so no service command or repeated login
+is required after the browser approval. Failures are returned explicitly; this
+endpoint never falls back to OpenRouter.
 
 ```json
 {
   "ok": true,
-  "modelRoutes": [{ "harnessId": "codex", "model": "gpt-5.5", "label": "GPT-5.5" }],
+  "baseUrl": "http://127.0.0.1:8317/v1",
+  "service": { "status": "ready", "managed": true, "detail": "..." },
+  "codex": { "available": true, "models": ["gpt-5.4-mini"], "loginCommand": "... -codex-login" },
+  "claude": { "available": false, "models": [], "loginCommand": "... -claude-login" },
+  "authentication": {}
+}
+```
+
+### `POST /api/auth/subscriptions/:provider/login`
+
+Starts the same one-time browser OAuth action exposed by the Authentication
+screen. `:provider` is `codex` or `claude`. The response includes both the raw
+subscription bridge state and the same `auth` provider list rendered by the UI.
+While approval is pending, poll `GET /api/auth/subscriptions` or `GET /api/state`.
+
+```json
+{
+  "ok": true,
+  "provider": "claude",
+  "status": "started",
+  "detail": "Complete the Claude approval in the browser.",
+  "subscriptions": { "authentication": { "claude": { "status": "pending" } } },
+  "auth": [{ "id": "claude", "status": "pending" }, { "id": "codex", "status": "available" }, { "id": "openrouter", "status": "configured" }]
+}
+```
+
+The approval is the only user action. On later launches AgentParty reuses the
+stored OAuth refresh token and automatically starts/reconnects the local bridge.
+If the bridge is absent on the first connection, AgentParty downloads the
+official Windows release, requires its GitHub-published SHA-256 digest to match,
+installs it under app data, and then opens OAuth. A failed download or digest
+mismatch is returned visibly and no executable is launched.
+
+Override the local deployment with `AGENTPARTY_SUBSCRIPTION_PROXY_URL` and
+`AGENTPARTY_SUBSCRIPTION_PROXY_KEY`. `AGENTPARTY_SUBSCRIPTION_PROXY_BIN` and
+`AGENTPARTY_SUBSCRIPTION_PROXY_CONFIG` override local binary/config discovery.
+The default key is a loopback client key, not an OpenAI or Anthropic credential.
+
+## Models
+
+### `GET /api/models`
+
+Returns the selectable model routes, harness permission contracts/defaults, and
+the Codex catalog discovery state. Every route reports `executionHarness`, which
+is the actual selected harness process and therefore matches `harnessId` even
+for cross-routed models.
+
+`modelProviders` is the shared provider contract used by Authentication and the
+Workbench model groups. It always contains exactly Claude, Codex, and
+OpenRouter; `routeProviderId` maps the stable product identity to the internal
+catalog route id used by each `modelRoutes` item.
+
+```json
+{
+  "ok": true,
+  "modelProviders": [{ "id": "claude", "label": "Claude", "routeProviderId": "anthropic", "authProviderId": "claude", "authKind": "subscription" }, { "id": "codex", "label": "Codex", "routeProviderId": "openai", "authProviderId": "codex", "authKind": "subscription" }, { "id": "openrouter", "label": "OpenRouter", "routeProviderId": "openrouter", "authProviderId": "openrouter", "authKind": "apiKey" }],
+  "modelRoutes": [{ "harnessId": "claude-code", "executionHarness": "claude-code", "model": "GPT-5.4 mini", "runtimeModel": "claude-gpt-5.4-mini", "label": "GPT-5.4 mini", "permission": { "kind": "permissionMode", "default": "default" } }],
+  "harnesses": [{ "id": "claude-code", "status": "available", "permission": { "kind": "permissionMode", "options": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"], "default": "default" } }],
   "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" }
 }
 ```
@@ -157,6 +221,19 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
   edit) and bills the configured **OpenRouter API key** (not the Codex
   subscription). Selecting one without an OpenRouter key configured fails
   explicitly at session start.
+- **Claude subscription models** are exposed as Codex routes with
+  `"modelProvider": "claude-subscription"` and the exact CLIProxyAPI Claude
+  model id. They use the local Claude OAuth credential rather than OpenRouter.
+
+Cross-routing keeps the chosen harness process intact:
+
+- **Claude Code + GPT** uses the Claude Code SDK with its `claude-gpt-*` alias;
+  the embedded Anthropic-compatible router maps that alias to the corresponding
+  GPT model on local CLIProxyAPI. It uses Claude permission modes and the signed-in
+  Codex/ChatGPT subscription.
+- **Codex + Claude** uses Codex app-server with
+  `modelProvider: "claude-subscription"` and a CLIProxyAPI Claude model id. It
+  uses Codex sandbox/approval policy and the signed-in Claude subscription.
 
 ### `POST /api/models/codex/refresh`
 
@@ -332,7 +409,8 @@ app) restores the mode last chosen rather than the start-time value.
 
 Updates a **Codex** session's two-axis safety model live (sandbox mode ×
 approval policy + guardian). Takes effect on the next turn. Errors if the session
-is not a Codex harness.
+does not use the Codex harness. When the session belongs to a party member,
+the policy is persisted and restored on member/app reopen.
 
 ```json
 { "policy": { "sandbox": "workspace-write", "approval": "on-request", "guardian": false } }
@@ -481,10 +559,29 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
   "partyId": "party-id",
   "name": "impl",
   "runtime": "claude-code",
+  "model": "sonnet",
+  "permissionMode": "plan",
   "requirement": "implement scoped code changes",
   "initialTask": "Inspect the current repo."
 }
 ```
+
+Creation accepts the full runtime profile: `model`, `effort`, `reasoning`,
+`reasoningBudget`, and an explicit initial permission. Use `permissionMode` for
+a Claude Code harness, or the complete `codexPolicy` object for Codex:
+
+```json
+{
+  "name": "gpt-worker",
+  "runtime": "claude-code",
+  "model": "GPT-5.4 mini",
+  "requirement": "run inexpensive checks",
+  "permissionMode": "plan"
+}
+```
+
+The example runs the Claude Code harness itself and routes its GPT model calls
+through the embedded router to the local Codex/ChatGPT subscription proxy.
 
 ### `POST /api/party/members/:name/message`
 
@@ -513,7 +610,12 @@ Marks a non-main member as opened in the UI without starting a harness session b
 
 ### `POST /api/party/members/:name/start`
 
-Starts a fresh harness session for an opened member. `main` is init-started when its party is created; other members normally start when the user sends the first chat message. The session cwd is the selected project root, not the member directory.
+Idempotently ensures a harness session exists for an opened member. If the
+member is already live (for example, an HTTP start races the Workbench prewarm),
+the existing session is returned instead of creating an orphaned duplicate.
+Use `respawn` when a live session must be rebuilt. `main` is init-started when
+its party is created; other members normally start when the user sends the first
+chat message. The session cwd is the selected project root, not the member directory.
 
 ```json
 {
@@ -591,6 +693,25 @@ session auto-compacts once occupancy crosses `at`%. Backs the toolbar compact
 pill, the threshold modal, the runtime modal's auto-compact block, and the
 sidebar `⇲ NN%` badge. The global default is set via `POST /api/settings`
 `{ "compactDefault": { "on": true, "at": 80 } }`.
+
+### `POST /api/party/members/:name/permission`
+
+Changes and persists a member's permission by name, with or without a live
+session. A live adapter is updated first, then the member record is written.
+This is the same `PartyApplicationService.setMemberPermission` path used by the
+agent-facing `member-permission` tool.
+
+For a Claude Code harness (including Claude Code + GPT):
+
+```json
+{ "permissionMode": "auto" }
+```
+
+For a Codex harness (including Codex + Claude):
+
+```json
+{ "codexPolicy": { "sandbox": "workspace-write", "approval": "on-request", "guardian": true } }
+```
 
 ### `GET /api/party/status`
 
@@ -689,6 +810,12 @@ in-memory source of truth and live-sync).
 window via `?window=<id>` (or the `x-agentparty-window` header). When omitted,
 the **focused** window is used. `GET /api/state?window=<id>` returns that
 window's workspace, party, and the `windows` list.
+
+Agent member tools additionally send `x-agentparty-party: <party-id>` on party
+list, message, status, interrupt, broadcast, and member-action requests. This
+pins a member session to the party that spawned it even if a user later selects
+another party in the desktop window. Ordinary UI and automation clients can
+omit the header and retain the active-window behavior above.
 
 ### `GET /api/windows`
 

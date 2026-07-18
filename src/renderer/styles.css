@@ -4425,6 +4425,7 @@ body.wb-resizing {
 .set-btn-accent:disabled { background: var(--bg-3); color: var(--text-3); cursor: default; }
 .set-btn-soft { height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 9px; color: var(--text-1); font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .set-btn-soft:hover { background: var(--bg-3); color: var(--text-0); }
+.set-btn-soft:disabled { opacity: 0.65; cursor: default; }
 
 /* runtime: base harness card */
 .set-card-label { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-3); padding: 18px 20px 0; }

@@ -58,12 +58,19 @@ export class AutomationApiServer {
     return this.deps.windowRegistry.resolve(windowId)?.workspacePath || this.deps.defaultWorkspace || process.cwd();
   }
 
+  /** Pins an agent member's HTTP tools to the party that spawned its session. */
+  private targetPartyId(req: http.IncomingMessage): string | undefined {
+    const header = req.headers["x-agentparty-party"];
+    return typeof header === "string" && header.trim() ? header.trim() : undefined;
+  }
+
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const method = req.method || "GET";
     const url = new URL(req.url || "/", this.baseUrl);
     log("info", "api", "request", { method, path: url.pathname });
     const c = this.deps.controller;
     const windowId = this.targetWindowId(url, req);
+    const partyId = this.targetPartyId(req);
     const workspace = this.targetWorkspace(windowId);
     try {
       if (method === "GET" && (url.pathname === "/api/health" || url.pathname === "/api/state")) {
@@ -112,6 +119,15 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/auth/openrouter/test") {
         sendJson(res, 200, await c.testOpenRouterKey());
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/auth/subscriptions") {
+        sendJson(res, 200, await c.getSubscriptionAuthState());
+        return;
+      }
+      const subscriptionLoginMatch = url.pathname.match(/^\/api\/auth\/subscriptions\/(codex|claude)\/login$/);
+      if (method === "POST" && subscriptionLoginMatch) {
+        sendJson(res, 200, await c.loginSubscriptionProvider(subscriptionLoginMatch[1] as "codex" | "claude"));
         return;
       }
       if (method === "GET" && url.pathname === "/api/models") {
@@ -164,7 +180,7 @@ export class AutomationApiServer {
         return;
       }
       if (method === "GET" && (url.pathname === "/api/party" || url.pathname === "/api/harness/party")) {
-        sendJson(res, 200, await c.listPartyMembers(workspace, windowId));
+        sendJson(res, 200, await c.listPartyMembers(workspace, windowId, partyId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/parties") {
@@ -184,7 +200,7 @@ export class AutomationApiServer {
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true }));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true }, partyId));
         return;
       }
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
@@ -205,20 +221,20 @@ export class AutomationApiServer {
       // Party-wide conveniences (agents' broadcast / stop-all / status-all):
       // routed through the same party-action dispatch with the "*" member name.
       if (method === "POST" && url.pathname === "/api/party/broadcast") {
-        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "broadcast", await readJson(req), windowId));
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "broadcast", await readJson(req), windowId, partyId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/party/interrupt") {
-        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "interrupt", await readJson(req), windowId));
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "interrupt", await readJson(req), windowId, partyId));
         return;
       }
       if (method === "GET" && url.pathname === "/api/party/status") {
-        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "status", {}, windowId));
+        sendJson(res, 200, await c.handlePartyAction(workspace, "*", "status", {}, windowId, partyId));
         return;
       }
       const partyMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && partyMatch) {
-        sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req), windowId));
+        sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req), windowId, partyId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/window/minimize") {

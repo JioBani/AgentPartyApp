@@ -3,6 +3,7 @@ import type { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/ev
 import type { HarnessSession } from "./types";
 import type { HarnessId } from "../../shared/types";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot } from "../../shared/mcp";
+import type { CodexPolicy } from "../../shared/codexPolicy";
 
 /** Distributes `Omit` across the event union so each member keeps its own keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -22,6 +23,7 @@ export interface MockHarnessOptions {
   commands?: ClaudeSessionSnapshot["slashCommands"];
   /** Which harness this mock stands in for (drives the MCP snapshot tag). */
   harness?: HarnessId;
+  codexPolicy?: CodexPolicy;
 }
 
 /**
@@ -61,6 +63,7 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       queuedTurnCount: 0,
       pendingApprovalCount: 0,
       slashCommands: options.commands,
+      codexPolicy: options.codexPolicy ? { ...options.codexPolicy } : undefined,
     };
   }
 
@@ -191,6 +194,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
 
   setPermissionMode(permissionMode: string): void {
     this.snapshot.permissionMode = permissionMode;
+    this.pushSnapshot();
+  }
+
+  setCodexPolicy(policy: CodexPolicy): void {
+    this.snapshot.codexPolicy = { ...policy };
     this.pushSnapshot();
   }
 

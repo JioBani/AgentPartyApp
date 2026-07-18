@@ -17,7 +17,7 @@ import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
-import { catalogModelById, catalogModelByRuntime, openRouterAliasMap, resolveCatalogModel } from "../shared/modelCatalog";
+import { catalogModelById, catalogModelByRuntime, resolveCatalogModel, routerTargetForModel } from "../shared/modelCatalog";
 import { backendFor } from "../shared/modelIdentity";
 import { deriveSubagentAction } from "../shared/subagentActivity";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
@@ -551,7 +551,7 @@ export class ClaudeAdapter extends EventEmitter {
       }
       if (this.usesRouterBackend()) {
         this.emitEvent({ type: "status", status: "router-check", detail: this.options.routerBaseUrl, at: now() });
-        await assertRouterReachable(this.options.routerBaseUrl);
+        await assertRouterReachable(this.options.routerBaseUrl, this.runtimeModel);
       }
       const env = {
         ...process.env,
@@ -1697,19 +1697,10 @@ function isResumeNotFound(message: string): boolean {
 }
 
 function isRoutableRouterModel(model: string): boolean {
-  // A model may go to the router backend when the catalog maps it to a concrete
-  // OpenRouter id, OR when it is a codex account model with a claude-* runtime
-  // alias (provider openai) — the AgentParty router backend translates that
-  // alias to the Codex backend (the harness×model cross feature; regressed once
-  // when this check was narrowed to OpenRouter-only).
-  if (openRouterAliasMap()[model.toLowerCase()]) {
-    return true;
-  }
-  const catalogued = catalogModelByRuntime(model);
-  return catalogued?.provider === "openrouter" || (catalogued?.provider === "openai" && Boolean(catalogued.runtimeModel));
+  return Boolean(routerTargetForModel(model));
 }
 
-async function assertRouterReachable(baseUrl: string): Promise<void> {
+async function assertRouterReachable(baseUrl: string, model: string): Promise<void> {
   const target = parseRouterTarget(baseUrl);
   const ok = await canConnect(target.host, target.port, 1200);
   if (!ok) {
@@ -1719,7 +1710,7 @@ async function assertRouterReachable(baseUrl: string): Promise<void> {
     );
   }
   const health = await readRouterHealth(baseUrl);
-  if (health && health.openRouterConfigured === false) {
+  if (routerTargetForModel(model)?.kind === "openrouter" && health && health.openRouterConfigured === false) {
     throw new Error(
       "AgentParty Native embedded router is running, but OpenRouter is not configured. " +
         "Set agentpartyNative.router.openRouterApiKey or OPENROUTER_API_KEY before using router-backed models such as MiniMax M3.",

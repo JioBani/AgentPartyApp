@@ -72,12 +72,22 @@ Claude Code exposes party operations through the in-process SDK MCP server in
 src/core/partyBridge.ts. Tool handlers are identity-bound closures created by
 PartyApplicationService.
 
+`member-create` accepts an explicit initial `permissionMode` or `codexPolicy`.
+`member-permission` lets a member change another member's persisted permission;
+both Claude and Codex tool implementations route it through the same
+`PartyApplicationService.setMemberPermission` method. `list-models` reports each
+route's concrete `executionHarness` and the permission schema/defaults. A
+cross-routed model never changes this value: Claude Code + GPT keeps Claude
+permission modes, while Codex + Claude keeps Codex sandbox/approval policy.
+
 Codex uses persistent codex app-server JSON-RPC sessions. Current Codex builds
 load model-visible tools through `mcp_servers.*`, so AgentParty starts each
 Codex party session with an inline `mcp_servers.agentparty-app` stdio MCP
 configuration. That local MCP server routes every tool call back into the app's
 local automation HTTP API, which reaches the same AppController /
-PartyApplicationService paths as the UI.
+PartyApplicationService paths as the UI. It supplies the spawning party id in
+the `x-agentparty-party` header, so switching the desktop window to another
+party cannot redirect a live Codex member's tools to the wrong party.
 
 ## Codex Harness
 
@@ -122,6 +132,7 @@ the UI uses the same controller path:
 - POST /api/party/members/:name/open
 - POST /api/party/members/:name/start
 - POST /api/party/members/:name/send
+- POST /api/party/members/:name/permission
 - POST /api/party/members/:name/close
 - POST /api/party/members/:name/remove
 - POST /api/party/messages

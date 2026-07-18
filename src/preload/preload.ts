@@ -8,6 +8,7 @@ const api = {
   setOpenRouterKey: (value: string) => ipcRenderer.invoke("auth:setOpenRouterKey", value),
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
+  loginSubscription: (provider: "codex" | "claude") => ipcRenderer.invoke("auth:loginSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
@@ -82,6 +83,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("settings:update", listener);
     return () => ipcRenderer.off("settings:update", listener);
+  },
+  onAuthUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("auth:update", listener);
+    return () => ipcRenderer.off("auth:update", listener);
   },
   onUsageUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

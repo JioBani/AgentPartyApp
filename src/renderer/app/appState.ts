@@ -1,4 +1,5 @@
 import type { InitialAppState } from "../../shared/types";
+import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 
 export type ViewId = "workbench" | "sessions" | "auth" | "runtime" | "automation";
 
@@ -34,6 +35,7 @@ export const initialState: InitialAppState = {
   auth: [],
   sessions: [],
   modelRoutes: [],
+  modelProviders: [...MODEL_PROVIDERS],
   harnesses: [],
   router: { baseUrl: "" },
   automationApi: { baseUrl: "", spec: "" },

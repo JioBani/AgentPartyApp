@@ -125,6 +125,14 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+// Reopen regression: an inactive member has persisted history but no live
+// session. Activating it prewarms a resumed session; navigating away, losing
+// that session, and returning must prewarm again without dropping the history.
+const startedMembers = [];
+const frontendHistory = [
+  { id: "front-old-user", kind: "user", text: "keep this old question", at: "09:00" },
+  { id: "front-old-answer", kind: "assistant", text: "KEEP_FRONTEND_HISTORY", at: "09:01" },
+];
 window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
@@ -149,6 +157,8 @@ window.agentParty = {
   maximizeWindow: noop,
   closeWindow: noop,
   listParty: async () => initialState.party,
+  getMemberTranscript: async (name) => name === "frontend" ? frontendHistory : [],
+  saveMemberTranscript: noop,
   createParty: async () => ({ ok: true, message: "", ...initialState.party }),
   selectParty: async () => ({ ok: true, message: "", ...initialState.party }),
   createPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
@@ -158,7 +168,23 @@ window.agentParty = {
   closePartyMember: async (name) => { closedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
   resumePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   respawnPartyMember: async (name) => { respawnedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
-  startPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  startPartyMember: async (name) => {
+    startedMembers.push(name);
+    const member = members.find((item) => item.name === name);
+    const sid = `s-${name}-resume-${startedMembers.filter((item) => item === name).length}`;
+    const session = { id: sid, title: member?.model || "model", workspace: "/dev/acme-api", snapshot: snapshot(sid, member?.model || "claude-sonnet-4.5", "idle") };
+    sessions.push(session);
+    if (member) {
+      member.sessionId = sid;
+      member.status = "running";
+    }
+    // Startup traffic deliberately wins the race with the command result. The
+    // renderer must still prepend persisted history to this already-created log.
+    emit("events", { sessionId: sid, events: [{ type: "status", status: "idle", detail: "session resumed" }] });
+    emit("sessions", [...sessions]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { ok: true, message: "", ...initialState.party, member, session };
+  },
   removePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   listModels: async () => ({ ok: true, modelRoutes: initialState.modelRoutes, codexModels: initialState.codexModels }),
   refreshCodexModels: noop,
@@ -290,6 +316,27 @@ if (closeBtn) {
 assert(closedMembers.includes("backend"), "tab × closed the 'backend' member session (closePartyMember called)");
 const tabsAfter = document.querySelectorAll('[data-panel-id="pa"] .wb-tab').length;
 assert(tabsAfter === tabsBefore - 1, "tab × removed the tab from the panel");
+assert(startedMembers.filter((name) => name === "frontend").length === 1, "activating a persisted member without a live session prewarms it");
+assert((document.getElementById("root").textContent || "").includes("KEEP_FRONTEND_HISTORY"), "prewarm keeps restored history even when startup events arrive before the session result");
+
+// Leaving Workbench unmounts its panels. Simulate the frontend harness session
+// disappearing while another menu is open, then return. A lifetime name-only
+// prewarm guard used to leave the member permanently 'not started' here until a
+// user sent chat; remount must now retry exactly once and preserve its history.
+emit("nav", "automation");
+await new Promise((resolve) => setTimeout(resolve, 60));
+const frontend = members.find((item) => item.name === "frontend");
+const firstFrontendSession = frontend?.sessionId;
+const firstIndex = sessions.findIndex((session) => session.id === firstFrontendSession);
+if (firstIndex >= 0) sessions.splice(firstIndex, 1);
+if (frontend) frontend.status = "missing_session";
+emit("sessions", [...sessions]);
+emit("partyUpdate", initialState.party);
+emit("nav", "workbench");
+await new Promise((resolve) => setTimeout(resolve, 180));
+assert(startedMembers.filter((name) => name === "frontend").length === 2, "returning to Workbench retries prewarm after the member session disappeared");
+assert(frontend?.sessionId !== firstFrontendSession, "reopened member is bound to a fresh resumed app session");
+assert((document.getElementById("root").textContent || "").includes("KEEP_FRONTEND_HISTORY"), "reopened member still shows its persisted conversation");
 
 // Hard restart moved to the member's right-click menu. Right-clicking reviewer's
 // sidebar row opens a context menu offering "하드 리스타트"; clicking it restarts

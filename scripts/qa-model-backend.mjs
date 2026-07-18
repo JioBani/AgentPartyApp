@@ -19,7 +19,7 @@ async function load(entry, name) {
   return import(pathToFileURL(out).href);
 }
 
-const { backendFor, backendSlug, parseModelId, isClaudeNative } = await load("src/shared/modelIdentity.ts", "identity.mjs");
+const { backendFor, backendSlug, parseModelId, isClaudeNative, executionHarnessFor, executionModelFor } = await load("src/shared/modelIdentity.ts", "identity.mjs");
 const { modelCatalog } = await load("src/shared/modelCatalog.ts", "cat2.mjs");
 
 const failures = [];
@@ -38,7 +38,9 @@ for (const m of modelCatalog()) {
   const cx = backendFor(m.id, "codex");
   if (m.codexModel) {
     assert(cx?.kind === "codex-account" && cx.slug === m.codexModel, `${m.id}: codexModel → codex-account (${cx?.kind})`);
-  } else if (m.orModelId) {
+  } else if (m.claudeSubscriptionModel) {
+    assert(cx?.kind === "codex-claude-subscription" && cx.model === m.claudeSubscriptionModel, `${m.id}: claudeSubscriptionModel → codex-claude-subscription (${cx?.kind})`);
+  } else if (m.provider === "openrouter" && m.orModelId) {
     assert(cx?.kind === "codex-openrouter" && cx.orModelId === m.orModelId, `${m.id}: orModelId → codex-openrouter (${cx?.kind})`);
   }
   // Every produced backend yields a non-empty egress slug (no route ships blank).
@@ -59,10 +61,13 @@ for (const [spelling, why] of [
   assert(isClaudeNative(backendFor(spelling, "claude-code")), `Opus via ${why} ('${spelling}') → claude-native`);
 }
 // Router-backed selections stay router.
-assert(backendFor("claude-gpt-5.6-sol", "claude-code")?.kind === "claude-router", "GPT-5.6 Sol alias → claude-router on claude-code");
+assert(backendFor("claude-gpt-5.6-sol", "claude-code")?.kind === "claude-router", "GPT-5.6 Sol stays on Claude Code through its router alias");
+assert(executionHarnessFor("GPT-5.4 mini", "claude-code") === "claude-code", "Claude-surface GPT mini executes on the Claude Code harness");
+assert(executionModelFor("GPT-5.4 mini", "claude-code") === "claude-gpt-5.4-mini", "Claude-surface GPT mini uses the Claude router alias");
+assert(executionHarnessFor("sonnet", "claude-code") === "claude-code", "native Sonnet stays on Claude Code");
 assert(backendFor("GLM-5.2", "claude-code")?.kind === "claude-router", "GLM-5.2 → claude-router on claude-code");
-// Opus on the codex harness is the cross feature: same model, OpenRouter transport.
-assert(backendFor("opus[1m]", "codex")?.kind === "codex-openrouter", "Opus on codex → codex-openrouter (cross feature)");
+// Opus on the Codex harness keeps Codex policy while using Claude OAuth.
+assert(backendFor("opus[1m]", "codex")?.kind === "codex-claude-subscription", "Opus on Codex → Claude subscription (cross feature)");
 
 console.log("\nparseModelId is a closed gate (no silent guess):");
 assert(parseModelId("claude-opus-4-8[1m]") === "opus[1m]", "canonical id → 'opus[1m]'");

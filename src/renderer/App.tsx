@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, InitialAppState, PartyCommandResult, SessionView } from "../shared/types";
+import type { HarnessDefaults, InitialAppState, PartyCommandResult, PartyMember, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
@@ -65,7 +65,6 @@ export function App() {
   const partyBroadcastSeen = useRef(false);
   // Members with an in-flight session start, and members already prewarmed once.
   const startingRef = useRef<Set<string>>(new Set());
-  const prewarmedRef = useRef<Set<string>>(new Set());
   // Auto-compact hysteresis: a member is "armed" while below its threshold; a
   // crossing fires ONE compaction and disarms it, re-arming only once occupancy
   // drops back below the threshold. This stops a member whose context can't be
@@ -240,6 +239,9 @@ export function App() {
       const incoming = payload as InitialAppState["settings"];
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
     });
+    const offAuthUpdate = window.agentParty.onAuthUpdate?.((payload) => {
+      setState((current) => ({ ...current, auth: payload as InitialAppState["auth"] }));
+    });
     // The push sends the raw snapshot; the initial fetch wraps it in `{ usage }`.
     const offUsageUpdate = window.agentParty.onUsageUpdate?.((payload) => setUsageLimits((payload as UsageLimitsSnapshot) || {}));
     void window.agentParty.getUsageLimits?.().then((res) => { if (res?.usage) setUsageLimits(res.usage); });
@@ -256,6 +258,7 @@ export function App() {
       offPartyUpdate();
       offModelsUpdate();
       offSettingsUpdate?.();
+      offAuthUpdate?.();
       offUsageUpdate?.();
       offQaLayout();
       offQaOpenSub();
@@ -370,6 +373,22 @@ export function App() {
     return () => clearTimeout(timer);
   }, [partyNotice]);
 
+  // OAuth is completed in the system browser. Poll the shared AppController
+  // state only while an approval is pending; the button disappears as soon as
+  // /v1/models proves the subscription was loaded.
+  const subscriptionAuthPending = state.auth.some((provider) => provider.status === "pending");
+  useEffect(() => {
+    if (!subscriptionAuthPending) {
+      return;
+    }
+    const timer = setInterval(() => {
+      void window.agentParty.listAuth()
+        .then((auth) => setState((current) => ({ ...current, auth })))
+        .catch((error) => setPartyNotice(`구독 인증 상태 확인 실패: ${error instanceof Error ? error.message : String(error)}`));
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [subscriptionAuthPending]);
+
   async function chooseWorkspace() {
     const settings = await window.agentParty.chooseWorkspace();
     setState((current) => ({ ...current, settings }));
@@ -456,7 +475,17 @@ export function App() {
     await refreshParty();
   }
 
-  async function createMemberInline(input: { name: string; requirement: string; runtime: string; model?: string; effort?: string; reasoning?: string; reasoningBudget?: number }) {
+  async function createMemberInline(input: {
+    name: string;
+    requirement: string;
+    runtime: string;
+    model?: string;
+    effort?: string;
+    reasoning?: string;
+    reasoningBudget?: number;
+    permissionMode?: import("../shared/types").PermissionModeSetting;
+    codexPolicy?: import("../shared/codexPolicy").CodexPolicy;
+  }) {
     const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
     await applyPartyResult(result);
   }
@@ -488,6 +517,41 @@ export function App() {
   function sessionIdFor(name: string): string | undefined {
     const sessionId = members.find((member) => member.name === name)?.sessionId;
     return sessionId && sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
+  }
+
+  async function connectSubscription(provider: "codex" | "claude") {
+    try {
+      const result = await window.agentParty.loginSubscription(provider);
+      setState((current) => ({ ...current, auth: result.auth }));
+      setPartyNotice(result.detail);
+    } catch (error) {
+      setPartyNotice(`구독 연결을 시작하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      const auth = await window.agentParty.listAuth();
+      setState((current) => ({ ...current, auth }));
+    }
+  }
+
+  /** Restored transcript for one concrete member identity, never name-only. */
+  function restoredTranscriptFor(member?: PartyMember): TranscriptBlock[] | undefined {
+    return member ? restoredRef.current[memberKey(member)] : undefined;
+  }
+
+  /** Prepends restored history to a new session even if startup events arrived first. */
+  function seedRestoredTranscript(sessionId: string, restored?: TranscriptBlock[]): void {
+    if (!restored?.length) {
+      return;
+    }
+    setLogsBySession((current) => {
+      const existing = current[sessionId];
+      if (!existing?.length) {
+        return { ...current, [sessionId]: restored };
+      }
+      const restoredIds = new Set(restored.map((block) => block.id));
+      if (existing.some((block) => restoredIds.has(block.id))) {
+        return current;
+      }
+      return { ...current, [sessionId]: [...restored, ...existing] };
+    });
   }
 
   /**
@@ -527,13 +591,14 @@ export function App() {
     if (existing) {
       return existing;
     }
-    if (startingRef.current.has(name)) {
+    const member = members.find((item) => item.name === name);
+    const identity = member ? memberKey(member) : name;
+    if (startingRef.current.has(identity)) {
       return undefined;
     }
-    startingRef.current.add(name);
+    startingRef.current.add(identity);
     try {
       const draft = runtimeDrafts[name];
-      const member = members.find((item) => item.name === name);
       const memberRoute = findRoute(member?.model, routes);
       // The member already carries its harness's model/effort/permission (set at
       // creation from that harness's defaults); fall back to the same harness's
@@ -556,13 +621,13 @@ export function App() {
       // Seed the (resumed) session's transcript with the member's restored history
       // so the conversation continues visibly, matching the harness thread resume.
       const sid = result.session?.id;
-      const restored = restoredRef.current[name];
-      if (sid && restored && restored.length) {
-        setLogsBySession((current) => (current[sid] === undefined ? { ...current, [sid]: restored } : current));
+      const restored = restoredTranscriptFor(result.member || member);
+      if (sid) {
+        seedRestoredTranscript(sid, restored);
       }
       return sid;
     } finally {
-      startingRef.current.delete(name);
+      startingRef.current.delete(identity);
     }
   }
 
@@ -587,24 +652,21 @@ export function App() {
       }
       if (!known) {
         // Freshly started: seed the restored history, then echo the just-sent turn.
-        const restored = restoredRef.current[name];
-        if (restored && restored.length) {
-          setLogsBySession((current) => (current[sessionId] === undefined ? { ...current, [sessionId]: restored } : current));
-        }
+        const restored = restoredTranscriptFor(result.member || members.find((item) => item.name === name));
+        seedRestoredTranscript(sessionId, restored);
         setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
       }
     },
     prewarm(name) {
-      // At-most-once per member: init the session ahead of the first turn so the
-      // palette can show the harness's real command/skill inventory. A failure is
-      // surfaced (not silently swallowed) and not retried in a loop — sending a
-      // message later goes through ensureSession again. Prewarm is OPPORTUNISTIC
-      // (auto): a member closed before — or while — it runs must stay closed.
+      // Init the visible member ahead of the first turn. Panel owns WHEN to try
+      // (on activation/remount); ensureSession only deduplicates an in-flight
+      // start. A lifetime "already prewarmed" set made a member impossible to
+      // reopen after its session disappeared or after switching between parties
+      // that both contain `main`: only sending a chat could revive it.
       const member = members.find((item) => item.name === name);
-      if (sessionIdFor(name) || prewarmedRef.current.has(name) || member?.status === "closed") {
+      if (sessionIdFor(name) || member?.status === "closed") {
         return;
       }
-      prewarmedRef.current.add(name);
       void ensureSession(name, { auto: true }).then((id) => {
         if (!id) {
           setPartyNotice(`'${name}' 세션을 미리 준비하지 못했습니다. 메시지를 보내면 다시 시도합니다.`);
@@ -640,9 +702,7 @@ export function App() {
       // Reload the member's session while continuing the conversation
       // (respawnMember: restart + resume the same harness thread). Rebuilds from
       // the member's current config and re-reads MCP, so newly-added servers
-      // take effect without losing context. Clear the prewarm mark so the new
-      // session isn't mistaken for an already-prewarmed one.
-      prewarmedRef.current.delete(name);
+      // take effect without losing context.
       void window.agentParty.respawnPartyMember(name);
     },
     compact(name) {
@@ -660,7 +720,6 @@ export function App() {
       // it stops occupying context / provider usage. Addressed by member name
       // (not sessionId): a prewarmed-but-not-yet-bound member still gets closed,
       // and the closed status blocks auto-prewarm from resurrecting it.
-      prewarmedRef.current.delete(name);
       void window.agentParty.closePartyMember(name);
     },
     async applyRuntime(name, runtime) {
@@ -673,8 +732,8 @@ export function App() {
       const currentHarness = member?.runtime === "codex" ? "codex" : "claude-code";
       if (runtime.route && selectedHarness !== currentHarness) {
         // A harness is the adapter PROCESS, not model metadata. Recreate the
-        // prewarmed session on the selected adapter and persist member.runtime;
-        // setModel on the old adapter caused Codex selections to launch Claude.
+        // prewarmed session only when the actual selected harness changes.
+        // Cross-routed models stay inside that harness process.
         const result = await window.agentParty.respawnPartyMember(name, {
           selectedHarnessId: selectedHarness,
           selectedProviderId: runtime.route.providerId,
@@ -728,7 +787,8 @@ export function App() {
     },
     async listMcp(name) {
       const sessionId = sessionIdFor(name);
-      const harness = members.find((member) => member.name === name)?.runtime === "codex" ? "codex" : "claude-code";
+      const member = members.find((item) => item.name === name);
+      const harness = member?.runtime === "codex" ? "codex" : "claude-code";
       if (!sessionId) {
         return { supported: true, harness, servers: [], note: "세션을 먼저 시작하세요 (멤버에게 메시지를 보내거나 패널을 열면 준비됩니다)." };
       }
@@ -787,12 +847,13 @@ export function App() {
 
   const isDark = theme.themeId === "dark";
 
-  // Party members driving each provider account (claude-code → Claude, codex →
-  // Codex) — the popover's "N명 사용" sub-labels.
+  // Party members driving each harness subscription/account indicator. Models
+  // routed through OpenRouter do not replace the selected harness process.
   const membersByProvider = useMemo<Partial<Record<UsageProviderId, number>>>(() => {
     const counts: Partial<Record<UsageProviderId, number>> = {};
     for (const member of members) {
-      const provider: UsageProviderId | undefined = member.runtime === "codex" ? "codex" : member.runtime === "claude-code" ? "claude" : undefined;
+      const harness = member.runtime === "codex" ? "codex" : "claude-code";
+      const provider: UsageProviderId = harness === "codex" ? "codex" : "claude";
       if (provider) {
         counts[provider] = (counts[provider] || 0) + 1;
       }
@@ -939,6 +1000,7 @@ export function App() {
                   onDraft={setOpenRouterDraft}
                   onSave={saveOpenRouterKey}
                   onTest={async () => { const auth = await window.agentParty.testOpenRouterKey(); setState((current) => ({ ...current, auth })); }}
+                  onConnectSubscription={connectSubscription}
                 />
               )}
               {currentView === "runtime" && (

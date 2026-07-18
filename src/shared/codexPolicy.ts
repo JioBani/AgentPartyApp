@@ -35,6 +35,28 @@ export const CODEX_PRESET_LABELS: Record<Exclude<CodexPreset, "custom">, string>
 
 export const DEFAULT_CODEX_POLICY: CodexPolicy = { sandbox: "workspace-write", approval: "on-request", guardian: false };
 
+export const CODEX_SANDBOX_MODES: readonly SandboxMode[] = ["read-only", "workspace-write", "danger-full-access"];
+export const CODEX_APPROVAL_POLICIES: readonly ApprovalPolicy[] = ["untrusted", "on-request", "never"];
+
+/** Closed validation gate for values crossing HTTP/MCP/IPC boundaries. */
+export function isCodexPolicy(value: unknown): value is CodexPolicy {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const policy = value as Partial<CodexPolicy>;
+  return CODEX_SANDBOX_MODES.includes(policy.sandbox as SandboxMode)
+    && CODEX_APPROVAL_POLICIES.includes(policy.approval as ApprovalPolicy)
+    && typeof policy.guardian === "boolean";
+}
+
+/** Returns a detached, validated policy or throws a user-visible contract error. */
+export function requireCodexPolicy(value: unknown): CodexPolicy {
+  if (!isCodexPolicy(value)) {
+    throw new Error("Codex policy requires sandbox, approval, and boolean guardian fields.");
+  }
+  return { sandbox: value.sandbox, approval: value.approval, guardian: value.guardian };
+}
+
 /** Which preset (if any) a policy matches — "custom" when the axes don't line up. */
 export function codexPresetOf(policy: Pick<CodexPolicy, "sandbox" | "approval">): CodexPreset {
   for (const [preset, axes] of Object.entries(CODEX_PRESETS) as [Exclude<CodexPreset, "custom">, Omit<CodexPolicy, "guardian">][]) {

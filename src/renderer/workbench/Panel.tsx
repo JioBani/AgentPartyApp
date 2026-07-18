@@ -54,14 +54,18 @@ export function Panel(props: PanelProps) {
 
   // Prewarm the visible member's session (init only, no turn) so its composer
   // palette can show the harness's real command/skill inventory before the
-  // first message. Idempotent + at-most-once is enforced in the action.
+  // first message. Run on member activation / session loss / panel remount.
+  // Deliberately exclude the `actions` object: App rebuilds it as state changes;
+  // including it retried a failed prewarm on every render instead of only on a
+  // meaningful panel lifecycle transition.
   const activeName = view?.name;
   const hasSession = Boolean(view?.session);
   useEffect(() => {
     if (activeName && !hasSession) {
       actions.prewarm(activeName);
     }
-  }, [activeName, hasSession, actions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeName, hasSession]);
 
   const wide = density === "wide";
   const narrow = density === "narrow";

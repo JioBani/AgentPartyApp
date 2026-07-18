@@ -60,6 +60,8 @@ export interface CatalogModel {
   runtimeModel?: string;
   /** Codex account slug sent to thread/turn (e.g. "gpt-5.6-sol"). Presence = the model runs on the codex harness. */
   codexModel?: string;
+  /** Claude OAuth model id exposed by local CLIProxyAPI for Codex-harness cross-routing. */
+  claudeSubscriptionModel?: string;
   /** Concrete OpenRouter model id the router forwards to. */
   orModelId?: string;
   subscription: boolean;
@@ -90,7 +92,17 @@ export function catalogModelById(id: string): CatalogModel | undefined {
 
 export function catalogModelByRuntime(runtimeModel: string): CatalogModel | undefined {
   const lower = runtimeModel.toLowerCase();
-  return MODELS.find((m) => (m.runtimeModel || m.id).toLowerCase() === lower || m.codexModel?.toLowerCase() === lower);
+  return MODELS.find(
+    (m) =>
+      (m.runtimeModel || m.id).toLowerCase() === lower ||
+      m.codexModel?.toLowerCase() === lower ||
+      m.claudeSubscriptionModel?.toLowerCase() === lower,
+  );
+}
+
+export function catalogModelByClaudeSubscriptionModel(model: string): CatalogModel | undefined {
+  const lower = model.toLowerCase();
+  return MODELS.find((m) => m.claudeSubscriptionModel?.toLowerCase() === lower);
 }
 
 /** Finds a catalog entry by its concrete OpenRouter model id (`orModelId`). */
@@ -142,7 +154,8 @@ export function resolveCatalogModel(model: string): CatalogModel | undefined {
       canonicalModelKey(m.id) === key ||
       (m.orModelId ? canonicalModelKey(m.orModelId) === key : false) ||
       (m.runtimeModel ? canonicalModelKey(m.runtimeModel) === key : false) ||
-      (m.codexModel ? canonicalModelKey(m.codexModel) === key : false),
+      (m.codexModel ? canonicalModelKey(m.codexModel) === key : false) ||
+      (m.claudeSubscriptionModel ? canonicalModelKey(m.claudeSubscriptionModel) === key : false),
   );
 }
 
@@ -179,6 +192,11 @@ export function codexAccountModels(): CatalogModel[] {
   return MODELS.filter((m) => m.provider === "openai" && Boolean(m.codexModel));
 }
 
+/** Anthropic subscription models exposed to the Codex harness via CLIProxyAPI. */
+export function claudeSubscriptionModels(): CatalogModel[] {
+  return MODELS.filter((m) => m.provider === "anthropic" && Boolean(m.claudeSubscriptionModel));
+}
+
 /**
  * Every model with a concrete OpenRouter id, ANY provider — the set the codex
  * harness routes through its OpenRouter custom provider. Superset of
@@ -186,19 +204,38 @@ export function codexAccountModels(): CatalogModel[] {
  * are OpenRouter-routable on codex while staying native on claude-code.
  */
 export function orRoutedModels(): CatalogModel[] {
-  return MODELS.filter((m) => Boolean(m.orModelId));
+  return openRouterModels();
 }
 
 /** runtimeModel/id -> OpenRouter model id, for the embedded router. */
 export function openRouterAliasMap(): Record<string, string> {
   const map: Record<string, string> = {};
   for (const m of openRouterModels()) {
-    if (m.orModelId) {
+    if (m.runtimeModel && m.orModelId) {
       map[(m.runtimeModel || m.id).toLowerCase()] = m.orModelId;
       map[m.id.toLowerCase()] = m.orModelId;
     }
   }
   return map;
+}
+
+export type RouterTarget =
+  | { kind: "codex-subscription"; model: string }
+  | { kind: "openrouter"; model: string };
+
+/** Exact provider target for one Claude-Code router alias. */
+export function routerTargetForModel(model: string): RouterTarget | undefined {
+  const entry = catalogModelByRuntime(model) || catalogModelById(model);
+  if (!entry?.runtimeModel) {
+    return undefined;
+  }
+  if (entry.provider === "openai" && entry.codexModel) {
+    return { kind: "codex-subscription", model: entry.codexModel };
+  }
+  if (entry.provider === "openrouter" && entry.orModelId) {
+    return { kind: "openrouter", model: entry.orModelId };
+  }
+  return undefined;
 }
 
 /** Whether a thinking spec lets the user turn reasoning off. */
