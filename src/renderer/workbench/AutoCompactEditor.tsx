@@ -15,12 +15,11 @@ import {
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 
-// The Auto-compact dialog's threshold slider band. Deliberately narrower + coarser
-// than the shared editor's full gauge (a value below 50% is rarely useful as a
-// quick per-member toggle, and 5-point steps keep the drag legible on the donut).
-const DIALOG_MIN = 50;
-const DIALOG_MAX = 95;
-const DIALOG_STEP = 5;
+// The Auto-compact dialog's threshold slider band — the SAME settable range as the
+// Runtime modal's editor (10–95, step 1), so the two entry points never disagree.
+const DIALOG_MIN = AUTO_COMPACT_MIN;
+const DIALOG_MAX = AUTO_COMPACT_MAX;
+const DIALOG_STEP = AUTO_COMPACT_STEP;
 
 /** Compact token count for the dialog readouts: 128000 → "128K". */
 function toK(value: number): string {

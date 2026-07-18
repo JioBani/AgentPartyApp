@@ -101,7 +101,7 @@ console.log("\nauto-compact dialog (usage card, toggle, slider, footer):");
   assert(text.includes("임계치 초과 시 자동 압축"), "has the enable toggle");
   const slider = host.querySelector(".wb-compact-thcard .wb-compact-range");
   assert(!!slider, "threshold slider present when enabled");
-  assert(slider?.getAttribute("min") === "50" && slider?.getAttribute("max") === "95" && slider?.getAttribute("step") === "5", "slider band is 50–95 step 5 (dialog spec)");
+  assert(slider?.getAttribute("min") === "10" && slider?.getAttribute("max") === "95" && slider?.getAttribute("step") === "1", "slider band is 10–95 step 1 (same as the Runtime editor)");
   const buttons = [...host.querySelectorAll("button")].map((b) => b.textContent);
   assert(buttons.some((t) => /지금 압축 실행/.test(t)), "footer has '지금 압축 실행'");
   assert(buttons.some((t) => /완료/.test(t)), "footer has '완료'");

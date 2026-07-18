@@ -571,7 +571,10 @@ export class PartyApplicationService {
       // interrupt-and-inject: stop the in-flight turn first so the message is
       // handled immediately; the adapters' queued-turn drain delivers it once
       // the interrupt settles. Without the flag it queues behind the turn.
-      if (options?.interrupt && this.isSessionBusy(target.sessionId)) {
+      // EXCEPTION: never interrupt a compaction — tearing it down half-way would
+      // waste the work and leave context in a partial state; the message queues
+      // behind it instead (compaction is short).
+      if (options?.interrupt && this.isSessionBusy(target.sessionId) && !this.deps.sessionManager.isCompacting(target.sessionId)) {
         this.deps.sessionManager.interrupt(target.sessionId);
       }
       this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);

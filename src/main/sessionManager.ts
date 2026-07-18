@@ -35,6 +35,14 @@ interface ManagedSession {
   turnActive: boolean;
   awaitingUser: boolean;
   stallNotified: boolean;
+  /**
+   * A compaction is in flight (set when {@link SessionManager.compact} is called,
+   * cleared once the harness reports the outcome). While true, an interrupt-on-send
+   * is suppressed so a member's context compaction is never torn down half-way by
+   * an incoming message — the message queues behind it instead. See
+   * {@link SessionManager.isCompacting}.
+   */
+  compacting?: boolean;
 }
 
 /** Pairs a party member's bridge with its identity for in-process tool access. */
@@ -444,6 +452,7 @@ export class SessionManager extends EventEmitter {
       case "error":
         session.turnActive = false;
         session.awaitingUser = false;
+        session.compacting = false;
         break;
       case "approval_request":
         session.turnActive = true;
@@ -457,8 +466,18 @@ export class SessionManager extends EventEmitter {
         if (status === "sent" || status === "requesting" || status === "responding") {
           session.turnActive = true;
         }
+        // The harness's compaction outcome (success both adapters emit) clears the
+        // in-flight flag; failure arrives as a `diagnostic` handled below.
+        if (status === "compacted") {
+          session.compacting = false;
+        }
         break;
       }
+      case "diagnostic":
+        if (String((event as { category?: unknown }).category || "") === "compact") {
+          session.compacting = false;
+        }
+        break;
       default:
         break;
     }
@@ -551,7 +570,17 @@ export class SessionManager extends EventEmitter {
   }
 
   compact(id: string): void {
-    this.sessions.get(id)?.adapter.compact();
+    const session = this.sessions.get(id);
+    if (!session) {
+      return;
+    }
+    session.compacting = true;
+    session.adapter.compact();
+  }
+
+  /** True while a compaction is in flight (see {@link ManagedSession.compacting}). */
+  isCompacting(id: string): boolean {
+    return Boolean(this.sessions.get(id)?.compacting);
   }
 
   closeSession(id: string): boolean {

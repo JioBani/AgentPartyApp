@@ -69,6 +69,10 @@ const sessionManager = {
   sendUserTurn(id, text) { sentTurns.push({ id, text }); },
   closeSession(id) { live.delete(id); },
   interrupt(id) { interrupted.push(id); },
+  // A session is "compacting" while its id is in this set (the real manager sets it
+  // in compact() and clears it on the outcome). Interrupt-on-send must respect it.
+  compacting: new Set(),
+  isCompacting(id) { return this.compacting.has(id); },
   listSessions() { return [...live].map((id) => ({ id, title: "t", workspace, snapshot: snapshots.get(id) || {} })); },
   notifyPartyChanged() { notifyCount += 1; },
   // Live codex catalog: discovered, so list-models must expose it per-harness.
@@ -187,6 +191,16 @@ const beforeQueue = interrupted.length;
 snapshots.get(memberSession("worker2")).status = "idle";
 await bridge.send("main", "worker2", "normal follow-up", true);
 assert(interrupted.length === beforeQueue, "send(interrupt=true) to an idle recipient skips the interrupt");
+
+// send with interrupt to a COMPACTING recipient: even though it is busy, the
+// compaction is NOT torn down — the interrupt is suppressed and the turn queues.
+snapshots.get(memberSession("worker2")).status = "responding";
+sessionManager.compacting.add(memberSession("worker2"));
+const beforeCompact = { interrupts: interrupted.length, turns: sentTurns.length };
+const compactSend = await bridge.send("main", "worker2", "don't cut the compaction", true);
+assert(compactSend.ok && interrupted.length === beforeCompact.interrupts && sentTurns.length === beforeCompact.turns + 1, "send(interrupt=true) to a COMPACTING recipient skips the interrupt but still delivers (message queues behind the compaction)");
+sessionManager.compacting.delete(memberSession("worker2"));
+snapshots.get(memberSession("worker2")).status = "idle";
 
 // broadcast: every other member gets the channel-wrapped message; self excluded.
 const beforeBc = sentTurns.length;
