@@ -38,7 +38,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-diagnostics` | Codex no-silent-fallback surfacing: classifier (reroute/rate-limit/guardian/config/deprecation/sandbox/mcp → severity+category, sandbox recovery hint; noisy rate-limit ticks + healthy MCP return null) + event pipeline (diagnostic→block, latestDiagnostic header pick) + Transcript DOM (severity banner, reroute detail, recovery hint) |
 | `qa-codex-compact` | Codex compact control: `/compact`/toolbar compact during an active turn is queued with a visible status, sent as `thread/compact/start` after root turn completion, compact completion clears stale context occupancy, and compact failures surface as errors. |
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
-| `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; the three text-only models (GLM-5.2 / Qwen3.7 Max / DeepSeek V4 Pro) are `image:false`, the rest `true`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the router shim translates an Anthropic image block into an OpenAI `image_url` part **without silently dropping it** (text-only messages stay plain strings) |
+| `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the Claude Code gateway preserves Anthropic image blocks without rebuilding or silently dropping them. |
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
 | `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
@@ -143,10 +143,12 @@ Cross-provider routing is tested separately so local OAuth/proxy state cannot
 mask this lifecycle regression.
 
 `node scripts/e2e-live-cross-harness.mjs` (or
-`npm run test:e2e:live-cross-harness`) is the billed two-turn proof of true
-harness/model cross-routing. It verifies from real harness debug traffic that
-GPT-5.4 mini low is spawned by Claude Code with `claude-gpt-5.4-mini`, while
-Claude Sonnet low is started by Codex app-server with
+`npm run test:e2e:live-cross-harness`) is the billed, real-process interruption
+proof of true harness/model cross-routing. For each direction it waits for a real
+streaming response, stops it through the same party interrupt action as the UI,
+sends a replacement user message, and verifies the old turn never finishes. GPT
+5.4 mini low runs in Claude Code through Anthropic Messages; Claude Sonnet low
+runs in Codex app-server through Responses with
 `modelProvider: "claude-subscription"`. GPT uses Codex/ChatGPT OAuth and Claude
 uses Claude OAuth; OpenRouter credit is not involved.
 
@@ -156,6 +158,12 @@ app and injects the subagent scenarios through
 end-to-end through the real normalization + fold. Not billed — no real subagent is
 spawned (mock-driven design); the trackers themselves are locked against RECORDED
 real traffic by `qa-subagent-tracker` (in `test:ui`).
+
+`npm run test:harness-protocol` is the non-billed protocol contract test. It
+proves Claude Code owns Anthropic Messages and Codex owns Responses regardless
+of model/provider. A fake GPT subscription receives the complete interrupt,
+user, tool, thinking, and image-capable Anthropic request at `/v1/messages`;
+only the concrete model id changes and fallback fields are removed.
 
 ---
 

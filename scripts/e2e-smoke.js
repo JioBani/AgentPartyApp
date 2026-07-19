@@ -39,6 +39,29 @@ async function main() {
     assert(health.router?.baseUrl, "router base url present");
     assert(health.logs?.logFilePath, "log file path present");
 
+    const models = await getJson(`${baseUrl}/api/models`);
+    const latestNonExcludedOpenRouterModels = [
+      "thinkingmachines/inkling",
+      "moonshotai/kimi-k3",
+      "meta/muse-spark-1.1",
+      "kwaipilot/kat-coder-air-v2.5",
+      "kwaipilot/kat-coder-pro-v2.5",
+      "x-ai/grok-4.5",
+      "aion-labs/aion-3.0-mini",
+      "aion-labs/aion-3.0",
+      "tencent/hy3",
+      "poolside/laguna-xs-2.1",
+      "nex-agi/nex-n2-mini",
+    ];
+    for (const model of latestNonExcludedOpenRouterModels) {
+      const codexRoute = models.modelRoutes.find((route) => route.harnessId === "codex" && route.modelProvider === "openrouter" && route.model === model);
+      assert(codexRoute, `${model} is selectable on Codex through OpenRouter`);
+      assert(
+        models.modelRoutes.some((route) => route.harnessId === "claude-code" && route.providerId === "openrouter" && route.label === codexRoute.label && route.runtimeModel),
+        `${model} is selectable on Claude Code through OpenRouter`,
+      );
+    }
+
     const spec = await getJson(`${baseUrl}/api/spec`);
     assert(spec.endpoints.includes("POST /api/window/maximize"), "window api in spec");
     assert(spec.endpoints.includes("POST /api/parties"), "party create api in spec");

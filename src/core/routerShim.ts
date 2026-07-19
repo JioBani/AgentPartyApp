@@ -1,11 +1,18 @@
 import * as http from "node:http";
 import * as net from "node:net";
+import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
-export interface EmbeddedRouterOptions {
+const CLAUDE_PROTOCOL = HARNESS_PROTOCOLS["claude-code"];
+const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const MAX_ACCOUNTING_CAPTURE_BYTES = 256 * 1024;
+
+export interface EmbeddedHarnessRouterOptions {
   preferredPort: number;
   openRouterApiKey?: string;
+  /** Override exists for protocol-contract QA; production uses OpenRouter. */
+  openRouterBaseUrl?: string;
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
@@ -26,23 +33,28 @@ interface CostBucket {
   hasCost: boolean;
 }
 
-class RouterUpstreamError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "RouterUpstreamError";
-  }
+interface UpstreamRoute {
+  response: Response;
+  openRouter: boolean;
 }
 
-export class EmbeddedRouter {
+/**
+ * Claude Code's embedded protocol gateway.
+ *
+ * The gateway selects credentials and a concrete provider model, but it never
+ * translates the harness contract. Requests enter and leave as Anthropic
+ * Messages, including tool blocks, interruption markers, images, thinking and
+ * SSE events. Provider bridges may translate internally after that boundary.
+ */
+export class EmbeddedHarnessRouter {
   private server: http.Server | undefined;
   private port = 0;
-  private options: EmbeddedRouterOptions;
+  private options: EmbeddedHarnessRouterOptions;
   private readonly costBuckets = new Map<string, CostBucket>();
+  private requestCount = 0;
+  private lastRoute: { protocol: string; targetKind: RouterTarget["kind"]; targetModel: string; upstreamEndpoint: string } | undefined;
 
-  constructor(options: EmbeddedRouterOptions) {
+  constructor(options: EmbeddedHarnessRouterOptions) {
     this.options = options;
   }
 
@@ -50,7 +62,7 @@ export class EmbeddedRouter {
     return `http://127.0.0.1:${this.port || this.options.preferredPort}`;
   }
 
-  updateOptions(options: Partial<EmbeddedRouterOptions>): void {
+  updateOptions(options: Partial<EmbeddedHarnessRouterOptions>): void {
     this.options = { ...this.options, ...options };
   }
 
@@ -98,122 +110,153 @@ export class EmbeddedRouter {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const abortController = new AbortController();
+    const abortUpstream = () => abortController.abort();
+    req.once("aborted", abortUpstream);
+    res.once("close", abortUpstream);
     try {
-      if (req.method === "GET" && req.url === "/health") {
+      const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
+      if (req.method === "GET" && pathname === "/health") {
         sendJson(res, 200, {
           ok: true,
-          router: "agentparty-native",
+          router: "agentparty-harness-protocol",
+          harness: "claude-code",
+          protocol: CLAUDE_PROTOCOL.id,
           openRouterConfigured: Boolean(this.openRouterApiKey()),
           subscriptionProxyConfigured: Boolean(this.subscriptionProxy().apiKey),
           subscriptionProxyBaseUrl: this.subscriptionProxy().baseUrl,
+          requestCount: this.requestCount,
+          lastRoute: this.lastRoute,
         });
         return;
       }
-      if (req.method !== "POST" || !req.url?.startsWith("/v1/messages")) {
-        sendJson(res, 404, { error: { type: "not_found", message: "AgentParty Native router only implements POST /v1/messages." } });
+      if (req.method !== "POST" || pathname !== `/v1/${CLAUDE_PROTOCOL.endpoint}`) {
+        sendJson(res, 404, {
+          error: {
+            type: "not_found",
+            message: `AgentParty's Claude Code gateway only implements POST /v1/${CLAUDE_PROTOCOL.endpoint}.`,
+          },
+        });
         return;
       }
       const expected = this.options.authToken || "dummy";
-      const actual = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      const actual = clientAuthToken(req);
       if (expected && actual && actual !== expected && !actual.startsWith("agentparty-native-session:")) {
-        sendJson(res, 401, { error: { type: "authentication_error", message: "Invalid AgentParty Native router token." } });
+        sendJson(res, 401, { error: { type: "authentication_error", message: "Invalid AgentParty harness gateway token." } });
         return;
       }
       const accountingKey = actual || expected;
       const body = await readJson(req);
-      const response = await this.forward(body, accountingKey);
-      if (body.stream) {
-        sendAnthropicSse(res, response);
-      } else {
-        sendJson(res, 200, response);
-      }
+      const route = await this.forward(body, req.headers, abortController.signal);
+      await this.relay(route, res, accountingKey, abortController.signal);
     } catch (error) {
-      const status = error instanceof RouterUpstreamError ? error.status : 500;
-      sendJson(res, status, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
+      if (isAbortError(error) && (req.destroyed || res.destroyed || abortController.signal.aborted)) {
+        return;
+      }
+      if (!res.headersSent && !res.destroyed) {
+        sendJson(res, 500, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
+      } else if (!res.destroyed) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    } finally {
+      req.off("aborted", abortUpstream);
+      res.off("close", abortUpstream);
     }
   }
 
-  private async forward(body: any, accountingKey: string): Promise<any> {
+  private async forward(body: any, incomingHeaders: http.IncomingHttpHeaders, signal: AbortSignal): Promise<UpstreamRoute> {
     const requestedModel = String(body.model || process.env.ANTHROPIC_CUSTOM_MODEL_OPTION || "");
     const target = routerTargetForModel(requestedModel);
     if (!target) {
-      throw new Error(`No explicit AgentParty router target for '${requestedModel}'. Refusing to guess or fall back.`);
+      throw new Error(`No explicit AgentParty provider target for '${requestedModel}'. Refusing to guess or fall back.`);
     }
+    this.requestCount += 1;
+    this.lastRoute = {
+      protocol: CLAUDE_PROTOCOL.id,
+      targetKind: target.kind,
+      targetModel: target.model,
+      upstreamEndpoint: CLAUDE_PROTOCOL.endpoint,
+    };
     return target.kind === "codex-subscription"
-      ? this.forwardToCodexSubscription(body, requestedModel, target)
-      : this.forwardToOpenRouter(body, accountingKey, requestedModel, target);
+      ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
+      : this.forwardToOpenRouter(body, incomingHeaders, target, signal);
   }
 
-  private async forwardToCodexSubscription(body: any, requestedModel: string, target: RouterTarget & { kind: "codex-subscription" }): Promise<any> {
+  private async forwardToCodexSubscription(
+    body: any,
+    incomingHeaders: http.IncomingHttpHeaders,
+    target: RouterTarget & { kind: "codex-subscription" },
+    signal: AbortSignal,
+  ): Promise<UpstreamRoute> {
     const config = this.subscriptionProxy();
     await assertSubscriptionModelAvailable(target.model, "codex", config);
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    const response = await fetch(apiEndpoint(config.baseUrl, CLAUDE_PROTOCOL.endpoint), {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: target.model,
-        messages: toOpenAiMessages(body),
-        tools: Array.isArray(body.tools) ? body.tools.map(toOpenAiTool) : undefined,
-        tool_choice: toOpenAiToolChoice(body.tool_choice),
-        temperature: body.temperature,
-        max_tokens: body.max_tokens,
-        reasoning_effort: toCodexReasoningEffort(body),
-        stream: false,
-      }),
+      headers: anthropicUpstreamHeaders(incomingHeaders, config.apiKey),
+      body: JSON.stringify(rewriteAnthropicRequestModel(body, target.model)),
+      signal,
     });
-    const payload = await readUpstreamPayload(response);
-    if (!response.ok) {
-      throw new RouterUpstreamError(
-        response.status,
-        `Codex subscription request failed (${response.status}): ${payload?.error?.message || JSON.stringify(payload)}`,
-      );
-    }
-    return toAnthropicMessage(payload, requestedModel);
+    return { response, openRouter: false };
   }
 
   private async forwardToOpenRouter(
     body: any,
-    accountingKey: string,
-    requestedModel: string,
+    incomingHeaders: http.IncomingHttpHeaders,
     target: RouterTarget & { kind: "openrouter" },
-  ): Promise<any> {
+    signal: AbortSignal,
+  ): Promise<UpstreamRoute> {
     const apiKey = this.openRouterApiKey();
     if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY is not configured. Set agentpartyNative.router.openRouterApiKey or the OPENROUTER_API_KEY environment variable.");
+      throw new Error("OPENROUTER_API_KEY is not configured. Open AgentParty Authentication and connect OpenRouter. No fallback was attempted.");
+    }
+    const response = await fetch(apiEndpoint(this.options.openRouterBaseUrl || DEFAULT_OPENROUTER_BASE_URL, CLAUDE_PROTOCOL.endpoint), {
+      method: "POST",
+      headers: anthropicUpstreamHeaders(incomingHeaders, apiKey, {
+        "HTTP-Referer": "https://agentparty-native.local",
+        "X-OpenRouter-Title": "AgentParty Native",
+        "X-OpenRouter-Metadata": "enabled",
+      }),
+      body: JSON.stringify(rewriteAnthropicRequestModel(body, target.model)),
+      signal,
+    });
+    return { response, openRouter: true };
+  }
+
+  private async relay(route: UpstreamRoute, res: http.ServerResponse, accountingKey: string, signal: AbortSignal): Promise<void> {
+    const { response } = route;
+    res.writeHead(response.status, relayHeaders(response.headers));
+    if (!response.body) {
+      res.end();
+      return;
     }
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://agentparty-native.local",
-        "X-Title": "AgentParty Native",
-      },
-      body: JSON.stringify({
-        model: target.model,
-        messages: toOpenAiMessages(body),
-        tools: Array.isArray(body.tools) ? body.tools.map(toOpenAiTool) : undefined,
-        tool_choice: toOpenAiToolChoice(body.tool_choice),
-        temperature: body.temperature,
-        max_tokens: body.max_tokens,
-        reasoning: toOpenRouterReasoning(body),
-        stream: false,
-      }),
-    });
-    const payload = await readUpstreamPayload(response);
-    if (!response.ok) {
-      throw new RouterUpstreamError(
-        response.status,
-        `OpenRouter request failed (${response.status}): ${payload?.error?.message || JSON.stringify(payload)}`,
-      );
+    const reader = response.body.getReader();
+    const captured: Buffer[] = [];
+    let capturedBytes = 0;
+    while (true) {
+      if (signal.aborted) {
+        await reader.cancel();
+        throw abortError();
+      }
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = Buffer.from(value);
+      if (capturedBytes < MAX_ACCOUNTING_CAPTURE_BYTES) {
+        const remaining = MAX_ACCOUNTING_CAPTURE_BYTES - capturedBytes;
+        captured.push(chunk.subarray(0, remaining));
+        capturedBytes += Math.min(chunk.length, remaining);
+      }
+      if (!res.write(chunk)) {
+        await waitForDrain(res, signal);
+      }
     }
-    payload.__openrouter = await fetchOpenRouterGenerationStats(apiKey, payload.id);
-    this.recordOpenRouterCost(accountingKey, payload);
-    return toAnthropicMessage(payload, requestedModel);
+
+    if (route.openRouter) {
+      await this.recordOpenRouterCost(accountingKey, Buffer.concat(captured).toString("utf8"));
+    }
+    res.end();
   }
 
   private openRouterApiKey(): string {
@@ -227,258 +270,149 @@ export class EmbeddedRouter {
     });
   }
 
-  private recordOpenRouterCost(accountingKey: string, payload: any): void {
+  private async recordOpenRouterCost(accountingKey: string, responseText: string): Promise<void> {
     const bucket = this.costBuckets.get(accountingKey);
     if (!bucket) {
       return;
     }
     bucket.requestCount += 1;
-    if (payload.id) {
-      bucket.generationIds.push(String(payload.id));
+    const payload = parseResponsePayload(responseText);
+    const generationId = responseGenerationId(payload, responseText);
+    if (generationId) {
+      bucket.generationIds.push(generationId);
     }
-    const cost = numberValue(payload.usage?.cost) ?? numberValue(payload.__openrouter?.cost);
-    if (typeof cost === "number") {
-      bucket.costUsd += cost;
+    const directCost = numberValue(payload?.usage?.cost)
+      ?? numberValue(payload?.openrouter_metadata?.cost)
+      ?? numberValue(payload?.openrouter_metadata?.total_cost);
+    if (typeof directCost === "number") {
+      bucket.costUsd += directCost;
       bucket.hasCost = true;
       return;
     }
-    if (payload.__openrouter?.costUnavailableReason) {
-      bucket.unavailableReasons.push(String(payload.__openrouter.costUnavailableReason));
+    const stats = await fetchOpenRouterGenerationStats(this.openRouterApiKey(), generationId);
+    if (typeof stats.cost === "number") {
+      bucket.costUsd += stats.cost;
+      bucket.hasCost = true;
+    } else if (stats.costUnavailableReason) {
+      bucket.unavailableReasons.push(stats.costUnavailableReason);
     }
   }
 }
 
 /**
- * Translates the reasoning intent the Claude Code harness forwards
- * (`output_config.effort` + `thinking`) into OpenRouter's unified `reasoning`
- * parameter, which OpenRouter normalizes to each provider's native control
- * (reasoning_effort, thinking, thinking_level, etc.). Without this the harness's
- * effort/thinking selection is silently dropped for router-backed models.
+ * The only legal body change at the Claude Code gateway: choose the concrete
+ * provider model. All Anthropic content/tool/control fields remain untouched.
+ * Explicit multi-model fallback fields are removed because AgentParty promises
+ * never to select an unrequested model.
  */
-function toOpenRouterReasoning(body: any): Record<string, unknown> | undefined {
-  const thinkingType = body?.thinking?.type;
-  const budget = numberValue(body?.thinking?.budget_tokens) ?? numberValue(body?.thinking?.budgetTokens);
-  const effort = typeof body?.output_config?.effort === "string" ? body.output_config.effort : undefined;
-
-  if (thinkingType === "disabled") {
-    return { enabled: false, exclude: true };
-  }
-  const reasoning: Record<string, unknown> = {};
-  if (budget != null) {
-    reasoning.max_tokens = budget;
-  } else if (effort) {
-    const mapped = mapEffortToOpenRouter(effort);
-    if (mapped) {
-      reasoning.effort = mapped;
-    }
-  }
-  if (Object.keys(reasoning).length === 0) {
-    return thinkingType === "enabled" ? { enabled: true } : undefined;
-  }
-  return reasoning;
+export function rewriteAnthropicRequestModel(body: any, targetModel: string): any {
+  const rewritten = { ...body, model: targetModel };
+  delete rewritten.models;
+  delete rewritten.fallbacks;
+  return rewritten;
 }
 
-/** Claude Code effort -> OpenAI/Codex chat-completions reasoning effort. */
-function toCodexReasoningEffort(body: any): string | undefined {
-  const effort = typeof body?.output_config?.effort === "string" ? body.output_config.effort : undefined;
-  if (!effort || effort === "none") {
-    return undefined;
-  }
-  return effort === "max" ? "high" : effort;
-}
-
-/** OpenRouter accepts minimal|low|medium|high; clamp the harness's wider scale. */
-function mapEffortToOpenRouter(effort: string): string | undefined {
-  switch (effort) {
-    case "none":
-      return undefined;
-    case "minimal":
-      return "minimal";
-    case "low":
-      return "low";
-    case "medium":
-      return "medium";
-    case "high":
-    case "xhigh":
-    case "max":
-      return "high";
-    default:
-      return undefined;
-  }
-}
-
-/** Exported for QA: Anthropic request body -> OpenAI chat messages (incl. images). */
-export function toOpenAiMessages(body: any): any[] {
-  const messages: any[] = [];
-  if (body.system) {
-    messages.push({ role: "system", content: contentToText(body.system) });
-  }
-  for (const message of body.messages || []) {
-    const converted = toOpenAiMessage(message);
-    if (Array.isArray(converted)) {
-      messages.push(...converted);
-    } else {
-      messages.push(converted);
-    }
-  }
-  return messages;
-}
-
-function toOpenAiMessage(message: any): any | any[] {
-  const role = message.role === "assistant" ? "assistant" : "user";
-  if (!Array.isArray(message.content)) {
-    return { role, content: String(message.content || "") };
-  }
-  const toolResults = message.content.filter((block: any) => block?.type === "tool_result");
-  if (toolResults.length) {
-    return toolResults.map((block: any) => ({
-      role: "tool",
-      tool_call_id: block.tool_use_id,
-      content: contentToText(block.content),
-    }));
-  }
-  const toolUses = message.content.filter((block: any) => block?.type === "tool_use");
-  if (toolUses.length) {
-    return {
-      role: "assistant",
-      content: contentToText(message.content.filter((block: any) => block?.type !== "tool_use")),
-      tool_calls: toolUses.map((block: any) => ({
-        id: block.id,
-        type: "function",
-        function: { name: block.name, arguments: JSON.stringify(block.input || {}) },
-      })),
-    };
-  }
-  return { role, content: contentToOpenAiParts(message.content) };
-}
-
-/**
- * Converts Anthropic content blocks to an OpenAI message `content`. Plain text
- * collapses to a string; when image blocks are present it becomes a multimodal
- * parts array ({type:"text"} + {type:"image_url"}). This is the vision path: it
- * MUST NOT drop image blocks (the old text-only collapse silently lost them).
- */
-function contentToOpenAiParts(content: any): string | any[] {
-  if (!Array.isArray(content)) {
-    return contentToText(content);
-  }
-  if (!content.some((block) => block?.type === "image")) {
-    return contentToText(content);
-  }
-  const parts: any[] = [];
-  for (const block of content) {
-    if (typeof block === "string") {
-      if (block) parts.push({ type: "text", text: block });
-    } else if (block?.type === "text") {
-      if (block.text) parts.push({ type: "text", text: block.text });
-    } else if (block?.type === "image") {
-      const url = imageBlockToUrl(block);
-      if (url) parts.push({ type: "image_url", image_url: { url } });
-    }
-  }
-  return parts.length ? parts : "";
-}
-
-/** Anthropic image block -> a URL usable in OpenAI `image_url` (data: or remote). */
-function imageBlockToUrl(block: any): string | undefined {
-  const source = block?.source;
-  if (!source) {
-    return undefined;
-  }
-  if (source.type === "base64" && source.data) {
-    return `data:${source.media_type || "image/png"};base64,${source.data}`;
-  }
-  if (source.type === "url" && source.url) {
-    return String(source.url);
-  }
-  return undefined;
-}
-
-function contentToText(content: any): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (!Array.isArray(content)) {
-    return content == null ? "" : String(content);
-  }
-  return content
-    .map((block) => {
-      if (typeof block === "string") {
-        return block;
-      }
-      if (block?.type === "text") {
-        return block.text || "";
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-function toOpenAiTool(tool: any): any {
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema || { type: "object", properties: {} },
-    },
+function anthropicUpstreamHeaders(
+  incoming: http.IncomingHttpHeaders,
+  apiKey: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    "x-api-key": apiKey,
+    "Content-Type": "application/json",
+    ...extra,
   };
+  for (const name of ["anthropic-version", "anthropic-beta"]) {
+    const value = incoming[name];
+    if (typeof value === "string" && value) {
+      headers[name] = value;
+    }
+  }
+  return headers;
 }
 
-function toOpenAiToolChoice(choice: any): any {
-  if (!choice || choice.type === "auto") {
-    return "auto";
+function relayHeaders(headers: Headers): Record<string, string> {
+  const relayed: Record<string, string> = {};
+  for (const name of [
+    "content-type",
+    "cache-control",
+    "x-request-id",
+    "request-id",
+    "anthropic-ratelimit-requests-limit",
+    "anthropic-ratelimit-requests-remaining",
+    "anthropic-ratelimit-requests-reset",
+    "anthropic-ratelimit-tokens-limit",
+    "anthropic-ratelimit-tokens-remaining",
+    "anthropic-ratelimit-tokens-reset",
+  ]) {
+    const value = headers.get(name);
+    if (value) {
+      relayed[name] = value;
+    }
   }
-  if (choice.type === "any") {
-    return "required";
-  }
-  if (choice.type === "tool") {
-    return { type: "function", function: { name: choice.name } };
-  }
-  return undefined;
+  return relayed;
 }
 
-function toAnthropicMessage(payload: any, requestedModel: string): any {
-  const choice = payload.choices?.[0];
-  const message = choice?.message || {};
-  const content: any[] = [];
-  const cost = numberValue(payload.usage?.cost) ?? numberValue(payload.__openrouter?.cost);
-  if (message.content) {
-    content.push({ type: "text", text: message.content });
-  }
-  for (const toolCall of message.tool_calls || []) {
-    content.push({
-      type: "tool_use",
-      id: toolCall.id,
-      name: toolCall.function?.name,
-      input: parseJson(toolCall.function?.arguments) || {},
-    });
-  }
-  return {
-    id: payload.id || `msg_${Date.now()}`,
-    type: "message",
-    role: "assistant",
-    model: requestedModel,
-    content,
-    stop_reason: toAnthropicStopReason(choice?.finish_reason),
-    stop_sequence: null,
-    usage: {
-      input_tokens: payload.usage?.prompt_tokens || 0,
-      output_tokens: payload.usage?.completion_tokens || 0,
-      cost,
-      generation_id: payload.id,
-      cost_unavailable_reason: typeof cost === "number" ? undefined : payload.__openrouter?.costUnavailableReason,
-    },
-  };
+function clientAuthToken(req: http.IncomingMessage): string {
+  const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const apiKey = typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : "";
+  return bearer || apiKey;
 }
 
-async function fetchOpenRouterGenerationStats(apiKey: string, generationId: string | undefined): Promise<{ cost?: number; costUnavailableReason?: string }> {
+function apiEndpoint(baseUrl: string, endpoint: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
+}
+
+function parseResponsePayload(text: string): any {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    const events = text
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter((line) => line && line !== "[DONE]");
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      try {
+        const event = JSON.parse(events[index]);
+        if (event?.openrouter_metadata || event?.message?.openrouter_metadata) {
+          return event?.message || event;
+        }
+      } catch {
+        // Keep scanning earlier native SSE events.
+      }
+    }
+    return {};
+  }
+}
+
+function responseGenerationId(payload: any, text: string): string | undefined {
+  const direct = payload?.openrouter_metadata?.generation_id
+    || payload?.generation_id
+    || payload?.id
+    || payload?.message?.openrouter_metadata?.generation_id
+    || payload?.message?.id;
+  if (direct) {
+    return String(direct);
+  }
+  const metadata = /"generation_id"\s*:\s*"([^"]+)"/.exec(text);
+  if (metadata?.[1]) {
+    return metadata[1];
+  }
+  const message = /"id"\s*:\s*"((?:gen|msg)[-_][^"]+)"/.exec(text);
+  return message?.[1];
+}
+
+async function fetchOpenRouterGenerationStats(
+  apiKey: string,
+  generationId: string | undefined,
+): Promise<{ cost?: number; costUnavailableReason?: string }> {
   if (!generationId) {
     return { costUnavailableReason: "OpenRouter response did not include a generation id." };
   }
   let lastReason = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     if (attempt > 0) {
       await delay(400 * attempt);
     }
@@ -504,68 +438,9 @@ async function fetchOpenRouterGenerationStats(apiKey: string, generationId: stri
   return { costUnavailableReason: lastReason || "OpenRouter generation stats cost unavailable." };
 }
 
-function toAnthropicStopReason(reason: string | undefined): string {
-  if (reason === "tool_calls") {
-    return "tool_use";
-  }
-  if (reason === "length") {
-    return "max_tokens";
-  }
-  return "end_turn";
-}
-
-function sendAnthropicSse(res: http.ServerResponse, message: any): void {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-  });
-  writeSse(res, "message_start", { type: "message_start", message: { ...message, content: [] } });
-  message.content.forEach((block: any, index: number) => {
-    writeSse(res, "content_block_start", { type: "content_block_start", index, content_block: contentBlockStart(block) });
-    if (block.type === "text" && block.text) {
-      writeSse(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } });
-    } else if (block.type === "tool_use") {
-      writeSse(res, "content_block_delta", {
-        type: "content_block_delta",
-        index,
-        delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input || {}) },
-      });
-    }
-    writeSse(res, "content_block_stop", { type: "content_block_stop", index });
-  });
-  writeSse(res, "message_delta", { type: "message_delta", delta: { stop_reason: message.stop_reason, stop_sequence: null }, usage: message.usage });
-  writeSse(res, "message_stop", { type: "message_stop" });
-  res.end();
-}
-
-function contentBlockStart(block: any): any {
-  if (block.type === "text") {
-    return { type: "text", text: "" };
-  }
-  if (block.type === "tool_use") {
-    return { type: "tool_use", id: block.id, name: block.name, input: {} };
-  }
-  return block;
-}
-
-function writeSse(res: http.ServerResponse, event: string, data: unknown): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
 function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(payload));
-}
-
-async function readUpstreamPayload(response: Response): Promise<any> {
-  const responseText = await response.text();
-  try {
-    return responseText ? JSON.parse(responseText) : {};
-  } catch {
-    return { error: { message: responseText || response.statusText } };
-  }
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {
@@ -605,19 +480,52 @@ function listen(server: http.Server, preferredPort: number): Promise<number> {
   });
 }
 
-function parseJson(value: string | undefined): unknown {
-  if (!value) {
-    return undefined;
-  }
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function abortError(): Error {
+  const error = new Error("Harness request interrupted by client.");
+  error.name = "AbortError";
+  return error;
+}
+
+function waitForDrain(res: http.ServerResponse, signal: AbortSignal): Promise<void> {
+  if (signal.aborted || res.destroyed) {
+    return Promise.reject(abortError());
+  }
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      res.off("drain", onDrain);
+      res.off("close", onClose);
+      res.off("error", onError);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+    const onClose = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    res.once("drain", onDrain);
+    res.once("close", onClose);
+    res.once("error", onError);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function delay(ms: number): Promise<void> {

@@ -43,7 +43,7 @@ blockers:
 | 4 | [partyRepository.ts](../src/main/partyRepository.ts) | storage via **Windows `node:fs` + `path.join`** → `.agent_party_app/` lands on Windows fs (or slow 9P). |
 | 5 | [sessionManager.ts](../src/main/sessionManager.ts) (`listResumableSessions`) | `sdk.listSessions({dir})` reads the **Windows `~/.claude`**. |
 | 6 | [main.ts](../src/main/main.ts) (`workspace:choose`) | workspace picker = **Windows `showOpenDialog`**; no distro / Linux-path selection. |
-| 7 | [routerShim.ts](../src/core/routerShim.ts) | embedded router runs on Windows `127.0.0.1`; an in-distro harness can't reach it cleanly. |
+| 7 | [routerShim.ts](../src/core/routerShim.ts) | embedded harness protocol gateway runs on Windows `127.0.0.1`; an in-distro harness can't reach it cleanly. |
 
 **Key leverage:** the binary-selection logic in blocker #1 already picks
 `@anthropic-ai/claude-agent-sdk-linux-x64` when `process.platform === 'linux'`.
@@ -190,7 +190,7 @@ Failures (no distro, install error, version mismatch, handshake timeout) are
 
 ## 9. Router & auth
 
-- The `EmbeddedRouter` runs **alongside the engine** (inside the distro for WSL),
+- The `EmbeddedHarnessRouter` runs **alongside the engine** (inside the distro for WSL),
   so the harness `env.ANTHROPIC_BASE_URL` points to a reachable in-host address.
 - Credentials (OpenRouter key, etc.) are **per-host**: a WSL engine reads/writes
   its own store inside the distro. The client forwards what's needed at connect

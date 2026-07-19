@@ -3,8 +3,11 @@
  *   1. Claude Code SDK process + GPT-5.4 mini through Codex/ChatGPT OAuth
  *   2. Codex app-server process + Claude Sonnet through Claude OAuth
  *
- * Exactly one short low-effort turn per combination. The isolated app process
- * uses the local CLIProxyAPI and deletes its temporary userData/workspace afterward.
+ * Real interruption regression on both cross-harness directions:
+ *   - Claude Code + GPT mini must keep Anthropic Messages semantics.
+ *   - Codex + Sonnet must keep Responses semantics.
+ * Each side starts a blocking terminal turn, interrupts it through the same
+ * product action users invoke, then verifies the replacement message is handled.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -53,12 +56,12 @@ async function main() {
       runtime: "claude-code",
       model: "GPT-5.4 mini",
       effort: "low",
-      permissionMode: "plan",
+      permissionMode: "bypassPermissions",
     });
     const gptStarted = runGpt ? await post(`/api/party/members/${gptName}/start`, {
       model: "GPT-5.4 mini",
       effort: "low",
-      permissionMode: "plan",
+      permissionMode: "bypassPermissions",
     }) : undefined;
 
     if (runClaude) await post("/api/party/members", {
@@ -78,29 +81,26 @@ async function main() {
 
     if (runGpt) {
       assert(gptStarted.member?.runtime === "claude-code", "GPT member retains runtime=claude-code");
-      assert(gptStarted.session?.snapshot?.permissionMode === "plan" && !gptStarted.session?.snapshot?.codexPolicy, "GPT member exposes Claude permission semantics, not Codex policy");
+      assert(gptStarted.session?.snapshot?.permissionMode === "bypassPermissions" && !gptStarted.session?.snapshot?.codexPolicy, "GPT member exposes Claude permission semantics, not Codex policy");
     }
     if (runClaude) {
       assert(claudeStarted.member?.runtime === "codex", "Claude member retains runtime=codex");
       assert(claudeStarted.session?.snapshot?.model === "claude-sonnet-4-6" && Boolean(claudeStarted.session?.snapshot?.codexPolicy), "Claude subscription model is bound to a Codex adapter session");
     }
 
-    if (runGpt) await post(`/api/party/members/${gptName}/message`, {
-      text: "Reply exactly CROSS_GPT_OK. Do not use tools.",
-    });
-    if (runClaude) await post(`/api/party/members/${claudeName}/message`, {
-      text: "Reply exactly CROSS_CLAUDE_OK. Do not use tools.",
-    });
-    await Promise.all([
-      ...(runGpt ? [waitForAssistant(gptName, "CROSS_GPT_OK")] : []),
-      ...(runClaude ? [waitForAssistant(claudeName, "CROSS_CLAUDE_OK")] : []),
-    ]);
+    // Run sequentially to minimize subscription load and make each billed proof
+    // attributable to one harness/model pair.
+    if (runGpt) await proveInterruptReplacement(gptName, "CROSS_GPT_INTERRUPT_OK");
+    if (runClaude) await proveInterruptReplacement(claudeName, "CROSS_CLAUDE_INTERRUPT_OK");
 
     const state = await getJson("/api/state");
     if (runGpt) {
       const gptSession = sessionOf(state, gptName);
       const gptRaw = readRequiredLog(gptSession?.snapshot?.logPath, gptName);
       assert(gptRaw.includes("spawn_sdk_query") && gptRaw.includes("claude-gpt-5.4-mini"), "real GPT turn was spawned by Claude Code with the subscription-router alias");
+      const routerHealth = await getJsonFrom(state.router?.baseUrl, "/health");
+      assert(routerHealth.protocol === "anthropic-messages" && routerHealth.lastRoute?.upstreamEndpoint === "messages", "Claude Code + GPT mini used Anthropic Messages end-to-end through the provider gateway");
+      assert(routerHealth.lastRoute?.targetKind === "codex-subscription" && routerHealth.lastRoute?.targetModel === "gpt-5.4-mini", "Anthropic gateway selected only the requested GPT mini subscription model");
     }
     if (runClaude) {
       const claudeSession = sessionOf(state, claudeName);
@@ -108,7 +108,7 @@ async function main() {
       assert(claudeRaw.includes("thread/start") && claudeRaw.includes("claude-sonnet-4-6") && claudeRaw.includes("claude-subscription"), "real Claude turn was spawned by Codex app-server with modelProvider=claude-subscription");
     }
 
-    console.log(`LIVE CROSS-HARNESS E2E PASSED (${runGpt ? "Claude Code+GPT mini" : ""}${runGpt && runClaude ? ", " : ""}${runClaude ? "Codex+Sonnet" : ""}; low effort, subscription OAuth)`);
+    console.log(`LIVE CROSS-HARNESS INTERRUPT E2E PASSED (${runGpt ? "Claude Code+GPT mini/Anthropic Messages" : ""}${runGpt && runClaude ? ", " : ""}${runClaude ? "Codex+Sonnet/Responses" : ""}; low effort, subscription OAuth)`);
     await closeApp(child);
     passed = true;
   } catch (error) {
@@ -144,6 +144,54 @@ function launchApp() {
   return child;
 }
 
+async function proveInterruptReplacement(name, expected) {
+  const oldMarker = `OLD_FINISHED_${expected}`;
+  await post(`/api/party/members/${encodeURIComponent(name)}/message`, {
+    text: `Start responding immediately. Output OLD_STREAM on 2,000 separate lines. Only after all 2,000 lines, output exactly ${oldMarker}. Do not use tools.`,
+  });
+  await waitForTurnResponding(name);
+
+  const replacement = `The previous request is cancelled. Reply exactly ${expected}. Do not use tools.`;
+  const interrupted = await post(`/api/party/members/${encodeURIComponent(name)}/interrupt`, {});
+  assert(interrupted.interrupted === true, `${name}: the real in-flight turn was stopped through the product interrupt action`);
+  await post(`/api/party/members/${encodeURIComponent(name)}/message`, { text: replacement });
+  await waitForAssistant(name, expected);
+
+  const blocks = await waitForTranscriptContent(name, replacement);
+  assert(JSON.stringify(blocks).includes(replacement), `${name}: replacement message remains in the visible transcript`);
+  const assistantText = blocks.filter((block) => block?.kind === "assistant").map((block) => String(block.text || "")).join("\n");
+  assert(!assistantText.includes(oldMarker), `${name}: interrupted request did not complete after replacement`);
+}
+
+async function waitForTranscriptContent(name, expected) {
+  const started = Date.now();
+  while (Date.now() - started < 15000) {
+    const transcript = await getJson(`/api/party/members/${encodeURIComponent(name)}/transcript`);
+    const blocks = transcript.blocks || [];
+    if (JSON.stringify(blocks).includes(expected)) return blocks;
+    await delay(250);
+  }
+  throw new Error(`${name}: transcript did not persist expected content '${expected}'.`);
+}
+
+async function waitForTurnResponding(name) {
+  const started = Date.now();
+  while (Date.now() - started < 60000) {
+    const result = await post(`/api/party/members/${encodeURIComponent(name)}/status`, {});
+    const member = (result.members || []).find((item) => item.name === name);
+    if (member?.turnActive) {
+      const transcript = await getJson(`/api/party/members/${encodeURIComponent(name)}/transcript`);
+      const hasPartialAssistant = (transcript.blocks || []).some((block) => block?.kind === "assistant" && String(block.text || "").includes("OLD_STREAM"));
+      if (member.status === "responding" || hasPartialAssistant) {
+        console.log(`  ok: ${name} began a real streaming response (${member.status})`);
+        return;
+      }
+    }
+    await delay(250);
+  }
+  throw new Error(`${name} never began a streaming response before interrupt QA.`);
+}
+
 async function waitForAssistant(name, expected) {
   const started = Date.now();
   while (Date.now() - started < 180000) {
@@ -159,6 +207,13 @@ async function waitForAssistant(name, expected) {
     await delay(750);
   }
   throw new Error(`${name} did not produce ${expected}`);
+}
+
+async function getJsonFrom(origin, url) {
+  if (!origin) throw new Error(`Missing origin for ${url}`);
+  const response = await fetch(origin + url);
+  if (!response.ok) throw new Error(`${origin}${url} returned ${response.status}: ${await response.text()}`);
+  return response.json();
 }
 
 function sessionOf(state, name) {

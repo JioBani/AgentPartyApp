@@ -49,6 +49,7 @@
     "test:interaction": "node scripts/qa-interaction-api.mjs",
     "test:catalog": "node scripts/qa-model-catalog.mjs",
     "test:backend": "node scripts/qa-model-backend.mjs",
+    "test:harness-protocol": "node scripts/qa-harness-protocol.mjs",
     "test:subscription-auth": "node scripts/qa-subscription-auth.mjs",
     "test:subscription-install": "node scripts/qa-subscription-proxy-install.mjs",
     "test:wsl-codex-bridge": "node scripts/qa-wsl-codex-bridge.mjs",

@@ -6,7 +6,7 @@ import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
 import { discoverCodexModels } from "../core/codexModelDiscovery";
-import { EmbeddedRouter } from "../core/routerShim";
+import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf } from "../shared/types";
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
@@ -102,7 +102,7 @@ export class SessionManager extends EventEmitter {
    *   Injected rather than read from `electron.app` so the engine core runs
    *   under plain node. See docs/WSL_REMOTE.md.
    */
-  constructor(private readonly router: EmbeddedRouter, private readonly userDataDir: string) {
+  constructor(private readonly router: EmbeddedHarnessRouter, private readonly userDataDir: string) {
     super();
   }
 

@@ -228,12 +228,13 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
 Cross-routing keeps the chosen harness process intact:
 
 - **Claude Code + GPT** uses the Claude Code SDK with its `claude-gpt-*` alias;
-  the embedded Anthropic-compatible router maps that alias to the corresponding
-  GPT model on local CLIProxyAPI. It uses Claude permission modes and the signed-in
-  Codex/ChatGPT subscription.
+  the embedded gateway keeps the request as Anthropic Messages and maps only the
+  alias to the corresponding GPT model on local CLIProxyAPI's `/v1/messages`
+  surface. It uses Claude permission modes and the signed-in Codex/ChatGPT subscription.
 - **Codex + Claude** uses Codex app-server with
-  `modelProvider: "claude-subscription"` and a CLIProxyAPI Claude model id. It
-  uses Codex sandbox/approval policy and the signed-in Claude subscription.
+  `modelProvider: "claude-subscription"` and a CLIProxyAPI Claude model id. Its
+  wire protocol remains Responses; it uses Codex sandbox/approval policy and the
+  signed-in Claude subscription.
 
 ### `POST /api/models/codex/refresh`
 

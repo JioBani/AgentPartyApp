@@ -1,4 +1,4 @@
-import { EmbeddedRouter } from "../../core/routerShim";
+import { EmbeddedHarnessRouter } from "../../core/routerShim";
 import { SessionManager } from "../sessionManager";
 import { WorkspaceManager } from "../workspaceManager";
 import { setUserDataDir } from "../userDataDir";
@@ -26,7 +26,7 @@ export interface EngineHostConfig {
  * headless host drives it directly or over a transport.
  */
 export interface EngineHost {
-  readonly router: EmbeddedRouter;
+  readonly router: EmbeddedHarnessRouter;
   readonly sessionManager: SessionManager;
   readonly workspaceManager: WorkspaceManager;
   readonly engineRegistry: EngineRegistry;
@@ -37,7 +37,7 @@ export interface EngineHost {
 
 export function createEngineHost(config: EngineHostConfig): EngineHost {
   setUserDataDir(config.storageDir);
-  const router = new EmbeddedRouter({
+  const router = new EmbeddedHarnessRouter({
     preferredPort: config.router.preferredPort,
     authToken: config.router.authToken,
     openRouterApiKey: config.router.openRouterApiKey || "",

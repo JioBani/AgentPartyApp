@@ -62,7 +62,7 @@ export interface CatalogModel {
   codexModel?: string;
   /** Claude OAuth model id exposed by local CLIProxyAPI for Codex-harness cross-routing. */
   claudeSubscriptionModel?: string;
-  /** Concrete OpenRouter model id the router forwards to. */
+  /** Concrete OpenRouter model id the harness protocol gateway selects. */
   orModelId?: string;
   subscription: boolean;
   description?: string;
@@ -207,7 +207,7 @@ export function orRoutedModels(): CatalogModel[] {
   return openRouterModels();
 }
 
-/** runtimeModel/id -> OpenRouter model id, for the embedded router. */
+/** runtimeModel/id -> OpenRouter model id, for the embedded protocol gateway. */
 export function openRouterAliasMap(): Record<string, string> {
   const map: Record<string, string> = {};
   for (const m of openRouterModels()) {
@@ -223,7 +223,7 @@ export type RouterTarget =
   | { kind: "codex-subscription"; model: string }
   | { kind: "openrouter"; model: string };
 
-/** Exact provider target for one Claude-Code router alias. */
+/** Exact provider target for one Claude Code gateway alias. */
 export function routerTargetForModel(model: string): RouterTarget | undefined {
   const entry = catalogModelByRuntime(model) || catalogModelById(model);
   if (!entry?.runtimeModel) {

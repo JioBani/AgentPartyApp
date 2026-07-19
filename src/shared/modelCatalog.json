@@ -72,6 +72,83 @@
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
+      "id": "Inkling", "label": "Inkling", "provider": "openrouter", "runtimeModel": "claude-inkling", "orModelId": "thinkingmachines/inkling", "subscription": false,
+      "description": "Thinking Machines Lab's open-weight multimodal MoE model for reasoning, coding, agentic, and tool-use workflows.",
+      "context": "1.05M", "inPerM": 1.0, "outPerM": 4.05, "ioPerM": 1.76,
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
+      "id": "Kimi K3", "label": "Kimi K3", "provider": "openrouter", "runtimeModel": "claude-kimi-k3", "orModelId": "moonshotai/kimi-k3", "subscription": false,
+      "description": "Moonshot AI's 2.8T open-weight multimodal reasoning model for complex coding, knowledge work, and long-horizon agentic workflows.",
+      "context": "1.05M", "inPerM": 3.0, "outPerM": 15.0, "ioPerM": 6.0,
+      "reasoning": { "effort": { "options": ["max"], "default": "max" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
+      "id": "Muse Spark 1.1", "label": "Muse Spark 1.1", "provider": "openrouter", "runtimeModel": "claude-muse-spark", "orModelId": "meta/muse-spark-1.1", "subscription": false,
+      "description": "Meta's multimodal reasoning model for agentic tasks; accepts text, images, video, audio, and documents.",
+      "context": "1.05M", "inPerM": 1.25, "outPerM": 4.25, "ioPerM": 2.0,
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } },
+      "vision": { "image": true, "video": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
+      "id": "KAT-Coder-Air V2.5", "label": "KAT-Coder-Air V2.5", "provider": "openrouter", "runtimeModel": "claude-kat-coder-air", "orModelId": "kwaipilot/kat-coder-air-v2.5", "subscription": false,
+      "description": "Kwaipilot's agentic coding model for end-to-end issues and business workflows.",
+      "context": "256K", "inPerM": 0.15, "outPerM": 0.6, "ioPerM": 0.26,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "KAT-Coder-Pro V2.5", "label": "KAT-Coder-Pro V2.5", "provider": "openrouter", "runtimeModel": "claude-kat-coder-pro", "orModelId": "kwaipilot/kat-coder-pro-v2.5", "subscription": false,
+      "description": "Kwaipilot's higher-capacity agentic coding model for end-to-end issues and business workflows.",
+      "context": "256K", "inPerM": 0.74, "outPerM": 2.96, "ioPerM": 1.30,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "Grok 4.5", "label": "Grok 4.5", "provider": "openrouter", "runtimeModel": "claude-grok-4-5", "orModelId": "x-ai/grok-4.5", "subscription": false,
+      "description": "xAI's frontier model for coding, knowledge work, and STEM.",
+      "context": "500K", "inPerM": 2.0, "outPerM": 6.0, "ioPerM": 3.0,
+      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
+      "id": "Aion-3.0 Mini", "label": "Aion-3.0 Mini", "provider": "openrouter", "runtimeModel": "claude-aion-mini", "orModelId": "aion-labs/aion-3.0-mini", "subscription": false,
+      "description": "AionLabs' multi-model roleplaying and storytelling system built on the DeepSeek family.",
+      "context": "131K", "inPerM": 0.7, "outPerM": 1.4, "ioPerM": 0.88,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "Aion-3.0", "label": "Aion-3.0", "provider": "openrouter", "runtimeModel": "claude-aion", "orModelId": "aion-labs/aion-3.0", "subscription": false,
+      "description": "AionLabs' multi-model roleplaying and storytelling system built on the GLM family.",
+      "context": "131K", "inPerM": 3.0, "outPerM": 6.0, "ioPerM": 3.75,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "Tencent Hy3", "label": "Tencent Hy3", "provider": "openrouter", "runtimeModel": "claude-hy3", "orModelId": "tencent/hy3", "subscription": false,
+      "description": "Tencent's 295B-parameter MoE model for reasoning, agentic workflows, and production use.",
+      "context": "262K", "inPerM": 0.2, "outPerM": 0.8, "ioPerM": 0.35,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "Laguna XS 2.1", "label": "Laguna XS 2.1", "provider": "openrouter", "runtimeModel": "claude-laguna-xs", "orModelId": "poolside/laguna-xs-2.1", "subscription": false,
+      "description": "Poolside's latest coding-agent model in the 33B-A3B category.",
+      "context": "262K", "inPerM": 0.06, "outPerM": 0.12, "ioPerM": 0.08,
+      "reasoning": null,
+      "vision": { "image": false }
+    },
+    {
+      "id": "Nex-N2-Mini", "label": "Nex-N2-Mini", "provider": "openrouter", "runtimeModel": "claude-nex-n2-mini", "orModelId": "nex-agi/nex-n2-mini", "subscription": false,
+      "description": "Nex AGI's open-source agentic MoE model for coding and tool use.",
+      "context": "262K", "inPerM": 0.025, "outPerM": 0.1, "ioPerM": 0.04,
+      "reasoning": null,
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
       "id": "GLM-5.2", "label": "GLM-5.2", "provider": "openrouter", "runtimeModel": "claude-glm", "orModelId": "z-ai/glm-5.2", "subscription": false,
       "description": "AgentParty router alias for z-ai/glm-5.2.",
       "context": "1M", "perf": 4, "costTier": 2, "inPerM": 0.95, "outPerM": 3.0, "ioPerM": 1.46,

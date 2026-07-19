@@ -79,6 +79,10 @@ both Claude and Codex tool implementations route it through the same
 route's concrete `executionHarness` and the permission schema/defaults. A
 cross-routed model never changes this value: Claude Code + GPT keeps Claude
 permission modes, while Codex + Claude keeps Codex sandbox/approval policy.
+The same invariant applies to the wire contract: Claude Code always emits
+Anthropic Messages and Codex always emits Responses. Provider/model routing may
+change credentials and the concrete model id, never the harness conversation,
+tool, or interruption protocol.
 
 Codex uses persistent codex app-server JSON-RPC sessions. Current Codex builds
 load model-visible tools through `mcp_servers.*`, so AgentParty starts each

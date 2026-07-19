@@ -123,7 +123,7 @@ export function isClaudeNative(backend: Backend | undefined): boolean {
 /**
  * Concrete harness process that executes a user-selected harness/model pair.
  * Cross-routing changes the model provider/transport, never the harness: GPT on
- * Claude Code remains a Claude Code SDK process through the embedded router;
+ * Claude Code remains a Claude Code SDK process through its Anthropic gateway;
  * Claude on Codex remains a Codex app-server process through its custom provider.
  */
 export function executionHarnessFor(_model: string | undefined, selectedHarness: HarnessId): HarnessId {

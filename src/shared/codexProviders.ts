@@ -1,5 +1,6 @@
 import { catalogModelByClaudeSubscriptionModel, orRoutedModels } from "./modelCatalog";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
+import { HARNESS_PROTOCOLS } from "./harnessProtocols";
 
 /**
  * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
@@ -27,7 +28,7 @@ export const CODEX_OPENROUTER_PROVIDER: CodexCustomProvider = {
   id: "openrouter",
   name: "OpenRouter",
   baseUrl: "https://openrouter.ai/api/v1",
-  wireApi: "responses",
+  wireApi: HARNESS_PROTOCOLS.codex.wireApi,
   envKey: "OPENROUTER_API_KEY",
 };
 
@@ -35,7 +36,7 @@ export const CODEX_CLAUDE_SUBSCRIPTION_PROVIDER: CodexCustomProvider = {
   id: "claude-subscription",
   name: "Claude subscription (local CLIProxyAPI)",
   baseUrl: DEFAULT_SUBSCRIPTION_PROXY_BASE_URL,
-  wireApi: "responses",
+  wireApi: HARNESS_PROTOCOLS.codex.wireApi,
   envKey: SUBSCRIPTION_PROXY_KEY_ENV,
 };
 

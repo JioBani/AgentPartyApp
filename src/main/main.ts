@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen, shell } from "electron";
-import { EmbeddedRouter } from "../core/routerShim";
+import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { getPublicSettings, getSettings } from "./settings";
@@ -49,7 +49,7 @@ if (process.env.AGENTPARTY_USER_DATA) {
 // duplicate" is the `agent-party` CLI's job (it finds the workspace's process via
 // discovery and asks it to open a window), not a global OS lock.
 
-let router: EmbeddedRouter | undefined;
+let router: EmbeddedHarnessRouter | undefined;
 let sessionManager: SessionManager | undefined;
 let workspaceManager: WorkspaceManager | undefined;
 let windowRegistry: WindowRegistry | undefined;
