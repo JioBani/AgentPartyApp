@@ -156,7 +156,7 @@ export function Panel(props: PanelProps) {
                     <button
                       type="button"
                       className="wb-menu-item"
-                      title="이 멤버가 보내는 메시지를 배달 전에 심사합니다"
+                      title="이 멤버가 보내는 메시지를 전달 전에 심사합니다"
                       onClick={() => { setMenuOpen(false); onOpenGate(view.name); }}
                     >
                       <MessageGateIcon size={14} className="wb-gate-accent" /> Message Gate 설정

@@ -110,7 +110,7 @@ export function PartySidebar(props: PartySidebarProps) {
         <div className="wb-section-label">Parties <span className="wb-mono">{parties.length}</span></div>
         <form className="wb-new-party" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="새 파티 이름…" />
-          <button type="button" className="wb-icon-btn is-accent" title="새 파티 만들기 (메시지 검문 옵션)" onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
+          <button type="button" className="wb-icon-btn is-accent" title="새 파티 만들기 (메시지 게이트 옵션)" onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
         </form>
         <div className="wb-party-list">
           {parties.map((party) => {
@@ -228,10 +228,10 @@ export function PartySidebar(props: PartySidebarProps) {
               <button
                 type="button"
                 className="wb-ctx-item"
-                title="이 파티의 멤버 간 메시지 검문 규칙을 설정합니다"
+                title="이 파티의 멤버 간 메시지 게이트 규칙을 설정합니다"
                 onClick={() => { onSelectParty(menu.partyId); onOpenPartyGate(menu.partyId); setMenu(null); }}
               >
-                <MessageGateIcon size={13} className="wb-gate-accent" /> 메시지 검문 설정
+                <MessageGateIcon size={13} className="wb-gate-accent" /> 메시지 게이트 설정
               </button>
               {confirmParty ? (
                 <button
@@ -309,8 +309,8 @@ function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: strin
               <span className="wb-gate-toggle-text">
                 <span className="wb-gate-tile"><MessageGateIcon size={17} /></span>
                 <span>
-                  <strong>메시지 검문 사용</strong>
-                  <small>멤버 간 메시지를 배달 직전 리뷰어가 심사합니다. 기본은 꺼짐.</small>
+                  <strong>메시지 게이트 사용</strong>
+                  <small>멤버 간 메시지를 전달 전에 리뷰어가 심사합니다. 기본은 꺼짐.</small>
                 </span>
               </span>
               <input type="checkbox" className="wb-switch" checked={gateOn} onChange={(event) => setGateOn(event.target.checked)} />

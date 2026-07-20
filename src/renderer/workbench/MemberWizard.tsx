@@ -4,7 +4,7 @@ import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { VisionTag } from "./VisionTag";
 import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
-import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./RuntimeModal";
+import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./modelMeters";
 import type { CreateMemberInput } from "./PartySidebar";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";

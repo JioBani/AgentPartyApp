@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Clock, Pencil, Undo2, X } from "lucide-react";
+import { ChevronDown, Clock, Pencil, Undo2, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
-import { routeKey } from "./routes";
-import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
-import { groupByProvider, type RouteEntry } from "./RuntimeModal";
+import { ModelCatalogModal } from "./ModelCatalogModal";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { effectiveGate, type GateMode, type GateReviewer, type MemberGateOverride, type PartyGate } from "../../shared/messageGate";
 
@@ -42,11 +40,11 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
   const [text, setText] = useState(initialText);
   const [reviewerSet, setReviewerSet] = useState(Boolean(gate?.reviewer));
   const [reviewer, setReviewer] = useState<GateReviewer>(gate?.reviewer ?? gateDefaults);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
-  // One entry per catalog model (a model is reachable from both harnesses; the
+  // One route per catalog model (a model is reachable from both harnesses; the
   // reviewer is headless so harness is irrelevant — dedupe, prefer claude-code).
-  const uniqueEntries = useMemo<RouteEntry[]>(() => {
+  const uniqueRoutes = useMemo<RouteLike[]>(() => {
     const byModel = new Map<string, RouteLike>();
     for (const route of routes) {
       const existing = byModel.get(route.model);
@@ -54,11 +52,8 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
         byModel.set(route.model, route);
       }
     }
-    return Array.from(byModel.values()).map((route) => ({ route, meta: modelView(route) }));
+    return Array.from(byModel.values());
   }, [routes]);
-  const grouped = useMemo(() => groupByProvider(uniqueEntries), [uniqueEntries]);
-  const selectedRoute = uniqueEntries.find((entry) => entry.route.model === reviewer.model)?.route;
-  const effortOptions = selectedRoute?.capabilities?.effort?.options ?? [];
 
   const overridden = text !== partyRule;
   const effectivelyOn = mode === "on" || (mode === "inherit" && partyOn);
@@ -86,14 +81,6 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
     onClose();
   }
 
-  function pickModel(route: RouteLike) {
-    const options = route.capabilities?.effort?.options ?? [];
-    const nextEffort = options.some((o) => o.id === reviewer.effort)
-      ? reviewer.effort
-      : route.capabilities?.effort?.defaultValue || options[0]?.id || "low";
-    setReviewer({ model: route.model, effort: nextEffort });
-    setPickerOpen(false);
-  }
 
   return (
     <div className="wb-modal-scrim">
@@ -103,7 +90,7 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
             <MessageGateIcon size={16} className="wb-gate-accent" />
             <strong>Message Gate</strong>
             <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
-              <span className="wb-dot" /> <span className="wb-mono">{view.name} · 배달 직전 심사</span>
+              <span className="wb-dot" /> <span className="wb-mono">{view.name} · 메시지 전달 전 심사</span>
             </span>
             {overridden && <span className="wb-gate-overridden"><Pencil size={11} /> Overridden</span>}
           </div>
@@ -165,57 +152,10 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
             {!reviewerSet ? (
               <div className="wb-gate-default-chip wb-mono">설정 기본값 사용 · {gateDefaults.model} · {gateDefaults.effort}</div>
             ) : (
-              <div className="wb-gate-reviewer">
-                <div className="wb-gate-picker-wrap">
-                  <button type="button" className="wb-gate-picker-btn" onClick={() => setPickerOpen((v) => !v)}>
-                    <span className="wb-mono">{reviewer.model}</span>
-                    <ChevronDown size={14} className="wb-flex-spacer-end" />
-                  </button>
-                  {pickerOpen && (
-                    <div className="wb-gate-picker-pop">
-                      {grouped.map((group) => (
-                        <div className="wb-model-group" key={group.provider}>
-                          <div className="wb-model-provider">
-                            <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider] }} />
-                            {PROVIDER_LABELS[group.provider]}
-                          </div>
-                          {group.entries.map((entry) => (
-                            <button
-                              type="button"
-                              key={routeKey(entry.route)}
-                              className={"wb-model-row" + (entry.route.model === reviewer.model ? " is-selected" : "")}
-                              onClick={() => pickModel(entry.route)}
-                            >
-                              <span className="wb-model-name">
-                                <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
-                                <small className="wb-gate-tier">{tierLabel(entry)}</small>
-                              </span>
-                              {entry.route.model === reviewer.model && <Check size={14} className="wb-model-check" />}
-                            </button>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {effortOptions.length > 0 && (
-                  <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>Effort</strong></div>
-                    <div className="wb-segmented">
-                      {effortOptions.map((option) => (
-                        <button
-                          type="button"
-                          key={option.id}
-                          className={"wb-segment" + (option.id === reviewer.effort ? " is-active" : "")}
-                          onClick={() => setReviewer((r) => ({ ...r, effort: option.id }))}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <button type="button" className="wb-model-picker-trigger" onClick={() => setCatalogOpen(true)}>
+                <span className="wb-mono">{reviewer.model} · {reviewer.effort}</span>
+                <ChevronDown size={14} />
+              </button>
             )}
           </div>
         </div>
@@ -230,20 +170,22 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
           </div>
         </footer>
       </div>
+
+      {catalogOpen && (
+        <ModelCatalogModal
+          title="리뷰어 모델"
+          icon={<MessageGateIcon size={16} className="wb-gate-accent" />}
+          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 · {view.name}</span>}
+          routes={uniqueRoutes}
+          value={{ model: reviewer.model, effort: reviewer.effort }}
+          config={{ effort: true }}
+          applyLabel="선택"
+          onApply={(next) => setReviewer({ model: next.model, effort: next.effort || reviewer.effort })}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
     </div>
   );
-}
-
-/** Coarse tier from the model's perf meter (no harness shown). */
-function tierLabel(entry: RouteEntry): string {
-  const perf = entry.meta.perf ?? 0;
-  if (perf >= 4) {
-    return "Frontier";
-  }
-  if (perf <= 1) {
-    return "Fast";
-  }
-  return "Balanced";
 }
 
 /** Effective gate summary for read-only surfaces (party manager rows). */

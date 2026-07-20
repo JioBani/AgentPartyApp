@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
@@ -7,7 +7,8 @@ import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
-import { RouteLike, routeKey } from "../workbench/routes";
+import { RouteLike } from "../workbench/routes";
+import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
 
 const permissionModes = [
   { id: "default", label: "기본" },
@@ -338,6 +339,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
  * uses this. Recommends a cheap/fast model (Haiku).
  */
 function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; reviewer: GateReviewer; onSave: (reviewer: GateReviewer) => void }) {
+  const [catalogOpen, setCatalogOpen] = useState(false);
   // One entry per catalog model (headless → harness irrelevant; prefer claude-code).
   const models = useMemo(() => {
     const byModel = new Map<string, RouteLike>();
@@ -349,16 +351,7 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
     }
     return Array.from(byModel.values());
   }, [routes]);
-  const selected = models.find((route) => route.model === reviewer.model);
-  const effortOptions = selected?.capabilities?.effort?.options ?? [];
   const recommended = reviewer.model === "haiku";
-
-  function pickModel(model: string) {
-    const route = models.find((r) => r.model === model);
-    const options = route?.capabilities?.effort?.options ?? [];
-    const nextEffort = options.some((o) => o.id === reviewer.effort) ? reviewer.effort : route?.capabilities?.effort?.defaultValue || options[0]?.id || "low";
-    onSave({ model, effort: nextEffort });
-  }
 
   return (
     <div className="set-gate-defaults">
@@ -366,20 +359,26 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
         <MessageGateIcon size={14} />
         <span>게이트가 켜진 멤버가 자체 리뷰어를 지정하지 않으면 이 기본 리뷰어로 메시지를 심사합니다. <b>저렴하고 빠른 모델(Haiku)</b>을 권장합니다. 하네스 없이 헤드리스로 실행됩니다.</span>
       </div>
-      <div className="set-harness-pick">
-        <label className="set-field">
-          <span className="set-field-label">리뷰어 모델 {recommended && <span className="set-reco-badge">권장</span>}</span>
-          <select className="set-select" value={reviewer.model} onChange={(event) => pickModel(event.target.value)}>
-            {models.map((route) => <option key={route.model} value={route.model}>{route.label || route.model}</option>)}
-          </select>
-        </label>
-        <label className="set-field">
-          <span className="set-field-label">리뷰어 effort</span>
-          <select className="set-select" value={reviewer.effort} disabled={effortOptions.length === 0} onChange={(event) => onSave({ ...reviewer, effort: event.target.value })}>
-            {(effortOptions.length ? effortOptions : [{ id: reviewer.effort, label: reviewer.effort }]).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-          </select>
-        </label>
+      <div className="set-field">
+        <span className="set-field-label">리뷰어 모델 · effort {recommended && <span className="set-reco-badge">권장</span>}</span>
+        <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
+          <span className="wb-mono">{reviewer.model} · {reviewer.effort}</span>
+          <ChevronDown size={14} />
+        </button>
       </div>
+      {catalogOpen && (
+        <ModelCatalogModal
+          title="게이트 리뷰어 모델"
+          icon={<MessageGateIcon size={16} />}
+          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 기본값</span>}
+          routes={models}
+          value={{ model: reviewer.model, effort: reviewer.effort }}
+          config={{ effort: true }}
+          applyLabel="선택"
+          onApply={(next) => onSave({ model: next.model, effort: next.effort || reviewer.effort })}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -402,7 +401,9 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
   const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
   const [saved, setSaved] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const isCodex = harnessId === "codex";
+  const selectedRoute = routes.find((route) => route.model === model);
 
   function save() {
     const patch: Partial<HarnessDefaults> = { model, effort: effort as HarnessDefaults["effort"], reasoning: reasoning || undefined };
@@ -424,12 +425,25 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
         <span className="set-harness-title">{label} 기본값</span>
       </div>
 
-      <label className="set-field">
+      <div className="set-field">
         <span className="set-field-label">모델</span>
-        <select className="set-select is-mono" value={model} onChange={(event) => setModel(event.target.value)}>
-          {routes.map((route) => <option key={routeKey(route)} value={route.model} disabled={route.enabled === false}>{route.label || route.model}</option>)}
-        </select>
-      </label>
+        <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
+          <span className="wb-mono">{selectedRoute?.label || model}</span>
+          <ChevronDown size={14} />
+        </button>
+      </div>
+      {catalogOpen && (
+        <ModelCatalogModal
+          title={`${label} 기본 모델`}
+          icon={<SquareTerminal size={16} />}
+          routes={routes}
+          value={{ model }}
+          config={{}}
+          applyLabel="선택"
+          onApply={(next) => setModel(next.model)}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
       {isCodex && codexModels?.status === "pending" && (
         <div className="set-inline-note is-soft">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 계정의 전체 모델로 갱신됩니다.</div>
       )}

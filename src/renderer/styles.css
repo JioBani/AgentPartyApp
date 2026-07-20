@@ -4905,3 +4905,66 @@ body.wb-resizing {
   border-radius: 6px;
   background: var(--bg-2);
 }
+
+/* ===== Shared model catalog picker (popup, never clipped) ====== */
+.wb-model-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wb-model-picker-trigger:hover { border-color: var(--border-strong); }
+.wb-model-picker-trigger:disabled { opacity: .55; cursor: default; }
+/* Settings variant: matches the height/tone of the neighbouring .set-select controls. */
+.set-model-trigger { height: 38px; }
+
+/* The shared catalog modal is portaled to <body> and floats ABOVE everything
+   (incl. another modal + the titlebar). By default it does NOT dim the backdrop
+   (a clean floating popup); `.is-dim` opts into the standard scrim. */
+.wb-catalog-scrim { z-index: 1200; background: transparent; }
+.wb-catalog-scrim.is-dim { background: var(--scrim); }
+.wb-model-picker-pop {
+  width: min(480px, 92vw);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.wb-model-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+.wb-model-picker-search-icon { color: var(--text-3); flex: 0 0 auto; }
+.wb-model-picker-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 13px;
+}
+.wb-model-picker-search:focus { outline: none; }
+.wb-model-picker-list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

@@ -71,7 +71,7 @@ export function PartyGateModal({ party, members, gateDefaults, onSetPartyGate, o
               <span className="wb-gate-toggle-text">
                 <span className="wb-gate-tile"><MessageGateIcon size={17} /></span>
                 <span>
-                  <strong>파티 메시지 검문 기본값</strong>
+                  <strong>파티 메시지 게이트 기본값</strong>
                   <small>Inherit 상태인 멤버는 이 값을 따릅니다. 멤버가 On/Off로 직접 재정의할 수 있어요.</small>
                 </span>
               </span>
