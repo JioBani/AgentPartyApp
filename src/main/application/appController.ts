@@ -486,7 +486,7 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.createMember({ ...input, partyId: input.partyId || this.partyForWindow(windowId) }));
   }
 
-  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
+  sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, partyId || this.partyForWindow(windowId), options));
   }
 
@@ -533,6 +533,19 @@ export class AppController {
   /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */
   setMemberAutoCompact(workspacePath: string, name: string, autoCompact: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>> {
     return this.handlePartyAction(workspacePath, name, "auto-compact", { autoCompact }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>>;
+  }
+
+  /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */
+  setMemberGate(workspacePath: string, name: string, gate: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberGate"]>> {
+    return this.handlePartyAction(workspacePath, name, "gate", { gate }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberGate"]>>;
+  }
+
+  /** Persists the party-wide Message Gate default (enablement + rule). */
+  async setPartyGate(workspacePath: string, partyId: string, gate: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setPartyGate"]>> {
+    const target = partyId || this.partyForWindow(windowId);
+    const result = await this.engineFor(workspacePath).setPartyGate(target, gate);
+    await this.broadcastParty(workspacePath);
+    return result;
   }
 
   getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {
@@ -667,6 +680,13 @@ export class AppController {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:open-subagent", { member, subId });
     return { ok: true, member, subId };
+  }
+
+  /** Opens a Message Gate modal (member editor or party manager) — QA of the modal UI. */
+  qaOpenGate(windowId: string | undefined, kind: "member" | "party", member: string): { ok: true; kind: string; member: string } {
+    this.requireQa();
+    this.windowFor(windowId)?.webContents.send("qa:open-gate", { kind, member });
+    return { ok: true, kind, member };
   }
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {

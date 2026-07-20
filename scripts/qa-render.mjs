@@ -294,8 +294,10 @@ if (moreBtn) {
 const menuItems = [...document.querySelectorAll('[data-panel-id="pb"] .wb-menu-item')];
 const restartMenuItem = menuItems.find((b) => /세션 재시작/.test(b.textContent || ""));
 const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
+const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || ""));
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
-assert(mcpMenuItem != null && menuItems.length === 2, "⋯ menu has exactly two items (세션 재시작 · MCP 서버)");
+assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
+assert(mcpMenuItem != null && menuItems.length === 3, "⋯ menu has three items (세션 재시작 · Message Gate · MCP 서버)");
 // A busy member's composer shows Stop (not Send) — the interrupt affordance.
 const busyStop = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop, [data-panel-id="pa"] .wb-send.is-stop');
 assert(busyStop !== null, "a busy member's composer shows Stop");

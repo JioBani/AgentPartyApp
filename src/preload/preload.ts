@@ -52,6 +52,8 @@ const api = {
   startPartyMember: (name: string, input?: unknown) => ipcRenderer.invoke("party:start", name, input),
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
   setMemberAutoCompact: (name: string, autoCompact: unknown) => ipcRenderer.invoke("party:autoCompact", name, autoCompact),
+  setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
+  setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
   saveMemberTranscript: (name: string, blocks: unknown[]) => ipcRenderer.invoke("party:transcript:save", name, blocks),
   onSessionEvents: (callback: (payload: unknown) => void) => {
@@ -103,6 +105,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("qa:open-subagent", listener);
     return () => ipcRenderer.off("qa:open-subagent", listener);
+  },
+  onQaOpenGate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("qa:open-gate", listener);
+    return () => ipcRenderer.off("qa:open-gate", listener);
   },
   onNavigate: (callback: (view: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, view: string) => callback(view);

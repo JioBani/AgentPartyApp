@@ -3,6 +3,7 @@ import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
 import type { ModelProviderDescriptor } from "./modelProviders";
+import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -65,6 +66,12 @@ export interface AppSettings {
    * `shared/autoCompact.ts`.
    */
   compactDefault: AutoCompactSetting;
+  /**
+   * Default headless reviewer (model + effort, NO harness) for the Message Gate.
+   * Used by any gate-on member that has not set its own reviewer. Edited in
+   * Settings → Runtime. See `shared/messageGate.ts` / docs/MESSAGE_GATE.md.
+   */
+  gateDefaults: GateReviewer;
 }
 
 /** All harnesses that have defaults, in a stable order. */
@@ -137,6 +144,12 @@ export interface PartyMember {
    * context crosses `at`% of the window. See `shared/autoCompact.ts`.
    */
   autoCompact?: AutoCompactSetting;
+  /**
+   * Per-member Message Gate override. Undefined = fully inherit the party gate
+   * ({@link PartyDefinition.gate}) + settings reviewer default. See
+   * `shared/messageGate.ts`.
+   */
+  gate?: MemberGateOverride;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -146,6 +159,12 @@ export interface PartyDefinition {
   name: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Party-wide Message Gate default (enablement + rule text). Undefined = off
+   * with no rule. Members inherit this unless they override. See
+   * `shared/messageGate.ts`.
+   */
+  gate?: PartyGate;
 }
 
 export interface PartyMessage {
@@ -174,6 +193,8 @@ export interface PartyCommandResult {
 
 export interface CreatePartyInput {
   name: string;
+  /** Optional initial Message Gate for the new party (default: off, no rule). */
+  gate?: PartyGate;
 }
 
 export interface CreateMemberInput {

@@ -10,6 +10,7 @@ import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
 import { SubagentDock } from "./SubagentDock";
+import { MessageGateIcon } from "./MessageGateIcon";
 import { SubagentDetail } from "./SubagentDetail";
 import { ContextDonut } from "./ContextDonut";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
@@ -30,6 +31,7 @@ interface PanelProps {
   onOpenRuntime: (member: string) => void;
   onOpenMcp: (member: string) => void;
   onOpenCompact: (member: string) => void;
+  onOpenGate: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
   /** Subagent dock/detail UI state for this panel's active member. */
   openSubId?: string;
@@ -40,7 +42,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
@@ -150,6 +152,14 @@ export function Panel(props: PanelProps) {
                       onClick={() => { setMenuOpen(false); actions.respawn(view.name); }}
                     >
                       <RefreshCw size={14} /> 세션 재시작
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      title="이 멤버가 보내는 메시지를 배달 전에 심사합니다"
+                      onClick={() => { setMenuOpen(false); onOpenGate(view.name); }}
+                    >
+                      <MessageGateIcon size={14} className="wb-gate-accent" /> Message Gate 설정
                     </button>
                     <button
                       type="button"

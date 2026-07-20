@@ -88,8 +88,9 @@ export interface EngineConnection {
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;
+  setPartyGate(partyId: string | undefined, gate: unknown): Promise<ReturnType<PartyApplicationService["setPartyGate"]>>;
   createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
-  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<PartyMutationResult>;
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyMutationResult>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   closeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;

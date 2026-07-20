@@ -101,7 +101,13 @@ export type ClaudeNormalizedEvent =
   // when a harness reports its rolling-window utilization; the main process
   // aggregates the latest per provider and pushes it to every window. See
   // src/shared/usageLimits.ts.
-  | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; at: string }
+  //
+  // `sourceId` identifies which adapter reported the read — `sessionManager`
+  // uses it to fan-in dedupe so only the single active source per provider
+  // (foreground session > background poller > remote engine) drives the merge,
+  // instead of every live session racing to overwrite each other's values.
+  // QA injection stamps a reserved `qa` id that always passes the filter.
+  | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; at: string; sourceId?: string }
   | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
@@ -120,6 +126,10 @@ export type ClaudeNormalizedEvent =
       /** A block appended to the subagent's OWN transcript. */
       block?: SubagentBlock;
       at: string }
+  // Message Gate outcome for an OUTGOING member-to-member send, rendered as an
+  // inline badge in the SENDER's transcript (reject/forced/failed). UI-only — it
+  // is never injected into any model's context. See docs/MESSAGE_GATE.md §8.
+  | { type: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at: string }
   | { type: "error"; message: string; at: string };
 
 export type NormalizedCommand =

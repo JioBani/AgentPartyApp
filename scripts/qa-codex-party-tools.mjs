@@ -71,7 +71,7 @@ try {
   const mcp = await adapter.listMcpServers();
   const partyServer = mcp.servers.find((server) => server.name === "agentparty-app");
   assert(Boolean(partyServer), "Codex MCP snapshot includes the app-hosted agentparty-app surface");
-  assert(partyServer?.tools?.length === 9, "agentparty-app exposes the nine party tools (incl. member-permission/status/interrupt/broadcast)");
+  assert(partyServer?.tools?.length === 10, "agentparty-app exposes the ten party tools (incl. member-permission/gate-set/status/interrupt/broadcast)");
   assert(partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__list"), "party tool names use the same mcp__agentparty-app__ prefix");
 
   adapter.sendUserTurn("KIND=partyTool call list");

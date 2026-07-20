@@ -5,6 +5,13 @@ import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
+import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
+
+/**
+ * Built-in Message Gate reviewer default: the cheapest/fastest model, since the
+ * gate can run on every member-to-member message. Headless (no harness).
+ */
+export const DEFAULT_GATE_REVIEWER: GateReviewer = { model: "haiku", effort: "low" };
 
 const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },
@@ -30,6 +37,7 @@ const defaults: AppSettings = {
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
+  gateDefaults: { ...DEFAULT_GATE_REVIEWER },
 };
 
 /** Transcript zoom bounds — keep in sync with the renderer's Ctrl+wheel step. */
@@ -97,6 +105,19 @@ function mergeHarnessDefaults(stored: Partial<Record<HarnessId, HarnessDefaults>
  * fallback route (modelRegistry) that then becomes selectable and only fails at
  * session start. Reset that harness's model to its built-in default.
  */
+/**
+ * Validates the Message Gate reviewer default, healing an unroutable model back
+ * to the built-in (mirrors the per-harness model heal above) so a stale value
+ * can never point the gate at a model the catalog no longer knows.
+ */
+function normalizeGateDefaults(value: unknown): GateReviewer {
+  const reviewer = normalizeGateReviewer(value) || { ...DEFAULT_GATE_REVIEWER };
+  if (!catalogModelById(reviewer.model) && !catalogModelByRuntime(reviewer.model)) {
+    return { ...reviewer, model: DEFAULT_GATE_REVIEWER.model };
+  }
+  return reviewer;
+}
+
 function sanitizeSettings(settings: AppSettings): AppSettings {
   const envAutomationPort = Number(process.env.AGENTPARTY_AUTOMATION_PORT || "");
   const withRuntimeOverrides = envAutomationPort > 0 ? { ...settings, automationApiPort: envAutomationPort } : settings;
@@ -108,7 +129,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
     }
   }
   const compactDefault = normalizeAutoCompact(withRuntimeOverrides.compactDefault) || { ...DEFAULT_AUTO_COMPACT };
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const gateDefaults = normalizeGateDefaults(withRuntimeOverrides.gateDefaults);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

@@ -87,6 +87,12 @@ Codex/ChatGPT subscription proxy.
 A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
 
+`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort" }`
+only (NO harness; the reviewer runs headless). Any gate-on member that has not
+set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
+`{ "gateDefaults": { "model": "haiku", "effort": "low" } }`. See the Message
+Gate endpoints below and `docs/MESSAGE_GATE.md`.
+
 Example:
 
 ```json
@@ -551,6 +557,14 @@ Sends a message through the internal AgentParty router. `attachments` is optiona
 
 If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
+**Message Gate**: when `from` is a member (not `"user"`) and that member's gate is
+active, the message is reviewed before delivery. A rejection returns
+`partyMessage.delivered: false` with `partyMessage.error` set to the reviewer's
+reason (rewrite and resend). Add `{ "force": true, "forceReason": "…" }` to bypass
+the gate for one message (surfaced as a "forced" badge). A reviewer error is
+fail-open: the message is delivered unreviewed with a visible notice. A human
+`from: "user"` turn is never gated. See `docs/MESSAGE_GATE.md`.
+
 ### `POST /api/party/members`
 
 Creates a member inside the selected party, or inside `partyId` when supplied.
@@ -713,6 +727,40 @@ For a Codex harness (including Codex + Claude):
 ```json
 { "codexPolicy": { "sandbox": "workspace-write", "approval": "on-request", "guardian": true } }
 ```
+
+### `POST /api/party/members/:name/gate`
+
+Sets a member's **Message Gate** override — the delivery-time reviewer of that
+member's OUTGOING messages to other members. This is a PATCH: any omitted axis is
+left unchanged; a `null` axis clears it back to inherit. Cross-editable (any
+member/agent may edit any member's gate). Backs the member gate modal and the
+agent-facing `gate-set` tool. See `docs/MESSAGE_GATE.md`.
+
+```json
+{ "gate": { "mode": "on", "rule": "Be concise. Talk to the owner directly, don't route through main.", "reviewer": { "model": "haiku", "effort": "low" } } }
+```
+
+- `mode`: `"inherit"` (follow the party gate) | `"on"` | `"off"`.
+- `rule`: the communication rule the headless reviewer enforces. `null` = inherit
+  the party rule.
+- `reviewer`: `{ model, effort }` for a custom headless reviewer (no harness —
+  it runs as a raw completion). `null` = use the settings default
+  (`gateDefaults`).
+
+### `POST /api/parties/:id/gate`
+
+Sets the **party-wide** Message Gate default (enablement + rule). Members with
+`mode: "inherit"` follow this. Body:
+
+```json
+{ "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips." }
+```
+
+The reviewer model default (model + effort, no harness) is global, set via
+`POST /api/settings` `{ "gateDefaults": { "model": "haiku", "effort": "low" } }`.
+
+The `POST /api/party/messages` send accepts `{ "force": true, "forceReason": "..." }`
+to bypass the gate for one message (surfaced as a "forced" badge).
 
 ### `GET /api/party/status`
 

@@ -3,6 +3,10 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
+import type { MemberGateOverride, PartyGate } from "../../shared/messageGate";
+
+/** A member-gate PATCH: any axis omitted is unchanged; `null` clears to inherit. */
+export type MemberGatePatch = MemberGateOverride;
 
 /**
  * Command surface a panel needs, addressed by member name. The App shell maps
@@ -54,6 +58,14 @@ export interface WorkbenchActions {
    * party-action path (works with or without a live session).
    */
   setAutoCompact(memberName: string, setting: AutoCompactSetting | undefined): void;
+  /**
+   * Sets a member's Message Gate override (a PATCH: mode / rule / reviewer; a
+   * `null` axis clears it back to inherit). Persisted through the party-action
+   * path (works with or without a live session); cross-editable across members.
+   */
+  setMemberGate(memberName: string, patch: MemberGatePatch): void;
+  /** Sets the party-wide Message Gate default (enablement + rule). */
+  setPartyGate(partyId: string, gate: PartyGate): void;
   /**
    * Closes the member's live session (tears down the harness, frees its context
    * + provider usage) and marks the member `closed`. Reopening the tab and

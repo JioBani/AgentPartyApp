@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -153,6 +153,8 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return <ChannelBlock block={block} view={view} />;
     case "partyAction":
       return <PartyActionBlock block={block} />;
+    case "gate":
+      return <GateBlock block={block} view={view} />;
     case "status":
       return (
         <div className="wb-block wb-status">
@@ -176,6 +178,41 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
     default:
       return null;
   }
+}
+
+const GATE_META = {
+  rejected: { label: "반려됨", tone: "live", note: "전달 안 됨 · 재작성 필요", Icon: CornerUpLeft },
+  forced: { label: "강제 전송", tone: "accent", note: "우회하여 전달됨", Icon: FastForward },
+  failed: { label: "리뷰 실패", tone: "danger", note: "심사 없이 전달됨", Icon: AlertTriangle },
+} as const;
+
+/**
+ * A Message Gate outcome for an OUTGOING send by this member — an inline badge
+ * (rejected / forced / failed). Reason is clamped to 2 lines and expands; the
+ * violated rule (rejected/forced) or error code (failed) shows when expanded.
+ */
+function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "gate" }>; view: MemberView }) {
+  const [open, setOpen] = useState(false);
+  const meta = GATE_META[block.gate];
+  const Icon = meta.Icon;
+  const extra = block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : "");
+  return (
+    <div className={"wb-block wb-gate is-" + meta.tone}>
+      <div className="wb-gate-head">
+        <span className="wb-gate-icon"><Icon size={14} /></span>
+        <span className="wb-gate-label">{meta.label}</span>
+        <span className="wb-gate-route wb-mono">{(block.from || view.name)} → {block.to}</span>
+        <span className="wb-gate-passnote">{meta.note}</span>
+        {block.reason && (
+          <button type="button" className="wb-gate-caret" onClick={() => setOpen((v) => !v)} title={open ? "접기" : "펼치기"}>
+            <ChevronRight size={13} className={"wb-caret" + (open ? " is-open" : "")} />
+          </button>
+        )}
+      </div>
+      {block.reason && <div className={"wb-gate-reason" + (open ? " is-open" : "")}>{block.reason}</div>}
+      {open && extra && <div className="wb-gate-meta wb-mono">{extra}</div>}
+    </div>
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, Slider
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, PartyMember, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
+import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import type { UsageLimitsSnapshot, UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
@@ -60,6 +61,7 @@ export function App() {
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
   // QA-driven "open this subagent's detail" request (mock-driven detail QA).
   const [subagentOpenRequest, setSubagentOpenRequest] = useState<{ member: string; subId: string; nonce: number } | null>(null);
+  const [gateOpenRequest, setGateOpenRequest] = useState<{ kind: "member" | "party"; member: string; nonce: number } | null>(null);
   // Tracks whether a live party broadcast has arrived, so a late-resolving
   // initial-state load cannot clobber it with a stale snapshot.
   const partyBroadcastSeen = useRef(false);
@@ -235,6 +237,11 @@ export function App() {
     // Settings are global; a change here or in another window / over HTTP pushes
     // the full settings. Preserve THIS window's own workspacePath on merge (each
     // window may view a different workspace).
+    const offQaOpenGate = window.agentParty.onQaOpenGate?.((payload) => {
+      const { kind, member } = (payload as { kind?: "member" | "party"; member?: string }) || {};
+      setGateOpenRequest({ kind: kind === "party" ? "party" : "member", member: member || "", nonce: Date.now() });
+      setCurrentView("workbench");
+    });
     const offSettingsUpdate = window.agentParty.onSettingsUpdate?.((payload) => {
       const incoming = payload as InitialAppState["settings"];
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
@@ -262,6 +269,7 @@ export function App() {
       offUsageUpdate?.();
       offQaLayout();
       offQaOpenSub();
+      offQaOpenGate?.();
       offNavigate();
       offWorkspaceChoose();
       offNewSession();
@@ -396,8 +404,8 @@ export function App() {
     setState((current) => ({ ...current, party }));
   }
 
-  async function createParty(name?: string) {
-    const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티" });
+  async function createParty(name?: string, gate?: PartyGate) {
+    const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티", gate });
     await applyPartyResult(result);
     setCurrentView("workbench");
   }
@@ -510,6 +518,11 @@ export function App() {
 
   async function saveCompactDefault(setting: AutoCompactSetting) {
     const settings = await window.agentParty.updateSettings({ compactDefault: setting });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  async function saveGateDefault(reviewer: GateReviewer) {
+    const settings = await window.agentParty.updateSettings({ gateDefaults: reviewer });
     setState((current) => ({ ...current, settings }));
   }
 
@@ -714,6 +727,14 @@ export function App() {
       // Re-arm the trigger so a fresh threshold takes effect immediately.
       autoArmedRef.current[name] = true;
       void window.agentParty.setMemberAutoCompact(name, setting ?? null);
+    },
+    setMemberGate(name, patch) {
+      // Persist through the shared party-action path; party:update reflects the
+      // new effective gate into every member view + the gate manager.
+      void window.agentParty.setMemberGate(name, patch);
+    },
+    setPartyGate(partyId, gate) {
+      void window.agentParty.setPartyGate(partyId, gate);
     },
     closeSession(name) {
       // Closing the tab tears down the member's session and marks it closed, so
@@ -942,12 +963,14 @@ export function App() {
                 onRefreshCodexModels={() => void window.agentParty.refreshCodexModels()}
                 defaultProfile={defaultMemberProfileOf(state.settings)}
                 harnessDefaults={state.settings.harnessDefaults}
+                gateDefaults={state.settings.gateDefaults}
                 debugEnabled={state.settings.debugEnabled}
                 sidebarOpen={sidebarOpen}
                 layoutRequest={layoutRequest}
                 subagentOpenRequest={subagentOpenRequest}
+                gateOpenRequest={gateOpenRequest}
                 actions={actions}
-                onCreateParty={(name) => void createParty(name)}
+                onCreateParty={(name, gate) => void createParty(name, gate)}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
                 onRemoveParty={(partyId) => void removePartyDirect(partyId)}
@@ -1015,6 +1038,7 @@ export function App() {
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
+                  onSaveGateDefault={saveGateDefault}
                 />
               )}
               {currentView === "automation" && (

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { GateReviewer } from "../../shared/messageGate";
 import { HARNESS_IDS } from "../../shared/types";
+import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { RouteLike, routeKey } from "../workbench/routes";
@@ -249,7 +251,7 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
 
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -260,6 +262,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
+  onSaveGateDefault: (reviewer: GateReviewer) => void;
 }) {
   const [copied, setCopied] = useState(false);
   function copyRouter() {
@@ -298,6 +301,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </div>
       </section>
 
+      {/* Message Gate reviewer default (model + effort, no harness — headless) */}
+      <section className="set-card">
+        <div className="set-card-label">Message Gate</div>
+        <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
+      </section>
+
       {/* global auto-compact default (inherited by members without their own) */}
       <section className="set-card">
         <div className="set-card-label">Auto-compact</div>
@@ -318,6 +327,58 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             onSave={(patch) => onSaveHarnessDefaults(id, patch)}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Message Gate reviewer default — model + effort only (NO harness; it runs
+ * headless as a raw completion). Any gate-on member without its own reviewer
+ * uses this. Recommends a cheap/fast model (Haiku).
+ */
+function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; reviewer: GateReviewer; onSave: (reviewer: GateReviewer) => void }) {
+  // One entry per catalog model (headless → harness irrelevant; prefer claude-code).
+  const models = useMemo(() => {
+    const byModel = new Map<string, RouteLike>();
+    for (const route of routes) {
+      const existing = byModel.get(route.model);
+      if (!existing || (route.harnessId || "claude-code") === "claude-code") {
+        byModel.set(route.model, route);
+      }
+    }
+    return Array.from(byModel.values());
+  }, [routes]);
+  const selected = models.find((route) => route.model === reviewer.model);
+  const effortOptions = selected?.capabilities?.effort?.options ?? [];
+  const recommended = reviewer.model === "haiku";
+
+  function pickModel(model: string) {
+    const route = models.find((r) => r.model === model);
+    const options = route?.capabilities?.effort?.options ?? [];
+    const nextEffort = options.some((o) => o.id === reviewer.effort) ? reviewer.effort : route?.capabilities?.effort?.defaultValue || options[0]?.id || "low";
+    onSave({ model, effort: nextEffort });
+  }
+
+  return (
+    <div className="set-gate-defaults">
+      <div className="set-inline-note">
+        <MessageGateIcon size={14} />
+        <span>게이트가 켜진 멤버가 자체 리뷰어를 지정하지 않으면 이 기본 리뷰어로 메시지를 심사합니다. <b>저렴하고 빠른 모델(Haiku)</b>을 권장합니다. 하네스 없이 헤드리스로 실행됩니다.</span>
+      </div>
+      <div className="set-harness-pick">
+        <label className="set-field">
+          <span className="set-field-label">리뷰어 모델 {recommended && <span className="set-reco-badge">권장</span>}</span>
+          <select className="set-select" value={reviewer.model} onChange={(event) => pickModel(event.target.value)}>
+            {models.map((route) => <option key={route.model} value={route.model}>{route.label || route.model}</option>)}
+          </select>
+        </label>
+        <label className="set-field">
+          <span className="set-field-label">리뷰어 effort</span>
+          <select className="set-select" value={reviewer.effort} disabled={effortOptions.length === 0} onChange={(event) => onSave({ ...reviewer, effort: event.target.value })}>
+            {(effortOptions.length ? effortOptions : [{ id: reviewer.effort, label: reviewer.effort }]).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </select>
+        </label>
       </div>
     </div>
   );

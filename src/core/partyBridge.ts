@@ -49,20 +49,34 @@ export interface PartyPermissionRequest {
   codexPolicy?: CodexPolicy;
 }
 
+/**
+ * A Message Gate override patch for one member. Each axis is optional; a `null`
+ * clears that axis back to inherit (party rule / settings reviewer default).
+ * See `shared/messageGate.ts`.
+ */
+export interface PartyGatePatch {
+  mode?: "inherit" | "on" | "off";
+  rule?: string | null;
+  reviewer?: { model: string; effort: string } | null;
+}
+
 // The capability surface a hosted member can drive. Every method routes through
 // the same `AppController`/`PartyApplicationService` path the UI and HTTP use,
 // and resolves to a plain result (never throws) so tool handlers stay trivial.
 export interface PartyBridge {
   /** Fire-and-forget send to another member; errors if target is off/missing.
    *  `interrupt: true` stops the recipient's in-flight turn first so the message
-   *  is handled immediately instead of queueing behind it. */
-  send(from: string, to: string, content: string, interrupt?: boolean): Promise<PartyToolResult>;
+   *  is handled immediately instead of queueing behind it. `force: true` bypasses
+   *  the Message Gate review (surfaced as a "forced" badge). */
+  send(from: string, to: string, content: string, interrupt?: boolean, force?: boolean, forceReason?: string): Promise<PartyToolResult>;
   /** Create a member in the caller's own party and auto-start its session. */
   createMember(request: PartyCreateMemberRequest): Promise<PartyToolResult>;
   /** Remove a member from the caller's own party (cannot remove `main`). */
   removeMember(name: string): Promise<PartyToolResult>;
   /** Change another member's permission policy in the caller's own party. */
   setPermission(name: string, request: PartyPermissionRequest): Promise<PartyToolResult>;
+  /** Set another member's Message Gate override (mode / rule / reviewer). */
+  gateSet(name: string, patch: PartyGatePatch): Promise<PartyToolResult>;
   /** List the caller's party members and their status. */
   list(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options. */
@@ -79,7 +93,7 @@ export interface PartyBridge {
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -87,6 +101,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for a Claude Code member, or codexPolicy for a Codex member. Call list-models to inspect each route's harness and permission contract.",
+  "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   list: "List your party's members and their current status.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
@@ -101,6 +116,8 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       to: { type: "string", description: "Recipient member name in your party." },
       content: { type: "string", description: "Message body." },
       interrupt: { type: "boolean", description: "Stop the recipient's in-flight turn first so the message is handled immediately. Default false: the message QUEUES and is only seen after the recipient finishes its current turn (a Codex member picks it up at its next tool call). Set true only when the message cannot wait for the current turn to end." },
+      force: { type: "boolean", description: "Bypass the Message Gate review and deliver even if your gate would reject. Use ONLY when the message genuinely must go through; it is surfaced as a 'forced' badge. Default false." },
+      forceReason: { type: "string", description: "Why you forced past the gate (recorded and shown). Provide when force=true." },
     },
     required: ["to", "content"],
     additionalProperties: false,
@@ -153,6 +170,26 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
           guardian: { type: "boolean" },
         },
         required: ["sandbox", "approval", "guardian"],
+        additionalProperties: false,
+      },
+    },
+    required: ["name"],
+    additionalProperties: false,
+  },
+  "gate-set": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Target member name in your party." },
+      mode: { type: "string", enum: ["inherit", "on", "off"], description: "inherit = follow the party gate; on/off = override just enablement." },
+      rule: { type: ["string", "null"], description: "Communication rule the reviewer enforces for this member's outgoing messages. null = inherit the party rule." },
+      reviewer: {
+        type: ["object", "null"],
+        description: "Custom headless reviewer for this member (null = use the settings default).",
+        properties: {
+          model: { type: "string", description: "Model id from list-models." },
+          effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+        },
+        required: ["model", "effort"],
         additionalProperties: false,
       },
     },
@@ -231,7 +268,14 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!to || !content) {
         return { ok: false, error: "send requires string arguments: to, content." };
       }
-      return bridge.send(identity.member, to, content, input.interrupt === true);
+      return bridge.send(
+        identity.member,
+        to,
+        content,
+        input.interrupt === true,
+        input.force === true,
+        typeof input.forceReason === "string" ? input.forceReason : undefined,
+      );
     }
     case "member-create": {
       const memberName = typeof input.name === "string" ? input.name : "";
@@ -267,6 +311,27 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
         codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
       });
+    }
+    case "gate-set": {
+      const memberName = typeof input.name === "string" ? input.name : "";
+      if (!memberName) {
+        return { ok: false, error: "gate-set requires string argument: name." };
+      }
+      const patch: PartyGatePatch = {};
+      if (input.mode === "inherit" || input.mode === "on" || input.mode === "off") {
+        patch.mode = input.mode;
+      }
+      if ("rule" in input) {
+        patch.rule = input.rule === null ? null : typeof input.rule === "string" ? input.rule : undefined;
+      }
+      if ("reviewer" in input) {
+        patch.reviewer = input.reviewer === null
+          ? null
+          : input.reviewer && typeof input.reviewer === "object"
+            ? input.reviewer as { model: string; effort: string }
+            : undefined;
+      }
+      return bridge.gateSet(memberName, patch);
     }
     case "list":
       return bridge.list();
@@ -321,6 +386,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
     `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
     `- \`${tool("member-permission")}\` — change another member's permission; use the member's harness from \`${tool("list-models")}\` to choose \`permissionMode\` (Claude Code) or \`codexPolicy\` (Codex).`,
+    `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
     `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
     "",
@@ -331,6 +397,13 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- To reply or initiate, call \`${tool("send")}\` with the recipient's member name. Replies are asynchronous: the other member's response arrives later as its own incoming message.`,
     "- **Turn timing (read this to avoid \"tangled\" turns).** Each member handles ONE turn at a time. A message you send lands in the recipient's queue and is only read when their CURRENT turn ends — for a Codex member, at its next tool call. So right after you send: they have NOT seen it yet if they were busy, and a slow reply means they are still finishing earlier work, not that your message was dropped. It will be handled in order once their turn completes.",
     `- Before assuming a message was missed, check \`${tool("member-status")}\` (or \`${tool("list")}\`) to see if the member is busy. When a message genuinely cannot wait for their current turn, use \`interrupt: true\` on \`${tool("send")}\`/\`${tool("broadcast")}\`, or call \`${tool("interrupt")}\` — this stops their turn so your message is seen immediately.`,
+    "",
+    "## Message Gate — your outgoing messages may be reviewed",
+    `- Your party may enable a **Message Gate**: before a message you send (\`${tool("send")}\` or \`${tool("broadcast")}\`) is delivered, a lightweight reviewer model checks it against the party's communication rules (e.g. "be concise", "don't route through the orchestrator — talk to the owner directly").`,
+    `- If the reviewer **rejects** your message, it is NOT delivered and the \`${tool("send")}\` tool returns \`{ok:false, error:"<reason>"}\`. The reason tells you exactly which rule you broke and how to fix it — rewrite your message to comply and send again. This is normal, not an error on your side.`,
+    `- If a message genuinely must go through even though it would be rejected (a real blocker/urgent alert), call \`${tool("send")}\` with \`force: true\` and a short \`forceReason\`. Use this sparingly — every forced send is surfaced to the user.`,
+    "- The gate is fail-open: if the reviewer itself errors, your message is delivered unreviewed (with a visible notice), so a gate problem never blocks your work.",
+    `- You can also configure another member's gate with \`${tool("gate-set")}\` when coordinating (e.g. tighten or relax a teammate's outgoing-message rules).`,
   ].join("\n");
 }
 
@@ -365,8 +438,11 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         to: z.string().describe("Recipient member name in your party."),
         content: z.string().describe("Message body."),
         interrupt: z.boolean().optional().describe("Stop the recipient's in-flight turn first (default false: the message queues behind it)."),
+        force: z.boolean().optional().describe("Bypass the Message Gate review and deliver even if your gate would reject (surfaced as a 'forced' badge). Use only when the message must go through. Default false."),
+        forceReason: z.string().optional().describe("Why you forced past the gate (recorded and shown). Provide when force=true."),
       },
-      async (args: { to: string; content: string; interrupt?: boolean }) => envelope(await bridge.send(identity.member, args.to, args.content, args.interrupt === true)),
+      async (args: { to: string; content: string; interrupt?: boolean; force?: boolean; forceReason?: string }) =>
+        envelope(await bridge.send(identity.member, args.to, args.content, args.interrupt === true, args.force === true, args.forceReason)),
     ),
     tool(
       "member-create",
@@ -408,6 +484,20 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         }).optional().describe("Codex permission policy."),
       },
       async (args: { name: string } & PartyPermissionRequest) => envelope(await bridge.setPermission(args.name, args)),
+    ),
+    tool(
+      "gate-set",
+      "Set another member's Message Gate (the delivery-time reviewer of that member's OUTGOING messages). mode: inherit|on|off. rule: the communication rule to enforce (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
+      {
+        name: z.string().describe("Target member name in your party."),
+        mode: z.enum(["inherit", "on", "off"]).optional().describe("inherit = follow the party gate; on/off overrides just enablement."),
+        rule: z.string().nullable().optional().describe("Communication rule the reviewer enforces (null = inherit the party rule)."),
+        reviewer: z.object({
+          model: z.string().describe("Model id from list-models."),
+          effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+        }).nullable().optional().describe("Custom headless reviewer (null = use the settings default)."),
+      },
+      async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
     ),
     tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
     tool(
