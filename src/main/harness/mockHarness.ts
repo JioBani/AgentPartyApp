@@ -148,6 +148,12 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     this.inject({ type: "status", status: "interrupted", at: now() });
   }
 
+  /** The mock has no harness to outlive a turn, so this is just an idle reset. */
+  forceStop(): void {
+    this.setStatus("idle");
+    this.inject({ type: "status", status: "force-stopped", at: now() });
+  }
+
   restart(): void {
     this.snapshot.turnCount = 0;
     this.snapshot.pendingApprovalCount = 0;

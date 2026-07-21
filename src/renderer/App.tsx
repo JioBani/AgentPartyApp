@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, PartyMember, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
@@ -14,7 +14,7 @@ import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
-import { appendBlock, applyEvents, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -340,6 +340,45 @@ export function App() {
     }
   }, [members, visibleMembers, restoreRetryNonce]);
 
+  // Serializes saves per member. Two overlapping saves for one member could land
+  // out of order and persist the OLDER transcript last, so each member's saves
+  // run in a chain; the delta is computed when a link actually runs.
+  const saveChainRef = useRef<Record<string, Promise<void>>>({});
+
+  /**
+   * Persists one member's transcript as an APPEND when possible.
+   *
+   * `restoredByMember[key]` mirrors what is on disk, and transcript blocks are
+   * immutable (events rebuild the blocks they touch), so the unchanged prefix is
+   * found by IDENTITY — everything after it is what needs saving. Sending only
+   * that matters because the engine RPC is a single stdio pipe shared with
+   * `sendUserTurn`: a full save of a 25 MB transcript queued ahead of a user turn
+   * delayed it by 33 seconds, with no reasoning shown because the turn had not
+   * reached the harness yet.
+   */
+  const persistTranscript = useCallback(async (name: string, key: string, blocks: TranscriptBlock[]) => {
+    const persisted = restoredRef.current[key];
+    if (persisted === blocks) {
+      return;
+    }
+    const save = buildTranscriptSave(persisted, blocks);
+    try {
+      let result = await window.agentParty.saveMemberTranscript?.(name, save);
+      if (result && !result.applied && save.afterId) {
+        // The engine could not anchor the append against its stored transcript.
+        // Resend in full rather than let the two sides silently diverge.
+        result = await window.agentParty.saveMemberTranscript?.(name, { blocks });
+      }
+      if (result && !result.applied) {
+        setPartyNotice(`'${name}' 대화 기록 저장 실패 (${result.reason || "unknown"})`);
+        return;
+      }
+      setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
+    } catch (error) {
+      setPartyNotice(`'${name}' 대화 기록 저장 실패 — ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, []);
+
   // Persist each active member's transcript to disk (debounced), and keep the
   // restored copy in sync so closing the member (or the app) preserves it. The
   // main side also captures the harness thread id here, so a reopen resumes it.
@@ -355,14 +394,18 @@ export function App() {
         if (restoredRef.current[key] === undefined) {
           continue;
         }
-        if (blocks && blocks.length) {
-          void window.agentParty.saveMemberTranscript?.(member.name, blocks);
-          setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
+        // Unchanged since the last persist. This effect fires on ANY session's
+        // events, so without this test one member's streaming re-saved every
+        // other member's transcript too.
+        if (!blocks || !blocks.length || restoredRef.current[key] === blocks) {
+          continue;
         }
+        const chain = saveChainRef.current[key] || Promise.resolve();
+        saveChainRef.current[key] = chain.then(() => persistTranscript(member.name, key, blocks));
       }
     }, 1200);
     return () => clearTimeout(timer);
-  }, [logsBySession]);
+  }, [logsBySession, persistTranscript]);
 
   // Auto-dismiss the status toast so a transient notice doesn't linger.
   useEffect(() => {
@@ -693,6 +736,10 @@ export function App() {
     interrupt(name) {
       const sessionId = sessionIdFor(name);
       if (sessionId) void window.agentParty.interrupt(sessionId);
+    },
+    forceStop(name) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) void window.agentParty.forceStop(sessionId);
     },
     restart(name) {
       const sessionId = sessionIdFor(name);

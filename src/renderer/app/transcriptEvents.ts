@@ -1,4 +1,4 @@
-import type { SessionView } from "../../shared/types";
+import type { SessionView, TranscriptSave } from "../../shared/types";
 import type { TranscriptBlock } from "../workbench/types";
 
 // The party write-tools as the agent sees them (mcp__<server>__<tool>). Mirrors
@@ -301,4 +301,32 @@ function partyToolResult(event: any): { state: "ok" | "failed" | undefined; erro
 
 export function nowTime(): string {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Builds the persist payload for a member whose transcript changed.
+ *
+ * Blocks are rebuilt immutably by {@link applyEvents} — a block the events did
+ * not touch keeps its identity — so the longest identity-equal prefix of
+ * `persisted` and `next` is exactly the part already on disk. Everything after
+ * it becomes an anchored append, turning a multi-MB save into a few KB.
+ *
+ * Falls back to a full save when there is no usable anchor (nothing in common,
+ * or the anchor block carries no id), because an append that cannot be anchored
+ * is not something the engine can apply.
+ */
+export function buildTranscriptSave(persisted: TranscriptBlock[] | undefined, next: TranscriptBlock[]): TranscriptSave {
+  if (!persisted || !persisted.length) {
+    return { blocks: next };
+  }
+  let common = 0;
+  const limit = Math.min(persisted.length, next.length);
+  while (common < limit && persisted[common] === next[common]) {
+    common += 1;
+  }
+  const afterId = common > 0 ? persisted[common - 1]?.id : undefined;
+  if (!afterId) {
+    return { blocks: next };
+  }
+  return { afterId, blocks: next.slice(common) };
 }

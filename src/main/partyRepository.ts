@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { PartyDefinition, PartyMember, PartyMessage } from "../shared/types";
+import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import { log } from "./logger";
 
 /**
@@ -42,6 +42,14 @@ interface PartyDetail {
 const initialState: StoredPartyState = { version: 2, parties: [], members: [], messages: [] };
 
 export class PartyRepository {
+  /**
+   * Mirror of each transcript file's last written blocks, keyed by file path.
+   * Lets an anchored append resolve its anchor without re-reading and re-parsing
+   * the file on every save. Safe because this process is the sole writer for its
+   * workspace; a cold entry falls back to a real read.
+   */
+  private readonly lastWritten = new Map<string, unknown[]>();
+
   /**
    * Composes the whole party state from the shared index + each party's detail
    * file. Migrates a legacy single-blob `state.json` (new root or the older
@@ -127,10 +135,48 @@ export class PartyRepository {
     }
   }
 
-  writeTranscript(workspacePath: string, partyId: string, memberName: string, blocks: unknown[]): void {
-    const file = this.transcriptPath(workspacePath, partyId, memberName);
-    const capped = (Array.isArray(blocks) ? blocks.slice(-TRANSCRIPT_CAP) : []).map(stripAttachmentBytes);
-    this.writeJsonAtomic(file, { version: 1, blocks: capped });
+  /**
+   * Persists a member's transcript, either wholesale or as an append.
+   *
+   * With `afterId`, `blocks` replace everything stored after that block — the
+   * caller ships only what changed instead of the entire transcript. The anchor
+   * is resolved against {@link lastWritten}, a write-through mirror of the file,
+   * so an append costs no read: this process is the only writer for its
+   * workspace, and the head-trimming done by {@link TRANSCRIPT_CAP} means the
+   * caller's indices do NOT match the file's — only ids can anchor safely.
+   *
+   * An anchor that is not found is NOT silently promoted to a full write: that
+   * would persist a fragment as if it were the whole history. It reports
+   * `applied: false` so the caller resends in full.
+   */
+  writeTranscript(workspacePath: string, partyId: string, memberName: string, save: TranscriptSave): TranscriptSaveResult {
+    const incoming = Array.isArray(save.blocks) ? save.blocks : [];
+    let next = incoming;
+    if (save.afterId) {
+      const stored = this.storedTranscript(workspacePath, partyId, memberName);
+      const anchor = findLastBlockIndexById(stored, save.afterId);
+      if (anchor < 0) {
+        log("warn", "party", "transcript append could not be anchored; requesting a full save", {
+          partyId, memberName, afterId: save.afterId, storedBlocks: stored.length,
+        });
+        return { applied: false, reason: "anchor-not-found" };
+      }
+      next = stored.slice(0, anchor + 1).concat(incoming);
+    }
+    const capped = next.slice(-TRANSCRIPT_CAP).map(stripAttachmentBytes);
+    this.writeJsonAtomic(this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
+    this.lastWritten.set(this.transcriptKey(workspacePath, partyId, memberName), capped);
+    return { applied: true };
+  }
+
+  /** The current on-disk blocks, from the write-through mirror when warm. */
+  private storedTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
+    const cached = this.lastWritten.get(this.transcriptKey(workspacePath, partyId, memberName));
+    return cached ?? this.readTranscript(workspacePath, partyId, memberName);
+  }
+
+  private transcriptKey(workspacePath: string, partyId: string, memberName: string): string {
+    return this.transcriptPath(workspacePath, partyId, memberName);
   }
 
   // ---- internals ---------------------------------------------------------
@@ -301,6 +347,20 @@ function mustPartyId(record: { partyId?: string; name?: string; id?: string }): 
 
 function sanitizeName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+/**
+ * Index of the transcript block with `id`, searched from the end. An append's
+ * anchor is the caller's last persisted block, so it sits at or near the tail —
+ * scanning backwards makes the common case O(1)-ish instead of O(n).
+ */
+function findLastBlockIndexById(blocks: unknown[], id: string): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if ((blocks[index] as { id?: unknown } | null)?.id === id) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 /**

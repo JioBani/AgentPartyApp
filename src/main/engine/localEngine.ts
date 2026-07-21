@@ -1,4 +1,4 @@
-import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput } from "../../shared/types";
+import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import { requireCodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
@@ -100,8 +100,8 @@ export class LocalEngine implements EngineConnection {
     return this.party.getMemberTranscript(name, partyId);
   }
 
-  async saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): Promise<void> {
-    this.party.saveMemberTranscript(name, blocks, partyId);
+  async saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult> {
+    return this.party.saveMemberTranscript(name, save, partyId);
   }
 
   // --- Models ---------------------------------------------------------------
@@ -133,6 +133,10 @@ export class LocalEngine implements EngineConnection {
   // --- Session control ----------------------------------------------------
   async sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
     this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
+  }
+
+  async forceStopSession(sessionId: string): Promise<void> {
+    this.deps.sessionManager.forceStop(sessionId);
   }
 
   async interruptSession(sessionId: string): Promise<void> {

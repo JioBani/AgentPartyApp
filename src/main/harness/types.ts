@@ -11,6 +11,13 @@ export interface HarnessSession extends EventEmitter {
   /** Sends a user turn. `attachments` (images) are optional and provider-neutral. */
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void;
   interrupt(): void;
+  /**
+   * Releases a turn this harness will never close, so input stops queueing
+   * behind it. Local to the adapter — it does not stop the harness. Every
+   * harness must implement it: a wedged turn blocks input identically on all of
+   * them, and the UI offers the same manual escape hatch regardless.
+   */
+  forceStop(): void;
   restart(): void;
   compact(): void;
   dispose(): void;

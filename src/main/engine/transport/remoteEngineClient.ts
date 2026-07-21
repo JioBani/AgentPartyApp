@@ -1,5 +1,5 @@
 import type { Readable, Writable } from "node:stream";
-import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput } from "../../../shared/types";
+import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput, TranscriptSave } from "../../../shared/types";
 import type { CodexPolicy } from "../../../shared/codexPolicy";
 import type { ImageAttachment } from "../../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
@@ -112,7 +112,7 @@ export class RemoteEngineClient implements EngineConnection {
   removeMember(name: string, partyId?: string) { return this.call<Result<"removeMember">>("removeMember", name, partyId); }
   partyAction(name: string, action: string, body: any, partyId?: string) { return this.call<Result<"partyAction">>("partyAction", name, action, body, partyId); }
   getMemberTranscript(name: string, partyId?: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name, partyId); }
-  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, blocks, partyId); }
+  saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, save, partyId); }
   listCodexModels(refresh?: boolean) { return this.call<Result<"listCodexModels">>("listCodexModels", refresh); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }
@@ -120,6 +120,7 @@ export class RemoteEngineClient implements EngineConnection {
   listWorkspaceSessions() { return this.call<Result<"listWorkspaceSessions">>("listWorkspaceSessions"); }
   sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]) { return this.call<void>("sendUserTurn", sessionId, text, attachments); }
   interruptSession(sessionId: string) { return this.call<void>("interruptSession", sessionId); }
+  forceStopSession(sessionId: string) { return this.call<void>("forceStopSession", sessionId); }
   restartSession(sessionId: string) { return this.call<void>("restartSession", sessionId); }
   compactSession(sessionId: string) { return this.call<void>("compactSession", sessionId); }
   setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string) { return this.call<void>("setSessionModel", sessionId, model, providerId, runtimeModel); }

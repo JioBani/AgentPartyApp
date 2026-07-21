@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 
 const api = {
   getInitialState: () => ipcRenderer.invoke("app:getInitialState"),
@@ -19,6 +20,7 @@ const api = {
   closeSession: (sessionId: string) => ipcRenderer.invoke("session:close", sessionId),
   sendMessage: (sessionId: string, text: string, attachments?: unknown) => ipcRenderer.invoke("session:send", sessionId, text, attachments),
   interrupt: (sessionId: string) => ipcRenderer.invoke("session:interrupt", sessionId),
+  forceStop: (sessionId: string) => ipcRenderer.invoke("session:forceStop", sessionId),
   restart: (sessionId: string) => ipcRenderer.invoke("session:restart", sessionId),
   compact: (sessionId: string) => ipcRenderer.invoke("session:compact", sessionId),
   setModel: (sessionId: string, model: string, providerId?: string, runtimeModel?: string) => ipcRenderer.invoke("session:setModel", sessionId, model, providerId, runtimeModel),
@@ -53,7 +55,7 @@ const api = {
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
   setMemberAutoCompact: (name: string, autoCompact: unknown) => ipcRenderer.invoke("party:autoCompact", name, autoCompact),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
-  saveMemberTranscript: (name: string, blocks: unknown[]) => ipcRenderer.invoke("party:transcript:save", name, blocks),
+  saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   onSessionEvents: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("session:events", listener);
