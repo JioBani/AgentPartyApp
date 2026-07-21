@@ -246,7 +246,7 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "member-permission", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the nine party tools in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "member-permission", "gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the ten party tools in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
@@ -260,7 +260,7 @@ assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "t
 console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
-assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same nine party tools");
+assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same ten party tools");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
@@ -269,6 +269,10 @@ const unknownDynamic = await invokePartyTool(bridge, mainBinding.identity, "mcp_
 assert(!unknownDynamic.ok && /Unknown AgentParty tool/.test(unknownDynamic.error || ""), "Codex dispatcher rejects legacy agentparty tool names");
 const dynamicPermission = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-permission`, { name: "buddy", permissionMode: "plan" });
 assert(dynamicPermission.ok && svc.list().members.find((m) => m.name === "buddy")?.permissionMode === "plan", "Codex dispatcher routes member-permission through the shared bridge");
+// gate-set: any member may edit another member's Message Gate (cross-editable).
+const dynamicGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}gate-set`, { name: "buddy", mode: "on", rule: "Be concise." });
+const buddyGate = svc.list().members.find((m) => m.name === "buddy")?.gate;
+assert(dynamicGate.ok && buddyGate?.mode === "on" && buddyGate?.rule === "Be concise.", "gate-set routes through the bridge and persists the member override");
 
 // --- session primer: deterministic surface knowledge (no model memory) -------
 console.log("\nParty primer assertions:");
@@ -278,6 +282,8 @@ assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.inclu
 assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
 assert(primer.includes("mcp__agentparty-app__broadcast") && primer.includes("mcp__agentparty-app__member-status") && primer.includes("mcp__agentparty-app__interrupt"), "primer teaches the coordination tools (broadcast/status/interrupt)");
 assert(primer.includes("mcp__agentparty-app__member-permission"), "primer teaches agents how to change another member's permission");
+assert(/Message Gate/.test(primer) && /reject/i.test(primer) && /force: true/.test(primer), "primer explains the Message Gate (review of outgoing messages, reject→rewrite, force escape hatch)");
+assert(primer.includes("mcp__agentparty-app__gate-set"), "primer names the gate-set tool");
 assert(/interrupt: true/.test(primer), "primer explains the interrupt-and-inject send option");
 // A sent message QUEUES behind the recipient's current turn (Codex: next tool
 // call) — the primer must teach this so agents stop expecting instant delivery.

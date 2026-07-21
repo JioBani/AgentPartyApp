@@ -4647,3 +4647,324 @@ body.wb-resizing {
 .usage-pop-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .usage-settings-btn:hover { background: var(--bg-3); color: var(--text-0); }
 .usage-settings-btn:disabled { opacity: .55; cursor: default; }
+
+/* ===== Message Gate ============================================= */
+.wb-gate-accent { color: var(--accent); }
+
+.wb-gate-modal { width: min(560px, 92vw); }
+.wb-party-gate-modal { width: min(720px, 94vw); }
+.wb-new-party-modal { width: min(480px, 92vw); }
+
+.wb-gate-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.wb-flex-spacer { flex: 1 1 auto; }
+.wb-flex-spacer-end { margin-left: auto; }
+
+.wb-gate-overridden {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--live-dim);
+  color: var(--live);
+}
+
+.wb-gate-mode .wb-segment.is-off {
+  background: var(--bg-4);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.wb-gate-caption { font-size: 11.5px; color: var(--text-3); }
+.wb-gate-caption b { color: var(--text-1); }
+.wb-gate-caption b.wb-gate-accent { color: var(--accent); }
+
+.wb-gate-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px 14px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 10px;
+}
+.wb-gate-block-head { display: flex; align-items: center; gap: 8px; }
+.wb-gate-block-head strong { font-size: 12.5px; color: var(--text-1); }
+.wb-gate-hint { font-size: 11px; color: var(--text-3); }
+
+.wb-gate-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: var(--border-width) solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+.wb-gate-reset:hover { color: var(--text-0); background: var(--bg-3); }
+
+.wb-gate-textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: var(--font-sans);
+}
+.wb-gate-textarea:focus { outline: none; border-color: var(--accent-bd); }
+
+.wb-gate-warn {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--live-dim);
+  border: var(--border-width) solid var(--live-bd);
+  color: var(--text-1);
+}
+.wb-gate-warn b { color: var(--live); }
+.wb-gate-note { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.wb-gate-note .wb-mono { color: var(--text-2); }
+
+.wb-gate-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+.wb-gate-toggle-text { display: flex; align-items: center; gap: 11px; }
+.wb-gate-toggle-text strong { display: block; font-size: 13px; color: var(--text-1); }
+.wb-gate-toggle-text small { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.wb-gate-tile {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.wb-gate-default-chip {
+  padding: 8px 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.wb-gate-reviewer { display: flex; flex-direction: column; gap: 10px; }
+.wb-gate-picker-wrap { position: relative; }
+.wb-gate-picker-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wb-gate-picker-btn:hover { border-color: var(--border-strong); }
+.wb-gate-picker-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 236px;
+  overflow-y: auto;
+  padding: 6px;
+  z-index: 20;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-modal);
+}
+.wb-gate-tier { font-size: 10px; color: var(--text-3); margin-left: 8px; }
+
+.wb-gate-status-chip {
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-3);
+  color: var(--success);
+}
+.wb-gate-member-list { display: flex; flex-direction: column; gap: 6px; }
+.wb-gate-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 9px;
+}
+.wb-gate-member-row .wb-dot { background: var(--member); flex: 0 0 auto; }
+.wb-gate-member-name { width: 92px; font-size: 12.5px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-gate-inline-mode { flex: 0 0 auto; }
+.wb-gate-inline-mode .wb-segment { min-width: 50px; height: 26px; font-size: 11px; }
+.wb-gate-member-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--bg-3);
+  color: var(--text-3);
+}
+.wb-gate-member-chip.is-on { background: var(--success-dim); color: var(--success); }
+.wb-gate-member-meta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 10.5px; color: var(--text-2); }
+.wb-gate-accent-live { color: var(--live); }
+.wb-gate-member-reviewer { color: var(--text-3); }
+.wb-gate-edit-btn { height: 26px; padding: 0 12px; flex: 0 0 auto; }
+
+.wb-gate-name-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 13px;
+}
+.wb-gate-name-input:focus { outline: none; border-color: var(--accent-bd); }
+
+.set-gate-defaults { display: flex; flex-direction: column; gap: 12px; }
+.set-reco-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--success-dim);
+  color: var(--success);
+}
+
+/* Transcript gate badge (inline) */
+.wb-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: var(--border-width) solid transparent;
+}
+.wb-gate.is-live { background: var(--live-dim); border-color: var(--live-bd); }
+.wb-gate.is-accent { background: var(--accent-dim); border-color: var(--accent-bd); }
+.wb-gate.is-danger { background: var(--danger-dim); border-color: var(--danger-bd); }
+.wb-gate-head { display: flex; align-items: center; gap: 7px; }
+.wb-gate-icon { display: inline-flex; }
+.wb-gate.is-live .wb-gate-icon, .wb-gate.is-live .wb-gate-label { color: var(--live); }
+.wb-gate.is-accent .wb-gate-icon, .wb-gate.is-accent .wb-gate-label { color: var(--accent); }
+.wb-gate.is-danger .wb-gate-icon, .wb-gate.is-danger .wb-gate-label { color: var(--danger); }
+.wb-gate-label { font-size: 11px; font-weight: 700; }
+.wb-gate-route { font-size: 11px; color: var(--text-2); }
+.wb-gate-passnote { margin-left: auto; font-size: 10px; font-weight: 600; }
+.wb-gate.is-live .wb-gate-passnote { color: var(--live); }
+.wb-gate.is-accent .wb-gate-passnote { color: var(--accent); }
+.wb-gate.is-danger .wb-gate-passnote { color: var(--danger); }
+.wb-gate-caret { background: none; border: none; cursor: pointer; color: var(--text-3); padding: 0 2px; display: inline-flex; }
+.wb-gate-caret .wb-caret { transition: transform .15s; }
+.wb-gate-caret .wb-caret.is-open { transform: rotate(90deg); }
+.wb-gate-reason {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wb-gate-reason.is-open { -webkit-line-clamp: unset; overflow: visible; }
+.wb-gate-meta {
+  font-size: 10.5px;
+  color: var(--text-2);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+/* ===== Shared model catalog picker (popup, never clipped) ====== */
+.wb-model-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 8px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wb-model-picker-trigger:hover { border-color: var(--border-strong); }
+.wb-model-picker-trigger:disabled { opacity: .55; cursor: default; }
+/* Settings variant: matches the height/tone of the neighbouring .set-select controls. */
+.set-model-trigger { height: 38px; }
+
+/* The shared catalog modal is portaled to <body> and floats ABOVE everything
+   (incl. another modal + the titlebar). By default it does NOT dim the backdrop
+   (a clean floating popup); `.is-dim` opts into the standard scrim. */
+.wb-catalog-scrim { z-index: 1200; background: transparent; }
+.wb-catalog-scrim.is-dim { background: var(--scrim); }
+.wb-model-picker-pop {
+  width: min(480px, 92vw);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.wb-model-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+.wb-model-picker-search-icon { color: var(--text-3); flex: 0 0 auto; }
+.wb-model-picker-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 13px;
+}
+.wb-model-picker-search:focus { outline: none; }
+.wb-model-picker-list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

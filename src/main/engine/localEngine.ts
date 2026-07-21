@@ -52,12 +52,18 @@ export class LocalEngine implements EngineConnection {
     return this.party.removeParty(partyId);
   }
 
+  async setPartyGate(partyId: string | undefined, gate: unknown) {
+    return this.party.setPartyGate(partyId, gate);
+  }
+
   async createMember(input: CreateMemberInput) {
     return this.party.createMember(input);
   }
 
-  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<PartyMutationResult> {
-    return this.party.sendMessage(name, content, from, attachments, partyId, options);
+  async sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyMutationResult> {
+    // The programmatic/agent send path (HTTP /api/party/messages, party:send IPC)
+    // is gated; the human user turn uses sendUserMessage and is never gated.
+    return this.party.sendGatedMessage(name, content, from, attachments, partyId, options);
   }
 
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) {

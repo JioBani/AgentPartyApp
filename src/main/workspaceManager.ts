@@ -1,6 +1,10 @@
 import { PartyApplicationService } from "./application/partyApplicationService";
 import { workspaceKey } from "../shared/workspaceLocation";
 import type { SessionManager } from "./sessionManager";
+import { getSettings } from "./settings";
+import { subscriptionProxyConfig } from "../core/subscriptionProxy";
+import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
+import type { GateReviewer } from "../shared/messageGate";
 
 /**
  * The single in-memory source of truth for one workspace. All windows viewing
@@ -14,6 +18,16 @@ export class WorkspaceContext {
     this.party = new PartyApplicationService({
       sessionManager,
       getWorkspacePath: () => this.workspacePath,
+      // Headless Message Gate reviewer, bound to the LIVE router + current
+      // settings + subscription proxy — the same transports real sessions use.
+      reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
+        const settings = getSettings();
+        return reviewGateMessage(message, reviewer, {
+          routerBaseUrl: sessionManager.routerBaseUrl(),
+          routerAuthToken: settings.routerAuthToken,
+          subscriptionProxy: subscriptionProxyConfig(),
+        });
+      },
     });
   }
 }

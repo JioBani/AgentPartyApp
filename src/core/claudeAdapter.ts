@@ -50,6 +50,14 @@ export interface ClaudeAdapterOptions {
   consumeRouterTurnUsage?: (accountingKey: string) => RouterTurnUsage | undefined;
   resumeSessionId?: string;
   /**
+   * Identifies which usage FAN-IN source this adapter's `usage_limit` events
+   * belong to. SessionManager keeps one active source per provider and drops
+   * events from any other, so a background poller and a foreground session cannot
+   * fight over the meter. Stamped onto every emitted `usage_limit`; when absent
+   * the event carries no source and the filter lets it through unchanged.
+   */
+  usageSourceId?: string;
+  /**
    * When this session represents a party member, the bridge + identity that
    * expose the in-process party tools (send / member-create / …) to its agent.
    * Both must be present for the `agentparty-app` MCP server to be attached.
@@ -854,7 +862,7 @@ export class ClaudeAdapter extends EventEmitter {
       const rateLimitsAvailable = usage?.rate_limits_available;
       const windows = claudeUsageWindows(usage?.rate_limits);
       if (windows.length) {
-        this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: true, at: now() });
+        this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: true, at: now(), sourceId: this.options.usageSourceId });
         this.lastUsageStatus = "";
         return;
       }
@@ -866,7 +874,7 @@ export class ClaudeAdapter extends EventEmitter {
       if (this.hasLiveUsageWindows) {
         return;
       }
-      this.emitEvent({ type: "usage_limit", provider: "claude", windows: [], available: rateLimitsAvailable !== false, at: now() });
+      this.emitEvent({ type: "usage_limit", provider: "claude", windows: [], available: rateLimitsAvailable !== false, at: now(), sourceId: this.options.usageSourceId });
       this.emitUsageStatus(
         rateLimitsAvailable === false
           ? "Claude plan rate limits are not available for this auth mode."
@@ -1004,7 +1012,7 @@ export class ClaudeAdapter extends EventEmitter {
       const window = rateLimitWindowFrom(info);
       if (window) {
         this.hasLiveUsageWindows = true;
-        this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now() });
+        this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now(), sourceId: this.options.usageSourceId });
         this.maybeEmitRateLimitDiagnostic(info, window);
       }
     }

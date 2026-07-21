@@ -67,9 +67,12 @@ const mkView = (turnCount) => ({
 });
 
 function render(view) {
+  // ModelCatalogModal (which RuntimeModal wraps) portals to document.body, so
+  // clear it each render for isolation and query the body as the root.
+  document.body.innerHTML = "";
   const host = document.createElement("div"); document.body.appendChild(host);
   reactDom.createRoot(host).render(React.createElement(RuntimeModal, { view, routes, debugEnabled: false, actions: {}, onClose: () => {} }));
-  return host;
+  return document.body;
 }
 const codexRow = (host) => [...host.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes("GPT-5"));
 const codexSegment = (host) => [...host.querySelectorAll(".wb-segment")].find((b) => (b.textContent || "") === "Codex");
@@ -121,15 +124,16 @@ const solView = {
   status: "idle", unread: 0, pendingApproval: false, busy: false, model: "gpt-5.6-sol", effort: "medium", permissionMode: "default", transcript: [],
   session: { id: "s2", title: "t", workspace: "/w", snapshot: { id: "s2", cwd: "/w", model: "gpt-5.6-sol", effort: "medium", status: "idle", startedAt: "", debugMode: false, turnCount: 3, queuedTurnCount: 0 } },
 };
+document.body.innerHTML = "";
 const solHost = document.createElement("div"); document.body.appendChild(solHost);
 reactDom.createRoot(solHost).render(React.createElement(RuntimeModal, { view: solView, routes: solRoutes, debugEnabled: false, actions: {}, onClose: () => {} }));
 await new Promise((r) => setTimeout(r, 80));
-const activeEffort = () => [...solHost.querySelectorAll(".wb-segment.is-active")].map((b) => b.textContent).filter((t) => ["low", "medium", "high"].includes(t))[0];
+const activeEffort = () => [...document.body.querySelectorAll(".wb-segment.is-active")].map((b) => b.textContent).filter((t) => ["low", "medium", "high"].includes(t))[0];
 assert(activeEffort() === "medium", `modal opens on the member's CURRENT effort (medium), not the model default (got ${activeEffort()})`);
-const applyBtn = () => [...solHost.querySelectorAll("button")].find((b) => b.textContent === "Apply");
+const applyBtn = () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Apply");
 assert(applyBtn()?.disabled === true, "an untouched modal is NOT dirty (Apply disabled)");
 // Selecting another model stages ITS default; selecting back restores the member's value.
-const rowOf = (label) => [...solHost.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes(label));
+const rowOf = (label) => [...document.body.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes(label));
 click(rowOf("GPT-5.4"));
 await new Promise((r) => setTimeout(r, 80));
 assert(activeEffort() === "low", "a DIFFERENT model stages its own default effort");

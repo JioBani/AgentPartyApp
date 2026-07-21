@@ -75,7 +75,15 @@ PartyApplicationService.
 `member-create` accepts an explicit initial `permissionMode` or `codexPolicy`.
 `member-permission` lets a member change another member's persisted permission;
 both Claude and Codex tool implementations route it through the same
-`PartyApplicationService.setMemberPermission` method. `list-models` reports each
+`PartyApplicationService.setMemberPermission` method.
+`send`/`broadcast` also accept `force: true` + `forceReason` to bypass the
+**Message Gate** (the delivery-time reviewer of a member's OUTGOING messages —
+see `docs/MESSAGE_GATE.md`); a gate rejection comes back as `{ok:false, error:<reason>}`
+so the sender rewrites. `gate-set` lets a member set another member's gate
+(`mode` inherit|on|off, `rule`, `reviewer {model,effort}`; `null` clears an axis
+to inherit) via `PartyApplicationService.setMemberGate`. The session primer
+(`buildPartyPrimer`) teaches all of this so a member knows its outgoing messages
+may be reviewed and how to respond. `list-models` reports each
 route's concrete `executionHarness` and the permission schema/defaults. A
 cross-routed model never changes this value: Claude Code + GPT keeps Claude
 permission modes, while Codex + Claude keeps Codex sandbox/approval policy.
@@ -137,9 +145,11 @@ the UI uses the same controller path:
 - POST /api/party/members/:name/start
 - POST /api/party/members/:name/send
 - POST /api/party/members/:name/permission
+- POST /api/party/members/:name/gate        (Message Gate override: mode/rule/reviewer)
+- POST /api/parties/:id/gate                (party-wide Message Gate: enabled/rule)
 - POST /api/party/members/:name/close
 - POST /api/party/members/:name/remove
-- POST /api/party/messages
+- POST /api/party/messages                  (member send is gated; force/forceReason to bypass)
 
 Keep src/shared/apiSpec.ts and docs/API.md updated whenever this surface changes.
 

@@ -48,6 +48,10 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
     } else if (event.type === "turn_complete") {
       const cost = event.cost ? ` - ${event.cost.label}` : "";
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: `turn complete${cost}${event.stopReason ? ` - ${event.stopReason}` : ""}`, at: nowTime() });
+    } else if (event.type === "gate") {
+      // Message Gate outcome for an outgoing send — an inline badge in the
+      // SENDER's transcript (never part of any model context).
+      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "gate", gate: event.gate, to: event.to, from: event.from, reason: event.reason, rule: event.rule, errcode: event.errcode, at: nowTime() });
     } else if (event.type === "error") {
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
     }

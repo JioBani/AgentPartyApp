@@ -100,8 +100,9 @@ export class RemoteEngineClient implements EngineConnection {
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }
   removeParty(partyId: string) { return this.call<Result<"removeParty">>("removeParty", partyId); }
+  setPartyGate(partyId: string | undefined, gate: unknown) { return this.call<Result<"setPartyGate">>("setPartyGate", partyId, gate); }
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
-  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId, options); }
+  sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId, options); }
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments, partyId); }
   closeMember(name: string, partyId?: string) { return this.call<Result<"closeMember">>("closeMember", name, partyId); }
   resumeMember(name: string, partyId?: string) { return this.call<Result<"resumeMember">>("resumeMember", name, partyId); }

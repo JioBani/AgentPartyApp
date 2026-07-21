@@ -27,6 +27,9 @@ import { Panel } from "./Panel";
 import { CreateMemberInput, PartySidebar } from "./PartySidebar";
 import { RuntimeModal } from "./RuntimeModal";
 import { McpModal } from "./McpModal";
+import { MessageGateModal } from "./MessageGateModal";
+import { PartyGateModal } from "./PartyGateModal";
+import type { GateReviewer, PartyGate } from "../../shared/messageGate";
 import { CompactModal } from "./AutoCompactEditor";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 
@@ -41,14 +44,18 @@ interface WorkbenchProps {
   defaultProfile: DefaultMemberProfile;
   /** Per-harness creation defaults, so the wizard seeds each harness's default. */
   harnessDefaults: Record<string, HarnessDefaults>;
+  /** Settings reviewer default (model + effort) for the Message Gate. */
+  gateDefaults: GateReviewer;
   debugEnabled: boolean;
   sidebarOpen: boolean;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
   /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
   subagentOpenRequest?: { member: string; subId: string; nonce: number } | null;
+  /** QA-driven "open a Message Gate modal" (member editor / party manager); applied on `nonce` change. */
+  gateOpenRequest?: { kind: "member" | "party"; member: string; nonce: number } | null;
   actions: WorkbenchActions;
-  onCreateParty: (name: string) => void;
+  onCreateParty: (name: string, gate?: PartyGate) => void;
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
   onRemoveParty: (partyId: string) => void;
@@ -102,7 +109,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -111,6 +118,8 @@ export function Workbench(props: WorkbenchProps) {
   const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
+  const [gateTarget, setGateTarget] = useState<string | null>(null);
+  const [partyGateTarget, setPartyGateTarget] = useState<string | null>(null);
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
@@ -164,6 +173,20 @@ export function Workbench(props: WorkbenchProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subagentOpenRequest?.nonce]);
+
+  // QA: open a Message Gate modal (member editor / party manager) over HTTP so an
+  // agent can drive the real UI route + screenshot it. See docs/E2E_TESTING.md.
+  useEffect(() => {
+    if (!gateOpenRequest) {
+      return;
+    }
+    if (gateOpenRequest.kind === "party") {
+      setPartyGateTarget(gateOpenRequest.member || activePartyId || null);
+    } else if (gateOpenRequest.member) {
+      setGateTarget(gateOpenRequest.member);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateOpenRequest?.nonce]);
 
   function onSidebarResizeDown(event: ReactPointerEvent) {
     sidebarResizeRef.current = { startX: event.clientX, startWidth: sidebarWidth };
@@ -380,6 +403,9 @@ export function Workbench(props: WorkbenchProps) {
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
   const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
   const compactView = compactTarget ? viewMap.get(compactTarget) : undefined;
+  const gateView = gateTarget ? viewMap.get(gateTarget) : undefined;
+  const activeParty = parties.find((party) => party.id === activePartyId);
+  const gateParty = partyGateTarget ? parties.find((party) => party.id === partyGateTarget) : undefined;
   const canAddAny = views.some((view) => !openMembers.has(view.name));
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
@@ -409,6 +435,7 @@ export function Workbench(props: WorkbenchProps) {
             onRestartMember={(member) => actions.restart(member)}
             onRemoveMember={onRemoveMember}
             onRemoveParty={onRemoveParty}
+            onOpenPartyGate={setPartyGateTarget}
             onCollapse={() => onToggleSidebar(false)}
           />
           <div className="wb-sidebar-resize" title="사이드바 너비 조정" onPointerDown={onSidebarResizeDown} />
@@ -454,6 +481,7 @@ export function Workbench(props: WorkbenchProps) {
               onOpenRuntime={setRuntimeTarget}
               onOpenMcp={setMcpTarget}
               onOpenCompact={setCompactTarget}
+              onOpenGate={setGateTarget}
               onTabPointerDown={onTabPointerDown}
               openSubId={subUi.open[panel.active]}
               subDockCollapsed={subUi.collapsed[panel.active]}
@@ -500,6 +528,29 @@ export function Workbench(props: WorkbenchProps) {
           view={compactView}
           actions={actions}
           onClose={() => setCompactTarget(null)}
+        />
+      )}
+
+      {gateView && (
+        <MessageGateModal
+          view={gateView}
+          routes={routes}
+          partyGate={activeParty?.gate}
+          gateDefaults={gateDefaults}
+          onApply={(patch) => actions.setMemberGate(gateView.name, patch)}
+          onClose={() => setGateTarget(null)}
+        />
+      )}
+
+      {gateParty && (
+        <PartyGateModal
+          party={gateParty}
+          members={views}
+          gateDefaults={gateDefaults}
+          onSetPartyGate={(gate) => actions.setPartyGate(gateParty.id, gate)}
+          onSetMemberGate={(name, mode) => actions.setMemberGate(name, { mode })}
+          onOpenMemberGate={(name) => { setPartyGateTarget(null); setGateTarget(name); }}
+          onClose={() => setPartyGateTarget(null)}
         />
       )}
     </div>

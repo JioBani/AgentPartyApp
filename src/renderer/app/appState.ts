@@ -31,6 +31,7 @@ export const initialState: InitialAppState = {
     automationApiPort: 47831,
     transcriptFontScale: 1,
     compactDefault: { on: false, at: 80 },
+    gateDefaults: { model: "haiku", effort: "low" },
   },
   auth: [],
   sessions: [],

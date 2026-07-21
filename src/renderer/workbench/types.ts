@@ -46,6 +46,10 @@ export type TranscriptBlock =
   | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string }
   // A party write-action this member drove (member-create / member-remove).
   | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
+  // A Message Gate outcome for an OUTGOING send by this member (inline badge).
+  // rejected = blocked (not delivered) · forced = bypassed the gate · failed =
+  // reviewer errored so it was delivered unreviewed (fail-open). UI-only.
+  | { id: string; kind: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at?: string }
   | {
       id: string;
       kind: "approval";

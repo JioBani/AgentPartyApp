@@ -76,6 +76,23 @@ export class SessionManager extends EventEmitter {
   private usageReconcileTimer?: NodeJS.Timeout;
   private static readonly USAGE_BACKOFF_MS = 10 * 60_000;
   /**
+   * Per-provider active source for the `usage_limit` event fan-in. Only the
+   * active source's emissions are merged into {@link usageLimits}; events from
+   * other sources are dropped. Prevents the multi-session race where several
+   * live Claude/Codex sessions (and the background poller) each read the same
+   * account endpoint and overwrite each other's last-write-wins values.
+   *
+   * Source ids:
+   *   - `session-${ts}`         — a foreground session (one per member)
+   *   - `usage-${provider}-${ts}` — the background poller for that provider
+   *   - `remote-${provider}`    — a remote engine's aggregated snapshot (WSL)
+   *   - `qa`                    — reserved for QA/test injection (always passes)
+   */
+  private activeUsageSource = new Map<UsageProviderId, string>();
+  private static readonly USAGE_SOURCE_BG = (p: UsageProviderId) => `bg-${p}`;
+  private static readonly USAGE_SOURCE_REMOTE = (p: UsageProviderId) => `remote-${p}`;
+  private static readonly USAGE_SOURCE_QA = "qa";
+  /**
    * Resolves the LIVE automation-API base URL (the ACTUAL bound port) for a Codex
    * member's party MCP server. Injected by the desktop host once the API server
    * binds; absent in the headless engine-server / tests, where the configured
@@ -126,6 +143,27 @@ export class SessionManager extends EventEmitter {
     this.emit("party", { workspace });
   }
 
+  /** Live embedded-router base URL (actual bound port) for headless helper calls (Message Gate reviewer). */
+  routerBaseUrl(): string {
+    return this.router.baseUrl;
+  }
+
+  /**
+   * Injects a synthetic Message Gate badge into a session's transcript stream
+   * (the SENDER's session), so a reject/forced/failed outcome shows inline. This
+   * is a UI-only artifact — it is never added to any model's context.
+   */
+  emitGateBadge(
+    sessionId: string,
+    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string },
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.closed) {
+      return;
+    }
+    this.queueEvent(session, { type: "gate", at: new Date().toISOString(), ...gate });
+  }
+
   /**
    * Snapshot of the live Codex account catalog (`model/list`); kicks discovery
    * on first call and caches the settle for the process lifetime. `refresh`
@@ -158,17 +196,63 @@ export class SessionManager extends EventEmitter {
     return this.usageLimits;
   }
 
-  /** Merges one provider's reported windows and broadcasts the new snapshot. */
+  /**
+   * Merges one provider's reported windows and broadcasts the new snapshot,
+   * but only if the event's `sourceId` matches this provider's active source.
+   * Other sources (a second Claude session, a stale background poller, etc.)
+   * are dropped with a debug log — that's the "numbers change on every refresh"
+   * race the active-source model fixes. Events without a `sourceId` are
+   * accepted and adopted as the new active source (back-compat for code that
+   * hasn't been updated yet, e.g. tests injecting raw events).
+   */
   private applyUsageLimit(event: Extract<ClaudeNormalizedEvent, { type: "usage_limit" }>): void {
+    const provider = event.provider;
+    const eventSource = event.sourceId;
+    const active = this.activeUsageSource.get(provider);
+    if (
+      active
+      && eventSource
+      && eventSource !== active
+      && eventSource !== SessionManager.USAGE_SOURCE_QA
+    ) {
+      log("debug", "usage", "dropped usage_limit from non-active source", {
+        provider,
+        eventSource,
+        active,
+      });
+      return;
+    }
+    if (eventSource && !active) {
+      this.activeUsageSource.set(provider, eventSource);
+    }
     this.usageLimits = {
       ...this.usageLimits,
-      [event.provider]: mergeProviderUsage(this.usageLimits[event.provider], {
-        provider: event.provider,
+      [provider]: mergeProviderUsage(this.usageLimits[provider], {
+        provider,
         windows: event.windows,
         available: event.available,
-        updatedAt: Date.now(),
+        // Use the event's own timestamp (ISO `at`) — `Date.now()` would be the
+        // receive time, which lags real provider time and breaks staleness math.
+        updatedAt: Date.parse(event.at) || Date.now(),
       }),
     };
+    this.emit("usage", this.usageLimits);
+  }
+
+  /**
+   * Clears the per-provider usage snapshot when its active source goes away.
+   * Used on session close, background-poller teardown, and remote-engine
+   * disconnect — without it the renderer keeps showing the dead source's last
+   * value forever ("stale rate limit" bug). The next active source's first
+   * emit repopulates; the 60s background poll keeps that window short.
+   */
+  private clearUsageForProvider(provider: UsageProviderId): void {
+    if (!this.usageLimits[provider]) {
+      return;
+    }
+    const next: UsageLimitsSnapshot = { ...this.usageLimits };
+    delete next[provider];
+    this.usageLimits = next;
     this.emit("usage", this.usageLimits);
   }
 
@@ -246,10 +330,23 @@ export class SessionManager extends EventEmitter {
     const cwd = settings.workspacePath || process.cwd();
     let adapter: HarnessSession;
     try {
-      adapter = this.createAdapter(id, cwd, undefined, { selectedHarnessId: provider === "codex" ? "codex" : "claude-code" });
+      // Both the active-source tracking and the per-event `sourceId` stamp use
+      // the same logical id (`bg-${provider}`) — the fan-in filter compares
+      // strings, so they must agree. The adapter's runtime id (`usage-…-${ts}`)
+      // stays for logs/diagnostics only.
+      adapter = this.createAdapter(id, cwd, undefined, {
+        selectedHarnessId: provider === "codex" ? "codex" : "claude-code",
+      }, undefined, SessionManager.USAGE_SOURCE_BG(provider));
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
       return;
+    }
+    // Claim the active source for this provider immediately, BEFORE start() —
+    // the adapter's first `usage_limit` emit must already be accepted by the
+    // fan-in filter. Only claim if no foreground session is currently the
+    // source (reconcile is the single source of truth for ownership).
+    if (!this.activeUsageSource.has(provider)) {
+      this.activeUsageSource.set(provider, SessionManager.USAGE_SOURCE_BG(provider));
     }
     this.usageAdapters.set(provider, adapter);
     adapter.on("event", (event: ClaudeNormalizedEvent) => {
@@ -278,6 +375,13 @@ export class SessionManager extends EventEmitter {
       return;
     }
     this.usageAdapters.delete(provider);
+    // The adapter we're tearing down may have been this provider's active
+    // source. If so, drop its snapshot — keeping it would mean showing the
+    // dead background poller's last value forever.
+    if (this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_BG(provider)) {
+      this.activeUsageSource.delete(provider);
+      this.clearUsageForProvider(provider);
+    }
     try {
       adapter.dispose();
     } catch {
@@ -287,7 +391,15 @@ export class SessionManager extends EventEmitter {
 
   private noteUsageAdapterFailure(provider: UsageProviderId, error: unknown): void {
     this.usageBackoffUntil.set(provider, Date.now() + SessionManager.USAGE_BACKOFF_MS);
+    // Capture before disposeUsageAdapter clears the active slot, so we still
+    // know whether the dying adapter was the active source.
+    const wasActive = this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_BG(provider);
     this.disposeUsageAdapter(provider);
+    if (wasActive) {
+      // Adapter is gone with no replacement queued (backoff window). Drop the
+      // snapshot so the renderer doesn't show its last reading as truth.
+      this.clearUsageForProvider(provider);
+    }
     // Surfaced, not swallowed: the pill honestly shows "데이터 없음" (never fake
     // numbers), and the reason is logged for diagnosis. Common cause: the
     // provider's CLI is not logged in.
@@ -301,10 +413,12 @@ export class SessionManager extends EventEmitter {
   /**
    * Test-only: inject a usage-limit event through the SAME aggregation path a
    * real harness event takes, so QA/e2e can drive the indicator deterministically
-   * without hitting a provider quota.
+   * without hitting a provider quota. The reserved `qa` source id bypasses the
+   * active-source filter, so tests don't have to set up a foreground session
+   * just to flip a number.
    */
   injectUsageLimit(event: Extract<ClaudeNormalizedEvent, { type: "usage_limit" }>): void {
-    this.applyUsageLimit(event);
+    this.applyUsageLimit({ ...event, sourceId: SessionManager.USAGE_SOURCE_QA } as typeof event & { sourceId: string });
   }
 
   /**
@@ -315,24 +429,35 @@ export class SessionManager extends EventEmitter {
    * engineServerEntry's "usage" channel + main's forwardRemoteEvent). Usage
    * limits are account-global, so a remote workspace's Claude/Codex reports merge
    * into the same snapshot local sessions feed, latest-per-provider winning.
+   *
+   * The remote engine owns its own fan-in (one source per provider over there),
+   * so on this side we treat it as a single deterministic source: we adopt
+   * `remote-${provider}` as the active source whenever the remote reports data,
+   * and clear that slot when the snapshot is empty (WSL disconnect).
    */
   mergeRemoteUsage(snapshot: UsageLimitsSnapshot): void {
     let changed = false;
     for (const provider of ["claude", "codex"] as const) {
       const incoming = snapshot?.[provider];
-      if (!incoming) {
-        continue;
+      if (incoming && (incoming.windows?.length || incoming.available !== undefined)) {
+        this.activeUsageSource.set(provider, SessionManager.USAGE_SOURCE_REMOTE(provider));
+        this.usageLimits = {
+          ...this.usageLimits,
+          [provider]: mergeProviderUsage(this.usageLimits[provider], {
+            provider,
+            windows: incoming.windows,
+            available: incoming.available,
+            updatedAt: incoming.updatedAt,
+          }),
+        };
+        changed = true;
+      } else if (!incoming && this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_REMOTE(provider)) {
+        // Remote used to be the active source and now has nothing — treat as
+        // disconnect; drop the snapshot so the renderer doesn't show ghost data.
+        this.activeUsageSource.delete(provider);
+        this.clearUsageForProvider(provider);
+        changed = true;
       }
-      this.usageLimits = {
-        ...this.usageLimits,
-        [provider]: mergeProviderUsage(this.usageLimits[provider], {
-          provider,
-          windows: incoming.windows,
-          available: incoming.available,
-          updatedAt: incoming.updatedAt,
-        }),
-      };
-      changed = true;
     }
     if (changed) {
       this.emit("usage", this.usageLimits);
@@ -384,6 +509,7 @@ export class SessionManager extends EventEmitter {
     const id = `mock-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
     const request = normalizeCreateSessionInput(input);
     const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    const provider = providerOfHarness(selectedHarness);
     const selectedDefaults = harnessDefaultsOf(settings, selectedHarness);
     const selectedModel = request.model || selectedDefaults.model;
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
@@ -397,7 +523,7 @@ export class SessionManager extends EventEmitter {
       autoReply: options?.autoReply,
       harness: selectedHarness,
     });
-    return this.registerSession(id, workspace, adapter);
+    return this.registerSession(id, workspace, adapter, provider);
   }
 
   injectMockEvent(id: string, event: unknown): void {
@@ -428,9 +554,11 @@ export class SessionManager extends EventEmitter {
     this.ensureWatchdog();
     adapter.start();
     this.emit("sessions", this.listSessions());
-    // A live session self-polls usage; drop the now-redundant background poller
-    // for its provider (recreated when the session closes — see reconcile timer).
+    // This session becomes the active source for its provider's account-usage
+    // read — its `usage_limit` events will drive the merge, and any prior
+    // background poller's emissions for the same provider will be dropped.
     if (provider) {
+      this.activeUsageSource.set(provider, id);
       this.reconcileUsageAdapters();
     }
     return this.toView(session);
@@ -606,8 +734,13 @@ export class SessionManager extends EventEmitter {
     session.adapter.dispose();
     this.sessions.delete(id);
     this.emit("sessions", this.listSessions());
-    // The closed session may have been a provider's only live usage source;
-    // revive its background poller so the indicator does not go stale.
+    // The closed session may have been a provider's only live usage source.
+    // Drop its snapshot (the dead-source stale-data bug) and let the
+    // background poller that reconcileUsageAdapters spawns take over.
+    if (session.provider && this.activeUsageSource.get(session.provider) === id) {
+      this.activeUsageSource.delete(session.provider);
+      this.clearUsageForProvider(session.provider);
+    }
     if (session.provider) {
       this.reconcileUsageAdapters();
     }
@@ -748,7 +881,7 @@ export class SessionManager extends EventEmitter {
     return `http://127.0.0.1:${process.env.AGENTPARTY_AUTOMATION_PORT || configuredPort}`;
   }
 
-  private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding): HarnessSession {
+  private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding, usageSourceId?: string): HarnessSession {
     const settings = getSettings();
     const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const harnessDefaults = harnessDefaultsOf(settings, selectedHarness);
@@ -770,6 +903,7 @@ export class SessionManager extends EventEmitter {
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,
+        usageSourceId,
       });
     }
     const storageDir = path.join(this.userDataDir, "logs");
@@ -797,6 +931,7 @@ export class SessionManager extends EventEmitter {
       resumeSessionId,
       partyBridge: binding?.bridge,
       partyIdentity: binding?.identity,
+      usageSourceId,
     });
   }
 

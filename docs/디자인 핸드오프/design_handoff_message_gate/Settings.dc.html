@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-0:#0a0b0e; --bg-1:#0e1014; --bg-2:#14171d; --bg-3:#1b1f27; --bg-4:#222731;
+  --bg-input:#0c0e12;
+  --border-subtle:#1c2028; --border:#262b35; --border-strong:#333a46;
+  --text-0:#e7e9ee; --text-1:#aeb4c0; --text-2:#79808d; --text-3:#535965;
+  --accent:#5b8cff; --accent-dim:rgba(91,140,255,.13); --accent-bd:rgba(91,140,255,.32); --accent-fg:#fff;
+  --live:#e0a14e; --live-dim:rgba(224,161,78,.13); --live-bd:rgba(224,161,78,.34);
+  --success:#54b585; --success-dim:rgba(84,181,133,.13); --success-bd:rgba(84,181,133,.32);
+  --danger:#e0635d; --danger-dim:rgba(224,99,93,.13); --danger-bd:rgba(224,99,93,.34);
+  --sans:'Geist','Geist Fallback',sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+}
+[data-theme="light"]{
+  --bg-0:#e7e8eb; --bg-1:#f3f4f6; --bg-2:#ffffff; --bg-3:#eef0f3; --bg-4:#e6e9ed;
+  --bg-input:#ffffff;
+  --border-subtle:#e2e5ea; --border:#d3d7df; --border-strong:#c0c5ce;
+  --text-0:#171a1f; --text-1:#454b56; --text-2:#6c7480; --text-3:#9aa1ac;
+  --accent:#3f6fe6; --accent-dim:rgba(63,111,230,.1); --accent-bd:rgba(63,111,230,.28); --accent-fg:#fff;
+  --live:#b9791d; --live-dim:rgba(185,121,29,.1); --live-bd:rgba(185,121,29,.3);
+  --success:#2f8f5e; --success-dim:rgba(47,143,94,.1); --success-bd:rgba(47,143,94,.28);
+  --danger:#cf4b45; --danger-dim:rgba(207,75,69,.1); --danger-bd:rgba(207,75,69,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#000;font-family:var(--sans)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--border-strong);background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+@keyframes st-spin{to{transform:rotate(360deg)}}
+@keyframes st-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" data-screen-label="Settings" style="position:relative;width:1440px;height:900px;display:flex;background:var(--bg-1);color:var(--text-0);font-family:var(--sans);font-size:13px;line-height:1.5;overflow:hidden;border-radius:10px;box-shadow:0 30px 80px -30px rgba(0,0,0,.8);-webkit-font-smoothing:antialiased">
+
+  <!-- NAV RAIL -->
+  <nav style="width:52px;flex:none;background:var(--bg-0);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;padding:11px 0;gap:5px;z-index:2">
+    <div title="Agents" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-2);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-0)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.7 4.9L18.5 9l-4.8 1.1L12 15l-1.7-4.9L5.5 9l4.8-1.1L12 3ZM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" stroke-linejoin="round"/></svg></div>
+    <div title="History" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg></div>
+    <div title="Members" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6.5a3 3 0 0 1 0 5.5M21 20a5.5 5.5 0 0 0-4-5.3"/></svg></div>
+    <div style="width:22px;height:1px;background:var(--border-subtle);margin:3px 0"></div>
+    <div onClick="{{ goAuth }}" title="인증" style="position:relative;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ authNavBg }};color:{{ authNavCol }}" style-hover="color:var(--text-0)"><span style="position:absolute;left:-11px;top:8px;bottom:8px;width:2.5px;border-radius:2px;background:{{ authNavBar }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M17 6l2 2M15 8l2 2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div onClick="{{ goRuntime }}" title="런타임" style="position:relative;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ rtNavBg }};color:{{ rtNavCol }}" style-hover="color:var(--text-0)"><span style="position:absolute;left:-11px;top:8px;bottom:8px;width:2.5px;border-radius:2px;background:{{ rtNavBar }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h11M19 6h1M4 12h1M9 12h11M4 18h7M15 18h5" stroke-linecap="round"/><circle cx="17" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></div>
+    <div title="일반 설정" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></div>
+    <div style="flex:1"></div>
+    <div style="width:28px;height:28px;border-radius:50%;background:var(--bg-3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;color:var(--text-1)">JD</div>
+  </nav>
+
+  <!-- CONTENT -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0">
+
+    <!-- HEADER -->
+    <header style="flex:none;padding:20px 26px 16px;border-bottom:1px solid var(--border-subtle);background:var(--bg-1)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <h1 style="margin:0;font-size:19px;font-weight:600;letter-spacing:-.3px">{{ pageTitle }}</h1>
+          <span style="font-size:12.5px;color:var(--text-2)">{{ pageSubtitle }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:none">
+          <button onClick="{{ toggleTheme }}" title="테마 전환" style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--bg-2);border:1px solid var(--border);border-radius:9px;color:var(--text-2);cursor:pointer" style-hover="color:var(--text-0);border-color:var(--border-strong)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+          <button title="작업공간" style="height:34px;display:flex;align-items:center;gap:7px;padding:0 13px;background:var(--bg-2);border:1px solid var(--border);border-radius:9px;color:var(--text-1);font-size:12.5px;font-weight:500;cursor:pointer;font-family:var(--sans)" style-hover="background:var(--bg-3);color:var(--text-0);border-color:var(--border-strong)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke-linejoin="round"/></svg>작업공간</button>
+        </div>
+      </div>
+      <!-- workspace path -->
+      <div style="display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;background:var(--bg-2);border:1px solid var(--border-subtle);border-radius:7px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.6" style="flex:none"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke-linejoin="round"/></svg>
+          <span style="font-family:var(--mono);font-size:11.5px;color:var(--text-1)">C:/Project/Tatica Defence</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;height:26px;padding:0 9px;background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:7px;font-family:var(--mono);font-size:11px;color:var(--accent)">--allow-file-access-from-files</span>
+      </div>
+    </header>
+
+    <!-- SCROLL BODY -->
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:24px 26px 40px">
+
+      <!-- ============ 인증 PAGE ============ -->
+      <sc-if value="{{ showAuth }}" hint-placeholder-val="{{ true }}">
+        <div style="max-width:760px;display:flex;flex-direction:column;gap:22px;animation:st-rise .22s ease both">
+
+          <!-- Subscriptions -->
+          <section style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:9px;padding:0 2px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)">구독</span>
+              <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+            </div>
+            <sc-for list="{{ subscriptions }}" as="sub" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:14px;padding:15px 16px;background:var(--bg-2);border:1px solid var(--border);border-radius:12px" style-hover="border-color:var(--border-strong)">
+                <span style="width:38px;height:38px;flex:none;border-radius:10px;background:var(--bg-3);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;color:var(--accent)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6Z"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">{{ sub.name }}</span>
+                  <span style="font-size:12px;color:var(--text-2);line-height:1.45">{{ sub.desc }}</span>
+                </div>
+                <div style="flex:none;display:flex;align-items:center;gap:9px">
+                  <button onClick="{{ sub.recheck }}" title="상태 다시 확인" style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text-2);cursor:pointer" style-hover="background:var(--bg-3);color:var(--text-0)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="animation:{{ sub.recheckAnim }}"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  <span style="display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:7px;background:var(--success-dim);border:1px solid var(--success-bd)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.4"><path d="M5 12l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span style="font-size:11px;font-weight:600;color:var(--success)">사용 가능</span>
+                  </span>
+                </div>
+              </div>
+            </sc-for>
+          </section>
+
+          <!-- Provider API keys -->
+          <section style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:9px;padding:0 2px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)">Provider API 키</span>
+              <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+            </div>
+
+            <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+              <div style="display:flex;align-items:center;gap:14px;padding:15px 16px">
+                <span style="width:38px;height:38px;flex:none;border-radius:10px;background:var(--accent-dim);border:1px solid var(--accent-bd);display:flex;align-items:center;justify-content:center;color:var(--accent)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M17 6l2 2M15 8l2 2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">OpenRouter API Key</span>
+                  <span style="font-size:12px;color:var(--text-2)">프로바이더 접근을 확인하려면 테스트를 실행하세요.</span>
+                </div>
+                <span style="flex:none;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:7px;background:var(--success-dim);border:1px solid var(--success-bd)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.4"><path d="M5 12l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span style="font-size:11px;font-weight:600;color:var(--success)">설정됨</span>
+                </span>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:9px;padding:13px 16px;border-top:1px solid var(--border-subtle);background:var(--bg-1)">
+                <span style="flex:none;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-2)">현재 키<span style="font-family:var(--mono);color:var(--text-1);background:var(--bg-3);padding:2px 8px;border-radius:6px;border:1px solid var(--border-subtle);letter-spacing:1px">{{ apiKeyMasked }}</span></span>
+                <div style="flex:1"></div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:8px;padding:0 16px 15px;background:var(--bg-1)">
+                <div style="flex:1;display:flex;align-items:center;gap:9px;height:38px;padding:0 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:9px" style-focus-within="border-color:var(--accent-bd)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.7" style="flex:none"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M17 6l2 2M15 8l2 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <input value="{{ apiKeyInput }}" onInput="{{ setApiKeyInput }}" placeholder="새 OpenRouter API 키 입력 (sk-or-…)" style="flex:1;min-width:0;height:100%;border:none;background:transparent;outline:none;color:var(--text-0);font-size:12.5px;font-family:var(--mono)"/>
+                </div>
+                <button onClick="{{ saveKey }}" title="키 저장" style="height:38px;display:flex;align-items:center;gap:7px;padding:0 14px;background:{{ saveKeyBg }};border:none;border-radius:9px;color:{{ saveKeyCol }};font-size:12.5px;font-weight:600;cursor:{{ saveKeyCursor }};font-family:var(--sans)" style-hover="filter:brightness(1.08)">{{ saveKeyIcon }}{{ saveKeyLabel }}</button>
+                <button onClick="{{ testKey }}" style="height:38px;display:flex;align-items:center;gap:7px;padding:0 14px;background:var(--bg-2);border:1px solid {{ testBd }};border-radius:9px;color:{{ testCol }};font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--sans)" style-hover="background:var(--bg-3)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="animation:{{ testAnim }}">{{ testIconPath }}</svg>{{ testLabel }}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- ============ 런타임 PAGE ============ -->
+      <sc-if value="{{ showRuntime }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:1180px;display:flex;flex-direction:column;gap:20px;animation:st-rise .22s ease both">
+
+          <!-- Base harness -->
+          <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:13px;padding:18px 20px;display:flex;flex-direction:column;gap:15px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)">기본 하네스</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:9px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span style="font-size:12px;line-height:1.5;color:var(--text-1)">새 멤버는 각 하네스의 기본값으로 생성됩니다. 아래에서 하네스별 기본값을 지정하세요.</span>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:9px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--success);flex:none"></span>
+                <span style="font-size:12.5px;font-weight:600;color:var(--text-1)">Router</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text-1)">http://127.0.0.1:3455</span>
+                <button onClick="{{ copyRouter }}" title="복사" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-3);color:var(--text-0)">{{ copyRouterIcon }}</button>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:7px">
+                <span style="font-size:11.5px;font-weight:600;color:var(--text-2)">새 멤버 기본 하네스</span>
+                <dc-import name="__ctrl" ctrl="{{ harnessCtrl }}" hint-size="100%,38px"></dc-import>
+              </div>
+              <label onClick="{{ toggleDebug }}" style="display:flex;align-items:center;gap:10px;cursor:pointer;height:38px;padding:0 4px">
+                <span style="width:38px;height:22px;border-radius:11px;flex:none;position:relative;transition:background .15s;background:{{ debugTrack }}"><span style="position:absolute;top:2.5px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;left:{{ debugKnob }}"></span></span>
+                <span style="font-size:12.5px;font-weight:500;color:var(--text-1)">디버그 로그</span>
+              </label>
+            </div>
+          </section>
+
+          <!-- Message Gate defaults -->
+          <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:13px;padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)">Message Gate</span>
+              <span style="font-size:11px;color:var(--text-3);font-family:var(--mono)">메시지 검문 · 리뷰어 기본값</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:9px">
+              <span style="width:32px;height:32px;flex:none;border-radius:8px;background:var(--accent-dim);border:1px solid var(--accent-bd);display:flex;align-items:center;justify-content:center;color:var(--accent)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 11.5a8.4 8.4 0 0 1-1 4 8.5 8.5 0 0 1-7.6 4.5 8.4 8.4 0 0 1-4-1L3 20l1-3.4a8.4 8.4 0 0 1-1-4 8.5 8.5 0 0 1 4.5-7.6 8.4 8.4 0 0 1 4-1h.5a8.5 8.5 0 0 1 8 8v.5Z"/><path d="m8.5 11.5 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:12.5px;line-height:1.5;color:var(--text-1)">멤버 간 메시지를 배달 직전 심사하는 리뷰어의 기본 모델입니다. 게이트를 켠 멤버가 리뷰어를 따로 지정하지 않으면 이 값을 사용합니다.</span>
+                <span style="font-size:11.5px;line-height:1.5;color:var(--text-2)">심사는 자주 실행되므로 <b style="color:var(--accent)">저렴하고 빠른 모델(Haiku)</b>을 권장합니다.</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="font-size:11.5px;font-weight:600;color:var(--text-2)">리뷰어 모델</span>
+                  <sc-if value="{{ gateRecBadgeShown }}" hint-placeholder-val="{{ true }}"><span style="display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 7px;border-radius:4px;background:var(--success-dim);color:var(--success);font-size:9.5px;font-weight:700"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>권장</span></sc-if>
+                </div>
+                <dc-import name="__ctrl" ctrl="{{ gateModelCtrl }}" hint-size="100%,38px"></dc-import>
+              </div>
+              <div style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px">
+                <span style="font-size:11.5px;font-weight:600;color:var(--text-2)">리뷰어 effort</span>
+                <dc-import name="__ctrl" ctrl="{{ gateEffortCtrl }}" hint-size="100%,38px"></dc-import>
+              </div>
+            </div>
+          </section>
+          <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:13px;padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)">Auto-compact</span>
+            </div>
+            <div onClick="{{ toggleAC }}" style="display:flex;align-items:center;gap:13px;padding:13px 14px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:10px;cursor:pointer" style-hover="border-color:var(--border)">
+              <span style="width:34px;height:34px;flex:none;border-radius:9px;background:var(--live-dim);border:1px solid var(--live-bd);display:flex;align-items:center;justify-content:center;color:var(--live)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 9h7V2M20 15h-7v7M4 15h7v7M20 9h-7V2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:13.5px;font-weight:600;color:var(--text-0)">컨텍스트 임계치 초과 시 자동 압축</span><span style="font-size:12px;color:var(--text-2);line-height:1.45">새 멤버는 이 기본값으로 생성됩니다. 멤버별로 런타임에서 개별 조정할 수 있습니다.</span></div>
+              <span style="width:38px;height:22px;border-radius:11px;flex:none;position:relative;transition:background .15s;background:{{ acTrack }}"><span style="position:absolute;top:2.5px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;left:{{ acKnob }}"></span></span>
+            </div>
+            <sc-if value="{{ acOn }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:11px;padding:14px 15px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:10px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                  <span style="font-size:12px;font-weight:600;color:var(--text-2)">기본 압축 임계치 · 컨텍스트 사용률</span>
+                  <span style="font-family:var(--mono);font-size:15px;font-weight:600;color:var(--live)">{{ acAt }}%</span>
+                </div>
+                <input type="range" min="50" max="95" step="5" value="{{ acAt }}" onInput="{{ setACAt }}" style="width:100%;accent-color:var(--live);cursor:pointer"/>
+                <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--text-3)"><span>50% · 보수적</span><span>95% · 공격적</span></div>
+              </div>
+            </sc-if>
+          </section>
+
+          <!-- Two harness columns -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <sc-for list="{{ harnessCards }}" as="hc" hint-placeholder-count="2">
+              <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:13px;padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+                <div style="display:flex;align-items:center;gap:10px;padding-bottom:2px">
+                  <span style="width:28px;height:28px;flex:none;border-radius:8px;background:{{ hc.iconBg }};border:1px solid {{ hc.iconBd }};display:flex;align-items:center;justify-content:center;color:{{ hc.iconCol }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 9l2 3-2 3M13 15h3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  <span style="font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-2)">{{ hc.title }}</span>
+                </div>
+                <sc-for list="{{ hc.controls }}" as="ctrl" hint-placeholder-count="4">
+                  <div style="display:flex;flex-direction:column;gap:7px">
+                    <span style="font-size:11.5px;font-weight:600;color:var(--text-2)">{{ ctrl.label }}</span>
+                    <dc-import name="__ctrl" ctrl="{{ ctrl }}" hint-size="100%,38px"></dc-import>
+                  </div>
+                </sc-for>
+                <button onClick="{{ hc.save }}" style="align-self:flex-start;margin-top:4px;height:34px;display:flex;align-items:center;gap:7px;padding:0 16px;background:{{ hc.saveBg }};border:none;border-radius:8px;color:{{ hc.saveCol }};font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--sans)" style-hover="filter:brightness(1.08)">{{ hc.saveIcon }}{{ hc.saveLabel }}</button>
+              </section>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;'dark'|'light'&quot;},&quot;page&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auth&quot;,&quot;runtime&quot;],&quot;default&quot;:&quot;auth&quot;,&quot;tsType&quot;:&quot;'auth'|'runtime'&quot;}}">
+class Component extends DCLogic {
+  state = {
+    theme: 'light',
+    page: 'auth',
+    openDropdown: null,
+    apiKeyInput: '',
+    apiKeyMasked: '••••••••35c8',
+    testState: 'idle',
+    recheck: {},
+    copied: false,
+    savedCard: null,
+    ac: { on: true, at: 80 },
+    rt: {
+      harness: 'Claude Code',
+      debug: false,
+      claude_model: 'Opus', claude_effort: 'medium', claude_mode: 'adaptive', claude_perm: '자동',
+      codex_model: 'GPT-5.5', codex_effort: 'medium', codex_mode: '모델 기본', codex_perm: 'Auto',
+      gate_model: 'claude-haiku-4', gate_effort: 'low',
+    },
+  };
+
+  OPTS = {
+    harness: ['Claude Code', 'Codex'],
+    claude_model: ['Opus', 'Sonnet', 'Haiku'],
+    claude_effort: ['minimal', 'low', 'medium', 'high'],
+    claude_mode: ['adaptive', '모델 기본', '항상 켜기', '끄기'],
+    claude_perm: ['자동', '읽기 전용', '승인 필요', '계획 모드'],
+    codex_model: ['GPT-5.5', 'GPT-5', 'o4-mini'],
+    codex_effort: ['low', 'medium', 'high'],
+    codex_mode: ['모델 기본', 'adaptive', '끄기'],
+    codex_perm: ['Auto', '읽기 전용', '전체 허용'],
+    gate_model: ['claude-haiku-4', 'claude-sonnet-4.5', 'o4-mini', 'gpt-5', 'deepseek-v3.2'],
+    gate_effort: ['low', 'medium', 'high'],
+  };
+
+  GATE_RECOMMENDED = 'claude-haiku-4';
+
+  _timers = {};
+  constructor(props){ super(props); if (props && props.page) this.state.page = props.page; }
+  componentDidMount(){
+    this._onDoc = (e) => {
+      if (this.state.openDropdown === null) return;
+      if (e.target && e.target.closest && e.target.closest('[data-dd]')) return;
+      this.setState({ openDropdown: null });
+    };
+    document.addEventListener('mousedown', this._onDoc, true);
+  }
+  componentWillUnmount(){ Object.values(this._timers).forEach(clearTimeout); document.removeEventListener('mousedown', this._onDoc, true); }
+
+  toggleTheme(){ this.setState(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })); }
+  setPage(p){ this.setState({ page: p, openDropdown: null }); }
+  toggleDropdown(id){ this.setState(s => ({ openDropdown: s.openDropdown === id ? null : id })); }
+  closeDropdown(){ this.setState({ openDropdown: null }); }
+  setVal(id, val){ this.setState(s => ({ rt: { ...s.rt, [id]: val }, openDropdown: null })); }
+  toggleDebug(){ this.setState(s => ({ rt: { ...s.rt, debug: !s.rt.debug } })); }
+  toggleAC(){ this.setState(s => ({ ac: { ...s.ac, on: !s.ac.on } })); }
+  setACAt(e){ const v = parseInt(e.target.value, 10); this.setState(s => ({ ac: { ...s.ac, at: v } })); }
+
+  setApiKeyInput(e){ this.setState({ apiKeyInput: e.target.value }); }
+  saveKey(){
+    const v = this.state.apiKeyInput.trim();
+    if (!v) return;
+    const tail = v.slice(-4).padStart(4, '0');
+    this.setState({ apiKeyMasked: '••••••••' + tail, apiKeyInput: '', testState: 'idle' });
+  }
+  testKey(){
+    if (this.state.testState === 'testing') return;
+    this.setState({ testState: 'testing' });
+    clearTimeout(this._timers.test);
+    this._timers.test = setTimeout(() => this.setState({ testState: 'ok' }), 1300);
+  }
+  recheckSub(id){
+    this.setState(s => ({ recheck: { ...s.recheck, [id]: true } }));
+    clearTimeout(this._timers['rc'+id]);
+    this._timers['rc'+id] = setTimeout(() => this.setState(s => ({ recheck: { ...s.recheck, [id]: false } })), 1200);
+  }
+  copyRouter(){
+    this.setState({ copied: true });
+    clearTimeout(this._timers.copy);
+    this._timers.copy = setTimeout(() => this.setState({ copied: false }), 1300);
+  }
+  saveCard(id){
+    this.setState({ savedCard: id });
+    clearTimeout(this._timers.save);
+    this._timers.save = setTimeout(() => this.setState({ savedCard: null }), 1500);
+  }
+
+  makeCtrl(id, label){
+    const val = this.state.rt[id];
+    const open = this.state.openDropdown === id;
+    const options = this.OPTS[id].map(o => ({
+      label: o, selected: o === val,
+      bg: o === val ? 'var(--accent-dim)' : 'transparent',
+      col: o === val ? 'var(--text-0)' : 'var(--text-1)',
+      checkOpacity: o === val ? '1' : '0',
+      select: () => this.setVal(id, o),
+    }));
+    return {
+      id, label, value: val, open,
+      z: open ? '30' : 'auto',
+      caret: open ? 'rotate(180deg)' : 'rotate(0deg)',
+      triggerBd: open ? 'var(--accent-bd)' : 'var(--border)',
+      toggle: () => this.toggleDropdown(id),
+      options,
+    };
+  }
+
+  renderVals(){
+    const s = this.state;
+    const isAuth = s.page === 'auth';
+
+    // theme nav helpers
+    const navOn = (active) => ({
+      bg: active ? 'var(--accent-dim)' : 'transparent',
+      col: active ? 'var(--accent)' : 'var(--text-3)',
+      bar: active ? 'var(--accent)' : 'transparent',
+    });
+    const an = navOn(isAuth), rn = navOn(!isAuth);
+
+    // AUTH
+    const subDefs = [
+      { id: 'claude', name: 'Claude Code Subscription', desc: 'AgentParty가 로컬 Claude Code 하네스에 구독 인증을 위임합니다.' },
+      { id: 'codex', name: 'Codex Subscription', desc: 'AgentParty가 로컬 codex CLI에 Codex 인증을 위임합니다.' },
+    ];
+    const subscriptions = subDefs.map(d => ({
+      name: d.name, desc: d.desc,
+      recheck: () => this.recheckSub(d.id),
+      recheckAnim: s.recheck[d.id] ? 'st-spin .9s linear infinite' : 'none',
+    }));
+
+    const canSave = !!s.apiKeyInput.trim();
+    const testMap = {
+      idle:    { label: '테스트', col: 'var(--text-1)', bd: 'var(--border)', anim: 'none' },
+      testing: { label: '테스트 중', col: 'var(--live)', bd: 'var(--live-bd)', anim: 'st-spin .9s linear infinite' },
+      ok:      { label: '정상', col: 'var(--success)', bd: 'var(--success-bd)', anim: 'none' },
+    };
+    const t = testMap[s.testState];
+    const testIcon = s.testState === 'ok'
+      ? React.createElement('path', { d: 'M5 12l4.5 4.5L19 7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+      : (s.testState === 'testing'
+        ? React.createElement('path', { d: 'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+        : React.createElement('path', { d: 'M9 3h6M10 3v5.5L5.5 17a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8.5V3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+    // RUNTIME
+    const harnessCtrl = this.makeCtrl('harness', '새 멤버 기본 하네스');
+    const gateModelCtrl = this.makeCtrl('gate_model', '리뷰어 모델');
+    const gateEffortCtrl = this.makeCtrl('gate_effort', '리뷰어 effort');
+    const gateIsRecommended = s.rt.gate_model === this.GATE_RECOMMENDED;
+    const claudeSaved = s.savedCard === 'claude', codexSaved = s.savedCard === 'codex';
+    const savedIcon = (on) => on
+      ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.3 }, React.createElement('path', { d: 'M5 12l4.5 4.5L19 7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+      : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7 }, React.createElement('path', { d: 'M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1ZM8 4v5h7M8 21v-7h8v7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+    const harnessCards = [
+      {
+        title: 'Claude Code 기본값',
+        iconBg: 'var(--accent-dim)', iconBd: 'var(--accent-bd)', iconCol: 'var(--accent)',
+        controls: [
+          this.makeCtrl('claude_model', '모델'),
+          this.makeCtrl('claude_effort', '추론 강도'),
+          this.makeCtrl('claude_mode', '추론 모드'),
+          this.makeCtrl('claude_perm', '권한 모드'),
+        ],
+        save: () => this.saveCard('claude'),
+        saveLabel: claudeSaved ? '저장됨' : 'Claude Code 기본값 저장',
+        saveBg: claudeSaved ? 'var(--success-dim)' : 'var(--accent)',
+        saveCol: claudeSaved ? 'var(--success)' : 'var(--accent-fg)',
+        saveIcon: savedIcon(claudeSaved),
+      },
+      {
+        title: 'Codex 기본값',
+        iconBg: 'var(--success-dim)', iconBd: 'var(--success-bd)', iconCol: 'var(--success)',
+        controls: [
+          this.makeCtrl('codex_model', '모델'),
+          this.makeCtrl('codex_effort', '추론 강도'),
+          this.makeCtrl('codex_mode', '추론 모드'),
+          this.makeCtrl('codex_perm', '권한 (샌드박스 × 승인)'),
+        ],
+        save: () => this.saveCard('codex'),
+        saveLabel: codexSaved ? '저장됨' : 'Codex 기본값 저장',
+        saveBg: codexSaved ? 'var(--success-dim)' : 'var(--accent)',
+        saveCol: codexSaved ? 'var(--success)' : 'var(--accent-fg)',
+        saveIcon: savedIcon(codexSaved),
+      },
+    ];
+
+    const copyIcon = s.copied
+      ? React.createElement('svg', { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--success)', 'stroke-width': 2.2 }, React.createElement('path', { d: 'M5 12l4.5 4.5L19 7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+      : React.createElement('svg', { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7 }, [
+          React.createElement('rect', { key: 'r', x: 9, y: 9, width: 11, height: 11, rx: 2 }),
+          React.createElement('path', { key: 'p', d: 'M5 15V5a2 2 0 0 1 2-2h8' }),
+        ]);
+
+    return {
+      theme: s.theme,
+      toggleTheme: () => this.toggleTheme(),
+      goAuth: () => this.setPage('auth'),
+      goRuntime: () => this.setPage('runtime'),
+      authNavBg: an.bg, authNavCol: an.col, authNavBar: an.bar,
+      rtNavBg: rn.bg, rtNavCol: rn.col, rtNavBar: rn.bar,
+      showAuth: isAuth, showRuntime: !isAuth,
+      pageTitle: isAuth ? '인증' : '런타임',
+      pageSubtitle: isAuth ? '구독과 provider API 키를 관리합니다.' : '하네스, provider, 모델, 디버깅 기본값을 관리합니다.',
+      dropdownOpen: s.openDropdown !== null,
+      closeDropdown: () => this.closeDropdown(),
+
+      subscriptions,
+      apiKeyMasked: s.apiKeyMasked,
+      apiKeyInput: s.apiKeyInput,
+      setApiKeyInput: (e) => this.setApiKeyInput(e),
+      saveKey: () => this.saveKey(),
+      saveKeyBg: canSave ? 'var(--accent)' : 'var(--bg-3)',
+      saveKeyCol: canSave ? 'var(--accent-fg)' : 'var(--text-3)',
+      saveKeyCursor: canSave ? 'pointer' : 'default',
+      saveKeyLabel: '저장',
+      saveKeyIcon: React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.3 }, React.createElement('path', { d: 'M5 12l4.5 4.5L19 7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })),
+      testKey: () => this.testKey(),
+      testLabel: t.label, testCol: t.col, testBd: t.bd, testAnim: t.anim,
+      testIconPath: testIcon,
+
+      harnessCtrl,
+      gateModelCtrl, gateEffortCtrl,
+      gateIsRecommended,
+      gateRecBadgeShown: gateIsRecommended,
+      harnessCards,
+      debugTrack: s.rt.debug ? 'var(--accent)' : 'var(--bg-4)',
+      debugKnob: s.rt.debug ? '18.5px' : '2.5px',
+      toggleDebug: () => this.toggleDebug(),
+      acOn: s.ac.on,
+      acTrack: s.ac.on ? 'var(--live)' : 'var(--bg-4)',
+      acKnob: s.ac.on ? '18.5px' : '2.5px',
+      acAt: s.ac.at,
+      setACAt: (e) => this.setACAt(e),
+      toggleAC: () => this.toggleAC(),
+      copyRouter: () => this.copyRouter(),
+      copyRouterIcon: copyIcon,
+    };
+  }
+}
+</script>
+</body>
+</html>

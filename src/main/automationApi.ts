@@ -197,10 +197,16 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.removeParty(workspace, decodeURIComponent(partyDeleteMatch[1]), windowId));
         return;
       }
+      // Party-wide Message Gate default (enablement + rule). Body: { enabled, rule }.
+      const partyGateMatch = url.pathname.match(/^\/api\/parties\/([^/]+)\/gate$/);
+      if (method === "POST" && partyGateMatch) {
+        sendJson(res, 200, await c.setPartyGate(workspace, decodeURIComponent(partyGateMatch[1]), await readJson(req), windowId));
+        return;
+      }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true }, partyId));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }, partyId));
         return;
       }
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
@@ -311,6 +317,11 @@ export class AutomationApiServer {
     const interactionMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/interaction$/);
     if (method === "POST" && interactionMatch) {
       sendJson(res, 200, await c.qaInteraction(workspace, decodeURIComponent(interactionMatch[1]), await readJson(req)));
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/qa/gate/open") {
+      const body = await readJson(req);
+      sendJson(res, 200, c.qaOpenGate(windowId, body?.kind === "party" ? "party" : "member", String(body?.member || "")));
       return;
     }
     sendJson(res, 404, { error: "not_found" });
