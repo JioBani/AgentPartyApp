@@ -25,6 +25,12 @@ export interface GateReviewer {
 export interface PartyGate {
   enabled: boolean;
   rule: string;
+  /**
+   * Party-wide reviewer. Absent = fall back to {@link AppSettings.gateDefaults}.
+   * Sits between the member override and the settings default, so one party can
+   * use a different model without changing the app-wide setting.
+   */
+  reviewer?: GateReviewer;
 }
 
 /**
@@ -76,9 +82,12 @@ export function effectiveGate(
   const partyEnabled = party?.enabled ?? false;
   const enabled = mode === "on" || (mode === "inherit" && partyEnabled);
   const partyRule = party?.rule ?? "";
-  const overridden = typeof member?.rule === "string";
-  const rule = overridden ? (member?.rule as string) : partyRule;
-  const reviewer = member?.reviewer ?? defaults;
+  const rule = typeof member?.rule === "string" ? member.rule : partyRule;
+  // "Overridden" means the member actually enforces DIFFERENT text, not merely
+  // that a string is stored. A stored rule identical to the party's is not an
+  // override, and showing it as one made the badge look stuck after a reset.
+  const overridden = typeof member?.rule === "string" && member.rule !== partyRule;
+  const reviewer = member?.reviewer ?? party?.reviewer ?? defaults;
   const active = enabled && rule.trim().length > 0;
   return { mode, enabled, rule, reviewer, overridden, active };
 }
@@ -104,7 +113,8 @@ export function normalizePartyGate(value: unknown): PartyGate | undefined {
   const enabled = Boolean((value as { enabled?: unknown }).enabled);
   const ruleRaw = (value as { rule?: unknown }).rule;
   const rule = typeof ruleRaw === "string" ? ruleRaw : "";
-  return { enabled, rule };
+  const reviewer = normalizeGateReviewer((value as { reviewer?: unknown }).reviewer);
+  return reviewer ? { enabled, rule, reviewer } : { enabled, rule };
 }
 
 /**

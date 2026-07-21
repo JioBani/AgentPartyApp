@@ -60,6 +60,17 @@ export interface PartyGatePatch {
   reviewer?: { model: string; effort: string } | null;
 }
 
+/**
+ * A patch of the PARTY-WIDE gate. Unlike {@link PartyGatePatch} there is no
+ * `mode`: the party level IS the default, so enablement is a plain boolean.
+ * Omitted keys keep their current value.
+ */
+export interface PartyGateGlobalPatch {
+  enabled?: boolean;
+  rule?: string;
+  reviewer?: { model: string; effort: string } | null;
+}
+
 // The capability surface a hosted member can drive. Every method routes through
 // the same `AppController`/`PartyApplicationService` path the UI and HTTP use,
 // and resolves to a plain result (never throws) so tool handlers stay trivial.
@@ -77,6 +88,8 @@ export interface PartyBridge {
   setPermission(name: string, request: PartyPermissionRequest): Promise<PartyToolResult>;
   /** Set another member's Message Gate override (mode / rule / reviewer). */
   gateSet(name: string, patch: PartyGatePatch): Promise<PartyToolResult>;
+  /** Set the PARTY-WIDE Message Gate every "inherit" member follows. */
+  partyGateSet(patch: PartyGateGlobalPatch): Promise<PartyToolResult>;
   /** List the caller's party members and their status. */
   list(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options. */
@@ -93,7 +106,7 @@ export interface PartyBridge {
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -102,6 +115,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for a Claude Code member, or codexPolicy for a Codex member. Call list-models to inspect each route's harness and permission contract.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
+  "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
   list: "List your party's members and their current status.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
@@ -194,6 +208,24 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       },
     },
     required: ["name"],
+    additionalProperties: false,
+  },
+  "party-gate-set": {
+    type: "object",
+    properties: {
+      enabled: { type: "boolean", description: "Turn the party-wide gate on or off. Every member with mode 'inherit' follows this." },
+      rule: { type: "string", description: "Communication rule enforced party-wide for inheriting members." },
+      reviewer: {
+        type: ["object", "null"],
+        description: "Party-wide headless reviewer (null = use the settings default). A member's own reviewer still wins.",
+        properties: {
+          model: { type: "string", description: "Model id from list-models." },
+          effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+        },
+        required: ["model", "effort"],
+        additionalProperties: false,
+      },
+    },
     additionalProperties: false,
   },
   list: { type: "object", properties: {}, additionalProperties: false },
@@ -333,6 +365,26 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       }
       return bridge.gateSet(memberName, patch);
     }
+    case "party-gate-set": {
+      const patch: PartyGateGlobalPatch = {};
+      if (typeof input.enabled === "boolean") {
+        patch.enabled = input.enabled;
+      }
+      if (typeof input.rule === "string") {
+        patch.rule = input.rule;
+      }
+      if ("reviewer" in input) {
+        patch.reviewer = input.reviewer === null
+          ? null
+          : input.reviewer && typeof input.reviewer === "object"
+            ? input.reviewer as { model: string; effort: string }
+            : undefined;
+      }
+      if (!Object.keys(patch).length) {
+        return { ok: false, error: "party-gate-set requires at least one of: enabled, rule, reviewer." };
+      }
+      return bridge.partyGateSet(patch);
+    }
     case "list":
       return bridge.list();
     case "list-models":
@@ -387,6 +439,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
     `- \`${tool("member-permission")}\` — change another member's permission; use the member's harness from \`${tool("list-models")}\` to choose \`permissionMode\` (Claude Code) or \`codexPolicy\` (Codex).`,
     `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,
+    `- \`${tool("party-gate-set")}\` — set the PARTY-WIDE gate every inheriting member follows: \`enabled\`, \`rule\`, \`reviewer\`. It moves every inheriting member at once, so reach for \`${tool("gate-set")}\` when only one member should change.`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
     `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
     "",
@@ -498,6 +551,19 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         }).nullable().optional().describe("Custom headless reviewer (null = use the settings default)."),
       },
       async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
+    ),
+    tool(
+      "party-gate-set",
+      "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set its own mode or rule keeps overriding this.",
+      {
+        enabled: z.boolean().optional().describe("Turn the party-wide gate on or off."),
+        rule: z.string().optional().describe("Communication rule enforced party-wide for inheriting members."),
+        reviewer: z.object({
+          model: z.string().describe("Model id from list-models."),
+          effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+        }).nullable().optional().describe("Party-wide headless reviewer (null = use the settings default). A member's own reviewer still wins."),
+      },
+      async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),
     ),
     tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
     tool(

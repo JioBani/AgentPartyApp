@@ -246,7 +246,7 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "member-permission", "gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the ten party tools in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"]), "exposes the eleven party tools in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");

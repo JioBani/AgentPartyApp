@@ -1300,6 +1300,30 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
+      partyGateSet: async (patch) => {
+        try {
+          // Merge onto the CURRENT party gate: the patch carries only the axes
+          // the agent named, and setPartyGate persists a whole gate.
+          const current = this.readState().parties?.find((item) => item.id === party)?.gate;
+          const next = {
+            enabled: typeof patch.enabled === "boolean" ? patch.enabled : current?.enabled ?? false,
+            rule: typeof patch.rule === "string" ? patch.rule : current?.rule ?? "",
+            ...(patch.reviewer === null
+              ? {}
+              : patch.reviewer
+                ? { reviewer: patch.reviewer }
+                : current?.reviewer
+                  ? { reviewer: current.reviewer }
+                  : {}),
+          };
+          const result = this.setPartyGate(party, next);
+          notify();
+          const gate = this.readState().parties?.find((item) => item.id === party)?.gate;
+          return { ok: true, data: { ok: result.ok, partyId: party, gate } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       list: async () => {
         const state = this.readState();
         const members = state.members
