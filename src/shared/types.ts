@@ -282,3 +282,33 @@ export interface ResumableSessionInfo {
   lastModified?: string;
   gitBranch?: string;
 }
+
+/**
+ * A member-transcript persist request.
+ *
+ * The renderer re-derives a member's whole transcript on every event, but the
+ * blocks it already persisted are unchanged — so shipping the full array each
+ * time pushed tens of MB per save through the engine RPC pipe (a single stdio
+ * channel shared with `sendUserTurn`, which then waited behind it: a user turn
+ * measured 33 s late). `afterId` turns the save into an append.
+ */
+export interface TranscriptSave {
+  /**
+   * When set, `blocks` REPLACE everything stored after the block with this id —
+   * the renderer's last known-persisted block. When absent, `blocks` replace the
+   * whole transcript (a full save).
+   */
+  afterId?: string;
+  blocks: unknown[];
+}
+
+/**
+ * Outcome of a {@link TranscriptSave}. An append whose `afterId` is not in the
+ * stored transcript CANNOT be applied (the two sides disagree about history);
+ * `applied: false` tells the caller to resend in full rather than let the two
+ * silently diverge.
+ */
+export interface TranscriptSaveResult {
+  applied: boolean;
+  reason?: string;
+}

@@ -10,6 +10,8 @@ import type {
   MemberPermissionInput,
   StartPartyMemberInput,
   SessionView,
+  TranscriptSave,
+  TranscriptSaveResult,
 } from "../../shared/types";
 import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
@@ -283,7 +285,10 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' permission updated.`, state, member);
   }
 
-  startMember(name: string, input: StartPartyMemberInput = {}, options: { mock?: boolean; autoReply?: boolean } = {}, partyId?: string): PartyCommandResult {
+  startMember(name: string, rawInput?: StartPartyMemberInput | null, rawOptions?: { mock?: boolean; autoReply?: boolean } | null, partyId?: string): PartyCommandResult {
+    // See respawnMember: `null` from an IPC/HTTP caller bypasses a TS default.
+    const input = rawInput ?? {};
+    const options = rawOptions ?? {};
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
@@ -338,7 +343,11 @@ export class PartyApplicationService {
    * teardown (not read from the debounced-persisted value), so the resume always
    * targets the exact current conversation.
    */
-  respawnMember(name: string, input: StartPartyMemberInput = {}, partyId?: string): PartyCommandResult {
+  respawnMember(name: string, rawInput?: StartPartyMemberInput | null, partyId?: string): PartyCommandResult {
+    // A TS default (`= {}`) only fires on `undefined`. This is public API — IPC
+    // and HTTP callers both reach it, and both can deliver a literal `null` for
+    // an omitted body — so normalize explicitly instead of trusting the default.
+    const input = rawInput ?? {};
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
@@ -418,12 +427,18 @@ export class PartyApplicationService {
    * Persists a member's transcript to disk (called debounced by the renderer, the
    * transcript's assembler). Also captures the member's live harness thread id so
    * a later reopen resumes that thread — keeping the record and the model context.
+   *
+   * `save.afterId` makes this an append; the returned `applied: false` asks the
+   * caller for a full save when the anchor no longer exists.
    */
-  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): void {
+  saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): TranscriptSaveResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
-    this.repository.writeTranscript(workspace, this.partyIdOf(member), member.name, blocks);
+    const result = this.repository.writeTranscript(workspace, this.partyIdOf(member), member.name, save);
+    if (!result.applied) {
+      return result;
+    }
     let changed = false;
     const harnessId = member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined;
     if (harnessId && harnessId !== member.harnessSessionId) {
@@ -437,6 +452,7 @@ export class PartyApplicationService {
       member.updatedAt = new Date().toISOString();
       this.persistParty(workspace, state, this.partyIdOf(member));
     }
+    return result;
   }
 
   /**
@@ -728,6 +744,33 @@ export class PartyApplicationService {
     return {
       ...this.result(wasBusy ? `Interrupt requested for '${member.name}'.` : `Member '${member.name}' is not in a turn (idle).`, state, member),
       interrupted: wasBusy,
+    };
+  }
+
+  /**
+   * Force-releases a member's stuck turn — the manual "강제 종료" the composer
+   * offers once a Stop has gone unanswered.
+   *
+   * Unlike {@link interruptMember} this does NOT ask the harness to stop; it
+   * releases the app-side turn so input stops queueing behind a turn that will
+   * never complete. It is therefore valid precisely when the member still looks
+   * busy after an interrupt — so, unlike interrupt, a non-busy member is a no-op
+   * rather than an error.
+   */
+  forceStopMember(name: string, partyId?: string): PartyCommandResult & { released: boolean } {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const member = this.requireMember(state, name, partyId);
+    if (!member.sessionId || !this.deps.sessionManager.hasSession(member.sessionId)) {
+      throw new Error(`Member '${member.name}' has no active session to force-stop.`);
+    }
+    const wasBusy = this.isSessionBusy(member.sessionId);
+    if (wasBusy) {
+      this.deps.sessionManager.forceStop(member.sessionId);
+    }
+    log("info", "party", "member force stop", { partyId: member.partyId, member: member.name, wasBusy });
+    return {
+      ...this.result(wasBusy ? `Force-stopped '${member.name}'.` : `Member '${member.name}' is not in a turn (idle).`, state, member),
+      released: wasBusy,
     };
   }
 

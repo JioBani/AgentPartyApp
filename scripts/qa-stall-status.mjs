@@ -48,5 +48,26 @@ assert(closedView.transcript.length === 2 && closedView.transcript[1].text === "
 const liveView = buildMemberView({ member, sessions: [busySession], transcriptBySession: { s1: [{ id: "a", kind: "assistant", text: "live" }] }, seenCount: 0, restored });
 assert(liveView.transcript.length === 1 && liveView.transcript[0].text === "live", "a live session's transcript takes precedence over the restored copy");
 
+
+// A stale approval block must never outrank a live busy turn. An approval whose
+// resolution was not recorded (app killed with the prompt open) persists to disk
+// and returns on restore; trusting it pinned the member in "approval" forever, so
+// the stop control never reappeared (observed on SEL-6877 `req`: snapshot
+// pendingApprovalCount=0, one unresolved AskUserQuestion block from hours earlier).
+console.log("\napproval vs. busy precedence:");
+const staleApproval = { id: "ap1", kind: "approval", requestId: "r1", toolName: "AskUserQuestion" };
+const busyNoPending = { id: "s1", snapshot: { status: "responding", model: "gpt-5.4", pendingApprovalCount: 0 } };
+const busyPending = { id: "s1", snapshot: { status: "responding", model: "gpt-5.4", pendingApprovalCount: 1 } };
+const view = (transcript, session) => buildMemberView({ member, sessions: [session], transcriptBySession: { s1: transcript }, seenCount: 0 });
+
+assert(view([staleApproval], busyNoPending).status === "working", "a live session reporting 0 pending approvals wins over a stale approval block");
+assert(view([staleApproval], busyNoPending).busy === true, "so the member is busy and the stop control shows");
+assert(view([staleApproval], busyPending).status === "approval", "a REAL pending approval still reads as approval");
+assert(view([staleApproval], idleSession).status === "idle", "an idle live session with a stale block is idle, not approval");
+assert(
+  buildMemberView({ member: { ...member, sessionId: undefined }, sessions: [], transcriptBySession: {}, seenCount: 0, restored: [staleApproval] }).status === "not-started",
+  "with no live session the transcript is the only record (member reads not-started, not a false busy)",
+);
+
 console.log(failures.length ? `\nSTALL STATUS FAILED (${failures.length})` : "\nSTALL STATUS PASSED");
 process.exit(failures.length ? 1 : 0);

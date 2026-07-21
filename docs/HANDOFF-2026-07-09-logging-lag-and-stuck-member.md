@@ -5,6 +5,19 @@
 - **Why this doc:** The AgentParty desktop is too laggy to edit safely in-place (see Issue A). Fix these in a clean environment.
 - **Environment observed:** Windows 11 desktop app (`%APPDATA%\AgentParty`) + WSL2 engine (`engine-server.mjs`, Ubuntu-20.04) driving workspaces `/home/spdlqj8876/sellmate-dockerize` and `/home/spdlqj8876/erp`.
 
+## Status — 2026-07-20
+
+Recommendations 1–3 and 5 are implemented; the follow-up investigation is in
+[HANDOFF-2026-07-20-transcript-rpc-backpressure.md](HANDOFF-2026-07-20-transcript-rpc-backpressure.md).
+
+| # | Recommendation | Status |
+|---|---|---|
+| 1 | Stop logging large IPC payloads | **done** — `summarizeIpcArgs` in `main.ts` |
+| 2 | Logger size cap / async / rotation | **partial** — payloads bounded by #1; the write is still sync `appendFileSync` with no rotation |
+| 3 | Don't re-serialize the whole transcript per save | **done** — anchored appends (`TranscriptSave`), see the 07-20 handoff |
+| 4 | Investigate transcript bloat (~150 MB, blocks ~30 KB each) | **open** — `TRANSCRIPT_CAP` still counts blocks, not bytes |
+| 5 | Recover stuck members when their turn dies | **done** — manual force stop in both adapters (no auto-escalation; see the 07-20 handoff for why) |
+
 ## TL;DR
 
 One root-cause bug produces three symptoms. The generic IPC handler logs the **full argument payload of every IPC call**, and `party:transcript:save` carries the **entire member transcript**. The logger writes it with a **synchronous, unbounded `fs.appendFileSync`** on the Electron main thread. When transcripts get large (tens–hundreds of MB), every save blocks the main thread on a huge `JSON.stringify` + disk append, and the log file grows by GB/minute.

@@ -35,11 +35,11 @@ const repo = new R.PartyRepository();
 console.log("\ntranscript persistence (repository):");
 assert(repo.readTranscript(workspace, "p1", "m1").length === 0, "an unknown member reads an empty transcript");
 const blocks = [{ kind: "user", text: "hi" }, { kind: "assistant", text: "hello" }];
-repo.writeTranscript(workspace, "p1", "m1", blocks);
+repo.writeTranscript(workspace, "p1", "m1", { blocks });
 const read = repo.readTranscript(workspace, "p1", "m1");
 assert(read.length === 2 && read[1].text === "hello", "transcript round-trips (write → read)");
 const many = Array.from({ length: 1000 }, (_, i) => ({ kind: "user", text: `b${i}` }));
-repo.writeTranscript(workspace, "p1", "m1", many);
+repo.writeTranscript(workspace, "p1", "m1", { blocks: many });
 const capped = repo.readTranscript(workspace, "p1", "m1");
 assert(capped.length === 800 && capped[capped.length - 1].text === "b999", "transcript is capped to the most recent 800 blocks");
 
@@ -67,7 +67,7 @@ const cxStarts = () => createCalls.filter((c) => c.member === "cx");
 svc.startMember("cx");
 assert(cxStarts().length === 1 && cxStarts()[0].resumeSessionId === undefined, "first start creates a FRESH thread (no resume id)");
 // The renderer persists the transcript; that call also captures the live thread id.
-svc.saveMemberTranscript("cx", blocks);
+svc.saveMemberTranscript("cx", { blocks });
 assert(svc.getMemberTranscript("cx").length === 2, "saved transcript is retrievable for restore");
 svc.closeMember("cx");
 svc.startMember("cx");

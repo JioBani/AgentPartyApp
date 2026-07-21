@@ -352,6 +352,22 @@ Disposes the local session and removes it from the active session list.
 
 Interrupts the active response.
 
+### `POST /api/sessions/:id/force-stop`
+
+Releases a turn the harness never closed, returning the session to idle and
+dispatching anything queued behind it. This does **not** stop the harness — it
+frees the app-side turn, which is what unblocks input.
+
+Only needed when `interrupt` goes unanswered: `interrupting` counts as a busy
+turn, so while it persists every later send is queued and never dispatched (the
+member appears to accept chats and then silently never answers). The composer
+surfaces this as the manual **강제 종료** control after a Stop has sat
+unacknowledged for a few seconds. Nothing escalates on a timer, so a
+slow-but-healthy interrupt is never torn out from under the harness. If the
+harness process itself is gone, the member's `respawn` is the stronger remedy.
+
+A session that is not in a turn is a no-op.
+
 ### `POST /api/sessions/:id/restart`
 
 Restarts the session harness.
@@ -681,6 +697,13 @@ error; a member with no live session errors. `name` `*` (or `all`) stops every
 busy member — `{ "exclude": "main" }` optionally skips one (the agents'
 `interrupt` tool passes themselves). Agents reach this via the `interrupt`
 party tool.
+
+### `POST /api/party/members/:name/force-stop`
+
+Member-addressed form of `/api/sessions/:id/force-stop` — releases a turn the
+harness never closed so the member stops queueing input behind it. Returns
+`released: false` for an idle member (not an error); a member with no live
+session errors.
 
 ### `POST /api/party/members/:name/auto-compact`
 

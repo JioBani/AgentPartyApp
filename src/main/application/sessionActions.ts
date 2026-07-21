@@ -5,6 +5,7 @@ import { sanitizeAttachments } from "../../shared/attachments";
 export type SessionActionName =
   | "send"
   | "interrupt"
+  | "force-stop"
   | "close"
   | "restart"
   | "compact"
@@ -20,6 +21,7 @@ type SessionActionHandler = (engine: EngineConnection, sessionId: string, body: 
 const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
   send: (engine, sessionId, body) => engine.sendUserTurn(sessionId, String(body.text || ""), sanitizeAttachments(body.attachments)),
   interrupt: (engine, sessionId) => engine.interruptSession(sessionId),
+  "force-stop": (engine, sessionId) => engine.forceStopSession(sessionId),
   close: (engine, sessionId) => engine.closeSession(sessionId),
   restart: (engine, sessionId) => engine.restartSession(sessionId),
   compact: (engine, sessionId) => engine.compactSession(sessionId),

@@ -11,9 +11,24 @@ export function isSessionBusy(session?: SessionView): boolean {
   return session ? BUSY_STATUSES.has(String(session.snapshot.status)) : false;
 }
 
+/**
+ * Whether the member is waiting on the user to answer an approval prompt.
+ *
+ * A LIVE session's count is authoritative — the harness knows what it is
+ * actually blocked on. The transcript is only consulted for a member with no
+ * live session (a closed member, or a freshly reopened app), where it is the
+ * only record there is.
+ *
+ * Scanning the transcript even when a live session reports zero was a bug: an
+ * approval block whose resolution never got recorded (the app was killed while
+ * the prompt was open) persists to disk, comes back on restore, and pins the
+ * member in "approval" forever. Because approval outranks "working" in
+ * {@link deriveStatus}, that member could never show as busy again — so its
+ * stop control never appeared, no matter how many turns it ran.
+ */
 function hasPendingApproval(transcript: TranscriptBlock[], session?: SessionView): boolean {
-  if (session && Number(session.snapshot.pendingApprovalCount || 0) > 0) {
-    return true;
+  if (session) {
+    return Number(session.snapshot.pendingApprovalCount || 0) > 0;
   }
   return transcript.some((block) => block.kind === "approval" && !block.resolved);
 }

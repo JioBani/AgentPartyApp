@@ -5,6 +5,8 @@ import type {
   ResumableSessionInfo,
   SessionView,
   StartPartyMemberInput,
+  TranscriptSave,
+  TranscriptSaveResult,
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -104,8 +106,12 @@ export interface EngineConnection {
   partyAction(name: string, action: string, body: any, partyId?: string): Promise<PartyMutationResult>;
   /** The member's persisted transcript (assembled UI blocks), restored on load. */
   getMemberTranscript(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
-  /** Persists the member's transcript (renderer-driven, debounced) + captures its resumable thread id. */
-  saveMemberTranscript(name: string, blocks: unknown[], partyId?: string): Promise<void>;
+  /**
+   * Persists the member's transcript (renderer-driven, debounced) + captures its
+   * resumable thread id. `save.afterId` sends only the appended blocks — the
+   * whole array would otherwise dominate this connection's traffic.
+   */
+  saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult>;
 
   // --- Models (engine-scoped) ----------------------------------------------
   /**
@@ -125,6 +131,8 @@ export interface EngineConnection {
   // --- Session control (by id, within this engine's workspace) -----------
   sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void>;
   interruptSession(sessionId: string): Promise<void>;
+  /** Force-releases a stuck turn — the UI's "강제 종료", offered after an unanswered Stop. */
+  forceStopSession(sessionId: string): Promise<void>;
   restartSession(sessionId: string): Promise<void>;
   compactSession(sessionId: string): Promise<void>;
   setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void>;

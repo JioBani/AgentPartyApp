@@ -200,8 +200,19 @@ export class CodexAdapter extends EventEmitter {
     void this.runTurn(text, attachments);
   }
 
+  /**
+   * Requests a turn interrupt — the normal Stop control.
+   *
+   * Accepting the `turn/interrupt` request is NOT the turn ending; only a turn
+   * completion or a failure clears "interrupting". When the app-server dies
+   * mid-turn (the 2026-07-09 handoff's stuck `survey4`) neither ever arrives, so
+   * the member reads "작업중" indefinitely and later sends queue behind a turn
+   * that is already gone. {@link forceStop} is the user's escape hatch for that.
+   */
   interrupt(): void {
     if (!this.sessionId || !this.activeTurnId) {
+      // No turn in flight — safe to release anything a past interrupt stranded.
+      this.forceStop();
       this.emitEvent({ type: "status", status: "interrupt", detail: "no active codex turn", at: now() });
       return;
     }
@@ -209,6 +220,22 @@ export class CodexAdapter extends EventEmitter {
     this.turnState = "interrupting";
     void this.request("turn/interrupt", { threadId: this.sessionId, turnId: this.activeTurnId }).catch((error) => this.finishWithError(error));
     this.emitEvent({ type: "status", status: "interrupt", detail: "requested", at: now() });
+  }
+
+  /**
+   * Releases a turn Codex will never close — the manual "강제 종료" offered once a
+   * Stop has gone unanswered. Local only: it frees this session and flushes the
+   * queue without killing the app-server or discarding the thread.
+   */
+  forceStop(): void {
+    if (!this.activeTurn && this.status !== "interrupting") {
+      return;
+    }
+    this.log("force_stop", { status: this.status, turnState: this.turnState });
+    this.status = "idle";
+    this.turnState = undefined;
+    this.activeTurnId = undefined;
+    this.drainQueuedTurn();
   }
 
   restart(): void {

@@ -3,7 +3,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import { sanitizeAttachments } from "../../shared/attachments";
 import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "broadcast" | "auto-compact" | "permission";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "permission";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult;
 
@@ -27,6 +27,9 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
     name === "*" || name === "all"
       ? party.interruptAllMembers(partyId, typeof body.exclude === "string" ? body.exclude : undefined)
       : party.interruptMember(name, partyId),
+  // Releases a turn the harness never closed, so input stops queueing behind it.
+  // The composer surfaces this only after a Stop went unanswered.
+  "force-stop": (party, name, _body, partyId) => party.forceStopMember(name, partyId),
   // Party-wide message; the URL member name is ignored (callers use "*").
   broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, { interrupt: body.interrupt === true }),
 };

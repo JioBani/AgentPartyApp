@@ -15,7 +15,7 @@ import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { StartPartyMemberInput, WindowInfo } from "../shared/types";
+import type { StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
@@ -477,6 +477,7 @@ function registerIpc(): void {
   handle("session:close", async (event, sessionId: string) => controller().closeSession(senderWorkspace(event), sessionId));
   handle("session:send", async (event, sessionId: string, text: string, attachments?: unknown) => controller().sendSessionMessage(senderWorkspace(event), sessionId, text, sanitizeAttachments(attachments)));
   handle("session:interrupt", async (event, sessionId: string) => controller().interruptSession(senderWorkspace(event), sessionId));
+  handle("session:forceStop", async (event, sessionId: string) => controller().forceStopSession(senderWorkspace(event), sessionId));
   handle("session:restart", async (event, sessionId: string) => controller().restartSession(senderWorkspace(event), sessionId));
   handle("session:compact", async (event, sessionId: string) => controller().compactSession(senderWorkspace(event), sessionId));
   handle("session:setModel", async (event, sessionId: string, model: string, providerId?: string, runtimeModel?: string) => {
@@ -518,14 +519,29 @@ function registerIpc(): void {
   handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event)));
   handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name, senderWindowId(event)));
-  handle("party:respawn", async (event, name: string, input?: StartPartyMemberInput) => controller().respawnPartyMember(senderWorkspace(event), name, input, senderWindowId(event)));
+  handle("party:respawn", async (event, name: string, input?: StartPartyMemberInput) => controller().respawnPartyMember(senderWorkspace(event), name, optionalArg(input), senderWindowId(event)));
   handle("party:open", async (event, name: string) => controller().openPartyMember(senderWorkspace(event), name, senderWindowId(event)));
-  handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, input as any, senderWindowId(event)));
+  handle("party:start", async (event, name: string, input?: unknown) => controller().startPartyMember(senderWorkspace(event), name, optionalArg(input) as any, senderWindowId(event)));
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:autoCompact", async (event, name: string, autoCompact: unknown) => controller().setMemberAutoCompact(senderWorkspace(event), name, autoCompact, senderWindowId(event)));
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
-  handle("party:transcript:save", async (event, name: string, blocks: unknown[]) => controller().saveMemberTranscript(senderWorkspace(event), name, blocks, senderWindowId(event)));
+  handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
+}
+
+/**
+ * Restores `undefined` for an omitted optional argument.
+ *
+ * Electron serializes an omitted/`undefined` invoke argument as `null`, so a
+ * handler's `input?: T` arrives as `null` and any downstream TypeScript default
+ * (`input: T = {}`) never fires — the callee then dereferences null. That is
+ * exactly how `respawnPartyMember(name)` crashed with "Cannot read properties of
+ * null (reading 'selectedHarnessId')". Normalize at the boundary that introduces
+ * the null, so every optional-object handler is safe rather than each callee
+ * having to re-guard.
+ */
+function optionalArg<T>(value: T | null | undefined): T | undefined {
+  return value === null ? undefined : value;
 }
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown): void {

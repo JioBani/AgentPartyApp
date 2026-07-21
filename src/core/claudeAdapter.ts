@@ -237,8 +237,23 @@ export class ClaudeAdapter extends EventEmitter {
     });
   }
 
+  /**
+   * Requests a turn interrupt — the normal Stop control.
+   *
+   * "interrupting" is cleared when the SDK delivers the turn's `result`; resolving
+   * `query.interrupt()` only means the REQUEST was accepted. A turn the CLI already
+   * broke (observed: `[ede_diagnostic] ... stop_reason=tool_use`) never produces
+   * that result, so this status can persist — and because `isTurnActive()` counts
+   * it, every later send would queue and never dispatch. {@link forceStop} is the
+   * user's escape hatch for exactly that; nothing here escalates on a timer,
+   * because a slow-but-healthy interrupt must not be torn out from under the
+   * harness.
+   */
   interrupt(): void {
     if (!this.query) {
+      // No query means no turn in flight — if a previous interrupt left the turn
+      // state behind, this is the point where it is provably safe to clear it.
+      this.forceStop();
       this.emitEvent({ type: "status", status: "interrupt", detail: "no active query", at: now() });
       return;
     }
@@ -249,6 +264,25 @@ export class ClaudeAdapter extends EventEmitter {
       (error) => this.emitError(error),
     );
     this.emit("snapshot", this.getSnapshot());
+  }
+
+  /**
+   * Releases a turn the harness will never close — the manual "강제 종료" the UI
+   * offers once a Stop has gone unanswered.
+   *
+   * Deliberately local: it returns THIS session to idle and flushes anything
+   * queued behind the dead turn, but does not kill the harness or touch the
+   * conversation. That makes it cheap and non-destructive; if the harness itself
+   * is gone, the member's restart (respawn) is the stronger remedy.
+   */
+  forceStop(): void {
+    if (!this.isTurnActive()) {
+      return;
+    }
+    this.log("force_stop", { status: this.currentStatus, turnState: this.turnState });
+    this.currentStatus = "idle";
+    this.turnState = undefined;
+    this.drainQueuedTurn();
   }
 
   private dispatchUserTurn(text: string, attachments?: ImageAttachment[]): void {

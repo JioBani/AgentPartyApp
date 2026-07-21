@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -384,6 +384,11 @@ export class AppController {
     return this.engineFor(workspacePath).interruptSession(sessionId);
   }
 
+  /** Releases a turn the harness never closed (the UI's manual force-stop). */
+  forceStopSession(workspacePath: string, sessionId: string): Promise<void> {
+    return this.engineFor(workspacePath).forceStopSession(sessionId);
+  }
+
   restartSession(workspacePath: string, sessionId: string): Promise<void> {
     return this.engineFor(workspacePath).restartSession(sessionId);
   }
@@ -539,8 +544,8 @@ export class AppController {
     return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
   }
 
-  saveMemberTranscript(workspacePath: string, name: string, blocks: unknown[], windowId?: string): Promise<void> {
-    return this.engineFor(workspacePath).saveMemberTranscript(name, blocks, this.partyForWindow(windowId));
+  saveMemberTranscript(workspacePath: string, name: string, save: TranscriptSave, windowId?: string): Promise<TranscriptSaveResult> {
+    return this.engineFor(workspacePath).saveMemberTranscript(name, save, this.partyForWindow(windowId));
   }
 
   // --- Window actions (addressed by window id) ----------------------------

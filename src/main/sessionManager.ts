@@ -567,6 +567,11 @@ export class SessionManager extends EventEmitter {
     this.sessions.get(id)?.adapter.interrupt();
   }
 
+  /** Manual escape hatch: releases a turn the harness will never close. */
+  forceStop(id: string): void {
+    this.sessions.get(id)?.adapter.forceStop();
+  }
+
   restart(id: string): void {
     const existing = this.sessions.get(id);
     if (!existing) {

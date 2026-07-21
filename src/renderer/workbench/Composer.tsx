@@ -36,6 +36,13 @@ interface ComposerProps {
 /** Max auto-grow height (px) before the textarea scrolls internally. */
 const TEXTAREA_MAX_HEIGHT = 220;
 
+/**
+ * How long a Stop may sit unacknowledged before the control offers a force stop.
+ * A healthy interrupt clears in well under a second, so this never appears in
+ * normal use — it is the escape hatch for a turn the harness will never close.
+ */
+const FORCE_STOP_AFTER_MS = 5_000;
+
 export function Composer({ view, density, actions }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -44,6 +51,20 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const harness = view.member.runtime === "codex" ? "codex" : "claude-code";
+
+  // A Stop the harness has not acknowledged yet. It stays "interrupting" only
+  // until the turn actually closes, so anything past the grace period is a turn
+  // the harness is not going to close on its own.
+  const interrupting = String(view.session?.snapshot.status || "") === "interrupting";
+  const [forceStop, setForceStop] = useState(false);
+  useLayoutEffect(() => {
+    if (!interrupting) {
+      setForceStop(false);
+      return;
+    }
+    const timer = setTimeout(() => setForceStop(true), FORCE_STOP_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [interrupting]);
 
   // Effective-model vision gating. image: true = allowed, false = text-only
   // (block with a reason), undefined = unknown (allow, model surfaces errors).
@@ -188,13 +209,19 @@ export function Composer({ view, density, actions }: ComposerProps) {
   ) : null;
 
   const stop = view.busy;
+  // Once a Stop has gone unanswered this long, the same control becomes a force
+  // stop. The harness clears "interrupting" as soon as it closes the turn, so a
+  // healthy interrupt never reaches this — only a turn that will never complete
+  // does, which is the state that used to silently queue every later message.
+  const stopLabel = forceStop ? "강제 종료" : "Stop";
+  const onStop = () => (forceStop ? actions.forceStop(view.name) : actions.interrupt(view.name));
   const iconOnly = stop ? (
-    <button type="button" className="wb-send is-stop" title="Stop" onClick={() => actions.interrupt(view.name)}><CircleStop size={15} /></button>
+    <button type="button" className="wb-send is-stop" title={stopLabel} onClick={onStop}><CircleStop size={15} /></button>
   ) : (
     <button type="submit" className="wb-send" title="Send" disabled={!canSend}><Send size={15} /></button>
   );
   const labeled = stop ? (
-    <button type="button" className="wb-send-labeled is-stop" title="Stop" onClick={() => actions.interrupt(view.name)}>Stop <CircleStop size={14} /></button>
+    <button type="button" className="wb-send-labeled is-stop" title={stopLabel} onClick={onStop}>{stopLabel} <CircleStop size={14} /></button>
   ) : (
     <button type="submit" className="wb-send-labeled" title="Send" disabled={!canSend}>Send <Send size={14} /></button>
   );

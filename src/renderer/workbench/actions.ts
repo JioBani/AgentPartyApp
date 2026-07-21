@@ -33,6 +33,13 @@ export interface WorkbenchActions {
   answerQuestion(memberName: string, requestId: string, input: unknown, answers: Record<string, string>): void;
   interrupt(memberName: string): void;
   /**
+   * Force-releases a turn the harness never closed. Surfaced by the composer
+   * only after a normal {@link interrupt} has gone unanswered, because it does
+   * NOT stop the harness — it frees the app-side turn so input stops queueing
+   * behind a turn that will never complete.
+   */
+  forceStop(memberName: string): void;
+  /**
    * Hard restart: tears down the running harness and restarts it in place with
    * an EMPTY conversation (model context reset). Exposed via the member's
    * right-click menu.
