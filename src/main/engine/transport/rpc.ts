@@ -28,8 +28,32 @@ export interface RpcEvent {
   payload: unknown;
 }
 
+/**
+ * A server→client REQUEST — the reverse of {@link RpcRequest}, for work only the
+ * desktop can do. The engine owns workspace state, but the desktop owns the
+ * provider transports: the subscription bridge and the embedded router both bind
+ * `127.0.0.1` on the desktop host, and from inside a distro that address is the
+ * distro's own loopback. Asking the desktop to make the call keeps credentials
+ * on the host instead of widening those listeners. See docs/WSL_REMOTE.md §7.
+ */
+export interface RpcHostCall {
+  kind: "call";
+  id: number;
+  method: string;
+  args: unknown[];
+}
+
+/** The client's reply to an {@link RpcHostCall}, correlated by `id`. */
+export interface RpcHostResult {
+  kind: "callResult";
+  id: number;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
 /** Writes one JSON value as a single `\n`-terminated line. */
-export function writeLine(stream: Writable, value: RpcRequest | RpcResponse | RpcEvent): void {
+export function writeLine(stream: Writable, value: RpcRequest | RpcResponse | RpcEvent | RpcHostCall | RpcHostResult): void {
   stream.write(`${JSON.stringify(value)}\n`);
 }
 

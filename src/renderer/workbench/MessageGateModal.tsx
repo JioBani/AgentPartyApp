@@ -134,10 +134,10 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
               onChange={(event) => setText(event.target.value)}
             />
             {emptyWhileOn && (
-              <div className="wb-gate-warn">규칙이 비어 있어 <b>심사가 실행되지 않습니다</b>. 게이트는 켜져 있지만 모든 메시지가 그대로 배달됩니다.</div>
+              <div className="wb-gate-warn">규칙이 비어 있어 <b>심사가 실행되지 않습니다</b>. 게이트는 켜져 있지만 모든 메시지가 그대로 전송됩니다.</div>
             )}
             {effectivelyOff && (
-              <div className="wb-gate-note">게이트가 꺼져 있어 이 멤버의 메시지는 심사 없이 배달됩니다.</div>
+              <div className="wb-gate-note">게이트가 꺼져 있어 이 멤버의 메시지는 심사 없이 전송됩니다.</div>
             )}
           </div>
 

@@ -8,8 +8,17 @@ import { readLines, writeLine, type RpcRequest } from "./rpc";
  * The engine may be synchronous (LocalEngine) — results are awaited uniformly,
  * so sync and async both work. See docs/WSL_REMOTE.md §7.
  */
-export function serveEngine(engine: EngineConnection, input: Readable, output: Writable): () => void {
+export function serveEngine(
+  engine: EngineConnection,
+  input: Readable,
+  output: Writable,
+  /** Replies to engine→desktop calls share this stream; hand them back to their caller. */
+  hostChannel?: { accept(message: unknown): boolean },
+): () => void {
   return readLines(input, async (message: RpcRequest) => {
+    if (hostChannel?.accept(message)) {
+      return;
+    }
     if (typeof message?.id !== "number" || typeof message?.method !== "string") {
       return;
     }

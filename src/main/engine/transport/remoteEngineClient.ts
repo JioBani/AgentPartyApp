@@ -4,7 +4,7 @@ import type { CodexPolicy } from "../../../shared/codexPolicy";
 import type { ImageAttachment } from "../../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
-import { readLines, writeLine, type RpcResponse } from "./rpc";
+import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc";
 
 /** Awaited return type of an EngineConnection method. */
 type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...args: any[]) => infer Ret ? Awaited<Ret> : never;
@@ -31,7 +31,17 @@ export class RemoteEngineClient implements EngineConnection {
   private detach: (() => void) | undefined;
   private disposed = false;
 
-  constructor(transport: RemoteTransport | Promise<RemoteTransport>, readonly workspacePath: string, private readonly onDispose?: () => void) {
+  constructor(
+    transport: RemoteTransport | Promise<RemoteTransport>,
+    readonly workspacePath: string,
+    private readonly onDispose?: () => void,
+    /**
+     * Handlers for engine→desktop calls. The engine delegates work that only the
+     * desktop host can do — reaching the subscription bridge / embedded router,
+     * which bind desktop loopback and are unreachable from inside a distro.
+     */
+    private readonly hostHandlers: Record<string, (...args: any[]) => Promise<unknown>> = {},
+  ) {
     this.transport = Promise.resolve(transport);
     this.transport.then(
       (t) => {
@@ -43,6 +53,10 @@ export class RemoteEngineClient implements EngineConnection {
             for (const listener of this.eventListeners) {
               listener(message.channel, message.payload);
             }
+            return;
+          }
+          if (message?.kind === "call") {
+            void this.serveHostCall(t, message as unknown as RpcHostCall);
             return;
           }
           if (typeof message?.id !== "number") {
@@ -76,6 +90,25 @@ export class RemoteEngineClient implements EngineConnection {
     this.detach?.();
     this.failAll(new Error("engine client disposed"));
     this.onDispose?.();
+  }
+
+  /**
+   * Runs one engine→desktop call and always answers it. A handler that throws is
+   * reported back as `ok:false` so the engine's caller sees a real error rather
+   * than a promise that never settles.
+   */
+  private async serveHostCall(t: RemoteTransport, message: RpcHostCall): Promise<void> {
+    const { id, method, args } = message;
+    try {
+      const handler = this.hostHandlers[method];
+      if (!handler) {
+        throw new Error(`Unknown host method '${method}'`);
+      }
+      const result = await handler(...(Array.isArray(args) ? args : []));
+      writeLine(t.output, { kind: "callResult", id, ok: true, result });
+    } catch (error) {
+      writeLine(t.output, { kind: "callResult", id, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   private failAll(error: Error): void {

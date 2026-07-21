@@ -90,7 +90,8 @@ A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort" }`
 only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
-`{ "gateDefaults": { "model": "haiku", "effort": "low" } }`. See the Message
+`{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }` — the
+built-in default, picked on measured accuracy rather than price. See the Message
 Gate endpoints below and `docs/MESSAGE_GATE.md`.
 
 Example:
@@ -579,7 +580,14 @@ active, the message is reviewed before delivery. A rejection returns
 reason (rewrite and resend). Add `{ "force": true, "forceReason": "…" }` to bypass
 the gate for one message (surfaced as a "forced" badge). A reviewer error is
 fail-open: the message is delivered unreviewed with a visible notice. A human
-`from: "user"` turn is never gated. See `docs/MESSAGE_GATE.md`.
+`from: "user"` turn is never gated.
+
+The reviewer's `effort` reaches the model differently per provider — `thinking`
+for Anthropic (which rejects `effort` outright), `effort` for router-backed
+models — and reasoning is never disabled, because a classifier that cannot
+reason rejects compliant messages. This behaves identically for local and WSL
+workspaces; for WSL the reviewer call runs on the desktop while the gate
+decision stays in the distro's engine. See `docs/MESSAGE_GATE.md`.
 
 ### `POST /api/party/members`
 
@@ -780,7 +788,7 @@ Sets the **party-wide** Message Gate default (enablement + rule). Members with
 ```
 
 The reviewer model default (model + effort, no harness) is global, set via
-`POST /api/settings` `{ "gateDefaults": { "model": "haiku", "effort": "low" } }`.
+`POST /api/settings` `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }`.
 
 The `POST /api/party/messages` send accepts `{ "force": true, "forceReason": "..." }`
 to bypass the gate for one message (surfaced as a "forced" badge).
