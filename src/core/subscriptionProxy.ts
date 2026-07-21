@@ -29,6 +29,16 @@ export interface SubscriptionProxyServiceStatus {
 export interface SubscriptionProxyAuthenticationStatus {
   status: "pending" | "error";
   detail?: string;
+  /**
+   * The provider's OAuth URL, as printed by the bridge's login command.
+   *
+   * The bridge opens the SYSTEM DEFAULT browser itself, which is the wrong one
+   * whenever the user's provider account lives in another browser or profile.
+   * Surfacing the URL is the only way out of that: without it the login sits at
+   * "인증 대기" forever with no way to retarget it. Absent until the command
+   * prints it (and for a flow that never prints one).
+   */
+  authUrl?: string;
 }
 
 export interface SubscriptionProxyStatus {

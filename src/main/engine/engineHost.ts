@@ -1,6 +1,6 @@
 import { EmbeddedHarnessRouter } from "../../core/routerShim";
 import { SessionManager } from "../sessionManager";
-import { WorkspaceManager } from "../workspaceManager";
+import { WorkspaceManager, type ReviewGate } from "../workspaceManager";
 import { setUserDataDir } from "../userDataDir";
 import { EngineRegistry } from "./engineRegistry";
 import type { EngineRegistryDeps } from "./engineRegistry";
@@ -16,6 +16,12 @@ export interface EngineHostConfig {
   };
   /** Desktop-only: builds a connection to an engine in another host (WSL). */
   createRemoteEngine?: EngineRegistryDeps["createRemoteEngine"];
+  /**
+   * Overrides how the Message Gate reaches a reviewer model. Set by a headless
+   * engine running away from the desktop's loopback (a WSL distro), where the
+   * subscription bridge and embedded router cannot be reached directly.
+   */
+  reviewGate?: ReviewGate;
 }
 
 /**
@@ -43,7 +49,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
     openRouterApiKey: config.router.openRouterApiKey || "",
   });
   const sessionManager = new SessionManager(router, config.storageDir);
-  const workspaceManager = new WorkspaceManager(sessionManager);
+  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate);
   const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {

@@ -8,10 +8,21 @@ import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog"
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 
 /**
- * Built-in Message Gate reviewer default: the cheapest/fastest model, since the
- * gate can run on every member-to-member message. Headless (no harness).
+ * Built-in Message Gate reviewer default. Headless (no harness), and low effort
+ * because the gate can run on every member-to-member message.
+ *
+ * Chosen on measurement, not price: over 114 live reviews (including Korean
+ * carrying English identifiers, code blocks and file paths — the shapes real
+ * dev messages take) GPT-5.6 Terra made no misjudgement, while haiku scored
+ * ~97% and Luna repeatedly rejected plainly-Korean messages as "not Korean".
+ * Terra was also faster (2.4s vs 3.0s median).
+ *
+ * This model needs the Codex subscription. If it is not connected the review
+ * fails and the gate falls open — which is why that failure is reported on the
+ * send result and as a transcript badge rather than passing for success, and
+ * why the reviewer is user-configurable in Settings → Runtime.
  */
-export const DEFAULT_GATE_REVIEWER: GateReviewer = { model: "haiku", effort: "low" };
+export const DEFAULT_GATE_REVIEWER: GateReviewer = { model: "GPT-5.6 Terra", effort: "low" };
 
 const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },

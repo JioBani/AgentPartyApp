@@ -4,7 +4,9 @@ import { AppController } from "../../application/appController";
 import { AutomationApiServer } from "../../automationApi";
 import { WindowRegistry } from "../../windowRegistry";
 import { serveEngine } from "./engineServer";
+import { HostChannel } from "./hostChannel";
 import { writeLine } from "./rpc";
+import type { GateReviewResult } from "../../../shared/messageGate";
 
 /**
  * Standalone engine server: builds an Electron-free engine host and serves one
@@ -26,9 +28,18 @@ async function main(): Promise<void> {
   const workspace = arg("workspace") || process.cwd();
   const storage = arg("storage") || workspace;
 
+  // The Message Gate reviewer is the one piece of engine work that CANNOT run
+  // here: it talks to the subscription bridge / embedded router, both bound to
+  // the desktop's 127.0.0.1, which from inside a distro is the distro's own
+  // loopback. Delegating it upward keeps the verdict, badge and rejection record
+  // in this engine (where the party state lives) while the credentialed HTTP call
+  // stays on the host. Without this the review throws on every message and the
+  // fail-open policy delivers them all unreviewed.
+  const hostChannel = new HostChannel(process.stdout);
   const host = createEngineHost({
     storageDir: storage,
     router: { preferredPort: 0, authToken: "engine", openRouterApiKey: process.env.OPENROUTER_API_KEY || "" },
+    reviewGate: (message, reviewer) => hostChannel.call<GateReviewResult>("reviewGate", message, reviewer),
   });
   // Start the embedded router so router-backed models (MiniMax M3, etc.) work —
   // it runs inside the distro alongside the harness. preferredPort 0 binds a
@@ -63,7 +74,7 @@ async function main(): Promise<void> {
   // in-distro party MCP server fetches a live local endpoint (never 127.0.0.1:0).
   host.sessionManager.setAutomationBaseUrlProvider(() => automationApi?.baseUrl);
 
-  serveEngine(engine, process.stdin, process.stdout);
+  serveEngine(engine, process.stdin, process.stdout, hostChannel);
 
   // Push this workspace's live session activity to the client over the same
   // channel (distinguished from RPC responses by `kind: "event"`).
@@ -84,6 +95,7 @@ async function main(): Promise<void> {
   host.sessionManager.on("usage", (payload) => writeLine(process.stdout, { kind: "event", channel: "usage", payload }));
 
   const shutdown = () => {
+    hostChannel.dispose();
     automationApi?.dispose();
     host.dispose();
     process.exit(0);

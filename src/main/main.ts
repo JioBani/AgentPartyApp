@@ -21,6 +21,9 @@ import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 import type { UsageLimitsSnapshot } from "../shared/usageLimits";
 import { SubscriptionProxyService } from "./subscriptionProxyService";
+import { subscriptionProxyConfig } from "../core/subscriptionProxy";
+import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
+import type { GateReviewer } from "../shared/messageGate";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -208,7 +211,25 @@ async function bootstrap(): Promise<void> {
         codexMcpServerWinPath: codexMcpServer,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       });
-      const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose);
+      const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose, {
+        // The distro engine owns the gate decision but cannot reach a provider:
+        // the subscription bridge and embedded router bind THIS host's loopback.
+        // Run the reviewer call here and hand the verdict back, so credentials
+        // stay on the desktop and the listeners stay closed.
+        reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
+          // Assigned right after createEngineHost returns, and this closure only
+          // runs once a workspace resolves — but say so out loud rather than
+          // letting a null deref surface as an opaque gate failure.
+          if (!sessionManager) {
+            throw new Error("Message Gate review requested before the engine host finished starting.");
+          }
+          return reviewGateMessage(message, reviewer, {
+            routerBaseUrl: sessionManager.routerBaseUrl(),
+            routerAuthToken: getSettings().routerAuthToken,
+            subscriptionProxy: subscriptionProxyConfig(),
+          });
+        },
+      });
       // Stream the distro engine's live session activity to this workspace's windows.
       client.onEvent((channel, payload) => forwardRemoteEvent(serialized, channel, payload));
       return client;

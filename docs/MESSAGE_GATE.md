@@ -51,7 +51,7 @@ gate: {
 
 ```ts
 gateDefaults: {
-  model: string;   // 예: "haiku" (권장 기본)
+  model: string;   // 예: "GPT-5.6 Terra" (기본값)
   effort: string;  // 예: "low"
 }
 ```
@@ -217,7 +217,7 @@ UI와 HTTP는 동일한 `AppController` 메서드를 통과한다. 신규 엔드
 구현된 표면(2026-07-21):
 - 데이터: `shared/messageGate.ts`(타입·`effectiveGate`·patch), `PartyMember.gate` /
   `PartyDefinition.gate` / `AppSettings.gateDefaults`(types.ts), 기본값
-  `{model:"haiku",effort:"low"}`(settings.ts).
+  `{model:"GPT-5.6 Terra",effort:"low"}`(settings.ts). 측정 근거는 §리뷰어 추론 참조.
 - 리뷰어: `core/messageGateReviewer.ts` — 헤드리스 1회 호출. anthropic 구독은
   subscription proxy, codex/openrouter는 임베디드 라우터로 디스패치.
 - 심사 훅: `PartyApplicationService.sendGatedMessage`(에이전트 발신 경로 전용) →
@@ -228,8 +228,29 @@ UI와 HTTP는 동일한 `AppController` 메서드를 통과한다. 신규 엔드
   send의 `force`/`forceReason`, 설정 `gateDefaults`(POST /api/settings). MCP 툴
   `gate-set` + `send`의 force. IPC `party:gate`/`party:partyGate`.
 
+리뷰어 추론(effort) 전송 — 프로바이더별로 와이어가 다르다:
+- **Anthropic(구독 브리지)**: `effort`를 보내면 400 `Extra inputs are not
+  permitted`. `thinking`으로 표현한다. 모드는 모델 카탈로그의
+  `reasoning.thinking.modes`를 따른다 — `adaptive`는 sonnet/opus에는 있지만
+  haiku에는 없어서 보내면 400이다.
+- **라우터(codex/openrouter)**: `effort`를 그대로 받는다. `thinking`은 보내지 않는다.
+
+**thinking은 어떤 effort에서도 끄지 않는다.** 실측(라이브 144콜) 결과 haiku는
+thinking을 끄면 12/24, 켜면 24/24였다 — 규칙을 충족한다고 스스로 인정한 메시지를
+규칙에 없는 근거(“배포가 위험해 보인다”)로 거부했다. 분류기가 추론을 못 하면
+게이트가 정상 트래픽을 막는다. 그래서 `effort`는 예산 크기만 조절한다(카탈로그
+`budget.min`~`max`). 최소 예산 1024로도 24/24였다.
+
+시스템 프롬프트로는 고쳐지지 않는다: 판단 범위를 제한하는 문장을 추가해도
+12/24 → 12/24로 변화가 없었고, 길어진 프롬프트가 역할 이탈을 한 번 유발해
+되돌렸다. `messageGateReviewer.ts`의 `reasoningPayload` 주석 참조.
+
+WSL 워크스페이스: 리뷰어 HTTP 호출은 **데스크톱에서** 실행된다. 구독 브리지와
+임베디드 라우터는 데스크톱의 `127.0.0.1`에 묶여 있어 배포판 안에서는 닿지 않는다
+(호스트 IP로도 안 된다 — 리스너가 루프백 전용). 엔진은 게이트 판정·배지·거부
+기록을 그대로 소유하고, 모델 호출만 `kind:"call"` 역방향 RPC로 위임한다.
+`transport/hostChannel.ts`, docs/WSL_REMOTE.md §7.
+
 미해결 / 후속:
-- 리뷰어 effort는 현재 설정·선택에만 반영(raw 호출은 최소 토큰). 상위 effort를
-  thinking 예산에 매핑할지 후속 결정.
 - `forceReason` 필수화 여부, 파티별 "강제 전송 금지" 옵션.
 - 리뷰어 결과 캐싱(동일 메시지 재심사 절감) 여부.

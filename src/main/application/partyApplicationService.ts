@@ -775,10 +775,25 @@ export class PartyApplicationService {
           );
         } catch (error) {
           // Fail-open: deliver unreviewed, but surface the failure (never silent).
+          // The badge alone is not enough — it needs a LIVE sender session, and
+          // the reviewer being unreachable (e.g. its subscription not connected)
+          // is exactly the case where nothing else says so. Report it on the
+          // result too, so HTTP/MCP/IPC callers cannot read this as a success.
           const detail = errorMessage(error);
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error" });
-          log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, error: detail });
-          return this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+          log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, reviewer: gate.reviewer.model, error: detail });
+          const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+          const notice = `Message gate reviewer '${gate.reviewer.model}' is unavailable, so the message was delivered UNREVIEWED: ${detail}`;
+          return {
+            ...delivered,
+            message: `${delivered.message} ${notice}`,
+            // Compose, never replace: the delivery layer may have its own
+            // diagnostic here (e.g. target_member_has_no_active_session), and
+            // dropping it to report the gate would just move the blind spot.
+            ...(delivered.partyMessage
+              ? { partyMessage: { ...delivered.partyMessage, error: delivered.partyMessage.error ? `${delivered.partyMessage.error}; ${notice}` : notice } }
+              : {}),
+          };
         }
         if (verdict.verdict === "reject") {
           const message = createPartyMessage(target, content, from);

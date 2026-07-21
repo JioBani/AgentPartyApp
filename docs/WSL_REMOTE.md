@@ -165,6 +165,29 @@ spawned remote), enforcing the shared-context rule.
   rendered in the drill-in detail (Bash card + currentAction + markdown report)
   with a `WSL · <distro>` workspace badge.
 
+**Implemented (reverse calls — engine → desktop):**
+- The channel also carries `{ kind: "call" }` frames in the *server→client*
+  direction, answered with `{ kind: "callResult" }`. This is for work the engine
+  legitimately owns but physically cannot perform: anything that must originate
+  from the desktop's network position.
+- First (and so far only) caller: the **Message Gate reviewer**. The subscription
+  bridge (`127.0.0.1:8317`) and the embedded router both bind the *desktop's*
+  loopback, and from inside a distro `127.0.0.1` is the distro's own — the host
+  IP does not help either, since the listeners are loopback-only. Measured:
+  `curl` from the distro to both endpoints, and to the host's `172.x` address,
+  all fail. Before this, every review threw and the gate's fail-open policy
+  delivered member-to-member messages **unreviewed**.
+- The split is deliberate: the engine keeps the gate decision, the badge and the
+  rejected-message record (it owns party state); only the credentialed HTTP call
+  moves to the host. The alternative — widening those listeners so a distro can
+  reach them — would expose subscription credentials on a broader interface and
+  depends on a WSL IP that changes across reboots and networking modes.
+- `HostChannel` (`transport/hostChannel.ts`) rejects on timeout rather than
+  hanging, because its callers sit on the user-visible message path.
+- Verified by `npm run test:engine-host-channel` (both directions over one
+  stream pair, error propagation, unknown method, timeout) and by product E2E
+  against a live WSL workspace: the same gate suite went 6 failures → 0.
+
 ## 8. In-distro server bootstrap (Stage 5)
 
 Mirrors VS Code's "install server on first connect":
