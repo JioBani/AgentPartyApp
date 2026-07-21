@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-0:#0a0b0e; --bg-1:#0e1014; --bg-2:#14171d; --bg-3:#1b1f27; --bg-4:#222731;
+  --bg-input:#0c0e12;
+  --border-subtle:#1c2028; --border:#262b35; --border-strong:#333a46;
+  --text-0:#e7e9ee; --text-1:#aeb4c0; --text-2:#79808d; --text-3:#535965;
+  --accent:#5b8cff; --accent-dim:rgba(91,140,255,.13); --accent-bd:rgba(91,140,255,.32); --accent-fg:#fff;
+  --live:#e0a14e; --live-dim:rgba(224,161,78,.13); --live-bd:rgba(224,161,78,.34);
+  --success:#54b585; --success-dim:rgba(84,181,133,.13); --success-bd:rgba(84,181,133,.32);
+  --danger:#e0635d; --danger-dim:rgba(224,99,93,.13); --danger-bd:rgba(224,99,93,.34);
+  --grid:rgba(255,255,255,.06);
+  --sans:'Geist','Geist Fallback',sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+}
+[data-theme="light"]{
+  --bg-0:#e7e8eb; --bg-1:#f3f4f6; --bg-2:#ffffff; --bg-3:#eef0f3; --bg-4:#e6e9ed;
+  --bg-input:#ffffff;
+  --border-subtle:#e2e5ea; --border:#d3d7df; --border-strong:#c0c5ce;
+  --text-0:#171a1f; --text-1:#454b56; --text-2:#6c7480; --text-3:#9aa1ac;
+  --accent:#3f6fe6; --accent-dim:rgba(63,111,230,.1); --accent-bd:rgba(63,111,230,.28); --accent-fg:#fff;
+  --live:#b9791d; --live-dim:rgba(185,121,29,.1); --live-bd:rgba(185,121,29,.3);
+  --success:#2f8f5e; --success-dim:rgba(47,143,94,.1); --success-bd:rgba(47,143,94,.28);
+  --danger:#cf4b45; --danger-dim:rgba(207,75,69,.1); --danger-bd:rgba(207,75,69,.3);
+  --grid:rgba(20,25,35,.07);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#000;font-family:var(--sans)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--border-strong);background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent);text-decoration:underline}
+@keyframes st-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes tu-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.tu-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1}
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" data-screen-label="Token Usage" style="position:relative;width:1440px;height:920px;display:flex;background:var(--bg-1);color:var(--text-0);font-family:var(--sans);font-size:13px;line-height:1.5;overflow:hidden;border-radius:10px;box-shadow:0 30px 80px -30px rgba(0,0,0,.8);-webkit-font-smoothing:antialiased">
+
+  <!-- NAV RAIL -->
+  <nav style="width:52px;flex:none;background:var(--bg-0);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;padding:11px 0;gap:5px;z-index:2">
+    <div title="Agents" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.7 4.9L18.5 9l-4.8 1.1L12 15l-1.7-4.9L5.5 9l4.8-1.1L12 3ZM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" stroke-linejoin="round"/></svg></div>
+    <div title="History" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg></div>
+    <div title="Token Usage" style="position:relative;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--accent-dim);color:var(--accent)"><span style="position:absolute;left:-11px;top:8px;bottom:8px;width:2.5px;border-radius:2px;background:var(--accent)"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div title="Members" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6.5a3 3 0 0 1 0 5.5M21 20a5.5 5.5 0 0 0-4-5.3"/></svg></div>
+    <div style="width:22px;height:1px;background:var(--border-subtle);margin:3px 0"></div>
+    <div title="설정" style="width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer" style-hover="background:var(--bg-2);color:var(--text-1)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></div>
+    <div style="flex:1"></div>
+    <div style="width:28px;height:28px;border-radius:50%;background:var(--bg-3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;color:var(--text-1)">JD</div>
+  </nav>
+
+  <!-- CONTENT -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0">
+
+    <!-- HEADER -->
+    <header style="flex:none;padding:18px 26px 15px;border-bottom:1px solid var(--border-subtle);background:var(--bg-1)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <div style="display:flex;align-items:center;gap:10px">
+            <sc-if value="{{ inMember }}" hint-placeholder-val="{{ false }}"><button onClick="{{ goDash }}" title="대시보드로" style="width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;color:var(--text-2);cursor:pointer" style-hover="color:var(--text-0);border-color:var(--border-strong)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></sc-if>
+            <h1 style="margin:0;font-size:19px;font-weight:600;letter-spacing:-.3px">{{ pageTitle }}</h1>
+          </div>
+          <span style="font-size:12.5px;color:var(--text-2)">{{ pageSubtitle }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:none">
+          <div style="display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:var(--bg-2);border:1px solid var(--border-subtle);border-radius:8px;font-size:11.5px;color:var(--text-2)"><span style="width:7px;height:7px;border-radius:2px;background:var(--text-0);flex:none"></span>실측<span style="width:1px;height:12px;background:var(--border);margin:0 1px"></span><span style="width:9px;height:7px;border-radius:2px;flex:none;background:repeating-linear-gradient(45deg,var(--text-3),var(--text-3) 1.5px,transparent 1.5px,transparent 3px)"></span>추정</div>
+          <button onClick="{{ toggleTheme }}" title="테마 전환" style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--bg-2);border:1px solid var(--border);border-radius:9px;color:var(--text-2);cursor:pointer" style-hover="color:var(--text-0);border-color:var(--border-strong)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- SCROLL BODY -->
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:20px 26px 44px">
+
+      <!-- ============ DASHBOARD ============ -->
+      <sc-if value="{{ inDash }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:18px;animation:st-rise .22s ease both">
+
+        <!-- TOOLBAR: range presets + compare -->
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="display:inline-flex;padding:3px;background:var(--bg-2);border:1px solid var(--border);border-radius:10px;gap:2px">
+            <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="5">
+              <button onClick="{{ r.select }}" style="height:30px;padding:0 13px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);background:{{ r.bg }};color:{{ r.col }}">{{ r.label }}</button>
+            </sc-for>
+          </div>
+          <div style="flex:1"></div>
+          <sc-if value="{{ compareOn }}" hint-placeholder-val="{{ false }}">
+            <div style="display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:9px;font-size:11.5px;color:var(--accent);font-weight:600"><span class="tu-num" style="color:var(--text-1)">A</span> 현재 5시간 한도 <span style="color:var(--text-3)">vs</span> <span class="tu-num" style="color:var(--text-1)">B</span> 직전 5시간 한도</div>
+          </sc-if>
+          <button onClick="{{ toggleCompare }}" title="구간 비교" style="display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);background:{{ cmpBg }};border:1px solid {{ cmpBd }};color:{{ cmpCol }}" style-hover="border-color:var(--border-strong)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v18M16 3v18M3 8h5M16 8h5M3 16h5M16 16h5" stroke-linecap="round"/></svg>비교 모드</button>
+        </div>
+
+        <!-- HEADLINE: 3 cards -->
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:14px">
+
+          <!-- Card 1: window utilization (the real constraint) -->
+          <div style="position:relative;background:var(--bg-2);border:1px solid var(--live-bd);border-radius:14px;padding:17px 19px;display:flex;flex-direction:column;gap:13px;overflow:hidden">
+            <div style="position:absolute;inset:0;background:linear-gradient(120deg,var(--live-dim),transparent 60%);pointer-events:none"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;position:relative">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-2)">5시간 한도 소진율</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--live);font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:var(--live);animation:tu-pulse 1.6s infinite"></span>실측 · Claude</span>
+            </div>
+            <div style="display:flex;align-items:flex-end;gap:14px;position:relative">
+              <div style="display:flex;align-items:baseline;gap:3px">
+                <span class="tu-num" style="font-size:44px;font-weight:600;line-height:.9;color:var(--live)">{{ h5.pct }}</span>
+                <span class="tu-num" style="font-size:20px;font-weight:600;color:var(--live)">%</span>
+              </div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px;padding-bottom:4px">
+                <div style="height:8px;border-radius:4px;background:var(--bg-4);overflow:hidden;position:relative">
+                  <div style="height:100%;width:{{ h5.pct }}%;background:var(--live);border-radius:4px"></div>
+                  <div title="현 속도 소진 예상선" style="position:absolute;top:-2px;bottom:-2px;left:{{ h5.projPct }}%;width:2px;background:var(--danger)"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-3)"><span class="tu-num">{{ h5.reset }} 후 리셋</span><span class="tu-num" style="color:var(--danger)">▲ {{ h5.proj }} 뒤 한도</span></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;position:relative;font-size:11px;color:var(--text-2)"><span style="width:8px;height:8px;border-radius:2px;background:#2bb67e;flex:none"></span>Codex 병행 한도 <span class="tu-num" style="color:var(--text-1)">{{ codexPct }}%</span> · 여유 있음</div>
+          </div>
+
+          <!-- Card 2: rate -->
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:17px 19px;display:flex;flex-direction:column;gap:11px">
+            <span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-2)">활성 시간당 토큰</span>
+            <div style="display:flex;align-items:baseline;gap:4px">
+              <span class="tu-num" style="font-size:40px;font-weight:600;line-height:.9;color:var(--text-0)">{{ rate.val }}</span>
+              <span class="tu-num" style="font-size:16px;font-weight:600;color:var(--text-2)">/h</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:5px;background:var(--danger-dim);color:var(--danger);font-size:11px;font-weight:700" class="tu-num"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 15l6-6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ rate.delta }}%</span>
+              <span style="font-size:11px;color:var(--text-2)">직전 구간 대비</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-3);line-height:1.45">유휴·승인 대기를 뺀 실제 경과 시간만 계산</div>
+          </div>
+
+        </div>
+
+        <!-- G1: HERO CHART -->
+        <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:16px 18px 12px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">타임라인 — 멤버별 토큰 × 한도 소진</span>
+                <span style="font-size:10.5px;color:var(--text-3);font-family:var(--mono)">{{ rangeLabel }}</span>
+              </div>
+              <span style="font-size:11.5px;color:var(--text-2)">{{ g1Readout }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+              <div style="display:inline-flex;padding:3px;background:var(--bg-1);border:1px solid var(--border);border-radius:9px;gap:2px">
+                <sc-for list="{{ scopes }}" as="sc" hint-placeholder-count="3">
+                  <button onClick="{{ sc.select }}" style="height:26px;padding:0 11px;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--sans);background:{{ sc.bg }};color:{{ sc.col }}">{{ sc.label }}</button>
+                </sc-for>
+              </div>
+              <sc-for list="{{ legend }}" as="m" hint-placeholder-count="5">
+                <div onMouseEnter="{{ m.hover }}" onMouseLeave="{{ clearHover }}" style="display:inline-flex;align-items:center;gap:6px;cursor:default;opacity:{{ m.op }}">
+                  <span style="width:10px;height:10px;border-radius:3px;background:{{ m.color }};flex:none"></span>
+                  <span style="font-size:11.5px;font-weight:500;color:var(--text-1)">{{ m.name }}</span>
+                </div>
+              </sc-for>
+              <div style="display:inline-flex;align-items:center;gap:6px"><span style="width:16px;height:2.5px;border-radius:2px;background:var(--text-0);flex:none"></span><span style="font-size:11.5px;font-weight:600;color:var(--text-0)">한도 소진 %</span></div>
+            </div>
+          </div>
+          <sc-if value="{{ brushOn }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 11px;background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:9px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M4 8h16M4 16h16M9 4v16M15 4v16" stroke-linecap="round"/></svg>
+              <span style="font-size:11.5px;color:var(--accent);font-weight:600">{{ brushLabel }}</span>
+              <span style="font-size:11px;color:var(--text-2)">구간이 표·그래프에 적용됨</span>
+              <div style="flex:1"></div>
+              <button onClick="{{ clearBrush }}" style="height:24px;padding:0 10px;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;color:var(--text-1);cursor:pointer;font-family:var(--sans)" style-hover="color:var(--text-0)">초기화</button>
+            </div>
+          </sc-if>
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--text-3)">간격</span>
+            <div style="display:inline-flex;padding:3px;background:var(--bg-1);border:1px solid var(--border);border-radius:9px;gap:2px">
+              <sc-for list="{{ intervals }}" as="iv" hint-placeholder-count="8">
+                <button onClick="{{ iv.select }}" style="height:26px;padding:0 10px;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--mono);background:{{ iv.bg }};color:{{ iv.col }}">{{ iv.label }}</button>
+              </sc-for>
+            </div>
+            <span style="font-size:10.5px;color:var(--text-3)">막대 1개 = 이 간격 · 낮은/빈 구간은 유휴 — 파티 내 멤버는 대개 순차 또는 2중으로만 실행됩니다</span>
+          </div>
+          <div style="width:100%">{{ g1 }}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--text-3)">추세</span>
+            <div style="display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:8px">
+              <span style="width:14px;height:2.5px;border-radius:2px;background:var(--text-0);flex:none"></span>
+              <span style="font-size:11px;color:var(--text-2)">한도</span>
+              <span class="tu-num" style="font-size:12.5px;font-weight:600;color:var(--text-0)">{{ utlTrend.val }}</span>
+              <span class="tu-num" style="font-size:11px;font-weight:700;color:{{ utlTrend.col }}">{{ utlTrend.arrow }} {{ utlTrend.delta }}</span>
+            </div>
+            <sc-for list="{{ trend }}" as="t" hint-placeholder-count="5">
+              <div style="display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:8px">
+                <span style="width:9px;height:9px;border-radius:3px;background:{{ t.color }};flex:none"></span>
+                <span style="font-size:11px;color:var(--text-2)">{{ t.name }}</span>
+                <span class="tu-num" style="font-size:12.5px;font-weight:600;color:var(--text-0)">{{ t.val }}</span>
+                <span class="tu-num" style="font-size:11px;font-weight:700;color:{{ t.col }}">{{ t.arrow }} {{ t.delta }}</span>
+              </div>
+            </sc-for>
+            <span style="font-size:10.5px;color:var(--text-3)">구간 합계 · 화살표 = 후반 vs 전반</span>
+          </div>
+          <div style="font-size:10.5px;color:var(--text-3);display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h16M9 4v16M15 4v16" stroke-linecap="round"/></svg>차트 위를 드래그해 구간을 지정하세요 (브러시). 봉우리 발견 → 확대 → 표에서 범인 확인.</div>
+        </section>
+
+        <!-- BUCKET DATA TABLE -->
+        <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:14px 18px 12px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">봉별 실제 수치</span>
+            <span style="font-size:10.5px;color:var(--text-3);font-family:var(--mono)">{{ rangeLabel }} · {{ scopeLabel }}</span>
+            <sc-if value="{{ pctMode }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 7px;border-radius:4px;background:var(--live-dim);border:1px solid var(--live-bd);font-size:9.5px;font-weight:700;color:var(--live)">시리즈별 한도% = 추정</span></sc-if>
+            <div style="flex:1"></div>
+            <div style="display:inline-flex;padding:3px;background:var(--bg-1);border:1px solid var(--border);border-radius:8px;gap:2px">
+              <sc-for list="{{ dataModes }}" as="d" hint-placeholder-count="2">
+                <button onClick="{{ d.select }}" style="height:24px;padding:0 11px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--sans);background:{{ d.bg }};color:{{ d.col }}">{{ d.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="max-height:288px;overflow:auto;border:1px solid var(--border-subtle);border-radius:10px">
+            <div style="display:grid;grid-template-columns:{{ gridTplB }};position:sticky;top:0;z-index:2;background:var(--bg-3);border-bottom:1px solid var(--border)">
+              <span style="position:sticky;left:0;z-index:3;background:var(--bg-3);padding:8px 11px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border-right:1px solid var(--border)">시각</span>
+              <sc-for list="{{ g1times }}" as="tm" hint-placeholder-count="12">
+                <span class="tu-num" style="padding:8px 8px;font-size:10.5px;font-weight:700;text-align:right;color:var(--text-2)">{{ tm }}</span>
+              </sc-for>
+            </div>
+            <sc-for list="{{ g1trows }}" as="r" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:{{ gridTplB }};background:{{ r.rowBg }};border-bottom:1px solid var(--border-subtle)" style-hover="background:var(--bg-3)">
+                <span style="position:sticky;left:0;z-index:1;background:{{ r.stickyBg }};padding:6px 11px;display:flex;align-items:center;gap:6px;border-right:1px solid var(--border)">
+                  <span style="width:8px;height:8px;border-radius:2px;background:{{ r.dotBg }};flex:none"></span>
+                  <span style="font-size:11px;font-weight:{{ r.labelWeight }};color:{{ r.labelCol }};white-space:nowrap">{{ r.name }}</span>
+                </span>
+                <sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="12">
+                  <span class="tu-num" style="padding:6px 8px;font-size:11px;text-align:right;color:{{ r.cellCol }};font-weight:{{ r.cellWeight }};font-style:{{ r.cellItalic }}">{{ c }}</span>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size:10.5px;color:var(--text-3)">가로축 = 시간 봉(차트와 동일) · 가로로 스크롤 · 멤버가 늘어나면 행으로 추가됩니다</span>
+        </section>
+
+        <!-- TABLE A: WHO -->
+        <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px 12px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">누가 — 파티 ▸ 멤버</span>
+              <span style="font-size:10.5px;color:var(--text-3);font-family:var(--mono)">소진 많은 순</span>
+            </div>
+            <sc-if value="{{ triggerFilter }}" hint-placeholder-val="{{ false }}">
+              <div style="display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 8px 0 10px;background:var(--live-dim);border:1px solid var(--live-bd);border-radius:7px;font-size:11px;font-weight:600;color:var(--live)">필터: {{ triggerFilterLabel }}<button onClick="{{ clearFilter }}" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--live);cursor:pointer;padding:0"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button></div>
+            </sc-if>
+          </div>
+          <!-- head -->
+          <div style="display:grid;grid-template-columns:{{ colsA }};gap:0;padding:0 18px 8px;border-bottom:1px solid var(--border-subtle);font-size:10.5px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--text-3)">
+            <sc-for list="{{ headA }}" as="h" hint-placeholder-count="9">
+              <button onClick="{{ h.sort }}" style="display:flex;align-items:center;gap:4px;justify-content:{{ h.justify }};background:transparent;border:none;padding:0;cursor:pointer;font:inherit;letter-spacing:.3px;text-transform:uppercase;color:{{ h.col }}" style-hover="color:var(--text-1)">{{ h.label }}<span style="opacity:{{ h.arrowOp }};font-size:9px">{{ h.arrow }}</span></button>
+            </sc-for>
+          </div>
+          <!-- body -->
+          <div>
+            <sc-for list="{{ parties }}" as="p" hint-placeholder-count="2">
+              <div onClick="{{ p.toggle }}" style="display:grid;grid-template-columns:{{ colsA }};align-items:center;padding:11px 18px;cursor:pointer;background:{{ p.bg }};border-bottom:1px solid var(--border-subtle)" style-hover="background:var(--bg-3)">
+                <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2.2" style="flex:none;transform:{{ p.caret }};transition:transform .15s"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.7" style="flex:none"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke-linejoin="round"/></svg>
+                  <span style="font-size:13px;font-weight:600;color:var(--text-0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+                  <span style="font-size:10px;color:var(--text-3);font-family:var(--mono);flex:none">{{ p.mcount }}</span>
+                </div>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-1)">{{ p.active }}</span>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-2)">{{ p.turns }}</span>
+                <span class="tu-num" style="text-align:right;font-size:12.5px;font-weight:600;color:var(--text-0)">{{ p.tokens }}</span>
+                <div style="display:flex;align-items:center;gap:8px;padding-left:14px">
+                  <div style="flex:1;height:7px;border-radius:4px;background:var(--bg-4);overflow:hidden"><div style="height:100%;width:{{ p.sharePct }}%;background:var(--accent);border-radius:4px"></div></div>
+                  <span class="tu-num" style="font-size:12px;font-weight:600;color:var(--text-1);width:38px;text-align:right">{{ p.share }}%</span>
+                </div>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-1)">{{ p.rate }}</span>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:{{ p.cacheCol }}">{{ p.cache }}%</span>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:{{ p.ovCol }}">{{ p.overhead }}%</span>
+                <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-3);font-style:italic">{{ p.est }}</span>
+              </div>
+              <sc-if value="{{ p.expanded }}" hint-placeholder-val="{{ true }}">
+                <sc-for list="{{ p.members }}" as="m" hint-placeholder-count="4">
+                  <div onClick="{{ m.drill }}" onMouseEnter="{{ m.hover }}" onMouseLeave="{{ clearHover }}" style="display:grid;grid-template-columns:{{ colsA }};align-items:center;padding:9px 18px;cursor:pointer;background:{{ m.bg }};border-bottom:1px solid var(--border-subtle);opacity:{{ m.op }}" style-hover="background:var(--bg-3)">
+                    <div style="display:flex;align-items:center;gap:9px;min-width:0;padding-left:22px">
+                      <span style="width:9px;height:9px;border-radius:3px;background:{{ m.color }};flex:none"></span>
+                      <span style="font-size:12.5px;font-weight:500;color:var(--text-0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</span>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.8" style="flex:none;opacity:.6"><path d="M7 17L17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-1)">{{ m.active }}</span>
+                    <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-2)">{{ m.turns }}</span>
+                    <span class="tu-num" style="text-align:right;font-size:12px;color:var(--text-0)">{{ m.tokens }}</span>
+                    <div style="display:flex;align-items:center;gap:8px;padding-left:14px">
+                      <div style="flex:1;height:6px;border-radius:3px;background:var(--bg-4);overflow:hidden"><div style="height:100%;width:{{ m.sharePct }}%;background:{{ m.color }};border-radius:3px"></div></div>
+                      <span class="tu-num" style="font-size:11.5px;color:var(--text-1);width:38px;text-align:right">{{ m.share }}%</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end"><span style="color:{{ m.trendCol }};font-size:10px">{{ m.trend }}</span><span class="tu-num" style="font-size:12px;color:var(--text-1)">{{ m.rate }}</span></div>
+                    <span class="tu-num" style="text-align:right;font-size:12px;color:{{ m.cacheCol }}">{{ m.cache }}%</span>
+                    <span class="tu-num" style="text-align:right;font-size:12px;color:{{ m.ovCol }}">{{ m.overhead }}%</span>
+                    <span class="tu-num" style="text-align:right;font-size:11.5px;color:var(--text-3);font-style:italic">{{ m.est }}</span>
+                  </div>
+                </sc-for>
+              </sc-if>
+            </sc-for>
+          </div>
+          <div style="padding:9px 18px;display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--text-3)"><span style="font-style:italic">기울임 · ~</span> 열은 <b style="color:var(--text-2);font-weight:600">추정값</b>입니다 (멤버별 한도 배분 근사) — 실측 아님</div>
+        </section>
+
+        <!-- LOWER GRID: Table B + G2 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+          <!-- TABLE B: WHAT -->
+          <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">무엇에 — 작업 종류 (trigger)</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)">오버헤드 <span class="tu-num" style="color:var(--live);font-weight:700">{{ overheadTotal }}%</span></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <sc-for list="{{ triggers }}" as="t" hint-placeholder-count="6">
+                <div onClick="{{ t.select }}" style="display:flex;flex-direction:column;gap:7px;padding:9px 11px;border-radius:9px;cursor:pointer;background:{{ t.bg }};border:1px solid {{ t.bd }}" style-hover="background:var(--bg-3)">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="width:9px;height:9px;border-radius:3px;background:{{ t.color }};flex:none"></span>
+                    <span style="font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text-0)">{{ t.key }}</span>
+                    <sc-if value="{{ t.isOverhead }}" hint-placeholder-val="{{ true }}"><span style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--live);background:var(--live-dim);padding:1px 5px;border-radius:3px">overhead</span></sc-if>
+                    <span style="flex:1;font-size:11px;color:var(--text-3);text-align:right">{{ t.note }}</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1.6fr 62px 58px;align-items:center;gap:10px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:7px;border-radius:4px;background:var(--bg-4);overflow:hidden"><div style="height:100%;width:{{ t.sharePct }}%;background:{{ t.color }};border-radius:4px"></div></div>
+                      <span class="tu-num" style="font-size:12px;font-weight:600;color:var(--text-1);width:34px;text-align:right">{{ t.share }}%</span>
+                    </div>
+                    <span class="tu-num" style="font-size:12px;color:var(--text-0);text-align:right">{{ t.tokens }}</span>
+                    <div style="display:flex;align-items:center;gap:3px;justify-content:flex-end"><span style="width:5px;height:5px;border-radius:50%;background:var(--text-3);flex:none"></span><span class="tu-num" style="font-size:11.5px;color:var(--text-2)">{{ t.rate }}</span></div>
+                  </div>
+                  <sc-if value="{{ t.isGate }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:1px;padding:8px 10px;background:var(--danger-dim);border:1px solid var(--danger-bd);border-radius:8px">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.8" style="flex:none"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke-linejoin="round"/></svg>
+                      <div style="display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:11px;color:var(--text-1)">거절률 <b class="tu-num" style="color:var(--text-0)">34%</b> · 순액 <b class="tu-num" style="color:var(--danger)">−0.42M</b></span>
+                        <span style="font-size:10.5px;color:var(--text-2)">차단 절감 &lt; 리뷰+재작성 비용 → <b style="color:var(--danger)">순손실</b>. 게이트 재검토 필요</span>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-3)">행을 클릭하면 화면 전체가 그 종류로 필터링됩니다</div>
+          </section>
+
+          <!-- G2 -->
+          <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:14px 18px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">trigger 구성 추이</span>
+                <span style="font-size:11px;color:var(--text-2)">설정 변경 전후 구성비 = 실험 판정</span>
+              </div>
+              <div style="display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;background:var(--live-dim);border:1px solid var(--live-bd);border-radius:6px;font-size:10px;font-weight:600;color:var(--live)"><span style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--live)"></span>게이트 도입</div>
+            </div>
+            <div style="width:100%">{{ g2 }}</div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+              <sc-for list="{{ g2legend }}" as="l" hint-placeholder-count="5">
+                <div style="display:inline-flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:2px;background:{{ l.color }};flex:none"></span><span style="font-family:var(--mono);font-size:11px;color:var(--text-2)">{{ l.name }}</span></div>
+              </sc-for>
+            </div>
+            <div style="padding:8px 10px;background:var(--bg-1);border:1px solid var(--border-subtle);border-radius:8px;font-size:11px;color:var(--text-1);line-height:1.5"><b style="color:var(--success)">판정:</b> 게이트 도입 후 <span class="tu-num" style="color:var(--accent)">party-message</span> 비중 30%→18%로 감소. 다만 <span class="tu-num" style="color:var(--live)">gate-review</span> 자체가 9%를 새로 차지 — 순효과는 위 순액으로 확인.</div>
+          </section>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ MEMBER DRILL-IN ============ -->
+      <sc-if value="{{ inMember }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:16px;animation:st-rise .22s ease both">
+
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg-2);border:1px solid var(--border);border-radius:11px">
+            <span style="width:12px;height:12px;border-radius:4px;background:{{ dm.color }};flex:none"></span>
+            <span style="font-size:15px;font-weight:600;color:var(--text-0)">{{ dm.name }}</span>
+            <span style="font-size:11px;color:var(--text-3);font-family:var(--mono)">{{ dm.party }}</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;flex-direction:column;gap:1px;padding:8px 14px;background:var(--bg-2);border:1px solid var(--border-subtle);border-radius:10px"><span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px">총 토큰</span><span class="tu-num" style="font-size:15px;font-weight:600;color:var(--text-0)">1.39M</span></div>
+            <div style="display:flex;flex-direction:column;gap:1px;padding:8px 14px;background:var(--bg-2);border:1px solid var(--border-subtle);border-radius:10px"><span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px">캐시 적중</span><span class="tu-num" style="font-size:15px;font-weight:600;color:var(--live)">44%</span></div>
+            <div style="display:flex;flex-direction:column;gap:1px;padding:8px 14px;background:var(--bg-2);border:1px solid var(--border-subtle);border-radius:10px"><span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px">오버헤드</span><span class="tu-num" style="font-size:15px;font-weight:600;color:var(--live)">74%</span></div>
+          </div>
+          <div style="flex:1"></div>
+          <button style="display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 15px;background:var(--accent);border:none;border-radius:10px;color:var(--accent-fg);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--sans)" style-hover="filter:brightness(1.08)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.4 8.4 0 0 1-1 4 8.5 8.5 0 0 1-7.6 4.5 8.4 8.4 0 0 1-4-1L3 20l1-3.4a8.4 8.4 0 0 1-1-4 8.5 8.5 0 0 1 12.5-7.6" stroke-linecap="round" stroke-linejoin="round"/></svg>이 멤버 대화로 이동</button>
+        </div>
+
+        <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:16px 18px 12px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">세션 내 컨텍스트 증가 곡선</span>
+            <span style="font-size:11.5px;color:var(--text-2)">기울기가 곧 비용입니다. 세로선은 compact 지점으로, 끊긴 뒤 캐시가 다시 쌓입니다.</span>
+          </div>
+          <div style="width:100%">{{ ctxChart }}</div>
+        </section>
+
+        <section style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:14px 18px 16px;display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:13.5px;font-weight:600;color:var(--text-0)">비싼 턴</span>
+          <div style="display:grid;grid-template-columns:34px 1fr 92px 120px 70px;gap:0;padding:0 4px 7px;border-bottom:1px solid var(--border-subtle);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3)">
+            <span>#</span><span>trigger · 요약</span><span style="text-align:right">최대 도구</span><span style="text-align:right">출력</span><span style="text-align:right">토큰</span>
+          </div>
+          <sc-for list="{{ turns }}" as="t" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:34px 1fr 92px 120px 70px;align-items:center;gap:0;padding:10px 4px;border-bottom:1px solid var(--border-subtle);cursor:pointer" style-hover="background:var(--bg-3)">
+              <span class="tu-num" style="font-size:12px;color:var(--text-3)">{{ t.n }}</span>
+              <div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="font-family:var(--mono);font-size:10.5px;font-weight:600;color:{{ t.trigCol }};background:{{ t.trigBg }};padding:1px 6px;border-radius:4px;flex:none">{{ t.trigger }}</span><span style="font-size:12px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.summary }}</span></div>
+              <span class="tu-num" style="text-align:right;font-size:11.5px;color:var(--text-2)">{{ t.tool }}</span>
+              <div style="display:flex;align-items:center;gap:8px;padding-left:14px"><div style="flex:1;height:6px;border-radius:3px;background:var(--bg-4);overflow:hidden"><div style="height:100%;width:{{ t.barPct }}%;background:{{ t.color }};border-radius:3px"></div></div></div>
+              <span class="tu-num" style="text-align:right;font-size:12.5px;font-weight:600;color:var(--text-0)">{{ t.tokens }}</span>
+            </div>
+          </sc-for>
+        </section>
+
+        <!-- EMPTY STATE demo -->
+        <section style="background:var(--bg-2);border:1px dashed var(--border);border-radius:14px;padding:18px;display:flex;align-items:center;gap:14px">
+          <span style="width:40px;height:40px;flex:none;border-radius:11px;background:var(--bg-3);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-3)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13px;font-weight:600;color:var(--text-1)">주간 한도 · 아직 없음</span>
+            <span style="font-size:11.5px;color:var(--text-3)">계측을 켠 지 얼마 안 돼 표본이 부족합니다. 값을 <b style="color:var(--text-2)">지어내지 않고</b> "아직 없음"으로 둡니다 — 0%로 표시하면 오해를 부릅니다.</span>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:920},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dashboard&quot;,&quot;member&quot;],&quot;default&quot;:&quot;dashboard&quot;,&quot;tsType&quot;:&quot;'dashboard'|'member'&quot;}}">
+class Component extends DCLogic {
+  state = {
+    theme: 'light',
+    view: 'dashboard',
+    range: '현재 5시간 한도',
+    scope: 'all',
+    interval: '5m',
+    compare: false,
+    expanded: { tatica: true, coldwater: false },
+    sortKey: 'share', sortDir: 'desc',
+    hover: null,
+    trigFilter: null,
+    brush: null,       // {a,b} bucket indices
+    hoverBucket: null,
+  };
+  _brushing = false;
+
+  MEM = {
+    backend:{c:'#5b8cff'}, frontend:{c:'#3aa8c9'}, reviewer:{c:'#7c6cf0'},
+    analyst:{c:'#c774d9'}, planner:{c:'#d9678f'},
+    api:{c:'#2fa8a0'}, worker:{c:'#c78a4a'},
+  };
+  // Tatica per-bucket tokens (k) — 현실적: 대개 1명, 가끔 2명만 동시 실행. 나머지는 유휴(0)
+  BK = {
+    backend:  [420,520,610,480,300, 60, 20,  0,  0,  0,  0,  0,  0,  0,  0],
+    frontend: [  0,  0, 40,120,260,420,500,360,180,  0,  0,  0,  0,  0,  0],
+    reviewer: [  0,  0,  0,  0,  0, 80,220,300,120,  0,  0,  0,140,220, 90],
+    analyst:  [  0,  0,  0,  0,  0,  0,  0,  0,  0,220,320,180, 60,  0,  0],
+    planner:  [  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 40,120, 80,  0,  0],
+  };
+  UTIL = [6,13,21,29,36,43,52,58,61,62,63,63,63,63,63];
+  // Coldwater API per-bucket tokens (k) — 동일하게 핸드오프 중심
+  COLD = {
+    api:      [300,360,280,120, 40,  0,  0,  0,  0, 60,140,100, 40,  0,  0],
+    worker:   [  0,  0, 60,180,240,180, 80,  0,  0,  0,  0,  0,  0,  0,  0],
+    reviewer: [  0,  0,  0,  0,  0, 60,160,200, 80,  0,  0,  0, 40, 90, 40],
+  };
+  PBK = {
+    tatica:    ['backend','frontend','reviewer','analyst','planner'],
+    coldwater: ['api','worker','reviewer'],
+  };
+  PARTYCOL = { tatica:'#5b8cff', coldwater:'#12b5a8' };
+  PARTYLABEL = { tatica:'Tatica Defence', coldwater:'Coldwater API' };
+  INTERVALS = [
+    { key:'1m', label:'1분', min:1,    n:90 },
+    { key:'3m', label:'3분', min:3,    n:80 },
+    { key:'5m', label:'5분', min:5,    n:72 },
+    { key:'15m',label:'15분',min:15,   n:64 },
+    { key:'30m',label:'30분',min:30,   n:56 },
+    { key:'1h', label:'1시간',min:60,  n:48 },
+    { key:'4h', label:'4시간',min:240, n:42 },
+    { key:'1d', label:'1일', min:1440,n:30 },
+  ];
+  // G2 trigger shares per bucket (sum ~100). gate introduced @ bucket 6
+  G2 = {
+    user:         [58,56,55,54,52,50,50,51,52,53,52,52,53,52,52],
+    'party-message':[30,31,30,31,30,30,20,19,18,18,18,19,18,18,18],
+    'gate-review':[0,0,0,0,0,1,11,12,12,11,12,11,12,12,12],
+    compact:      [8,9,11,11,14,15,15,14,13,13,13,13,12,13,13],
+    other:        [4,4,4,4,4,4,4,4,5,5,5,5,5,5,5],
+  };
+  G2COL = { user:'#9aa1ac', 'party-message':'var(--accent)', 'gate-review':'var(--live)', compact:'#8b83b8', other:'var(--border-strong)' };
+
+  PARTIES = [
+    { id:'tatica', name:'Tatica Defence', active:'4시간 36분', turns:904, tokens:9.83e6, share:78, rate:'214k', cache:64, overhead:38, est:'~48%',
+      members:[
+        { name:'backend',  active:'3시간 58분', turns:214, tokens:4.28e6, share:34, rate:'312k', trend:'▲', cache:71, overhead:22, est:'~19%' },
+        { name:'frontend', active:'2시간 44분', turns:156, tokens:2.52e6, share:20, rate:'198k', trend:'▲', cache:63, overhead:31, est:'~11%' },
+        { name:'reviewer', active:'2시간 10분', turns:402, tokens:1.39e6, share:11, rate:'88k',  trend:'▼', cache:44, overhead:74, est:'~5%'  },
+        { name:'analyst',  active:'1시간 30분', turns:88,  tokens:1.13e6, share:9,  rate:'132k', trend:'–', cache:81, overhead:12, est:'~5%'  },
+        { name:'planner',  active:'52분',       turns:44,  tokens:0.50e6, share:4,  rate:'61k',  trend:'▼', cache:58, overhead:19, est:'~2%'  },
+      ] },
+    { id:'coldwater', name:'Coldwater API', active:'2시간 30분', turns:270, tokens:2.77e6, share:22, rate:'150k', cache:57, overhead:33, est:'~11%',
+      members:[
+        { name:'api',      active:'1시간 48분', turns:120, tokens:1.64e6, share:13, rate:'210k', trend:'▲', cache:66, overhead:24, est:'~7%' },
+        { name:'worker',   active:'1시간 02분', turns:60,  tokens:0.76e6, share:6,  rate:'95k',  trend:'–', cache:52, overhead:20, est:'~3%' },
+        { name:'reviewer', active:'40분',       turns:90,  tokens:0.38e6, share:3,  rate:'40k',  trend:'▼', cache:39, overhead:68, est:'~1%' },
+      ] },
+  ];
+  TRIG = [
+    { key:'user',          color:'#9aa1ac', calls:612, tokens:6.55e6, share:52, rate:'210k', overhead:false, note:'사람 지시 · 기준선' },
+    { key:'party-message', color:'var(--accent)', calls:388, tokens:2.65e6, share:21, rate:'150k', overhead:true, note:'멤버 간 메시지' },
+    { key:'gate-review',   color:'var(--live)', calls:356, tokens:1.13e6, share:9, rate:'96k', overhead:true, gate:true, note:'게이트 리뷰어' },
+    { key:'compact',       color:'#8b83b8', calls:42, tokens:1.39e6, share:11, rate:'240k', overhead:true, note:'컨텍스트 압축' },
+    { key:'subagent',      color:'#3aa8c9', calls:71, tokens:0.63e6, share:5, rate:'120k', overhead:false, note:'서브에이전트' },
+    { key:'init/poller',   color:'var(--border-strong)', calls:240, tokens:0.25e6, share:2, rate:'8k', overhead:true, note:'초기화·폴링 · 고정비' },
+  ];
+  TURNS = [
+    { n:1, trigger:'compact', summary:'세션 컨텍스트 압축 — 요약 재생성', tool:'summarize', tokens:'52k', bar:100 },
+    { n:2, trigger:'party-message', summary:'backend → reviewer diff 검토 요청', tool:'read_file', tokens:'41k', bar:79 },
+    { n:3, trigger:'gate-review', summary:'메시지 게이트 심사 · 반려', tool:'—', tokens:'12k', bar:23 },
+    { n:4, trigger:'user', summary:'테스트 실패 원인 추적', tool:'grep', tokens:'9.4k', bar:18 },
+    { n:5, trigger:'party-message', summary:'frontend 상태 동기화 확인', tool:'read_file', tokens:'6.1k', bar:12 },
+  ];
+  TCOL = { user:'#9aa1ac', 'party-message':'#5b8cff', 'gate-review':'#e0a14e', compact:'#8b83b8', subagent:'#3aa8c9' };
+
+  componentDidMount(){
+    if (this.props && this.props.theme) this.setState({ theme: this.props.theme });
+    this._up = () => { this._brushing = false; };
+    window.addEventListener('mouseup', this._up, true);
+  }
+  componentWillUnmount(){ window.removeEventListener('mouseup', this._up, true); }
+
+  toggleTheme(){ this.setState(s=>({theme:s.theme==='dark'?'light':'dark'})); }
+  setRange(r){ this.setState({ range:r, brush:null }); }
+  toggleCompare(){ this.setState(s=>({compare:!s.compare})); }
+  toggleParty(id){ this.setState(s=>({expanded:{...s.expanded,[id]:!s.expanded[id]}})); }
+  setSort(k){ this.setState(s=>({ sortKey:k, sortDir: s.sortKey===k && s.sortDir==='desc' ? 'asc':'desc' })); }
+  setHover(m){ this.setState({hover:m}); }
+  clearHover(){ this.setState({hover:null}); }
+  setFilter(k){ this.setState(s=>({ trigFilter: s.trigFilter===k?null:k })); }
+  drill(name,party,color){ this.setState({ view:'member', dm:{name,party,color} }); }
+  goDash(){ this.setState({ view:'dashboard' }); }
+  brushDown(i){ this._brushing=true; this.setState({ brush:{a:i,b:i} }); }
+  brushMove(i){ if(!this._brushing) return; this.setState(s=> s.brush?{brush:{...s.brush,b:i}}:{}); }
+  clearBrush(){ this.setState({brush:null}); }
+  setScope(sc){ this.setState({scope:sc, hover:null}); }
+  setBucket(iv){ this.setState({interval:iv, brush:null, hoverBucket:null}); }
+  setDataMode(m){ this.setState({dataMode:m}); }
+
+  curInterval(){ return this.INTERVALS.find(x=>x.key===this.state.interval)||this.INTERVALS[2]; }
+  interp(arr,t){ const p=t*(arr.length-1); const lo=Math.floor(p),hi=Math.min(lo+1,arr.length-1),f=p-lo; return arr[lo]+(arr[hi]-arr[lo])*f; }
+  seedFor(k){ let s=0; for(const c of k) s+=c.charCodeAt(0); return s%13; }
+  // sampled value at bucket i of N, with deterministic candle-like texture
+  sampleVal(profile,i,N,key){ const t=N>1?i/(N-1):0; const s=this.seedFor(key);
+    const base=this.interp(profile,t);
+    if(base<3) return 0; // 유휴: 활동 없는 멤버는 0
+    const j = 1 + 0.17*Math.sin(i*1.9+s) + 0.10*Math.sin(i*0.63+s*2.1);
+    return Math.max(base*j, 1); }
+  bucketLabelAt(i,N,iv){ const base=new Date(2026,6,21,14,50,0).getTime();
+    const d=new Date(base-(N-1-i)*iv.min*60000);
+    const p=x=>String(x).padStart(2,'0');
+    if(iv.min>=240) return (d.getMonth()+1)+'/'+d.getDate();
+    return p(d.getHours())+':'+p(d.getMinutes()); }
+
+  // series for current G1 scope: [{key,color,name,vals}]
+  seriesForScope(){
+    const sc=this.state.scope, N=15;
+    if(sc==='all'){
+      const sum=(mems,data)=>{ const a=new Array(N).fill(0); mems.forEach(m=>{ for(let i=0;i<N;i++) a[i]+=data[m][i]; }); return a; };
+      return [
+        { key:'tatica', color:this.PARTYCOL.tatica, name:'Tatica Defence', vals:sum(this.PBK.tatica,this.BK) },
+        { key:'coldwater', color:this.PARTYCOL.coldwater, name:'Coldwater API', vals:sum(this.PBK.coldwater,this.COLD) },
+      ];
+    }
+    const data = sc==='coldwater'? this.COLD : this.BK;
+    return this.PBK[sc].map(m=>({ key:m, color:this.MEM[m].c, name:m, vals:data[m] }));
+  }
+
+  el(t,p,c){ return React.createElement(t,p,c); }
+
+  buildG1(){
+    const W=1080,H=300, x0=8,x1=1032,y0=14,y1=250;
+    const iv=this.curInterval(), N=iv.n, slot=(x1-x0)/N, barW=Math.max(slot*0.62,2);
+    const series=this.seriesForScope();
+    const samp=series.map(se=>{ const a=[]; for(let i=0;i<N;i++) a.push(this.sampleVal(se.vals,i,N,se.key)); return {...se,arr:a}; });
+    const utl=[]; for(let i=0;i<N;i++) utl.push(this.interp(this.UTIL, N>1?i/(N-1):0));
+    const totals=[]; for(let i=0;i<N;i++){ let s=0; samp.forEach(se=>s+=se.arr[i]); totals.push(s); }
+    const maxT=Math.max(...totals)*1.08;
+    const hov=this.state.hover, br=this.state.brush;
+    const bset = br? {lo:Math.min(br.a,br.b),hi:Math.max(br.a,br.b)}:null;
+    const kids=[];
+    // grid + left ticks (tokens) + right ticks (%)
+    for(let g=0;g<=4;g++){ const y=y1-(y1-y0)*g/4;
+      kids.push(this.el('line',{key:'g'+g,x1:x0+30,y1:y,x2:x1-24,y2:y,stroke:'var(--grid)','stroke-width':1}));
+      kids.push(this.el('text',{key:'lt'+g,x:x0+26,y:y+3,'text-anchor':'end','font-size':10,fill:'var(--text-3)','font-family':'var(--mono)'}, this.fmtK(maxT*g/4)));
+      kids.push(this.el('text',{key:'rt'+g,x:x1-20,y:y+3,'text-anchor':'start','font-size':10,fill:'var(--text-3)','font-family':'var(--mono)'}, (25*g)+'%'));
+    }
+    // brush band
+    if(bset){ const bx=x0+34+slot*bset.lo, bw=slot*(bset.hi-bset.lo+1);
+      kids.push(this.el('rect',{key:'br',x:bx,y:y0,width:bw,height:y1-y0,fill:'var(--accent)','fill-opacity':.1,stroke:'var(--accent)','stroke-opacity':.4,'stroke-width':1,rx:3})); }
+    // stacked bars
+    const px = i => x0+34+slot*i + (slot-barW)/2;
+    for(let i=0;i<N;i++){
+      let acc=0;
+      samp.forEach(se=>{
+        const v=se.arr[i], h=(v/maxT)*(y1-y0);
+        if(h<0.4) return; // 유휴 구간은 막대 없음
+        const dim = hov && hov!==se.key ? .22 : 1;
+        kids.push(this.el('rect',{key:'b'+i+se.key,x:px(i),y:y1-acc-h,width:barW,height:h,fill:se.color,opacity:dim,rx:1.5}));
+        acc+=h;
+      });
+    }
+    // util line
+    const uy = v => y1-(v/100)*(y1-y0);
+    const ux = i => x0+34+slot*i+slot/2;
+    let d=''; utl.forEach((v,i)=>{ d+=(i?'L':'M')+ux(i)+' '+uy(v); });
+    kids.push(this.el('path',{key:'uf',d:d+`L${ux(N-1)} ${y1}L${ux(0)} ${y1}Z`,fill:'var(--text-0)','fill-opacity':.05}));
+    kids.push(this.el('path',{key:'ul',d,fill:'none',stroke:'var(--text-0)','stroke-width':2.2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+    if(N<=26) utl.forEach((v,i)=> kids.push(this.el('circle',{key:'uc'+i,cx:ux(i),cy:uy(v),r:2.6,fill:'var(--bg-2)',stroke:'var(--text-0)','stroke-width':1.8})));
+    // config marker (게이트 도입 ~40% 지점)
+    const cmx=x0+34+slot*(N*0.4); kids.push(this.el('line',{key:'cm',x1:cmx,y1:y0,x2:cmx,y2:y1,stroke:'var(--live)','stroke-width':1.4,'stroke-dasharray':'3 3'}));
+    // hit rects + time labels
+    const lblStep=Math.max(Math.ceil(N/8),1);
+    for(let i=0;i<N;i++){
+      const hb=this.state.hoverBucket===i;
+      if(hb) kids.push(this.el('rect',{key:'hl'+i,x:x0+34+slot*i,y:y0,width:slot,height:y1-y0,fill:'var(--text-0)','fill-opacity':.04}));
+      kids.push(this.el('rect',{key:'ht'+i,x:x0+34+slot*i,y:y0,width:slot,height:y1-y0,fill:'transparent',style:{cursor:'crosshair'},
+        onMouseDown:()=>this.brushDown(i), onMouseEnter:()=>{this.brushMove(i);this.setState({hoverBucket:i});}, onMouseLeave:()=>this.setState({hoverBucket:null})}));
+      if(i%lblStep===0){ const mm=this.bucketLabelAt(i,N,iv); kids.push(this.el('text',{key:'xl'+i,x:x0+34+slot*i+slot/2,y:y1+18,'text-anchor':'middle','font-size':10,fill:'var(--text-3)','font-family':'var(--mono)'},mm)); }
+    }
+    return this.el('svg',{viewBox:`0 0 ${W} ${H}`,width:'100%',style:{display:'block',userSelect:'none'}},kids);
+  }
+
+  buildG2(){
+    const W=520,H=180,x0=4,x1=516,y0=8,y1=158,N=15,slot=(x1-x0)/N;
+    const keys=Object.keys(this.G2);
+    const ux=i=>x0+slot*i+slot/2;
+    const kids=[];
+    // stacked areas (normalized ~100)
+    const acc=new Array(N).fill(0);
+    keys.forEach((k)=>{
+      const top=[],bot=[];
+      for(let i=0;i<N;i++){ const b=acc[i]; const t=b+this.G2[k][i]; bot.push(b); top.push(t); acc[i]=t; }
+      let d='';
+      for(let i=0;i<N;i++){ d+=(i?'L':'M')+ux(i)+' '+(y1-top[i]/100*(y1-y0)); }
+      for(let i=N-1;i>=0;i--){ d+='L'+ux(i)+' '+(y1-bot[i]/100*(y1-y0)); }
+      d+='Z';
+      kids.push(this.el('path',{key:k,d,fill:this.G2COL[k],'fill-opacity':.85}));
+    });
+    const cmx=ux(6); kids.push(this.el('line',{key:'cm',x1:cmx,y1:y0,x2:cmx,y2:y1,stroke:'var(--live)','stroke-width':1.4,'stroke-dasharray':'3 3'}));
+    return this.el('svg',{viewBox:`0 0 ${W} ${H}`,width:'100%',style:{display:'block'}},kids);
+  }
+
+  buildCtx(){
+    const W=1000,H=220,x0=40,x1=980,y0=12,y1=180,N=40;
+    // context growth with 2 compact resets
+    const pts=[]; let c=0;
+    for(let i=0;i<N;i++){ c+=3+Math.random()*0; c=[6,12,18,25,33,42,52,63,75,88,100,113,128,142,20,30,42,55,68,80,92,104,116,128,138,146,152,30,40,52,64,77,89,100,110,119,127,134,140,145][i]; pts.push(c); }
+    const resets=[14,27];
+    const maxC=160;
+    const ux=i=>x0+(x1-x0)*i/(N-1), uy=v=>y1-(v/maxC)*(y1-y0);
+    const kids=[];
+    for(let g=0;g<=4;g++){ const y=y1-(y1-y0)*g/4; kids.push(this.el('line',{key:'g'+g,x1:x0,y1:y,x2:x1,y2:y,stroke:'var(--grid)','stroke-width':1}));
+      kids.push(this.el('text',{key:'t'+g,x:x0-6,y:y+3,'text-anchor':'end','font-size':10,fill:'var(--text-3)','font-family':'var(--mono)'},(40*g)+'k')); }
+    resets.forEach((r,ri)=>{ const x=ux(r); kids.push(this.el('line',{key:'r'+ri,x1:x,y1:y0,x2:x,y2:y1,stroke:'var(--live)','stroke-width':1.4,'stroke-dasharray':'3 3'}));
+      kids.push(this.el('text',{key:'rl'+ri,x:x+4,y:y0+11,'font-size':9.5,fill:'var(--live)','font-family':'var(--mono)'},'compact')); });
+    // draw as segments split at resets
+    let seg=[[]]; pts.forEach((v,i)=>{ if(resets.includes(i)) seg.push([]); seg[seg.length-1].push([i,v]); });
+    seg.forEach((s,si)=>{ if(!s.length) return; let d=''; s.forEach((p,k)=>{ d+=(k?'L':'M')+ux(p[0])+' '+uy(p[1]); });
+      kids.push(this.el('path',{key:'seg'+si,d,fill:'none',stroke:this.state.dm?this.state.dm.color:'#7c6cf0','stroke-width':2.4,'stroke-linejoin':'round'})); });
+    return this.el('svg',{viewBox:`0 0 ${W} ${H}`,width:'100%',style:{display:'block'}},kids);
+  }
+
+  fmtK(v){ // v in k-tokens
+    if(v>=1000) return (v/1000).toFixed(1)+'M';
+    return Math.round(v)+'k';
+  }
+  bucketTime(i){ const start=9*60+40; const t=start+i*20; const h=Math.floor(t/60)%24, m=t%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+  fmtTok(n){ if(n>=1e6) return (n/1e6).toFixed(2)+'M'; if(n>=1e3) return (n/1e3).toFixed(1)+'k'; return ''+n; }
+
+  renderVals(){
+    const s=this.state;
+    const inDash=s.view==='dashboard', inMember=s.view==='member';
+    const dm=s.dm||{name:'reviewer',party:'Tatica Defence',color:'#7c6cf0'};
+
+    // ranges
+    const RG=['현재 5시간 한도','현재 주간 한도','오늘','어제','기간 지정'];
+    const ranges=RG.map(r=>{ const active=(s.brush?'기간 지정':s.range)===r;
+      return { label:r, select:()=>this.setRange(r), bg:active?'var(--accent)':'transparent', col:active?'var(--accent-fg)':'var(--text-2)' }; });
+
+    // sort members
+    const sk=s.sortKey, dir=s.sortDir==='desc'?-1:1;
+    const numOf=(o,k)=>{ if(k==='rate') return parseFloat(o.rate); if(k==='name') return 0;
+      if(k==='tokens') return o.tokens; if(typeof o[k]==='string') return parseFloat(o[k])||0; return o[k]; };
+    const sortMembers=(arr)=>{ if(sk==='name') return [...arr].sort((a,b)=>dir*a.name.localeCompare(b.name));
+      return [...arr].sort((a,b)=>dir*(numOf(a,sk)-numOf(b,sk))); };
+
+    const rowMem=(m,pid)=>{
+      const dim = s.hover && s.hover!==m.name ? '.32':'1';
+      const trendCol = m.trend==='▲'?'var(--danger)':(m.trend==='▼'?'var(--success)':'var(--text-3)');
+      const color = this.MEM[m.name]? this.MEM[m.name].c : '#8b8f99';
+      return { ...m, color,
+        bg:'transparent', op:dim,
+        sharePct:Math.min(m.share*2.4,100),
+        trendCol,
+        cacheCol: m.cache<50?'var(--live)':'var(--text-1)',
+        ovCol: m.overhead>=50?'var(--live)':'var(--text-1)',
+        hover:()=>this.setHover(m.name), drill:()=>this.drill(m.name,this.PARTIES.find(p=>p.id===pid).name,color) };
+    };
+    const parties=this.PARTIES.map(p=>({
+      name:p.name, mcount:p.members.length+'명', active:p.active, turns:p.turns,
+      tokens:this.fmtTok(p.tokens), share:p.share, sharePct:Math.min(p.share*1.15,100), rate:p.rate+'/h',
+      cache:p.cache, cacheCol:p.cache<50?'var(--live)':'var(--text-1)',
+      overhead:p.overhead, ovCol:p.overhead>=50?'var(--live)':'var(--text-1)', est:p.est,
+      bg:s.expanded[p.id]?'var(--bg-1)':'transparent',
+      caret:s.expanded[p.id]?'rotate(90deg)':'rotate(0deg)', expanded:!!s.expanded[p.id],
+      toggle:()=>this.toggleParty(p.id),
+      members:sortMembers(p.members).map(m=>({...rowMem(m,p.id), tokens:this.fmtTok(m.tokens), rate:m.rate+'/h'})),
+    }));
+
+    // Table A header
+    const heads=[
+      {k:'name',label:'파티 / 멤버',j:'flex-start'},{k:'active',label:'활성 시간',j:'flex-end'},
+      {k:'turns',label:'턴',j:'flex-end'},{k:'tokens',label:'총 토큰',j:'flex-end'},
+      {k:'share',label:'점유율',j:'flex-start'},{k:'rate',label:'시간당',j:'flex-end'},
+      {k:'cache',label:'캐시',j:'flex-end'},{k:'overhead',label:'오버헤드',j:'flex-end'},{k:'est',label:'~추정 한도%',j:'flex-end'},
+    ];
+    const headA=heads.map(h=>({ label:h.label, justify:h.j, sort:()=>this.setSort(h.k),
+      col: sk===h.k?'var(--text-1)':'var(--text-3)', arrow: s.sortDir==='desc'?'▼':'▲', arrowOp: sk===h.k?'1':'0' }));
+
+    // triggers
+    const triggers=this.TRIG.map(t=>{ const sel=s.trigFilter===t.key;
+      return { key:t.key, color:t.color, note:t.note, isOverhead:t.overhead, isGate:!!t.gate,
+        share:t.share, sharePct:Math.min(t.share*1.7,100), tokens:this.fmtTok(t.tokens), rate:t.rate+'/h',
+        bg:sel?'var(--live-dim)':'var(--bg-1)', bd:sel?'var(--live-bd)':'var(--border-subtle)',
+        select:()=>this.setFilter(t.key) }; });
+    const tf=this.TRIG.find(t=>t.key===s.trigFilter);
+
+    const g2legend=Object.keys(this.G2).map(k=>({name:k,color:this.G2COL[k]}));
+    const iv=this.curInterval(), gN=iv.n;
+    const gseries=this.seriesForScope();
+    const legend=gseries.map(se=>({name:se.name,color:se.color,op:s.hover&&s.hover!==se.key?'.4':'1',hover:()=>this.setHover(se.key)}));
+    const SC=[{k:'all',l:'전체'},{k:'tatica',l:'Tatica Defence'},{k:'coldwater',l:'Coldwater API'}];
+    const scopes=SC.map(o=>({label:o.l,select:()=>this.setScope(o.k),bg:s.scope===o.k?'var(--accent)':'transparent',col:s.scope===o.k?'var(--accent-fg)':'var(--text-2)'}));
+    const intervals=this.INTERVALS.map(o=>({label:o.label,select:()=>this.setBucket(o.key),bg:s.interval===o.key?'var(--accent)':'transparent',col:s.interval===o.key?'var(--accent-fg)':'var(--text-2)'}));
+
+    const sampAt=(se,i)=>this.sampleVal(se.vals,i,gN,se.key);
+    const utlAt=i=>this.interp(this.UTIL, gN>1?i/(gN-1):0);
+    const barTokK=v=>v*(iv.min/5);
+    const brushLabel = s.brush ? `${this.bucketLabelAt(Math.min(s.brush.a,s.brush.b),gN,iv)} – ${this.bucketLabelAt(Math.max(s.brush.a,s.brush.b),gN,iv)}` : '';
+    const hb=s.hoverBucket;
+    const g1Readout = hb!=null
+      ? `${this.bucketLabelAt(hb,gN,iv)} · ${this.fmtK(barTokK(gseries.reduce((a,se)=>a+sampAt(se,hb),0)))} tok · 한도 ${Math.round(utlAt(hb))}%`
+      : `막대 1개 = ${iv.label} · 멤버별 토큰 위에 한도 소진 라인을 겹쳐, 원인을 눈으로 잇습니다`;
+    // numeric trend (구간 합계 + 후반 vs 전반 — 유휴가 섞여도 견고)
+    const half=Math.max(Math.floor(gN/2),1);
+    const trend=gseries.map(se=>{ let sum=0,fh=0,lh=0;
+      for(let i=0;i<gN;i++){ const v=barTokK(sampAt(se,i)); sum+=v; if(i<half) fh+=v; else lh+=v; }
+      const dp = fh>0?((lh-fh)/fh*100):(lh>0?100:0); const up=dp>5, down=dp<-5;
+      return { name:se.name, color:se.color, val:this.fmtK(sum),
+        delta:(dp>=0?'+':'')+Math.round(dp)+'%', arrow:up?'▲':(down?'▼':'–'),
+        col:up?'var(--danger)':(down?'var(--success)':'var(--text-3)') }; });
+    const uL=Math.round(utlAt(gN-1)), uF=Math.round(utlAt(0)), ud=uL-uF;
+    const utlTrend={ val:uL+'%', delta:(ud>=0?'+':'')+ud+'%p', arrow:ud>2?'▲':(ud<-2?'▼':'–'), col:ud>2?'var(--danger)':'var(--text-1)' };
+    // per-bucket data table, transposed: rows = series, columns = time buckets
+    const dmode=s.dataMode||'tok';
+    const g1times=[]; for(let i=0;i<gN;i++) g1times.push(this.bucketLabelAt(i,gN,iv));
+    const bTot=[], dUtil=[];
+    for(let i=0;i<gN;i++){ let t=0; gseries.forEach(se=>t+=barTokK(sampAt(se,i))); bTot.push(t);
+      const cur=utlAt(i), prev=i>0?utlAt(i-1):utlAt(0)*0.7; dUtil.push(Math.max(cur-prev,0)); }
+    const pctStr=v=> '~'+(v<1?v.toFixed(2):v.toFixed(1))+'%';
+    const seriesCell=(se,i)=> dmode==='tok'
+      ? this.fmtK(barTokK(sampAt(se,i)))
+      : pctStr( dUtil[i]*(bTot[i]>0? barTokK(sampAt(se,i))/bTot[i] : 0) );
+    const italic = dmode==='pct'?'italic':'normal';
+    const gridTplB=`134px repeat(${gN}, minmax(52px,1fr))`;
+    const g1trows=gseries.map(se=>({ name:se.name, dotBg:se.color, labelCol:'var(--text-0)', labelWeight:'500',
+      cellCol:'var(--text-1)', cellWeight:'400', cellItalic:italic, rowBg:'var(--bg-2)', stickyBg:'var(--bg-2)',
+      cells:g1times.map((_,i)=>seriesCell(se,i)) }));
+    g1trows.push({ name:'한도 소진%(누적)', dotBg:'var(--text-0)', labelCol:'var(--text-1)', labelWeight:'600',
+      cellCol:'var(--live)', cellWeight:'500', cellItalic:'normal', rowBg:'var(--bg-1)', stickyBg:'var(--bg-1)',
+      cells:g1times.map((_,i)=>Math.round(utlAt(i))+'%') });
+    g1trows.push({ name:'합계', dotBg:'transparent', labelCol:'var(--text-0)', labelWeight:'700',
+      cellCol:'var(--text-0)', cellWeight:'600', cellItalic:italic, rowBg:'var(--bg-1)', stickyBg:'var(--bg-1)',
+      cells:g1times.map((_,i)=> dmode==='tok'? this.fmtK(bTot[i]) : pctStr(dUtil[i]) ) });
+    const scopeLabel = s.scope==='all'?'전체 멤버':(this.PARTYLABEL[s.scope]+' 멤버');
+    const DM=[{k:'tok',l:'토큰'},{k:'pct',l:'한도 %'}];
+    const dataModes=DM.map(o=>({label:o.l,select:()=>this.setDataMode(o.k),bg:dmode===o.k?'var(--accent)':'transparent',col:dmode===o.k?'var(--accent-fg)':'var(--text-2)'}));
+    const pctMode=dmode==='pct';
+
+    const turns=this.TURNS.map(t=>({ n:t.n, trigger:t.trigger, summary:t.summary, tool:t.tool, tokens:t.tokens,
+      barPct:t.bar, color:this.TCOL[t.trigger]||'#9aa1ac', trigCol:this.TCOL[t.trigger]||'#9aa1ac',
+      trigBg:'color-mix(in srgb,'+(this.TCOL[t.trigger]||'#9aa1ac')+' 16%,transparent)' }));
+
+    return {
+      theme:s.theme, toggleTheme:()=>this.toggleTheme(),
+      inDash, inMember, goDash:()=>this.goDash(),
+      pageTitle: inMember? '멤버 드릴인' : 'Token Usage',
+      pageSubtitle: inMember? '컨텍스트가 어떻게 불어나는지, 어느 턴이 비쌀는지 보고 해당 대화로 바로 이동합니다.' : '어디서 얼마나 타는지 몇 초 안에 알아채고, 원인까지 한 화면에서 내려갑니다.',
+      ranges, rangeLabel: s.brush?('기간 지정 · '+brushLabel):s.range,
+      compareOn:s.compare, toggleCompare:()=>this.toggleCompare(),
+      cmpBg:s.compare?'var(--accent-dim)':'var(--bg-2)', cmpBd:s.compare?'var(--accent-bd)':'var(--border)', cmpCol:s.compare?'var(--accent)':'var(--text-1)',
+      h5:{pct:63,reset:'2시간 12분',proj:'3시간 01분',projPct:88},
+      codexPct:24,
+      rate:{val:'247k',delta:18},
+      scopes, intervals, trend, utlTrend,
+      g1times, g1trows, gridTplB, scopeLabel, dataModes, pctMode,
+      legend, clearHover:()=>this.clearHover(),
+      g1:this.buildG1(), g1Readout,
+      g2:this.buildG2(), g2legend,
+      brushOn:!!s.brush, brushLabel, clearBrush:()=>this.clearBrush(),
+      colsA:'minmax(180px,1.6fr) 92px 60px 92px minmax(160px,1.5fr) 88px 62px 82px 84px',
+      headA, parties,
+      triggers, overheadTotal:43,
+      triggerFilter:!!s.trigFilter, triggerFilterLabel: tf?tf.key:'', clearFilter:()=>this.setFilter(s.trigFilter),
+      dm, ctxChart:this.buildCtx(), turns,
+    };
+  }
+}
+</script>
+</body>
+</html>
