@@ -546,9 +546,11 @@ export function Workbench(props: WorkbenchProps) {
         <PartyGateModal
           party={gateParty}
           members={views}
+          routes={routes}
           gateDefaults={gateDefaults}
           onSetPartyGate={(gate) => actions.setPartyGate(gateParty.id, gate)}
           onSetMemberGate={(name, mode) => actions.setMemberGate(name, { mode })}
+          onClearMemberRule={(name) => actions.setMemberGate(name, { rule: null })}
           onOpenMemberGate={(name) => { setPartyGateTarget(null); setGateTarget(name); }}
           onClose={() => setPartyGateTarget(null)}
         />

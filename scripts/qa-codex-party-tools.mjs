@@ -71,7 +71,11 @@ try {
   const mcp = await adapter.listMcpServers();
   const partyServer = mcp.servers.find((server) => server.name === "agentparty-app");
   assert(Boolean(partyServer), "Codex MCP snapshot includes the app-hosted agentparty-app surface");
-  assert(partyServer?.tools?.length === 10, "agentparty-app exposes the ten party tools (incl. member-permission/gate-set/status/interrupt/broadcast)");
+  assert(partyServer?.tools?.length === 11, "agentparty-app exposes the eleven party tools (incl. member-permission/gate-set/party-gate-set/status/interrupt/broadcast)");
+  assert(
+    partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__party-gate-set"),
+    "the PARTY-WIDE gate is drivable by an agent, not just the per-member override",
+  );
   assert(partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__list"), "party tool names use the same mcp__agentparty-app__ prefix");
 
   adapter.sendUserTurn("KIND=partyTool call list");

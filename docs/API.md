@@ -780,15 +780,21 @@ agent-facing `gate-set` tool. See `docs/MESSAGE_GATE.md`.
 
 ### `POST /api/parties/:id/gate`
 
-Sets the **party-wide** Message Gate default (enablement + rule). Members with
-`mode: "inherit"` follow this. Body:
+Sets the **party-wide** Message Gate default (enablement + rule + optional
+reviewer). Members with `mode: "inherit"` follow this. Backs the party gate modal
+and the agent-facing `party-gate-set` tool. Body:
 
 ```json
-{ "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips." }
+{ "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips.", "reviewer": { "model": "GPT-5.6 Terra", "effort": "low" } }
 ```
 
-The reviewer model default (model + effort, no harness) is global, set via
+This replaces the whole party gate, so send every axis you want to keep.
+
+`reviewer` is optional and resolves in three steps — member override → party →
+`gateDefaults`. Omit it to fall back to the app-wide default, which is set via
 `POST /api/settings` `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }`.
+The party level exists so one party can review with a different model without
+changing the app-wide setting.
 
 The `POST /api/party/messages` send accepts `{ "force": true, "forceReason": "..." }`
 to bypass the gate for one message (surfaced as a "forced" badge).

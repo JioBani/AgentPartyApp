@@ -78,12 +78,20 @@ gate?: {
 |------|----------|
 | `enabled` | `M.gate?.enabled` → `P.gate.enabled` → `false` |
 | `rule` | `M.gate?.rule` → `P.gate.rule` → `""` |
-| `harness` | `M.gate?.harness` → `S.gateDefaults.harness` |
-| `model` | `M.gate?.model` → `S.gateDefaults.model` |
-| `effort` | `M.gate?.effort` → `S.gateDefaults.effort` |
+| `model` | `M.gate?.reviewer.model` → `P.gate?.reviewer.model` → `S.gateDefaults.model` |
+| `effort` | `M.gate?.reviewer.effort` → `P.gate?.reviewer.effort` → `S.gateDefaults.effort` |
+
+리뷰어는 **세 단계**다. 파티 단계가 있으므로 앱 전역 설정을 건드리지 않고
+파티 하나만 다른 모델로 심사할 수 있다.
 
 **심사 발동 조건**: `enabled === true` **그리고** `rule.trim() !== ""`.
 규칙이 비어 있으면 리뷰어를 호출하지 않는다(불필요한 모델 호출/지연/비용 방지).
+
+**`overridden`의 의미**: "멤버가 파티와 **다른 규칙 텍스트**를 강제한다"이다.
+문자열이 저장되어 있다는 사실만으로는 오버라이드가 아니다 — 파티 규칙과 같은
+텍스트를 들고 있으면 오버라이드로 표시하지 않는다. 그리고 파티 게이트 모달의
+Inherit/On/Off는 **enablement만** 바꾸므로 rule 오버라이드가 남는다. 이건 의도된
+분리이고, 목록의 "오버라이드" 배지 자체가 해제 버튼(`rule: null`)이다.
 
 ## 5. 전송 심사 흐름
 
@@ -226,7 +234,12 @@ UI와 HTTP는 동일한 `AppController` 메서드를 통과한다. 신규 엔드
   transcript `kind:"gate"` 블록(§8).
 - API: `POST /api/party/members/:name/gate`, `POST /api/parties/:id/gate`,
   send의 `force`/`forceReason`, 설정 `gateDefaults`(POST /api/settings). MCP 툴
-  `gate-set` + `send`의 force. IPC `party:gate`/`party:partyGate`.
+  `gate-set`(멤버) / `party-gate-set`(파티 전역) + `send`의 force.
+  IPC `party:gate`/`party:partyGate`.
+
+에이전트 노출 범위: 멤버 게이트(`gate-set`)와 파티 전역 게이트
+(`party-gate-set`) 둘 다 드라이브할 수 있다. 자기 자신의 게이트를 끄는 것도
+가능하다 — 게이트는 **강제 통제 장치가 아니라 협업 규약 장치**다.
 
 리뷰어 추론(effort) 전송 — 프로바이더별로 와이어가 다르다:
 - **Anthropic(구독 브리지)**: `effort`를 보내면 400 `Extra inputs are not
