@@ -98,6 +98,13 @@ export interface AuthProviderState {
   source?: string;
   maskedValue?: string;
   detail?: string;
+  /**
+   * The pending OAuth URL, while a subscription login is waiting on the browser.
+   * The bridge opens the SYSTEM DEFAULT browser, so this is what lets a user
+   * finish the flow in a different browser or profile instead of being stuck at
+   * "인증 대기 중" with nothing to click.
+   */
+  authUrl?: string;
   /** Optional action rendered by Authentication and exposed over automation. */
   action?: {
     type: "subscriptionOAuth";

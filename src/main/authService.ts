@@ -87,6 +87,7 @@ export function withSubscriptionProxyAuth(
         description,
         source: provider === "codex" ? "Codex subscription" : "Claude Code subscription",
         detail,
+        ...(authentication?.authUrl ? { authUrl: authentication.authUrl } : {}),
         ...(providerStatus.available ? {} : {
           action: {
             type: "subscriptionOAuth" as const,

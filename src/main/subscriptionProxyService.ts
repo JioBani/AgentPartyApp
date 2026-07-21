@@ -165,6 +165,15 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
     let diagnosticTail = "";
     const capture = (chunk: Buffer) => {
       diagnosticTail = `${diagnosticTail}${chunk.toString("utf8")}`.slice(-6_000);
+      // Surface the OAuth URL the moment it is printed. The bridge opens the
+      // SYSTEM DEFAULT browser, so a user whose provider account lives in another
+      // browser/profile has no way to finish the flow unless we hand them the
+      // link. Re-published on every chunk because the URL can span chunks.
+      const authUrl = authUrlFromLoginOutput(diagnosticTail);
+      const current = this.loginStates.get(provider);
+      if (authUrl && current && current.authUrl !== authUrl) {
+        this.loginStates.set(provider, { ...current, authUrl });
+      }
     };
     child.stdout?.on("data", capture);
     child.stderr?.on("data", capture);
@@ -543,4 +552,25 @@ function sanitizeDiagnostic(value: string): string {
 
 export function loginOutputProvesCredentialSaved(value: string): boolean {
   return /authentication saved to\s+/i.test(value) && /authentication successful!?/i.test(value);
+}
+
+/**
+ * The OAuth URL the bridge's login command prints before opening a browser.
+ *
+ * Matched by PROVIDER AUTHORIZATION SHAPE rather than by the surrounding prose,
+ * because that prose differs per provider and across bridge versions. Only real
+ * authorization endpoints qualify — a docs or callback link in the same output
+ * must never be offered as the thing to click. Returns the LAST match: when a
+ * flow reprints its URL, the newest one is the live attempt.
+ */
+export function authUrlFromLoginOutput(value: string): string | undefined {
+  const matches = value.match(/https:\/\/[^\s"'<>]+/g);
+  if (!matches) {
+    return undefined;
+  }
+  const authorization = matches.filter((url) => (
+    /[?&](client_id|code_challenge|response_type)=/.test(url) && /\/(authorize|oauth|auth)\b/i.test(url)
+  ));
+  const chosen = authorization[authorization.length - 1];
+  return chosen ? chosen.replace(/[.,;)\]]+$/, "") : undefined;
 }

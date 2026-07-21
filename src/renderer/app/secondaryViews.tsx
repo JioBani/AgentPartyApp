@@ -85,6 +85,42 @@ function SetBadge({ status }: { status: InitialAppState["auth"][number]["status"
   );
 }
 
+/**
+ * The pending OAuth link, shown while a subscription login waits on the browser.
+ *
+ * Read-only and selectable rather than a plain anchor: clicking would reopen the
+ * SAME default browser that already failed the user. Copying is the action that
+ * actually unblocks them — paste into whichever browser or profile holds the
+ * provider account.
+ */
+function AuthUrlRow({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="set-auth-url">
+      <span className="set-auth-url-hint">
+        다른 브라우저에서 열려면 이 주소를 복사하세요
+      </span>
+      <div className="set-auth-url-body">
+        <input className="set-auth-url-input" value={url} readOnly onFocus={(event) => event.target.select()} />
+        <button
+          type="button"
+          className="set-btn-soft"
+          onClick={() => {
+            void navigator.clipboard.writeText(url).then(
+              () => setCopied(true),
+              // Never claim a copy that did not happen — the URL stays selectable.
+              () => setCopied(false),
+            );
+          }}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? "복사됨" : "복사"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SetSectionHead({ label }: { label: string }) {
   return (
     <div className="set-section-head">
@@ -194,24 +230,31 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
         <section className="set-section">
           <SetSectionHead label="구독" />
           {subscriptions.map((provider) => (
-            <div className="set-row" key={provider.id}>
-              <span className="set-row-icon"><ShieldCheck size={19} /></span>
-              <div className="set-row-body">
-                <span className="set-row-name">{provider.label}</span>
-                <span className="set-row-desc">{provider.detail || provider.description}</span>
+            <div className="set-row-stack" key={provider.id}>
+              <div className="set-row">
+                <span className="set-row-icon"><ShieldCheck size={19} /></span>
+                <div className="set-row-body">
+                  <span className="set-row-name">{provider.label}</span>
+                  <span className="set-row-desc">{provider.detail || provider.description}</span>
+                </div>
+                {provider.action?.type === "subscriptionOAuth" && (
+                  <button
+                    type="button"
+                    className="set-btn-soft"
+                    disabled={provider.status === "pending"}
+                    onClick={() => onConnectSubscription(provider.action!.provider)}
+                  >
+                    <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
+                    {provider.action.label}
+                  </button>
+                )}
+                <SetBadge status={provider.status} />
               </div>
-              {provider.action?.type === "subscriptionOAuth" && (
-                <button
-                  type="button"
-                  className="set-btn-soft"
-                  disabled={provider.status === "pending"}
-                  onClick={() => onConnectSubscription(provider.action!.provider)}
-                >
-                  <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
-                  {provider.action.label}
-                </button>
-              )}
-              <SetBadge status={provider.status} />
+              {/* The bridge opened the SYSTEM DEFAULT browser. When the account
+                  lives in another browser or profile that flow can never finish,
+                  so the link must be reachable by hand — otherwise the row just
+                  sits at "인증 대기 중" forever. */}
+              {provider.authUrl && <AuthUrlRow url={provider.authUrl} />}
             </div>
           ))}
         </section>
