@@ -69,6 +69,8 @@ export interface CodexAdapterOptions {
   /** Local CLIProxyAPI connection used for Claude OAuth cross-routing. */
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
+  /** Authentication generation already present before this process starts. */
+  authenticationGeneration?: string;
 }
 
 type JsonRpcId = string;
@@ -117,6 +119,8 @@ export class CodexAdapter extends EventEmitter {
   /** Last reported context-window occupancy (tokens) and, if Codex sends it, window size. */
   private contextTokens: number | undefined;
   private contextWindow: number | undefined;
+  private authenticationGeneration = "";
+  private pendingAuthenticationGeneration: string | undefined;
   private requestSeq = 0;
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
@@ -143,6 +147,7 @@ export class CodexAdapter extends EventEmitter {
     this.sessionId = options.resumeSessionId || "";
     this.debugMode = options.debugEnabled;
     this.policy = options.policy ?? codexPolicyFromPermissionMode(options.permissionMode);
+    this.authenticationGeneration = options.authenticationGeneration || "";
   }
 
   /**
@@ -261,6 +266,51 @@ export class CodexAdapter extends EventEmitter {
     this.contextTokens = undefined;
     this.contextWindow = undefined;
     this.start();
+  }
+
+  /**
+   * Reconnects an account-catalog session to newly synchronized native Codex
+   * credentials while retaining its thread id and therefore conversation.
+   */
+  authenticationChanged(generation: string): "ignored" | "restarted" | "deferred" {
+    if (this.currentProvider() || generation === this.authenticationGeneration) {
+      return "ignored";
+    }
+    this.authenticationGeneration = generation;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "auth",
+      title: "Codex 인증이 변경되었습니다",
+      detail: this.activeTurn
+        ? "현재 응답이 끝난 뒤 대화 내용을 유지한 채 세션을 자동으로 다시 연결합니다."
+        : this.status === "starting"
+          ? "현재 연결 준비가 끝난 뒤 대화 내용을 유지한 채 새 인증으로 다시 연결합니다."
+        : "대화 내용을 유지한 채 세션을 새 인증으로 자동 재연결합니다.",
+      at: now(),
+    });
+    if (this.activeTurn) {
+      this.pendingAuthenticationGeneration = generation;
+      return "deferred";
+    }
+    if (this.status === "starting" && this.initializing) {
+      const initializing = this.initializing;
+      this.pendingAuthenticationGeneration = generation;
+      const scheduleReload = () => {
+        if (
+          this.pendingAuthenticationGeneration === generation
+          && this.initializing === initializing
+          && !this.disposed
+        ) {
+          this.pendingAuthenticationGeneration = undefined;
+          void this.reloadAuthentication();
+        }
+      };
+      void initializing.then(scheduleReload, scheduleReload);
+      return "deferred";
+    }
+    void this.reloadAuthentication();
+    return "restarted";
   }
 
   compact(): void {
@@ -527,7 +577,8 @@ export class CodexAdapter extends EventEmitter {
     const provider = this.currentProvider();
     const providerArgs = codexProviderConfigArgs(provider);
     const partyArgs = this.partyMcpConfigArgs();
-    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...providerArgs, ...partyArgs, "app-server"];
+    const credentialArgs = this.currentProvider() ? [] : ["-c", 'cli_auth_credentials_store="file"'];
+    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...credentialArgs, ...providerArgs, ...partyArgs, "app-server"];
     const env = {
       ...process.env,
       ...(provider?.id === CODEX_OPENROUTER_PROVIDER.id && this.options.openRouterApiKey
@@ -535,6 +586,9 @@ export class CodexAdapter extends EventEmitter {
         : {}),
       ...(provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
         ? { [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.envKey]: this.subscriptionProxy().apiKey }
+        : {}),
+      ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
+        ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
         : {}),
       ...this.partyMcpEnv(),
     };
@@ -1330,6 +1384,11 @@ export class CodexAdapter extends EventEmitter {
             },
     );
     this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, at: now() });
+    if (this.pendingAuthenticationGeneration) {
+      this.pendingAuthenticationGeneration = undefined;
+      void this.reloadAuthentication();
+      return;
+    }
     this.drainQueuedTurn();
   }
 
@@ -1351,6 +1410,23 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.emit("snapshot", this.getSnapshot());
+  }
+
+  private async reloadAuthentication(): Promise<void> {
+    if (this.disposed || !this.started) {
+      return;
+    }
+    this.shutdownProcess();
+    this.status = "starting";
+    this.turnState = "auth-reconnect";
+    this.initializing = this.ensureThread();
+    try {
+      await this.initializing;
+      this.emitEvent({ type: "status", status: "auth-reconnected", detail: "Codex authentication reconnected", at: now() });
+      this.drainQueuedTurn();
+    } catch (error) {
+      this.finishWithError(error);
+    }
   }
 
   /**
@@ -1391,8 +1467,15 @@ export class CodexAdapter extends EventEmitter {
     this.stopUsagePolling();
     this.lineReader?.close();
     this.lineReader = undefined;
-    this.process?.kill();
+    const child = this.process;
     this.process = undefined;
+    child?.removeAllListeners("error");
+    child?.removeAllListeners("exit");
+    child?.kill();
+    const interrupted = new Error("Codex app-server stopped for session reinitialization.");
+    for (const pending of this.pendingRequests.values()) {
+      pending.reject(interrupted);
+    }
     this.pendingRequests.clear();
     this.pendingApprovals.clear();
   }

@@ -15,11 +15,15 @@
  */
 import readline from "node:readline";
 import fs from "node:fs";
+import path from "node:path";
 
 const APPROVAL_ID = "srv-approval-1";
 const TOOL_ID = "srv-tool-1";
 const outFile = process.env.AGENTPARTY_FAKE_CODEX_OUT || "";
 const toolOutFile = process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT || "";
+const authLifecycleOut = process.env.AGENTPARTY_FAKE_CODEX_AUTH_OUT || "";
+
+recordAuthLifecycle({ event: "spawn", argv: process.argv.slice(2), accountId: currentAccountId() });
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -71,6 +75,11 @@ rl.on("line", (line) => {
       return;
     }
     if (msg.method === "thread/start" || msg.method === "thread/resume") {
+      recordAuthLifecycle({
+        event: msg.method,
+        threadId: msg.params?.threadId || "thr-fake",
+        accountId: currentAccountId(),
+      });
       send({ id: msg.id, result: { thread: { id: "thr-fake" }, model: msg.params?.model || "fake" } });
       return;
     }
@@ -163,6 +172,24 @@ rl.on("line", (line) => {
   }
   // Notifications (initialized, etc.) need no response.
 });
+
+function currentAccountId() {
+  try {
+    const home = process.env.CODEX_HOME || path.join(process.env.HOME || "", ".codex");
+    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8"))?.tokens?.account_id || "";
+  } catch {
+    return "";
+  }
+}
+
+function recordAuthLifecycle(value) {
+  if (!authLifecycleOut) return;
+  try {
+    fs.appendFileSync(authLifecycleOut, `${JSON.stringify(value)}\n`);
+  } catch {
+    // Best effort diagnostic used only by QA.
+  }
+}
 
 /** Emits every transcript ThreadItem type so the adapter's normalizeItem is exercised end-to-end. */
 function emitItemStream(cwd) {

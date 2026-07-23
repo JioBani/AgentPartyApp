@@ -587,6 +587,18 @@ export function App() {
     }
   }
 
+  async function disconnectSubscription(provider: "codex" | "claude") {
+    try {
+      const result = await window.agentParty.disconnectSubscription(provider);
+      setState((current) => ({ ...current, auth: result.auth }));
+      setPartyNotice(result.detail);
+    } catch (error) {
+      setPartyNotice(`구독 연결을 끊지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      const auth = await window.agentParty.listAuth();
+      setState((current) => ({ ...current, auth }));
+    }
+  }
+
   /** Restored transcript for one concrete member identity, never name-only. */
   function restoredTranscriptFor(member?: PartyMember): TranscriptBlock[] | undefined {
     return member ? restoredRef.current[memberKey(member)] : undefined;
@@ -1071,6 +1083,7 @@ export function App() {
                   onSave={saveOpenRouterKey}
                   onTest={async () => { const auth = await window.agentParty.testOpenRouterKey(); setState((current) => ({ ...current, auth })); }}
                   onConnectSubscription={connectSubscription}
+                  onDisconnectSubscription={disconnectSubscription}
                 />
               )}
               {currentView === "runtime" && (

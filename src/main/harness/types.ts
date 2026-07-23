@@ -27,6 +27,11 @@ export interface HarnessSession extends EventEmitter {
   setEffort(effort: string): void;
   setThinking(mode: string, budget?: number): void;
   setPermissionMode(permissionMode: string): void;
+  /**
+   * Account credentials changed outside this harness process. Codex adapters
+   * reconnect automatically; other harnesses omit this capability.
+   */
+  authenticationChanged?(generation: string): "ignored" | "restarted" | "deferred";
   /** Refresh provider/account-scoped usage limits now, if the harness exposes them. */
   refreshUsageLimits?(): Promise<void>;
   /** Codex-only: update the two-axis safety model live. Absent on Claude. */

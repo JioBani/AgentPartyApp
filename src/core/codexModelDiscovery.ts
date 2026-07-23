@@ -24,11 +24,16 @@ const DEFAULT_TIMEOUT_MS = 20000;
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
   const requested = codexExecutable(options.executablePath);
   const resolved = resolveCodexExecutable(requested);
-  const args = [...codexExtraArgs(options.executableArgs), "app-server"];
+  const args = [...codexExtraArgs(options.executableArgs), "-c", 'cli_auth_credentials_store="file"', "app-server"];
 
   const child = spawn(resolved.command, args, {
     cwd: options.cwd,
-    env: process.env,
+    env: {
+      ...process.env,
+      ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
+        ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
+        : {}),
+    },
     windowsHide: true,
     shell: resolved.shell,
   });

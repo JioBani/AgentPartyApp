@@ -182,6 +182,25 @@ official Windows release, requires its GitHub-published SHA-256 digest to match,
 installs it under app data, and then opens OAuth. A failed download or digest
 mismatch is returned visibly and no executable is launched.
 
+### `DELETE /api/auth/subscriptions/:provider`
+
+Disconnects the persisted OAuth account for `:provider` (`codex` or `claude`).
+The active credential files are moved out of CLIProxyAPI's watched auth
+directory into AgentParty's recoverable app-data backup, then model discovery
+verifies that the provider is no longer available. The response includes
+`removedCredentials`, updated `subscriptions`, and the same `auth` provider list
+rendered by the Authentication screen. A visible error is returned if no
+matching credential exists or another credential source still exposes models.
+For Codex, `runtimeAuthentication` reports the native-engine propagation result
+for every active local/WSL engine (`changed`, `connected`,
+`restartedSessions`, `deferredSessions`). AgentParty writes the selected bridge
+OAuth account to each engine host's native Codex credential store. Idle live
+sessions restart Codex app-server and resume the same thread immediately;
+sessions with an active turn defer that restart until the turn completes. Each
+affected session records one visible authentication-change diagnostic for that
+credential generation. OAuth tokens are internal and are never returned by the
+HTTP API.
+
 Override the local deployment with `AGENTPARTY_SUBSCRIPTION_PROXY_URL` and
 `AGENTPARTY_SUBSCRIPTION_PROXY_KEY`. `AGENTPARTY_SUBSCRIPTION_PROXY_BIN` and
 `AGENTPARTY_SUBSCRIPTION_PROXY_CONFIG` override local binary/config discovery.

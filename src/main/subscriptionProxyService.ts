@@ -13,6 +13,7 @@ import {
   type SubscriptionProxyStatus,
 } from "../core/subscriptionProxy";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL } from "../shared/subscriptionProxyDefaults";
+import type { CodexAuthenticationUpdate } from "../shared/codexAuthentication";
 import { log } from "./logger";
 
 export interface SubscriptionProxyLoginResult {
@@ -23,10 +24,22 @@ export interface SubscriptionProxyLoginResult {
   subscriptions: SubscriptionProxyStatus;
 }
 
+export interface SubscriptionProxyDisconnectResult {
+  ok: boolean;
+  provider: SubscriptionProxyProvider;
+  status: "disconnected" | "error";
+  detail: string;
+  removedCredentials: number;
+  subscriptions: SubscriptionProxyStatus;
+}
+
 /** Application-layer dependency used by AppController and easy to fake in QA. */
 export interface SubscriptionProxyController {
   getStatus(): Promise<SubscriptionProxyStatus>;
   login(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyLoginResult>;
+  disconnect(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyDisconnectResult>;
+  /** Internal only: never expose the returned OAuth tokens through UI/HTTP. */
+  getCodexAuthentication(): Promise<CodexAuthenticationUpdate | undefined>;
 }
 
 interface LoginState extends SubscriptionProxyAuthenticationStatus {
@@ -96,6 +109,60 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
   /** Current state for Authentication/API. Also heals a stopped bridge. */
   async getStatus(): Promise<SubscriptionProxyStatus> {
     return this.ensureRunning();
+  }
+
+  /**
+   * Normalizes CLIProxyAPI's selected Codex OAuth file for native Codex CLI
+   * engines. The newest active credential is the account a just-completed
+   * single-account connection selected.
+   */
+  async getCodexAuthentication(): Promise<CodexAuthenticationUpdate | undefined> {
+    const status = await this.ensureRunning();
+    if (!status.codex.available) {
+      log("info", "codex-auth", "Codex bridge authentication is not available; native engines were not synchronized");
+      return undefined;
+    }
+    const configPath = await this.ensureConfig();
+    const authDir = await authDirectoryFromConfig(configPath);
+    const files = await findProviderCredentialFiles(authDir, "codex");
+    const candidates = await Promise.all(files.map(async (file) => ({
+      file,
+      modifiedAt: (await fsp.stat(file)).mtimeMs,
+    })));
+    candidates.sort((left, right) => right.modifiedAt - left.modifiedAt);
+    for (const candidate of candidates) {
+      try {
+        const value = JSON.parse(await fsp.readFile(candidate.file, "utf8")) as Record<string, unknown>;
+        const accessToken = String(value.access_token || "");
+        const refreshToken = String(value.refresh_token || "");
+        const idToken = String(value.id_token || "");
+        const accountId = String(value.account_id || "");
+        if (!accessToken || !refreshToken || !idToken || !accountId || value.disabled === true) {
+          continue;
+        }
+        const generation = createHash("sha256")
+          .update(`${accountId}\0${accessToken}\0${refreshToken}\0${idToken}`)
+          .digest("hex");
+        return {
+          generation,
+          credential: {
+            authMode: "chatgpt",
+            lastRefresh: String(value.last_refresh || new Date(candidate.modifiedAt).toISOString()),
+            tokens: { accessToken, refreshToken, idToken, accountId },
+          },
+        };
+      } catch (error) {
+        log("warn", "codex-auth", "could not read a Codex bridge credential", {
+          file: candidate.file,
+          error: messageOf(error),
+        });
+      }
+    }
+    log("warn", "codex-auth", "Codex bridge reports available models but has no complete active OAuth credential", {
+      authDir,
+      credentialFiles: candidates.length,
+    });
+    return undefined;
   }
 
   /**
@@ -201,6 +268,132 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
       status: "started",
       detail: `Complete the ${providerLabel(provider)} approval in the browser.`,
       subscriptions,
+    };
+  }
+
+  /**
+   * Removes every persisted OAuth credential for one provider from the active
+   * bridge auth directory. Files are moved into app storage instead of erased,
+   * so an accidental disconnect remains recoverable without leaving the
+   * credential active in CLIProxyAPI's watched directory.
+   */
+  async disconnect(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyDisconnectResult> {
+    const loginProcess = this.loginProcesses.get(provider);
+    if (loginProcess) {
+      loginProcess.kill();
+      this.loginProcesses.delete(provider);
+    }
+    this.loginVerifications.delete(provider);
+    this.loginStates.delete(provider);
+
+    let configPath: string;
+    try {
+      configPath = await this.ensureConfig();
+    } catch (error) {
+      const detail = `Could not locate the active subscription credentials: ${messageOf(error)}`;
+      log("error", "subscription-proxy", detail, { provider });
+      return {
+        ok: false,
+        provider,
+        status: "error",
+        detail,
+        removedCredentials: 0,
+        subscriptions: this.decorate(await getSubscriptionProxyStatus()),
+      };
+    }
+
+    let authDir: string;
+    let credentialFiles: string[];
+    try {
+      authDir = await authDirectoryFromConfig(configPath);
+      credentialFiles = await findProviderCredentialFiles(authDir, provider);
+    } catch (error) {
+      const detail = `Could not inspect the active ${providerLabel(provider)} credentials: ${messageOf(error)}`;
+      log("error", "subscription-proxy", detail, { provider });
+      return {
+        ok: false,
+        provider,
+        status: "error",
+        detail,
+        removedCredentials: 0,
+        subscriptions: this.decorate(await getSubscriptionProxyStatus()),
+      };
+    }
+    if (credentialFiles.length === 0) {
+      const detail = `No persisted ${providerLabel(provider)} OAuth credential was found in the active subscription bridge.`;
+      log("error", "subscription-proxy", detail, { provider });
+      return {
+        ok: false,
+        provider,
+        status: "error",
+        detail,
+        removedCredentials: 0,
+        subscriptions: this.decorate(await getSubscriptionProxyStatus()),
+      };
+    }
+
+    const backupDir = path.join(
+      this.options.storageDir,
+      "disconnected-subscription-auth",
+      provider,
+      `${Date.now()}-${process.pid}`,
+    );
+    const moved: Array<{ source: string; destination: string }> = [];
+    try {
+      for (const source of credentialFiles) {
+        const relative = path.relative(authDir, source);
+        const destination = path.join(backupDir, relative);
+        await fsp.mkdir(path.dirname(destination), { recursive: true });
+        await moveFile(source, destination);
+        moved.push({ source, destination });
+      }
+    } catch (error) {
+      for (const entry of moved.reverse()) {
+        await fsp.mkdir(path.dirname(entry.source), { recursive: true });
+        await moveFile(entry.destination, entry.source).catch(() => undefined);
+      }
+      const detail = `Could not disconnect ${providerLabel(provider)}: ${messageOf(error)}`;
+      log("error", "subscription-proxy", detail, { provider });
+      return {
+        ok: false,
+        provider,
+        status: "error",
+        detail,
+        removedCredentials: 0,
+        subscriptions: this.decorate(await getSubscriptionProxyStatus()),
+      };
+    }
+
+    let subscriptions = await getSubscriptionProxyStatus();
+    for (let attempt = 0; subscriptions[provider].available && attempt < 20; attempt += 1) {
+      await delay(250);
+      subscriptions = await getSubscriptionProxyStatus();
+    }
+    if (subscriptions[provider].available) {
+      const detail = `${providerLabel(provider)} OAuth credentials were removed, but the bridge still exposes ${provider} models. Another credential source may still be configured.`;
+      log("error", "subscription-proxy", detail, { provider, removedCredentials: moved.length });
+      return {
+        ok: false,
+        provider,
+        status: "error",
+        detail,
+        removedCredentials: moved.length,
+        subscriptions: this.decorate(subscriptions),
+      };
+    }
+
+    const detail = `${providerLabel(provider)} 연결을 끊었습니다. 이제 다른 계정으로 다시 연결할 수 있습니다.`;
+    log("info", "subscription-proxy", "subscription disconnected", {
+      provider,
+      removedCredentials: moved.length,
+    });
+    return {
+      ok: true,
+      provider,
+      status: "disconnected",
+      detail,
+      removedCredentials: moved.length,
+      subscriptions: this.decorate(subscriptions),
     };
   }
 
@@ -521,6 +714,83 @@ function messageOf(error: unknown): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function authDirectoryFromConfig(configPath: string): Promise<string> {
+  const config = await fsp.readFile(configPath, "utf8");
+  const match = config.match(/^\s*auth-dir\s*:\s*(.+?)\s*$/m);
+  if (!match) {
+    throw new Error(`active config does not declare auth-dir (${configPath})`);
+  }
+  const configured = match[1].trim().replace(/^(['"])(.*)\1$/, "$2");
+  const expanded = configured === "~"
+    ? os.homedir()
+    : configured.startsWith("~/") || configured.startsWith("~\\")
+      ? path.join(os.homedir(), configured.slice(2))
+      : configured;
+  return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(path.dirname(configPath), expanded));
+}
+
+/** Move across volumes too, without leaving a copied credential active on error. */
+async function moveFile(source: string, destination: string): Promise<void> {
+  try {
+    await fsp.rename(source, destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
+      throw error;
+    }
+    await fsp.copyFile(source, destination);
+    try {
+      await fsp.unlink(source);
+    } catch (unlinkError) {
+      await fsp.rm(destination, { force: true }).catch(() => undefined);
+      throw unlinkError;
+    }
+  }
+}
+
+async function findProviderCredentialFiles(
+  authDir: string,
+  provider: SubscriptionProxyProvider,
+): Promise<string[]> {
+  const found: string[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(candidate);
+        continue;
+      }
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".json") {
+        continue;
+      }
+      const stat = await fsp.stat(candidate);
+      if (stat.size > 2 * 1024 * 1024) {
+        continue;
+      }
+      try {
+        const credential = JSON.parse(await fsp.readFile(candidate, "utf8")) as { type?: unknown; provider?: unknown };
+        const type = String(credential.type || credential.provider || "").toLowerCase();
+        if (type === provider || (provider === "claude" && type === "anthropic")) {
+          found.push(candidate);
+        }
+      } catch {
+        // Never infer the provider from a filename and risk moving unrelated
+        // user data when auth-dir contains non-credential JSON.
+      }
+    }
+  };
+  await visit(authDir);
+  return found;
 }
 
 async function findFile(root: string, expectedName: string): Promise<string | undefined> {

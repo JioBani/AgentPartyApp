@@ -10,6 +10,7 @@ const api = {
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
   loginSubscription: (provider: "codex" | "claude") => ipcRenderer.invoke("auth:loginSubscription", provider),
+  disconnectSubscription: (provider: "codex" | "claude") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),

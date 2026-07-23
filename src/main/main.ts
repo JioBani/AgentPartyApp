@@ -485,6 +485,12 @@ function registerIpc(): void {
     }
     return controller().loginSubscriptionProvider(provider);
   });
+  handle("auth:disconnectSubscription", async (_event, provider: string) => {
+    if (provider !== "codex" && provider !== "claude") {
+      throw new Error(`Unsupported subscription provider '${provider}'.`);
+    }
+    return controller().disconnectSubscriptionProvider(provider);
+  });
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));

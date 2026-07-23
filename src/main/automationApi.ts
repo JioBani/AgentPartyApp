@@ -130,6 +130,11 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.loginSubscriptionProvider(subscriptionLoginMatch[1] as "codex" | "claude"));
         return;
       }
+      const subscriptionDisconnectMatch = url.pathname.match(/^\/api\/auth\/subscriptions\/(codex|claude)$/);
+      if (method === "DELETE" && subscriptionDisconnectMatch) {
+        sendJson(res, 200, await c.disconnectSubscriptionProvider(subscriptionDisconnectMatch[1] as "codex" | "claude"));
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/models") {
         sendJson(res, 200, await c.listModels(workspace));
         return;

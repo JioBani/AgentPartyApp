@@ -3,6 +3,7 @@ import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
 import { LocalEngine } from "./localEngine";
+import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 
 export interface EngineRegistryDeps {
   workspaceManager: WorkspaceManager;
@@ -24,6 +25,7 @@ export interface EngineRegistryDeps {
  */
 export class EngineRegistry {
   private readonly engines = new Map<string, EngineConnection>();
+  private codexAuthentication: CodexAuthenticationUpdate | undefined;
 
   constructor(private readonly deps: EngineRegistryDeps) {}
 
@@ -33,8 +35,17 @@ export class EngineRegistry {
     if (!engine) {
       engine = this.create(workspacePath);
       this.engines.set(key, engine);
+      if (this.codexAuthentication) {
+        void engine.setCodexAuthentication(this.codexAuthentication).catch(() => undefined);
+      }
     }
     return engine;
+  }
+
+  /** Applies one account generation to every currently hosted engine. */
+  async setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
+    this.codexAuthentication = update;
+    return Promise.all([...this.engines.values()].map((engine) => engine.setCodexAuthentication(update)));
   }
 
   /** Tears down the engine for a workspace (e.g. when its last window closes). */

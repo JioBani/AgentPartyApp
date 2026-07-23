@@ -14,6 +14,7 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
+import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -81,6 +82,9 @@ export interface QaInteractionInput {
  */
 export interface EngineConnection {
   readonly workspacePath: string;
+
+  /** Synchronizes the desktop-selected Codex account on this engine host. */
+  setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult>;
 
   // --- Party (workspace-scoped; `partyId` scopes to the CALLING WINDOW's party) --
   // One engine serves every window of a workspace, so which party is active is a

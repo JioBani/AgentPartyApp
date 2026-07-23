@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
@@ -212,17 +212,30 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
   );
 }
 
-export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscription }: {
+export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscription, onDisconnectSubscription }: {
   auth: InitialAppState["auth"];
   draft: string;
   onDraft: (value: string) => void;
   onSave: () => void;
   onTest: () => void;
   onConnectSubscription: (provider: "codex" | "claude") => void;
+  onDisconnectSubscription: (provider: "codex" | "claude") => Promise<void>;
 }) {
   const subscriptions = auth.filter((provider) => provider.kind === "subscription");
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
   const canSave = draft.trim().length > 0;
+  const [disconnectArmed, setDisconnectArmed] = useState<"codex" | "claude" | undefined>();
+  const [disconnecting, setDisconnecting] = useState<"codex" | "claude" | undefined>();
+
+  async function confirmDisconnect(provider: "codex" | "claude"): Promise<void> {
+    setDisconnectArmed(undefined);
+    setDisconnecting(provider);
+    try {
+      await onDisconnectSubscription(provider);
+    } finally {
+      setDisconnecting(undefined);
+    }
+  }
 
   return (
     <div className="set-page">
@@ -246,6 +259,26 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
                   >
                     <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
                     {provider.action.label}
+                  </button>
+                )}
+                {provider.id === "codex" && provider.status === "available" && (
+                  <button
+                    type="button"
+                    className={`set-btn-soft set-btn-disconnect${disconnectArmed === "codex" ? " is-armed" : ""}`}
+                    disabled={disconnecting === "codex"}
+                    onClick={() => {
+                      if (disconnectArmed !== "codex") {
+                        setDisconnectArmed("codex");
+                        return;
+                      }
+                      void confirmDisconnect("codex");
+                    }}
+                    onBlur={() => setDisconnectArmed(undefined)}
+                  >
+                    {disconnecting === "codex"
+                      ? <RefreshCw size={14} className="wb-spin" />
+                      : <LogOut size={14} />}
+                    {disconnecting === "codex" ? "연결 끊는 중…" : disconnectArmed === "codex" ? "정말 연결 끊기" : "연결 끊기"}
                   </button>
                 )}
                 <SetBadge status={provider.status} />

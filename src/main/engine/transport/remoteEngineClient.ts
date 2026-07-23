@@ -5,6 +5,7 @@ import type { ImageAttachment } from "../../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc";
+import type { CodexAuthenticationUpdate } from "../../../shared/codexAuthentication";
 
 /** Awaited return type of an EngineConnection method. */
 type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...args: any[]) => infer Ret ? Awaited<Ret> : never;
@@ -130,6 +131,7 @@ export class RemoteEngineClient implements EngineConnection {
   }
 
   listParty(viewPartyId?: string) { return this.call<Result<"listParty">>("listParty", viewPartyId); }
+  setCodexAuthentication(update: CodexAuthenticationUpdate) { return this.call<Result<"setCodexAuthentication">>("setCodexAuthentication", update); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }
   removeParty(partyId: string) { return this.call<Result<"removeParty">>("removeParty", partyId); }

@@ -58,13 +58,31 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     if (process.env.AGENTPARTY_CODEX_MCP_OUT) {
       env.WSLENV = appendWslEnv(env.WSLENV, "AGENTPARTY_CODEX_MCP_OUT");
     }
+    // A WSL login shell can discard WSLENV-forwarded test/runtime overrides on
+    // some installations. Export these non-secret values in the shell command
+    // as well, with strict quoting, so an isolated CODEX_HOME can never
+    // accidentally fall through to the user's real ~/.codex.
+    const codexRuntimeExports = [
+      "AGENTPARTY_NATIVE_CODEX_HOME",
+      "AGENTPARTY_CODEX_BIN",
+      "AGENTPARTY_CODEX_ARGS",
+      "AGENTPARTY_FAKE_CODEX_AUTH_OUT",
+    ].flatMap((name) => process.env[name]
+      ? [`export ${name}=${bashQuote(process.env[name]!)};`]
+      : []);
+    if (codexRuntimeExports.length > 0) {
+      log("info", "wsl-engine", "forwarding isolated Codex runtime configuration", {
+        variables: ["AGENTPARTY_NATIVE_CODEX_HOME", "AGENTPARTY_CODEX_BIN", "AGENTPARTY_CODEX_ARGS", "AGENTPARTY_FAKE_CODEX_AUTH_OUT"]
+          .filter((name) => Boolean(process.env[name])),
+      });
+    }
     child = spawn(
       "wsl.exe",
       [
         "-d", options.distro, "-e", "bash", "-lc",
         // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
         // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
-        `cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
+        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );
@@ -129,6 +147,10 @@ function appendWslEnv(current: string | undefined, name: string): string {
     return name;
   }
   return current.split(":").includes(name) ? current : `${current}:${name}`;
+}
+
+function bashQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function wslpath(distro: string, winPath: string): Promise<string> {

@@ -10,6 +10,7 @@ export const automationEndpoints = [
   "POST /api/auth/openrouter/test",
   "GET /api/auth/subscriptions",
   "POST /api/auth/subscriptions/:provider/login",
+  "DELETE /api/auth/subscriptions/:provider",
   "GET /api/models",
   "POST /api/models/codex/refresh",
   "GET /api/usage",

@@ -26,6 +26,7 @@ import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
+import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -85,6 +86,8 @@ export class AppController {
    * window's entry and passes it to the engine, so windows stay independent.
    */
   private readonly activePartyByWindow = new Map<string, string>();
+  private codexAuthenticationGeneration = "";
+  private codexAuthenticationApply: Promise<unknown> = Promise.resolve();
 
   private partyForWindow(windowId?: string): string | undefined {
     return windowId ? this.activePartyByWindow.get(windowId) : undefined;
@@ -188,13 +191,15 @@ export class AppController {
   // --- Global state -------------------------------------------------------
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
-    const codexModels = await this.engineFor(workspacePath).listCodexModels();
+    const engine = this.engineFor(workspacePath);
+    await this.synchronizeCodexAuthentication(engine);
+    const codexModels = await engine.listCodexModels();
     const state: InitialAppState = {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
       auth: await this.listAuthProviders(),
-      sessions: await this.engineFor(workspacePath).listWorkspaceSessions(),
+      sessions: await engine.listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
       modelProviders: [...MODEL_PROVIDERS],
       codexModels,
@@ -205,7 +210,7 @@ export class AppController {
         spec: `${this.deps.getAutomationBaseUrl()}/api/spec`,
       },
       logs: { logFilePath: getLogFilePath() },
-      party: await this.engineFor(workspacePath).listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
+      party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
     };
@@ -276,7 +281,11 @@ export class AppController {
   }
 
   async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
-    return withSubscriptionProxyAuth(getAuthState(), await this.getSubscriptionStatus());
+    const subscriptions = await this.getSubscriptionStatus();
+    if (subscriptions.codex.available) {
+      await this.synchronizeCodexAuthentication();
+    }
+    return withSubscriptionProxyAuth(getAuthState(), subscriptions);
   }
 
   async setOpenRouterKey(key: string): Promise<ReturnType<typeof getAuthState>> {
@@ -311,6 +320,58 @@ export class AppController {
       ...result,
       auth,
     };
+  }
+
+  /** Disconnects one persisted subscription account and refreshes every UI. */
+  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider) {
+    if (!this.deps.subscriptionProxy) {
+      throw new Error("Subscription OAuth must be managed from the AgentParty desktop Authentication screen, not a remote workspace engine.");
+    }
+    const result = await this.deps.subscriptionProxy.disconnect(provider);
+    const runtimeAuthentication = provider === "codex" && result.removedCredentials > 0
+      ? await this.applyCodexAuthentication({ generation: "disconnected" })
+      : [];
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(getAuthState(), result.subscriptions));
+    return {
+      ...result,
+      runtimeAuthentication,
+      auth,
+    };
+  }
+
+  /**
+   * Reconciles CLIProxyAPI's selected Codex account into every native engine.
+   * A target is supplied during initial state load so a just-created WSL engine
+   * is synchronized before it can discover models or prewarm a member.
+   */
+  private async synchronizeCodexAuthentication(target?: EngineConnection): Promise<CodexAuthenticationApplyResult[]> {
+    const update = await this.deps.subscriptionProxy?.getCodexAuthentication();
+    if (!update) {
+      return [];
+    }
+    // A new generation must reach every already-live engine, not only the
+    // workspace whose state request happened to detect it.
+    if (update.generation !== this.codexAuthenticationGeneration) {
+      return this.applyCodexAuthentication(update);
+    }
+    if (target) {
+      const result = await target.setCodexAuthentication(update);
+      return [result];
+    }
+    return [];
+  }
+
+  private applyCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
+    const task = this.codexAuthenticationApply.then(async () => {
+      if (update.generation === this.codexAuthenticationGeneration) {
+        return [];
+      }
+      const result = await this.deps.engineRegistry.setCodexAuthentication(update);
+      this.codexAuthenticationGeneration = update.generation;
+      return result;
+    });
+    this.codexAuthenticationApply = task.catch(() => undefined);
+    return task;
   }
 
   private getSubscriptionStatus(): ReturnType<SubscriptionProxyController["getStatus"]> {

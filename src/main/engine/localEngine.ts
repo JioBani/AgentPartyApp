@@ -9,6 +9,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
 import { runPartyAction } from "./partyActions";
+import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -33,6 +34,10 @@ export class LocalEngine implements EngineConnection {
 
   private get party(): PartyApplicationService {
     return this.deps.party;
+  }
+
+  async setCodexAuthentication(update: CodexAuthenticationUpdate) {
+    return this.deps.sessionManager.setCodexAuthentication(update);
   }
 
   // --- Party --------------------------------------------------------------
