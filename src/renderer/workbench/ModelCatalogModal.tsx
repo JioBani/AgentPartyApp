@@ -13,6 +13,7 @@ export interface ModelCatalogConfig {
   /** Harness segment (Claude Code / Codex) + filter the model list by harness. */
   harness?: boolean;
   effort?: boolean;
+  serviceTier?: boolean;
   thinking?: boolean;
   /** Debug-logging toggle (Workbench-only). */
   debug?: boolean;
@@ -28,6 +29,7 @@ export interface ModelCatalogValue {
   route?: RouteLike;
   harness?: string;
   effort?: string;
+  serviceTier?: string;
   thinkingMode?: string;
   thinkingBudget?: number;
   debug?: boolean;
@@ -59,6 +61,7 @@ interface ModelCatalogModalProps {
 const HARNESS_CHOICES = [
   { id: "claude-code", label: "Claude Code" },
   { id: "codex", label: "Codex" },
+  { id: "cursor", label: "Cursor CLI" },
 ];
 
 /**
@@ -103,6 +106,7 @@ export function ModelCatalogModal({
   const capabilities: RouteCapabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
   const thinkingCap = capabilities.thinking;
+  const serviceTierCap = capabilities.serviceTier;
 
   const baselineEffort = (key: string): string => {
     if (!effortCap?.supported) {
@@ -124,6 +128,7 @@ export function ModelCatalogModal({
   };
 
   const [effort, setEffort] = useState(() => baselineEffort(currentKey));
+  const [serviceTier, setServiceTier] = useState(value.serviceTier || serviceTierCap?.defaultValue || "");
   const [thinkingMode, setThinkingMode] = useState<string>(() => baselineThinking(currentKey));
   const [budget, setBudget] = useState<number>(() => baselineBudget(currentKey));
   const [debug, setDebug] = useState(Boolean(value.debug));
@@ -133,6 +138,7 @@ export function ModelCatalogModal({
   // Re-stage reasoning when the selected model (and thus its caps) changes.
   useEffect(() => {
     setEffort(baselineEffort(selectedKey));
+    setServiceTier(value.serviceTier || serviceTierCap?.defaultValue || "");
     setThinkingMode(baselineThinking(selectedKey));
     setBudget(baselineBudget(selectedKey));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,6 +171,7 @@ export function ModelCatalogModal({
     selectedKey !== currentKey ||
     (config.harness && harness !== (value.harness || currentHarness)) ||
     (config.effort && effortCap?.supported && effort !== baselineEffort(selectedKey)) ||
+    (config.serviceTier && serviceTierCap?.supported && serviceTier !== (value.serviceTier || serviceTierCap.defaultValue || "")) ||
     (config.thinking && thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
     (config.debug && debug !== Boolean(value.debug)) ||
     (config.autoCompact && (compact.on !== initialCompact.on || compact.at !== initialCompact.at));
@@ -175,6 +182,7 @@ export function ModelCatalogModal({
       route: selected?.route,
       harness: config.harness ? harness : value.harness,
       effort: config.effort && effortCap?.supported ? effort : undefined,
+      serviceTier: config.serviceTier && serviceTierCap?.supported ? serviceTier : undefined,
       thinkingMode: config.thinking && thinkingCap?.supported ? thinkingMode : undefined,
       thinkingBudget: config.thinking && showBudget ? budget : undefined,
       debug: config.debug ? debug : undefined,
@@ -219,7 +227,7 @@ export function ModelCatalogModal({
                 </div>
               </>
             )}
-            <div className="wb-modal-label">Model <span className="wb-mono">{displayEntries.length} available</span></div>
+            <div className="wb-modal-label">Model <span className="wb-mono">{displayEntries.length} catalogued</span></div>
             {grouped.map((group) => (
               <div className="wb-model-group" key={group.provider}>
                 <div className="wb-model-provider">
@@ -235,9 +243,10 @@ export function ModelCatalogModal({
                       key={key}
                       className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
                       disabled={entry.route.enabled === false}
+                      title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
                       onClick={() => setSelectedKey(key)}
                     >
-                      <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span></span>
+                      <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span>{entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}</span>
                       <PerfMeter value={entry.meta.perf} />
                       <CostMeter value={entry.meta.cost} />
                       {key === selectedKey && <Check size={14} className="wb-model-check" />}
@@ -287,6 +296,19 @@ export function ModelCatalogModal({
                     <div className="wb-segmented">
                       {effortCap.options.map((option) => (
                         <button type="button" key={option.id} className={"wb-segment" + (option.id === effort ? " is-active" : "")} onClick={() => setEffort(option.id)}>
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {config.serviceTier && serviceTierCap?.supported && serviceTierCap.options.length > 0 && (
+                  <div className="wb-detail-section">
+                    <div className="wb-detail-section-head"><strong>Service mode</strong> <span>Cursor Grok serving speed</span></div>
+                    <div className="wb-segmented">
+                      {serviceTierCap.options.map((option) => (
+                        <button type="button" key={option.id} className={"wb-segment" + (option.id === serviceTier ? " is-active" : "")} onClick={() => setServiceTier(option.id)}>
                           {option.label}
                         </button>
                       ))}

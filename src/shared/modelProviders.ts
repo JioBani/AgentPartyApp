@@ -1,11 +1,11 @@
-/** The three credential/model providers exposed by Authentication and Workbench. */
-export type ModelProviderId = "claude" | "codex" | "openrouter";
-export type ModelRouteProviderId = "anthropic" | "openai" | "openrouter";
+/** Credential/model providers exposed by Authentication and Workbench. */
+export type ModelProviderId = "claude" | "codex" | "cursor" | "openrouter";
+export type ModelRouteProviderId = "anthropic" | "openai" | "cursor" | "openrouter";
 
 export interface ModelProviderDescriptor {
   /** Stable user-facing provider identity. */
   id: ModelProviderId;
-  label: "Claude" | "Codex" | "OpenRouter";
+  label: "Claude" | "Codex" | "Cursor" | "OpenRouter";
   /** Existing internal route id retained at adapter/catalog boundaries. */
   routeProviderId: ModelRouteProviderId;
   /** Provider id returned by Authentication. */
@@ -16,6 +16,7 @@ export interface ModelProviderDescriptor {
 export const MODEL_PROVIDERS: readonly ModelProviderDescriptor[] = [
   { id: "claude", label: "Claude", routeProviderId: "anthropic", authProviderId: "claude", authKind: "subscription" },
   { id: "codex", label: "Codex", routeProviderId: "openai", authProviderId: "codex", authKind: "subscription" },
+  { id: "cursor", label: "Cursor", routeProviderId: "cursor", authProviderId: "cursor", authKind: "subscription" },
   { id: "openrouter", label: "OpenRouter", routeProviderId: "openrouter", authProviderId: "openrouter", authKind: "apiKey" },
 ] as const;
 

@@ -19,11 +19,12 @@ export interface HarnessCapabilities {
   steer: boolean;
 }
 
-const CAPABILITIES: Record<"claude-code" | "codex", HarnessCapabilities> = {
+const CAPABILITIES: Record<"claude-code" | "codex" | "cursor", HarnessCapabilities> = {
   "claude-code": { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false },
   codex: { twoAxisPermission: true, guardian: true, cloud: true, subagents: true, steer: true },
+  cursor: { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false },
 };
 
 export function harnessCapabilities(harness: string | undefined): HarnessCapabilities {
-  return CAPABILITIES[harness === "codex" ? "codex" : "claude-code"];
+  return CAPABILITIES[harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : "claude-code"];
 }

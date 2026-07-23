@@ -12,8 +12,8 @@ import {
 import type { CodexModelInfo } from "../shared/codexModels";
 import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 
-export type HarnessId = "claude-code" | "codex";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -49,6 +49,8 @@ export interface ModelRoute {
   capabilities: ModelCapabilities;
   meta?: ModelLeaderboardMeta;
   enabled: boolean;
+  /** Visible explanation when a catalog combination cannot be executed. */
+  unavailableReason?: string;
 }
 
 export interface ModelPricing {
@@ -116,6 +118,8 @@ export interface VisionCapability {
 export interface ModelCapabilities {
   effort: EffortCapability;
   thinking: ThinkingCapability;
+  /** Optional provider serving tier such as Cursor Grok Standard/Fast. */
+  serviceTier?: EffortCapability;
   permission: PermissionCapability;
   vision: VisionCapability;
 }
@@ -135,6 +139,7 @@ export interface ModelRouteConfig {
 export interface PartialModelCapabilities {
   effort?: Partial<EffortCapability> & { options?: Array<ModelOption | string> };
   thinking?: Partial<ThinkingCapability>;
+  serviceTier?: Partial<EffortCapability> & { options?: Array<ModelOption | string> };
   permission?: Partial<PermissionCapability> & { options?: Array<ModelOption | string> };
   vision?: VisionCapability;
 }
@@ -151,6 +156,12 @@ export const harnesses: HarnessDescriptor[] = [
     label: "Codex",
     enabled: true,
     description: "Codex CLI app-server harness with persistent JSON-RPC threads.",
+  },
+  {
+    id: "cursor",
+    label: "Cursor CLI",
+    enabled: true,
+    description: "Cursor Agent CLI with Cursor Auto or the Grok 4.5 named model.",
   },
 ];
 
@@ -182,6 +193,21 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   }
   for (const model of claudeSubscriptionModels()) {
     addRoute(routes, seen, codexClaudeSubscriptionRoute(model));
+  }
+  addRoute(routes, seen, cursorAutoRoute());
+  for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
+    addRoute(routes, seen, cursorRouteFromCatalog(model));
+  }
+  // Catalog completeness is independent from executable protocol support.
+  // Cursor is an agent runtime, not an Anthropic/OpenAI-compatible model
+  // endpoint, so unsupported combinations remain visible with an explicit
+  // reason instead of disappearing or silently switching harnesses.
+  for (const model of modelCatalog().filter((entry) => !entry.cursorModel)) {
+    addRoute(routes, seen, unavailableCursorHarnessRoute(model));
+  }
+  for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
+    addRoute(routes, seen, unavailableCursorProviderRoute("claude-code", model));
+    addRoute(routes, seen, unavailableCursorProviderRoute("codex", model));
   }
 
   // Keep the currently selected model visible even if it is not catalogued
@@ -300,6 +326,127 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
       context: model.context,
     },
     enabled: true,
+  };
+}
+
+/** Cursor's plan-compatible automatic model selector. The chosen model is opaque. */
+export function cursorAutoRoute(): ModelRoute {
+  return {
+    harnessId: "cursor",
+    providerId: "cursor",
+    model: "Auto",
+    runtimeModel: "auto",
+    label: "Auto",
+    description: "Lets Cursor select the model. The underlying model is not reported by Cursor CLI.",
+    pricing: { billing: "subscription", directPrice: "Cursor subscription" },
+    capabilities: {
+      effort: { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: standardPermissionCapability(),
+      vision: { image: false },
+    },
+    enabled: true,
+  };
+}
+
+/** The named-model Cursor surface: catalog entries with cursorModel. */
+export function cursorRouteFromCatalog(model: CatalogModel): ModelRoute {
+  const effort = model.reasoning?.effort;
+  const serviceTier = model.serviceTier;
+  return {
+    harnessId: "cursor",
+    providerId: "cursor",
+    model: model.id,
+    runtimeModel: model.cursorModel,
+    label: model.label,
+    description: `${model.description || ""} Runs through the signed-in Cursor Agent CLI.`.trim(),
+    pricing: { billing: "subscription", directPrice: "Cursor subscription", context: model.context },
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      serviceTier: serviceTier
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: serviceTier.default,
+            options: serviceTier.options.map((tier) => ({ id: tier, label: tier === "fast" ? "Fast" : "Standard" })),
+          }
+        : undefined,
+      permission: standardPermissionCapability(),
+      vision: { image: false },
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: true,
+  };
+}
+
+function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {
+  return {
+    harnessId: "cursor",
+    providerId: model.provider,
+    model: model.id,
+    runtimeModel: model.id,
+    label: model.label,
+    description: model.description,
+    pricing: pricingFromCatalog(model),
+    capabilities: capabilitiesFromCatalog(model),
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: false,
+    unavailableReason: "Cursor Agent CLI does not expose this model to the signed-in account. No fallback will be attempted.",
+  };
+}
+
+function unavailableCursorProviderRoute(harnessId: "claude-code" | "codex", model: CatalogModel): ModelRoute {
+  return {
+    harnessId,
+    providerId: "cursor",
+    model: model.id,
+    runtimeModel: model.cursorModel,
+    label: model.label,
+    description: `${model.description || ""} Cursor subscription route.`.trim(),
+    pricing: { billing: "subscription", directPrice: "Cursor subscription", context: model.context },
+    capabilities: {
+      ...capabilitiesFromCatalog(model),
+      serviceTier: model.serviceTier
+        ? {
+            supported: true,
+            mutableDuringSession: false,
+            defaultValue: model.serviceTier.default,
+            options: model.serviceTier.options.map((tier) => ({ id: tier, label: tier === "fast" ? "Fast" : "Standard" })),
+          }
+        : undefined,
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: false,
+    unavailableReason: `Cursor exposes Grok through its agent CLI/SDK, not the ${harnessId === "codex" ? "OpenAI Responses" : "Anthropic Messages"} model protocol required by ${harnessId === "codex" ? "Codex" : "Claude Code"}.`,
   };
 }
 
@@ -592,6 +739,13 @@ function mergeCapabilities(base: ModelCapabilities, override: PartialModelCapabi
       ...base.thinking,
       ...override.thinking,
     },
+    serviceTier: override.serviceTier
+      ? {
+          ...(base.serviceTier || { supported: false, mutableDuringSession: false, options: [] }),
+          ...override.serviceTier,
+          options: normalizeOptions(override.serviceTier.options) || base.serviceTier?.options || [],
+        }
+      : base.serviceTier,
     permission: {
       ...base.permission,
       ...override.permission,

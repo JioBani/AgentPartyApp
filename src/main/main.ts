@@ -514,6 +514,7 @@ function registerIpc(): void {
   handle("session:setThinking", async (event, sessionId: string, mode: string, budget?: number) => controller().setSessionThinking(senderWorkspace(event), sessionId, mode, budget));
   handle("session:setPermissionMode", async (event, sessionId: string, permissionMode: string) => controller().setSessionPermissionMode(senderWorkspace(event), sessionId, permissionMode));
   handle("session:setCodexPolicy", async (event, sessionId: string, policy: any) => controller().setSessionCodexPolicy(senderWorkspace(event), sessionId, policy));
+  handle("session:setCursorPolicy", async (event, sessionId: string, policy: any) => controller().setSessionCursorPolicy(senderWorkspace(event), sessionId, policy));
   handle("session:approve", async (event, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => {
     await controller().approveSession(senderWorkspace(event), sessionId, requestId, behavior, updatedInput, message);
   });

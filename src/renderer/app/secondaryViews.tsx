@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
+import {
+  cursorPolicyOf,
+  type CursorAgentMode,
+  type CursorApprovalMode,
+  type CursorPolicy,
+} from "../../shared/cursorPolicy";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
 import { HARNESS_IDS } from "../../shared/types";
@@ -326,7 +332,7 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
   );
 }
 
-const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex" };
+const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI" };
 
 export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault }: {
   routes: RouteLike[];
@@ -475,10 +481,12 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [effort, setEffort] = useState(defaults.effort);
   const [reasoning, setReasoning] = useState(defaults.reasoning || "");
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
+  const [cursorPolicy, setCursorPolicy] = useState<CursorPolicy>(() => cursorPolicyOf(defaults.cursorPolicy, defaults.permissionMode));
   const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
   const [saved, setSaved] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const isCodex = harnessId === "codex";
+  const isCursor = harnessId === "cursor";
   const selectedRoute = routes.find((route) => route.model === model);
 
   function save() {
@@ -486,6 +494,9 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
     if (isCodex) {
       const axes = preset === "custom" ? (defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }) : CODEX_PRESETS[preset];
       patch.codexPolicy = { ...axes, guardian: defaults.codexPolicy?.guardian ?? false } as CodexPolicy;
+    } else if (isCursor) {
+      patch.cursorPolicy = cursorPolicy;
+      patch.permissionMode = undefined;
     } else {
       patch.permissionMode = permissionMode as HarnessDefaults["permissionMode"];
     }
@@ -554,6 +565,25 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
             {preset === "custom" && <option value="custom">Custom</option>}
           </select>
         </label>
+      ) : isCursor ? (
+        <>
+          <label className="set-field">
+            <span className="set-field-label">Cursor mode</span>
+            <select className="set-select" value={cursorPolicy.mode} onChange={(event) => setCursorPolicy((current) => ({ ...current, mode: event.target.value as CursorAgentMode }))}>
+              <option value="agent">Agent</option>
+              <option value="ask">Ask</option>
+              <option value="plan">Plan</option>
+            </select>
+          </label>
+          <label className="set-field">
+            <span className="set-field-label">Approval mode</span>
+            <select className="set-select" value={cursorPolicy.approval} onChange={(event) => setCursorPolicy((current) => ({ ...current, approval: event.target.value as CursorApprovalMode }))}>
+              <option value="allowlist">Allowlist</option>
+              <option value="auto-review">Auto-review</option>
+              <option value="unrestricted">Run Everything</option>
+            </select>
+          </label>
+        </>
       ) : (
         <label className="set-field">
           <span className="set-field-label">권한 모드</span>

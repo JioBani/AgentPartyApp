@@ -26,6 +26,7 @@ import { buildModelRoutes } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
 import { DEFAULT_CODEX_POLICY, isCodexPolicy, requireCodexPolicy, type CodexPolicy } from "../../shared/codexPolicy";
+import { cursorPolicyOf, requireCursorPolicy, type CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import {
   applyMemberGatePatch,
@@ -283,6 +284,13 @@ export class PartyApplicationService {
         this.deps.sessionManager.setCodexPolicy(liveSessionId, policy);
       }
       member.codexPolicy = policy;
+    } else if (harnessId === "cursor") {
+      const policy = requireCursorPolicy(input.cursorPolicy);
+      if (liveSessionId) {
+        this.deps.sessionManager.setCursorPolicy(liveSessionId, policy);
+      }
+      member.cursorPolicy = policy;
+      member.permissionMode = undefined;
     } else {
       if (!isPermissionModeSetting(input.permissionMode)) {
         throw new Error("Claude Code permission requires a valid permissionMode.");
@@ -302,6 +310,7 @@ export class PartyApplicationService {
       harnessId,
       permissionMode: member.permissionMode,
       codexPolicy: member.codexPolicy,
+      cursorPolicy: member.cursorPolicy,
     });
     return this.result(`Member '${member.name}' permission updated.`, state, member);
   }
@@ -587,6 +596,26 @@ export class PartyApplicationService {
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, this.partyIdOf(member));
     log("info", "party", "member Codex policy persisted", { workspace, partyId: member.partyId, member: member.name, policy });
+  }
+
+  /** Persists a live Cursor agent-mode + approval-mode change. */
+  syncMemberCursorPolicy(sessionId: string, policy: CursorPolicy): void {
+    if (!sessionId) return;
+    const validated = requireCursorPolicy(policy);
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || (
+      member.cursorPolicy?.mode === validated.mode
+      && member.cursorPolicy?.approval === validated.approval
+    )) {
+      return;
+    }
+    member.cursorPolicy = { ...validated };
+    member.permissionMode = undefined;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member Cursor policy persisted", { workspace, partyId: member.partyId, member: member.name, policy: validated });
   }
 
   /**
@@ -1010,6 +1039,7 @@ export class PartyApplicationService {
       throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
     }
     const requestedCodexPolicy = input.codexPolicy === undefined ? undefined : requireCodexPolicy(input.codexPolicy);
+    const requestedCursorPolicy = input.cursorPolicy === undefined ? undefined : requireCursorPolicy(input.cursorPolicy);
     if (input.selectedHarnessId) {
       const requested = normalizeHarnessId(input.selectedHarnessId);
       if (requested !== normalizeHarnessId(member.runtime)) {
@@ -1024,10 +1054,19 @@ export class PartyApplicationService {
     const defaults = harnessDefaultsOf(getSettings(), normalizeHarnessId(member.runtime));
     member.model = input.model || member.model || defaults.model;
     member.effort = input.effort || member.effort || defaults.effort;
-    member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
+    const harnessId = normalizeHarnessId(member.runtime);
+    if (harnessId === "cursor") {
+      member.cursorPolicy = cursorPolicyOf(
+        requestedCursorPolicy || member.cursorPolicy || defaults.cursorPolicy,
+        input.permissionMode || member.permissionMode || defaults.permissionMode,
+      );
+      member.permissionMode = undefined;
+    } else {
+      member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
+    }
     member.reasoning = input.thinking || member.reasoning;
     member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget;
-    const harnessId = normalizeHarnessId(member.runtime);
+    member.serviceTier = input.serviceTier ?? member.serviceTier;
     if (harnessId === "codex") {
       const executionDefaults = harnessDefaultsOf(getSettings(), "codex");
       member.codexPolicy = {
@@ -1037,6 +1076,9 @@ export class PartyApplicationService {
       };
     } else {
       member.codexPolicy = undefined;
+    }
+    if (harnessId !== "cursor") {
+      member.cursorPolicy = undefined;
     }
   }
 
@@ -1064,8 +1106,10 @@ export class PartyApplicationService {
       effort: member.effort as any,
       thinking: member.reasoning,
       thinkingBudget: member.reasoningBudget,
+      serviceTier: member.serviceTier,
       permissionMode: member.permissionMode,
       codexPolicy: member.codexPolicy,
+      cursorPolicy: member.cursorPolicy,
     };
     if (options.mock) {
       return this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply });
@@ -1083,6 +1127,13 @@ export class PartyApplicationService {
 
   private ensureMigrated(state: StoredPartyState): StoredPartyState {
     this.healMemberModels(state);
+    for (const member of state.members) {
+      if (normalizeHarnessId(member.runtime) === "cursor" && !member.cursorPolicy) {
+        member.cursorPolicy = cursorPolicyOf(undefined, member.permissionMode);
+        member.permissionMode = undefined;
+        log("info", "party", "migrated legacy Cursor permission", { member: member.name, cursorPolicy: member.cursorPolicy });
+      }
+    }
     if (state.parties.length > 0) {
       return state;
     }
@@ -1230,8 +1281,8 @@ export class PartyApplicationService {
       },
       createMember: async (request) => {
         const harness = String(request.harness || "claude-code").toLowerCase();
-        if (harness !== "claude-code" && harness !== "codex") {
-          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code' or 'codex'.` };
+        if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
+          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code', 'codex', or 'cursor'.` };
         }
         if (request.permissionMode !== undefined && !isPermissionModeSetting(request.permissionMode)) {
           return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
@@ -1247,8 +1298,10 @@ export class PartyApplicationService {
             effort: request.effort,
             reasoning: request.reasoning,
             reasoningBudget: request.reasoningBudget,
+            serviceTier: request.serviceTier,
             permissionMode: request.permissionMode,
             codexPolicy: request.codexPolicy,
+            cursorPolicy: request.cursorPolicy,
           });
           const started = this.startMember(request.name, {}, {}, party);
           notify();
@@ -1274,6 +1327,7 @@ export class PartyApplicationService {
           const result = this.setMemberPermission(name, {
             permissionMode: request.permissionMode,
             codexPolicy: request.codexPolicy,
+            cursorPolicy: request.cursorPolicy,
           }, party);
           notify();
           return {
@@ -1283,6 +1337,7 @@ export class PartyApplicationService {
               name,
               permissionMode: result.member?.permissionMode,
               codexPolicy: result.member?.codexPolicy,
+              cursorPolicy: result.member?.cursorPolicy,
             },
           };
         } catch (error) {
@@ -1414,6 +1469,7 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
     models: routes.map((route) => {
       const thinking = route.capabilities.thinking;
       const effort = route.capabilities.effort;
+      const serviceTier = route.capabilities.serviceTier;
       const reasoning = thinking.supported || effort.supported
         ? {
             effort: effort.supported ? { options: effort.options.map((option) => option.id), default: effort.defaultValue } : undefined,
@@ -1434,6 +1490,9 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
         ioPerM: route.meta?.ioPerM,
         context: route.meta?.context,
         reasoning,
+        serviceTier: serviceTier?.supported
+          ? { options: serviceTier.options.map((option) => option.id), default: serviceTier.defaultValue }
+          : null,
       };
     }),
   };

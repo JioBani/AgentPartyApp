@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter } from "../core/codexAdapter";
+import { CursorAdapter } from "../core/cursorAdapter";
+import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
@@ -11,6 +13,7 @@ import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsO
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
+import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
@@ -574,6 +577,7 @@ export class SessionManager extends EventEmitter {
       effort: request.effort || selectedDefaults.effort,
       permissionMode: request.permissionMode || selectedDefaults.permissionMode || "default",
       codexPolicy: request.codexPolicy || selectedDefaults.codexPolicy,
+      cursorPolicy: request.cursorPolicy || selectedDefaults.cursorPolicy,
       autoReply: options?.autoReply,
       harness: selectedHarness,
     });
@@ -806,7 +810,7 @@ export class SessionManager extends EventEmitter {
     if (!adapter) {
       return;
     }
-    const adapterHarness = adapter instanceof CodexAdapter ? "codex" : "claude-code";
+    const adapterHarness = adapter instanceof CodexAdapter ? "codex" : adapter instanceof CursorAdapter ? "cursor" : "claude-code";
     const effectiveModel = adapterHarness === "codex" ? executionModelFor(model, "codex") : model;
     adapter.setModel(effectiveModel, providerId as any, runtimeModel);
   }
@@ -829,6 +833,14 @@ export class SessionManager extends EventEmitter {
       throw new Error(`Session '${id}' does not support a Codex policy (not a Codex harness).`);
     }
     adapter.setCodexPolicy(policy);
+  }
+
+  setCursorPolicy(id: string, policy: CursorPolicy): void {
+    const adapter = this.sessions.get(id)?.adapter;
+    if (!adapter?.setCursorPolicy) {
+      throw new Error(`Session '${id}' does not support a Cursor policy (not a Cursor harness).`);
+    }
+    adapter.setCursorPolicy(policy);
   }
 
   // --- MCP (external servers a member connects to as a client) -------------
@@ -940,6 +952,31 @@ export class SessionManager extends EventEmitter {
     const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const harnessDefaults = harnessDefaultsOf(settings, selectedHarness);
     const selectedModel = request.model || harnessDefaults.model;
+    if (selectedHarness === "cursor") {
+      const partyRuntime = binding
+        ? prepareCursorPartyRuntime({
+            baseDir: path.join(this.userDataDir, "cursor-plugins"),
+            sessionId: id,
+            automationBaseUrl: this.codexAutomationBaseUrl(settings.automationApiPort),
+            identity: binding.identity,
+          })
+        : undefined;
+      return new CursorAdapter({
+        id,
+        cwd,
+        executablePath: settings.cursorExecutablePath,
+        model: selectedModel,
+        effort: request.effort || harnessDefaults.effort,
+        serviceTier: request.serviceTier || harnessDefaults.serviceTier,
+        permissionMode: request.permissionMode || harnessDefaults.permissionMode,
+        cursorPolicy: request.cursorPolicy || harnessDefaults.cursorPolicy,
+        debugEnabled: settings.debugEnabled,
+        storageDir: path.join(this.userDataDir, "logs"),
+        resumeSessionId,
+        pluginDir: partyRuntime?.pluginDir,
+        partyPrimer: partyRuntime?.primer,
+      });
+    }
     if (selectedHarness === "codex") {
       return new CodexAdapter({
         id,

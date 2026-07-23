@@ -11,7 +11,9 @@ import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { PermissionModeSetting } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { CodexPermissionControl } from "./CodexPermissionControl";
+import { CursorPermissionControl } from "./CursorPermissionControl";
 import { PERMISSION_OPTIONS } from "./controls";
+import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 
 interface MemberWizardProps {
   routes: RouteLike[];
@@ -42,6 +44,14 @@ const HARNESSES: HarnessChoice[] = [
 
 const STEPS = ["이름", "하네스", "모델", "추론", "권한", "역할"] as const;
 const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+const CURSOR_HARNESS: HarnessChoice = {
+  id: "cursor",
+  label: "Cursor CLI",
+  status: "available",
+  icon: <TerminalSquare size={16} />,
+  hint: "Cursor Agent CLI · Auto / Grok 4.5",
+};
+const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS];
 
 /**
  * Step wizard for creating a party member (name → harness → model → reasoning →
@@ -70,9 +80,11 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries[0];
   const capabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
+  const serviceTierCap = capabilities.serviceTier;
   const thinkingCap = capabilities.thinking;
 
   const [effort, setEffort] = useState("");
+  const [serviceTier, setServiceTier] = useState("");
   const [thinkingMode, setThinkingMode] = useState("");
   const [budget, setBudget] = useState(0);
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(
@@ -80,6 +92,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   );
   const [codexPolicy, setCodexPolicy] = useState<CodexPolicy>(
     harnessDefaults.codex?.codexPolicy || DEFAULT_CODEX_POLICY,
+  );
+  const [cursorPolicy, setCursorPolicy] = useState<CursorPolicy>(
+    cursorPolicyOf(harnessDefaults.cursor?.cursorPolicy, harnessDefaults.cursor?.permissionMode),
   );
 
   // When the chosen harness changes, seed the model to THAT harness's default
@@ -103,6 +118,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
     const budgetDefault = thinkingCap?.budget?.default ?? 0;
     setEffort(effortCap?.supported && hDefaults?.effort ? hDefaults.effort : effDefault);
+    setServiceTier(serviceTierCap?.supported ? hDefaults?.serviceTier || serviceTierCap.defaultValue || "standard" : "");
     setThinkingMode(thinkingCap?.supported && hDefaults?.reasoning ? hDefaults.reasoning : thinkDefault);
     setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);
   }, [selectedKey]);
@@ -117,12 +133,14 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
-  const selectedHarness = HARNESSES.find((item) => item.id === harness);
-  const executionHarness = harness === "codex" ? "codex" : "claude-code";
+  const selectedHarness = ALL_HARNESSES.find((item) => item.id === harness);
+  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : "claude-code";
 
   useEffect(() => {
     if (executionHarness === "codex") {
       setCodexPolicy({ ...(harnessDefaults.codex?.codexPolicy || DEFAULT_CODEX_POLICY) });
+    } else if (executionHarness === "cursor") {
+      setCursorPolicy(cursorPolicyOf(harnessDefaults.cursor?.cursorPolicy, harnessDefaults.cursor?.permissionMode));
     } else {
       setPermissionMode(harnessDefaults["claude-code"]?.permissionMode || "default");
     }
@@ -148,10 +166,12 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         runtime: harness,
         model: selected?.route.model,
         effort: effortCap?.supported ? effort : undefined,
+        serviceTier: serviceTierCap?.supported ? serviceTier : undefined,
         reasoning: thinkingCap?.supported ? thinkingMode : undefined,
         reasoningBudget: showBudget ? budget : undefined,
         permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,
         codexPolicy: executionHarness === "codex" ? codexPolicy : undefined,
+        cursorPolicy: executionHarness === "cursor" ? cursorPolicy : undefined,
       });
       return;
     }
@@ -201,7 +221,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             <div className="wb-wizard-pane">
               <div className="wb-modal-label">하네스</div>
               <div className="wb-wizard-cards">
-                {HARNESSES.map((item) => (
+                {ALL_HARNESSES.map((item) => (
                   <button
                     type="button"
                     key={item.id}
@@ -223,7 +243,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
           {step === 2 && (
             <div className="wb-wizard-pane wb-wizard-models">
-              <div className="wb-modal-label">모델 <span className="wb-mono">{harnessEntries.length} available</span></div>
+              <div className="wb-modal-label">모델 <span className="wb-mono">{harnessEntries.length} catalogued</span></div>
               {harness === "codex" && codexModels?.status === "pending" && (
                 <p className="wb-wizard-hint">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 목록이 갱신됩니다.</p>
               )}
@@ -252,9 +272,11 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                           type="button"
                           key={key}
                           className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
+                          disabled={entry.route.enabled === false}
+                          title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
                           onClick={() => setSelectedKey(key)}
                         >
-                          <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span></span>
+                          <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span>{entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}</span>
                           <PerfMeter value={entry.meta.perf} />
                           <CostMeter value={entry.meta.cost} />
                           {key === selectedKey && <Check size={14} className="wb-model-check" />}
@@ -333,6 +355,16 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   )}
                 </div>
               )}
+              {serviceTierCap?.supported && serviceTierCap.options.length > 0 && (
+                <div className="wb-detail-section">
+                  <div className="wb-detail-section-head"><strong>Service mode</strong> <span>Cursor Grok serving speed</span></div>
+                  <div className="wb-segmented">
+                    {serviceTierCap.options.map((option) => (
+                      <button type="button" key={option.id} className={"wb-segment" + (option.id === serviceTier ? " is-active" : "")} onClick={() => setServiceTier(option.id)}>{option.label}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {!effortCap?.supported && !thinkingCap?.supported && (
                 <p className="wb-wizard-hint">이 모델은 노출된 추론 제어가 없습니다. 다음 단계로 진행하세요.</p>
               )}
@@ -341,11 +373,16 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
           {step === 4 && (
             <div className="wb-wizard-pane">
-              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : "Claude Code"}</span></div>
+              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
               {executionHarness === "codex" ? (
                 <>
                   <CodexPermissionControl policy={codexPolicy} onChange={setCodexPolicy} />
                   <p className="wb-wizard-hint">Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.</p>
+                </>
+              ) : executionHarness === "cursor" ? (
+                <>
+                  <CursorPermissionControl policy={cursorPolicy} onChange={setCursorPolicy} />
+                  <p className="wb-wizard-hint">Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.</p>
                 </>
               ) : (
                 <>
@@ -380,7 +417,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   <div><dt>하네스</dt><dd>{selectedHarness?.label}</dd></div>
                   <div><dt>모델</dt><dd className="wb-mono">{selected?.route.label || selectedMeta?.name || "—"}</dd></div>
                   <div><dt>추론</dt><dd className="wb-mono">{reasoningSummary(effortCap?.supported ? effort : "", thinkingCap?.supported ? thinkingMode : "", showBudget ? budget : undefined)}</dd></div>
-                  <div><dt>권한</dt><dd className="wb-mono">{executionHarness === "codex" ? `${codexPolicy.sandbox} / ${codexPolicy.approval}${codexPolicy.guardian ? " / guardian" : ""}` : permissionMode}</dd></div>
+                  <div><dt>권한</dt><dd className="wb-mono">{executionHarness === "codex" ? `${codexPolicy.sandbox} / ${codexPolicy.approval}${codexPolicy.guardian ? " / guardian" : ""}` : executionHarness === "cursor" ? `${cursorPolicy.mode} / ${cursorPolicy.approval}` : permissionMode}</dd></div>
                 </dl>
               </div>
             </div>

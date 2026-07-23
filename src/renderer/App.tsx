@@ -536,6 +536,7 @@ export function App() {
     reasoningBudget?: number;
     permissionMode?: import("../shared/types").PermissionModeSetting;
     codexPolicy?: import("../shared/codexPolicy").CodexPolicy;
+    cursorPolicy?: import("../shared/cursorPolicy").CursorPolicy;
   }) {
     const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
     await applyPartyResult(result);
@@ -667,18 +668,24 @@ export function App() {
     startingRef.current.add(identity);
     try {
       const draft = runtimeDrafts[name];
-      const memberRoute = findRoute(member?.model, routes);
+      const memberHarness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
+      const memberRoute = findRoute(
+        member?.model,
+        routes.filter((route) => (route.harnessId || "claude-code") === memberHarness),
+      );
       // The member already carries its harness's model/effort/permission (set at
       // creation from that harness's defaults); fall back to the same harness's
       // defaults if somehow unset. Provider is inferred from the model route.
-      const harnessDefaults = harnessDefaultsOf(state.settings, (member?.runtime === "codex" ? "codex" : "claude-code"));
+      const harnessDefaults = harnessDefaultsOf(state.settings, memberHarness);
       const result = await window.agentParty.startPartyMember(name, {
         // Opportunistic starts must not resurrect a member closed meanwhile.
         auto: opts.auto,
         selectedProviderId: draft?.providerId || (memberRoute?.providerId as any),
         model: draft?.model || member?.model || harnessDefaults.model,
         effort: (draft?.effort as any) || (member?.effort as any) || harnessDefaults.effort,
+        serviceTier: draft?.serviceTier || member?.serviceTier || harnessDefaults.serviceTier,
         permissionMode: (draft?.permissionMode as any) || (member?.permissionMode as any) || harnessDefaults.permissionMode,
+        cursorPolicy: draft?.cursorPolicy || member?.cursorPolicy || harnessDefaults.cursorPolicy,
       });
       await applyPartyResult(result);
       // The engine deliberately skipped an auto-start on a closed member — an
@@ -808,9 +815,9 @@ export function App() {
       }
       const sessionId = sessionIdFor(name);
       const member = members.find((item) => item.name === name);
-      const selectedHarness = runtime.route?.harnessId === "codex" ? "codex" : "claude-code";
-      const currentHarness = member?.runtime === "codex" ? "codex" : "claude-code";
-      if (runtime.route && selectedHarness !== currentHarness) {
+      const selectedHarness = runtime.route?.harnessId === "codex" ? "codex" : runtime.route?.harnessId === "cursor" ? "cursor" : "claude-code";
+      const currentHarness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
+      if (runtime.route && (selectedHarness !== currentHarness || runtime.serviceTier !== member?.serviceTier)) {
         // A harness is the adapter PROCESS, not model metadata. Recreate the
         // prewarmed session only when the actual selected harness changes.
         // Cross-routed models stay inside that harness process.
@@ -819,6 +826,7 @@ export function App() {
           selectedProviderId: runtime.route.providerId,
           model: runtime.route.model,
           effort: runtime.effort,
+          serviceTier: runtime.serviceTier,
           thinking: runtime.thinkingMode,
           thinkingBudget: runtime.thinkingBudget,
         });
@@ -842,6 +850,7 @@ export function App() {
           providerId: runtime.route?.providerId ?? current[name]?.providerId,
           runtimeModel: runtime.route?.runtimeModel ?? current[name]?.runtimeModel,
           effort: runtime.effort ?? current[name]?.effort,
+          serviceTier: runtime.serviceTier ?? current[name]?.serviceTier,
           thinking: runtime.thinkingMode ? runtime.thinkingMode !== "disabled" : current[name]?.thinking,
         },
       }));
@@ -865,10 +874,17 @@ export function App() {
         void window.agentParty.setCodexPolicy(sessionId, policy);
       }
     },
+    setCursorPolicy(name, policy) {
+      const sessionId = sessionIdFor(name);
+      if (sessionId) {
+        void window.agentParty.setCursorPolicy(sessionId, policy);
+      }
+      setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], cursorPolicy: policy } }));
+    },
     async listMcp(name) {
       const sessionId = sessionIdFor(name);
       const member = members.find((item) => item.name === name);
-      const harness = member?.runtime === "codex" ? "codex" : "claude-code";
+      const harness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
       if (!sessionId) {
         return { supported: true, harness, servers: [], note: "세션을 먼저 시작하세요 (멤버에게 메시지를 보내거나 패널을 열면 준비됩니다)." };
       }
@@ -903,7 +919,7 @@ export function App() {
   };
 
   /** Persists one harness's creation defaults (model/effort/reasoning/permission). */
-  async function saveHarnessDefaults(harnessId: "claude-code" | "codex", patch: Partial<HarnessDefaults>) {
+  async function saveHarnessDefaults(harnessId: "claude-code" | "codex" | "cursor", patch: Partial<HarnessDefaults>) {
     const current = state.settings.harnessDefaults[harnessId];
     const settings = await window.agentParty.updateSettings({
       harnessDefaults: { ...state.settings.harnessDefaults, [harnessId]: { ...current, ...patch } },
@@ -912,7 +928,7 @@ export function App() {
   }
 
   /** Sets which harness a brand-new member defaults to. */
-  async function setDefaultHarness(harnessId: "claude-code" | "codex") {
+  async function setDefaultHarness(harnessId: "claude-code" | "codex" | "cursor") {
     const settings = await window.agentParty.updateSettings({ selectedHarnessId: harnessId });
     setState((prev) => ({ ...prev, settings }));
   }
@@ -932,8 +948,8 @@ export function App() {
   const membersByProvider = useMemo<Partial<Record<UsageProviderId, number>>>(() => {
     const counts: Partial<Record<UsageProviderId, number>> = {};
     for (const member of members) {
-      const harness = member.runtime === "codex" ? "codex" : "claude-code";
-      const provider: UsageProviderId = harness === "codex" ? "codex" : "claude";
+      const harness = member.runtime === "codex" ? "codex" : member.runtime === "cursor" ? "cursor" : "claude-code";
+      const provider: UsageProviderId | undefined = harness === "codex" ? "codex" : harness === "claude-code" ? "claude" : undefined;
       if (provider) {
         counts[provider] = (counts[provider] || 0) + 1;
       }

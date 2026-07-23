@@ -7,8 +7,10 @@ import { PERMISSION_OPTIONS } from "./controls";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
 import { CodexPermissionControl } from "./CodexPermissionControl";
+import { CursorPermissionControl } from "./CursorPermissionControl";
 import { harnessCapabilities } from "../../shared/harnessCapabilities";
 import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
+import { cursorPolicyOf } from "../../shared/cursorPolicy";
 import {
   DEFAULT_MAX_IMAGES_PER_TURN,
   DEFAULT_MAX_IMAGE_BYTES,
@@ -50,7 +52,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const harness = view.member.runtime === "codex" ? "codex" : "claude-code";
+  const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
   // until the turn actually closes, so anything past the grace period is a turn
@@ -231,6 +233,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
     <CodexPermissionControl
       policy={view.session?.snapshot.codexPolicy || view.member.codexPolicy || DEFAULT_CODEX_POLICY}
       onChange={(policy) => actions.setCodexPolicy(view.name, policy)}
+    />
+  ) : harness === "cursor" ? (
+    <CursorPermissionControl
+      policy={cursorPolicyOf(view.session?.snapshot.cursorPolicy || view.member.cursorPolicy, view.permissionMode)}
+      onChange={(policy) => actions.setCursorPolicy(view.name, policy)}
     />
   ) : (
     <Dropdown

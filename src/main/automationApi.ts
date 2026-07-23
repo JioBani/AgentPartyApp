@@ -139,6 +139,10 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.listModels(workspace));
         return;
       }
+      if (method === "GET" && url.pathname === "/api/harnesses/cursor/status") {
+        sendJson(res, 200, await c.getCursorHarnessStatus());
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/models/codex/refresh") {
         sendJson(res, 200, await c.refreshCodexModels(workspace));
         return;

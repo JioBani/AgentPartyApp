@@ -65,8 +65,10 @@ export function providerOfRuntime(runtime: string | undefined): UsageProviderId 
 }
 
 /** The usage provider a harness id belongs to (codex vs the Claude family). */
-export function providerOfHarness(harnessId: string | undefined): UsageProviderId {
-  return harnessId === "codex" ? "codex" : "claude";
+export function providerOfHarness(harnessId: string | undefined): UsageProviderId | undefined {
+  if (harnessId === "codex") return "codex";
+  if (harnessId === "claude-code" || harnessId === "claude") return "claude";
+  return undefined;
 }
 
 /**

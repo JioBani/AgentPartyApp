@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/events";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
-export type HarnessId = "claude-code" | "codex";
+export type HarnessId = "claude-code" | "codex" | "cursor";
 
 export interface HarnessSession extends EventEmitter {
   start(): void;
@@ -36,6 +37,8 @@ export interface HarnessSession extends EventEmitter {
   refreshUsageLimits?(): Promise<void>;
   /** Codex-only: update the two-axis safety model live. Absent on Claude. */
   setCodexPolicy?(policy: CodexPolicy): void;
+  /** Cursor-only: update agent mode and approval mode for the next turn. */
+  setCursorPolicy?(policy: CursorPolicy): void;
   /**
    * MCP (external servers this member connects to as a **client**). Optional
    * because support + per-action capabilities differ per harness; the snapshot's
@@ -71,5 +74,11 @@ export const harnesses: HarnessDescriptor[] = [
     label: "Codex",
     status: "available",
     description: "Local Codex CLI harness backed by persistent app-server JSON-RPC.",
+  },
+  {
+    id: "cursor",
+    label: "Cursor CLI",
+    status: "available",
+    description: "Cursor Agent CLI harness with Auto and Cursor Grok 4.5.",
   },
 ];

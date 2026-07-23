@@ -24,6 +24,21 @@ const codexPolicySchema = {
   required: ["sandbox", "approval", "guardian"],
   additionalProperties: false,
 };
+const readOnlyAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const gateReviewerSchema = {
+  type: ["object", "null"],
+  properties: {
+    model: { type: "string" },
+    effort: { type: "string" },
+  },
+  required: ["model", "effort"],
+  additionalProperties: false,
+};
 
 const tools = [
   {
@@ -35,6 +50,8 @@ const tools = [
         to: { type: "string", description: "Recipient member name." },
         content: { type: "string", description: "Message body." },
         interrupt: { type: "boolean", description: "Stop the recipient's current turn before delivery." },
+        force: { type: "boolean", description: "Bypass Message Gate review for an urgent message." },
+        forceReason: { type: "string", description: "Why the Message Gate was bypassed." },
       },
       required: ["to", "content"],
       additionalProperties: false,
@@ -81,18 +98,49 @@ const tools = [
     },
   },
   {
+    name: "gate-set",
+    description: "Set another member's Message Gate override.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        mode: { type: "string", enum: ["inherit", "on", "off"] },
+        rule: { type: ["string", "null"] },
+        reviewer: gateReviewerSchema,
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "party-gate-set",
+    description: "Set the party-wide Message Gate default.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        rule: { type: "string" },
+        reviewer: gateReviewerSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "list",
     description: "List AgentParty members and their current status.",
+    annotations: readOnlyAnnotations,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "list-models",
     description: "List available AgentParty harnesses and model routes.",
+    annotations: readOnlyAnnotations,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "member-status",
     description: "Check one member's turn status, or every member when name is omitted.",
+    annotations: readOnlyAnnotations,
     inputSchema: { type: "object", properties: { name: { type: "string" } }, additionalProperties: false },
   },
   {
@@ -173,7 +221,14 @@ async function callTool(name, args) {
   assertBaseUrl();
   switch (name) {
     case "send":
-      return post("/api/harness/party/messages", { to: String(args.to || ""), from: member, content: String(args.content || ""), interrupt: args.interrupt === true }, { "x-agentparty-member": member });
+      return post("/api/harness/party/messages", {
+        to: String(args.to || ""),
+        from: member,
+        content: String(args.content || ""),
+        interrupt: args.interrupt === true,
+        force: args.force === true,
+        forceReason: typeof args.forceReason === "string" ? args.forceReason : undefined,
+      }, { "x-agentparty-member": member });
     case "member-create": {
       const created = await post("/api/party/members", {
         partyId: party || undefined,
@@ -205,6 +260,26 @@ async function callTool(name, args) {
         permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
         codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
       });
+    case "gate-set": {
+      const gate = {};
+      if (args.mode === "inherit" || args.mode === "on" || args.mode === "off") gate.mode = args.mode;
+      if ("rule" in args && (args.rule === null || typeof args.rule === "string")) gate.rule = args.rule;
+      if ("reviewer" in args && (args.reviewer === null || typeof args.reviewer === "object")) gate.reviewer = args.reviewer;
+      return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/gate`, { gate });
+    }
+    case "party-gate-set": {
+      if (!party) return { ok: false, error: "AGENTPARTY_PARTY is not set." };
+      const state = await get("/api/harness/party");
+      const current = state?.parties?.find((item) => item.id === party)?.gate || { enabled: false, rule: "" };
+      const gate = { ...current };
+      if (typeof args.enabled === "boolean") gate.enabled = args.enabled;
+      if (typeof args.rule === "string") gate.rule = args.rule;
+      if ("reviewer" in args && (args.reviewer === null || typeof args.reviewer === "object")) {
+        if (args.reviewer === null) delete gate.reviewer;
+        else gate.reviewer = args.reviewer;
+      }
+      return post(`/api/parties/${encodeURIComponent(party)}/gate`, gate);
+    }
     case "list":
       return get("/api/harness/party");
     case "list-models":

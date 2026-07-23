@@ -32,16 +32,21 @@ const settings = {
   harnessDefaults: {
     "claude-code": { model: "sonnet", effort: "high", reasoning: "adaptive", permissionMode: "plan" },
     codex: { model: "gpt-5.4-mini", effort: "low", codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false } },
+    cursor: { model: "Grok 4.5", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
   },
 };
 
 // ---- Layer 1: accessors -----------------------------------------------------
 const T = await bundleNode("src/shared/types.ts", "types-harness.mjs");
+const CP = await bundleNode("src/shared/cursorPolicy.ts", "cursor-policy.mjs");
 console.log("\nharness accessors:");
 assert(T.harnessDefaultsOf(settings).model === "sonnet", "harnessDefaultsOf defaults to the selected harness");
 assert(T.harnessDefaultsOf(settings, "codex").model === "gpt-5.4-mini", "harnessDefaultsOf resolves a specific harness");
 assert(T.defaultMemberProfileOf(settings, "codex").codexPolicy?.sandbox === "read-only", "codex profile carries the codex policy default");
-assert(T.HARNESS_IDS.length === 2, "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
+assert(T.HARNESS_IDS.join() === "claude-code,codex,cursor", "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
+assert(CP.cursorPolicyFromLegacyPermission("plan").mode === "plan", "legacy Cursor plan keeps Plan mode");
+assert(CP.cursorPolicyFromLegacyPermission("auto").approval === "auto-review", "legacy Cursor auto keeps Auto-review");
+assert(CP.cursorPolicyFromLegacyPermission("bypassPermissions").approval === "unrestricted", "legacy Cursor bypass keeps Run Everything");
 
 // ---- Layer 2: buildPartyMember ----------------------------------------------
 const D = await bundleNode("src/main/application/partyDomain.ts", "party-domain.mjs");
@@ -52,6 +57,18 @@ assert(!claudeMember.codexPolicy, "claude-code member has no codex policy");
 const codexMember = D.buildPartyMember({ partyId: "p1", name: "cx", role: "r", runtime: "codex" }, settings);
 assert(codexMember.model === "gpt-5.4-mini" && codexMember.effort === "low", "codex member inherits the CODEX defaults (not claude's)");
 assert(codexMember.codexPolicy?.sandbox === "read-only", "codex member starts with the codex default 2-axis policy (read-only here)");
+const cursorMember = D.buildPartyMember({ partyId: "p1", name: "cursor", role: "r", runtime: "cursor" }, settings);
+assert(cursorMember.model === "Grok 4.5" && cursorMember.effort === "high", "cursor member inherits its Grok-only defaults");
+assert(!cursorMember.codexPolicy && !cursorMember.permissionMode && cursorMember.cursorPolicy?.mode === "agent" && cursorMember.cursorPolicy?.approval === "allowlist", "cursor member uses Cursor's mode + approval policy");
+const explicitCursor = D.buildPartyMember({ partyId: "p1", name: "cursor2", role: "r", runtime: "cursor", cursorPolicy: { mode: "ask", approval: "auto-review" } }, settings);
+assert(explicitCursor.cursorPolicy?.mode === "ask" && explicitCursor.cursorPolicy?.approval === "auto-review", "explicit Cursor policy overrides the runtime default");
+let invalidCursorPolicyError = "";
+try {
+  D.buildPartyMember({ partyId: "p1", name: "bad-cursor", role: "r", runtime: "cursor", cursorPolicy: { mode: "agent" } }, settings);
+} catch (error) {
+  invalidCursorPolicyError = error instanceof Error ? error.message : String(error);
+}
+assert(invalidCursorPolicyError.includes("Cursor") && invalidCursorPolicyError.includes("approval"), "incomplete Cursor policy is rejected at the domain boundary");
 // Explicit input still overrides the harness default.
 const override = D.buildPartyMember({ partyId: "p1", name: "cx2", role: "r", runtime: "codex", model: "z-ai/glm-5.2" }, settings);
 assert(override.model === "z-ai/glm-5.2", "explicit input model overrides the harness default");

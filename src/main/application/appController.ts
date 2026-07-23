@@ -6,6 +6,7 @@ import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInp
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
@@ -27,6 +28,7 @@ import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import { inspectCursorAgent } from "../../core/cursorAgentCli";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -52,7 +54,7 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
 } {
   const settings = getSettings();
   const modelRoutes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models).map((route) => {
-    const harnessId = route.harnessId === "codex" ? "codex" : "claude-code";
+    const harnessId = route.harnessId;
     return { ...route, executionHarness: harnessId, permission: permissionDiscoveryFor(settings, harnessId) };
   });
   return {
@@ -77,6 +79,10 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  */
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
+
+  getCursorHarnessStatus() {
+    return inspectCursorAgent(getSettings().cursorExecutablePath);
+  }
 
   /**
    * The active party PER WINDOW (`windowId → partyId`). One engine serves every
@@ -162,7 +168,7 @@ export class AppController {
       try {
         const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
         for (const member of party.members || []) {
-          const harnessId = member.runtime === "codex" ? "codex" : "claude-code";
+          const harnessId = member.runtime === "codex" ? "codex" : member.runtime === "cursor" ? "cursor" : "claude-code";
           const provider = providerOfHarness(harnessId);
           if (provider) {
             providers.add(provider);
@@ -476,6 +482,10 @@ export class AppController {
 
   setSessionCodexPolicy(workspacePath: string, sessionId: string, policy: CodexPolicy): Promise<void> {
     return this.engineFor(workspacePath).setSessionCodexPolicy(sessionId, policy);
+  }
+
+  setSessionCursorPolicy(workspacePath: string, sessionId: string, policy: CursorPolicy): Promise<void> {
+    return this.engineFor(workspacePath).setSessionCursorPolicy(sessionId, policy);
   }
 
   approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {

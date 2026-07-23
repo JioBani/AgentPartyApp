@@ -19,7 +19,7 @@ interface RuntimeModalProps {
  * thinking, debug, auto-compact). Apply restarts the member's session.
  */
 export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: RuntimeModalProps) {
-  const currentHarness = view.member.runtime === "codex" ? "codex" : "claude-code";
+  const currentHarness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
   const harnessLocked =
     (view.session?.snapshot.turnCount ?? 0) > 0 ||
     view.transcript.some((block) => block.kind === "user" || block.kind === "assistant");
@@ -29,6 +29,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     model: view.model,
     harness: currentHarness,
     effort: view.effort,
+    serviceTier: view.member.serviceTier,
     thinkingMode: view.thinkingMode,
     thinkingBudget: view.thinkingBudget,
     debug: debugEnabled,
@@ -39,6 +40,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     actions.applyRuntime(view.name, {
       route: next.route,
       effort: next.effort,
+      serviceTier: next.serviceTier,
       thinkingMode: next.thinkingMode,
       thinkingBudget: next.thinkingBudget,
       debug: Boolean(next.debug),
@@ -57,12 +59,12 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
           <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
             <span className="wb-dot" /> {view.name}
           </span>
-          <span className="wb-mono wb-modal-sub">{currentHarness === "codex" ? "Codex" : "Claude Code"}</span>
+          <span className="wb-mono wb-modal-sub">{currentHarness === "codex" ? "Codex" : currentHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span>
         </>
       }
       routes={routes}
       value={value}
-      config={{ harness: true, effort: true, thinking: true, debug: true, autoCompact: true }}
+      config={{ harness: true, effort: true, serviceTier: true, thinking: true, debug: true, autoCompact: true }}
       harnessLocked={harnessLocked}
       currentHarness={currentHarness}
       contextWindow={view.context?.total || view.member.lastContextWindow}

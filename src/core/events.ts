@@ -1,6 +1,7 @@
 import type { ModelRoute } from "./modelRegistry";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../shared/subagentActivity";
 import type { UsageProviderId, UsageWindow } from "../shared/usageLimits";
+import type { CursorPolicy } from "../shared/cursorPolicy";
 
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -43,6 +44,7 @@ export interface ClaudeSessionSnapshot {
   /** Live thinking token budget, when set. */
   thinkingBudget?: number;
   permissionMode?: string;
+  cursorPolicy?: CursorPolicy;
   status: string;
   turnState?: string;
   startedAt: string;
@@ -90,7 +92,7 @@ export interface ResumableSessionInfo {
 
 export type ClaudeNormalizedEvent =
   | { type: "status"; status: string | null; detail?: string; at: string }
-  | { type: "session"; sessionId: string; model?: string; permissionMode?: string; tools?: string[]; slashCommands?: HarnessCommand[]; models?: ModelRoute[]; at: string }
+  | { type: "session"; sessionId: string; model?: string; permissionMode?: string; cursorPolicy?: CursorPolicy; tools?: string[]; slashCommands?: HarnessCommand[]; models?: ModelRoute[]; at: string }
   | { type: "assistant_text_delta"; text: string; blockIndex?: number; at: string }
   | { type: "reasoning_delta"; text: string; blockIndex?: number; at: string }
   | { type: "thinking_tokens"; estimatedTokens: number; delta?: number; at: string }

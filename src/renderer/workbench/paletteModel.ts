@@ -13,7 +13,7 @@
  */
 
 /** Member runtimes map onto one of these palette dialects. */
-export type HarnessId = "claude-code" | "codex";
+export type HarnessId = "claude-code" | "codex" | "cursor";
 
 /** Where a command comes from — drives the source badge. */
 export type PaletteSource = "built-in" | "skill" | "agent" | "mcp" | "plugin" | "user" | "project" | "agentparty";
@@ -144,11 +144,18 @@ const CODEX: HarnessPalette = {
 const PALETTES: Record<HarnessId, HarnessPalette> = {
   "claude-code": CLAUDE_CODE,
   codex: CODEX,
+  cursor: {
+    ...CLAUDE_CODE,
+    harness: "cursor",
+    commands: CLAUDE_CODE.commands.map((command) => command.id === "compact"
+      ? { ...command, id: "compress", trigger: "/compress", title: "compress", description: "Compress the Cursor chat context" }
+      : command),
+  },
 };
 
 /** Resolve a member runtime to its palette dialect. Defaults to Claude Code. */
 export function getHarnessPalette(runtime: string | undefined): HarnessPalette {
-  return runtime === "codex" ? PALETTES.codex : PALETTES["claude-code"];
+  return runtime === "codex" ? PALETTES.codex : runtime === "cursor" ? PALETTES.cursor : PALETTES["claude-code"];
 }
 
 /**

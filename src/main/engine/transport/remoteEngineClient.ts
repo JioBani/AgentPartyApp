@@ -1,6 +1,7 @@
 import type { Readable, Writable } from "node:stream";
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput, TranscriptSave } from "../../../shared/types";
 import type { CodexPolicy } from "../../../shared/codexPolicy";
+import type { CursorPolicy } from "../../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
@@ -164,6 +165,7 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionThinking(sessionId: string, mode: string, budget?: number) { return this.call<void>("setSessionThinking", sessionId, mode, budget); }
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
+  setSessionCursorPolicy(sessionId: string, policy: CursorPolicy) { return this.call<void>("setSessionCursorPolicy", sessionId, policy); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
   closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }
   listSessionMcpServers(sessionId: string) { return this.call<McpServerSnapshot>("listSessionMcpServers", sessionId); }

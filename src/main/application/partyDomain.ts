@@ -1,6 +1,7 @@
 import type { AppSettings, CreateMemberInput, HarnessId, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
 import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, requireCodexPolicy } from "../../shared/codexPolicy";
+import { cursorPolicyOf, requireCursorPolicy } from "../../shared/cursorPolicy";
 
 export function createPartyDefinition(name: string, now = new Date().toISOString()): PartyDefinition {
   return {
@@ -24,11 +25,12 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
   }
   const requestedCodexPolicy = input.codexPolicy === undefined ? undefined : requireCodexPolicy(input.codexPolicy);
+  const requestedCursorPolicy = input.cursorPolicy === undefined ? undefined : requireCursorPolicy(input.cursorPolicy);
 
   // A member is created from ITS harness's defaults (not one global profile), so
   // e.g. a Codex member starts with the Codex default model + sandbox policy.
   const runtime = normalizeRuntime(input.runtime || settings.selectedHarnessId);
-  const harnessId: HarnessId = runtime === "codex" ? "codex" : "claude-code";
+  const harnessId: HarnessId = runtime === "codex" ? "codex" : runtime === "cursor" ? "cursor" : "claude-code";
   const profile = harnessDefaultsOf(settings, harnessId);
   const model = input.model || profile.model;
   return {
@@ -41,11 +43,15 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     effort: input.effort || profile.effort,
     reasoning: input.reasoning ?? profile.reasoning,
     reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
-    permissionMode: input.permissionMode || profile.permissionMode || "default",
+    serviceTier: input.serviceTier ?? profile.serviceTier,
+    permissionMode: harnessId === "claude-code" ? input.permissionMode || profile.permissionMode || "default" : undefined,
     // Permission semantics belong to the selected harness. Cross-routed models
     // do not replace the Claude Code SDK or Codex app-server process.
     codexPolicy: harnessId === "codex"
       ? { ...(requestedCodexPolicy || profile.codexPolicy || DEFAULT_CODEX_POLICY) }
+      : undefined,
+    cursorPolicy: harnessId === "cursor"
+      ? cursorPolicyOf(requestedCursorPolicy || profile.cursorPolicy, input.permissionMode || profile.permissionMode)
       : undefined,
     createdAt: now,
     updatedAt: now,
@@ -75,11 +81,11 @@ export function buildChannelPayload(message: PartyMessage, target: PartyMember):
 }
 
 export function normalizeRuntime(value: unknown): PartyMember["runtime"] {
-  return value === "codex" ? "codex" : value === "claude" ? "claude" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "claude" ? "claude" : "claude-code";
 }
 
-export function normalizeHarnessId(value: unknown): "claude-code" | "codex" {
-  return value === "codex" ? "codex" : "claude-code";
+export function normalizeHarnessId(value: unknown): HarnessId {
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : "claude-code";
 }
 
 export function normalizeMemberName(value: unknown): string {

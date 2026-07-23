@@ -4,6 +4,7 @@ import type { HarnessSession } from "./types";
 import type { HarnessId } from "../../shared/types";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot } from "../../shared/mcp";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 
 /** Distributes `Omit` across the event union so each member keeps its own keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -24,6 +25,7 @@ export interface MockHarnessOptions {
   /** Which harness this mock stands in for (drives the MCP snapshot tag). */
   harness?: HarnessId;
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 /**
@@ -64,6 +66,7 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       pendingApprovalCount: 0,
       slashCommands: options.commands,
       codexPolicy: options.codexPolicy ? { ...options.codexPolicy } : undefined,
+      cursorPolicy: options.cursorPolicy ? { ...options.cursorPolicy } : undefined,
     };
   }
 
@@ -205,6 +208,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
 
   setCodexPolicy(policy: CodexPolicy): void {
     this.snapshot.codexPolicy = { ...policy };
+    this.pushSnapshot();
+  }
+
+  setCursorPolicy(policy: CursorPolicy): void {
+    this.snapshot.cursorPolicy = { ...policy };
     this.pushSnapshot();
   }
 

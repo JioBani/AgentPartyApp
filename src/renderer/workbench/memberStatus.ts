@@ -143,6 +143,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     thinkingMode: session?.snapshot.thinkingMode || member.reasoning || undefined,
     thinkingBudget: session?.snapshot.thinkingBudget ?? member.reasoningBudget,
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
+    cursorPolicy: session?.snapshot.cursorPolicy || member.cursorPolicy,
     vision: visionFor(model, routes),
     effortOptions: effortOptionsFor(model, routes),
     context: contextFor(session, member, model, String(member.model || ""), routes),

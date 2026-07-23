@@ -19,6 +19,11 @@ export const HARNESS_PROTOCOLS = {
     wireApi: "responses",
     endpoint: "responses",
   },
+  cursor: {
+    id: "cursor-agent-ndjson",
+    wireApi: "cursor-agent",
+    endpoint: "cli",
+  },
 } as const satisfies Record<HarnessId, {
   id: string;
   wireApi: string;

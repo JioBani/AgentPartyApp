@@ -24,6 +24,7 @@ const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider }
 const { openRouterAliasMap, openRouterModels, orRoutedModels, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
+const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
 const { claudeRuntimeModelFor } = await load("src/core/claudeAdapter.ts", "claude-adapter.mjs");
 
 const failures = [];
@@ -35,12 +36,18 @@ const byId = Object.fromEntries(routes.map((r) => [r.model, r]));
 const liveSolRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-5.6-sol", displayName: "gpt-5.6-sol", isDefault: false, hidden: false, reasoningEfforts: [], serviceTiers: [] }])
   .find((r) => r.harnessId === "codex" && r.model === "gpt-5.6-sol");
 assert(liveSolRoute?.label === "GPT-5.6 Sol", "live Codex discovery keeps the shared catalog label (transport slug stays internal)");
-assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same three provider names as Authentication");
+assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 for (const harnessId of ["claude-code", "codex"]) {
-  for (const providerId of ["anthropic", "openai", "openrouter"]) {
+  for (const providerId of ["anthropic", "openai", "cursor", "openrouter"]) {
     assert(routes.some((route) => route.harnessId === harnessId && route.providerId === providerId), `${harnessId} exposes a separate ${PROVIDER_LABELS[providerId]} model group`);
   }
 }
+const groupedProviders = groupByProvider(
+  routes
+    .filter((route) => route.harnessId === "claude-code")
+    .map((route) => ({ route, meta: { id: route.model, name: route.label, provider: route.providerId, context: "—" } })),
+).map((group) => group.provider);
+assert(groupedProviders.includes("cursor"), "renderer provider grouping keeps the Cursor bucket visible");
 
 // Leaderboard OR-O set must be exactly these, with concrete OR ids.
 const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 Pro", "MiniMax M3", "Gemini 3.x Pro", "Kimi K2.7 Code", "Kimi K2.6", "Grok Build 0.1", "Qwen3.7 Plus", "Grok 4.3"];
@@ -48,7 +55,7 @@ const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 P
 // and as codex routes (Phase 2, modelProvider=openrouter). `byId` keys off the
 // claude-code label; codex OR routes are keyed by the orModelId slug.
 const orClaudeRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "claude-code");
-assert(orClaudeRoutes.length === expectedOr.length, `exactly ${expectedOr.length} OpenRouter models on the claude-code harness (got ${orClaudeRoutes.length})`);
+assert(orClaudeRoutes.length === orRoutedModels().length, `all ${orRoutedModels().length} OpenRouter models are on the claude-code harness (got ${orClaudeRoutes.length})`);
 assert(expectedOr.every((id) => byId[id]), "all leaderboard OR-O models are present");
 // Only actual OpenRouter catalog models use modelProvider=openrouter.
 const orCodexRoutes = routes.filter((r) => r.modelProvider === "openrouter" && r.harnessId === "codex");
@@ -111,7 +118,14 @@ assert(routes.some((route) => route.harnessId === "codex" && route.model === "gp
 // ALSO static codex routes, and each OR model adds a codex OpenRouter route.
 console.log("\nHarness×model cross-routing (one catalog entry per model):");
 const codexAccountCount = modelCatalog().filter((m) => m.provider === "openai" && m.codexModel).length;
-assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length === routes.length, "claude-code catalog routes + Codex account/OpenRouter/Claude-subscription routes all produced");
+const cursorModelCount = modelCatalog().filter((m) => m.cursorModel).length;
+assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + modelCatalog().length + (cursorModelCount * 2) + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
+const cursorRoutes = routes.filter((route) => route.harnessId === "cursor");
+assert(cursorRoutes.length === modelCatalog().length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness catalogues every model plus Auto");
+assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");
+assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.runtimeModel === "cursor-grok-4.5-high", "Cursor Grok route carries the verified named-model slug");
+assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.serviceTier?.options.map((o) => o.id).join() === "standard,fast", "Cursor Grok exposes independent Standard/Fast service modes");
+assert(routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5")?.enabled === false, "Claude Code × Cursor Grok is visible but explicitly unavailable without a compatible protocol");
 for (const [id, slug, perf, costTier] of [["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
   const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
   assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
@@ -121,11 +135,11 @@ for (const [id, slug, perf, costTier] of [["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], 
   assert(claudeRoute?.runtimeModel === `claude-${slug}`, `'${id}' is ALSO a claude-code route via the claude-${slug} router alias (cross feature)`);
 }
 assert(routes.some((r) => r.harnessId === "claude-code" && r.runtimeModel === "claude-gpt-5.5"), "GPT-5.5 keeps its claude-code router route (cross feature regression guard)");
-// No model label appears twice within one harness (the duplicate-exposure bug);
-// the SAME label on both harnesses is the cross feature, not a duplicate.
+// Multiple providers may expose the same model label; only the full
+// harness/provider/model identity must remain unique.
 for (const harness of ["claude-code", "codex"]) {
-  const labels = routes.filter((r) => r.harnessId === harness).map((r) => r.label);
-  assert(new Set(labels).size === labels.length, `no duplicate model labels on the ${harness} harness`);
+  const keys = routes.filter((r) => r.harnessId === harness).map((r) => `${r.harnessId}::${r.providerId}::${r.model}`);
+  assert(new Set(keys).size === keys.length, `no duplicate route identities on the ${harness} harness`);
 }
 
 // Canonical-spelling resolution (the vanished-Adaptive bug). A live session

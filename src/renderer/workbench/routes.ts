@@ -17,6 +17,7 @@ export interface RouteVision {
 /** Per-model reasoning capability surfaced from the catalog (main process). */
 export interface RouteCapabilities {
   effort?: { supported: boolean; defaultValue?: string; options: RouteOption[] };
+  serviceTier?: { supported: boolean; defaultValue?: string; options: RouteOption[] };
   thinking?: {
     supported: boolean;
     defaultValue?: string;
@@ -47,6 +48,7 @@ export type RouteLike = {
   label?: string;
   description?: string;
   enabled?: boolean;
+  unavailableReason?: string;
   meta?: RouteMeta;
   capabilities?: RouteCapabilities;
 };

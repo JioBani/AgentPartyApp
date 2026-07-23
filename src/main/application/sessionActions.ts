@@ -1,5 +1,6 @@
 import type { EngineConnection } from "../engine/engineConnection";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { sanitizeAttachments } from "../../shared/attachments";
 
 export type SessionActionName =
@@ -14,6 +15,7 @@ export type SessionActionName =
   | "thinking"
   | "permission"
   | "codex-policy"
+  | "cursor-policy"
   | "approve";
 
 type SessionActionHandler = (engine: EngineConnection, sessionId: string, body: any) => Promise<unknown>;
@@ -30,6 +32,7 @@ const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
   thinking: (engine, sessionId, body) => engine.setSessionThinking(sessionId, String(body.mode || ""), typeof body.budget === "number" ? body.budget : undefined),
   permission: (engine, sessionId, body) => engine.setSessionPermissionMode(sessionId, String(body.permissionMode || "")),
   "codex-policy": (engine, sessionId, body) => engine.setSessionCodexPolicy(sessionId, body.policy as CodexPolicy),
+  "cursor-policy": (engine, sessionId, body) => engine.setSessionCursorPolicy(sessionId, body.policy as CursorPolicy),
   approve: (engine, sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
 };
 

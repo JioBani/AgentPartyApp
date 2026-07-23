@@ -1,6 +1,8 @@
 import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import { requireCodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
+import { requireCursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
@@ -193,6 +195,12 @@ export class LocalEngine implements EngineConnection {
     const validated = requireCodexPolicy(policy);
     this.deps.sessionManager.setCodexPolicy(sessionId, validated);
     this.party.syncMemberCodexPolicy(sessionId, validated);
+  }
+
+  async setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void> {
+    const validated = requireCursorPolicy(policy);
+    this.deps.sessionManager.setCursorPolicy(sessionId, validated);
+    this.party.syncMemberCursorPolicy(sessionId, validated);
   }
 
   async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {

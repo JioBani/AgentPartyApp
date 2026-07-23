@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { getUserDataDir } from "./userDataDir";
 import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/types";
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
+import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
@@ -29,11 +30,13 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   // A catalog codexModel slug (codexRouteFromCatalog), so the default is
   // selectable even before live model/list discovery lands.
   codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { ...DEFAULT_CODEX_POLICY } },
+  cursor: { model: "Grok 4.5", effort: "high", serviceTier: "standard", cursorPolicy: { ...DEFAULT_CURSOR_POLICY } },
 };
 
 const defaults: AppSettings = {
   workspacePath: process.cwd(),
   claudeExecutablePath: "",
+  cursorExecutablePath: "",
   claudeSafeMode: false,
   selectedHarnessId: "claude-code",
   harnessDefaults: HARNESS_DEFAULTS,
@@ -96,6 +99,7 @@ export function migrateSettings(stored: Record<string, any>): Partial<AppSetting
         permissionMode: claudePermissionMode || HARNESS_DEFAULTS["claude-code"].permissionMode,
       },
       codex: { ...HARNESS_DEFAULTS.codex },
+      cursor: { ...HARNESS_DEFAULTS.cursor },
     },
   };
 }
@@ -106,6 +110,11 @@ function mergeHarnessDefaults(stored: Partial<Record<HarnessId, HarnessDefaults>
   for (const id of HARNESS_IDS) {
     merged[id] = { ...HARNESS_DEFAULTS[id], ...(stored?.[id] || {}) };
   }
+  merged.cursor = {
+    ...merged.cursor,
+    cursorPolicy: cursorPolicyOf(merged.cursor.cursorPolicy, merged.cursor.permissionMode),
+    permissionMode: undefined,
+  };
   return merged;
 }
 

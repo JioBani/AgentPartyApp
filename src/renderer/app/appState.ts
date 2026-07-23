@@ -1,5 +1,6 @@
 import type { InitialAppState } from "../../shared/types";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 
 export type ViewId = "workbench" | "sessions" | "auth" | "runtime" | "automation";
 
@@ -9,7 +10,9 @@ export interface MemberRuntimeDraft {
   providerId?: string;
   runtimeModel?: string;
   effort?: string;
+  serviceTier?: string;
   permissionMode?: string;
+  cursorPolicy?: CursorPolicy;
   thinking?: boolean;
 }
 
@@ -18,11 +21,13 @@ export const initialState: InitialAppState = {
   settings: {
     workspacePath: "",
     claudeExecutablePath: "",
+    cursorExecutablePath: "",
     claudeSafeMode: false,
     selectedHarnessId: "claude-code",
     harnessDefaults: {
       "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },
       codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } },
+      cursor: { model: "Grok 4.5", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
     },
     debugEnabled: false,
     routerBaseUrl: "http://127.0.0.1:3455",

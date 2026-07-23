@@ -3,6 +3,7 @@ import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 
 /**
  * One in-session subagent, folded from `subagent` normalized events. Its output
@@ -94,6 +95,7 @@ export interface MemberView {
   /** Current thinking token budget, when set. */
   thinkingBudget?: number;
   permissionMode: string;
+  cursorPolicy?: CursorPolicy;
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;
   /** The effective model's selectable effort options (empty when the model has none). */

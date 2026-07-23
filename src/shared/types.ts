@@ -1,6 +1,7 @@
 import type { ClaudeSessionSnapshot } from "../core/events";
 import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
+import type { CursorPolicy } from "./cursorPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
@@ -11,8 +12,8 @@ export function isPermissionModeSetting(value: unknown): value is PermissionMode
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
 export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
-export type HarnessId = "claude-code" | "codex";
-export type ProviderId = "anthropic" | "openrouter" | "openai" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor";
+export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
  * The per-harness member-creation defaults. Each harness owns its own default
@@ -28,10 +29,14 @@ export interface HarnessDefaults {
   /** Reasoning/thinking mode (adaptive | enabled | disabled). */
   reasoning?: string;
   reasoningBudget?: number;
+  /** Provider serving tier such as Cursor Grok `standard` or `fast`. */
+  serviceTier?: string;
   /** Single-mode permission (Claude Code and similar harnesses). */
   permissionMode?: PermissionModeSetting;
   /** Two-axis safety model (Codex and similar harnesses). */
   codexPolicy?: CodexPolicy;
+  /** Cursor's agent mode and approval mode. */
+  cursorPolicy?: CursorPolicy;
 }
 
 /**
@@ -48,6 +53,8 @@ export interface AppSettings {
   workspacePath: string;
   /** Claude Code executable override (Claude-harness infrastructure). */
   claudeExecutablePath: string;
+  /** Cursor Agent executable/bundle override. Empty = auto-discover official install. */
+  cursorExecutablePath: string;
   claudeSafeMode: boolean;
   /** The harness a brand-new member defaults to. */
   selectedHarnessId: HarnessId;
@@ -75,7 +82,7 @@ export interface AppSettings {
 }
 
 /** All harnesses that have defaults, in a stable order. */
-export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex"];
+export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor"];
 
 /** The creation defaults for one harness (falls back to the default harness). */
 export function harnessDefaultsOf(settings: AppSettings, harnessId?: HarnessId): HarnessDefaults {
@@ -117,7 +124,7 @@ export interface PartyMember {
   partyId?: string;
   name: string;
   status: "idle" | "opened" | "running" | "closed" | "missing_session";
-  runtime?: "codex" | "claude" | "claude-code";
+  runtime?: "codex" | "claude" | "claude-code" | "cursor";
   role?: string;
   sessionId?: string;
   /**
@@ -132,9 +139,13 @@ export interface PartyMember {
   reasoning?: string;
   /** Thinking token budget when applicable. */
   reasoningBudget?: number;
+  /** Provider serving tier such as Cursor Grok `standard` or `fast`. */
+  serviceTier?: string;
   permissionMode?: PermissionModeSetting;
   /** Codex two-axis safety model (sandbox × approval + guardian); Codex members only. */
   codexPolicy?: CodexPolicy;
+  /** Cursor agent mode + approval mode; Cursor members only. */
+  cursorPolicy?: CursorPolicy;
   /**
    * Context-window occupancy (tokens) captured from the member's last live turn,
    * persisted so a reopened member — or a reopened app — shows its context meter
@@ -210,14 +221,16 @@ export interface CreateMemberInput {
   requirement: string;
   role?: string;
   initialTask?: string;
-  runtime?: "codex" | "claude" | "claude-code";
+  runtime?: "codex" | "claude" | "claude-code" | "cursor";
   model?: string;
   effort?: string;
   reasoning?: string;
   reasoningBudget?: number;
+  serviceTier?: string;
   permissionMode?: PermissionModeSetting;
   /** Explicit initial Codex safety policy for members using the Codex harness. */
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 export interface StartPartyMemberInput {
@@ -226,9 +239,11 @@ export interface StartPartyMemberInput {
   effort?: EffortSetting;
   thinking?: string;
   thinkingBudget?: number;
+  serviceTier?: string;
   permissionMode?: PermissionModeSetting;
   /** Explicit Codex safety policy for members using the Codex harness. */
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
   selectedProviderId?: ProviderId;
   /**
    * Opportunistic start (renderer prewarm on panel open) — must NOT resurrect a
@@ -242,6 +257,7 @@ export interface StartPartyMemberInput {
 export interface MemberPermissionInput {
   permissionMode?: PermissionModeSetting;
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 export interface SessionView {
@@ -260,9 +276,11 @@ export interface CreateSessionInput {
   /** Thinking mode (adaptive | enabled | disabled); falls back to the model's catalog default. */
   thinking?: string;
   thinkingBudget?: number;
+  serviceTier?: string;
   permissionMode?: PermissionModeSetting;
   /** Codex two-axis safety model; used only when the harness is Codex. */
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 export interface WindowInfo {
@@ -288,7 +306,7 @@ export interface InitialAppState {
   auth: AuthProviderState[];
   sessions: SessionView[];
   modelRoutes: unknown[];
-  /** The three provider groups used to partition modelRoutes in Workbench. */
+  /** Provider groups used to partition modelRoutes in Workbench. */
   modelProviders: ModelProviderDescriptor[];
   /** Live Codex account-catalog discovery state (pending/ready/error). */
   codexModels?: CodexModelDiscoveryState;

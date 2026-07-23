@@ -1,5 +1,6 @@
 import type { RouteLike } from "./routes";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
@@ -79,12 +80,14 @@ export interface WorkbenchActions {
    * sending a message starts a fresh session. Bound to the tab's close (×).
    */
   closeSession(memberName: string): void;
-  applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
+  applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; serviceTier?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
   setEffort(memberName: string, effort: string): void;
   setThinking(memberName: string, mode: string, budget?: number): void;
   setPermissionMode(memberName: string, mode: string): void;
   /** Codex two-axis safety model (sandbox × approval + guardian); applied live. */
   setCodexPolicy(memberName: string, policy: CodexPolicy): void;
+  /** Cursor agent mode + approval mode; applied to the next turn. */
+  setCursorPolicy(memberName: string, policy: CursorPolicy): void;
   /** Lists the member's external MCP servers (status + tools). Needs a live session. */
   listMcp(memberName: string): Promise<McpServerSnapshot>;
   /** Reconnects one MCP server (Codex: reloads MCP config). */

@@ -38,6 +38,11 @@ export interface ReasoningSpec {
   budget?: ReasoningBudgetSpec;
 }
 
+export interface ServiceTierSpec {
+  options: Array<"standard" | "fast">;
+  default: "standard" | "fast";
+}
+
 /**
  * Per-model multimodal input support. `image: false` = text-only (attaching an
  * image is refused with a visible error, never silently dropped). Omitted =
@@ -62,6 +67,8 @@ export interface CatalogModel {
   codexModel?: string;
   /** Claude OAuth model id exposed by local CLIProxyAPI for Codex-harness cross-routing. */
   claudeSubscriptionModel?: string;
+  /** Cursor Agent named-model slug. Presence opts this entry into the Cursor harness. */
+  cursorModel?: string;
   /** Concrete OpenRouter model id the harness protocol gateway selects. */
   orModelId?: string;
   subscription: boolean;
@@ -75,6 +82,8 @@ export interface CatalogModel {
   outPerM?: number;
   ioPerM?: number;
   reasoning?: ReasoningSpec | null;
+  /** Provider-specific serving tier, e.g. Cursor Grok Standard/Fast. */
+  serviceTier?: ServiceTierSpec;
   /** Multimodal input support. Omitted = unknown. */
   vision?: VisionSpec;
 }
@@ -96,6 +105,7 @@ export function catalogModelByRuntime(runtimeModel: string): CatalogModel | unde
     (m) =>
       (m.runtimeModel || m.id).toLowerCase() === lower ||
       m.codexModel?.toLowerCase() === lower ||
+      m.cursorModel?.toLowerCase() === lower ||
       m.claudeSubscriptionModel?.toLowerCase() === lower,
   );
 }
@@ -155,6 +165,7 @@ export function resolveCatalogModel(model: string): CatalogModel | undefined {
       (m.orModelId ? canonicalModelKey(m.orModelId) === key : false) ||
       (m.runtimeModel ? canonicalModelKey(m.runtimeModel) === key : false) ||
       (m.codexModel ? canonicalModelKey(m.codexModel) === key : false) ||
+      (m.cursorModel ? canonicalModelKey(m.cursorModel) === key : false) ||
       (m.claudeSubscriptionModel ? canonicalModelKey(m.claudeSubscriptionModel) === key : false),
   );
 }

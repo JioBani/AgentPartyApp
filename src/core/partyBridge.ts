@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CodexPolicy } from "../shared/codexPolicy";
+import type { CursorPolicy } from "../shared/cursorPolicy";
 
 // Boundary 2 of the party-communication design (docs/PARTY_COMMUNICATION.md):
 // the seam through which an app-hosted member session reaches the app's party
@@ -37,16 +38,20 @@ export interface PartyCreateMemberRequest {
   /** Reasoning/thinking mode (adaptive|enabled|disabled) for the new member. */
   reasoning?: string;
   reasoningBudget?: number;
+  serviceTier?: string;
   effort?: string;
   /** Initial single-mode permission for the Claude Code harness. */
   permissionMode?: string;
   /** Initial two-axis permission for the Codex harness. */
   codexPolicy?: CodexPolicy;
+  /** Initial Cursor agent mode + approval mode. */
+  cursorPolicy?: CursorPolicy;
 }
 
 export interface PartyPermissionRequest {
   permissionMode?: string;
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 /**
@@ -113,7 +118,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Delivery is QUEUED, not instant: if the recipient is mid-turn, your message is only picked up AFTER their current turn finishes (for a Codex member, at its next tool call), so do not expect an immediate reply — a delayed response means they are still finishing earlier work, not that the message was lost. Set interrupt=true ONLY when the message cannot wait: it stops the recipient's current turn so the message is handled right away.",
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
-  "member-permission": "Change another member's permission. Use permissionMode for a Claude Code member, or codexPolicy for a Codex member. Call list-models to inspect each route's harness and permission contract.",
+  "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
   list: "List your party's members and their current status.",
@@ -158,6 +163,15 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         required: ["sandbox", "approval", "guardian"],
         additionalProperties: false,
       },
+      cursorPolicy: {
+        type: "object",
+        description: "Initial Cursor mode and approval policy.",
+        properties: {
+          mode: { type: "string", enum: ["agent", "ask", "plan"] },
+          approval: { type: "string", enum: ["allowlist", "auto-review", "unrestricted"] },
+        },
+        required: ["mode", "approval"],
+      },
     },
     required: ["name", "role"],
     additionalProperties: false,
@@ -185,6 +199,15 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         },
         required: ["sandbox", "approval", "guardian"],
         additionalProperties: false,
+      },
+      cursorPolicy: {
+        type: "object",
+        description: "Cursor mode and approval policy (all fields required).",
+        properties: {
+          mode: { type: "string", enum: ["agent", "ask", "plan"] },
+          approval: { type: "string", enum: ["allowlist", "auto-review", "unrestricted"] },
+        },
+        required: ["mode", "approval"],
       },
     },
     required: ["name"],
@@ -325,6 +348,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         effort: typeof input.effort === "string" ? input.effort : undefined,
         permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
         codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
+        cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
       });
     }
     case "member-remove": {
@@ -342,6 +366,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       return bridge.setPermission(memberName, {
         permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
         codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
+        cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
       });
     }
     case "gate-set": {
@@ -437,7 +462,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
     `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
     `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
-    `- \`${tool("member-permission")}\` — change another member's permission; use the member's harness from \`${tool("list-models")}\` to choose \`permissionMode\` (Claude Code) or \`codexPolicy\` (Codex).`,
+    `- \`${tool("member-permission")}\` — change another member's permission; use \`permissionMode\` (Claude Code), \`codexPolicy\` (Codex), or \`cursorPolicy\` (Cursor).`,
     `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,
     `- \`${tool("party-gate-set")}\` — set the PARTY-WIDE gate every inheriting member follows: \`enabled\`, \`rule\`, \`reviewer\`. It moves every inheriting member at once, so reach for \`${tool("gate-set")}\` when only one member should change.`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
@@ -514,6 +539,10 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           approval: z.enum(["untrusted", "on-request", "never"]),
           guardian: z.boolean(),
         }).optional().describe("Initial Codex permission policy."),
+        cursorPolicy: z.object({
+          mode: z.enum(["agent", "ask", "plan"]),
+          approval: z.enum(["allowlist", "auto-review", "unrestricted"]),
+        }).optional().describe("Initial Cursor mode and approval policy."),
       },
       async (args: PartyCreateMemberRequest) =>
         envelope(await bridge.createMember(args)),
@@ -526,7 +555,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "member-permission",
-      "Change another member's permission. Use permissionMode for a Claude Code member or codexPolicy for a Codex member; list-models reports each harness's permission contract.",
+      "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor; list-models reports each harness's permission contract.",
       {
         name: z.string().describe("Target member name in your party."),
         permissionMode: z.string().optional().describe("Claude permission mode."),
@@ -535,6 +564,10 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           approval: z.enum(["untrusted", "on-request", "never"]),
           guardian: z.boolean(),
         }).optional().describe("Codex permission policy."),
+        cursorPolicy: z.object({
+          mode: z.enum(["agent", "ask", "plan"]),
+          approval: z.enum(["allowlist", "auto-review", "unrestricted"]),
+        }).optional().describe("Cursor mode and approval policy."),
       },
       async (args: { name: string } & PartyPermissionRequest) => envelope(await bridge.setPermission(args.name, args)),
     ),

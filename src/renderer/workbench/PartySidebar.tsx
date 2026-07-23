@@ -3,6 +3,7 @@ import { Check, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-r
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { PermissionModeSetting } from "../../shared/types";
 import type { PartyGate } from "../../shared/messageGate";
 import type { MemberView } from "./types";
@@ -20,8 +21,10 @@ export interface CreateMemberInput {
   effort?: string;
   reasoning?: string;
   reasoningBudget?: number;
+  serviceTier?: string;
   permissionMode?: PermissionModeSetting;
   codexPolicy?: CodexPolicy;
+  cursorPolicy?: CursorPolicy;
 }
 
 interface PartySidebarProps {

@@ -17,8 +17,8 @@
  */
 import { resolveCatalogModel } from "./modelCatalog";
 
-export type HarnessId = "claude-code" | "codex";
-export type ProviderId = "anthropic" | "openrouter" | "openai" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor";
+export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
  * A model id known to resolve to a catalog entry (or a live-discovered Codex
@@ -38,7 +38,8 @@ export type Backend =
   | { kind: "claude-router"; alias: string } // claude-* alias translated by the AgentParty router backend
   | { kind: "codex-account"; slug: string } // Codex built-in account model
   | { kind: "codex-claude-subscription"; model: string } // Codex app-server through local Claude OAuth
-  | { kind: "codex-openrouter"; orModelId: string }; // Codex routed through the OpenRouter custom provider
+  | { kind: "codex-openrouter"; orModelId: string } // Codex routed through the OpenRouter custom provider
+  | { kind: "cursor-agent"; slug: string }; // Cursor Agent named model
 
 /** A typed handle to a model on a specific harness — the app-internal reference. */
 export interface RouteRef {
@@ -86,6 +87,9 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
     }
     return undefined; // catalogued but not routable on this harness
   }
+  if (harnessId === "cursor") {
+    return entry.cursorModel ? { kind: "cursor-agent", slug: entry.cursorModel } : undefined;
+  }
   // codex harness
   if (entry.codexModel) {
     return { kind: "codex-account", slug: entry.codexModel };
@@ -112,6 +116,8 @@ export function backendSlug(backend: Backend): string {
       return backend.model;
     case "codex-openrouter":
       return backend.orModelId;
+    case "cursor-agent":
+      return backend.slug;
   }
 }
 

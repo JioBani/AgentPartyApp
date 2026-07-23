@@ -32,7 +32,7 @@ Returns a machine-readable list of supported endpoints.
 Returns settings, auth provider states, sessions, model routes, harnesses, router status, logs, and AgentParty member state.
 
 Each session's live `snapshot` carries the harness runtime status. Two fields drive
-the per-member **context-capacity meter** (both harnesses):
+the per-member **context-capacity meter** (all harnesses):
 
 - `contextTokens` — current context-window occupancy in tokens (the last turn's
   prompt + generation). **Non-cumulative**: it drops after a `/compact`, so it
@@ -77,8 +77,8 @@ window load (or immediately in the window that changed it).
 
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
-permission config (`permissionMode` for Claude Code, `codexPolicy` two-axis for
-Codex). `selectedHarnessId` is the harness a brand-new member defaults to. A new
+permission config (`permissionMode` for Claude Code, `codexPolicy` for Codex,
+and `cursorPolicy` for Cursor). `selectedHarnessId` is the harness a brand-new member defaults to. A new
 member is created from ITS harness's defaults (a Codex member gets the Codex
 default model + sandbox policy, a Claude member the Claude default + permission
 mode). Selecting a GPT model on Claude Code keeps the Claude Code harness and
@@ -101,7 +101,8 @@ Example:
   "selectedHarnessId": "claude-code",
   "harnessDefaults": {
     "claude-code": { "model": "MiniMax M3", "effort": "medium", "permissionMode": "plan" },
-    "codex": { "model": "gpt-5.5", "effort": "medium", "codexPolicy": { "sandbox": "read-only", "approval": "on-request", "guardian": false } }
+    "codex": { "model": "gpt-5.5", "effort": "medium", "codexPolicy": { "sandbox": "read-only", "approval": "on-request", "guardian": false } },
+    "cursor": { "model": "Grok 4.5", "effort": "high", "cursorPolicy": { "mode": "agent", "approval": "allowlist" } }
   },
   "debugEnabled": true
 }
@@ -115,6 +116,11 @@ default, acceptEdits, plan, auto, dontAsk, bypassPermissions
 
 Codex `codexPolicy` axes: `sandbox` = `read-only | workspace-write | danger-full-access`;
 `approval` = `untrusted | on-request | never`; `guardian` = route approvals through a reviewer.
+
+Cursor `cursorPolicy` mirrors Cursor CLI's separate controls:
+`mode` = `agent | ask | plan`; `approval` =
+`allowlist | auto-review | unrestricted` (`unrestricted` is displayed as
+**Run Everything** and maps to `--force`).
 
 ## Authentication
 
@@ -216,16 +222,19 @@ is the actual selected harness process and therefore matches `harnessId` even
 for cross-routed models.
 
 `modelProviders` is the shared provider contract used by Authentication and the
-Workbench model groups. It always contains exactly Claude, Codex, and
-OpenRouter; `routeProviderId` maps the stable product identity to the internal
+Workbench model groups. It contains Claude, Codex, Cursor, and OpenRouter;
+`routeProviderId` maps the stable product identity to the internal
 catalog route id used by each `modelRoutes` item.
 
 ```json
 {
   "ok": true,
-  "modelProviders": [{ "id": "claude", "label": "Claude", "routeProviderId": "anthropic", "authProviderId": "claude", "authKind": "subscription" }, { "id": "codex", "label": "Codex", "routeProviderId": "openai", "authProviderId": "codex", "authKind": "subscription" }, { "id": "openrouter", "label": "OpenRouter", "routeProviderId": "openrouter", "authProviderId": "openrouter", "authKind": "apiKey" }],
+  "modelProviders": [{ "id": "claude", "label": "Claude", "routeProviderId": "anthropic", "authProviderId": "claude", "authKind": "subscription" }, { "id": "codex", "label": "Codex", "routeProviderId": "openai", "authProviderId": "codex", "authKind": "subscription" }, { "id": "cursor", "label": "Cursor", "routeProviderId": "cursor", "authProviderId": "cursor", "authKind": "subscription" }, { "id": "openrouter", "label": "OpenRouter", "routeProviderId": "openrouter", "authProviderId": "openrouter", "authKind": "apiKey" }],
   "modelRoutes": [{ "harnessId": "claude-code", "executionHarness": "claude-code", "model": "GPT-5.4 mini", "runtimeModel": "claude-gpt-5.4-mini", "label": "GPT-5.4 mini", "permission": { "kind": "permissionMode", "default": "default" } }],
-  "harnesses": [{ "id": "claude-code", "status": "available", "permission": { "kind": "permissionMode", "options": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"], "default": "default" } }],
+  "harnesses": [
+    { "id": "claude-code", "status": "available", "permission": { "kind": "permissionMode", "options": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"], "default": "default" } },
+    { "id": "cursor", "status": "available", "permission": { "kind": "cursorPolicy", "mode": ["agent", "ask", "plan"], "approval": ["allowlist", "auto-review", "unrestricted"], "default": { "mode": "agent", "approval": "allowlist" } } }
+  ],
   "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" }
 }
 ```
@@ -261,6 +270,25 @@ Cross-routing keeps the chosen harness process intact:
   `modelProvider: "claude-subscription"` and a CLIProxyAPI Claude model id. Its
   wire protocol remains Responses; it uses Codex sandbox/approval policy and the
   signed-in Claude subscription.
+- **Cursor CLI** exposes `Auto` and `Grok 4.5` routes with
+  `"harnessId":"cursor"`. Auto passes the literal `auto` slug and lets Cursor
+  choose an opaque underlying model. Grok effort maps to Cursor's current
+  named-model slugs (`cursor-grok-4.5-low|medium|high`). AgentParty never changes
+  a selected Grok route to Auto after a plan error.
+
+### `GET /api/harnesses/cursor/status`
+
+Runs read-only Cursor CLI diagnostics and returns the discovered installation,
+version, and Grok 4.5 slugs. It does not return Cursor credentials or make a
+model call.
+
+```json
+{
+  "installed": true,
+  "version": "2026.07.20-8cc9c0b",
+  "grok45Models": ["cursor-grok-4.5-low", "cursor-grok-4.5-medium", "cursor-grok-4.5-high"]
+}
+```
 
 ### `POST /api/models/codex/refresh`
 
@@ -345,6 +373,16 @@ Creates a Claude Code harness session.
 When these runtime fields are supplied, they are applied to the new session at creation time.
 Use `"selectedHarnessId": "codex"` with a Codex route (any model from `GET /api/models` with `"harnessId": "codex"`, e.g. `"model": "gpt-5.5"`) to start a local Codex app-server-backed session. Codex auth is delegated to the local `codex` CLI; tests may override the binary with `AGENTPARTY_CODEX_BIN` and optional JSON-array args in `AGENTPARTY_CODEX_ARGS`.
 
+Use `"selectedHarnessId":"cursor"` with `"model":"Auto"` for Cursor-managed
+selection, or `"model":"Grok 4.5"` and effort `"low"`, `"medium"`, or `"high"`
+for the named model. Cursor permissions use
+`"cursorPolicy":{"mode":"agent","approval":"auto-review"}`. The CLI is auto-discovered;
+override it with `cursorExecutablePath` in settings or
+`AGENTPARTY_CURSOR_BIN` plus optional JSON-array `AGENTPARTY_CURSOR_ARGS`.
+Cursor chat ids are persisted as `harnessSessionId`, so subsequent turns and
+member reopen/respawn use `--resume`. Named-model plan/account failures are
+reported as visible `cursor-cli` diagnostics and are never replaced with Auto.
+
 ### `GET /api/sessions/history`
 
 Lists resumable Claude Code sessions for the current workspace.
@@ -396,7 +434,9 @@ A session that is not in a turn is a no-op.
 
 ### `POST /api/sessions/:id/restart`
 
-Restarts the session harness.
+Restarts the session harness and begins an empty model conversation. For Cursor,
+this explicitly discards the Cursor chat ID so the next turn does not pass
+`--resume`; queued turns and stale error/context counters are also cleared.
 
 ### `POST /api/sessions/:id/compact`
 
@@ -463,6 +503,15 @@ the policy is persisted and restored on member/app reopen.
 - `approval`: `untrusted` | `on-request` | `never`
 - `guardian`: route approvals through an auto-review reviewer.
 
+### `POST /api/sessions/:id/cursor-policy`
+
+Updates a **Cursor** session's agent mode and approval mode for the next turn.
+When the session belongs to a party member, the policy is persisted.
+
+```json
+{ "policy": { "mode": "plan", "approval": "allowlist" } }
+```
+
 ### `POST /api/sessions/:id/approve`
 
 Responds to a pending approval request.
@@ -528,6 +577,11 @@ automation API to the same AppController path as the UI. Requires a live session
   the interactive `/mcp`); Codex supports reconnect + OAuth but not live toggle
   (its enable/disable is config-file driven). The UI only offers supported actions.
 - `note` / `error`: surfaced harness-level messages (never swallowed).
+- Cursor injects the session-scoped `agentparty-app` stdio plugin. Its configured
+  eleven-tool inventory is shown immediately with `state: "unknown"`; after a
+  successful MCP discovery/call event is observed, state becomes `"connected"`.
+  Cursor print mode does not emit a separate server lifecycle event, so the API
+  does not claim a live state before that observation.
 
 ### `POST /api/sessions/:id/mcp/reconnect`
 
@@ -626,7 +680,8 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
 
 Creation accepts the full runtime profile: `model`, `effort`, `reasoning`,
 `reasoningBudget`, and an explicit initial permission. Use `permissionMode` for
-a Claude Code harness, or the complete `codexPolicy` object for Codex:
+a Claude Code harness, the complete `codexPolicy` object for Codex, or
+`cursorPolicy` for Cursor:
 
 ```json
 {
@@ -698,7 +753,8 @@ that need a session restart — e.g. a just-added MCP server — without losing 
 conversation. This is what the tab toolbar's reset button calls. Contrast with a
 hard restart (the member's right-click menu), which begins an EMPTY conversation.
 Optional body fields override the profile for the new session (same shape as
-`start`). Passing `selectedHarnessId` (`"claude-code"` or `"codex"`) changes
+`start`). Passing `selectedHarnessId` (`"claude-code"`, `"codex"`, or
+`"cursor"`) changes
 and persists the member's harness before recreating the session. A cross-harness
 change intentionally starts a fresh harness thread because Claude conversation
 IDs and Codex thread IDs are not compatible.
@@ -776,6 +832,12 @@ For a Codex harness (including Codex + Claude):
 
 ```json
 { "codexPolicy": { "sandbox": "workspace-write", "approval": "on-request", "guardian": true } }
+```
+
+For a Cursor harness:
+
+```json
+{ "cursorPolicy": { "mode": "agent", "approval": "auto-review" } }
 ```
 
 ### `POST /api/party/members/:name/gate`
@@ -1111,6 +1173,29 @@ time — mirroring how real providers report.
 Removes every mock member (real members are left untouched).
 
 ## Low-Cost Live Model Test
+
+### Cursor Grok reasoning and Fast mode
+
+`Grok 4.5` exposes two independent model settings in `GET /api/models` and the
+party `list-models` tool:
+
+- `capabilities.effort`: `low | medium | high`
+- `capabilities.serviceTier`: `standard | fast`
+
+Create or respawn a Cursor member with the same fields used by the UI:
+
+```json
+{
+  "runtime": "cursor",
+  "model": "Grok 4.5",
+  "effort": "high",
+  "serviceTier": "fast"
+}
+```
+
+The concrete Cursor CLI model is selected without fallback:
+`cursor-grok-4.5-{effort}` for Standard and
+`cursor-grok-4.5-{effort}-fast` for Fast.
 
 Use MiniMax M3 for live calls:
 

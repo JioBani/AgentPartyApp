@@ -107,10 +107,11 @@
       "vision": { "image": false }
     },
     {
-      "id": "Grok 4.5", "label": "Grok 4.5", "provider": "openrouter", "runtimeModel": "claude-grok-4-5", "orModelId": "x-ai/grok-4.5", "subscription": false,
+      "id": "Grok 4.5", "label": "Grok 4.5", "provider": "openrouter", "runtimeModel": "claude-grok-4-5", "orModelId": "x-ai/grok-4.5", "cursorModel": "cursor-grok-4.5-high", "subscription": false,
       "description": "xAI's frontier model for coding, knowledge work, and STEM.",
       "context": "500K", "inPerM": 2.0, "outPerM": 6.0, "ioPerM": 3.0,
       "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } },
+      "serviceTier": { "options": ["standard", "fast"], "default": "standard" },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {

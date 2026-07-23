@@ -11,6 +11,7 @@ import type {
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
+import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
@@ -145,6 +146,7 @@ export interface EngineConnection {
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
+  setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
   closeSession(sessionId: string): Promise<boolean>;
 

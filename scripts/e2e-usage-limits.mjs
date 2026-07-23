@@ -67,6 +67,31 @@ async function main() {
     const cap = await post("/api/capture", { path: shot });
     assert(cap.ok, `captured titlebar usage pill → ${cap.path || shot}`);
 
+    // --- Source-change purge regression (active-source dedupe) -------------
+    // Until now QA injection stamped no sourceId, so any seed of Claude or
+    // Codex member "won" the active-source slot and its session id was tracked.
+    // Closing the only member for a provider must clear the snapshot — that's
+    // the "stale rate limit" bug the dedupe fix targets. E2E mode suppresses
+    // background polling, so with no foreground session the snapshot is empty.
+    await post("/api/qa/usage", { provider: "claude", windows: [{ kind: "five_hour", utilization: 12 }] });
+    usage = (await get("/api/usage")).usage;
+    assert(usage.claude?.windows?.find((w) => w.kind === "five_hour")?.utilization === 12, "before close: injected 12% on the five-hour window is reflected");
+
+    // The seeded "worker" is the only Claude session. Closing it should
+    // release the active-source slot and purge the snapshot.
+    await post("/api/party/members/worker/close").catch(() => {});
+    usage = (await get("/api/usage")).usage;
+    assert(!usage.claude, "after closing the only Claude member: snapshot purged (no stale data)");
+
+    // Re-open the snapshot via QA (the qa source id always passes the filter)
+    // — proves the dedupe doesn't lock QA out, only non-active foreground sources.
+    await post("/api/qa/usage", { provider: "claude", windows: [{ kind: "five_hour", utilization: 9 }] });
+    usage = (await get("/api/usage")).usage;
+    assert(usage.claude?.windows?.find((w) => w.kind === "five_hour")?.utilization === 9, "QA bypass re-publishes the snapshot after the purge");
+
+    // Final cleanup: drop the lingering snapshot before we tear down.
+    await post("/api/qa/reset").catch(() => {});
+
     await post("/api/window/close").catch(() => {});
     await waitExit(child);
   } catch (error) {

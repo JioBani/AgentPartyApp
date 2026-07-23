@@ -30,7 +30,7 @@ const MAX_TOOL_CHIPS = 16;
  * (canReconnect / canToggle / canAuthenticate) — never a button that no-ops.
  */
 export function McpModal({ view, actions, onClose }: McpModalProps) {
-  const fallbackHarness = view.member.runtime === "codex" ? "codex" : "claude-code";
+  const fallbackHarness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
   const [snapshot, setSnapshot] = useState<McpServerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Set<string>>(new Set());

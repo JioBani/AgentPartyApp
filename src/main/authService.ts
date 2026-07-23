@@ -2,10 +2,18 @@ import { getSettings, maskSecret, updateSettings } from "./settings";
 import { AuthProviderState } from "../shared/types";
 import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core/subscriptionProxy";
 import { isE2E } from "./runtimeMode";
+import { resolveCursorAgentCommand } from "../core/cursorAgentCli";
 
 export function getAuthState(): AuthProviderState[] {
   const settings = getSettings();
   const openRouterKey = settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
+  let cursorSource: string | undefined;
+  let cursorError: string | undefined;
+  try {
+    cursorSource = resolveCursorAgentCommand(settings.cursorExecutablePath).source;
+  } catch (error) {
+    cursorError = error instanceof Error ? error.message : String(error);
+  }
   return [
     {
       id: "claude",
@@ -24,6 +32,17 @@ export function getAuthState(): AuthProviderState[] {
       description: "Uses the local Codex CLI login or CODEX_API_KEY for Codex app-server.",
       source: "Codex CLI login",
       detail: "AgentParty delegates Codex auth to the local codex CLI.",
+    },
+    {
+      id: "cursor",
+      label: "Cursor",
+      kind: "subscription",
+      status: cursorSource ? "available" : "missing",
+      description: "Uses the account signed in to Cursor Agent CLI.",
+      source: cursorSource,
+      detail: cursorSource
+        ? "Cursor CLI is installed. Auto is plan-compatible; named-model access (Grok 4.5) depends on the signed-in Cursor plan."
+        : cursorError,
     },
     {
       id: "openrouter",
