@@ -258,6 +258,25 @@ thinking을 끄면 12/24, 켜면 24/24였다 — 규칙을 충족한다고 스�
 12/24 → 12/24로 변화가 없었고, 길어진 프롬프트가 역할 이탈을 한 번 유발해
 되돌렸다. `messageGateReviewer.ts`의 `reasoningPayload` 주석 참조.
 
+**max_tokens는 추론 지출까지 감당해야 한다.** thinking/reasoning 토큰은 verdict
+이전에 `max_tokens`에서 차감되므로, reasoning이 켜지는 모든 경로에 headroom
+8192를 더한다(명시 budget 경로는 `400 + budget + 8192`). 두 실측 근거:
+sonnet + adaptive + `max_tokens 400`은 실제 게이트 메시지에서 thinking이 400을
+전부 소모해 `stop_reason: max_tokens` + text 0개로 잘렸고("Reviewer returned no
+text content." fail-open), haiku는 `budget_tokens: 1024`를 목표치로만 취급해
+1424토큰을 쓰면서 `400 + 1024` 캡을 전부 소모했다 — budget은 하드 캡이 아니다.
+캡은 지출이 아니라서 안 쓰면 비용이 없다.
+
+**리뷰어 타임아웃은 60s.** sonnet + adaptive는 모델 호출만 17.7s가 실측됐고, 앱
+경로의 모델 목록 preflight까지 더하면 20s 타임아웃이 라이브 리뷰를 중간에
+abort시켰다. 타임아웃은 순수 hang 방어용이다(전송 계층 다운은 연결 오류로 즉시
+실패한다).
+
+**verdict 단어는 영어로 고정되지 않는다.** 프롬프트에 "lowercase English"를
+못박아도 sonnet이 한국어 메시지에 `{"verdict":"반려"}` / `{"verdict":"허용"}`을
+실제로 반환했다. `normalizeVerdict`가 관측된 한국어 표현(허용/승인/통과,
+반려/거부/거절/차단/위반)을 인식한다 — 백스톱이 아니라 실측 기반 필수 처리다.
+
 WSL 워크스페이스: 리뷰어 HTTP 호출은 **데스크톱에서** 실행된다. 구독 브리지와
 임베디드 라우터는 데스크톱의 `127.0.0.1`에 묶여 있어 배포판 안에서는 닿지 않는다
 (호스트 IP로도 안 된다 — 리스너가 루프백 전용). 엔진은 게이트 판정·배지·거부

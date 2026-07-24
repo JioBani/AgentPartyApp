@@ -38,8 +38,28 @@ export interface GateReviewTransport {
   timeoutMs?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 20_000;
+/**
+ * Reasoning reviews are slow for real: sonnet + adaptive thinking on a long
+ * party rule measured 17.7s for the model call alone, and the app path adds a
+ * models-list preflight — 20s aborted live reviews mid-flight. The timeout only
+ * guards true hangs (transport-down fails fast with a connection error), so it
+ * can afford to be generous.
+ */
+const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TOKENS = 400;
+/**
+ * Token headroom added to `max_tokens` whenever reasoning is on. The model
+ * spends thinking tokens out of `max_tokens` BEFORE the verdict, so without
+ * headroom a thoughtful review is truncated to a bare thinking block and zero
+ * text. Both flavors were reproduced live:
+ *   - no budget knob (`adaptive`, router `effort`): sonnet + max_tokens 400
+ *     returned stop_reason "max_tokens" with an empty thinking block;
+ *   - explicit budget (`enabled`): `budget_tokens` is a target, NOT a hard
+ *     cap — haiku with budget 1024 spent 1424 thinking tokens, consuming the
+ *     whole 400+1024 cap and truncating the verdict away.
+ * A cap is not a spend: unused headroom costs nothing.
+ */
+const REASONING_HEADROOM = 8_192;
 
 /**
  * Deliberately NOT hardened further against the reviewer inventing criteria the
@@ -59,6 +79,7 @@ const SYSTEM_PROMPT = [
   "Decide whether that MESSAGE complies with the RULES.",
   'Output a single JSON object and NOTHING else: {"verdict":"allow"} if it complies,',
   'or {"verdict":"reject","reason":"<one short sentence saying which rule was violated and how to fix the message>"} if it violates a rule.',
+  'The "verdict" value must be exactly "allow" or "reject" in lowercase English — never translated.',
   "Write the reason in the MESSAGE's language. Default to allow when the message plainly complies.",
   "Do not add any prose, explanation, or greeting before or after the JSON.",
 ].join(" ");
@@ -171,18 +192,24 @@ function reasoningPayload(entry: CatalogModel, effort: string, viaRouter: boolea
   }
   if (viaRouter) {
     const options = spec.effort?.options;
-    return { body: options?.includes(effort as EffortLevel) ? { effort } : {} };
+    if (!options?.includes(effort as EffortLevel)) {
+      return { body: {} };
+    }
+    // Router-side reasoning also draws from max_tokens, with no explicit budget.
+    return { body: { effort }, budgetTokens: REASONING_HEADROOM };
   }
   const modes = spec.thinking?.modes;
   if (!modes?.length) {
     return { body: {} };
   }
   if (modes.includes("adaptive")) {
-    return { body: { thinking: { type: "adaptive" } } };
+    // Adaptive has no budget knob; reserve headroom so thinking cannot starve the verdict.
+    return { body: { thinking: { type: "adaptive" } }, budgetTokens: REASONING_HEADROOM };
   }
   if (modes.includes("enabled")) {
     const budgetTokens = thinkingBudgetFor(spec.budget, effort);
-    return { body: { thinking: { type: "enabled", budget_tokens: budgetTokens } }, budgetTokens };
+    // budget_tokens is a target the model can overshoot; reserve extra cap.
+    return { body: { thinking: { type: "enabled", budget_tokens: budgetTokens } }, budgetTokens: budgetTokens + REASONING_HEADROOM };
   }
   return { body: {} };
 }
@@ -216,7 +243,8 @@ function buildUserPrompt(message: GateReviewMessage): string {
 function parseVerdict(payload: unknown): GateReviewResult {
   const text = anthropicText(payload);
   if (!text) {
-    throw new Error("Reviewer returned no text content.");
+    const stop = (payload as { stop_reason?: unknown })?.stop_reason;
+    throw new Error(`Reviewer returned no text content${typeof stop === "string" && stop ? ` (stop_reason: ${stop})` : ""}.`);
   }
   const json = extractJsonObject(text);
   if (!json || typeof json !== "object") {
@@ -242,10 +270,13 @@ function parseVerdict(payload: unknown): GateReviewResult {
  */
 function normalizeVerdict(obj: Record<string, unknown>): "allow" | "reject" | undefined {
   const word = String(obj.verdict ?? obj.decision ?? obj.result ?? "").toLowerCase().trim();
-  if (["allow", "approve", "approved", "pass", "ok", "accept"].includes(word)) {
+  // Korean verdicts happen for real: despite the prompt pinning the verdict to
+  // English, sonnet judged a Korean message with {"verdict":"허용"} in a live
+  // replay. Recognize the common Korean verdict words rather than failing open.
+  if (["allow", "approve", "approved", "pass", "ok", "accept", "허용", "승인", "통과"].includes(word)) {
     return "allow";
   }
-  if (["reject", "rejected", "deny", "denied", "block", "blocked", "fail", "violation"].includes(word)) {
+  if (["reject", "rejected", "deny", "denied", "block", "blocked", "fail", "violation", "반려", "거부", "거절", "차단", "위반"].includes(word)) {
     return "reject";
   }
   for (const key of ["complies", "compliant", "allowed", "isAllowed", "ok", "pass", "valid", "approved"]) {

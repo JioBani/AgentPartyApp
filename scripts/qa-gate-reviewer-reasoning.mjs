@@ -89,6 +89,9 @@ for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
   // sonnet DOES declare adaptive, so it must get adaptive rather than a budget.
   const sonnet = await sent("sonnet", "high");
   assert(sonnet.thinking?.type === "adaptive", "sonnet effort=high → thinking adaptive (its catalog spec declares it)");
+  // Adaptive spends thinking out of max_tokens with no budget knob. Reproduced
+  // live: max_tokens 400 → stop_reason "max_tokens", zero text, gate fails.
+  assert(sonnet.max_tokens >= 4000, `adaptive gets reasoning headroom in max_tokens (got ${sonnet.max_tokens}) so thinking cannot starve the verdict`);
 }
 
 console.log("\nGPT reviewer (embedded router) — `effort`, never `thinking`:");
@@ -96,6 +99,7 @@ console.log("\nGPT reviewer (embedded router) — `effort`, never `thinking`:");
   const low = await sent("GPT-5.6 Luna", "low");
   assert(low.effort === "low", "Luna effort=low is forwarded to the router");
   assert(!("thinking" in low), "no `thinking` field is sent to the router");
+  assert(low.max_tokens >= 4000, `router-side reasoning also gets max_tokens headroom (got ${low.max_tokens})`);
   const max = await sent("GPT-5.6 Luna", "max");
   assert(max.effort === "max", "Luna effort=max is forwarded to the router");
   const bogus = await sent("GPT-5.6 Luna", "bogus");
