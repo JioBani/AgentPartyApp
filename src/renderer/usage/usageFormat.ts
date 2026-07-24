@@ -84,15 +84,17 @@ export const RANGE_PRESETS: RangePreset[] = [
 ];
 
 /** Bucket-interval presets (design G1 controls). */
-export const INTERVAL_PRESETS: Array<{ key: string; label: string; minutes: number }> = [
-  { key: "1m", label: "1분", minutes: 1 },
-  { key: "3m", label: "3분", minutes: 3 },
-  { key: "5m", label: "5분", minutes: 5 },
-  { key: "15m", label: "15분", minutes: 15 },
-  { key: "30m", label: "30분", minutes: 30 },
-  { key: "1h", label: "1시간", minutes: 60 },
-  { key: "4h", label: "4시간", minutes: 240 },
-  { key: "1d", label: "1일", minutes: 1440 },
+export const INTERVAL_PRESETS: Array<{ key: string; label: string; minutes: number; n: number }> = [
+  // `n` = how many bars the interval shows; span = minutes×n ending now, so a
+  // finer interval zooms into a shorter, more detailed window (stock-candle feel).
+  { key: "1m", label: "1분", minutes: 1, n: 90 },
+  { key: "3m", label: "3분", minutes: 3, n: 80 },
+  { key: "5m", label: "5분", minutes: 5, n: 72 },
+  { key: "15m", label: "15분", minutes: 15, n: 64 },
+  { key: "30m", label: "30분", minutes: 30, n: 56 },
+  { key: "1h", label: "1시간", minutes: 60, n: 48 },
+  { key: "4h", label: "4시간", minutes: 240, n: 42 },
+  { key: "1d", label: "1일", minutes: 1440, n: 30 },
 ];
 
 /** Trigger display metadata (label hint + overhead flag + series color). */

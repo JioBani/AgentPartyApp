@@ -743,6 +743,16 @@ export class AppController {
       ).catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
+    // Optional `scrollX`: horizontal scroll of a selector (e.g. a wide table) so a
+    // frozen-first-column / far-right section can be screenshotted. Requires
+    // `scrollSelector`; pass pixels or "right".
+    if (body?.scrollX !== undefined && typeof body?.scrollSelector === "string" && body.scrollSelector.trim()) {
+      const x = body.scrollX === "right" ? Number.MAX_SAFE_INTEGER : Number(body.scrollX) || 0;
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(body.scrollSelector.trim())}); if (el) el.scrollLeft = ${x}; return el ? el.scrollLeft : 0; })()`,
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
     const { image, buffer } = await this.captureNonEmptyPage(win);
     const requestedPath = typeof body?.path === "string" && body.path.trim() ? body.path.trim() : "";
     const outputPath = requestedPath || path.join(path.dirname(getLogFilePath()), `capture-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);

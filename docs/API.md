@@ -67,7 +67,9 @@ Captures the current Electron window and stores it as a PNG. If `path` is omitte
 Optional `scrollY` scrolls a long screen before capturing, so a below-the-fold
 section (e.g. the Token Usage tables) can be screenshotted over HTTP without
 resizing the window. Pass a pixel offset or the string `"bottom"`; `scrollSelector`
-overrides the scrolled element (default `.program-scroll`). Optional `theme`
+overrides the scrolled element (default `.program-scroll`). `scrollX` (pixels or
+`"right"`, with `scrollSelector`) scrolls a wide element horizontally — e.g. to
+test a frozen first column. Optional `theme`
 (`"light"`|`"dark"`) flips the active theme before capturing, for both-theme
 fidelity shots. Optional `click` (CSS selector) dispatches a click before
 capturing, so an interactive state can be shot — e.g. the Token Usage compare

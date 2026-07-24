@@ -73,10 +73,19 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   const partyName = (id: string) => parties.find((p) => p.id === id)?.name || id;
   const activeIds = useMemo(() => new Set(parties.map((p) => p.id)), [parties]);
 
+  // Aggregate window = the range preset (tables/catalog/headline are range-scoped).
   const windowBounds = useMemo(() => {
     const now = Date.now();
     return brush ? { fromMs: brush.fromMs, toMs: brush.toMs } : { fromMs: now - range.rangeMs, toMs: now };
   }, [rangeKey, brush]);
+  // Chart/bucket-table window = interval × n ending now, so the interval acts like
+  // a zoom (finer = shorter, denser span) — the stock-candle behavior. A brush
+  // overrides it with the dragged sub-range.
+  const chartBounds = useMemo(() => {
+    if (brush) return { fromMs: brush.fromMs, toMs: brush.toMs };
+    const now = Date.now();
+    return { fromMs: now - interval.minutes * interval.n * 60_000, toMs: now };
+  }, [intervalKey, brush]);
 
   // Fetch the aggregate (tables/catalog) + the raw turns (timeline/rane/context).
   const reqNonce = useRef(0);
@@ -88,9 +97,13 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
     if (!api.getTokenUsage) { setLoading(false); return; }
     setLoading(true);
     const prevQ: TokenUsageQuery = { fromMs: fromMs - (toMs - fromMs), toMs: fromMs, bucketMinutes: interval.minutes };
+    // Turns span the WIDER of the aggregate window and the chart window, so both
+    // the range-scoped drill data and the interval-zoomed chart have their records.
+    const tFrom = Math.min(fromMs, chartBounds.fromMs);
+    const tTo = Math.max(toMs, chartBounds.toMs);
     Promise.all([
       api.getTokenUsage(q) as Promise<TokenUsageAggregate>,
-      (api.getTokenUsageTurns ? api.getTokenUsageTurns({ fromMs, toMs }) : Promise.resolve([])) as Promise<TurnUsageRecord[]>,
+      (api.getTokenUsageTurns ? api.getTokenUsageTurns({ fromMs: tFrom, toMs: tTo }) : Promise.resolve([])) as Promise<TurnUsageRecord[]>,
       (compare ? api.getTokenUsage(prevQ) : Promise.resolve(null)) as Promise<TokenUsageAggregate | null>,
     ]).then(([a, t, prev]) => {
       if (mine !== reqNonce.current) return;
@@ -123,7 +136,7 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   }, [agg, parties]);
 
   // ── Timeline series from raw turns, bucketed by the interval ───────────────
-  const { series, buckets } = useMemo(() => buildSeries(turns || [], scope, windowBounds, interval.minutes, partyName, hiddenMembers), [turns, scope, windowBounds, intervalKey, parties, hiddenMembers]);
+  const { series, buckets } = useMemo(() => buildSeries(turns || [], scope, chartBounds, interval.minutes, partyName, hiddenMembers), [turns, scope, chartBounds, intervalKey, parties, hiddenMembers]);
   const isHidden = (key: string) => scope === "all" ? !!hiddenParties[key] : !!hiddenMembers[`${scope}:${key}`];
   const toggleSeries = (key: string) => scope === "all"
     ? setHiddenParties((h) => ({ ...h, [key]: !h[key] }))
@@ -587,7 +600,11 @@ function BucketCostTable(props: {
 }) {
   const { series, buckets, interval, dataMode } = props;
   const times = buckets.map((b) => fmtBucketLabel(b, interval.minutes));
-  const gridTpl = `140px repeat(${Math.max(times.length, 1)}, minmax(58px,1fr))`;
+  // Fixed column widths (not 1fr) so every row computes an identical intrinsic
+  // width; rows are `max-content` so the container truly scrolls horizontally and
+  // the sticky left column pins instead of scrolling with the cells.
+  const gridTpl = `140px repeat(${Math.max(times.length, 1)}, 62px)`;
+  const rowW: React.CSSProperties = { width: "max-content", minWidth: "100%" };
   const [pin, setPin] = useState<{ x: number; y: number; series: string; time: string; prev: string; next: string } | null>(null);
   // per (series,bucket) dominant model/effort for cell tint/height, from turns
   const meta = useMemo(() => {
@@ -631,14 +648,14 @@ function BucketCostTable(props: {
           {[{ k: "cost", l: "비용" }, { k: "pct", l: "한도 %" }].map((d) => <button key={d.k} onClick={() => props.setDataMode(d.k as "cost" | "pct")} style={segBtnSmall(dataMode === d.k)}>{d.l}</button>)}
         </div>
       </div>
-      <div style={{ maxHeight: 288, overflow: "auto", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
-        <div style={{ display: "grid", gridTemplateColumns: gridTpl, position: "sticky", top: 0, zIndex: 2, background: "var(--bg-3)", borderBottom: "1px solid var(--border)" }}>
-          <span style={{ position: "sticky", left: 0, zIndex: 3, background: "var(--bg-3)", padding: "8px 11px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>시각</span>
+      <div data-tu="bucket-scroll" style={{ maxHeight: 288, overflow: "auto", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, position: "sticky", top: 0, zIndex: 3, background: "var(--bg-3)", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ position: "sticky", left: 0, zIndex: 5, background: "var(--bg-3)", padding: "8px 11px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>시각</span>
           {times.map((t, i) => <span key={i} className="wb-mono" style={{ padding: "8px 8px", fontSize: 10.5, fontWeight: 700, textAlign: "right", color: "var(--text-2)" }}>{t}</span>)}
         </div>
         {series.filter((s) => s.key !== REST_KEY).map((s) => (
-          <div key={s.key} style={{ display: "grid", gridTemplateColumns: gridTpl, background: "var(--bg-2)", borderBottom: "1px solid var(--border-subtle)" }}>
-            <span style={{ position: "sticky", left: 0, zIndex: 1, background: "var(--bg-2)", padding: "6px 11px", display: "flex", alignItems: "center", gap: 6, borderRight: "1px solid var(--border)" }}>
+          <div key={s.key} style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-2)", borderBottom: "1px solid var(--border-subtle)" }}>
+            <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-2)", padding: "6px 11px", display: "flex", alignItems: "center", gap: 6, borderRight: "1px solid var(--border)" }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flex: "none" }} /><span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-0)", whiteSpace: "nowrap" }}>{s.name}</span>
             </span>
             {buckets.map((_, i) => {
@@ -656,8 +673,8 @@ function BucketCostTable(props: {
             })}
           </div>
         ))}
-        <div style={{ display: "grid", gridTemplateColumns: gridTpl, background: "var(--bg-1)" }}>
-          <span style={{ position: "sticky", left: 0, zIndex: 1, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}>합계</span>
+        <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-1)" }}>
+          <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}>합계</span>
           {bucketTotals.map((t, i) => <span key={i} className="wb-mono" style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(t, "$") : "100%"}</span>)}
         </div>
       </div>
