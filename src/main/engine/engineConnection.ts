@@ -17,7 +17,7 @@ import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
-import type { TokenUsageAggregate, TokenUsageQuery } from "../../shared/tokenUsage";
+import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -167,6 +167,7 @@ export interface EngineConnection {
    * queried on their own host.
    */
   getTokenUsage(query: TokenUsageQuery): Promise<TokenUsageAggregate>;
+  getTokenUsageTurns(query: TokenUsageTurnsQuery): Promise<TurnUsageRecord[]>;
 
   // --- MCP (external servers a member connects to; by session id) ---------
   listSessionMcpServers(sessionId: string): Promise<McpServerSnapshot>;

@@ -64,6 +64,20 @@ Captures the current Electron window and stores it as a PNG. If `path` is omitte
 { "path": "C:\\tmp\\agentparty-capture.png" }
 ```
 
+Optional `scrollY` scrolls a long screen before capturing, so a below-the-fold
+section (e.g. the Token Usage tables) can be screenshotted over HTTP without
+resizing the window. Pass a pixel offset or the string `"bottom"`; `scrollSelector`
+overrides the scrolled element (default `.program-scroll`). Optional `theme`
+(`"light"`|`"dark"`) flips the active theme before capturing, for both-theme
+fidelity shots. Optional `click` (CSS selector) dispatches a click before
+capturing, so an interactive state can be shot — e.g. the Token Usage compare
+toggle `[data-tu=compare-toggle]` or a member drill-in row
+`[data-tu=member-row][data-member=backend]`.
+
+```json
+{ "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
+```
+
 ## Settings
 
 ### `POST /api/settings`
@@ -418,6 +432,26 @@ bill when available (실측); `estCostUsd` is a deterministic list-price `≈$`
 conversion (환산) kept separate so 실측 and 환산 stay distinguishable. Token
 fields are only present when the harness reported them (Codex exposes no cache
 split), so a missing field means "not reported", not zero.
+
+Each rollup row carries the design's derived metrics, computed from the raw
+records so the dashboard and any agent read the same numbers:
+
+```text
+totalTokens    input+cacheRead+cacheWrite+output for the row
+activeMs       real active run time (ms) — a UNION of the row's turn intervals,
+               so a party's concurrent members are counted once (needs atStart;
+               0 when no turn reported a start time)
+cacheHitRate   cacheRead ÷ all input (0–1) — the cache-optimization lever
+overheadRatio  overhead-trigger tokens ÷ totalTokens (0–1)
+ratePerHour    totalTokens ÷ active hours — the burn speed (not summable)
+trendPct       later-half vs earlier-half token change (%), for the trend arrows
+```
+
+Top level also carries `totalTokens`, `activeMsUnion` (union across the whole
+range), `ratePerHour`, and `overheadRatio`. Every derived field is `undefined`
+(not 0) when its inputs are absent, so "아직 없음" stays honest. **Active-time
+metrics require the per-turn `atStart` timestamp**, recorded from the ledger's
+phase-2 alignment onward — older records have no active time and contribute 0.
 
 ## Sessions
 

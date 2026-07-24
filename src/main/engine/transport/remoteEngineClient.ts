@@ -7,7 +7,7 @@ import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc";
 import type { CodexAuthenticationUpdate } from "../../../shared/codexAuthentication";
-import type { TokenUsageQuery } from "../../../shared/tokenUsage";
+import type { TokenUsageQuery, TokenUsageTurnsQuery } from "../../../shared/tokenUsage";
 
 /** Awaited return type of an EngineConnection method. */
 type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...args: any[]) => infer Ret ? Awaited<Ret> : never;
@@ -158,6 +158,7 @@ export class RemoteEngineClient implements EngineConnection {
   resumeSession(sessionId: string) { return this.call<Result<"resumeSession">>("resumeSession", sessionId); }
   listWorkspaceSessions() { return this.call<Result<"listWorkspaceSessions">>("listWorkspaceSessions"); }
   getTokenUsage(query: TokenUsageQuery) { return this.call<Result<"getTokenUsage">>("getTokenUsage", query); }
+  getTokenUsageTurns(query: TokenUsageTurnsQuery) { return this.call<Result<"getTokenUsageTurns">>("getTokenUsageTurns", query); }
   sendUserTurn(sessionId: string, text: string, attachments?: ImageAttachment[]) { return this.call<void>("sendUserTurn", sessionId, text, attachments); }
   interruptSession(sessionId: string) { return this.call<void>("interruptSession", sessionId); }
   forceStopSession(sessionId: string) { return this.call<void>("forceStopSession", sessionId); }

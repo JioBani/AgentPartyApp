@@ -41,6 +41,13 @@ interface ManagedSession {
   /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
   lastActivityAt: number;
   turnActive: boolean;
+  /**
+   * Wall-clock start of the in-flight turn (ms), stamped when a turn transitions
+   * idle→active. Recorded as {@link TurnUsageRecord.atStart} so the usage ledger
+   * can measure real active time (the design's rate/utilization metrics), not
+   * just turn counts. Cleared when the turn's usage is recorded.
+   */
+  turnStartedAt?: number;
   awaitingUser: boolean;
   stallNotified: boolean;
   /**
@@ -695,6 +702,7 @@ export class SessionManager extends EventEmitter {
         session.compacting = false;
         break;
       case "approval_request":
+        if (!session.turnActive) session.turnStartedAt = Date.now();
         session.turnActive = true;
         session.awaitingUser = true;
         break;
@@ -704,6 +712,7 @@ export class SessionManager extends EventEmitter {
       case "status": {
         const status = String((event as { status?: unknown }).status || "");
         if (status === "sent" || status === "requesting" || status === "responding") {
+          if (!session.turnActive) session.turnStartedAt = Date.now();
           session.turnActive = true;
         }
         // The harness's compaction outcome (success both adapters emit) clears the
@@ -828,6 +837,7 @@ export class SessionManager extends EventEmitter {
       return;
     }
     session.compacting = true;
+    if (!session.turnActive) session.turnStartedAt = Date.now();
     session.adapter.compact();
   }
 
@@ -1126,8 +1136,11 @@ export class SessionManager extends EventEmitter {
     const snapshot = session.lastSnapshot;
     const trigger: TokenTrigger = session.pendingTrigger ?? (session.compacting ? "compact" : "unknown");
     session.pendingTrigger = undefined;
+    const startedAt = session.turnStartedAt;
+    session.turnStartedAt = undefined;
     const record: TurnUsageRecord = {
       at: event.at || new Date().toISOString(),
+      atStart: startedAt ? new Date(startedAt).toISOString() : undefined,
       partyId: session.identity?.party,
       member: session.identity?.member,
       sessionId: snapshot?.sessionId,
@@ -1142,6 +1155,40 @@ export class SessionManager extends EventEmitter {
       costSource: event.cost?.source,
     };
     this.ledger.append(session.workspace, record);
+  }
+
+  /**
+   * Records one Message Gate review as a `gate-review` ledger turn. The reviewer
+   * is a headless router call (not a session), so its overhead would otherwise be
+   * invisible; this attributes its measured token spend + verdict to the party so
+   * the dashboard can price the gate and compute its reject rate honestly.
+   */
+  recordGateReview(workspace: string, input: {
+    partyId?: string;
+    member?: string;
+    model?: string;
+    verdict: "allow" | "reject";
+    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  }): void {
+    const record: TurnUsageRecord = {
+      at: new Date().toISOString(),
+      partyId: input.partyId,
+      member: input.member,
+      appSessionId: `gate-review:${input.partyId || "?"}:${input.member || "?"}`,
+      provider: "claude",
+      model: input.model,
+      trigger: "gate-review",
+      tokens: {
+        input: input.usage?.input,
+        output: input.usage?.output,
+        cacheRead: input.usage?.cacheRead,
+        cacheWrite: input.usage?.cacheWrite,
+      },
+      costBasis: "subscription",
+      costSource: "estimate",
+      gate: { verdict: input.verdict },
+    };
+    this.ledger.append(workspace, record);
   }
 
   /**

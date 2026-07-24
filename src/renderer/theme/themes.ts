@@ -20,6 +20,7 @@ export type ThemeColorToken =
   | "compact-zone"
   | "success" | "success-dim" | "success-bd"
   | "danger" | "danger-dim" | "danger-bd"
+  | "grid"
   | "scrim";
 
 export type ThemeShapeToken =
@@ -83,6 +84,9 @@ const light: Theme = {
     "danger": "#cf4b45",
     "danger-dim": "rgba(207,75,69,.13)",
     "danger-bd": "rgba(207,75,69,.3)",
+    // Chart gridlines — faint, tuned per theme so the Token Usage charts read on
+    // both backgrounds without competing with data marks.
+    "grid": "rgba(20,25,35,.07)",
     "scrim": "rgba(20,23,29,.42)",
   },
   shape: baseShape,
@@ -120,6 +124,7 @@ const dark: Theme = {
     "danger": "#e0635d",
     "danger-dim": "rgba(224,99,93,.13)",
     "danger-bd": "rgba(224,99,93,.34)",
+    "grid": "rgba(255,255,255,.06)",
     "scrim": "rgba(0,0,0,.5)",
   },
   shape: baseShape,

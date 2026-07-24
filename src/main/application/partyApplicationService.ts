@@ -827,6 +827,17 @@ export class PartyApplicationService {
               : {}),
           };
         }
+        // Record the review's measured token spend + verdict as a gate-review
+        // ledger turn (overhead attributed to the sender's party) so the Token
+        // Usage dashboard can price the gate and show its reject rate. Telemetry
+        // must never break delivery, so the ledger append is best-effort.
+        this.deps.sessionManager.recordGateReview?.(workspace, {
+          partyId: targetPartyId,
+          member: sender.name,
+          model: gate.reviewer.model,
+          verdict: verdict.verdict,
+          usage: verdict.usage,
+        });
         if (verdict.verdict === "reject") {
           const message = createPartyMessage(target, content, from);
           message.delivered = false;

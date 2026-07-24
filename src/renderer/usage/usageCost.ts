@@ -1,0 +1,101 @@
+/**
+ * Cost + model encoding helpers for the Token Usage dashboard (new handoff:
+ * cost-first, model×effort encoded by color-tint + fill-height). Pure, so the
+ * pricing/encoding rules live in one testable place.
+ *
+ * Cost is a DETERMINISTIC list-price conversion (실측 토큰 × 공개 단가), not an
+ * estimate — matching the ledger's `estimatedTurnCostUsd`.
+ */
+
+import { resolveCatalogModel } from "../../shared/modelCatalog";
+
+/** Model family → identity color for the transposed table's cell tint (design §토큰). */
+const MODEL_COLOR: Record<string, string> = {
+  opus: "#6d5ae6",
+  sonnet: "#2f9e8f",
+  haiku: "#8b8f99",
+  "gpt-5": "#c98a3a",
+  "gpt-5-mini": "#d8b06a",
+  fable: "#c25b8f",
+};
+
+/** Coarse model family from any catalog id/alias (e.g. `gpt-5.4-mini` → `gpt-5-mini`). */
+export function modelFamily(model: string | undefined): string {
+  const m = (model || "").toLowerCase();
+  if (!m) return "sonnet";
+  if (m.includes("opus")) return "opus";
+  if (m.includes("haiku")) return "haiku";
+  if (m.includes("fable")) return "fable";
+  if (m.includes("mini")) return "gpt-5-mini";
+  if (m.includes("gpt")) return "gpt-5";
+  if (m.includes("sonnet")) return "sonnet";
+  return "sonnet";
+}
+
+export function modelColor(model: string | undefined): string {
+  return MODEL_COLOR[modelFamily(model)] || "#8b8f99";
+}
+
+/** Short display label for a model (family, since effort is shown separately). */
+export function modelLabel(model: string | undefined): string {
+  const fam = modelFamily(model);
+  return fam;
+}
+
+/** Capability tier 1–3 (haiku/mini=1, sonnet=2, opus/gpt-5=3) for the ▰▱ bars. */
+export function modelTier(model: string | undefined): number {
+  const fam = modelFamily(model);
+  if (fam === "opus" || fam === "gpt-5") return 3;
+  if (fam === "sonnet") return 2;
+  return 1;
+}
+
+export function tierBars(model: string | undefined): string {
+  const t = modelTier(model);
+  return "▰".repeat(t) + "▱".repeat(3 - t);
+}
+
+/** effort → mini-bar fill height (% of cell) — the design's EFF_H. */
+const EFF_H: Record<string, number> = { min: 22, low: 40, med: 60, medium: 60, high: 80, max: 100 };
+export function effortHeight(effort: string | undefined): number {
+  return EFF_H[(effort || "med").toLowerCase()] ?? 60;
+}
+
+/** effort → density (% of member color) for the model·effort timeline rane. */
+const EFF_MIX: Record<string, number> = { min: 38, low: 52, med: 66, medium: 66, high: 82, max: 100 };
+export function effortMix(color: string, effort: string | undefined): string {
+  const pct = EFF_MIX[(effort || "med").toLowerCase()] ?? 66;
+  return `color-mix(in srgb, ${color} ${pct}%, var(--bg-2))`;
+}
+
+/** Cell background = model color at 30% over the card bg (theme-adaptive). */
+export function cellTint(model: string | undefined): string {
+  return `color-mix(in srgb, ${modelColor(model)} 30%, var(--bg-2))`;
+}
+
+/** List-price cost (USD) for a token split at a model's catalog rate. Cache reads
+ *  are cheap (0.1×), cache writes 1.25× vs base input. Returns 0 when unpriceable. */
+export function turnCost(model: string | undefined, t: { input?: number; cacheRead?: number; cacheWrite?: number; output?: number }): number {
+  const cat = model ? resolveCatalogModel(model) : undefined;
+  const inPerM = cat?.inPerM;
+  const outPerM = cat?.outPerM ?? cat?.ioPerM;
+  if (typeof inPerM !== "number" && typeof outPerM !== "number") return 0;
+  const inUnits = (t.input || 0) + (t.cacheWrite || 0) * 1.25 + (t.cacheRead || 0) * 0.1;
+  const inCost = typeof inPerM === "number" ? (inUnits / 1e6) * inPerM : 0;
+  const outCost = typeof outPerM === "number" ? ((t.output || 0) / 1e6) * outPerM : 0;
+  return inCost + outCost;
+}
+
+/** `≈$` cost, precision scaled to magnitude (design fmtCost). */
+export function fmtCost(v: number | undefined, prefix = "≈$"): string {
+  if (v === undefined || !Number.isFinite(v)) return "—";
+  const n = v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3);
+  return prefix + n;
+}
+
+/** Money axis tick (`$12` / `$1.5` / `$0.20`). */
+export function fmtMoneyAxis(v: number): string {
+  if (v >= 10) return "$" + v.toFixed(0);
+  if (v >= 1) return "$" + v.toFixed(1);
+  return "$" + v.toFixed(2);
+}

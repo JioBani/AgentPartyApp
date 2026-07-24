@@ -414,9 +414,10 @@ function registerApplicationMenu(): void {
       submenu: [
         { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
         { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
-        { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
-        { label: "Runtime", accelerator: "CmdOrCtrl+4", click: () => navigate("runtime") },
-        { label: "Automation", accelerator: "CmdOrCtrl+5", click: () => navigate("automation") },
+        { label: "Token Usage", accelerator: "CmdOrCtrl+3", click: () => navigate("usage") },
+        { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
+        { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
+        { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
         { type: "separator" },
         { label: "Reload", role: "reload" },
         { label: "Toggle DevTools", role: "toggleDevTools" },
@@ -498,6 +499,7 @@ function registerIpc(): void {
   handle("usage:get", async () => controller().getUsageLimits());
   handle("usage:refresh", async () => controller().refreshUsageLimits());
   handle("tokenUsage:get", async (event, query: unknown) => controller().getTokenUsage(senderWorkspace(event), query as any));
+  handle("tokenUsage:turns", async (event, query: unknown) => controller().getTokenUsageTurns(senderWorkspace(event), query as any));
 
   handle("session:create", async (event, input?: unknown) => controller().createSession(senderWorkspace(event), input as any));
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));

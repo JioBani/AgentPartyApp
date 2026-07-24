@@ -11,7 +11,7 @@ import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
-import type { TokenUsageAggregate, TokenUsageQuery } from "../../shared/tokenUsage";
+import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setOpenRouterKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
@@ -476,6 +476,11 @@ export class AppController {
     return this.engineFor(workspacePath).getTokenUsage(query);
   }
 
+  /** Raw per-turn records for the member drill-in (context curve + expensive turns). */
+  getTokenUsageTurns(workspacePath: string, query: TokenUsageTurnsQuery): Promise<TurnUsageRecord[]> {
+    return this.engineFor(workspacePath).getTokenUsageTurns(query);
+  }
+
   // Session control is routed to the engine that owns the workspace the caller
   // (window / ?window=) is viewing — the session lives in that engine, local or
   // a WSL distro. See docs/WSL_REMOTE.md §7.
@@ -707,6 +712,36 @@ export class AppController {
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
+    }
+    // Optional `scrollY`: scroll the main scroll region (or a selector) before
+    // capturing, so a below-the-fold section of a long screen (e.g. the Token
+    // Usage tables) can be screenshotted over HTTP without a resize. Pass a
+    // number of pixels, or the string "bottom".
+    // Optional `theme`: flip the active theme before capturing so both light and
+    // dark fidelity can be screenshotted over HTTP (the theme is a user-toggleable
+    // display attribute, so setting it here is harmless).
+    if (typeof body?.theme === "string" && (body.theme === "light" || body.theme === "dark")) {
+      await win.webContents.executeJavaScript(
+        `(() => { document.documentElement.setAttribute("data-theme", ${JSON.stringify(body.theme)}); try { localStorage.setItem("agentparty.theme", ${JSON.stringify(body.theme)}); } catch {} })()`,
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    // Optional `click`: dispatch a click on a selector before capturing, so an
+    // interactive state (compare toggle, a drill-in row) can be screenshotted over
+    // HTTP. Repeatable via a CSS selector; no-op if the element isn't found.
+    if (typeof body?.click === "string" && body.click.trim()) {
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(body.click.trim())}); if (el) { el.click(); return true; } return false; })()`,
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (body?.scrollY !== undefined) {
+      const target = typeof body?.scrollSelector === "string" && body.scrollSelector.trim() ? body.scrollSelector.trim() : ".program-scroll";
+      const y = body.scrollY === "bottom" ? Number.MAX_SAFE_INTEGER : Number(body.scrollY) || 0;
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(target)}) || document.scrollingElement; if (el) el.scrollTop = ${y}; return el ? el.scrollTop : 0; })()`,
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
     const { image, buffer } = await this.captureNonEmptyPage(win);
     const requestedPath = typeof body?.path === "string" && body.path.trim() ? body.path.trim() : "";

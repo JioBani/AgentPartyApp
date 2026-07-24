@@ -5,7 +5,7 @@ import { sanitizeAttachments } from "../shared/attachments";
 import { log } from "./logger";
 import type { AppController } from "./application/appController";
 import type { WindowRegistry } from "./windowRegistry";
-import { TOKEN_TRIGGERS, type TokenTrigger, type TokenUsageQuery } from "../shared/tokenUsage";
+import { TOKEN_TRIGGERS, type TokenTrigger, type TokenUsageQuery, type TokenUsageTurnsQuery } from "../shared/tokenUsage";
 
 export interface AutomationApiDeps {
   port: number;
@@ -158,6 +158,10 @@ export class AutomationApiServer {
       }
       if (method === "GET" && url.pathname === "/api/token-usage") {
         sendJson(res, 200, await c.getTokenUsage(workspace, tokenUsageQueryFrom(url)));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/token-usage/turns") {
+        sendJson(res, 200, await c.getTokenUsageTurns(workspace, tokenUsageTurnsQueryFrom(url)));
         return;
       }
       if (method === "POST" && url.pathname === "/api/sessions") {
@@ -379,6 +383,28 @@ function tokenUsageQueryFrom(url: URL): TokenUsageQuery {
     bucketMinutes,
     partyId: url.searchParams.get("party") || undefined,
     trigger,
+  };
+}
+
+/**
+ * Builds a {@link TokenUsageTurnsQuery} for `GET /api/token-usage/turns` — the raw
+ * per-turn records behind the member drill-in. Same range params as the aggregate
+ * (`range`|`from`/`to`, `party`) plus `member` and an optional `limit`.
+ */
+function tokenUsageTurnsQueryFrom(url: URL): TokenUsageTurnsQuery {
+  const now = Date.now();
+  const fromParam = Number(url.searchParams.get("from"));
+  const toParam = Number(url.searchParams.get("to"));
+  const rangeMs = TOKEN_USAGE_RANGE_MS[url.searchParams.get("range") || "5h"] ?? TOKEN_USAGE_RANGE_MS["5h"];
+  const toMs = Number.isFinite(toParam) && toParam > 0 ? toParam : now;
+  const fromMs = Number.isFinite(fromParam) && fromParam > 0 ? fromParam : toMs - rangeMs;
+  const limit = Number(url.searchParams.get("limit"));
+  return {
+    fromMs,
+    toMs,
+    partyId: url.searchParams.get("party") || undefined,
+    member: url.searchParams.get("member") || undefined,
+    limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
   };
 }
 
