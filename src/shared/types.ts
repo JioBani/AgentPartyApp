@@ -128,6 +128,16 @@ export interface PartyMember {
   role?: string;
   sessionId?: string;
   /**
+   * Identity of the engine process boot that owns `sessionId` (a per-process
+   * `boot-<pid>-<nonce>` stamp). An app session id is only meaningful inside
+   * the process that created it, but the party store is shared on disk — after
+   * a quit/crash (or from a sibling process on the same cwd) the persisted
+   * `sessionId` used to read as a live binding forever ("tab open but session
+   * closed"). On load, a binding whose owner boot is gone is cleared instead
+   * of being reported as missing_session.
+   */
+  sessionBootId?: string;
+  /**
    * The harness's own resumable thread id (Claude SDK session / Codex thread),
    * distinct from the transient app `sessionId`. Persisted so reopening the
    * member — or reopening the app — resumes that thread and keeps model context.

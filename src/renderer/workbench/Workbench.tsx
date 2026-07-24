@@ -116,6 +116,15 @@ export function Workbench(props: WorkbenchProps) {
   const partyKey = activePartyId || "default";
 
   const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
+  /**
+   * The party whose MEMBER LIST has actually loaded when we seeded the layout.
+   * Workbench can mount before the party state arrives (views=[]); seeding,
+   * pruning, or saving in that window destroys the stored layout — the
+   * "my tabs closed by themselves after relaunch" bug. Until this matches
+   * partyKey, the layout is provisional: never pruned against an empty member
+   * list and never persisted.
+   */
+  const seededPartyRef = useRef<string | null>(views.length > 0 ? partyKey : null);
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
   const [gateTarget, setGateTarget] = useState<string | null>(null);
@@ -210,14 +219,26 @@ export function Workbench(props: WorkbenchProps) {
     document.body.classList.remove("wb-resizing");
   }
 
-  // Reseed when the active party changes (each party has its own layout).
+  // Reseed when the active party changes (each party has its own layout), and
+  // once more when the member list FIRST arrives for that party — a mount-time
+  // seed against an empty list must not stand as the party's layout.
+  const membersLoaded = views.length > 0;
   useEffect(() => {
+    if (!membersLoaded || seededPartyRef.current === partyKey) {
+      return;
+    }
+    seededPartyRef.current = partyKey;
     setLayout(seedLayout(partyKey, views));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partyKey]);
+  }, [partyKey, membersLoaded]);
 
   // Drop tabs for members that no longer exist; persist after every change.
+  // Skipped until the member list has loaded — pruning against a not-yet-loaded
+  // (empty) list would silently close every restored tab.
   useEffect(() => {
+    if (validMembers.size === 0) {
+      return;
+    }
     setLayout((current) => {
       const pruned = pruneLayout(current, validMembers);
       return sameLayout(pruned, current) ? current : pruned;
@@ -228,6 +249,12 @@ export function Workbench(props: WorkbenchProps) {
   // panel (a fresh region) so it goes live immediately instead of to background.
   // A party switch / first mount only seeds the baseline — it does not auto-open.
   useEffect(() => {
+    // Wait for the member list to load: seeding the tracker with an empty
+    // pre-load list made every existing member look "just created" a moment
+    // later, auto-opening ALL tabs on relaunch.
+    if (views.length === 0) {
+      return;
+    }
     const currentNames = new Set(views.map((view) => view.name));
     const tracker = knownMembersRef.current;
     if (tracker.partyKey !== partyKey) {
@@ -245,10 +272,39 @@ export function Workbench(props: WorkbenchProps) {
   }, [views, partyKey]);
 
   useEffect(() => {
-    saveLayout(partyKey, layout);
+    // Persist only a layout seeded from a LOADED party; a provisional
+    // (pre-load) layout would overwrite the user's stored tabs with nothing.
+    if (seededPartyRef.current === partyKey) {
+      saveLayout(partyKey, layout);
+    }
     onVisibleMembersChange(layout.panels.map((panel) => panel.active).filter(Boolean));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, partyKey]);
+
+  // Revive EVERY open tab's session, not only each panel's active tab. After a
+  // relaunch the party store still carries the previous process's dead
+  // sessionId, so a restored background tab used to sit "open but closed":
+  // other members' member-status saw missing_session and the MCP menu stayed
+  // empty until a manual 세션 재시작. An open tab is an explicit "keep this
+  // member live" — prewarm any that lack a live session. ensureSession dedupes
+  // in-flight starts, and prewarm skips members the user explicitly closed.
+  const sessionlessOpenTabs = useMemo(
+    () => layout.panels
+      .flatMap((panel) => panel.tabs)
+      .filter((name) => { const view = viewMap.get(name); return Boolean(view && !view.session); })
+      .sort()
+      .join("|"),
+    [layout, viewMap],
+  );
+  useEffect(() => {
+    if (!membersLoaded || seededPartyRef.current !== partyKey || !sessionlessOpenTabs) {
+      return;
+    }
+    for (const name of sessionlessOpenTabs.split("|")) {
+      actions.prewarm(name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionlessOpenTabs, membersLoaded, partyKey]);
 
   // Apply a QA-driven panel arrangement when requested.
   useEffect(() => {

@@ -383,6 +383,7 @@ export class PartyApplicationService {
     this.applyRuntimeDefaults(member, input);
     const session = this.createMemberSession(workspace, member, input, options);
     member.sessionId = session.id;
+    member.sessionBootId = SESSION_BOOT_ID;
     member.status = "running";
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, member.partyId || "default");
@@ -693,6 +694,7 @@ export class PartyApplicationService {
       throw new Error(`Session '${sessionId}' is not active.`);
     }
     member.sessionId = sessionId;
+    member.sessionBootId = SESSION_BOOT_ID;
     member.status = "running";
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, this.partyIdOf(member));
@@ -708,6 +710,7 @@ export class PartyApplicationService {
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     member.sessionId = undefined;
+    member.sessionBootId = undefined;
     member.status = "closed";
     member.updatedAt = new Date().toISOString();
     this.persistParty(workspace, state, this.partyIdOf(member));
@@ -1127,6 +1130,7 @@ export class PartyApplicationService {
 
   private ensureMigrated(state: StoredPartyState): StoredPartyState {
     this.healMemberModels(state);
+    this.reconcileStaleSessionBindings(state);
     for (const member of state.members) {
       if (normalizeHarnessId(member.runtime) === "cursor" && !member.cursorPolicy) {
         member.cursorPolicy = cursorPolicyOf(undefined, member.permissionMode);
@@ -1149,6 +1153,45 @@ export class PartyApplicationService {
       members: state.members.map((member) => ({ ...member, partyId: party.id })),
       messages: state.messages.map((message) => ({ ...message, partyId: party.id })),
     };
+  }
+
+  /** Already-logged stale bindings, so the read-path reconcile logs each once. */
+  private readonly reportedStaleBindings = new Set<string>();
+
+  /**
+   * Clears session bindings whose OWNING PROCESS is gone. The app session id is
+   * per-process, but the store is shared and survives quits/crashes — nothing
+   * used to invalidate it, so members kept a dead `sessionId` + `status:
+   * "running"` forever and read as `missing_session` ghosts. A binding is kept
+   * only while its recorded boot is this process (and the session is live) or
+   * another still-running process on this host (same-host pid probe — the store
+   * and its engines always share a host; see docs/WSL_REMOTE.md). Runs on every
+   * state read (deterministic, in-memory); the next mutation persists it.
+   */
+  private reconcileStaleSessionBindings(state: StoredPartyState): void {
+    for (const member of state.members) {
+      if (!member.sessionId || this.deps.sessionManager.hasSession(member.sessionId)) {
+        continue;
+      }
+      if (sessionOwnerMayBeAlive(member.sessionBootId)) {
+        continue;
+      }
+      const key = `${member.partyId}/${member.name}/${member.sessionId}`;
+      if (!this.reportedStaleBindings.has(key)) {
+        this.reportedStaleBindings.add(key);
+        log("info", "party", "cleared stale session binding (owner process gone)", {
+          member: member.name,
+          partyId: member.partyId,
+          sessionId: member.sessionId,
+          sessionBootId: member.sessionBootId,
+        });
+      }
+      member.sessionId = undefined;
+      member.sessionBootId = undefined;
+      if (member.status === "running" || member.status === "missing_session") {
+        member.status = "idle";
+      }
+    }
   }
 
   /**
@@ -1496,4 +1539,35 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
       };
     }),
   };
+}
+
+/**
+ * This process's session-ownership stamp, recorded next to every sessionId it
+ * writes into the shared party store (see PartyMember.sessionBootId). The pid
+ * lets another process on the same host probe whether the owner is still
+ * running; the nonce distinguishes recycled pids across boots.
+ */
+export const SESSION_BOOT_ID = `boot-${process.pid}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/**
+ * Whether the process that recorded `bootId` may still be running (same-host
+ * pid probe). `false` means the binding is certainly stale: no owner recorded
+ * (legacy/pre-crash), our own boot without a live session, a recycled pid, or
+ * a pid that no longer exists. EPERM counts as alive — the process exists but
+ * belongs to another user.
+ */
+function sessionOwnerMayBeAlive(bootId: string | undefined): boolean {
+  if (!bootId || bootId === SESSION_BOOT_ID) {
+    return false;
+  }
+  const pid = Number(bootId.split("-")[1]);
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
