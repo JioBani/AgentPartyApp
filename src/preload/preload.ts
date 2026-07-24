@@ -15,6 +15,7 @@ const api = {
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
   refreshUsageLimits: () => ipcRenderer.invoke("usage:refresh"),
+  getTokenUsage: (query: unknown) => ipcRenderer.invoke("tokenUsage:get", query),
   createSession: (input?: unknown) => ipcRenderer.invoke("session:create", input),
   listResumableSessions: (workspacePath?: string) => ipcRenderer.invoke("session:listResumable", workspacePath),
   resumeSession: (sessionId: string, workspacePath?: string) => ipcRenderer.invoke("session:resume", sessionId, workspacePath),

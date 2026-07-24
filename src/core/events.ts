@@ -2,6 +2,7 @@ import type { ModelRoute } from "./modelRegistry";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../shared/subagentActivity";
 import type { UsageProviderId, UsageWindow } from "../shared/usageLimits";
 import type { CursorPolicy } from "../shared/cursorPolicy";
+import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -114,7 +115,10 @@ export type ClaudeNormalizedEvent =
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; changes?: import("../shared/codexItems").CodexFileEdit[]; status?: string; at: string }
-  | { type: "turn_complete"; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; at: string }
+  // `usage` carries the per-turn token split (fresh/cacheRead/cacheWrite/output +
+  // context occupancy) as far as the harness reports it — the raw accounting the
+  // Token Usage ledger persists. Absent when the harness reports no usage.
+  | { type: "turn_complete"; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; usage?: TurnTokenBreakdown; at: string }
   // An in-session subagent's lifecycle / live activity / own-transcript block.
   // Kept OUT of the parent transcript: the renderer folds these into a separate
   // per-session subagent slice (dock + drill-in detail). One event can carry any

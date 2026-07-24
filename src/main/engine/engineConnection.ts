@@ -17,6 +17,7 @@ import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
+import type { TokenUsageAggregate, TokenUsageQuery } from "../../shared/tokenUsage";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -157,6 +158,15 @@ export interface EngineConnection {
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
   closeSession(sessionId: string): Promise<boolean>;
+
+  // --- Token usage (workspace-scoped) ------------------------------------
+  /**
+   * Aggregated per-turn usage ledger for the Token Usage dashboard. Reads this
+   * engine's workspace ledger and rolls it up by bucket/party/member/trigger —
+   * engine-scoped so a WSL workspace's turns (recorded on the distro) are
+   * queried on their own host.
+   */
+  getTokenUsage(query: TokenUsageQuery): Promise<TokenUsageAggregate>;
 
   // --- MCP (external servers a member connects to; by session id) ---------
   listSessionMcpServers(sessionId: string): Promise<McpServerSnapshot>;

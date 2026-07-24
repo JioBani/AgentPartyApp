@@ -387,6 +387,38 @@ Asks every live harness that exposes usage reads to refresh now, then returns th
 same shape as `GET /api/usage`. Failures are surfaced as session status events
 instead of silently clearing existing usage.
 
+### `GET /api/token-usage`
+
+Aggregated **per-turn usage ledger** for the Token Usage dashboard — the real,
+append-only accounting written on every completed turn (party id, member,
+session, provider, model, effort, token split, cost, trigger, timestamp). This
+is **distinct from `GET /api/usage`**: that endpoint is the account-global
+rate-limit meter (실측 window %), while this one attributes token spend to the
+local actors (party ▸ member ▸ trigger) over a time window.
+
+Query params (all optional):
+
+```text
+range    5h (default) | weekly | today | 24h | 4h | 1h   — relative range from now
+from,to  explicit epoch-ms bounds (override range; [from, to))
+bucket   bucket width in minutes (default 5)
+party    restrict to a single party id (#id identity)
+trigger  user | party-message | gate-review | compact | subagent | init | unknown
+```
+
+The range param is `range`, **not** `window` — `?window=` is reserved API-wide
+for selecting the target app window. Example:
+`GET /api/token-usage?range=5h&bucket=5&party=7f3a`
+
+Returns a `TokenUsageAggregate`: time-`buckets` (each with per-series token/cost
+totals), plus `parties`, `members`, and `triggers` rollups, `totals`, and
+`recordCount`. **`recordCount: 0` means the range has no samples — the dashboard
+shows "아직 없음", never a fabricated 0%.** `costUsd` is the harness/provider
+bill when available (실측); `estCostUsd` is a deterministic list-price `≈$`
+conversion (환산) kept separate so 실측 and 환산 stay distinguishable. Token
+fields are only present when the harness reported them (Codex exposes no cache
+split), so a missing field means "not reported", not zero.
+
 ## Sessions
 
 ### `POST /api/sessions`

@@ -3,6 +3,7 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import * as readline from "node:readline";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
+import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import type { ImageAttachment } from "../shared/attachments";
 import { parseContextTokens } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
@@ -67,6 +68,8 @@ export class CursorAdapter extends EventEmitter {
   private lastAssistantMessageAt?: string;
   private lastError?: string;
   private contextTokens?: number;
+  /** Per-turn token split from the last `result` block, for the usage ledger. */
+  private lastTokens?: TurnTokenBreakdown;
   private stderrTail = "";
   private resultSeen = false;
   private turnFailed = false;
@@ -481,6 +484,9 @@ export class CursorAdapter extends EventEmitter {
       const output = finiteNumber(usage.outputTokens);
       const cache = finiteNumber(usage.cacheReadTokens);
       this.contextTokens = input == null && output == null && cache == null ? undefined : (input || 0) + (output || 0) + (cache || 0);
+      this.lastTokens = input == null && output == null && cache == null
+        ? undefined
+        : { input: input ?? undefined, output: output ?? undefined, cacheRead: cache ?? undefined, context: this.contextTokens };
       if (message.is_error || message.subtype !== "success") {
         this.finishWithError(new Error(String(message.result || "Cursor Agent turn failed.")));
       } else {
@@ -496,7 +502,7 @@ export class CursorAdapter extends EventEmitter {
     this.status = success ? (handingOff ? "responding" : "idle") : "error";
     this.turnState = handingOff ? "in_progress" : undefined;
     this.emitEvent(success
-      ? { type: "turn_complete", result, cost: { source: "unknown", basis: "subscription", label: "Cursor subscription" }, at: now() }
+      ? { type: "turn_complete", result, cost: { source: "unknown", basis: "subscription", label: "Cursor subscription" }, usage: this.lastTokens, at: now() }
       : { type: "error", message: result, at: now() });
   }
 

@@ -14,6 +14,7 @@ import type {
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
+import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
 import type { ImageAttachment } from "../shared/attachments";
@@ -1009,6 +1010,7 @@ export class ClaudeAdapter extends EventEmitter {
         costUsd: cost.amountUsd ?? harnessCostUsd,
         cost,
         stopReason: (message as any).stop_reason || undefined,
+        usage: tokenBreakdownFromClaudeUsage((message as any).usage),
         at: now(),
       });
       this.drainQueuedTurn();
@@ -1575,6 +1577,28 @@ function appendJsonDelta(current: unknown, delta: string | undefined): unknown {
  * plus this turn's output (which lands in the next turn's context). Returns
  * undefined when the block carries no recognizable token counts.
  */
+/**
+ * Splits a Claude result `usage` block into the ledger's per-turn token
+ * breakdown. `context` mirrors {@link contextTokensFromUsage} (the occupancy
+ * meter's sum). Returns undefined when the harness reported no token counts —
+ * a missing field must read as "not reported", never zero.
+ */
+function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | undefined {
+  const record = asRecord(usage);
+  if (!record) {
+    return undefined;
+  }
+  const input = numberValue(record.input_tokens);
+  const cacheRead = numberValue(record.cache_read_input_tokens);
+  const cacheWrite = numberValue(record.cache_creation_input_tokens);
+  const output = numberValue(record.output_tokens);
+  if (input == null && cacheRead == null && cacheWrite == null && output == null) {
+    return undefined;
+  }
+  const context = (input || 0) + (cacheRead || 0) + (cacheWrite || 0) + (output || 0);
+  return { input, cacheRead, cacheWrite, output, context: context > 0 ? context : undefined };
+}
+
 function contextTokensFromUsage(usage: unknown): number | undefined {
   const record = asRecord(usage);
   if (!record) {

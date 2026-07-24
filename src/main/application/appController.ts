@@ -11,6 +11,7 @@ import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
+import type { TokenUsageAggregate, TokenUsageQuery } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setOpenRouterKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
@@ -463,6 +464,16 @@ export class AppController {
 
   resumeSession(workspacePath: string, sessionId: string): Promise<ReturnType<SessionManager["resumeSession"]>> {
     return this.engineFor(workspacePath).resumeSession(sessionId);
+  }
+
+  // --- Token usage dashboard ---------------------------------------------
+  /**
+   * Aggregated per-turn usage ledger for the Token Usage dashboard — the single
+   * method backing both the UI and `GET /api/token-usage`. Routed to the engine
+   * that owns the workspace so a WSL distro's turns are read on their own host.
+   */
+  getTokenUsage(workspacePath: string, query: TokenUsageQuery): Promise<TokenUsageAggregate> {
+    return this.engineFor(workspacePath).getTokenUsage(query);
   }
 
   // Session control is routed to the engine that owns the workspace the caller

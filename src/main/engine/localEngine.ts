@@ -14,6 +14,7 @@ import { runPartyAction } from "./partyActions";
 import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
 import { getSettings } from "../settings";
+import { aggregateUsage, type TokenUsageAggregate, type TokenUsageQuery } from "../../shared/tokenUsage";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -148,6 +149,11 @@ export class LocalEngine implements EngineConnection {
   async listWorkspaceSessions(): Promise<SessionView[]> {
     const key = workspaceKey(this.workspacePath);
     return this.deps.sessionManager.listSessions().filter((session) => workspaceKey(session.workspace) === key);
+  }
+
+  async getTokenUsage(query: TokenUsageQuery): Promise<TokenUsageAggregate> {
+    const records = this.deps.sessionManager.readUsageLedger(this.workspacePath, query.fromMs, query.toMs);
+    return aggregateUsage(records, query);
   }
 
   // --- Session control ----------------------------------------------------

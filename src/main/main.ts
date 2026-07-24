@@ -497,6 +497,7 @@ function registerIpc(): void {
 
   handle("usage:get", async () => controller().getUsageLimits());
   handle("usage:refresh", async () => controller().refreshUsageLimits());
+  handle("tokenUsage:get", async (event, query: unknown) => controller().getTokenUsage(senderWorkspace(event), query as any));
 
   handle("session:create", async (event, input?: unknown) => controller().createSession(senderWorkspace(event), input as any));
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));

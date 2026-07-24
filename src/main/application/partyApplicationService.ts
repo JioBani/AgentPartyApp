@@ -877,7 +877,9 @@ export class PartyApplicationService {
       if (options?.interrupt && this.isSessionBusy(target.sessionId) && !this.deps.sessionManager.isCompacting(target.sessionId)) {
         this.deps.sessionManager.interrupt(target.sessionId);
       }
-      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);
+      // A member-to-member message drove this turn — tag it so the usage ledger
+      // attributes the recipient's spend to `party-message` (an overhead trigger).
+      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments, "party-message");
       message.delivered = true;
       target.status = "running";
     } else {
@@ -1115,7 +1117,12 @@ export class PartyApplicationService {
       cursorPolicy: member.cursorPolicy,
     };
     if (options.mock) {
-      return this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply });
+      // Attribute mock turns to the member too, so the usage ledger / dashboard
+      // works under QA (and in design captures) exactly as with a live member.
+      return this.deps.sessionManager.createMockSession(createInput, {
+        autoReply: options.autoReply,
+        identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
+      });
     }
     // Give the member's session the in-process party tool surface, with its
     // identity closure-bound so `from` is never agent-supplied.
