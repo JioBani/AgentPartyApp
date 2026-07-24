@@ -568,9 +568,16 @@ Codex 계열 멤버는 샌드박스와 승인 정책을 함께 사용한다.
 
 - Claude Code 하네스에서 GPT 모델을 사용할 수 있다.
 - Codex 하네스에서 Claude 구독 모델을 사용할 수 있다.
+- Claude Code 하네스에서 Cursor 구독 모델("Grok 4.5 (Cursor)")도 사용할 수 있다.
 - 권한 체계는 모델 제공자가 아니라 실제 실행 하네스를 따른다.
 - Claude Code+GPT는 Claude Code 권한 모드를 사용한다.
 - Codex+Claude는 Codex 샌드박스와 승인 정책을 사용한다.
+- Claude Code+Cursor 구독도 Claude Code 권한 모드를 사용하며, 도구 호출은
+  로컬 MCP 릴레이를 거쳐 실제 하네스 도구로 왕복 실행된다.
+- Claude Code+Cursor 구독의 Grok 4.5는 항상 Effort: High, Tier: Fast 한
+  조합만 제공하며 다른 조합은 선택할 수 없다.
+- 로그인되지 않은 Cursor 계정으로 이 모델을 시작하면 자동으로 다른 모델로
+  바뀌지 않고 명시적인 오류가 표시된다.
 
 #### 11.4 Cursor 모델
 

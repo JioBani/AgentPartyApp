@@ -200,7 +200,11 @@ Mirrors VS Code's "install server on first connect":
    — never silently fall back to a Windows run.
 3. **Ensure engine** under `~/.agent_party_app/server/<version>/` inside the
    distro: copy the engine bundle **and the linux claude binary** from the
-   Windows app into the distro. Version-gated so upgrades reinstall.
+   Windows app into the distro. Version-gated so upgrades reinstall. The Cursor
+   ACP MCP relay stub (`scripts/agentparty-acp-mcp-relay.mjs`) is copied to
+   `~/.agent_party_app/server/agentparty-acp-mcp-relay.mjs` the same way, so the
+   Cursor ACP bridge (§9) can spawn it from `cursor-agent` running inside the
+   distro.
 4. **Spawn** `wsl.exe -d <distro> -- <node> server.js --socket <path>`.
    **Strip `ELECTRON_RUN_AS_NODE`** (the known launch-bug lesson — see
    [[renderer-qa-without-electron]] context): inside the distro we run *plain
@@ -215,6 +219,10 @@ Failures (no distro, install error, version mismatch, handshake timeout) are
 
 - The `EmbeddedHarnessRouter` runs **alongside the engine** (inside the distro for WSL),
   so the harness `env.ANTHROPIC_BASE_URL` points to a reachable in-host address.
+  This also means the Cursor ACP bridge (`cursor-subscription` router target,
+  `src/core/cursorHarnessBridge.ts`) runs in that same in-distro router, which is
+  why it naturally reaches the distro's own `cursor-agent` login instead of the
+  desktop's.
 - Credentials (OpenRouter key, etc.) are **per-host**: a WSL engine reads/writes
   its own store inside the distro. The client forwards what's needed at connect
   time; we do not assume Windows-side secrets are visible in the distro.
