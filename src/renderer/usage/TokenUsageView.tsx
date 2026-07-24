@@ -101,12 +101,15 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   const recordCount = agg?.recordCount ?? 0;
   const isEmpty = !loading && recordCount === 0;
 
-  // Expand the biggest party by default (design opens the top party), once.
-  const didAutoExpand = useRef(false);
+  // Default to the most-active party so members show right away (the handoff
+  // defaults to a party scope, not the all-parties roll-up). One-time; the user
+  // can still switch to "전체" or another party from the scope dropdown.
+  const didInitScope = useRef(false);
   useEffect(() => {
-    if (didAutoExpand.current || !agg?.parties.length) return;
-    didAutoExpand.current = true;
-    setExpanded((cur) => (Object.keys(cur).length ? cur : { [agg.parties[0].key]: true }));
+    if (didInitScope.current || !agg?.parties.length) return;
+    didInitScope.current = true;
+    const top = agg.parties.find((p) => activeIds.has(p.key)) || agg.parties[0];
+    if (top) { setScope(top.key); setExpanded((cur) => (Object.keys(cur).length ? cur : { [top.key]: true })); }
   }, [agg]);
 
   // ── Catalog: active parties (in current list) + archived (ledger-only) ─────
