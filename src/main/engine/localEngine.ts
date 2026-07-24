@@ -12,6 +12,8 @@ import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
 import { runPartyAction } from "./partyActions";
 import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import { inspectCursorAgent } from "../../core/cursorAgentCli";
+import { getSettings } from "../settings";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -123,6 +125,11 @@ export class LocalEngine implements EngineConnection {
       return this.deps.sessionManager.refreshCodexModels();
     }
     return this.deps.sessionManager.getCodexModelState();
+  }
+
+  // --- Cursor CLI (host-scoped: local host here, the distro in a WSL engine) --
+  async getCursorStatus() {
+    return inspectCursorAgent(getSettings().cursorExecutablePath);
   }
 
   // --- Sessions -----------------------------------------------------------

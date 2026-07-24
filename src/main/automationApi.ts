@@ -130,9 +130,9 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.loginSubscriptionProvider(subscriptionLoginMatch[1] as "codex" | "claude"));
         return;
       }
-      const subscriptionDisconnectMatch = url.pathname.match(/^\/api\/auth\/subscriptions\/(codex|claude)$/);
+      const subscriptionDisconnectMatch = url.pathname.match(/^\/api\/auth\/subscriptions\/(codex|claude|cursor)$/);
       if (method === "DELETE" && subscriptionDisconnectMatch) {
-        sendJson(res, 200, await c.disconnectSubscriptionProvider(subscriptionDisconnectMatch[1] as "codex" | "claude"));
+        sendJson(res, 200, await c.disconnectSubscriptionProvider(subscriptionDisconnectMatch[1] as "codex" | "claude" | "cursor"));
         return;
       }
       if (method === "GET" && url.pathname === "/api/models") {
@@ -140,7 +140,7 @@ export class AutomationApiServer {
         return;
       }
       if (method === "GET" && url.pathname === "/api/harnesses/cursor/status") {
-        sendJson(res, 200, await c.getCursorHarnessStatus());
+        sendJson(res, 200, await c.getCursorHarnessStatus(workspace));
         return;
       }
       if (method === "POST" && url.pathname === "/api/models/codex/refresh") {

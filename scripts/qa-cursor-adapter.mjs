@@ -157,8 +157,10 @@ const failing = new CursorAdapter({
 const failures = [];
 failing.on("event", (event) => failures.push(event));
 failing.sendUserTurn("fail");
-await waitFor(() => failures.some((event) => event.type === "diagnostic"));
-const diagnostic = failures.find((event) => event.type === "diagnostic");
+// The adapter may also emit an unrelated rate-limit info diagnostic on start
+// (the usage poller); the turn failure is the cursor-cli one.
+await waitFor(() => failures.some((event) => event.type === "diagnostic" && event.category === "cursor-cli"));
+const diagnostic = failures.find((event) => event.type === "diagnostic" && event.category === "cursor-cli");
 assert.match(diagnostic.detail, /Named models unavailable/);
 assert.match(diagnostic.recovery, /not fall back to Auto/);
 

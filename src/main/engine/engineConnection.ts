@@ -16,6 +16,7 @@ import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -127,6 +128,13 @@ export interface EngineConnection {
    * (kicking a background discovery on first call).
    */
   listCodexModels(refresh?: boolean): Promise<CodexModelDiscoveryState>;
+
+  /**
+   * Cursor Agent CLI status ON THIS ENGINE'S HOST — install/version/models plus
+   * login state. Engine-scoped because a WSL workspace runs the CLI inside the
+   * distro: inspecting the Windows install answers for the wrong host.
+   */
+  getCursorStatus(): Promise<CursorAgentStatus>;
 
   // --- Sessions (workspace-scoped) ---------------------------------------
   createSession(input?: CreateSessionInput | string): Promise<SessionView>;

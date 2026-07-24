@@ -757,9 +757,15 @@ export class CodexAdapter extends EventEmitter {
         this.emitEvent({ type: "usage_limit", provider: "codex", windows, available: true, at: now(), sourceId: this.options.usageSourceId });
         this.lastUsageStatus = "";
       } else {
+        // An EMPTY report still must reach the aggregator: without it the
+        // snapshot stays undefined and the indicator shows "불러오는 중…"
+        // forever (the Codex perpetual-loading bug). Prior good windows are
+        // preserved by the merge; a first empty read renders "데이터 없음".
+        this.emitEvent({ type: "usage_limit", provider: "codex", windows: [], at: now(), sourceId: this.options.usageSourceId });
         this.emitUsageStatus("Codex rate limit read returned no usable windows.");
       }
     } catch (error) {
+      this.emitEvent({ type: "usage_limit", provider: "codex", windows: [], at: now(), sourceId: this.options.usageSourceId });
       this.emitUsageStatus(`Codex rate limit read failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -1559,11 +1565,13 @@ function numberValue(value: unknown): number | undefined {
 
 /**
  * Maps a Codex `RateLimitSnapshot` to {@link UsageWindow}s. Codex reports two
- * rolling windows — `primary` and `secondary`. Codex/ChatGPT plans use a 5-hour
- * primary and a weekly secondary, so we map primary→5-hour, secondary→weekly.
- * ASSUMPTION: the protocol carries no explicit window-duration field this code
- * reads; if a future Codex version adds one, prefer it. `resetsAt` is epoch
- * seconds. Windows without a numeric `usedPercent` are skipped (never faked).
+ * rolling windows — `primary` and `secondary`. When the snapshot carries an
+ * explicit window duration (`windowMinutes`/`windowDurationMins`) it decides
+ * 5-hour vs weekly — a primary window that resets in days IS the weekly meter,
+ * and labeling it "5시간 한도" misreports the account state. Without a duration
+ * the historical primary→5-hour / secondary→weekly mapping applies. `resetsAt`
+ * is epoch seconds. Windows without a numeric `usedPercent` are skipped (never
+ * faked).
  */
 function codexRateLimitWindows(snapshot: any): UsageWindow[] {
   if (!snapshot || typeof snapshot !== "object") {
@@ -1573,13 +1581,22 @@ function codexRateLimitWindows(snapshot: any): UsageWindow[] {
     ["five_hour", snapshot.primary],
     ["weekly", snapshot.secondary],
   ];
-  const windows: UsageWindow[] = [];
-  for (const [kind, w] of pairs) {
-    if (w && typeof w.usedPercent === "number" && isFinite(w.usedPercent)) {
-      windows.push({ kind, utilization: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: toEpochMs(w.resetsAt) });
+  const byKind = new Map<UsageWindowKind, UsageWindow>();
+  for (const [fallbackKind, w] of pairs) {
+    if (!w || typeof w.usedPercent !== "number" || !isFinite(w.usedPercent)) {
+      continue;
+    }
+    const minutes = numberValue(w.windowMinutes) ?? numberValue(w.windowDurationMins) ?? numberValue(w.window_minutes);
+    // ≥24h of window is the weekly meter; anything shorter is the 5-hour one.
+    const kind: UsageWindowKind = minutes != null ? (minutes >= 24 * 60 ? "weekly" : "five_hour") : fallbackKind;
+    const window: UsageWindow = { kind, utilization: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: toEpochMs(w.resetsAt) };
+    const existing = byKind.get(kind);
+    // Two windows classifying to the same kind: keep the more constrained one.
+    if (!existing || window.utilization > existing.utilization) {
+      byKind.set(kind, window);
     }
   }
-  return windows;
+  return [...byKind.values()];
 }
 
 function stringArray(value: unknown): string[] {

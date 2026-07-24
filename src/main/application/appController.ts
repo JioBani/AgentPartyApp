@@ -12,7 +12,7 @@ import type { ImageAttachment } from "../../shared/attachments";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
-import { clearOpenRouterKey, getAuthState, setOpenRouterKey, testOpenRouterKey, withSubscriptionProxyAuth } from "../authService";
+import { clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setOpenRouterKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -28,7 +28,7 @@ import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
-import { inspectCursorAgent } from "../../core/cursorAgentCli";
+import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -80,7 +80,15 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
 
-  getCursorHarnessStatus() {
+  /**
+   * Cursor Agent CLI status for the host that actually RUNS the harness: the
+   * workspace's engine (the distro for a WSL workspace). Without a workspace
+   * the desktop host is inspected.
+   */
+  getCursorHarnessStatus(workspacePath?: string) {
+    if (workspacePath) {
+      return this.engineFor(workspacePath).getCursorStatus();
+    }
     return inspectCursorAgent(getSettings().cursorExecutablePath);
   }
 
@@ -286,28 +294,33 @@ export class AppController {
     return settings;
   }
 
+  /** The desktop auth cards with the Cursor CLI's REAL (cached) login state overlaid. */
+  private async authStateWithCursor(base?: ReturnType<typeof getAuthState>): Promise<ReturnType<typeof getAuthState>> {
+    return withCursorCliAuth(base || getAuthState(), await cursorCliAuthState());
+  }
+
   async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
     const subscriptions = await this.getSubscriptionStatus();
     if (subscriptions.codex.available) {
       await this.synchronizeCodexAuthentication();
     }
-    return withSubscriptionProxyAuth(getAuthState(), subscriptions);
+    return withSubscriptionProxyAuth(await this.authStateWithCursor(), subscriptions);
   }
 
   async setOpenRouterKey(key: string): Promise<ReturnType<typeof getAuthState>> {
     const state = setOpenRouterKey(key || "");
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(state, await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
   }
 
   async clearOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
     const state = clearOpenRouterKey();
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(state, await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
   }
 
   async testOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
-    return this.broadcastAuth(withSubscriptionProxyAuth(await testOpenRouterKey(), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testOpenRouterKey()), await this.getSubscriptionStatus()));
   }
 
   /** Live OAuth-backed model availability from the local CLIProxyAPI. */
@@ -321,7 +334,7 @@ export class AppController {
       throw new Error("Subscription OAuth must be started from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.login(provider);
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(getAuthState(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
     return {
       ...result,
       auth,
@@ -329,7 +342,10 @@ export class AppController {
   }
 
   /** Disconnects one persisted subscription account and refreshes every UI. */
-  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider) {
+  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider | "cursor") {
+    if (provider === "cursor") {
+      return this.disconnectCursor();
+    }
     if (!this.deps.subscriptionProxy) {
       throw new Error("Subscription OAuth must be managed from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
@@ -337,10 +353,28 @@ export class AppController {
     const runtimeAuthentication = provider === "codex" && result.removedCredentials > 0
       ? await this.applyCodexAuthentication({ generation: "disconnected" })
       : [];
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(getAuthState(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
     return {
       ...result,
       runtimeAuthentication,
+      auth,
+    };
+  }
+
+  /**
+   * Signs the DESKTOP HOST's Cursor Agent CLI out (`cursor-agent logout`) — the
+   * account the auth card describes. A WSL distro's own Cursor login is that
+   * host's credential and is not touched here.
+   */
+  private async disconnectCursor() {
+    const result = await cursorAgentLogout(getSettings().cursorExecutablePath);
+    invalidateCursorAuthCache();
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), await this.getSubscriptionStatus()));
+    return {
+      ok: result.ok,
+      provider: "cursor" as const,
+      status: "disconnected" as const,
+      detail: result.detail,
       auth,
     };
   }
@@ -726,20 +760,20 @@ export class AppController {
    */
   qaEmitUsage(body: { provider?: string; windows?: Array<{ kind?: string; utilization?: number; resetsAt?: number }>; available?: boolean }): { ok: true; usage: UsageLimitsSnapshot } {
     this.requireQa();
-    const provider = body?.provider === "codex" ? "codex" : body?.provider === "claude" ? "claude" : undefined;
+    const provider = body?.provider === "codex" ? "codex" : body?.provider === "claude" ? "claude" : body?.provider === "cursor" ? "cursor" : undefined;
     if (!provider) {
-      throw new Error("usage injection requires provider 'claude' or 'codex'.");
+      throw new Error("usage injection requires provider 'claude', 'codex', or 'cursor'.");
     }
     const windows: UsageWindow[] = [];
     for (const w of Array.isArray(body?.windows) ? body.windows : []) {
-      const kind = w?.kind === "weekly" ? "weekly" : w?.kind === "five_hour" ? "five_hour" : undefined;
+      const kind = w?.kind === "weekly" ? "weekly" : w?.kind === "five_hour" ? "five_hour" : w?.kind === "monthly" ? "monthly" : undefined;
       const utilization = Number(w?.utilization);
       if (kind && isFinite(utilization)) {
         windows.push({ kind, utilization, resetsAt: typeof w?.resetsAt === "number" ? w.resetsAt : undefined });
       }
     }
     if (!windows.length) {
-      throw new Error("usage injection requires at least one window { kind: 'five_hour'|'weekly', utilization }.");
+      throw new Error("usage injection requires at least one window { kind: 'five_hour'|'weekly'|'monthly', utilization }.");
     }
     this.deps.sessionManager.injectUsageLimit({ type: "usage_limit", provider, windows, available: body?.available, at: new Date().toISOString() });
     return { ok: true, usage: this.deps.sessionManager.getUsageLimits() };

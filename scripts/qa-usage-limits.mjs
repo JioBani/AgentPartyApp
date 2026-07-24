@@ -65,8 +65,20 @@ console.log("\nBackground usage poller — provider mapping:");
 assert(providerOfRuntime("codex") === "codex", "codex runtime → codex");
 assert(providerOfRuntime("claude-code") === "claude", "claude-code runtime → claude");
 assert(providerOfRuntime("claude") === "claude", "claude runtime → claude");
+assert(providerOfRuntime("cursor") === "cursor", "cursor runtime → cursor");
 assert(providerOfRuntime("mock") === undefined, "unknown runtime → no provider");
-assert(providerOfHarness("codex") === "codex" && providerOfHarness("claude-code") === "claude", "harness id → provider");
+assert(providerOfHarness("codex") === "codex" && providerOfHarness("claude-code") === "claude" && providerOfHarness("cursor") === "cursor", "harness id → provider");
+
+// cursor plan-usage mapping (GetCurrentPeriodUsage → monthly window)
+const CU = await loadModule("src/core/cursorUsage.ts", "cursor-usage.mjs");
+console.log("\nCursor plan usage mapping:");
+const cursorWin = CU.cursorUsageWindow({ billingCycleEnd: "1779578902000", planUsage: { limit: 2000, remaining: 200, totalPercentUsed: 90 } });
+assert(cursorWin?.kind === "monthly" && cursorWin.utilization === 90, "server percent wins → 90% monthly window");
+assert(cursorWin?.resetsAt === 1779578902000, "billingCycleEnd (epoch ms string) becomes resetsAt");
+const derived = CU.cursorUsageWindow({ planUsage: { limit: 1000, remaining: 250 } });
+assert(derived?.utilization === 75, "no server percent → derived from limit-remaining (75%)");
+assert(CU.cursorUsageWindow({ planUsage: {} }) === undefined, "no usable numbers → no window (never faked)");
+assert(CU.cursorUsageWindow({}) === undefined, "missing planUsage → no window");
 
 // reconcileUsageTargets — the pure background-poller decision
 console.log("\nBackground usage poller — reconcile decision:");
@@ -116,7 +128,7 @@ const snapshot = {
   ] },
 };
 const view = buildUsageView(snapshot, { claude: 3, codex: 2 }, now);
-assert(view.pills.length === 2, "two provider pills built");
+assert(view.pills.length === 3, "one pill per provider (claude · codex · cursor)");
 assert(view.pills[0].pctLabel === "63%" && view.pills[0].pctCol === "#c5835f", "claude pill shows 63% in brand color");
 assert(view.pills[0].ring.includes("63%"), "claude ring conic-gradient reflects 63%");
 assert(view.rows[0].sub === "3명 사용" && view.rows[1].sub === "2명 사용", "member counts shown per provider");
@@ -130,7 +142,7 @@ assert(high.pills[0].pctCol === "var(--live)", "82% pill percent uses warning co
 
 // buildUsageView — unknown (no data yet)
 const unknown = buildUsageView({}, { claude: 1 }, now);
-assert(unknown.pills.length === 2 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
+assert(unknown.pills.length === 3 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
 assert(unknown.pills[0].ring === "var(--bg-4)", "unknown ring is a muted track, no fabricated fill");
 assert(unknown.rows[0].meters[0].known === false && unknown.rows[0].meters[0].right === "불러오는 중…", "unknown meter reads loading, not a number");
 assert(unknown.empty === true, "no window data anywhere → empty");
@@ -140,9 +152,28 @@ const na = buildUsageView({ claude: { provider: "claude", available: false, upda
 assert(na.pills[0].pctLabel === "N/A", "available:false → N/A pill");
 assert(na.rows[0].meters[0].right === "해당 없음 (API 키)", "available:false meter says 해당 없음");
 
-// buildUsageView — fully empty still shows both providers as loading
+// buildUsageView — a provider reporting ONLY its weekly window must not pill "—"
+const weeklyOnly = buildUsageView(
+  { codex: { provider: "codex", available: true, updatedAt: now, windows: [{ kind: "weekly", utilization: 100 }] } },
+  { codex: 1 },
+  now,
+);
+assert(weeklyOnly.pills.find((pill) => pill.key === "codex").pctLabel === "100%", "pill falls back to the weekly window when 5-hour is absent");
+
+// buildUsageView — cursor renders ONLY its monthly plan meter
+const cursorView = buildUsageView(
+  { cursor: { provider: "cursor", available: true, updatedAt: now, windows: [{ kind: "monthly", utilization: 42, resetsAt: now + 3 * 86400_000 }] } },
+  { cursor: 1 },
+  now,
+);
+const cursorRow = cursorView.rows.find((row) => row.key === "cursor");
+assert(cursorRow.meters.length === 1 && cursorRow.meters[0].kind === "monthly", "cursor row shows one plan meter (no fake 5h/weekly rows)");
+assert(cursorRow.meters[0].right.startsWith("42%"), "cursor plan meter shows the utilization");
+assert(cursorView.pills.find((pill) => pill.key === "cursor").pctLabel === "42%", "cursor pill donut uses the monthly meter");
+
+// buildUsageView — fully empty still shows every provider as loading
 const empty = buildUsageView({}, {}, now);
-assert(empty.pills.length === 2 && empty.rows.length === 2, "no data + no members → Claude and Codex still visible");
+assert(empty.pills.length === 3 && empty.rows.length === 3, "no data + no members → every provider still visible");
 
 // --- 2) jsdom render of <UsageLimitPill> ----------------------------------
 const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
@@ -204,7 +235,7 @@ try {
 assert(!crashed, `render did not throw${crashed ? `: ${crashed.stack || crashed}` : ""}`);
 
 const root = window.document.getElementById("root");
-assert(root.querySelectorAll(".usage-seg").length === 2, "pill renders one segment per provider");
+assert(root.querySelectorAll(".usage-seg").length === 3, "pill renders one segment per provider");
 assert((root.textContent || "").includes("63%"), "pill shows the 5-hour percent");
 assert(root.querySelector(".usage-pop") === null, "popover closed until clicked");
 
@@ -213,7 +244,7 @@ window.document.querySelector(".usage-pill").dispatchEvent(new window.MouseEvent
 await new Promise((r) => setTimeout(r, 60));
 const pop = root.querySelector(".usage-pop");
 assert(Boolean(pop), "clicking the pill opens the popover");
-assert(root.querySelectorAll(".usage-meter").length === 4, "popover shows 5h + weekly meter per provider (2×2)");
+assert(root.querySelectorAll(".usage-meter").length === 5, "popover shows 5h+weekly for Claude/Codex and the plan meter for Cursor (2+2+1)");
 assert((pop?.textContent || "").includes("5시간 한도") && (pop?.textContent || "").includes("주간 한도"), "both window labels rendered");
 assert((pop?.textContent || "").includes("2시간 12분 후 리셋"), "reset countdown rendered in the meter");
 const refreshBtn = [...root.querySelectorAll(".usage-settings-btn")].find((button) => /새로고침/.test(button.textContent || ""));

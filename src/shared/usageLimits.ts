@@ -12,10 +12,14 @@
  * suites build the identical view from the same code.
  */
 
-export type UsageProviderId = "claude" | "codex";
+export type UsageProviderId = "claude" | "codex" | "cursor";
 
-/** The two rolling windows the indicator shows per provider. */
-export type UsageWindowKind = "five_hour" | "weekly";
+/**
+ * The rolling windows the indicator can show. Claude/Codex report 5-hour +
+ * weekly account windows; Cursor reports one billing-cycle plan meter
+ * (`monthly`). See {@link PROVIDER_WINDOW_KINDS} for which provider shows what.
+ */
+export type UsageWindowKind = "five_hour" | "weekly" | "monthly";
 
 export interface UsageWindow {
   kind: UsageWindowKind;
@@ -42,21 +46,37 @@ export interface ProviderUsage {
 export type UsageLimitsSnapshot = {
   claude?: ProviderUsage;
   codex?: ProviderUsage;
+  cursor?: ProviderUsage;
 };
 
 /** Provider display metadata. Brand colors are design literals, not theme tokens. */
 export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: string }> = {
   claude: { label: "Claude", brand: "#c5835f" },
   codex: { label: "Codex", brand: "#2bb67e" },
+  cursor: { label: "Cursor", brand: "#8e92a3" },
 };
 
 /** Fixed display order (matches the design). */
-export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex"];
+export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex", "cursor"];
+
+/**
+ * The windows each provider actually has. Rendering the union for everyone
+ * would show permanent "데이터 없음" rows (e.g. a 5-hour meter Cursor never
+ * reports), so the view builds only the provider's own kinds.
+ */
+export const PROVIDER_WINDOW_KINDS: Record<UsageProviderId, UsageWindowKind[]> = {
+  claude: ["five_hour", "weekly"],
+  codex: ["five_hour", "weekly"],
+  cursor: ["monthly"],
+};
 
 /** The usage provider a party member's runtime draws its account quota from. */
 export function providerOfRuntime(runtime: string | undefined): UsageProviderId | undefined {
   if (runtime === "codex") {
     return "codex";
+  }
+  if (runtime === "cursor") {
+    return "cursor";
   }
   if (runtime === "claude-code" || runtime === "claude") {
     return "claude";
@@ -64,9 +84,10 @@ export function providerOfRuntime(runtime: string | undefined): UsageProviderId 
   return undefined;
 }
 
-/** The usage provider a harness id belongs to (codex vs the Claude family). */
+/** The usage provider a harness id belongs to (codex/cursor vs the Claude family). */
 export function providerOfHarness(harnessId: string | undefined): UsageProviderId | undefined {
   if (harnessId === "codex") return "codex";
+  if (harnessId === "cursor") return "cursor";
   if (harnessId === "claude-code" || harnessId === "claude") return "claude";
   return undefined;
 }
@@ -104,8 +125,8 @@ export function reconcileUsageTargets(input: {
   }
   return { start, dispose };
 }
-const WINDOW_ORDER: UsageWindowKind[] = ["five_hour", "weekly"];
-const WINDOW_LABELS: Record<UsageWindowKind, string> = { five_hour: "5시간 한도", weekly: "주간 한도" };
+const WINDOW_ORDER: UsageWindowKind[] = ["five_hour", "weekly", "monthly"];
+const WINDOW_LABELS: Record<UsageWindowKind, string> = { five_hour: "5시간 한도", weekly: "주간 한도", monthly: "플랜 한도 (결제 주기)" };
 
 /**
  * Normalizes a provider-reported reset timestamp to epoch **ms**. Providers vary:
@@ -260,33 +281,40 @@ export function buildUsageView(
     const usage = snapshot[provider];
     const members = membersByProvider[provider] || 0;
     const { label, brand } = USAGE_PROVIDERS[provider];
+    const kinds = PROVIDER_WINDOW_KINDS[provider];
     const notApplicable = usage?.available === false;
 
-    const five = windowOf(usage, "five_hour");
-    const weekly = windowOf(usage, "weekly");
-    if (five || weekly) {
+    const providerWindows = kinds
+      .map((kind) => windowOf(usage, kind))
+      .filter((w): w is UsageWindow => Boolean(w));
+    if (providerWindows.length) {
       anyData = true;
     }
-    if ((five && five.utilization >= 75) || (weekly && weekly.utilization >= 75)) {
+    if (providerWindows.some((w) => w.utilization >= 75)) {
       anyHigh = true;
     }
 
-    const fivePct = notApplicable ? undefined : five?.utilization;
-    const fiveCol = usageLevelColor(fivePct, brand);
+    // The pill donut shows the provider's PRIMARY window — the first of its
+    // kinds that has data (5-hour for Claude/Codex, the plan meter for
+    // Cursor). Falling back to later kinds matters: a provider reporting only
+    // its weekly window (e.g. an exhausted account) must not render "—".
+    const primary = notApplicable ? undefined : providerWindows[0];
+    const primaryPct = primary?.utilization;
+    const primaryCol = usageLevelColor(primaryPct, brand);
     pills.push({
       key: provider,
       label,
-      pctLabel: notApplicable ? "N/A" : fivePct == null ? "—" : `${Math.round(fivePct)}%`,
+      pctLabel: notApplicable ? "N/A" : primaryPct == null ? "—" : `${Math.round(primaryPct)}%`,
       ring:
-        fivePct == null
+        primaryPct == null
           ? "var(--bg-4)"
-          : `conic-gradient(${fiveCol} 0 ${fivePct}%, var(--bg-4) ${fivePct}% 100%)`,
+          : `conic-gradient(${primaryCol} 0 ${primaryPct}%, var(--bg-4) ${primaryPct}% 100%)`,
       holeBg: "var(--bg-2)",
       labelCol: "var(--text-1)",
-      pctCol: fivePct == null ? "var(--text-3)" : fiveCol,
+      pctCol: primaryPct == null ? "var(--text-3)" : primaryCol,
     });
 
-    const meters: UsageMeterView[] = WINDOW_ORDER.map((kind) => {
+    const meters: UsageMeterView[] = kinds.map((kind) => {
       const w = notApplicable ? undefined : windowOf(usage, kind);
       if (!w) {
         return {

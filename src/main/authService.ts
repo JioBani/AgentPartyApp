@@ -2,7 +2,56 @@ import { getSettings, maskSecret, updateSettings } from "./settings";
 import { AuthProviderState } from "../shared/types";
 import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core/subscriptionProxy";
 import { isE2E } from "./runtimeMode";
-import { resolveCursorAgentCommand } from "../core/cursorAgentCli";
+import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
+
+const CURSOR_AUTH_TTL_MS = 30_000;
+let cursorAuthCache: { at: number; value: CursorAgentAuthStatus } | undefined;
+
+/**
+ * The desktop host's Cursor CLI login state, cached briefly — the read spawns
+ * the CLI, and auth state is listed on every window load. E2E never spawns a
+ * user-owned CLI; it reports an unknown (undefined) state instead.
+ */
+export async function cursorCliAuthState(force = false): Promise<CursorAgentAuthStatus> {
+  if (isE2E()) {
+    return {};
+  }
+  if (!force && cursorAuthCache && Date.now() - cursorAuthCache.at < CURSOR_AUTH_TTL_MS) {
+    return cursorAuthCache.value;
+  }
+  const value = await cursorAgentAuthStatus(getSettings().cursorExecutablePath);
+  cursorAuthCache = { at: Date.now(), value };
+  return value;
+}
+
+/** Drops the cached login state (call after login/logout mutations). */
+export function invalidateCursorAuthCache(): void {
+  cursorAuthCache = undefined;
+}
+
+/**
+ * Overlays the host CLI's real login state onto the Cursor auth card. The card
+ * without this claimed "available" for a logged-out CLI whose every turn would
+ * fail with "Authentication required".
+ */
+export function withCursorCliAuth(states: AuthProviderState[], auth: CursorAgentAuthStatus): AuthProviderState[] {
+  return states.map((state) => {
+    if (state.id !== "cursor" || state.status !== "available" || auth.authenticated === undefined) {
+      return state;
+    }
+    if (auth.authenticated) {
+      return {
+        ...state,
+        detail: `Cursor CLI 로그인됨${auth.email ? ` (${auth.email})` : ""}. Auto는 플랜 호환이며 Grok 4.5는 플랜에 따라 사용 가능합니다.`,
+      };
+    }
+    return {
+      ...state,
+      status: "invalid",
+      detail: "Cursor CLI가 설치되어 있지만 로그인되어 있지 않습니다. 터미널에서 `cursor-agent login`을 실행하세요.",
+    };
+  });
+}
 
 export function getAuthState(): AuthProviderState[] {
   const settings = getSettings();

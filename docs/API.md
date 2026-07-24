@@ -190,7 +190,14 @@ mismatch is returned visibly and no executable is launched.
 
 ### `DELETE /api/auth/subscriptions/:provider`
 
-Disconnects the persisted OAuth account for `:provider` (`codex` or `claude`).
+Disconnects the account for `:provider` (`codex`, `claude`, or `cursor`).
+
+For `cursor`, AgentParty runs `cursor-agent logout` on the **desktop host** and
+verifies the CLI reports an unauthenticated state afterwards. A WSL distro's own
+Cursor login is that host's credential and is not touched. The response carries
+`{ ok, provider: "cursor", status: "disconnected", detail, auth }`.
+
+For `codex`/`claude` (the subscription bridge accounts):
 The active credential files are moved out of CLIProxyAPI's watched auth
 directory into AgentParty's recoverable app-data backup, then model discovery
 verifies that the provider is no longer available. The response includes
@@ -279,14 +286,18 @@ Cross-routing keeps the chosen harness process intact:
 ### `GET /api/harnesses/cursor/status`
 
 Runs read-only Cursor CLI diagnostics and returns the discovered installation,
-version, and Grok 4.5 slugs. It does not return Cursor credentials or make a
-model call.
+version, Grok 4.5 slugs, and the CLI's login state (`status --format json`). The
+inspection runs on the host that actually executes the harness for the request's
+workspace — for a WSL workspace that is the **distro's** CLI, not the Windows
+install. It does not return Cursor credentials or make a model call.
 
 ```json
 {
   "installed": true,
   "version": "2026.07.20-8cc9c0b",
-  "grok45Models": ["cursor-grok-4.5-low", "cursor-grok-4.5-medium", "cursor-grok-4.5-high"]
+  "grok45Models": ["cursor-grok-4.5-low", "cursor-grok-4.5-medium", "cursor-grok-4.5-high"],
+  "authenticated": true,
+  "accountEmail": "user@example.com"
 }
 ```
 
@@ -302,10 +313,24 @@ usage indicator. These limits are **account-global** (shared by every agent usin
 that provider), not per-session or per-workspace, so this endpoint takes no
 parameters. AgentParty first asks a newly-started harness for its current usage
 when the harness exposes a read API (Claude SDK `/usage`, Codex
-`account/rateLimits/read`), then keeps the snapshot fresh from each harness's own
-event stream (Claude `rate_limit_event`, Codex `account/rateLimits/updated`).
+`account/rateLimits/read`, Cursor `DashboardService/GetCurrentPeriodUsage` with
+the CLI's own stored credential), then keeps the snapshot fresh from each
+harness's own event stream (Claude `rate_limit_event`, Codex
+`account/rateLimits/updated`) or a 60s poll (Cursor).
 Reports are merged per provider; a provider absent from the response simply
-hasn't reported yet (show an unknown/loading state, never a fabricated 0%).
+hasn't reported yet (show an unknown/loading state, never a fabricated 0%). A
+read that answers but carries no usable windows is published as an explicit
+empty report (`windows: []`), so the indicator moves from loading to
+"데이터 없음" instead of loading forever.
+
+**One active source per provider.** These reads are account-global, so several
+live sessions (or a WSL engine and the desktop) polling the same account at
+different moments would otherwise overwrite each other and make the number
+change on every refresh. Every `usage_limit` event is stamped with its source
+and only the provider's ACTIVE source is merged; precedence is live local
+session → remote (WSL) engine → background poller. Claude's several weekly
+buckets (`seven_day`, `seven_day_sonnet`, …) are folded to the **most
+constrained** variant for the same reason.
 
 **Fresh even with no open session.** Because those event streams only exist while
 a session runs, the indicator used to go stale once every member was closed (e.g.
@@ -332,17 +357,26 @@ stays at "no data" — never a fabricated number.
         { "kind": "weekly", "utilization": 41, "resetsAt": 1752300000000 }
       ]
     },
-    "codex": { "provider": "codex", "available": true, "updatedAt": 1751900000000, "windows": [ ... ] }
+    "codex": { "provider": "codex", "available": true, "updatedAt": 1751900000000, "windows": [ ... ] },
+    "cursor": {
+      "provider": "cursor",
+      "available": true,
+      "updatedAt": 1751900000000,
+      "windows": [ { "kind": "monthly", "utilization": 42, "resetsAt": 1753900000000 } ]
+    }
   }
 }
 ```
 
 `utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
-didn't report a reset). `available:false` means the provider reported limits are
-not applicable (Claude API key / Bedrock / Vertex) — render "해당 없음", not 0%.
-The titlebar indicator always shows Claude and Codex; missing provider data is
-rendered as loading/unknown until a read or push update arrives. Windows update
-live over the `usage:update` IPC push to every window.
+didn't report a reset). Claude/Codex report `five_hour` + `weekly` windows;
+Cursor reports one `monthly` window — the signed-in account's billing-cycle plan
+meter (reset at `billingCycleEnd`). `available:false` means the provider
+reported limits are not applicable (Claude API key / Bedrock / Vertex) — render
+"해당 없음", not 0%. The titlebar indicator always shows Claude, Codex, and
+Cursor; missing provider data is rendered as loading/unknown until a read or
+push update arrives. Windows update live over the `usage:update` IPC push to
+every window.
 
 AgentParty refreshes live harness usage once per minute while a session is
 running. Users or automation can request an immediate refresh:
@@ -1163,8 +1197,8 @@ consuming a real quota. Returns the merged snapshot (same shape as
 }
 ```
 
-`provider` must be `"claude"` or `"codex"`; each window needs a `kind`
-(`"five_hour"` | `"weekly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
+`provider` must be `"claude"`, `"codex"`, or `"cursor"`; each window needs a `kind`
+(`"five_hour"` | `"weekly"` | `"monthly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
 

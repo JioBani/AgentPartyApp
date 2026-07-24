@@ -67,7 +67,7 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
       <button
         type="button"
         className="usage-pill"
-        title="사용 한도 (5시간 · 주간)"
+        title="사용 한도 (계정 · provider별)"
         style={{ borderColor: triggerBorder }}
         onClick={() => setOpen((v) => !v)}
       >

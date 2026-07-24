@@ -218,6 +218,13 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
   );
 }
 
+/** The subscription cards whose account the app can disconnect in place. */
+type DisconnectableProvider = "codex" | "claude" | "cursor";
+
+function disconnectableProviderOf(id: string): DisconnectableProvider | undefined {
+  return id === "codex" || id === "claude" || id === "cursor" ? id : undefined;
+}
+
 export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscription, onDisconnectSubscription }: {
   auth: InitialAppState["auth"];
   draft: string;
@@ -225,15 +232,15 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
   onSave: () => void;
   onTest: () => void;
   onConnectSubscription: (provider: "codex" | "claude") => void;
-  onDisconnectSubscription: (provider: "codex" | "claude") => Promise<void>;
+  onDisconnectSubscription: (provider: DisconnectableProvider) => Promise<void>;
 }) {
   const subscriptions = auth.filter((provider) => provider.kind === "subscription");
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
   const canSave = draft.trim().length > 0;
-  const [disconnectArmed, setDisconnectArmed] = useState<"codex" | "claude" | undefined>();
-  const [disconnecting, setDisconnecting] = useState<"codex" | "claude" | undefined>();
+  const [disconnectArmed, setDisconnectArmed] = useState<DisconnectableProvider | undefined>();
+  const [disconnecting, setDisconnecting] = useState<DisconnectableProvider | undefined>();
 
-  async function confirmDisconnect(provider: "codex" | "claude"): Promise<void> {
+  async function confirmDisconnect(provider: DisconnectableProvider): Promise<void> {
     setDisconnectArmed(undefined);
     setDisconnecting(provider);
     try {
@@ -248,7 +255,9 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
       {subscriptions.length > 0 && (
         <section className="set-section">
           <SetSectionHead label="구독" />
-          {subscriptions.map((provider) => (
+          {subscriptions.map((provider) => {
+            const disconnectable = provider.status === "available" ? disconnectableProviderOf(provider.id) : undefined;
+            return (
             <div className="set-row-stack" key={provider.id}>
               <div className="set-row">
                 <span className="set-row-icon"><ShieldCheck size={19} /></span>
@@ -267,24 +276,24 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
                     {provider.action.label}
                   </button>
                 )}
-                {provider.id === "codex" && provider.status === "available" && (
+                {disconnectable && (
                   <button
                     type="button"
-                    className={`set-btn-soft set-btn-disconnect${disconnectArmed === "codex" ? " is-armed" : ""}`}
-                    disabled={disconnecting === "codex"}
+                    className={`set-btn-soft set-btn-disconnect${disconnectArmed === disconnectable ? " is-armed" : ""}`}
+                    disabled={disconnecting === disconnectable}
                     onClick={() => {
-                      if (disconnectArmed !== "codex") {
-                        setDisconnectArmed("codex");
+                      if (disconnectArmed !== disconnectable) {
+                        setDisconnectArmed(disconnectable);
                         return;
                       }
-                      void confirmDisconnect("codex");
+                      void confirmDisconnect(disconnectable);
                     }}
                     onBlur={() => setDisconnectArmed(undefined)}
                   >
-                    {disconnecting === "codex"
+                    {disconnecting === disconnectable
                       ? <RefreshCw size={14} className="wb-spin" />
                       : <LogOut size={14} />}
-                    {disconnecting === "codex" ? "연결 끊는 중…" : disconnectArmed === "codex" ? "정말 연결 끊기" : "연결 끊기"}
+                    {disconnecting === disconnectable ? "연결 끊는 중…" : disconnectArmed === disconnectable ? "정말 연결 끊기" : "연결 끊기"}
                   </button>
                 )}
                 <SetBadge status={provider.status} />
@@ -295,7 +304,8 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
                   sits at "인증 대기 중" forever. */}
               {provider.authUrl && <AuthUrlRow url={provider.authUrl} />}
             </div>
-          ))}
+            );
+          })}
         </section>
       )}
 

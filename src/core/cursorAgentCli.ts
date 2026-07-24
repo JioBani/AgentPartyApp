@@ -14,6 +14,10 @@ export interface CursorAgentStatus {
   source?: string;
   version?: string;
   grok45Models: string[];
+  /** CLI login state (`status --format json`); undefined when the read failed. */
+  authenticated?: boolean;
+  /** Signed-in account email, when authenticated. */
+  accountEmail?: string;
   error?: string;
 }
 
@@ -26,9 +30,10 @@ export async function inspectCursorAgent(explicitPath?: string): Promise<CursorA
     return { installed: false, grok45Models: [], error: error instanceof Error ? error.message : String(error) };
   }
   try {
-    const [version, models] = await Promise.all([
+    const [version, models, auth] = await Promise.all([
       runCursorCommand(resolved, ["--version"]),
       runCursorCommand(resolved, ["--list-models"]),
+      cursorAgentAuthStatus(explicitPath),
     ]);
     const grok45Models = models.stdout.split(/\r?\n/)
       .map((line) => line.match(/^\s*(cursor-grok-4\.5-[a-z-]+)\s+-/i)?.[1])
@@ -38,6 +43,8 @@ export async function inspectCursorAgent(explicitPath?: string): Promise<CursorA
       source: resolved.source,
       version: version.stdout.trim(),
       grok45Models,
+      authenticated: auth.authenticated,
+      accountEmail: auth.email,
       ...(version.stderr.trim() || models.stderr.trim()
         ? { error: [version.stderr, models.stderr].filter(Boolean).join("\n").trim() }
         : {}),
@@ -50,6 +57,51 @@ export async function inspectCursorAgent(explicitPath?: string): Promise<CursorA
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export interface CursorAgentAuthStatus {
+  /** Undefined when the CLI could not be run or answered garbage. */
+  authenticated?: boolean;
+  email?: string;
+  error?: string;
+}
+
+/** The CLI's own login state (`cursor-agent status --format json`). */
+export async function cursorAgentAuthStatus(explicitPath?: string): Promise<CursorAgentAuthStatus> {
+  let resolved: CursorAgentCommand;
+  try {
+    resolved = resolveCursorAgentCommand(explicitPath);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+  try {
+    const result = await runCursorCommand(resolved, ["status", "--format", "json"]);
+    const parsed = JSON.parse(result.stdout) as { isAuthenticated?: unknown; userInfo?: { email?: unknown } };
+    return {
+      authenticated: Boolean(parsed.isAuthenticated),
+      email: typeof parsed.userInfo?.email === "string" ? parsed.userInfo.email : undefined,
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Signs the Cursor Agent CLI out on THIS host (`cursor-agent logout`). */
+export async function cursorAgentLogout(explicitPath?: string): Promise<{ ok: boolean; detail: string }> {
+  const resolved = resolveCursorAgentCommand(explicitPath);
+  const before = await cursorAgentAuthStatus(explicitPath);
+  if (before.authenticated === false) {
+    return { ok: true, detail: "Cursor CLI는 이미 로그아웃 상태입니다." };
+  }
+  const result = await runCursorCommand(resolved, ["logout"]);
+  const after = await cursorAgentAuthStatus(explicitPath);
+  if (after.authenticated === true) {
+    throw new Error(`Cursor logout이 완료되지 않았습니다: ${result.stderr.trim() || result.stdout.trim() || "still authenticated"}`);
+  }
+  return {
+    ok: true,
+    detail: before.email ? `Cursor 계정(${before.email}) 연결을 끊었습니다.` : "Cursor 계정 연결을 끊었습니다.",
+  };
 }
 
 /**

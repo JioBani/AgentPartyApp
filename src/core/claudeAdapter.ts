@@ -132,6 +132,13 @@ export class ClaudeAdapter extends EventEmitter {
   private turnState: string | undefined;
   /** True once a live rate_limit_event has fed the usage meter (real windows). */
   private hasLiveUsageWindows = false;
+  /**
+   * Latest weekly reading PER VARIANT (`seven_day`, `seven_day_sonnet`, …).
+   * Claude reports several weekly buckets; folding whichever arrived last onto
+   * one "weekly" meter made the number flap between variants on every event or
+   * refresh. The meter instead always shows the MOST CONSTRAINED variant.
+   */
+  private readonly weeklyVariants = new Map<string, UsageWindow>();
   private sessionId = "";
   private permissionMode: PermissionMode = "default";
   private model: string;
@@ -860,6 +867,11 @@ export class ClaudeAdapter extends EventEmitter {
     try {
       const usage = await usageFn.call(this.query);
       const rateLimitsAvailable = usage?.rate_limits_available;
+      // Seed the per-variant weekly state so this read and later live
+      // rate_limit_events agree on the same most-constrained-variant meter.
+      for (const [variant, window] of weeklyVariantWindows(usage?.rate_limits)) {
+        this.weeklyVariants.set(variant, window);
+      }
       const windows = claudeUsageWindows(usage?.rate_limits);
       if (windows.length) {
         this.emitEvent({ type: "usage_limit", provider: "claude", windows, available: true, at: now(), sourceId: this.options.usageSourceId });
@@ -1012,10 +1024,25 @@ export class ClaudeAdapter extends EventEmitter {
       const window = rateLimitWindowFrom(info);
       if (window) {
         this.hasLiveUsageWindows = true;
-        this.emitEvent({ type: "usage_limit", provider: "claude", windows: [window], available: true, at: now(), sourceId: this.options.usageSourceId });
-        this.maybeEmitRateLimitDiagnostic(info, window);
+        const stable = window.kind === "weekly"
+          ? this.stableWeeklyWindow(String(info?.rateLimitType || "seven_day"), window)
+          : window;
+        this.emitEvent({ type: "usage_limit", provider: "claude", windows: [stable], available: true, at: now(), sourceId: this.options.usageSourceId });
+        this.maybeEmitRateLimitDiagnostic(info, stable);
       }
     }
+  }
+
+  /** Folds one variant's fresh reading in and returns the most constrained weekly window. */
+  private stableWeeklyWindow(variant: string, window: UsageWindow): UsageWindow {
+    this.weeklyVariants.set(variant, window);
+    let max = window;
+    for (const candidate of this.weeklyVariants.values()) {
+      if (candidate.utilization > max.utilization) {
+        max = candidate;
+      }
+    }
+    return max;
   }
 
   private normalizeSystem(message: any): void {
@@ -1697,7 +1724,29 @@ function rateLimitWindowFrom(info: any): UsageWindow | undefined {
   return { kind, utilization: Math.max(0, Math.min(100, info.utilization)), resetsAt: toEpochMs(info.resetsAt) };
 }
 
-/** Maps the Claude SDK `/usage` response's rate_limits object to display windows. */
+const CLAUDE_WEEKLY_VARIANTS = ["seven_day", "seven_day_sonnet", "seven_day_opus", "seven_day_oauth_apps"] as const;
+
+/** Every weekly variant the `/usage` read reports, keyed by variant name. */
+function weeklyVariantWindows(rateLimits: any): Array<[string, UsageWindow]> {
+  if (!rateLimits || typeof rateLimits !== "object") {
+    return [];
+  }
+  const variants: Array<[string, UsageWindow]> = [];
+  for (const variant of CLAUDE_WEEKLY_VARIANTS) {
+    const window = claudeUsageWindow("weekly", rateLimits[variant]);
+    if (window) {
+      variants.push([variant, window]);
+    }
+  }
+  return variants;
+}
+
+/**
+ * Maps the Claude SDK `/usage` response's rate_limits object to display windows.
+ * The weekly meter is the MOST CONSTRAINED variant — picking "the first present
+ * one" while live events fed whichever variant just ticked made the displayed
+ * weekly number change on every refresh.
+ */
 function claudeUsageWindows(rateLimits: any): UsageWindow[] {
   if (!rateLimits || typeof rateLimits !== "object") {
     return [];
@@ -1707,11 +1756,12 @@ function claudeUsageWindows(rateLimits: any): UsageWindow[] {
   if (five) {
     windows.push(five);
   }
-  const weekly =
-    claudeUsageWindow("weekly", rateLimits.seven_day) ||
-    claudeUsageWindow("weekly", rateLimits.seven_day_sonnet) ||
-    claudeUsageWindow("weekly", rateLimits.seven_day_opus) ||
-    claudeUsageWindow("weekly", rateLimits.seven_day_oauth_apps);
+  let weekly: UsageWindow | undefined;
+  for (const [, window] of weeklyVariantWindows(rateLimits)) {
+    if (!weekly || window.utilization > weekly.utilization) {
+      weekly = window;
+    }
+  }
   if (weekly) {
     windows.push(weekly);
   }

@@ -5,7 +5,7 @@ import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
-import type { UsageLimitsSnapshot, UsageProviderId } from "../shared/usageLimits";
+import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
@@ -588,7 +588,7 @@ export function App() {
     }
   }
 
-  async function disconnectSubscription(provider: "codex" | "claude") {
+  async function disconnectSubscription(provider: "codex" | "claude" | "cursor") {
     try {
       const result = await window.agentParty.disconnectSubscription(provider);
       setState((current) => ({ ...current, auth: result.auth }));
@@ -948,8 +948,7 @@ export function App() {
   const membersByProvider = useMemo<Partial<Record<UsageProviderId, number>>>(() => {
     const counts: Partial<Record<UsageProviderId, number>> = {};
     for (const member of members) {
-      const harness = member.runtime === "codex" ? "codex" : member.runtime === "cursor" ? "cursor" : "claude-code";
-      const provider: UsageProviderId | undefined = harness === "codex" ? "codex" : harness === "claude-code" ? "claude" : undefined;
+      const provider = providerOfRuntime(member.runtime);
       if (provider) {
         counts[provider] = (counts[provider] || 0) + 1;
       }

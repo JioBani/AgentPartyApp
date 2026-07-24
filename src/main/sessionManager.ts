@@ -185,7 +185,12 @@ export class SessionManager extends EventEmitter {
     const id = resumeSessionId ? `resume-${Date.now()}` : `session-${Date.now()}`;
     const request = normalizeCreateSessionInput(input);
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
-    const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding);
+    // The session id doubles as its usage sourceId: registerSession claims the
+    // active-usage slot under this id, and the fan-in filter compares event
+    // sourceIds against that slot. Unstamped foreground events used to bypass
+    // the filter entirely, letting every live session overwrite the meter
+    // (the "usage changes on every refresh" bug).
+    const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding, id);
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const provider = providerOfHarness(requestedHarness);
     return this.registerSession(id, workspace, adapter, provider);
@@ -235,6 +240,12 @@ export class SessionManager extends EventEmitter {
 
   /** Requests every live harness to refresh account/provider usage now. */
   async refreshUsageLimits(): Promise<UsageLimitsSnapshot> {
+    // A manual refresh is the user explicitly asking "read it again NOW" —
+    // clear any failure backoff and revive missing background pollers first,
+    // or the refresh button silently does nothing for up to 10 minutes after
+    // a failed connect (e.g. the provider CLI just got logged in).
+    this.usageBackoffUntil.clear();
+    this.reconcileUsageAdapters();
     const tasks: Promise<void>[] = [];
     for (const session of this.sessions.values()) {
       if (session.closed || typeof session.adapter.refreshUsageLimits !== "function") {
@@ -354,7 +365,7 @@ export class SessionManager extends EventEmitter {
       backoffUntil[provider] = until;
     }
     const liveProviders: UsageProviderId[] = [];
-    for (const p of ["claude", "codex"] as UsageProviderId[]) {
+    for (const p of ["claude", "codex", "cursor"] as UsageProviderId[]) {
       if (this.hasLiveSessionForProvider(p)) {
         liveProviders.push(p);
       }
@@ -392,7 +403,7 @@ export class SessionManager extends EventEmitter {
       // strings, so they must agree. The adapter's runtime id (`usage-…-${ts}`)
       // stays for logs/diagnostics only.
       adapter = this.createAdapter(id, cwd, undefined, {
-        selectedHarnessId: provider === "codex" ? "codex" : "claude-code",
+        selectedHarnessId: provider === "codex" ? "codex" : provider === "cursor" ? "cursor" : "claude-code",
       }, undefined, SessionManager.USAGE_SOURCE_BG(provider));
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
@@ -452,10 +463,17 @@ export class SessionManager extends EventEmitter {
     // know whether the dying adapter was the active source.
     const wasActive = this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_BG(provider);
     this.disposeUsageAdapter(provider);
-    if (wasActive) {
-      // Adapter is gone with no replacement queued (backoff window). Drop the
-      // snapshot so the renderer doesn't show its last reading as truth.
+    if (wasActive || !this.usageLimits[provider]) {
+      // Adapter is gone with no replacement queued (backoff window). Drop any
+      // stale reading, but leave an explicit EMPTY report in its place: a
+      // missing snapshot renders "불러오는 중…", and nothing is loading during
+      // the backoff — the honest state is "데이터 없음" until a poller returns.
       this.clearUsageForProvider(provider);
+      this.usageLimits = {
+        ...this.usageLimits,
+        [provider]: { provider, windows: [], updatedAt: Date.now() },
+      };
+      this.emit("usage", this.usageLimits);
     }
     // Surfaced, not swallowed: the pill honestly shows "데이터 없음" (never fake
     // numbers), and the reason is logged for diagnosis. Common cause: the
@@ -494,10 +512,26 @@ export class SessionManager extends EventEmitter {
    */
   mergeRemoteUsage(snapshot: UsageLimitsSnapshot): void {
     let changed = false;
-    for (const provider of ["claude", "codex"] as const) {
+    for (const provider of ["claude", "codex", "cursor"] as const) {
       const incoming = snapshot?.[provider];
       if (incoming && (incoming.windows?.length || incoming.available !== undefined)) {
-        this.activeUsageSource.set(provider, SessionManager.USAGE_SOURCE_REMOTE(provider));
+        // A live LOCAL foreground session outranks the remote reader: both
+        // poll the same account, and letting each adopt the active slot in
+        // turn made the meter alternate between two readings taken at
+        // different moments ("differs by process"). Remote may replace the
+        // background poller — but only with REAL windows: adopting on an
+        // empty report would trade the local poller's live meter for a
+        // remote host whose read has nothing (e.g. its CLI lacks the usage
+        // API). A remote-active slot keeps accepting remote reports as before.
+        const active = this.activeUsageSource.get(provider);
+        const remoteId = SessionManager.USAGE_SOURCE_REMOTE(provider);
+        if (active && active !== remoteId) {
+          const isBackground = active === SessionManager.USAGE_SOURCE_BG(provider);
+          if (!isBackground || !incoming.windows?.length) {
+            continue;
+          }
+        }
+        this.activeUsageSource.set(provider, remoteId);
         this.usageLimits = {
           ...this.usageLimits,
           [provider]: mergeProviderUsage(this.usageLimits[provider], {
@@ -975,6 +1009,7 @@ export class SessionManager extends EventEmitter {
         resumeSessionId,
         pluginDir: partyRuntime?.pluginDir,
         partyPrimer: partyRuntime?.primer,
+        usageSourceId,
       });
     }
     if (selectedHarness === "codex") {

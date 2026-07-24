@@ -7,6 +7,7 @@ import type { ImageAttachment } from "../shared/attachments";
 import { parseContextTokens } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import { resolveCursorAgentCommand } from "./cursorAgentCli";
+import { fetchCursorUsage, readCursorAccessToken } from "./cursorUsage";
 import type { McpServerSnapshot } from "../shared/mcp";
 import {
   cursorPolicyFromLegacyPermission,
@@ -29,6 +30,8 @@ export interface CursorAdapterOptions {
   resumeSessionId?: string;
   pluginDir?: string;
   partyPrimer?: string;
+  /** Stamped on usage_limit events for the SessionManager's fan-in filter. */
+  usageSourceId?: string;
 }
 
 interface QueuedTurn {
@@ -68,6 +71,8 @@ export class CursorAdapter extends EventEmitter {
   private resultSeen = false;
   private turnFailed = false;
   private partyMcpConnected = false;
+  private usageRefreshTimer?: NodeJS.Timeout;
+  private lastUsageStatus = "";
 
   constructor(private readonly options: CursorAdapterOptions) {
     super();
@@ -88,6 +93,57 @@ export class CursorAdapter extends EventEmitter {
     this.started = true;
     this.status = "idle";
     this.emitEvent({ type: "status", status: "ready", detail: "Cursor Agent CLI", at: now() });
+    // Account plan usage is an HTTP read of the CLI's own credential — no CLI
+    // process needed, so the meter works even for the turn-less background
+    // poller (SessionManager.startUsageAdapter).
+    void this.refreshUsageLimits();
+    this.startUsagePolling();
+  }
+
+  /**
+   * Reads the Cursor account's current billing-cycle plan usage and feeds the
+   * shared usage indicator. Failures emit an EMPTY usage_limit (so the UI shows
+   * "데이터 없음" instead of loading forever) plus a deduped diagnostic.
+   */
+  async refreshUsageLimits(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    const token = readCursorAccessToken();
+    if (!token) {
+      this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], at: now(), sourceId: this.options.usageSourceId });
+      this.emitUsageStatus("Cursor CLI is not logged in on this host. Run `cursor-agent login`.");
+      return;
+    }
+    const result = await fetchCursorUsage(token);
+    if (this.disposed) {
+      return;
+    }
+    if (result.windows.length) {
+      this.emitEvent({ type: "usage_limit", provider: "cursor", windows: result.windows, available: true, at: now(), sourceId: this.options.usageSourceId });
+      this.lastUsageStatus = "";
+      return;
+    }
+    this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], at: now(), sourceId: this.options.usageSourceId });
+    this.emitUsageStatus(result.error || "Cursor usage read returned no usable plan meter.");
+  }
+
+  private emitUsageStatus(detail: string): void {
+    if (detail === this.lastUsageStatus) {
+      return;
+    }
+    this.lastUsageStatus = detail;
+    this.emitEvent({ type: "diagnostic", severity: "info", category: "rate-limit", title: "사용량 정보를 읽을 수 없습니다", detail, at: now() });
+  }
+
+  private startUsagePolling(): void {
+    if (this.usageRefreshTimer) {
+      return;
+    }
+    this.usageRefreshTimer = setInterval(() => {
+      void this.refreshUsageLimits();
+    }, 60_000);
+    this.usageRefreshTimer.unref?.();
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
@@ -162,6 +218,10 @@ export class CursorAdapter extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
+    if (this.usageRefreshTimer) {
+      clearInterval(this.usageRefreshTimer);
+      this.usageRefreshTimer = undefined;
+    }
     this.process?.kill("SIGKILL");
     this.process = undefined;
     this.lineReader?.close();
