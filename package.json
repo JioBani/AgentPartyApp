@@ -143,6 +143,10 @@
       {
         "from": "scripts/agentparty-codex-mcp-server.mjs",
         "to": "bin/agentparty-codex-mcp-server.mjs"
+      },
+      {
+        "from": "scripts/agentparty-acp-mcp-relay.mjs",
+        "to": "bin/agentparty-acp-mcp-relay.mjs"
       }
     ],
     "win": {

@@ -10,6 +10,8 @@ export interface WslEngineOptions {
   serverBundleWinPath: string;
   /** Windows path to the Codex-facing AgentParty MCP stdio server. */
   codexMcpServerWinPath?: string;
+  /** Windows path to the Cursor ACP bridge's relay MCP stub. */
+  acpRelayWinPath?: string;
   /** Forwarded to the distro engine's router for router-backed models. */
   openRouterApiKey?: string;
 }
@@ -40,6 +42,10 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     if (options.codexMcpServerWinPath) {
       const wslMcpScript = await wslpath(options.distro, options.codexMcpServerWinPath);
       await runBash(options.distro, `cp "${wslMcpScript}" "${serverDir}/agentparty-codex-mcp-server.mjs"`);
+    }
+    if (options.acpRelayWinPath) {
+      const wslRelayScript = await wslpath(options.distro, options.acpRelayWinPath);
+      await runBash(options.distro, `cp "${wslRelayScript}" "${serverDir}/agentparty-acp-mcp-relay.mjs"`);
     }
     await ensureSdk(options.distro, serverDir);
 
@@ -82,7 +88,7 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
         "-d", options.distro, "-e", "bash", "-lc",
         // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
         // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
-        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
+        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}${options.acpRelayWinPath ? 'export AGENTPARTY_ACP_RELAY_SCRIPT="$HOME/.agent_party_app/server/agentparty-acp-mcp-relay.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );

@@ -205,8 +205,14 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of modelCatalog().filter((entry) => !entry.cursorModel)) {
     addRoute(routes, seen, unavailableCursorHarnessRoute(model));
   }
+  // The claude-code placeholder ("Cursor is an agent runtime, not an endpoint")
+  // is obsolete once a bridge-backed cursor entry serves that harness — keeping
+  // it would show the same model twice under the Cursor provider, one disabled.
+  const cursorBridgeServesClaudeCode = modelCatalog().some((entry) => entry.provider === "cursor" && Boolean(entry.cursorAcpModelId));
   for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
-    addRoute(routes, seen, unavailableCursorProviderRoute("claude-code", model));
+    if (!cursorBridgeServesClaudeCode) {
+      addRoute(routes, seen, unavailableCursorProviderRoute("claude-code", model));
+    }
     addRoute(routes, seen, unavailableCursorProviderRoute("codex", model));
   }
 
@@ -532,6 +538,7 @@ export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
 function routeFromCatalog(model: CatalogModel): ModelRoute {
   const routed = model.provider !== "anthropic";
   const subscriptionRouted = model.provider === "openai" && Boolean(model.codexModel);
+  const cursorRouted = model.provider === "cursor" && Boolean(model.cursorAcpModelId);
   return {
     harnessId: "claude-code",
     providerId: model.provider,
@@ -541,13 +548,17 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
     description: routed
       ? subscriptionRouted
         ? `${model.description || ""} Runs on the Claude Code harness through your Codex/ChatGPT subscription (local CLIProxyAPI).`.trim()
-        : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
+        : cursorRouted
+          ? `${model.description || ""} Runs on the Claude Code harness through your Cursor subscription (local ACP bridge).`.trim()
+          : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
       : model.description,
     pricing: subscriptionRouted
       ? { billing: "subscription", directPrice: "Codex subscription", context: model.context }
-      : routed
-        ? { ...pricingFromCatalog(model), billing: "token" }
-        : pricingFromCatalog(model),
+      : cursorRouted
+        ? { billing: "subscription", directPrice: "Cursor subscription", context: model.context }
+        : routed
+          ? { ...pricingFromCatalog(model), billing: "token" }
+          : pricingFromCatalog(model),
     capabilities: capabilitiesFromCatalog(model),
     meta: {
       perf: model.perf,
@@ -654,11 +665,22 @@ function capabilitiesFromCatalog(model: CatalogModel): ModelCapabilities {
     effort: effort
       ? {
           supported: true,
-          mutableDuringSession: true,
+          // A single-option spec is informational — the provider serves exactly
+          // one configuration (e.g. Cursor's grok-4.5 is high+fast only), and
+          // showing it beats hiding it, but there is nothing to switch to.
+          mutableDuringSession: effort.options.length > 1,
           defaultValue: effort.default,
           options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
         }
       : { supported: false, mutableDuringSession: true, options: [] },
+    serviceTier: model.provider === "cursor" && model.serviceTier
+      ? {
+          supported: true,
+          mutableDuringSession: model.serviceTier.options.length > 1,
+          defaultValue: model.serviceTier.default,
+          options: model.serviceTier.options.map((tier) => ({ id: tier, label: tier === "fast" ? "Fast" : "Standard" })),
+        }
+      : undefined,
     thinking: thinking
       ? {
           supported: true,

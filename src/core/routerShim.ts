@@ -1,7 +1,9 @@
+import * as crypto from "node:crypto";
 import * as http from "node:http";
 import * as net from "node:net";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
+import { CursorHarnessBridge } from "./cursorHarnessBridge";
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
 const CLAUDE_PROTOCOL = HARNESS_PROTOCOLS["claude-code"];
@@ -16,6 +18,14 @@ export interface EmbeddedHarnessRouterOptions {
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
+  /** Enables the Cursor-subscription ACP bridge (cursor-provider catalog models). */
+  cursorBridge?: {
+    /** Absolute path to scripts/agentparty-acp-mcp-relay.mjs (or its packaged copy). */
+    relayScriptPath: string;
+    /** Directory for the bridge's isolated per-conversation ACP workspaces. */
+    workspacesDir: string;
+    cursorExecutablePath?: () => string | undefined;
+  };
 }
 
 export interface RouterTurnUsage {
@@ -51,6 +61,9 @@ export class EmbeddedHarnessRouter {
   private port = 0;
   private options: EmbeddedHarnessRouterOptions;
   private readonly costBuckets = new Map<string, CostBucket>();
+  private cursorBridge: CursorHarnessBridge | undefined;
+  private readonly cursorBridgeToken = crypto.randomBytes(24).toString("hex");
+  private oneshotSeq = 0;
   private requestCount = 0;
   private lastRoute: { protocol: string; targetKind: RouterTarget["kind"]; targetModel: string; upstreamEndpoint: string } | undefined;
 
@@ -104,6 +117,8 @@ export class EmbeddedHarnessRouter {
   }
 
   dispose(): void {
+    this.cursorBridge?.dispose();
+    this.cursorBridge = undefined;
     this.server?.close();
     this.server = undefined;
     this.port = 0;
@@ -130,6 +145,18 @@ export class EmbeddedHarnessRouter {
         });
         return;
       }
+      if (req.method === "POST" && pathname.startsWith("/acp-bridge/")) {
+        // Loopback callback surface for the bridge's relay MCP stubs. Guarded
+        // by the per-process bridge token, never the harness gateway token.
+        const bridge = this.cursorBridge;
+        if (!bridge) {
+          sendJson(res, 404, { error: { type: "not_found", message: "The Cursor ACP bridge is not active in this router." } });
+          return;
+        }
+        const outcome = await bridge.handleRelay(pathname, clientAuthToken(req), await readJson(req));
+        sendJson(res, outcome.status, outcome.body);
+        return;
+      }
       if (req.method !== "POST" || pathname !== `/v1/${CLAUDE_PROTOCOL.endpoint}`) {
         sendJson(res, 404, {
           error: {
@@ -147,7 +174,7 @@ export class EmbeddedHarnessRouter {
       }
       const accountingKey = actual || expected;
       const body = await readJson(req);
-      const route = await this.forward(body, req.headers, abortController.signal);
+      const route = await this.forward(body, req.headers, abortController.signal, accountingKey);
       await this.relay(route, res, accountingKey, abortController.signal);
     } catch (error) {
       if (isAbortError(error) && (req.destroyed || res.destroyed || abortController.signal.aborted)) {
@@ -164,7 +191,7 @@ export class EmbeddedHarnessRouter {
     }
   }
 
-  private async forward(body: any, incomingHeaders: http.IncomingHttpHeaders, signal: AbortSignal): Promise<UpstreamRoute> {
+  private async forward(body: any, incomingHeaders: http.IncomingHttpHeaders, signal: AbortSignal, accountingKey: string): Promise<UpstreamRoute> {
     const requestedModel = String(body.model || process.env.ANTHROPIC_CUSTOM_MODEL_OPTION || "");
     const target = routerTargetForModel(requestedModel);
     if (!target) {
@@ -177,9 +204,42 @@ export class EmbeddedHarnessRouter {
       targetModel: target.model,
       upstreamEndpoint: CLAUDE_PROTOCOL.endpoint,
     };
+    if (target.kind === "cursor-subscription") {
+      return this.forwardToCursorBridge(body, target, accountingKey);
+    }
     return target.kind === "codex-subscription"
       ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
       : this.forwardToOpenRouter(body, incomingHeaders, target, signal);
+  }
+
+  private async forwardToCursorBridge(
+    body: any,
+    target: RouterTarget & { kind: "cursor-subscription" },
+    accountingKey: string,
+  ): Promise<UpstreamRoute> {
+    const config = this.options.cursorBridge;
+    if (!config) {
+      throw new Error(
+        "This model needs the Cursor ACP bridge, which is not configured in this router. No fallback was attempted.",
+      );
+    }
+    if (!this.cursorBridge) {
+      this.cursorBridge = new CursorHarnessBridge({
+        relayScriptPath: config.relayScriptPath,
+        bridgeToken: this.cursorBridgeToken,
+        routerBaseUrl: () => this.baseUrl,
+        cursorExecutablePath: config.cursorExecutablePath,
+        workspacesDir: config.workspacesDir,
+      });
+    }
+    // Harness sessions carry a stable per-session token — the bridge keys its
+    // warm ACP session (and tool round-trip state) on it. Anything else (gate
+    // reviewer, ad-hoc callers) is a stateless one-shot conversation.
+    const conversationKey = accountingKey.startsWith("agentparty-native-session:")
+      ? accountingKey
+      : `oneshot-${(this.oneshotSeq += 1)}`;
+    const response = await this.cursorBridge.handleMessages(conversationKey, target.model, body);
+    return { response, openRouter: false };
   }
 
   private async forwardToCodexSubscription(

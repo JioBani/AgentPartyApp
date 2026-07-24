@@ -282,6 +282,16 @@ Cross-routing keeps the chosen harness process intact:
   choose an opaque underlying model. Grok effort maps to Cursor's current
   named-model slugs (`cursor-grok-4.5-low|medium|high`). AgentParty never changes
   a selected Grok route to Auto after a plan error.
+- **Claude Code + Cursor subscription** (`"Grok 4.5 Cursor"`, label
+  "Grok 4.5 (Cursor)") keeps the Claude Code SDK process and routes the
+  `claude-cursor-grok-4-5` alias through the embedded gateway's Cursor ACP
+  bridge: a warm `cursor-agent acp` session serves the turns, and the harness's
+  own tools are mirrored to the agent over a local MCP relay so tool_use /
+  tool_result round-trips work end-to-end (multi-step chains included). Runs on
+  the host that owns the workspace's harness (distro CLI for WSL). Requires a
+  signed-in cursor-agent there; an unauthenticated host fails with an explicit
+  error — no fallback. Image attachments are forwarded as ACP image blocks
+  (verified live). See `docs/CURSOR_PROXY_TODO.md`.
 
 ### `GET /api/harnesses/cursor/status`
 

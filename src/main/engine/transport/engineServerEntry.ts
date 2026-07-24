@@ -38,7 +38,14 @@ async function main(): Promise<void> {
   const hostChannel = new HostChannel(process.stdout);
   const host = createEngineHost({
     storageDir: storage,
-    router: { preferredPort: 0, authToken: "engine", openRouterApiKey: process.env.OPENROUTER_API_KEY || "" },
+    router: {
+      preferredPort: 0,
+      authToken: "engine",
+      openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
+      // Cursor-subscription cross-harness models run HERE (the distro owns the
+      // cursor-agent login), unlike the gate reviewer which must run upward.
+      cursorAcpRelayScriptPath: process.env.AGENTPARTY_ACP_RELAY_SCRIPT || undefined,
+    },
     reviewGate: (message, reviewer) => hostChannel.call<GateReviewResult>("reviewGate", message, reviewer),
   });
   // Start the embedded router so router-backed models (MiniMax M3, etc.) work —

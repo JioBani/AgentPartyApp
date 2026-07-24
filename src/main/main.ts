@@ -184,12 +184,17 @@ async function bootstrap(): Promise<void> {
     baseUrl: subscriptionStatus.baseUrl,
     detail: subscriptionStatus.service?.detail || subscriptionStatus.detail,
   });
+  const acpRelayScript = app.isPackaged
+    ? path.join(process.resourcesPath, "bin", "agentparty-acp-mcp-relay.mjs")
+    : path.join(app.getAppPath(), "scripts", "agentparty-acp-mcp-relay.mjs");
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
     router: {
       preferredPort: parsePort(settings.routerBaseUrl),
       authToken: settings.routerAuthToken,
       openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+      cursorAcpRelayScriptPath: acpRelayScript,
+      cursorExecutablePath: () => getSettings().cursorExecutablePath || undefined,
     },
     // Desktop only: a WSL workspace is served by an engine spawned in the distro.
     createRemoteEngine: (location, serialized) => {
@@ -209,6 +214,7 @@ async function bootstrap(): Promise<void> {
         workspacePosix: location.path,
         serverBundleWinPath: serverBundle,
         codexMcpServerWinPath: codexMcpServer,
+        acpRelayWinPath: acpRelayScript,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       });
       const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose, {

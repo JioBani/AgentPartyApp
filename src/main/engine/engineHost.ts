@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { EmbeddedHarnessRouter } from "../../core/routerShim";
 import { SessionManager } from "../sessionManager";
 import { WorkspaceManager, type ReviewGate } from "../workspaceManager";
@@ -13,6 +14,9 @@ export interface EngineHostConfig {
     preferredPort: number;
     authToken: string;
     openRouterApiKey?: string;
+    /** Enables Cursor-subscription cross-harness models (the ACP bridge). */
+    cursorAcpRelayScriptPath?: string;
+    cursorExecutablePath?: () => string | undefined;
   };
   /** Desktop-only: builds a connection to an engine in another host (WSL). */
   createRemoteEngine?: EngineRegistryDeps["createRemoteEngine"];
@@ -47,6 +51,13 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
     preferredPort: config.router.preferredPort,
     authToken: config.router.authToken,
     openRouterApiKey: config.router.openRouterApiKey || "",
+    cursorBridge: config.router.cursorAcpRelayScriptPath
+      ? {
+          relayScriptPath: config.router.cursorAcpRelayScriptPath,
+          workspacesDir: path.join(config.storageDir, "acp-bridge"),
+          cursorExecutablePath: config.router.cursorExecutablePath,
+        }
+      : undefined,
   });
   const sessionManager = new SessionManager(router, config.storageDir);
   const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate);

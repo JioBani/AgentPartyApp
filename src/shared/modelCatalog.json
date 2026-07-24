@@ -2,229 +2,943 @@
   "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry.",
   "models": [
     {
-      "id": "claude-fable-5[1m]", "label": "Fable", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-fable-5", "orModelId": "anthropic/claude-fable-5",
+      "id": "claude-fable-5[1m]",
+      "label": "Fable",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-fable-5",
+      "orModelId": "anthropic/claude-fable-5",
       "description": "Fable 5, Anthropic's most capable model (Mythos-class, above Opus). Adaptive thinking is always on (cannot be disabled); safety classifiers may refuse a request. No short 'fable' CLI alias exists yet — the full id is required (verified 10 Jul '26).",
-      "context": "1M", "perf": 5, "costTier": 5, "inPerM": 10, "outPerM": 50, "ioPerM": 20,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive"], "default": "adaptive" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 10,
+      "outPerM": 50,
+      "ioPerM": 20,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "adaptive"
+          ],
+          "default": "adaptive"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "opus[1m]", "label": "Opus 4.8", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-opus-4-8", "orModelId": "anthropic/claude-opus-4.8",
+      "id": "opus[1m]",
+      "label": "Opus 4.8",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-opus-4-8",
+      "orModelId": "anthropic/claude-opus-4.8",
       "description": "Opus with 1M context. Best for complex work.",
-      "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 25, "ioPerM": 10,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "disabled" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 5,
+      "outPerM": 25,
+      "ioPerM": 10,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "adaptive",
+            "disabled"
+          ],
+          "default": "disabled"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "sonnet", "label": "Sonnet 4.6", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-sonnet-4-6", "orModelId": "anthropic/claude-sonnet-4.6",
+      "id": "sonnet",
+      "label": "Sonnet 4.6",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-sonnet-4-6",
+      "orModelId": "anthropic/claude-sonnet-4.6",
       "description": "Sonnet. Efficient default for routine coding tasks.",
-      "context": "1M", "perf": 3, "costTier": 5, "inPerM": 3, "outPerM": 15, "ioPerM": 6,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 3,
+      "costTier": 5,
+      "inPerM": 3,
+      "outPerM": 15,
+      "ioPerM": 6,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "adaptive",
+            "disabled"
+          ],
+          "default": "adaptive"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "haiku", "label": "Haiku", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-haiku-4-5-20251001", "orModelId": "anthropic/claude-haiku-4.5",
+      "id": "haiku",
+      "label": "Haiku",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-haiku-4-5-20251001",
+      "orModelId": "anthropic/claude-haiku-4.5",
       "description": "Haiku. Fastest for quick answers.",
-      "context": "200K", "perf": 0, "costTier": 3, "inPerM": 1, "outPerM": 5, "ioPerM": 2,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "disabled" }, "budget": { "default": 4096, "min": 1024, "max": 32000 } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "200K",
+      "perf": 0,
+      "costTier": 3,
+      "inPerM": 1,
+      "outPerM": 5,
+      "ioPerM": 2,
+      "reasoning": {
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "disabled"
+        },
+        "budget": {
+          "default": 4096,
+          "min": 1024,
+          "max": 32000
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.6 Sol", "label": "GPT-5.6 Sol", "provider": "openai", "codexModel": "gpt-5.6-sol", "runtimeModel": "claude-gpt-5.6-sol", "subscription": true,
+      "id": "GPT-5.6 Sol",
+      "label": "GPT-5.6 Sol",
+      "provider": "openai",
+      "codexModel": "gpt-5.6-sol",
+      "runtimeModel": "claude-gpt-5.6-sol",
+      "subscription": true,
       "description": "Latest frontier agentic coding model. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 30, "ioPerM": 11.25,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "low" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 5,
+      "outPerM": 30,
+      "ioPerM": 11.25,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.6 Terra", "label": "GPT-5.6 Terra", "provider": "openai", "codexModel": "gpt-5.6-terra", "runtimeModel": "claude-gpt-5.6-terra", "subscription": true,
+      "id": "GPT-5.6 Terra",
+      "label": "GPT-5.6 Terra",
+      "provider": "openai",
+      "codexModel": "gpt-5.6-terra",
+      "runtimeModel": "claude-gpt-5.6-terra",
+      "subscription": true,
       "description": "Balanced agentic coding model for everyday work. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "1M", "perf": 4, "costTier": 4, "inPerM": 2.5, "outPerM": 15, "ioPerM": 5.63,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 4,
+      "costTier": 4,
+      "inPerM": 2.5,
+      "outPerM": 15,
+      "ioPerM": 5.63,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.6 Luna", "label": "GPT-5.6 Luna", "provider": "openai", "codexModel": "gpt-5.6-luna", "runtimeModel": "claude-gpt-5.6-luna", "subscription": true,
+      "id": "GPT-5.6 Luna",
+      "label": "GPT-5.6 Luna",
+      "provider": "openai",
+      "codexModel": "gpt-5.6-luna",
+      "runtimeModel": "claude-gpt-5.6-luna",
+      "subscription": true,
       "description": "Fast and affordable agentic coding model. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "1M", "perf": 3, "costTier": 3, "inPerM": 1, "outPerM": 6, "ioPerM": 2.25,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "medium" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 3,
+      "costTier": 3,
+      "inPerM": 1,
+      "outPerM": 6,
+      "ioPerM": 2.25,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.5", "label": "GPT-5.5", "provider": "openai", "codexModel": "gpt-5.5", "runtimeModel": "claude-gpt-5.5", "subscription": true,
+      "id": "GPT-5.5",
+      "label": "GPT-5.5",
+      "provider": "openai",
+      "codexModel": "gpt-5.5",
+      "runtimeModel": "claude-gpt-5.5",
+      "subscription": true,
       "description": "Frontier model for complex coding, research, and real-world work. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "1.05M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 30, "ioPerM": 11.25,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 5,
+      "outPerM": 30,
+      "ioPerM": 11.25,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.4", "label": "GPT-5.4", "provider": "openai", "codexModel": "gpt-5.4", "runtimeModel": "claude-gpt-5.4", "subscription": true,
+      "id": "GPT-5.4",
+      "label": "GPT-5.4",
+      "provider": "openai",
+      "codexModel": "gpt-5.4",
+      "runtimeModel": "claude-gpt-5.4",
+      "subscription": true,
       "description": "Strong model for everyday coding. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "1M", "perf": 4, "costTier": 4, "inPerM": 2.5, "outPerM": 15, "ioPerM": 5.63,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 4,
+      "costTier": 4,
+      "inPerM": 2.5,
+      "outPerM": 15,
+      "ioPerM": 5.63,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GPT-5.4 mini", "label": "GPT-5.4 mini", "provider": "openai", "codexModel": "gpt-5.4-mini", "runtimeModel": "claude-gpt-5.4-mini", "subscription": true,
+      "id": "GPT-5.4 mini",
+      "label": "GPT-5.4 mini",
+      "provider": "openai",
+      "codexModel": "gpt-5.4-mini",
+      "runtimeModel": "claude-gpt-5.4-mini",
+      "subscription": true,
       "description": "Small, fast, and cost-efficient model for simpler coding tasks. Both harnesses use the signed-in Codex/ChatGPT subscription.",
-      "context": "400K", "perf": 1, "costTier": 3, "inPerM": 0.75, "outPerM": 4.5, "ioPerM": 1.69,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "low" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "400K",
+      "perf": 1,
+      "costTier": 3,
+      "inPerM": 0.75,
+      "outPerM": 4.5,
+      "ioPerM": 1.69,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Inkling", "label": "Inkling", "provider": "openrouter", "runtimeModel": "claude-inkling", "orModelId": "thinkingmachines/inkling", "subscription": false,
+      "id": "Inkling",
+      "label": "Inkling",
+      "provider": "openrouter",
+      "runtimeModel": "claude-inkling",
+      "orModelId": "thinkingmachines/inkling",
+      "subscription": false,
       "description": "Thinking Machines Lab's open-weight multimodal MoE model for reasoning, coding, agentic, and tool-use workflows.",
-      "context": "1.05M", "inPerM": 1.0, "outPerM": 4.05, "ioPerM": 1.76,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "max"], "default": "high" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "inPerM": 1,
+      "outPerM": 4.05,
+      "ioPerM": 1.76,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Kimi K3", "label": "Kimi K3", "provider": "openrouter", "runtimeModel": "claude-kimi-k3", "orModelId": "moonshotai/kimi-k3", "subscription": false,
+      "id": "Kimi K3",
+      "label": "Kimi K3",
+      "provider": "openrouter",
+      "runtimeModel": "claude-kimi-k3",
+      "orModelId": "moonshotai/kimi-k3",
+      "subscription": false,
       "description": "Moonshot AI's 2.8T open-weight multimodal reasoning model for complex coding, knowledge work, and long-horizon agentic workflows.",
-      "context": "1.05M", "inPerM": 3.0, "outPerM": 15.0, "ioPerM": 6.0,
-      "reasoning": { "effort": { "options": ["max"], "default": "max" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "inPerM": 3,
+      "outPerM": 15,
+      "ioPerM": 6,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "max"
+          ],
+          "default": "max"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Muse Spark 1.1", "label": "Muse Spark 1.1", "provider": "openrouter", "runtimeModel": "claude-muse-spark", "orModelId": "meta/muse-spark-1.1", "subscription": false,
+      "id": "Muse Spark 1.1",
+      "label": "Muse Spark 1.1",
+      "provider": "openrouter",
+      "runtimeModel": "claude-muse-spark",
+      "orModelId": "meta/muse-spark-1.1",
+      "subscription": false,
       "description": "Meta's multimodal reasoning model for agentic tasks; accepts text, images, video, audio, and documents.",
-      "context": "1.05M", "inPerM": 1.25, "outPerM": 4.25, "ioPerM": 2.0,
-      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh"], "default": "medium" } },
-      "vision": { "image": true, "video": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "inPerM": 1.25,
+      "outPerM": 4.25,
+      "ioPerM": 2,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "video": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "KAT-Coder-Air V2.5", "label": "KAT-Coder-Air V2.5", "provider": "openrouter", "runtimeModel": "claude-kat-coder-air", "orModelId": "kwaipilot/kat-coder-air-v2.5", "subscription": false,
+      "id": "KAT-Coder-Air V2.5",
+      "label": "KAT-Coder-Air V2.5",
+      "provider": "openrouter",
+      "runtimeModel": "claude-kat-coder-air",
+      "orModelId": "kwaipilot/kat-coder-air-v2.5",
+      "subscription": false,
       "description": "Kwaipilot's agentic coding model for end-to-end issues and business workflows.",
-      "context": "256K", "inPerM": 0.15, "outPerM": 0.6, "ioPerM": 0.26,
+      "context": "256K",
+      "inPerM": 0.15,
+      "outPerM": 0.6,
+      "ioPerM": 0.26,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "KAT-Coder-Pro V2.5", "label": "KAT-Coder-Pro V2.5", "provider": "openrouter", "runtimeModel": "claude-kat-coder-pro", "orModelId": "kwaipilot/kat-coder-pro-v2.5", "subscription": false,
+      "id": "KAT-Coder-Pro V2.5",
+      "label": "KAT-Coder-Pro V2.5",
+      "provider": "openrouter",
+      "runtimeModel": "claude-kat-coder-pro",
+      "orModelId": "kwaipilot/kat-coder-pro-v2.5",
+      "subscription": false,
       "description": "Kwaipilot's higher-capacity agentic coding model for end-to-end issues and business workflows.",
-      "context": "256K", "inPerM": 0.74, "outPerM": 2.96, "ioPerM": 1.30,
+      "context": "256K",
+      "inPerM": 0.74,
+      "outPerM": 2.96,
+      "ioPerM": 1.3,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Grok 4.5", "label": "Grok 4.5", "provider": "openrouter", "runtimeModel": "claude-grok-4-5", "orModelId": "x-ai/grok-4.5", "cursorModel": "cursor-grok-4.5-high", "subscription": false,
+      "id": "Grok 4.5",
+      "label": "Grok 4.5",
+      "provider": "openrouter",
+      "runtimeModel": "claude-grok-4-5",
+      "orModelId": "x-ai/grok-4.5",
+      "cursorModel": "cursor-grok-4.5-high",
+      "subscription": false,
       "description": "xAI's frontier model for coding, knowledge work, and STEM.",
-      "context": "500K", "inPerM": 2.0, "outPerM": 6.0, "ioPerM": 3.0,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } },
-      "serviceTier": { "options": ["standard", "fast"], "default": "standard" },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "500K",
+      "inPerM": 2,
+      "outPerM": 6,
+      "ioPerM": 3,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high"
+        }
+      },
+      "serviceTier": {
+        "options": [
+          "standard",
+          "fast"
+        ],
+        "default": "standard"
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Aion-3.0 Mini", "label": "Aion-3.0 Mini", "provider": "openrouter", "runtimeModel": "claude-aion-mini", "orModelId": "aion-labs/aion-3.0-mini", "subscription": false,
+      "id": "Grok 4.5 Cursor",
+      "label": "Grok 4.5 (Cursor)",
+      "provider": "cursor",
+      "runtimeModel": "claude-cursor-grok-4-5",
+      "cursorAcpModelId": "grok-4.5[effort=high,fast=true]",
+      "subscription": true,
+      "description": "xAI's Grok 4.5 through the signed-in Cursor subscription for cross-harness use. Cursor serves exactly one configuration for this model — reasoning effort HIGH on the FAST tier — so there are no effort/tier knobs to adjust.",
+      "context": "500K",
+      "perf": 3,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "high"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      },
+      "serviceTier": {
+        "options": [
+          "fast"
+        ],
+        "default": "fast"
+      }
+    },
+    {
+      "id": "Aion-3.0 Mini",
+      "label": "Aion-3.0 Mini",
+      "provider": "openrouter",
+      "runtimeModel": "claude-aion-mini",
+      "orModelId": "aion-labs/aion-3.0-mini",
+      "subscription": false,
       "description": "AionLabs' multi-model roleplaying and storytelling system built on the DeepSeek family.",
-      "context": "131K", "inPerM": 0.7, "outPerM": 1.4, "ioPerM": 0.88,
+      "context": "131K",
+      "inPerM": 0.7,
+      "outPerM": 1.4,
+      "ioPerM": 0.88,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Aion-3.0", "label": "Aion-3.0", "provider": "openrouter", "runtimeModel": "claude-aion", "orModelId": "aion-labs/aion-3.0", "subscription": false,
+      "id": "Aion-3.0",
+      "label": "Aion-3.0",
+      "provider": "openrouter",
+      "runtimeModel": "claude-aion",
+      "orModelId": "aion-labs/aion-3.0",
+      "subscription": false,
       "description": "AionLabs' multi-model roleplaying and storytelling system built on the GLM family.",
-      "context": "131K", "inPerM": 3.0, "outPerM": 6.0, "ioPerM": 3.75,
+      "context": "131K",
+      "inPerM": 3,
+      "outPerM": 6,
+      "ioPerM": 3.75,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Tencent Hy3", "label": "Tencent Hy3", "provider": "openrouter", "runtimeModel": "claude-hy3", "orModelId": "tencent/hy3", "subscription": false,
+      "id": "Tencent Hy3",
+      "label": "Tencent Hy3",
+      "provider": "openrouter",
+      "runtimeModel": "claude-hy3",
+      "orModelId": "tencent/hy3",
+      "subscription": false,
       "description": "Tencent's 295B-parameter MoE model for reasoning, agentic workflows, and production use.",
-      "context": "262K", "inPerM": 0.2, "outPerM": 0.8, "ioPerM": 0.35,
+      "context": "262K",
+      "inPerM": 0.2,
+      "outPerM": 0.8,
+      "ioPerM": 0.35,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Laguna XS 2.1", "label": "Laguna XS 2.1", "provider": "openrouter", "runtimeModel": "claude-laguna-xs", "orModelId": "poolside/laguna-xs-2.1", "subscription": false,
+      "id": "Laguna XS 2.1",
+      "label": "Laguna XS 2.1",
+      "provider": "openrouter",
+      "runtimeModel": "claude-laguna-xs",
+      "orModelId": "poolside/laguna-xs-2.1",
+      "subscription": false,
       "description": "Poolside's latest coding-agent model in the 33B-A3B category.",
-      "context": "262K", "inPerM": 0.06, "outPerM": 0.12, "ioPerM": 0.08,
+      "context": "262K",
+      "inPerM": 0.06,
+      "outPerM": 0.12,
+      "ioPerM": 0.08,
       "reasoning": null,
-      "vision": { "image": false }
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Nex-N2-Mini", "label": "Nex-N2-Mini", "provider": "openrouter", "runtimeModel": "claude-nex-n2-mini", "orModelId": "nex-agi/nex-n2-mini", "subscription": false,
+      "id": "Nex-N2-Mini",
+      "label": "Nex-N2-Mini",
+      "provider": "openrouter",
+      "runtimeModel": "claude-nex-n2-mini",
+      "orModelId": "nex-agi/nex-n2-mini",
+      "subscription": false,
       "description": "Nex AGI's open-source agentic MoE model for coding and tool use.",
-      "context": "262K", "inPerM": 0.025, "outPerM": 0.1, "ioPerM": 0.04,
+      "context": "262K",
+      "inPerM": 0.025,
+      "outPerM": 0.1,
+      "ioPerM": 0.04,
       "reasoning": null,
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "GLM-5.2", "label": "GLM-5.2", "provider": "openrouter", "runtimeModel": "claude-glm", "orModelId": "z-ai/glm-5.2", "subscription": false,
+      "id": "GLM-5.2",
+      "label": "GLM-5.2",
+      "provider": "openrouter",
+      "runtimeModel": "claude-glm",
+      "orModelId": "z-ai/glm-5.2",
+      "subscription": false,
       "description": "AgentParty router alias for z-ai/glm-5.2.",
-      "context": "1M", "perf": 4, "costTier": 2, "inPerM": 0.95, "outPerM": 3.0, "ioPerM": 1.46,
-      "reasoning": { "effort": { "options": ["high", "max"], "default": "max" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
-      "vision": { "image": false }
+      "context": "1M",
+      "perf": 4,
+      "costTier": 2,
+      "inPerM": 0.95,
+      "outPerM": 3,
+      "ioPerM": 1.46,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "high",
+            "max"
+          ],
+          "default": "max"
+        },
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        }
+      },
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "Gemini 3.5 Flash", "label": "Gemini 3.5 Flash", "provider": "openrouter", "runtimeModel": "claude-gemini-flash", "orModelId": "google/gemini-3.5-flash", "subscription": false,
+      "id": "Gemini 3.5 Flash",
+      "label": "Gemini 3.5 Flash",
+      "provider": "openrouter",
+      "runtimeModel": "claude-gemini-flash",
+      "orModelId": "google/gemini-3.5-flash",
+      "subscription": false,
       "description": "AgentParty router alias for google/gemini-3.5-flash.",
-      "context": "1.05M", "perf": 4, "costTier": 4, "inPerM": 1.5, "outPerM": 9.0, "ioPerM": 3.38,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "medium" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "perf": 4,
+      "costTier": 4,
+      "inPerM": 1.5,
+      "outPerM": 9,
+      "ioPerM": 3.38,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Qwen3.7 Max", "label": "Qwen3.7 Max", "provider": "openrouter", "runtimeModel": "claude-qwen", "orModelId": "qwen/qwen3.7-max", "subscription": false,
+      "id": "Qwen3.7 Max",
+      "label": "Qwen3.7 Max",
+      "provider": "openrouter",
+      "runtimeModel": "claude-qwen",
+      "orModelId": "qwen/qwen3.7-max",
+      "subscription": false,
       "description": "AgentParty router alias for qwen/qwen3.7-max.",
-      "context": "1M", "perf": 3, "costTier": 3, "inPerM": 1.25, "outPerM": 3.75, "ioPerM": 1.88,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } },
-      "vision": { "image": false }
+      "context": "1M",
+      "perf": 3,
+      "costTier": 3,
+      "inPerM": 1.25,
+      "outPerM": 3.75,
+      "ioPerM": 1.88,
+      "reasoning": {
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        },
+        "budget": {
+          "default": 81920,
+          "min": 1024,
+          "max": 81920
+        }
+      },
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "DeepSeek V4 Pro", "label": "DeepSeek V4 Pro", "provider": "openrouter", "runtimeModel": "claude-deepseek-pro", "orModelId": "deepseek/deepseek-v4-pro", "subscription": false,
+      "id": "DeepSeek V4 Pro",
+      "label": "DeepSeek V4 Pro",
+      "provider": "openrouter",
+      "runtimeModel": "claude-deepseek-pro",
+      "orModelId": "deepseek/deepseek-v4-pro",
+      "subscription": false,
       "description": "AgentParty router alias for deepseek/deepseek-v4-pro.",
-      "context": "1.05M", "perf": 2, "costTier": 1, "inPerM": 0.435, "outPerM": 0.87, "ioPerM": 0.54,
-      "reasoning": { "effort": { "options": ["high", "max"], "default": "high" }, "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
-      "vision": { "image": false }
+      "context": "1.05M",
+      "perf": 2,
+      "costTier": 1,
+      "inPerM": 0.435,
+      "outPerM": 0.87,
+      "ioPerM": 0.54,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        }
+      },
+      "vision": {
+        "image": false
+      }
     },
     {
-      "id": "MiniMax M3", "label": "MiniMax M3", "provider": "openrouter", "runtimeModel": "claude-minimax", "orModelId": "minimax/minimax-m3", "subscription": false,
+      "id": "MiniMax M3",
+      "label": "MiniMax M3",
+      "provider": "openrouter",
+      "runtimeModel": "claude-minimax",
+      "orModelId": "minimax/minimax-m3",
+      "subscription": false,
       "description": "AgentParty router alias for minimax/minimax-m3.",
-      "context": "1.05M", "perf": 2, "costTier": 1, "inPerM": 0.3, "outPerM": 1.2, "ioPerM": 0.53,
-      "reasoning": { "thinking": { "modes": ["enabled", "adaptive", "disabled"], "default": "adaptive" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "perf": 2,
+      "costTier": 1,
+      "inPerM": 0.3,
+      "outPerM": 1.2,
+      "ioPerM": 0.53,
+      "reasoning": {
+        "thinking": {
+          "modes": [
+            "enabled",
+            "adaptive",
+            "disabled"
+          ],
+          "default": "adaptive"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Gemini 3.x Pro", "label": "Gemini 3.x Pro", "provider": "openrouter", "runtimeModel": "claude-gemini-pro", "orModelId": "google/gemini-3.1-pro-preview", "subscription": false,
+      "id": "Gemini 3.x Pro",
+      "label": "Gemini 3.x Pro",
+      "provider": "openrouter",
+      "runtimeModel": "claude-gemini-pro",
+      "orModelId": "google/gemini-3.1-pro-preview",
+      "subscription": false,
       "description": "AgentParty router alias for google/gemini-3.1-pro-preview.",
-      "context": "1.05M", "perf": 2, "costTier": 4, "inPerM": 2.0, "outPerM": 12.0, "ioPerM": 4.5,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "high" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1.05M",
+      "perf": 2,
+      "costTier": 4,
+      "inPerM": 2,
+      "outPerM": 12,
+      "ioPerM": 4.5,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Kimi K2.7 Code", "label": "Kimi K2.7 Code", "provider": "openrouter", "runtimeModel": "claude-kimi-code", "orModelId": "moonshotai/kimi-k2.7-code", "subscription": false,
+      "id": "Kimi K2.7 Code",
+      "label": "Kimi K2.7 Code",
+      "provider": "openrouter",
+      "runtimeModel": "claude-kimi-code",
+      "orModelId": "moonshotai/kimi-k2.7-code",
+      "subscription": false,
       "description": "AgentParty router alias for moonshotai/kimi-k2.7-code.",
-      "context": "262K", "perf": 1, "costTier": 2, "inPerM": 0.74, "outPerM": 3.5, "ioPerM": 1.43,
+      "context": "262K",
+      "perf": 1,
+      "costTier": 2,
+      "inPerM": 0.74,
+      "outPerM": 3.5,
+      "ioPerM": 1.43,
       "reasoning": null,
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Kimi K2.6", "label": "Kimi K2.6", "provider": "openrouter", "runtimeModel": "claude-kimi", "orModelId": "moonshotai/kimi-k2.6", "subscription": false,
+      "id": "Kimi K2.6",
+      "label": "Kimi K2.6",
+      "provider": "openrouter",
+      "runtimeModel": "claude-kimi",
+      "orModelId": "moonshotai/kimi-k2.6",
+      "subscription": false,
       "description": "AgentParty router alias for moonshotai/kimi-k2.6.",
-      "context": "262K", "perf": 1, "costTier": 2, "inPerM": 0.66, "outPerM": 3.41, "ioPerM": 1.35,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "262K",
+      "perf": 1,
+      "costTier": 2,
+      "inPerM": 0.66,
+      "outPerM": 3.41,
+      "ioPerM": 1.35,
+      "reasoning": {
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Grok Build 0.1", "label": "Grok Build 0.1", "provider": "openrouter", "runtimeModel": "claude-grok-build", "orModelId": "x-ai/grok-build-0.1", "subscription": false,
+      "id": "Grok Build 0.1",
+      "label": "Grok Build 0.1",
+      "provider": "openrouter",
+      "runtimeModel": "claude-grok-build",
+      "orModelId": "x-ai/grok-build-0.1",
+      "subscription": false,
       "description": "AgentParty router alias for x-ai/grok-build-0.1.",
-      "context": "256K", "perf": 0, "costTier": 2, "inPerM": 1.0, "outPerM": 2.0, "ioPerM": 1.25,
+      "context": "256K",
+      "perf": 0,
+      "costTier": 2,
+      "inPerM": 1,
+      "outPerM": 2,
+      "ioPerM": 1.25,
       "reasoning": null,
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Qwen3.7 Plus", "label": "Qwen3.7 Plus", "provider": "openrouter", "runtimeModel": "claude-qwen-plus", "orModelId": "qwen/qwen3.7-plus", "subscription": false,
+      "id": "Qwen3.7 Plus",
+      "label": "Qwen3.7 Plus",
+      "provider": "openrouter",
+      "runtimeModel": "claude-qwen-plus",
+      "orModelId": "qwen/qwen3.7-plus",
+      "subscription": false,
       "description": "AgentParty router alias for qwen/qwen3.7-plus.",
-      "context": "1M", "perf": 0, "costTier": 1, "inPerM": 0.32, "outPerM": 1.28, "ioPerM": 0.56,
-      "reasoning": { "thinking": { "modes": ["enabled", "disabled"], "default": "enabled" }, "budget": { "default": 81920, "min": 1024, "max": 81920 } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 0,
+      "costTier": 1,
+      "inPerM": 0.32,
+      "outPerM": 1.28,
+      "ioPerM": 0.56,
+      "reasoning": {
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        },
+        "budget": {
+          "default": 81920,
+          "min": 1024,
+          "max": 81920
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     },
     {
-      "id": "Grok 4.3", "label": "Grok 4.3", "provider": "openrouter", "runtimeModel": "claude-grok", "orModelId": "x-ai/grok-4.3", "subscription": false,
+      "id": "Grok 4.3",
+      "label": "Grok 4.3",
+      "provider": "openrouter",
+      "runtimeModel": "claude-grok",
+      "orModelId": "x-ai/grok-4.3",
+      "subscription": false,
       "description": "AgentParty router alias for x-ai/grok-4.3.",
-      "context": "1M", "perf": 0, "costTier": 3, "inPerM": 1.25, "outPerM": 2.5, "ioPerM": 1.56,
-      "reasoning": { "effort": { "options": ["low", "medium", "high"], "default": "low" } },
-      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+      "context": "1M",
+      "perf": 0,
+      "costTier": 3,
+      "inPerM": 1.25,
+      "outPerM": 2.5,
+      "ioPerM": 1.56,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     }
   ]
 }

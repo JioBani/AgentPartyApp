@@ -7,7 +7,7 @@
  */
 import catalog from "./modelCatalog.json";
 
-export type CatalogProvider = "anthropic" | "openai" | "openrouter";
+export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor";
 
 /** Effort levels transportable to the harness (SDK `effort`). */
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -69,6 +69,12 @@ export interface CatalogModel {
   claudeSubscriptionModel?: string;
   /** Cursor Agent named-model slug. Presence opts this entry into the Cursor harness. */
   cursorModel?: string;
+  /**
+   * Cursor ACP modelId for CROSS-harness use (variants baked in, e.g.
+   * "grok-4.5[effort=high,fast=true]"). Presence + provider "cursor" routes the
+   * embedded gateway through the Cursor-subscription ACP bridge.
+   */
+  cursorAcpModelId?: string;
   /** Concrete OpenRouter model id the harness protocol gateway selects. */
   orModelId?: string;
   subscription: boolean;
@@ -232,7 +238,8 @@ export function openRouterAliasMap(): Record<string, string> {
 
 export type RouterTarget =
   | { kind: "codex-subscription"; model: string }
-  | { kind: "openrouter"; model: string };
+  | { kind: "openrouter"; model: string }
+  | { kind: "cursor-subscription"; model: string };
 
 /** Exact provider target for one Claude Code gateway alias. */
 export function routerTargetForModel(model: string): RouterTarget | undefined {
@@ -245,6 +252,9 @@ export function routerTargetForModel(model: string): RouterTarget | undefined {
   }
   if (entry.provider === "openrouter" && entry.orModelId) {
     return { kind: "openrouter", model: entry.orModelId };
+  }
+  if (entry.provider === "cursor" && entry.cursorAcpModelId) {
+    return { kind: "cursor-subscription", model: entry.cursorAcpModelId };
   }
   return undefined;
 }

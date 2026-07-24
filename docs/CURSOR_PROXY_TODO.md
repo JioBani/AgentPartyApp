@@ -1,7 +1,60 @@
 # Cursor cross-harness proxy TODO
 
-Status: deferred
+Status: IMPLEMENTED (2026-07-24) — in AgentParty's own embedded router, not CLIProxyAPI
 Recorded: 2026-07-24
+
+## Implementation (what actually shipped)
+
+The gateway is AgentParty's own `EmbeddedHarnessRouter` (`src/core/routerShim.ts`),
+NOT a CLIProxyAPI plugin: the router already dispatches per catalog target, runs
+on both hosts (desktop and distro engine — so the bridge naturally executes
+where the cursor-agent login lives), and adding a target kind kept everything in
+this codebase. Pieces:
+
+- `src/core/cursorAcp.ts` — minimal ACP JSON-RPC client over `cursor-agent acp`
+  stdio + a per-conversation warm-session pool (session/new costs ~5-7s).
+  Conversation key = the harness's per-session router token
+  (`agentparty-native-session:<id>`), giving exact session affinity for free.
+- `src/core/cursorHarnessBridge.ts` — Anthropic Messages ⇄ ACP state machine
+  with FULL tool round-trips: the harness's tools are mirrored to the agent as
+  MCP tools via a relay stub (`scripts/agentparty-acp-mcp-relay.mjs`, spawned by
+  cursor-agent, calling back over loopback `/acp-bridge/*`); an agent tools/call
+  becomes a `tool_use` response block; the harness's `tool_result` resolves the
+  held relay call while the ACP turn stays in flight. SSE synthesis included.
+- Catalog: provider `"cursor"` + `cursorAcpModelId` (variants are baked into the
+  ACP id, e.g. `grok-4.5[effort=high,fast=true]`) → router target kind
+  `cursor-subscription`. First entry: "Grok 4.5 (Cursor)".
+
+Measured constraints that shaped the design:
+
+- Cursor's MCP client times out a tools/call at ~60s, silently RETRIES, and
+  sends no `progressToken` (keepalive impossible; the timeout lives in the
+  native core — no config knob found). The bridge therefore holds a relay call
+  ≤45s and answers "STILL RUNNING — call again"; the model re-calls until the
+  real result arrives. A 130s execution verified end-to-end.
+- `session/new` returns the LIVE model catalog (31 models incl. every variant),
+  which satisfies "discover live model IDs" with zero scraping.
+- Parallel tool calls arrive within milliseconds of each other → batched into
+  one multi-`tool_use` response (250ms window).
+- Verified through the real app (WSL distro engine, real Cursor Pro login):
+  Claude Code harness member on "Grok 4.5 (Cursor)" ran Read/Write/Bash/Grep/
+  Edit chains, error results round-tripped, streaming + cancel + session reuse
+  all pass. Stub QA: `scripts/qa-cursor-acp-bridge.mjs` (fake cursor-agent).
+
+Still open (deliberately):
+
+- Model advertisement is not yet gated on cursor-agent auth: an unauthenticated
+  host fails with an explicit ACP error instead of hiding the model.
+- ~~Images~~ RESOLVED: ACP accepts base64 image prompt blocks (verified live —
+  grok answered a generated red PNG with "red"); the bridge forwards Anthropic
+  image blocks as ACP image blocks and the catalog declares vision.
+- Cost/usage attribution for bridge turns (Cursor plan usage covers it).
+- The double-agent semantic (cursor-agent's own persona around the bridged
+  system prompt) is mitigated by a preamble, not eliminated.
+
+Everything below this line is the original research record.
+
+---
 
 ## Goal
 
