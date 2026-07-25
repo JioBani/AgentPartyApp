@@ -76,8 +76,8 @@ export class LocalEngine implements EngineConnection {
     return this.party.sendGatedMessage(name, content, from, attachments, partyId, options);
   }
 
-  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string) {
-    return this.party.sendUserMessage(name, text, attachments, partyId);
+  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) {
+    return this.party.sendUserMessage(name, text, attachments, partyId, options);
   }
 
   async closeMember(name: string, partyId?: string) {

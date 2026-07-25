@@ -470,7 +470,15 @@ export class PartyApplicationService {
    * attachments. Distinct from {@link sendMessage}, which wraps inter-member
    * channel messages.
    */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): PartyCommandResult {
+  /**
+   * A user turn addressed to one member. `interrupt` stops an in-flight turn so
+   * the message is handled now instead of queueing behind it — the Discord bridge
+   * always sets it, because a person who typed on their phone is waiting, and a
+   * long autonomous turn would otherwise swallow the instruction for minutes.
+   * The compaction exception mirrors {@link sendMessage}: never tear down a
+   * compaction half-way.
+   */
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
@@ -483,6 +491,9 @@ export class PartyApplicationService {
     }
     if (!sessionId) {
       throw new Error(`Could not start a session for member '${member.name}'.`);
+    }
+    if (options?.interrupt && this.isSessionBusy(sessionId) && !this.deps.sessionManager.isCompacting(sessionId)) {
+      this.deps.sessionManager.interrupt(sessionId);
     }
     this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
     // Re-read: startMember wrote the new sessionId/status; reflect it back.

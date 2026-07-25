@@ -138,7 +138,21 @@ async function main() {
     assert(await discordHasMessage(agentMarker, 180_000), "the member's own discord-send reached Discord");
     step("agent-driven discord-send verified in Discord");
 
-    // 5. The Settings → Discord screen must actually render the stored state.
+    // 5. A message delivered while the member is mid-turn must INTERRUPT it —
+    // the same path Discord inbound takes (sendUserMessage with interrupt).
+    await post(`/api/party/members/${memberName}/message`, {
+      text: "1부터 300까지 한 줄에 하나씩 세어줘. 절대 멈추지 말고 끝까지 세.",
+    });
+    assert(await memberBusy(60_000), "the member is mid-turn before the interrupt");
+    const interruptMarker = `interrupt-${Date.now()}`;
+    await post(`/api/party/members/${memberName}/message`, {
+      text: `그만 세고, 지금 즉시 discord-send 도구로 "e2e ${interruptMarker}" 만 보내.`,
+      interrupt: true,
+    });
+    assert(await discordHasMessage(interruptMarker, 120_000), "the interrupting message was handled instead of queueing behind the long turn");
+    step("interrupt-and-inject verified on a busy member");
+
+    // 6. The Settings → Discord screen must actually render the stored state.
     await post("/api/navigation", { view: "runtime" });
     await sleep(1200);
     const shot = path.join(os.tmpdir(), `agentparty-discord-settings-${runId}.png`);
@@ -147,7 +161,7 @@ async function main() {
     step(`settings screenshot: ${shot}`);
     await post("/api/navigation", { view: "workbench" });
 
-    // 6. Inbound — manual leg (the bridge ignores its own posts by design).
+    // 7. Inbound — manual leg (the bridge ignores its own posts by design).
     if (waitForInbound) {
       const replyMarker = `inbound-${Date.now()}`;
       await post(`/api/party/members/${memberName}/discord/send`, {
@@ -220,6 +234,20 @@ function assertDiscoveryInWorkspace() {
     .map((file) => JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")))
     .some((entry) => entry?.baseUrl === base);
   assert(advertised, "the app advertises this base url for the e2e workspace");
+}
+
+/** True once the member's turn is actually running (mirrors the UI's busy states). */
+async function memberBusy(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = await post(`/api/party/members/${memberName}/status`, {});
+    const entry = Array.isArray(status?.members) ? status.members.find((m) => m.name === memberName) : status?.member;
+    if (entry?.turnActive) {
+      return true;
+    }
+    await sleep(2000);
+  }
+  return false;
 }
 
 async function waitForSession(initial) {

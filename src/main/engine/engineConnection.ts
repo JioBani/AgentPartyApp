@@ -101,7 +101,7 @@ export interface EngineConnection {
   createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
   sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyMutationResult>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   closeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
   resumeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
   /** Reloads the member's session, resuming the same conversation (respawn). */
