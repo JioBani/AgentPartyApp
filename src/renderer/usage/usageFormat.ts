@@ -113,6 +113,17 @@ export const TRIGGER_ORDER: TokenTrigger[] = [
   "user", "party-message", "gate-review", "compact", "subagent", "init", "unknown",
 ];
 
+/**
+ * True when a turn's model/effort reflect the MEMBER's own reasoning. The Message
+ * Gate reviewer runs as a separate agent on its own model (e.g. Sonnet, no effort),
+ * so its `gate-review` turns must be excluded from the member's model·effort
+ * identity — otherwise they read as phantom "opus→sonnet" switches and make a
+ * fixed-effort member's lane flicker. Their COST still belongs to the member.
+ */
+export function isMemberModelTurn(trigger: TokenTrigger | undefined): boolean {
+  return trigger !== "gate-review";
+}
+
 /** Format a bucket start (epoch ms) as an axis label for the given interval. */
 export function fmtBucketLabel(tMs: number, intervalMinutes: number): string {
   const d = new Date(tMs);

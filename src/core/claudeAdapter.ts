@@ -1010,7 +1010,11 @@ export class ClaudeAdapter extends EventEmitter {
         costUsd: cost.amountUsd ?? harnessCostUsd,
         cost,
         stopReason: (message as any).stop_reason || undefined,
-        usage: tokenBreakdownFromClaudeUsage((message as any).usage),
+        // `context` = the live occupancy meter (this.contextTokens, updated per
+        // streamed message so it drops after /compact) — NOT the cumulative turn
+        // total, which grows with tool round-trips and would misrepresent the
+        // context window actually held. input/cacheRead/... stay cumulative (cost).
+        usage: withContextOccupancy(tokenBreakdownFromClaudeUsage((message as any).usage), this.contextTokens),
         at: now(),
       });
       this.drainQueuedTurn();
@@ -1579,9 +1583,14 @@ function appendJsonDelta(current: unknown, delta: string | undefined): unknown {
  */
 /**
  * Splits a Claude result `usage` block into the ledger's per-turn token
- * breakdown. `context` mirrors {@link contextTokensFromUsage} (the occupancy
- * meter's sum). Returns undefined when the harness reported no token counts —
- * a missing field must read as "not reported", never zero.
+ * breakdown. The result `usage` is CUMULATIVE across every internal API round
+ * trip of the turn, so input/cacheRead/cacheWrite/output are the turn's billed
+ * totals (correct for cost). It deliberately does NOT derive `context` from this
+ * sum — that would balloon with the number of tool round-trips and misrepresent
+ * context-window occupancy. The caller stamps `context` from the live occupancy
+ * meter ({@link contextTokensFromUsage}, non-cumulative) instead. Returns
+ * undefined when the harness reported no token counts — a missing field must
+ * read as "not reported", never zero.
  */
 function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | undefined {
   const record = asRecord(usage);
@@ -1595,8 +1604,23 @@ function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | und
   if (input == null && cacheRead == null && cacheWrite == null && output == null) {
     return undefined;
   }
-  const context = (input || 0) + (cacheRead || 0) + (cacheWrite || 0) + (output || 0);
-  return { input, cacheRead, cacheWrite, output, context: context > 0 ? context : undefined };
+  return { input, cacheRead, cacheWrite, output };
+}
+
+/**
+ * Stamps the honest context-window occupancy onto a turn breakdown. `occupancy`
+ * is the adapter's last live meter reading (non-cumulative); when it is absent we
+ * leave `context` undefined rather than fall back to the cumulative sum — an
+ * unknown occupancy must read as "not reported", never as an inflated total.
+ */
+function withContextOccupancy(
+  breakdown: TurnTokenBreakdown | undefined,
+  occupancy: number | undefined,
+): TurnTokenBreakdown | undefined {
+  if (!breakdown) {
+    return breakdown;
+  }
+  return { ...breakdown, context: occupancy };
 }
 
 function contextTokensFromUsage(usage: unknown): number | undefined {

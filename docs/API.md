@@ -443,7 +443,13 @@ shows "아직 없음", never a fabricated 0%.** `costUsd` is the harness/provide
 bill when available (실측); `estCostUsd` is a deterministic list-price `≈$`
 conversion (환산) kept separate so 실측 and 환산 stay distinguishable. Token
 fields are only present when the harness reported them (Codex exposes no cache
-split), so a missing field means "not reported", not zero.
+split), so a missing field means "not reported", not zero. In the per-turn token
+split, `input`/`cacheRead`/`cacheWrite`/`output` are the turn's **billed totals**
+(cumulative across every internal tool round-trip — correct for cost), whereas
+`context` is the **context-window occupancy** at the turn (non-cumulative, the
+same meter as the snapshot's `contextTokens`, dropping after `/compact`). It is
+NOT the sum of the split — deriving it that way ballooned with tool-call count
+and misread as context held. Absent when no live occupancy was reported.
 
 Each rollup row carries the design's derived metrics, computed from the raw
 records so the dashboard and any agent read the same numbers:

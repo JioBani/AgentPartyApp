@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RollupRow, TokenUsageAggregate, TokenUsageQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { UsageLimitsSnapshot, UsageWindowKind } from "../../shared/usageLimits";
 import { memberColor } from "../theme/memberColors";
-import { fmtActive, fmtBucketLabel, fmtRate, fmtTokens, INTERVAL_PRESETS, RANGE_PRESETS } from "./usageFormat";
+import { fmtActive, fmtBucketLabel, fmtRate, fmtTokens, fmtTokensAxis, INTERVAL_PRESETS, isMemberModelTurn, RANGE_PRESETS } from "./usageFormat";
 import {
   cellTint, effortHeight, effortMix, fmtCost, fmtMoneyAxis, modelColor, modelLabel, modelTier, tierBars, turnCost,
 } from "./usageCost";
@@ -24,6 +24,10 @@ interface TokenUsageViewProps {
 type SortKey = "name" | "active" | "turns" | "cost" | "share" | "rate" | "cache" | "overhead" | "est";
 
 const REST_KEY = "__rest";
+// Wheel-zoom bounds on the on-screen candle count. Max is kept where candles stay
+// individually legible (≥ ~2.5px slot) rather than fusing into a smear.
+const MIN_BARS = 10;
+const MAX_BARS = 400;
 
 /** ↑input (fresh+cache) and ↓output totals for a rollup row. */
 function ioOf(r: { input: number; cacheRead: number; cacheWrite: number; output: number }) {
@@ -47,7 +51,8 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   const [ctxOn, setCtxOn] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverBucket, setHoverBucket] = useState<number | null>(null);
-  const [brush, setBrush] = useState<{ fromMs: number; toMs: number; label: string } | null>(null);
+  const [chartEnd, setChartEnd] = useState<number | null>(null); // null = live (right edge pinned to now); a timestamp = panned into the past
+  const [zoom, setZoom] = useState(1); // wheel zoom: multiplies the interval's base bar count (how many candles fit on screen), interval fixed
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "share", dir: "desc" });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dataMode, setDataMode] = useState<"cost" | "pct">("cost");
@@ -67,6 +72,7 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
   useEffect(() => { const id = setInterval(() => setNowTick(Date.now()), 1000); return () => clearInterval(id); }, []);
+  const [refreshTick, setRefreshTick] = useState(0); // bumps to pull fresh ledger data while live (new turns/members)
 
   const range = RANGE_PRESETS.find((r) => r.key === rangeKey) || RANGE_PRESETS[0];
   const interval = INTERVAL_PRESETS.find((i) => i.key === intervalKey) || INTERVAL_PRESETS[2];
@@ -76,40 +82,85 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
   // Aggregate window = the range preset (tables/catalog/headline are range-scoped).
   const windowBounds = useMemo(() => {
     const now = Date.now();
-    return brush ? { fromMs: brush.fromMs, toMs: brush.toMs } : { fromMs: now - range.rangeMs, toMs: now };
-  }, [rangeKey, brush]);
-  // Chart/bucket-table window = interval × n ending now, so the interval acts like
-  // a zoom (finer = shorter, denser span) — the stock-candle behavior. A brush
-  // overrides it with the dragged sub-range.
+    return { fromMs: now - range.rangeMs, toMs: now };
+  }, [rangeKey]);
+  // Chart/bucket-table window = a stock-chart viewport. Its WIDTH is interval × n
+  // (a finer interval = shorter, denser span = zoom); its RIGHT EDGE is `chartEnd`,
+  // which the user drags left/right to travel through time. `chartEnd === null` is
+  // live: pinned to now, snapped to the bucket grid so it steps once per bar.
+  // Wheel zoom scales how many candles are on screen WITHOUT changing the interval:
+  // the visible bar count = the preset's baseN × zoom (clamped), and the window
+  // width follows it. So 1분봉 stays 1분봉; the wheel just fits more/fewer of them.
+  const visibleBars = Math.round(Math.min(MAX_BARS, Math.max(MIN_BARS, interval.n * zoom)));
+  const chartSpanMs = interval.minutes * visibleBars * 60_000;
+  const liveEnd = useMemo(() => {
+    const width = interval.minutes * 60_000;
+    return Math.ceil(nowTick / width) * width;
+  }, [intervalKey, nowTick]);
   const chartBounds = useMemo(() => {
-    if (brush) return { fromMs: brush.fromMs, toMs: brush.toMs };
-    const now = Date.now();
-    return { fromMs: now - interval.minutes * interval.n * 60_000, toMs: now };
-  }, [intervalKey, brush]);
+    const end = chartEnd ?? liveEnd;
+    return { fromMs: end - chartSpanMs, toMs: end };
+  }, [intervalKey, chartEnd, liveEnd, chartSpanMs]);
+  const isLive = chartEnd === null;
+  const chartRangeLabel = `${fmtBucketLabel(chartBounds.fromMs, interval.minutes)} – ${fmtBucketLabel(chartBounds.toMs, interval.minutes)}`;
+  // Wheel handler target: set the new bar count + the cursor-anchored right edge in
+  // one update (zoom = bars ÷ baseN so `visibleBars` round-trips to the same count).
+  const applyZoom = (nextBars: number, nextEnd: number | null) => { setZoom(nextBars / interval.n); setChartEnd(nextEnd); };
 
-  // Fetch the aggregate (tables/catalog) + the raw turns (timeline/rane/context).
+  // Fetch A — the range-scoped aggregate (gauges / catalog / who-table). Independent
+  // of the chart viewport, so panning the chart never refetches or reflows these.
   const reqNonce = useRef(0);
   useEffect(() => {
     const mine = ++reqNonce.current;
-    const { fromMs, toMs } = windowBounds;
+    const now = Date.now();
+    const fromMs = now - range.rangeMs, toMs = now;
     const q: TokenUsageQuery = { fromMs, toMs, bucketMinutes: interval.minutes };
     const api = window.agentParty;
     if (!api.getTokenUsage) { setLoading(false); return; }
-    setLoading(true);
-    const prevQ: TokenUsageQuery = { fromMs: fromMs - (toMs - fromMs), toMs: fromMs, bucketMinutes: interval.minutes };
-    // Turns span the WIDER of the aggregate window and the chart window, so both
-    // the range-scoped drill data and the interval-zoomed chart have their records.
-    const tFrom = Math.min(fromMs, chartBounds.fromMs);
-    const tTo = Math.max(toMs, chartBounds.toMs);
+    if (!agg) setLoading(true); // only gate on the FIRST load; live-refresh polls keep the current content visible
+    const prevQ: TokenUsageQuery = { fromMs: fromMs - range.rangeMs, toMs: fromMs, bucketMinutes: interval.minutes };
     Promise.all([
       api.getTokenUsage(q) as Promise<TokenUsageAggregate>,
-      (api.getTokenUsageTurns ? api.getTokenUsageTurns({ fromMs: tFrom, toMs: tTo }) : Promise.resolve([])) as Promise<TurnUsageRecord[]>,
       (compare ? api.getTokenUsage(prevQ) : Promise.resolve(null)) as Promise<TokenUsageAggregate | null>,
-    ]).then(([a, t, prev]) => {
+    ]).then(([a, prev]) => {
       if (mine !== reqNonce.current) return;
-      setAgg(a); setTurns(Array.isArray(t) ? t : []); setAggPrev(prev); setLoading(false);
+      setAgg(a); setAggPrev(prev); setLoading(false);
     }).catch(() => { if (mine === reqNonce.current) setLoading(false); });
-  }, [rangeKey, intervalKey, brush, compare]);
+  }, [rangeKey, intervalKey, compare, refreshTick]);
+
+  // Fetch B — raw turns for the chart viewport (timeline / rane / context / bucket
+  // table). Buffered ±1 span so panning within the loaded window is instant with no
+  // refetch and no loading flicker; only crossing the buffer edge triggers a silent
+  // fetch. Independent of `loading` (Fetch A owns the empty/error state).
+  const turnsBuf = useRef<{ fromMs: number; toMs: number } | null>(null);
+  const lastRefresh = useRef(refreshTick);
+  useEffect(() => {
+    // A live-refresh tick forces a refetch of the current window (new turns land
+    // inside the loaded buffer, so the coverage check would otherwise skip them).
+    const forced = lastRefresh.current !== refreshTick; lastRefresh.current = refreshTick;
+    const view = chartBounds;
+    const buf = turnsBuf.current;
+    if (!forced && buf && view.fromMs >= buf.fromMs && view.toMs <= buf.toMs) return;
+    const need = { fromMs: view.fromMs - chartSpanMs, toMs: view.toMs + chartSpanMs };
+    turnsBuf.current = need;
+    const api = window.agentParty.getTokenUsageTurns;
+    if (!api) { setTurns([]); return; }
+    let alive = true;
+    (api({ fromMs: need.fromMs, toMs: need.toMs }) as Promise<TurnUsageRecord[]>)
+      .then((t) => { if (alive) setTurns(Array.isArray(t) ? t : []); })
+      .catch(() => { /* an empty chart surfaces the gap; Fetch A owns the error banner */ });
+    return () => { alive = false; };
+  }, [chartBounds.fromMs, chartBounds.toMs, chartSpanMs, refreshTick]);
+
+  // Live refresh: while pinned to the live edge, re-pull the ledger every few
+  // seconds so newly-recorded turns and freshly-added members (and the resulting
+  // idle-fold) appear without a manual control change. A panned-to-past view is
+  // static, so it isn't polled; leaving the Token Usage view unmounts this.
+  useEffect(() => {
+    if (!isLive) return;
+    const id = setInterval(() => setRefreshTick((t) => t + 1), 5000);
+    return () => clearInterval(id);
+  }, [isLive]);
 
   const recordCount = agg?.recordCount ?? 0;
   const isEmpty = !loading && recordCount === 0;
@@ -167,16 +218,11 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={pillGroup}>
           {RANGE_PRESETS.filter((r) => r.key !== "1h").map((r) => (
-            <button key={r.key} onClick={() => { setBrush(null); setRangeKey(r.key); }} style={segBtn(rangeKey === r.key && !brush)}>{r.label}</button>
+            <button key={r.key} data-tu="range" data-range={r.key} onClick={() => setRangeKey(r.key)} style={segBtn(rangeKey === r.key)}>{r.label}</button>
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {brush && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 30, padding: "0 11px", background: "var(--accent-dim)", border: "1px solid var(--accent-bd)", borderRadius: 9, fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}>
-            기간 지정 · {brush.label}<button onClick={() => setBrush(null)} style={clearBtn}>초기화</button>
-          </div>
-        )}
-        {compare && <div style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 32, padding: "0 12px", background: "var(--accent-dim)", border: "1px solid var(--accent-bd)", borderRadius: 9, fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}><span className="wb-mono" style={{ color: "var(--text-1)" }}>A</span> 현재 <span style={{ color: "var(--text-3)" }}>vs</span> <span className="wb-mono" style={{ color: "var(--text-1)" }}>B</span> 직전 구간</div>}
+        {compare &&<div style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 32, padding: "0 12px", background: "var(--accent-dim)", border: "1px solid var(--accent-bd)", borderRadius: 9, fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}><span className="wb-mono" style={{ color: "var(--text-1)" }}>A</span> 현재 <span style={{ color: "var(--text-3)" }}>vs</span> <span className="wb-mono" style={{ color: "var(--text-1)" }}>B</span> 직전 구간</div>}
         <button onClick={() => setCompare((v) => !v)} title="구간 비교" style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 32, padding: "0 13px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: compare ? "var(--accent-dim)" : "var(--bg-2)", border: `1px solid ${compare ? "var(--accent-bd)" : "var(--border)"}`, color: compare ? "var(--accent)" : "var(--text-1)" }}>비교 모드</button>
       </div>
 
@@ -202,7 +248,9 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
             interval={interval} scope={scope} parties={parties} scopeLabel={scopeLabel}
             scopeMenuOpen={scopeMenuOpen} setScopeMenuOpen={setScopeMenuOpen} onScope={(id) => { setScope(id); setHover(null); setScopeMenuOpen(false); }}
             hover={hover} setHover={setHover} hoverBucket={hoverBucket} setHoverBucket={setHoverBucket}
-            onInterval={setIntervalKey} onBrush={setBrush} rangeLabel={brush ? `기간 지정 · ${brush.label}` : range.label}
+            onInterval={(k) => { setIntervalKey(k); setZoom(1); }}
+            chartEnd={chartEnd} liveEnd={liveEnd} isLive={isLive} onPan={setChartEnd} chartRangeLabel={chartRangeLabel}
+            visibleBars={visibleBars} onZoom={applyZoom}
           />
 
           {/* e. 카탈로그 */}
@@ -215,7 +263,7 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
           />
 
           {/* f. 봉별 실제 수치 (비용) */}
-          <BucketCostTable series={visSeries} buckets={buckets} interval={interval} scopeLabel={scope === "all" ? "전체" : `${partyName(scope)} 멤버`} dataMode={dataMode} setDataMode={setDataMode} rangeLabel={brush ? "기간 지정" : range.label} turns={turns || []} scope={scope} />
+          <BucketCostTable series={visSeries} buckets={buckets} interval={interval} scopeLabel={scope === "all" ? "전체" : `${partyName(scope)} 멤버`} dataMode={dataMode} setDataMode={setDataMode} rangeLabel={`${isLive ? "실시간" : "과거"} · ${chartRangeLabel}`} turns={turns || []} scope={scope} />
 
           {/* g. 누가 — 파티 ▸ 멤버 */}
           <WhoTable agg={agg} parties={parties} activeIds={activeIds} sort={sort} setSort={setSort} expanded={expanded} setExpanded={setExpanded} hover={hover} setHover={setHover} onDrill={setDrill} tableQuery={tableQuery} setTableQuery={setTableQuery} showArchived={showArchived} setShowArchived={setShowArchived} utilPct={fiveH?.utilization} />
@@ -238,7 +286,11 @@ function buildSeries(
   const nB = Math.max(1, Math.ceil((wnd.toMs - from) / width));
   const buckets: number[] = [];
   for (let i = 0; i < nB; i += 1) buckets.push(from + i * width);
-  const bucketOf = (ms: number) => Math.min(nB - 1, Math.max(0, Math.floor((ms - from) / width)));
+  // Bucket index for a timestamp, or -1 when it falls OUTSIDE the visible window.
+  // `turns` is fetched with a ±1-span buffer (for smooth panning), so out-of-window
+  // turns must be DROPPED here — clamping them into bucket 0 / nB-1 was piling all
+  // off-screen spend onto the first/last candle ("양 끝의 정체불명 봉").
+  const bucketOf = (ms: number) => { const b = Math.floor((ms - from) / width); return b >= 0 && b < nB ? b : -1; };
 
   // Group turns by series key.
   const keyOf = (r: TurnUsageRecord) => scope === "all" ? (r.partyId || "(none)") : (r.member || "(unknown)");
@@ -261,15 +313,21 @@ function buildSeries(
     const segs: Series["segs"] = [];
     for (const r of rows) {
       const bi = bucketOf(Date.parse(r.at));
+      if (bi < 0) continue; // outside the visible window (buffered turn) — don't fold into an edge bar
       cost[bi] += turnCost(r.model, r.tokens);
       const c = r.tokens.context;
       if (typeof c === "number") {
         if (r.trigger === "compact" && c < lastCtx) resets.push(bi);
         ctx[bi] = c; lastCtx = c;
       }
-      const last = segs[segs.length - 1];
-      if (last && last.model === r.model && last.effort === r.effort) last.n += 1;
-      else segs.push({ model: r.model, effort: r.effort, n: 1 });
+      // Model·effort segments show the MEMBER's own runtime — exclude the gate
+      // reviewer's turns (a different agent) so its Sonnet/no-effort calls don't
+      // appear as phantom model switches in the member's lane.
+      if (isMemberModelTurn(r.trigger)) {
+        const last = segs[segs.length - 1];
+        if (last && last.model === r.model && last.effort === r.effort) last.n += 1;
+        else segs.push({ model: r.model, effort: r.effort, n: 1 });
+      }
     }
     // carry context forward over idle buckets
     let carry = NaN;
@@ -302,14 +360,16 @@ function TimelineSection(props: {
   interval: { label: string; minutes: number }; scope: string; parties: Array<{ id: string; name: string }>; scopeLabel: string;
   scopeMenuOpen: boolean; setScopeMenuOpen: (v: boolean) => void; onScope: (id: string) => void;
   hover: string | null; setHover: (h: string | null) => void; hoverBucket: number | null; setHoverBucket: (i: number | null) => void;
-  onInterval: (k: string) => void; onBrush: (b: { fromMs: number; toMs: number; label: string } | null) => void; rangeLabel: string;
+  onInterval: (k: string) => void;
+  chartEnd: number | null; liveEnd: number; isLive: boolean; onPan: (end: number | null) => void; chartRangeLabel: string;
+  visibleBars: number; onZoom: (nextBars: number, nextEnd: number | null) => void;
 }) {
   const { series: allSeries, isHidden, buckets, ctxOn, interval, hover, hoverBucket } = props;
   const series = allSeries.filter((s) => !isHidden(s.key));
   const [scopeQuery, setScopeQuery] = useState("");
   const readout = hoverBucket != null && buckets[hoverBucket] != null
     ? `${fmtBucketLabel(buckets[hoverBucket], interval.minutes)} · ${fmtCost(series.reduce((a, s) => a + (s.cost[hoverBucket] || 0), 0))} · ${fmtTokens(series.reduce((a, s) => a + (Number.isFinite(s.ctx[hoverBucket]) ? s.ctx[hoverBucket] : 0), 0))} tok`
-    : "막대=비용, 점선=컨텍스트 보유량 · 같은 시간축에서 상관관계를 봅니다";
+    : "막대=비용, 점선=컨텍스트 보유량 · 좌우로 드래그해 시간 이동 · 더블클릭=지금";
 
   return (
     <section style={cardSection}>
@@ -317,7 +377,10 @@ function TimelineSection(props: {
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <span style={sectionTitle}>타임라인 — 비용(막대) × 컨텍스트 보유(점선)</span>
-            <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{props.rangeLabel}</span>
+            <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{props.chartRangeLabel}</span>
+            {props.isLive
+              ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--live)", fontWeight: 600 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--live)" }} />실시간</span>
+              : <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600, background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 6, padding: "1px 6px" }}>과거 구간</span>}
           </div>
           <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>{readout}</span>
         </div>
@@ -361,12 +424,14 @@ function TimelineSection(props: {
       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
         <span style={miniLabel}>간격</span>
         <div style={{ ...pillGroup, background: "var(--bg-1)" }}>
-          {INTERVAL_PRESETS.map((iv) => <button key={iv.key} onClick={() => props.onInterval(iv.key)} style={{ ...segBtnSmall(interval.minutes === iv.minutes), fontFamily: "var(--font-mono)" }}>{iv.label}</button>)}
+          {INTERVAL_PRESETS.map((iv) => <button key={iv.key} data-tu="interval" data-iv={iv.key} onClick={() => props.onInterval(iv.key)} style={{ ...segBtnSmall(interval.minutes === iv.minutes), fontFamily: "var(--font-mono)" }}>{iv.label}</button>)}
         </div>
-        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>막대 1개 = 이 간격 · 낮은/빈 구간은 유휴</span>
+        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>봉 <b style={{ color: "var(--text-2)", fontWeight: 600 }}>{props.visibleBars}개</b> · 좌우 드래그=시간 이동 · 휠=봉 개수(범위) 조절 (주식 차트처럼)</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => props.onPan(null)} disabled={props.isLive} title="가장 최근 구간으로" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 11px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: props.isLive ? "default" : "pointer", fontFamily: "var(--font-sans)", background: props.isLive ? "var(--bg-1)" : "var(--accent-dim)", border: `1px solid ${props.isLive ? "var(--border)" : "var(--accent-bd)"}`, color: props.isLive ? "var(--text-3)" : "var(--accent)", opacity: props.isLive ? 0.6 : 1 }}>지금으로<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M13 6l6 6-6 6M5 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
       </div>
 
-      <TimelineChart series={series} buckets={buckets} ctxOn={ctxOn} interval={interval} hover={hover} hoverBucket={hoverBucket} setHoverBucket={props.setHoverBucket} onBrush={props.onBrush} />
+      <TimelineChart series={series} buckets={buckets} ctxOn={ctxOn} interval={interval} hover={hover} hoverBucket={hoverBucket} setHoverBucket={props.setHoverBucket} chartEnd={props.chartEnd} liveEnd={props.liveEnd} onPan={props.onPan} visibleBars={props.visibleBars} onZoom={props.onZoom} />
 
       {/* d. 모델·effort 레인 (파티 선택 시) */}
       {props.scope === "all" ? (
@@ -399,40 +464,94 @@ function ModelEffortRane({ s }: { s: Series }) {
   );
 }
 
-/** SVG: stacked cost bars (left $ axis) + dashed context lines (right k axis). */
+/** SVG: stacked cost bars (left $ axis) + dashed context lines (right k axis).
+ *  Drag the plot left/right to pan the time axis; wheel to zoom the number of
+ *  visible candles (interval fixed), anchored on the cursor; double-click = 지금. */
 function TimelineChart(props: {
   series: Series[]; buckets: number[]; ctxOn: boolean; interval: { minutes: number };
   hover: string | null; hoverBucket: number | null; setHoverBucket: (i: number | null) => void;
-  onBrush: (b: { fromMs: number; toMs: number; label: string } | null) => void;
+  chartEnd: number | null; liveEnd: number; onPan: (end: number | null) => void;
+  visibleBars: number; onZoom: (nextBars: number, nextEnd: number | null) => void;
 }) {
   const { series, buckets, ctxOn, interval, hover, hoverBucket, setHoverBucket } = props;
   const W = 1080, H = 300, x0 = 8, x1 = 1032, y0 = 14, y1 = 250;
   const N = Math.max(buckets.length, 1);
   const slot = (x1 - x0 - 34) / N;
-  const barW = Math.min(Math.max(slot * 0.62, 2), 46);
-  const drag = useRef<{ a: number; b: number } | null>(null);
+  // Never wider than ~85% of the slot — the old hard 2px floor exceeded the slot
+  // at high bar counts, so candles overlapped into one solid block ("봉이 하나로
+  // 합쳐져" when zoomed far out). Cap keeps a visible gap at any count.
+  const barW = Math.min(Math.max(slot * 0.62, 1), 46, slot * 0.85);
+  const width = interval.minutes * 60_000;
+
+  // ── pan: dragging the plot right travels into the past (older bars slide in) ──
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pan = useRef<{ startX: number; startEnd: number } | null>(null);
+  const MAXPAST = 400 * 24 * 3_600_000;
+  const onDown = (e: React.PointerEvent) => {
+    pan.current = { startX: e.clientX, startEnd: props.chartEnd ?? props.liveEnd };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* older webview */ }
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const p = pan.current, el = containerRef.current;
+    if (!p || !el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const dxVb = ((e.clientX - p.startX) / rect.width) * W;   // px moved, in viewBox units
+    const dt = dxVb * (width / slot);                          // → ms (drag right ⇒ +dx ⇒ older)
+    let end = p.startEnd - dt;
+    if (end >= props.liveEnd) { props.onPan(null); return; }   // caught up to now → live
+    const minEnd = props.liveEnd - MAXPAST;
+    if (end < minEnd) end = minEnd;
+    props.onPan(end);
+  };
+  const onUp = (e: React.PointerEvent) => { try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ } pan.current = null; };
+
+  // ── wheel zoom: change the visible bar count, anchored on the cursor's time ──
+  // A native non-passive listener is required — React's onWheel is passive, so it
+  // can't preventDefault the page scroll. Latest values are read from a ref so the
+  // listener is attached once (no re-bind churn as bars/pan change).
+  const zoomRef = useRef({ visibleBars: props.visibleBars, end: props.chartEnd, liveEnd: props.liveEnd, width, onZoom: props.onZoom });
+  zoomRef.current = { visibleBars: props.visibleBars, end: props.chartEnd, liveEnd: props.liveEnd, width, onZoom: props.onZoom };
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.deltaY) return;
+      e.preventDefault();
+      const st = zoomRef.current;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const cursorVbX = ((e.clientX - rect.left) / rect.width) * W;         // cursor x in viewBox units
+      const frac = Math.min(1, Math.max(0, (cursorVbX - (x0 + 34)) / (x1 - (x0 + 34))));
+      const end = st.end ?? st.liveEnd;
+      const curSpan = st.visibleBars * st.width;
+      const tCursor = (end - curSpan) + frac * curSpan;                     // time under the cursor (kept fixed)
+      const factor = e.deltaY > 0 ? 1.2 : 1 / 1.2;                          // wheel down ⇒ more bars (zoom out)
+      const nextBars = Math.min(MAX_BARS, Math.max(MIN_BARS, Math.round(st.visibleBars * factor)));
+      const nextEnd = tCursor + (1 - frac) * (nextBars * st.width);         // re-anchor cursor at the same x
+      st.onZoom(nextBars, nextEnd >= st.liveEnd ? null : nextEnd);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   const totals = buckets.map((_, i) => series.reduce((a, s) => a + (s.cost[i] || 0), 0));
   const maxT = Math.max(...totals, 0.001) * 1.08;
-  const maxCtx = 200_000;
+  // Context axis auto-scales to the visible data (like the cost axis) — a fixed
+  // ceiling pinned every real value to the top and drew a flat line.
+  const ctxVals: number[] = [];
+  if (ctxOn) for (const s of series) { if (s.key === REST_KEY) continue; for (const v of s.ctx) if (Number.isFinite(v)) ctxVals.push(v); }
+  const maxCtx = ctxVals.length ? Math.max(...ctxVals) * 1.1 : 200_000;
   const px = (i: number) => x0 + 34 + slot * i + (slot - barW) / 2;
   const ux = (i: number) => x0 + 34 + slot * i + slot / 2;
   const uyC = (v: number) => y1 - (Math.min(v, maxCtx) / maxCtx) * (y1 - y0);
-
-  const commit = () => {
-    const d = drag.current; drag.current = null;
-    if (!d || !buckets.length) { props.onBrush(null); return; }
-    const lo = Math.min(d.a, d.b), hi = Math.max(d.a, d.b);
-    if (lo === hi) { props.onBrush(null); return; }
-    props.onBrush({ fromMs: buckets[lo], toMs: buckets[hi] + interval.minutes * 60_000, label: `${fmtBucketLabel(buckets[lo], interval.minutes)} – ${fmtBucketLabel(buckets[hi], interval.minutes)}` });
-  };
 
   const kids: JSX.Element[] = [];
   for (let g = 0; g <= 4; g += 1) {
     const y = y1 - (y1 - y0) * g / 4;
     kids.push(<line key={`g${g}`} x1={x0 + 30} y1={y} x2={x1 - 24} y2={y} stroke="var(--grid)" strokeWidth={1} />);
     kids.push(<text key={`lt${g}`} x={x0 + 26} y={y + 3} textAnchor="end" fontSize={10} fill="var(--text-3)" fontFamily="var(--font-mono)">{fmtMoneyAxis(maxT * g / 4)}</text>);
-    if (ctxOn) kids.push(<text key={`rt${g}`} x={x1 - 20} y={y + 3} textAnchor="start" fontSize={10} fill="var(--text-3)" fontFamily="var(--font-mono)">{50 * g}k</text>);
+    if (ctxOn) kids.push(<text key={`rt${g}`} x={x1 - 20} y={y + 3} textAnchor="start" fontSize={10} fill="var(--text-3)" fontFamily="var(--font-mono)">{fmtTokensAxis(maxCtx * g / 4)}</text>);
   }
   for (let i = 0; i < buckets.length; i += 1) {
     let acc = 0;
@@ -455,12 +574,17 @@ function TimelineChart(props: {
   }
   const lblStep = Math.max(Math.ceil(N / 8), 1);
   for (let i = 0; i < buckets.length; i += 1) {
-    if (hoverBucket === i) kids.push(<rect key={`hl${i}`} x={x0 + 34 + slot * i} y={y0} width={slot} height={y1 - y0} fill="var(--text-0)" fillOpacity={0.04} />);
-    kids.push(<rect key={`ht${i}`} x={x0 + 34 + slot * i} y={y0} width={slot} height={y1 - y0} fill="transparent" style={{ cursor: "crosshair" }}
-      onMouseDown={() => { drag.current = { a: i, b: i }; setHoverBucket(i); }} onMouseEnter={() => { if (drag.current) drag.current.b = i; setHoverBucket(i); }} onMouseUp={commit} onMouseLeave={() => setHoverBucket(null)} />);
-    if (i % lblStep === 0) kids.push(<text key={`xl${i}`} x={ux(i)} y={y1 + 18} textAnchor="middle" fontSize={10} fill="var(--text-3)" fontFamily="var(--font-mono)">{fmtBucketLabel(buckets[i], interval.minutes)}</text>);
+    if (hoverBucket === i) kids.push(<rect key={`hl${i}`} x={x0 + 34 + slot * i} y={y0} width={slot} height={y1 - y0} fill="var(--text-0)" fillOpacity={0.04} pointerEvents="none" />);
+    kids.push(<rect key={`ht${i}`} x={x0 + 34 + slot * i} y={y0} width={slot} height={y1 - y0} fill="transparent"
+      onMouseEnter={() => setHoverBucket(i)} onMouseLeave={() => setHoverBucket(null)} />);
+    if (i % lblStep === 0) kids.push(<text key={`xl${i}`} x={ux(i)} y={y1 + 18} textAnchor="middle" fontSize={10} fill="var(--text-3)" fontFamily="var(--font-mono)" pointerEvents="none">{fmtBucketLabel(buckets[i], interval.minutes)}</text>);
   }
-  return <div style={{ width: "100%" }} onMouseUp={commit}><svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", userSelect: "none" }}>{kids}</svg></div>;
+  return (
+    <div ref={containerRef} style={{ width: "100%", cursor: "grab", touchAction: "none" }}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={() => props.onPan(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", userSelect: "none" }}>{kids}</svg>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -600,17 +724,32 @@ function BucketCostTable(props: {
 }) {
   const { series, buckets, interval, dataMode } = props;
   const times = buckets.map((b) => fmtBucketLabel(b, interval.minutes));
+  // Align the horizontal scroll to the newest bucket (the chart's right/live edge)
+  // whenever the window shifts, so the populated recent buckets are what you see —
+  // a wide interval otherwise opens on the empty oldest columns. Manual scroll-left
+  // to inspect older buckets still works; only a window change re-aligns.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastBucket = buckets[buckets.length - 1];
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [lastBucket, buckets.length, series.length]);
   // Fixed column widths (not 1fr) so every row computes an identical intrinsic
   // width; rows are `max-content` so the container truly scrolls horizontally and
-  // the sticky left column pins instead of scrolling with the cells.
-  const gridTpl = `140px repeat(${Math.max(times.length, 1)}, 62px)`;
+  // the sticky left column pins instead of scrolling with the cells. (gridTpl is
+  // built below from displayCols, which may fold idle runs.)
   const rowW: React.CSSProperties = { width: "max-content", minWidth: "100%" };
   const [pin, setPin] = useState<{ x: number; y: number; series: string; time: string; prev: string; next: string } | null>(null);
+  const [foldIdle, setFoldIdle] = useState(true); // collapse buckets where every visible member is idle
   // per (series,bucket) dominant model/effort for cell tint/height, from turns
   const meta = useMemo(() => {
     const m = new Map<string, { model?: string; effort?: string }>();
     const width = interval.minutes * 60_000; const from = buckets[0] ?? 0;
     for (const r of props.turns) {
+      // Cell tint/height + the change badge track the member's own model·effort;
+      // the gate reviewer's turns are a different agent and must not trigger a
+      // phantom "opus→sonnet" change or repaint the cell in the reviewer's color.
+      if (!isMemberModelTurn(r.trigger)) continue;
       const key = props.scope === "all" ? (r.partyId || "(none)") : (r.member || "(unknown)");
       const bi = Math.floor((Date.parse(r.at) - from) / width);
       m.set(`${key}:${bi}`, { model: r.model, effort: r.effort });
@@ -638,33 +777,57 @@ function BucketCostTable(props: {
 
   const bucketTotals = buckets.map((_, i) => series.reduce((a, s) => a + (s.cost[i] || 0), 0));
 
+  // Collapse consecutive buckets where EVERY visible member is idle (total 0) into
+  // one narrow "⋯N" column — the table then shows the active buckets instead of a
+  // sea of $0.000. Toggleable; each active bucket keeps its real index for tint/badge.
+  const displayCols: Array<{ kind: "b"; i: number } | { kind: "gap"; from: number; to: number; count: number }> = [];
+  {
+    let run: number[] = [];
+    const flush = () => { if (run.length) { displayCols.push({ kind: "gap", from: run[0], to: run[run.length - 1], count: run.length }); run = []; } };
+    for (let i = 0; i < buckets.length; i += 1) {
+      if (foldIdle && (bucketTotals[i] || 0) <= 0) run.push(i);
+      else { flush(); displayCols.push({ kind: "b", i }); }
+    }
+    flush();
+  }
+  const gridTpl = "140px " + (displayCols.map((c) => (c.kind === "gap" ? "46px" : "62px")).join(" ") || "62px");
+  const idleFolded = displayCols.reduce((a, c) => a + (c.kind === "gap" ? c.count : 0), 0);
+
   return (
     <section style={{ ...cardSection, gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         <span style={sectionTitle}>봉별 실제 수치</span>
         <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{props.rangeLabel} · {props.scopeLabel}</span>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setFoldIdle((v) => !v)} title="전 멤버가 유휴인 구간을 접어서 표시" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: foldIdle ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${foldIdle ? "var(--accent-bd)" : "var(--border)"}`, color: foldIdle ? "var(--accent)" : "var(--text-2)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M8 7l-4 5 4 5M16 7l4 5-4 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          유휴 접기{foldIdle && idleFolded > 0 ? ` · ${idleFolded}` : ""}
+        </button>
         <div style={{ ...pillGroup, background: "var(--bg-1)", borderRadius: 8 }}>
           {[{ k: "cost", l: "비용" }, { k: "pct", l: "한도 %" }].map((d) => <button key={d.k} onClick={() => props.setDataMode(d.k as "cost" | "pct")} style={segBtnSmall(dataMode === d.k)}>{d.l}</button>)}
         </div>
       </div>
-      <div data-tu="bucket-scroll" style={{ maxHeight: 288, overflow: "auto", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
+      <div ref={scrollRef} data-tu="bucket-scroll" style={{ maxHeight: 288, overflow: "auto", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, position: "sticky", top: 0, zIndex: 3, background: "var(--bg-3)", borderBottom: "1px solid var(--border)" }}>
           <span style={{ position: "sticky", left: 0, zIndex: 5, background: "var(--bg-3)", padding: "8px 11px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>시각</span>
-          {times.map((t, i) => <span key={i} className="wb-mono" style={{ padding: "8px 8px", fontSize: 10.5, fontWeight: 700, textAlign: "right", color: "var(--text-2)" }}>{t}</span>)}
+          {displayCols.map((c, ci) => c.kind === "b"
+            ? <span key={ci} className="wb-mono" style={{ padding: "8px 8px", fontSize: 10.5, fontWeight: 700, textAlign: "right", color: "var(--text-2)" }}>{times[c.i]}</span>
+            : <span key={ci} className="wb-mono" title={`${times[c.from]} – ${times[c.to]} · ${c.count}개 봉 전원 유휴`} style={{ padding: "8px 2px", fontSize: 9.5, fontWeight: 700, textAlign: "center", color: "var(--text-3)", background: "var(--bg-2)", borderLeft: "1px dashed var(--border)", borderRight: "1px dashed var(--border)" }}>⋯{c.count}</span>)}
         </div>
         {series.filter((s) => s.key !== REST_KEY).map((s) => (
           <div key={s.key} style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-2)", borderBottom: "1px solid var(--border-subtle)" }}>
             <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-2)", padding: "6px 11px", display: "flex", alignItems: "center", gap: 6, borderRight: "1px solid var(--border)" }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flex: "none" }} /><span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-0)", whiteSpace: "nowrap" }}>{s.name}</span>
             </span>
-            {buckets.map((_, i) => {
+            {displayCols.map((c, ci) => {
+              if (c.kind === "gap") return <span key={ci} style={{ background: "var(--bg-1)", borderLeft: "1px dashed var(--border-subtle)", borderRight: "1px dashed var(--border-subtle)" }} />;
+              const i = c.i;
               const md = meta.get(`${s.key}:${i}`);
               const v = s.cost[i] || 0;
               const fillH = v > 0 && md ? effortHeight(md.effort) : 0;
               const chg = changes.get(`${s.key}:${i}`);
               return (
-                <span key={i} className="wb-mono" style={{ position: "relative", padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: v > 0 ? "var(--text-0)" : "var(--text-3)", overflow: "visible" }}>
+                <span key={ci} className="wb-mono" style={{ position: "relative", padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: v > 0 ? "var(--text-0)" : "var(--text-3)", overflow: "visible" }}>
                   {v > 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${fillH}%`, background: cellTint(md?.model), zIndex: 0 }} />}
                   {chg && <button title="모델·effort 변경" onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPin({ x: r.left, y: r.bottom + 4, series: s.name, time: times[i], prev: chg.prev, next: chg.next }); }} style={{ position: "absolute", left: 3, top: 3, zIndex: 2, width: 17, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 4, cursor: "pointer", padding: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--live)" strokeWidth={2.4}><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
                   <span style={{ position: "relative", zIndex: 1 }}>{dataMode === "cost" ? fmtCost(v, "$") : (bucketTotals[i] > 0 ? `${Math.round(v / bucketTotals[i] * 100)}%` : "0%")}</span>
@@ -675,11 +838,13 @@ function BucketCostTable(props: {
         ))}
         <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-1)" }}>
           <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}>합계</span>
-          {bucketTotals.map((t, i) => <span key={i} className="wb-mono" style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(t, "$") : "100%"}</span>)}
+          {displayCols.map((c, ci) => c.kind === "b"
+            ? <span key={ci} className="wb-mono" style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(bucketTotals[c.i], "$") : "100%"}</span>
+            : <span key={ci} style={{ background: "var(--bg-1)", borderLeft: "1px dashed var(--border-subtle)", borderRight: "1px dashed var(--border-subtle)" }} />)}
         </div>
       </div>
       <span style={{ fontSize: 10.5, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        가로축 = 시간 봉(차트와 동일) · 배경=모델색, 채움 높이=effort · <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 15, height: 12, background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 3, flex: "none" }} />= 모델·effort 변경 봉 (클릭)</span>
+        가로축 = 시간 봉(차트와 동일) · 배경=모델색, 채움 높이=effort · <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 15, height: 12, background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 3, flex: "none" }} />= 모델·effort 변경 봉 (클릭)</span> · <span style={{ fontWeight: 600, color: "var(--text-2)" }}>⋯N</span> = 전원 유휴 N봉 접힘
         {["opus", "sonnet", "gpt-5", "haiku"].map((m) => <span key={m} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: modelColor(m), flex: "none" }} />{m}</span>)}
       </span>
       {pin && (
@@ -751,7 +916,7 @@ function WhoTable(props: {
           const active = activeIds.has(p.key);
           return (
             <div key={p.key}>
-              <div onClick={() => props.setExpanded({ ...expanded, [p.key]: !open })} style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", padding: "10px 18px", cursor: "pointer", background: open ? "var(--bg-1)" : "transparent", borderBottom: "1px solid var(--border-subtle)" }}>
+              <div data-tu="party-row" data-pid={p.key} onClick={() => props.setExpanded({ ...expanded, [p.key]: !open })} style={{ display: "grid", gridTemplateColumns: cols, alignItems: "center", padding: "10px 18px", cursor: "pointer", background: open ? "var(--bg-1)" : "transparent", borderBottom: "1px solid var(--border-subtle)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth={2.2} style={{ flex: "none", transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: colorForKey(partyName(p.key, parties)), flex: "none" }} />
@@ -871,7 +1036,10 @@ function MemberDrillIn(props: { drill: { partyId: string; member: string; color:
 }
 
 function segments(turns: TurnUsageRecord[]): Array<{ model?: string; effort?: string; n: number }> {
-  const sorted = [...turns].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  // Only the member's own turns define its model·effort run — exclude the gate
+  // reviewer (a separate agent) so the drill-in segments and dominant model chip
+  // don't show the reviewer's Sonnet as if the member had switched to it.
+  const sorted = [...turns].filter((r) => isMemberModelTurn(r.trigger)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const out: Array<{ model?: string; effort?: string; n: number }> = [];
   for (const r of sorted) { const last = out[out.length - 1]; if (last && last.model === r.model && last.effort === r.effort) last.n += 1; else out.push({ model: r.model, effort: r.effort, n: 1 }); }
   return out;
@@ -958,5 +1126,4 @@ const barTrack: React.CSSProperties = { flex: 1, height: 7, borderRadius: 4, bac
 function segBtn(active: boolean): React.CSSProperties { return { height: 30, padding: "0 13px", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: active ? "var(--accent)" : "transparent", color: active ? "var(--accent-fg)" : "var(--text-2)" }; }
 function segBtnSmall(active: boolean): React.CSSProperties { return { height: 26, padding: "0 10px", border: "none", borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: active ? "var(--accent)" : "transparent", color: active ? "var(--accent-fg)" : "var(--text-2)" }; }
 function menuItem(active: boolean): React.CSSProperties { return { display: "flex", alignItems: "center", gap: 7, width: "100%", height: 30, padding: "0 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: active ? 600 : 500, fontFamily: "var(--font-sans)", background: active ? "var(--accent-dim)" : "transparent", color: active ? "var(--accent)" : "var(--text-1)", textAlign: "left" }; }
-const clearBtn: React.CSSProperties = { height: 20, padding: "0 8px", background: "transparent", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", color: "var(--accent)", fontFamily: "var(--font-sans)" };
 function numCell(color: string): React.CSSProperties { return { textAlign: "right", fontSize: 12, color }; }

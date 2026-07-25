@@ -370,9 +370,11 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
       const mrow = ensureRow(members, memberKey, r.member);
       addTurn(mrow, r, midMs);
       pushIval(memberIvals, memberKey, r);
-      // Latest model/effort wins (records are not guaranteed ordered).
+      // Latest model/effort wins (records are not guaranteed ordered). Skip
+      // gate-review turns: the reviewer is a separate agent on its own model, so
+      // its runtime must not masquerade as the member's dominant model/effort.
       const t = Date.parse(r.at);
-      if (r.model && t >= (memberLastAt.get(memberKey) ?? -Infinity)) {
+      if (r.model && r.trigger !== "gate-review" && t >= (memberLastAt.get(memberKey) ?? -Infinity)) {
         memberLastAt.set(memberKey, t);
         mrow.lastModel = r.model;
         mrow.lastEffort = r.effort;
