@@ -72,7 +72,7 @@ export interface PartyApplicationDeps {
 export interface DiscordBridgePort {
   connectMember(input: { workspacePath: string; party: string; partyLabel?: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; threadName: string; threadId: string; created: boolean }>;
   sendAsMember(workspacePath: string, party: string, member: string, content: string): Promise<{ channelName: string }>;
-  disconnectMember(workspacePath: string, party: string, member: string): { removed: boolean };
+  disconnectMember(workspacePath: string, party: string, member: string): Promise<{ removed: boolean }> | { removed: boolean };
 }
 
 // Mirrors the renderer's BUSY_STATUSES (src/renderer/workbench/memberStatus.ts):
@@ -1563,7 +1563,7 @@ export class PartyApplicationService {
           return { ok: false, error: "The Discord bridge is not available in this process." };
         }
         try {
-          return { ok: true, data: discord.disconnectMember(this.workspacePath(), party, selfMember) };
+          return { ok: true, data: await discord.disconnectMember(this.workspacePath(), party, selfMember) };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }

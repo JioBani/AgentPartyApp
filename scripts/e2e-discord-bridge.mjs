@@ -14,7 +14,7 @@
  * bridge ignores its own posts — so that leg is verified manually; this script
  * prints the channel to type in and waits for the member to answer.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -24,13 +24,21 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Per-run dirs: a previous run's Electron may still be releasing its userData,
 // and a shared path then fails to delete (EBUSY) before the new run even starts.
 const runId = `${process.pid}-${Math.floor(Number(process.hrtime.bigint() % 100000n))}`;
-const ws = path.join(os.tmpdir(), `agentparty-discord-bridge-ws-${runId}`);
+const wslWorkspacePath = `/tmp/agentparty-discord-bridge-${runId}`;
+const ws = process.argv.includes("--wsl")
+  ? `wsl+${process.env.AGENTPARTY_WSL_DISTRO || "Ubuntu-22.04"}:${wslWorkspacePath}`
+  : path.join(os.tmpdir(), `agentparty-discord-bridge-ws-${runId}`);
 const userData = path.join(os.tmpdir(), `agentparty-discord-bridge-user-data-${runId}`);
 const memberName = "reporter";
 const partyName = `e2e-discord-${process.pid}`;
 const desktopName = `E2E-PC-${process.pid}`;
 const model = process.env.AGENTPARTY_DISCORD_E2E_MODEL || "sonnet";
 const waitForInbound = !process.argv.includes("--no-inbound");
+// --wsl runs the SAME assertions against a workspace inside a WSL distro, where
+// the party tools live in a headless in-distro engine while the bridge itself
+// stays on the desktop (the token and the gateway socket are the desktop's).
+const useWsl = process.argv.includes("--wsl");
+const distro = process.env.AGENTPARTY_WSL_DISTRO || "Ubuntu-22.04";
 
 loadDotEnv();
 const token = (process.env.DISCORD_BOT_TOKEN || "").trim();
@@ -45,9 +53,15 @@ let channelId = "";
 let threadId = "";
 
 async function main() {
-  rmrf(ws);
   rmrf(userData);
-  fs.mkdirSync(ws, { recursive: true });
+  if (useWsl) {
+    // Per-run path, so it never collides and nothing has to be deleted first.
+    execFileSync("wsl.exe", ["-d", distro, "-e", "bash", "-lc", `mkdir -p ${wslWorkspacePath}`], { encoding: "utf8" });
+    step(`WSL workspace ready: ${ws}`);
+  } else {
+    rmrf(ws);
+    fs.mkdirSync(ws, { recursive: true });
+  }
 
   const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
     cwd: root,
@@ -78,7 +92,9 @@ async function main() {
     await post(`/api/windows/${encodeURIComponent(windowId)}/workspace`, { workspacePath: ws });
     const state = await getJson("/api/state");
     assert(sameDir(state.settings?.workspacePath || state.workspacePath, ws), `served workspace is the e2e one (got ${state.settings?.workspacePath || state.workspacePath})`);
-    assertDiscoveryInWorkspace();
+    if (!useWsl) {
+      assertDiscoveryInWorkspace();
+    }
 
     // 1. Status reflects the configured credentials, and NEVER leaks the token.
     const status = await getJson("/api/discord");

@@ -80,6 +80,14 @@ function workspaceFromArgv(argv: string[]): string | undefined {
   return location;
 }
 
+/** The Discord bridge, or an explicit error — never a silent no-op. */
+function requireBridge(): DiscordBridgeService {
+  if (!discordBridge) {
+    throw new Error("The Discord bridge is not available on the desktop.");
+  }
+  return discordBridge;
+}
+
 function launchWorkspace(): string | undefined {
   return workspaceFromArgv(process.argv);
 }
@@ -266,6 +274,20 @@ ${content}
         // the subscription bridge and embedded router bind THIS host's loopback.
         // Run the reviewer call here and hand the verdict back, so credentials
         // stay on the desktop and the listeners stay closed.
+        // A distro member drove a discord-* tool: run it on the desktop, where the
+        // token and the gateway socket live.
+        //
+        // The workspace path is ALWAYS this connection's `serialized` URI
+        // (`wsl+Ubuntu:/path`), never what the engine reported. Inside the distro
+        // the workspace is a bare posix path, so trusting it would key the same
+        // member two different ways — the desktop's HTTP path and the member's own
+        // tool would then bind two separate channels for one member. (Observed:
+        // the WSL e2e created a duplicate channel and the agent posted into it.)
+        discordConnect: (input: any) => requireBridge().connectMember({ ...input, workspacePath: serialized }),
+        discordSend: (_workspacePath: string, party: string, member: string, content: string) =>
+          requireBridge().sendAsMember(serialized, party, member, content),
+        discordDisconnect: async (_workspacePath: string, party: string, member: string) =>
+          requireBridge().disconnectMember(serialized, party, member),
         reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
           // Assigned right after createEngineHost returns, and this closure only
           // runs once a workspace resolves — but say so out loud rather than
