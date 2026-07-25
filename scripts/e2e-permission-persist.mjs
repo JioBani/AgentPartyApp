@@ -61,13 +61,13 @@ async function main() {
     // Change permission mode ("auto" — the mode reported to revert), model, and
     // effort DURING the session, via the same HTTP endpoints the UI drives.
     await post(`/api/sessions/${member.sessionId}/permission`, { permissionMode: "auto" });
-    await post(`/api/sessions/${member.sessionId}/model`, { model: "opus[1m]" });
+    await post(`/api/sessions/${member.sessionId}/model`, { model: "claude-opus-5[1m]" });
     await post(`/api/sessions/${member.sessionId}/effort`, { effort: "high" });
     await post(`/api/sessions/${codey.sessionId}/codex-policy`, { policy: codexChanged });
 
     // All three must be persisted to the member's on-disk record immediately.
     assert(memberIn(detailFile)?.permissionMode === "auto", "runtime permission change persisted to member's party.json");
-    assert(memberIn(detailFile)?.model === "opus[1m]", "runtime model change persisted to member's party.json");
+    assert(memberIn(detailFile)?.model === "claude-opus-5[1m]", "runtime model change persisted to member's party.json");
     assert(memberIn(detailFile)?.effort === "high", "runtime effort change persisted to member's party.json");
     assert(JSON.stringify(codeyIn(detailFile)?.codexPolicy) === JSON.stringify(codexChanged), "runtime Codex policy change persisted to member's party.json");
 
@@ -80,7 +80,7 @@ async function main() {
     party = await get("/api/party");
     const restored = party.members.find((m) => m.name === "worker");
     assert(restored?.permissionMode === "auto", "permission mode restored to the runtime-chosen value after restart");
-    assert(restored?.model === "opus[1m]", "model restored to the runtime-chosen value after restart");
+    assert(restored?.model === "claude-opus-5[1m]", "model restored to the runtime-chosen value after restart");
     assert(restored?.effort === "high", "effort restored to the runtime-chosen value after restart");
     const restoredCodey = party.members.find((m) => m.name === "codey");
     assert(JSON.stringify(restoredCodey?.codexPolicy) === JSON.stringify(codexChanged), "Codex policy restored after restart");

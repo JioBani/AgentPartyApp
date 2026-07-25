@@ -1215,8 +1215,8 @@ export class PartyApplicationService {
   /**
    * Rewrites a member's persisted model to its catalog id when it was stored
    * under a different spelling of the SAME Anthropic model — e.g. the
-   * OpenRouter slug "anthropic/claude-opus-4.8" or the harness canonical id
-   * "claude-opus-4-8[1m]" instead of "opus[1m]". Such a value inferred provider
+   * OpenRouter slug "anthropic/claude-opus-5" or the retired short alias
+   * "opus[1m]" instead of "claude-opus-5[1m]". Such a value inferred provider
    * "custom" and silently routed a subscription model through the router →
    * OpenRouter (token-billed), and the Runtime modal lost the model's
    * capabilities (the vanished thinking/Adaptive control). Healed in memory on

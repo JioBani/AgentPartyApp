@@ -303,6 +303,19 @@ short alias — the CLI rejects it), then starts a live member on that model,
 sends one real turn, and asserts the reply + live `contextTokens` prove the id
 routes natively through the claude-code harness.
 
+For a **live Opus 5 catalog/routing** e2e (one real Claude Opus 5 turn), run:
+```
+npm run test:e2e:live-opus5
+```
+Same shape as the Fable run, for `claude-opus-5[1m]`: it asserts the route is
+native anthropic with a 1M window, effort to `max` defaulting to `high`, thinking
+defaulting to `adaptive`, image vision, that `claude-opus-4-8[1m]` is still
+selectable alongside it, and that NO `opus`/`opus[1m]` short-alias route exists —
+the CLI's short aliases resolve to the *latest* model of a family (`opus` →
+`claude-opus-5` as of CLI 2.1.220), so an alias-keyed route silently changes model
+under a fixed label on a CLI update. The live turn additionally asserts the
+snapshot model is an Opus 5 (never 4.8). Capture: `opus5-e2e.png`.
+
 The app **can** be launched here. The catch that makes it look otherwise: VS Code
 / Claude Code terminals export `ELECTRON_RUN_AS_NODE=1`, which makes the Electron
 binary boot as plain Node (so `app` is undefined). `scripts/launch-electron.mjs`

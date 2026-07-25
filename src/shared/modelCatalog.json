@@ -9,8 +9,15 @@
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
-      "id": "opus[1m]", "label": "Opus 4.8", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-opus-4-8", "orModelId": "anthropic/claude-opus-4.8",
-      "description": "Opus with 1M context. Best for complex work.",
+      "id": "claude-opus-5[1m]", "label": "Opus 5", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-opus-5", "orModelId": "anthropic/claude-opus-5",
+      "description": "Opus 5 with 1M context. Strongest Opus for agentic coding and long-horizon work. Thinking is adaptive by default and may only be turned off at effort 'high' or below — the API rejects disabled thinking at xhigh/max (verified 25 Jul '26).",
+      "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 25, "ioPerM": 10,
+      "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "adaptive" } },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
+    },
+    {
+      "id": "claude-opus-4-8[1m]", "label": "Opus 4.8", "provider": "anthropic", "subscription": true, "claudeSubscriptionModel": "claude-opus-4-8", "orModelId": "anthropic/claude-opus-4.8",
+      "description": "Previous-generation Opus with 1M context. Pinned by full id on purpose: the CLI's short 'opus' alias now resolves to Opus 5, so 'opus[1m]' would silently serve Opus 5 under this label (verified 25 Jul '26).",
       "context": "1M", "perf": 5, "costTier": 5, "inPerM": 5, "outPerM": 25, "ioPerM": 10,
       "reasoning": { "effort": { "options": ["low", "medium", "high", "xhigh", "max"], "default": "high" }, "thinking": { "modes": ["adaptive", "disabled"], "default": "disabled" } },
       "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }

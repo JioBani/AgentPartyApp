@@ -51,12 +51,13 @@ for (const m of modelCatalog()) {
 console.log("\nNative detection is spelling-independent (the recurring-bug guard):");
 // An Anthropic model must resolve to native by ANY spelling — catalog id, label,
 // OpenRouter slug, and the harness-reported canonical id — with NO name list. If
-// this holds for these it holds for a future 'opus-5' the same way.
+// this holds for these it holds for the next Opus generation the same way.
 for (const [spelling, why] of [
-  ["opus[1m]", "catalog id"],
-  ["Opus", "display label"],
-  ["anthropic/claude-opus-4.8", "OpenRouter slug"],
-  ["claude-opus-4-8[1m]", "harness canonical id"],
+  ["claude-opus-5[1m]", "catalog id"],
+  ["Opus 5", "display label"],
+  ["anthropic/claude-opus-5", "OpenRouter slug"],
+  ["claude-opus-5", "harness canonical id"],
+  ["claude-opus-4-8[1m]", "previous-generation catalog id"],
 ]) {
   assert(isClaudeNative(backendFor(spelling, "claude-code")), `Opus via ${why} ('${spelling}') → claude-native`);
 }
@@ -67,11 +68,11 @@ assert(executionModelFor("GPT-5.4 mini", "claude-code") === "claude-gpt-5.4-mini
 assert(executionHarnessFor("sonnet", "claude-code") === "claude-code", "native Sonnet stays on Claude Code");
 assert(backendFor("GLM-5.2", "claude-code")?.kind === "claude-router", "GLM-5.2 → claude-router on claude-code");
 // Opus on the Codex harness keeps Codex policy while using Claude OAuth.
-assert(backendFor("opus[1m]", "codex")?.kind === "codex-claude-subscription", "Opus on Codex → Claude subscription (cross feature)");
+assert(backendFor("claude-opus-5[1m]", "codex")?.kind === "codex-claude-subscription", "Opus on Codex → Claude subscription (cross feature)");
 
 console.log("\nparseModelId is a closed gate (no silent guess):");
-assert(parseModelId("claude-opus-4-8[1m]") === "opus[1m]", "canonical id → 'opus[1m]'");
-assert(parseModelId("Opus") === "opus[1m]", "label → 'opus[1m]'");
+assert(parseModelId("claude-opus-5") === "claude-opus-5[1m]", "canonical id → 'claude-opus-5[1m]'");
+assert(parseModelId("Opus 5") === "claude-opus-5[1m]", "label → 'claude-opus-5[1m]'");
 assert(parseModelId("totally-unknown") === undefined, "unknown spelling → undefined");
 assert(parseModelId(undefined) === undefined, "undefined → undefined");
 // An uncatalogued model has no derivable backend (caller falls back to metadata).

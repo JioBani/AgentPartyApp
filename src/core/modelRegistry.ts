@@ -213,7 +213,7 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   // Keep the currently selected model visible even if it is not catalogued
   // (e.g. a user-configured custom route), so it never silently disappears.
   // Resolution is canonical-spelling aware: a session echoing
-  // "claude-opus-4-8[1m]" is the opus[1m] entry, not a new fallback route.
+  // "claude-opus-5" is the claude-opus-5[1m] entry, not a new fallback route.
   if (currentModel && !resolveCatalogModel(currentModel)) {
     addRoute(routes, seen, {
       harnessId: "claude-code",
@@ -635,7 +635,7 @@ export function runtimeModelFor(model: string, customRoutes: ModelRouteConfig[] 
     return configured.runtimeModel;
   }
   // Resolve any spelling back to the catalog entry and send ITS harness id:
-  // "anthropic/claude-opus-4.8" must reach the Claude harness as "opus[1m]"
+  // "anthropic/claude-opus-5" must reach the Claude harness as "claude-opus-5[1m]"
   // (native), never be forwarded verbatim into the router path.
   const catalogued = resolveCatalogModel(model);
   return catalogued ? catalogued.runtimeModel || catalogued.id : model;

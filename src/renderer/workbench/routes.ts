@@ -59,13 +59,13 @@ export function routeKey(route: RouteLike): string {
 
 /**
  * Finds a route by a model string, tolerantly. The string may be a route id
- * ("opus[1m]"), a runtime id ("claude-gpt-5.5"), or — because a live snapshot
- * reports the adapter's DISPLAY value — a label ("Opus"), in any casing.
+ * ("claude-opus-5[1m]"), a runtime id ("claude-gpt-5.5"), or — because a live
+ * snapshot reports the adapter's DISPLAY value — a label ("Opus 5"), in any casing.
  * Exact case-sensitive id matching silently missed the route (losing the
  * context window, vision info, and the modal's current selection) for every
  * native Anthropic model. As a last resort the string is resolved through the
  * catalog's canonical-spelling resolver: a session echoing the harness id
- * "claude-opus-4-8[1m]" matched NO route, which silently dropped the Runtime
+ * "claude-opus-5[1m]" matched NO route, which silently dropped the Runtime
  * modal's thinking (Adaptive) control and the context-meter denominator.
  */
 export function findRoute(model: string | undefined, routes: RouteLike[]): RouteLike | undefined {

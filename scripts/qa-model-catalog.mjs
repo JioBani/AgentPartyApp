@@ -90,7 +90,12 @@ assert(gptMiniClaudeRoute?.pricing?.billing === "subscription", "Claude Code GPT
 // Leaderboard metrics flow onto routes.
 assert(byId["MiniMax M3"].meta?.perf === 2 && byId["MiniMax M3"].meta?.costTier === 1, "MiniMax M3 perf/cost from leaderboard");
 assert(byId["MiniMax M3"].meta?.ioPerM === 0.53, "MiniMax M3 io price present");
-assert(byId["Claude Opus 4.8"] === undefined && byId["opus[1m]"].meta?.perf === 5, "Opus mapped to opus[1m] with perf 5");
+assert(byId["Claude Opus 5"] === undefined && byId["claude-opus-5[1m]"].meta?.perf === 5, "Opus 5 mapped to claude-opus-5[1m] with perf 5");
+// Both Opus generations are pinned by FULL id. The CLI's short aliases track
+// the latest model ("opus" → claude-opus-5 as of 2.1.220), so an "opus[1m]"
+// route labelled "Opus 4.8" would silently serve Opus 5 after a CLI update.
+assert(byId["opus[1m]"] === undefined && byId["claude-opus-4-8[1m]"]?.label === "Opus 4.8", "no drifting 'opus' alias route — each Opus generation is pinned by full id");
+assert(byId["claude-opus-5[1m]"].capabilities.thinking.defaultValue === "adaptive", "Opus 5 defaults to adaptive thinking (the API default; disabled only holds at effort ≤ high)");
 // Fable 5: full model id (no short CLI alias exists), top perf tier, and an
 // adaptive-only thinking control — reasoning cannot be turned off, so the
 // catalog must not offer a 'disabled' mode (no silent lie in the UI).
@@ -149,19 +154,22 @@ for (const harness of ["claude-code", "codex"]) {
 // the model's capabilities (thinking/Adaptive control, context denominator)
 // and the adapter routes a subscription model through the router → OpenRouter.
 console.log("\nCanonical model-spelling resolution:");
-assert(resolveCatalogModel("claude-opus-4-8[1m]")?.id === "opus[1m]", "harness canonical 'claude-opus-4-8[1m]' → opus[1m]");
+assert(resolveCatalogModel("claude-opus-5")?.id === "claude-opus-5[1m]", "harness canonical 'claude-opus-5' → claude-opus-5[1m]");
+assert(resolveCatalogModel("anthropic/claude-opus-5")?.id === "claude-opus-5[1m]", "OpenRouter slug → claude-opus-5[1m]");
+assert(resolveCatalogModel("claude-opus-4-8[1m]")?.id === "claude-opus-4-8[1m]", "Opus 4.8 keeps its own entry (never absorbed by the Opus 5 route)");
 assert(resolveCatalogModel("claude-sonnet-4-6")?.id === "sonnet", "harness canonical 'claude-sonnet-4-6' → sonnet");
-assert(resolveCatalogModel("anthropic/claude-opus-4.8")?.id === "opus[1m]", "OpenRouter slug → opus[1m]");
-assert(resolveCatalogModel("Opus")?.id === "opus[1m]", "display label → opus[1m]");
+assert(resolveCatalogModel("anthropic/claude-opus-4.8")?.id === "claude-opus-4-8[1m]", "OpenRouter slug → claude-opus-4-8[1m]");
+assert(resolveCatalogModel("Opus 5")?.id === "claude-opus-5[1m]", "display label → claude-opus-5[1m]");
 assert(resolveCatalogModel("claude-fable-5")?.id === "claude-fable-5[1m]", "bare fable id → the [1m] catalog entry");
+assert(resolveCatalogModel("opus[1m]")?.id === "claude-opus-5[1m]", "retired 'opus[1m]' alias resolves to what it actually ran (Opus 5) — persisted members heal instead of dropping out of the catalog");
 assert(resolveCatalogModel("totally-unknown-model") === undefined, "unknown model stays unresolved (no silent guess)");
 assert(displayModelFor("claude-opus-4-8[1m]") === "Opus 4.8", "displayModelFor resolves the canonical id to the versioned label");
-assert(runtimeModelFor("anthropic/claude-opus-4.8") === "opus[1m]", "runtimeModelFor sends the NATIVE id to the harness (never the slug → router/OR billing)");
+assert(runtimeModelFor("anthropic/claude-opus-4.8") === "claude-opus-4-8[1m]", "runtimeModelFor sends the NATIVE id to the harness (never the slug → router/OR billing)");
 assert(inferModelProvider("anthropic/claude-opus-4.8") === "anthropic", "OR slug infers the HOME provider, not 'custom'");
 const canonicalRoute = findRoute("claude-opus-4-8[1m]", routes);
-assert(canonicalRoute?.harnessId === "claude-code" && canonicalRoute?.model === "opus[1m]", "findRoute maps the canonical id to the claude-code opus route");
+assert(canonicalRoute?.harnessId === "claude-code" && canonicalRoute?.model === "claude-opus-4-8[1m]", "findRoute maps the canonical id to the claude-code opus route");
 assert(canonicalRoute?.capabilities.thinking.modes.map((o) => o.id).join() === "adaptive,disabled", "…which still carries the Adaptive thinking control");
-assert(!buildModelRoutes("claude-opus-4-8[1m]", [], []).some((r) => r.model === "claude-opus-4-8[1m]"), "a canonical spelling never injects a duplicate fallback route");
+assert(buildModelRoutes("claude-opus-5", [], []).filter((r) => r.harnessId === "claude-code" && r.providerId === "anthropic" && r.model === "claude-opus-5").length === 0, "a canonical spelling never injects a duplicate fallback route");
 
 // Stale-model healing (guards the member-create bug where a legacy persisted
 // model — "GLM-5.2 (OpenRouter)" — was selectable and only failed at chat time).
@@ -176,8 +184,8 @@ assert(!buildModelRoutes("sonnet", [], []).some((r) => r.model === legacy), "a s
 // Claude adapter must keep native Anthropic selections on their subscription
 // ids; Codex handles its own OpenRouter route independently.
 console.log("\nClaude native runtime boundary assertions:");
-assert(claudeRuntimeModelFor("opus[1m]", "anthropic", "anthropic/claude-opus-4.8") === "opus[1m]", "Claude Opus ignores an OpenRouter runtime slug and stays native");
-assert(claudeRuntimeModelFor("Opus", "anthropic", "anthropic/claude-opus-4.8") === "opus[1m]", "display-label Opus also normalizes to the native 1M id");
+assert(claudeRuntimeModelFor("claude-opus-5[1m]", "anthropic", "anthropic/claude-opus-5") === "claude-opus-5[1m]", "Claude Opus ignores an OpenRouter runtime slug and stays native");
+assert(claudeRuntimeModelFor("Opus 5", "anthropic", "anthropic/claude-opus-5") === "claude-opus-5[1m]", "display-label Opus 5 also normalizes to the native 1M id");
 assert(claudeRuntimeModelFor("GLM-5.2", "openrouter", "claude-glm-5.2") === "claude-glm-5.2", "router-backed Claude aliases remain explicit");
 
 // Context-window parsing feeds the per-member context-capacity meter's denominator.
