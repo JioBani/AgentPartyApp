@@ -47,6 +47,15 @@ async function main(): Promise<void> {
       cursorAcpRelayScriptPath: process.env.AGENTPARTY_ACP_RELAY_SCRIPT || undefined,
     },
     reviewGate: (message, reviewer) => hostChannel.call<GateReviewResult>("reviewGate", message, reviewer),
+    // The Discord bridge is desktop-owned for the same reason as the gate: it
+    // holds the bot token and one long-lived gateway socket, and the desktop —
+    // not this distro — is what the user configured. Delegating upward keeps a
+    // WSL member's discord-* tools working instead of reporting "unavailable".
+    discord: {
+      connectMember: (input) => hostChannel.call("discordConnect", input),
+      sendAsMember: (workspacePath, party, member, content) => hostChannel.call("discordSend", workspacePath, party, member, content),
+      disconnectMember: (workspacePath, party, member) => hostChannel.call("discordDisconnect", workspacePath, party, member),
+    },
   });
   // Start the embedded router so router-backed models (MiniMax M3, etc.) work —
   // it runs inside the distro alongside the harness. preferredPort 0 binds a

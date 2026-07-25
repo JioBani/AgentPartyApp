@@ -110,6 +110,14 @@ message in it, content over 2000 characters is REJECTED with the limit stated
 `discord-connect`/`discord-send` MCP tools. It then navigates to Settings →
 Runtime and captures the Discord card. The e2e channel is deleted on exit.
 
+`--wsl` runs the same assertions against a workspace **inside a WSL distro**
+(`AGENTPARTY_WSL_DISTRO`, default `Ubuntu-22.04`). That path matters: the party
+tools then execute in the headless in-distro engine while the bridge stays on the
+desktop, so the tools reach it through the reverse host-call channel. It caught a
+real defect — the distro reports a bare posix workspace path while the desktop
+knows `wsl+Distro:/path`, so the same member was keyed two ways and got two
+channels; the desktop now always keys by its own URI.
+
 Needs `DISCORD_BOT_TOKEN` + `DISCORD_USER_ID` (a `.env` next to the app is read).
 By default it also runs the **inbound** leg, which is MANUAL: the bridge ignores
 its own posts, so no bot can stand in for the user. The script prints the channel
