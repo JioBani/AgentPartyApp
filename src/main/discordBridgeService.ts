@@ -47,6 +47,8 @@ export interface DiscordBridgeDeps {
   /** Called whenever status changes so the UI can re-render. */
   onStatusChanged?: (status: DiscordBridgeStatus) => void;
   log?: (message: string) => void;
+  /** Overridable so the gateway lifecycle is testable without a real socket. */
+  createGateway?: (token: string) => DiscordGateway;
 }
 
 interface StoredBindings {
@@ -100,11 +102,26 @@ export class DiscordBridgeService {
     const current = normalizeDiscordSettings(getSettings().discord || DEFAULT_DISCORD_SETTINGS);
     const next = normalizeDiscordSettings({ ...current, ...patch });
     updateSettings({ discord: next });
-    // A token change invalidates everything derived from the old one.
-    if (patch.botToken !== undefined || patch.guildId !== undefined) {
+    // Compare VALUES, not `patch` keys: the settings form resubmits every field,
+    // so `patch.guildId !== undefined` is true even when the guild id is unchanged.
+    const tokenChanged = current.botToken !== next.botToken;
+    const guildChanged = current.guildId !== next.guildId;
+    // The guild id only feeds REST channel resolution; the bot identity derives
+    // from the token. Invalidate the cached derivations of whatever actually moved.
+    if (guildChanged) {
+      this.resolvedGuildId = undefined;
+    }
+    if (tokenChanged) {
       this.botUser = undefined;
       this.resolvedGuildId = undefined;
+      // The gateway socket authenticates with the token alone, so ONLY a token
+      // change requires reconnecting it — a guild-id (or allowlist) edit must not
+      // tear down inbound delivery. Bring a socket straight back on the new token
+      // if any member is still bound, so saving settings never leaves inbound dead.
       this.stopGateway();
+      if (this.bindings.length && next.botToken) {
+        this.ensureGateway();
+      }
     }
     return this.status();
   }
@@ -315,7 +332,7 @@ export class DiscordBridgeService {
     }
     this.stopGateway();
     this.tokenInUse = settings.botToken;
-    const gateway = new DiscordGateway(settings.botToken);
+    const gateway = (this.deps.createGateway ?? ((token) => new DiscordGateway(token)))(settings.botToken);
     gateway.on("state", (state: DiscordConnectionState, error?: string) => {
       this.connection = state;
       this.lastError = state === "connected" ? undefined : error || this.lastError;

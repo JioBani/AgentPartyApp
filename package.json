@@ -115,7 +115,8 @@
     "test:gate-reviewer-reasoning": "node scripts/qa-gate-reviewer-reasoning.mjs",
     "test:engine-host-channel": "node scripts/qa-engine-host-channel.mjs",
     "test:gate-fail-open": "node scripts/qa-gate-fail-open-notice.mjs",
-    "test:party-gate-scope": "node scripts/qa-party-gate-scope.mjs"
+    "test:party-gate-scope": "node scripts/qa-party-gate-scope.mjs",
+    "test:discord-settings-gateway": "node scripts/qa-discord-settings-gateway.mjs"
   },
   "build": {
     "appId": "party.agentparty.desktop",
