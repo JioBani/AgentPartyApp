@@ -67,6 +67,10 @@ export function isGateMode(value: unknown): value is GateMode {
 export interface GateReviewResult {
   verdict: "allow" | "reject";
   reason: string;
+  /** The reviewer call's own token spend, when the provider reported it — recorded
+   *  to the usage ledger as a `gate-review` turn so the dashboard can price the
+   *  gate's overhead honestly (measured, not fabricated). */
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
 }
 
 /**

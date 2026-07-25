@@ -19,6 +19,8 @@ import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
+import { UsageLedger } from "./usageLedger";
+import type { TokenTrigger, TurnUsageRecord } from "../shared/tokenUsage";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
 import { log } from "./logger";
@@ -39,6 +41,13 @@ interface ManagedSession {
   /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
   lastActivityAt: number;
   turnActive: boolean;
+  /**
+   * Wall-clock start of the in-flight turn (ms), stamped when a turn transitions
+   * idle→active. Recorded as {@link TurnUsageRecord.atStart} so the usage ledger
+   * can measure real active time (the design's rate/utilization metrics), not
+   * just turn counts. Cleared when the turn's usage is recorded.
+   */
+  turnStartedAt?: number;
   awaitingUser: boolean;
   stallNotified: boolean;
   /**
@@ -49,6 +58,16 @@ interface ManagedSession {
    * {@link SessionManager.isCompacting}.
    */
   compacting?: boolean;
+  /** Party/member identity (present for member sessions) — attributes ledger records. */
+  identity?: PartyIdentity;
+  /** Latest harness snapshot — the source of model/effort/sessionId for the ledger. */
+  lastSnapshot?: ClaudeSessionSnapshot;
+  /**
+   * Why the in-flight turn was started, set by the initiator (user send /
+   * party-message delivery / compact). Consumed and cleared when the turn
+   * completes; a turn with no known origin records `"unknown"`, never a guess.
+   */
+  pendingTrigger?: TokenTrigger;
 }
 
 /** Pairs a party member's bridge with its identity for in-process tool access. */
@@ -59,6 +78,8 @@ export interface SessionPartyBinding {
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  /** Append-only per-turn usage ledger backing the Token Usage dashboard. */
+  private ledger = new UsageLedger();
   /**
    * Latest account/provider-scoped rate-limit usage, merged across every session
    * (rate limits are account-global, not per-session). Fed by `usage_limit`
@@ -193,7 +214,7 @@ export class SessionManager extends EventEmitter {
     const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding, id);
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const provider = providerOfHarness(requestedHarness);
-    return this.registerSession(id, workspace, adapter, provider);
+    return this.registerSession(id, workspace, adapter, provider, binding?.identity);
   }
 
   /**
@@ -595,7 +616,7 @@ export class SessionManager extends EventEmitter {
    * Creates a QA mock session backed by {@link MockHarnessSession}. It performs
    * no model calls; events are driven by the QA API. Used only in QA mode.
    */
-  createMockSession(input?: string | CreateSessionInput, options?: { autoReply?: boolean }): SessionView {
+  createMockSession(input?: string | CreateSessionInput, options?: { autoReply?: boolean; identity?: PartyIdentity }): SessionView {
     const settings = getSettings();
     const id = `mock-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
     const request = normalizeCreateSessionInput(input);
@@ -615,7 +636,7 @@ export class SessionManager extends EventEmitter {
       autoReply: options?.autoReply,
       harness: selectedHarness,
     });
-    return this.registerSession(id, workspace, adapter, provider);
+    return this.registerSession(id, workspace, adapter, provider, options?.identity);
   }
 
   injectMockEvent(id: string, event: unknown): void {
@@ -639,8 +660,8 @@ export class SessionManager extends EventEmitter {
     return session.adapter;
   }
 
-  private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, provider, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
+  private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
+    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
@@ -681,6 +702,7 @@ export class SessionManager extends EventEmitter {
         session.compacting = false;
         break;
       case "approval_request":
+        if (!session.turnActive) session.turnStartedAt = Date.now();
         session.turnActive = true;
         session.awaitingUser = true;
         break;
@@ -690,6 +712,7 @@ export class SessionManager extends EventEmitter {
       case "status": {
         const status = String((event as { status?: unknown }).status || "");
         if (status === "sent" || status === "requesting" || status === "responding") {
+          if (!session.turnActive) session.turnStartedAt = Date.now();
           session.turnActive = true;
         }
         // The harness's compaction outcome (success both adapters emit) clears the
@@ -760,8 +783,16 @@ export class SessionManager extends EventEmitter {
     return this.createSession({ workspacePath }, sessionId);
   }
 
-  sendUserTurn(id: string, text: string, attachments?: ImageAttachment[]): void {
-    this.sessions.get(id)?.adapter.sendUserTurn(text, attachments);
+  sendUserTurn(id: string, text: string, attachments?: ImageAttachment[], trigger: TokenTrigger = "user"): void {
+    const session = this.sessions.get(id);
+    if (!session) {
+      return;
+    }
+    // Tag the in-flight turn's origin so the usage ledger can attribute its cost
+    // by trigger (person vs member-to-member message vs …). Consumed on
+    // turn_complete; see {@link recordTurnUsage}.
+    session.pendingTrigger = trigger;
+    session.adapter.sendUserTurn(text, attachments);
   }
 
   hasSession(id: string): boolean {
@@ -806,6 +837,7 @@ export class SessionManager extends EventEmitter {
       return;
     }
     session.compacting = true;
+    if (!session.turnActive) session.turnStartedAt = Date.now();
     session.adapter.compact();
   }
 
@@ -1068,6 +1100,9 @@ export class SessionManager extends EventEmitter {
         return;
       }
       this.trackTurnActivity(session, event);
+      if (event.type === "turn_complete") {
+        this.recordTurnUsage(session, event);
+      }
       if (event.type === "usage_limit") {
         // Account-scoped, not a transcript block: aggregate globally and push,
         // rather than queueing it into this session's event stream.
@@ -1083,9 +1118,91 @@ export class SessionManager extends EventEmitter {
       if (session.closed || !this.sessions.has(session.id)) {
         return;
       }
+      session.lastSnapshot = snapshot;
       this.emit("snapshot", { sessionId: session.id, workspace: session.workspace, snapshot });
       this.emit("sessions", this.listSessions());
     });
+  }
+
+  /**
+   * Appends one {@link TurnUsageRecord} to the per-workspace usage ledger on
+   * every completed turn. Identity/model/effort come from the session binding
+   * and the latest harness snapshot; the token split and cost come from the
+   * event. The trigger is the initiator's tag (see {@link sendUserTurn} /
+   * {@link compact}), or `"compact"` when a compaction was in flight, and
+   * `"unknown"` when neither is known — never fabricated.
+   */
+  private recordTurnUsage(session: ManagedSession, event: Extract<ClaudeNormalizedEvent, { type: "turn_complete" }>): void {
+    const snapshot = session.lastSnapshot;
+    const trigger: TokenTrigger = session.pendingTrigger ?? (session.compacting ? "compact" : "unknown");
+    session.pendingTrigger = undefined;
+    const startedAt = session.turnStartedAt;
+    session.turnStartedAt = undefined;
+    const record: TurnUsageRecord = {
+      at: event.at || new Date().toISOString(),
+      atStart: startedAt ? new Date(startedAt).toISOString() : undefined,
+      partyId: session.identity?.party,
+      member: session.identity?.member,
+      sessionId: snapshot?.sessionId,
+      appSessionId: session.id,
+      provider: session.provider,
+      model: snapshot?.model,
+      effort: snapshot?.effort,
+      trigger,
+      tokens: event.usage || {},
+      costUsd: event.cost?.amountUsd ?? event.costUsd,
+      costBasis: event.cost?.basis,
+      costSource: event.cost?.source,
+    };
+    this.ledger.append(session.workspace, record);
+  }
+
+  /**
+   * Records one Message Gate review as a `gate-review` ledger turn. The reviewer
+   * is a headless router call (not a session), so its overhead would otherwise be
+   * invisible; this attributes its measured token spend + verdict to the party so
+   * the dashboard can price the gate and compute its reject rate honestly.
+   */
+  recordGateReview(workspace: string, input: {
+    partyId?: string;
+    member?: string;
+    model?: string;
+    verdict: "allow" | "reject";
+    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  }): void {
+    const record: TurnUsageRecord = {
+      at: new Date().toISOString(),
+      partyId: input.partyId,
+      member: input.member,
+      appSessionId: `gate-review:${input.partyId || "?"}:${input.member || "?"}`,
+      provider: "claude",
+      model: input.model,
+      trigger: "gate-review",
+      tokens: {
+        input: input.usage?.input,
+        output: input.usage?.output,
+        cacheRead: input.usage?.cacheRead,
+        cacheWrite: input.usage?.cacheWrite,
+      },
+      costBasis: "subscription",
+      costSource: "estimate",
+      gate: { verdict: input.verdict },
+    };
+    this.ledger.append(workspace, record);
+  }
+
+  /**
+   * Reads and range-scans the per-workspace usage ledger. The main-process
+   * query surface for the Token Usage dashboard (see AppController); aggregation
+   * lives in the pure {@link import("../shared/tokenUsage")} module.
+   */
+  readUsageLedger(workspace: string, fromMs: number, toMs: number): TurnUsageRecord[] {
+    return this.ledger.read(workspace, fromMs, toMs);
+  }
+
+  /** Total ledger record count for a workspace (0 ⇒ no samples yet). */
+  usageLedgerCount(workspace: string): number {
+    return this.ledger.count(workspace);
   }
 
   private queueEvent(session: ManagedSession, event: ClaudeNormalizedEvent): void {

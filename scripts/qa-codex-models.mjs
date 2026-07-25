@@ -55,6 +55,7 @@ assert(normalizeCodexModel(null) === undefined, "null entry normalizes to undefi
 
 // ---- Layer 2: routes ----------------------------------------------------------
 const { buildModelRoutes, codexRouteFromModel } = await bundle("src/core/modelRegistry.ts", "codex-model-routes.mjs", []);
+const { claudeSubscriptionModels } = await bundle("src/shared/modelCatalog.ts", "codex-models-catalog.mjs", []);
 console.log("\nmodelRegistry codex routes:");
 const withCatalog = buildModelRoutes("sonnet", [], [], models);
 // Account-catalog codex routes (from model/list) are the openai-provider ones;
@@ -86,7 +87,9 @@ assert(glm?.capabilities.effort.supported && glm.capabilities.effort.options.som
 assert((glm?.description || "").includes("OpenRouter"), "description warns the model bills via OpenRouter");
 assert(glm?.meta?.perf === 4 && glm?.meta?.costTier === 2, "leaderboard meta preserved from the catalog");
 const claudeCodex = withCatalog.filter((route) => route.harnessId === "codex" && route.modelProvider === "claude-subscription");
-assert(claudeCodex.length === 4, "Claude catalog models are exposed on Codex through Claude OAuth");
+// Count comes from the catalog, not a literal: adding an Anthropic model (e.g.
+// Opus 5) must not fail this test, only a model that stops being cross-routed.
+assert(claudeCodex.length === claudeSubscriptionModels().length, `Claude catalog models are exposed on Codex through Claude OAuth (${claudeCodex.length}/${claudeSubscriptionModels().length})`);
 const sonnet = claudeCodex.find((route) => route.model === "claude-sonnet-4-6");
 assert(sonnet?.pricing?.billing === "subscription" && sonnet?.providerId === "anthropic", "Codex Sonnet is an Anthropic subscription route");
 // Account catalog + OpenRouter both present without discovery too.
@@ -135,7 +138,11 @@ const readyHost = mount(React.createElement(MemberWizard, { routes: withCatalog,
 await tick();
 await openModelStep(readyHost);
 const rows = [...readyHost.querySelectorAll(".wb-model-row")];
-assert(rows.length === 6 + orCodex.length + claudeCodex.length, `Codex harness lists account, OpenRouter, and Claude-subscription models`);
+// Every codex route the registry produced must be listed — account models,
+// OpenRouter, Claude-subscription cross-routes, and the explicitly
+// unavailable Cursor entries (which stay visible with a reason).
+const allCodexRoutes = withCatalog.filter((route) => route.harnessId === "codex");
+assert(rows.length === allCodexRoutes.length, `Codex harness lists every codex route (${rows.length}/${allCodexRoutes.length}: account, OpenRouter, Claude-subscription, unavailable)`);
 // The shared catalog owns the display identity: a discovered slug with a
 // catalog twin (gpt-5.4-mini → "GPT-5.4 mini") renders the catalog label, not
 // the raw model/list displayName. Selectability is asserted on that label.

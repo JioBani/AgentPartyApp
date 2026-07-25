@@ -10,6 +10,7 @@ import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, Harnes
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
+import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
@@ -1389,7 +1390,7 @@ export class CodexAdapter extends EventEmitter {
             usage: this.lastUsage,
             },
     );
-    this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, at: now() });
+    this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, usage: codexTokenBreakdown(this.lastUsage, this.contextTokens), at: now() });
     if (this.pendingAuthenticationGeneration) {
       this.pendingAuthenticationGeneration = undefined;
       void this.reloadAuthentication();
@@ -1545,6 +1546,20 @@ function approvalTitle(kind: CodexApprovalKind): string {
     default:
       return "Codex 승인 요청";
   }
+}
+
+/**
+ * Codex reports input/output token counts and a numeric context occupancy, but
+ * no cache-read/write split — those fields stay undefined (not zero). Returns
+ * undefined when nothing was reported.
+ */
+function codexTokenBreakdown(usage: TurnUsage | undefined, context: number | undefined): TurnTokenBreakdown | undefined {
+  const input = usage?.inputTokens;
+  const output = usage?.outputTokens;
+  if (input == null && output == null && context == null) {
+    return undefined;
+  }
+  return { input, output, context };
 }
 
 function normalizeCodexUsage(value: unknown): TurnUsage | undefined {

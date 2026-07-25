@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, InitialAppState, PartyCommandResult, PartyMember, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
@@ -15,6 +15,7 @@ import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
+import { TokenUsageView } from "./usage/TokenUsageView";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
@@ -936,6 +937,7 @@ export function App() {
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
     { id: "sessions", label: "세션", icon: <History size={18} /> },
+    { id: "usage", label: "Token Usage", icon: <BarChart3 size={18} /> },
     { id: "auth", label: "인증", icon: <KeyRound size={18} /> },
     { id: "runtime", label: "런타임", icon: <SlidersHorizontal size={18} /> },
     { id: "automation", label: "자동화", icon: <Settings size={18} /> },
@@ -1114,6 +1116,17 @@ export function App() {
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveGateDefault={saveGateDefault}
+                />
+              )}
+              {currentView === "usage" && (
+                <TokenUsageView
+                  usage={usageLimits}
+                  parties={(state.party.parties || []).map((p) => ({ id: p.id, name: p.name }))}
+                  onOpenMemberChat={(partyId, member) => {
+                    if (partyId !== state.party.currentPartyId) { void selectParty(partyId); }
+                    setCurrentView("workbench");
+                    setPartyNotice(`'${member}' 멤버 대화로 이동했습니다.`);
+                  }}
                 />
               )}
               {currentView === "automation" && (

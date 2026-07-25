@@ -64,6 +64,22 @@ Captures the current Electron window and stores it as a PNG. If `path` is omitte
 { "path": "C:\\tmp\\agentparty-capture.png" }
 ```
 
+Optional `scrollY` scrolls a long screen before capturing, so a below-the-fold
+section (e.g. the Token Usage tables) can be screenshotted over HTTP without
+resizing the window. Pass a pixel offset or the string `"bottom"`; `scrollSelector`
+overrides the scrolled element (default `.program-scroll`). `scrollX` (pixels or
+`"right"`, with `scrollSelector`) scrolls a wide element horizontally — e.g. to
+test a frozen first column. Optional `theme`
+(`"light"`|`"dark"`) flips the active theme before capturing, for both-theme
+fidelity shots. Optional `click` (CSS selector) dispatches a click before
+capturing, so an interactive state can be shot — e.g. the Token Usage compare
+toggle `[data-tu=compare-toggle]` or a member drill-in row
+`[data-tu=member-row][data-member=backend]`.
+
+```json
+{ "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
+```
+
 ## Settings
 
 ### `POST /api/settings`
@@ -396,6 +412,58 @@ running. Users or automation can request an immediate refresh:
 Asks every live harness that exposes usage reads to refresh now, then returns the
 same shape as `GET /api/usage`. Failures are surfaced as session status events
 instead of silently clearing existing usage.
+
+### `GET /api/token-usage`
+
+Aggregated **per-turn usage ledger** for the Token Usage dashboard — the real,
+append-only accounting written on every completed turn (party id, member,
+session, provider, model, effort, token split, cost, trigger, timestamp). This
+is **distinct from `GET /api/usage`**: that endpoint is the account-global
+rate-limit meter (실측 window %), while this one attributes token spend to the
+local actors (party ▸ member ▸ trigger) over a time window.
+
+Query params (all optional):
+
+```text
+range    5h (default) | weekly | today | 24h | 4h | 1h   — relative range from now
+from,to  explicit epoch-ms bounds (override range; [from, to))
+bucket   bucket width in minutes (default 5)
+party    restrict to a single party id (#id identity)
+trigger  user | party-message | gate-review | compact | subagent | init | unknown
+```
+
+The range param is `range`, **not** `window` — `?window=` is reserved API-wide
+for selecting the target app window. Example:
+`GET /api/token-usage?range=5h&bucket=5&party=7f3a`
+
+Returns a `TokenUsageAggregate`: time-`buckets` (each with per-series token/cost
+totals), plus `parties`, `members`, and `triggers` rollups, `totals`, and
+`recordCount`. **`recordCount: 0` means the range has no samples — the dashboard
+shows "아직 없음", never a fabricated 0%.** `costUsd` is the harness/provider
+bill when available (실측); `estCostUsd` is a deterministic list-price `≈$`
+conversion (환산) kept separate so 실측 and 환산 stay distinguishable. Token
+fields are only present when the harness reported them (Codex exposes no cache
+split), so a missing field means "not reported", not zero.
+
+Each rollup row carries the design's derived metrics, computed from the raw
+records so the dashboard and any agent read the same numbers:
+
+```text
+totalTokens    input+cacheRead+cacheWrite+output for the row
+activeMs       real active run time (ms) — a UNION of the row's turn intervals,
+               so a party's concurrent members are counted once (needs atStart;
+               0 when no turn reported a start time)
+cacheHitRate   cacheRead ÷ all input (0–1) — the cache-optimization lever
+overheadRatio  overhead-trigger tokens ÷ totalTokens (0–1)
+ratePerHour    totalTokens ÷ active hours — the burn speed (not summable)
+trendPct       later-half vs earlier-half token change (%), for the trend arrows
+```
+
+Top level also carries `totalTokens`, `activeMsUnion` (union across the whole
+range), `ratePerHour`, and `overheadRatio`. Every derived field is `undefined`
+(not 0) when its inputs are absent, so "아직 없음" stays honest. **Active-time
+metrics require the per-turn `atStart` timestamp**, recorded from the ledger's
+phase-2 alignment onward — older records have no active time and contribute 0.
 
 ## Sessions
 

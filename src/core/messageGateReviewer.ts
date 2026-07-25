@@ -152,7 +152,19 @@ export async function reviewGateMessage(
       throw new Error(`Reviewer call failed (${response.status})${detail ? `: ${detail}` : ""}`);
     }
     const payload = await response.json();
-    return parseVerdict(payload);
+    const verdict = parseVerdict(payload);
+    // Capture the reviewer's own token spend (measured) so the ledger can price
+    // the gate's overhead — a missing field means "not reported", never 0.
+    const u = payload?.usage;
+    if (u && typeof u === "object") {
+      verdict.usage = {
+        input: typeof u.input_tokens === "number" ? u.input_tokens : undefined,
+        output: typeof u.output_tokens === "number" ? u.output_tokens : undefined,
+        cacheRead: typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : undefined,
+        cacheWrite: typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : undefined,
+      };
+    }
+    return verdict;
   } finally {
     clearTimeout(timer);
   }

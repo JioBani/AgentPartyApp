@@ -2,7 +2,7 @@
  * Targeted full-process regression for native Claude Code Opus routing.
  * Starts the real Electron app and Claude process, deliberately sends the
  * stale/cross-harness OpenRouter runtime slug through the public model setter,
- * then proves the live turn runs as native opus[1m] without router fallback.
+ * then proves the live turn runs as native claude-opus-5[1m] without router fallback.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -49,7 +49,7 @@ async function main() {
     // Reproduce the exact bad boundary input from the reported failure. Before
     // the fix this restarts into router mode and throws the mapping error.
     await post(`/api/sessions/${created.id}/model`, {
-      model: "opus[1m]",
+      model: "claude-opus-5[1m]",
       providerId: "anthropic",
       runtimeModel: "anthropic/claude-opus-4.8",
     });

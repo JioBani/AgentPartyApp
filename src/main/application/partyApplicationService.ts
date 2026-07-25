@@ -827,6 +827,17 @@ export class PartyApplicationService {
               : {}),
           };
         }
+        // Record the review's measured token spend + verdict as a gate-review
+        // ledger turn (overhead attributed to the sender's party) so the Token
+        // Usage dashboard can price the gate and show its reject rate. Telemetry
+        // must never break delivery, so the ledger append is best-effort.
+        this.deps.sessionManager.recordGateReview?.(workspace, {
+          partyId: targetPartyId,
+          member: sender.name,
+          model: gate.reviewer.model,
+          verdict: verdict.verdict,
+          usage: verdict.usage,
+        });
         if (verdict.verdict === "reject") {
           const message = createPartyMessage(target, content, from);
           message.delivered = false;
@@ -877,7 +888,9 @@ export class PartyApplicationService {
       if (options?.interrupt && this.isSessionBusy(target.sessionId) && !this.deps.sessionManager.isCompacting(target.sessionId)) {
         this.deps.sessionManager.interrupt(target.sessionId);
       }
-      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments);
+      // A member-to-member message drove this turn — tag it so the usage ledger
+      // attributes the recipient's spend to `party-message` (an overhead trigger).
+      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments, "party-message");
       message.delivered = true;
       target.status = "running";
     } else {
@@ -1115,7 +1128,12 @@ export class PartyApplicationService {
       cursorPolicy: member.cursorPolicy,
     };
     if (options.mock) {
-      return this.deps.sessionManager.createMockSession(createInput, { autoReply: options.autoReply });
+      // Attribute mock turns to the member too, so the usage ledger / dashboard
+      // works under QA (and in design captures) exactly as with a live member.
+      return this.deps.sessionManager.createMockSession(createInput, {
+        autoReply: options.autoReply,
+        identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
+      });
     }
     // Give the member's session the in-process party tool surface, with its
     // identity closure-bound so `from` is never agent-supplied.
@@ -1197,8 +1215,8 @@ export class PartyApplicationService {
   /**
    * Rewrites a member's persisted model to its catalog id when it was stored
    * under a different spelling of the SAME Anthropic model — e.g. the
-   * OpenRouter slug "anthropic/claude-opus-4.8" or the harness canonical id
-   * "claude-opus-4-8[1m]" instead of "opus[1m]". Such a value inferred provider
+   * OpenRouter slug "anthropic/claude-opus-5" or the retired short alias
+   * "opus[1m]" instead of "claude-opus-5[1m]". Such a value inferred provider
    * "custom" and silently routed a subscription model through the router →
    * OpenRouter (token-billed), and the Runtime modal lost the model's
    * capabilities (the vanished thinking/Adaptive control). Healed in memory on

@@ -142,7 +142,21 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       this.inject({ type: "assistant_text_delta", text: `(mock) "${truncate(text)}" 잘 받았습니다. QA 응답입니다.` });
     }, 350);
     this.schedule(() => {
-      this.inject({ type: "turn_complete", result: "ok", stopReason: "end_turn" });
+      // Synthetic token split so the usage ledger accrues records during QA/E2E
+      // without a real provider. Scales with the prompt so turns differ.
+      const base = 400 + Math.min(text.length, 4000);
+      this.inject({
+        type: "turn_complete",
+        result: "ok",
+        stopReason: "end_turn",
+        usage: {
+          input: Math.round(base * 0.6),
+          cacheRead: Math.round(base * 1.4),
+          cacheWrite: Math.round(base * 0.2),
+          output: Math.round(base * 0.25),
+          context: Math.round(base * 2.45),
+        },
+      });
     }, 700);
   }
 
