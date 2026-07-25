@@ -70,7 +70,7 @@ export interface PartyApplicationDeps {
  * caller — so an agent can never bridge or post as a teammate.
  */
 export interface DiscordBridgePort {
-  connectMember(input: { workspacePath: string; party: string; partyLabel?: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; created: boolean }>;
+  connectMember(input: { workspacePath: string; party: string; partyLabel?: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; threadName: string; threadId: string; created: boolean }>;
   sendAsMember(workspacePath: string, party: string, member: string, content: string): Promise<{ channelName: string }>;
   disconnectMember(workspacePath: string, party: string, member: string): { removed: boolean };
 }
@@ -1527,7 +1527,7 @@ export class PartyApplicationService {
             member: selfMember,
             channelName,
           });
-          return { ok: true, data: { channel: result.channelName, channelId: result.channelId, created: result.created } };
+          return { ok: true, data: { channel: result.channelName, thread: result.threadName, created: result.created } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }

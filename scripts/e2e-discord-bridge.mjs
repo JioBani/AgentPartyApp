@@ -28,6 +28,7 @@ const ws = path.join(os.tmpdir(), `agentparty-discord-bridge-ws-${runId}`);
 const userData = path.join(os.tmpdir(), `agentparty-discord-bridge-user-data-${runId}`);
 const memberName = "reporter";
 const partyName = `e2e-discord-${process.pid}`;
+const desktopName = `E2E-PC-${process.pid}`;
 const model = process.env.AGENTPARTY_DISCORD_E2E_MODEL || "sonnet";
 const waitForInbound = !process.argv.includes("--no-inbound");
 
@@ -41,6 +42,7 @@ if (!token) {
 const port = Number(process.env.AGENTPARTY_DISCORD_E2E_PORT || "") || 48971;
 let base = `http://127.0.0.1:${port}`;
 let channelId = "";
+let threadId = "";
 
 async function main() {
   rmrf(ws);
@@ -58,6 +60,7 @@ async function main() {
       AGENTPARTY_WINDOW_DISPLAY: "left",
       DISCORD_BOT_TOKEN: token,
       DISCORD_USER_ID: userId,
+      AGENTPARTY_DESKTOP_NAME: desktopName,
     },
     windowsHide: true,
   });
@@ -97,9 +100,19 @@ async function main() {
     // 2. HTTP path: connect + send, verified against Discord itself.
     const connected = await post(`/api/party/members/${memberName}/discord/connect`, {});
     channelId = connected.channelId;
+    threadId = connected.threadId;
     assert(connected.ok && channelId, "connect returned a channel");
     assert(connected.created === true, "a fresh channel was created");
-    assert(connected.channel === `${partyName}-${memberName}`, `the channel is named party-member (got #${connected.channel})`);
+    assert(connected.channel.startsWith(`${partyName}-`), `the channel is named after the party + a party-id slice (got #${connected.channel})`);
+    assert(connected.thread === memberName, `the member has its own thread (got ${connected.thread})`);
+
+    // The channel must sit under THIS desktop's category, and say which cwd and
+    // party it serves — that is what keeps two PCs' identically-named parties apart.
+    const layout = await discordLayout(connected.channelId);
+    assert(layout.category === desktopName, `the channel lives under the desktop category (got ${layout.category})`);
+    assert(layout.topic.includes(ws) && layout.topic.includes(partyName), "the channel topic carries the workspace + party identity");
+    assert(layout.pinned.some((text) => text.includes(ws)), "a pinned header states the workspace");
+    step(`layout: ${layout.category} / #${connected.channel} / ${connected.thread}`);
     step(`connected: #${connected.channel} (${channelId})`);
 
     const marker = `http-path-${Date.now()}`;
@@ -156,8 +169,14 @@ async function main() {
   } finally {
     try {
       if (channelId) {
+        // Deleting the channel takes its threads with it; the per-run category
+        // would otherwise pile up in the server after every e2e.
+        const channel = await discord("GET", `/channels/${channelId}`);
         await discord("DELETE", `/channels/${channelId}`);
-        step("e2e channel deleted");
+        if (channel?.parent_id) {
+          await discord("DELETE", `/channels/${channel.parent_id}`);
+        }
+        step("e2e channel + category deleted");
       }
     } catch (error) {
       console.warn(`cleanup: could not delete the e2e channel — ${error}`);
@@ -266,10 +285,23 @@ async function discord(method, route, body) {
   return parsed;
 }
 
+/** Reads the channel's category, topic and pinned headers straight from Discord. */
+async function discordLayout(id) {
+  const channel = await discord("GET", `/channels/${id}`);
+  const parent = channel.parent_id ? await discord("GET", `/channels/${channel.parent_id}`) : undefined;
+  const pinned = await discord("GET", `/channels/${id}/pins`);
+  const items = Array.isArray(pinned) ? pinned : pinned?.items || [];
+  return {
+    category: parent?.name || "",
+    topic: channel.topic || "",
+    pinned: items.map((entry) => String(entry?.content || entry?.message?.content || "")),
+  };
+}
+
 async function discordHasMessage(marker, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const messages = await discord("GET", `/channels/${channelId}/messages?limit=50`);
+    const messages = await discord("GET", `/channels/${threadId}/messages?limit=50`);
     if (messages.some((message) => String(message.content || "").includes(marker))) {
       return true;
     }

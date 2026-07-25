@@ -1,11 +1,15 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { DiscordRest, DiscordRestError } from "../core/discordRest";
+import { CHANNEL_TYPE_CATEGORY, CHANNEL_TYPE_TEXT, DiscordRest, DiscordRestError, type DiscordChannel } from "../core/discordRest";
 import { DiscordGateway, type DiscordInboundMessage } from "../core/discordGateway";
 import {
   DEFAULT_DISCORD_SETTINGS,
   DISCORD_MESSAGE_LIMIT,
-  discordChannelNameOf,
+  discordChannelIdentity,
+  discordChannelTopic,
+  discordPartyChannelNameOf,
+  discordThreadNameOf,
   normalizeDiscordSettings,
   type DiscordBridgeSettings,
   type DiscordBridgeStatus,
@@ -84,6 +88,8 @@ export class DiscordBridgeService {
     const envToken = (process.env.DISCORD_BOT_TOKEN || "").trim();
     const envUser = (process.env.DISCORD_USER_ID || "").trim();
     return {
+      // Identifies THIS pc among several sharing one Discord server.
+      desktopName: stored.desktopName || (process.env.AGENTPARTY_DESKTOP_NAME || "").trim() || os.hostname(),
       botToken: stored.botToken || envToken,
       guildId: stored.guildId || (process.env.DISCORD_GUILD_ID || "").trim(),
       allowedUserIds: stored.allowedUserIds.length ? stored.allowedUserIds : envUser ? [envUser] : [],
@@ -106,6 +112,7 @@ export class DiscordBridgeService {
   status(): DiscordBridgeStatus {
     const settings = this.settings();
     return {
+      desktopName: settings.desktopName,
       configured: Boolean(settings.botToken),
       connection: this.connection,
       error: this.lastError,
@@ -119,14 +126,21 @@ export class DiscordBridgeService {
 
   // --- Member operations (driven by the MCP tools and the HTTP API) ---------
 
-  /** Ensures the member has a channel, creating it if needed, and starts inbound. */
+  /**
+   * Resolves (creating as needed) this member's place in Discord:
+   *
+   *   category "<desktop>" → channel "#<party>-<id>" → thread "<member>"
+   *
+   * The channel is matched by the IDENTITY stamped in its topic (desktop +
+   * workspace + party id), never by name. Two PCs — or two workspaces on one PC —
+   * routinely hold a party called `dev` with a member called `main`; matching by
+   * name would quietly join them to one channel and deliver every instruction the
+   * user typed to BOTH machines.
+   */
   async connectMember(request: DiscordConnectRequest): Promise<DiscordChannelBinding & { created: boolean }> {
     const settings = this.requireSettings();
     const rest = new DiscordRest(settings.botToken);
     const guildId = await this.resolveGuild(rest, settings.guildId);
-    const wanted = request.channelName
-      ? discordChannelNameOf("", request.channelName)
-      : discordChannelNameOf(request.partyLabel || request.party, request.member);
 
     const existing = this.bindingFor(request.workspacePath, request.party, request.member);
     if (existing) {
@@ -134,9 +148,25 @@ export class DiscordBridgeService {
       return { ...existing, created: false };
     }
 
+    const partyName = request.partyLabel || request.party;
+    const identityInput = { desktop: settings.desktopName, workspacePath: request.workspacePath, partyId: request.party, partyName };
+    const identity = discordChannelIdentity(identityInput);
     const channels = await rest.guildChannels(guildId);
-    const match = channels.find((channel) => channel.type === 0 && channel.name === wanted);
-    const channel = match || (await rest.createTextChannel(guildId, wanted, `AgentParty member '${request.member}'`));
+
+    const category = channels.find((entry) => entry.type === CHANNEL_TYPE_CATEGORY && entry.name === settings.desktopName)
+      || (await rest.createCategory(guildId, settings.desktopName));
+
+    let channel = channels.find((entry) => entry.type === CHANNEL_TYPE_TEXT && (entry.topic || "").startsWith(identity));
+    const createdChannel = !channel;
+    if (!channel) {
+      channel = await rest.createTextChannel(guildId, discordPartyChannelNameOf(partyName, request.party), {
+        topic: discordChannelTopic(identityInput),
+        parentId: category.id,
+      });
+      await this.pinPartyHeader(rest, channel.id, identityInput);
+    }
+
+    const thread = await this.resolveThread(rest, guildId, channel.id, discordThreadNameOf(request.channelName || request.member));
 
     const binding: DiscordChannelBinding = {
       workspacePath: request.workspacePath,
@@ -144,13 +174,54 @@ export class DiscordBridgeService {
       member: request.member,
       channelId: channel.id,
       channelName: channel.name,
+      threadId: thread.id,
+      threadName: thread.name,
     };
     this.bindings = [...this.bindings.filter((b) => !sameMember(b, binding)), binding];
     this.writeBindings();
     this.ensureGateway();
     this.notify();
-    this.log(`Discord: member '${request.member}' bound to #${channel.name} (${match ? "existing" : "created"}).`);
-    return { ...binding, created: !match };
+    this.log(`Discord: member '${request.member}' bound to #${channel.name} > ${thread.name}${createdChannel ? " (channel created)" : ""}.`);
+    return { ...binding, created: createdChannel };
+  }
+
+  /** Finds the member's thread, reviving an auto-archived one, else creates it. */
+  private async resolveThread(rest: DiscordRest, guildId: string, channelId: string, name: string): Promise<DiscordChannel> {
+    const active = (await rest.activeThreads(guildId)).find((thread) => thread.parent_id === channelId && thread.name === name);
+    if (active) {
+      return active;
+    }
+    const archived = (await rest.archivedThreads(channelId)).find((thread) => thread.name === name);
+    if (archived) {
+      // Archived threads still accept messages, but reviving one keeps the member
+      // visible in the thread list instead of hidden behind "archived".
+      await rest.unarchiveThread(archived.id);
+      return archived;
+    }
+    return rest.createThread(channelId, name);
+  }
+
+  /**
+   * Pins one header stating WHICH machine, workspace and party a channel serves.
+   * Channel names repeat across PCs; this is what makes a channel self-explanatory
+   * when it is read on a phone weeks later.
+   */
+  private async pinPartyHeader(rest: DiscordRest, channelId: string, input: { desktop: string; workspacePath: string; partyId: string; partyName: string }): Promise<void> {
+    const header = [
+      `📌 **AgentParty · ${input.desktop}**`,
+      `파티: **${input.partyName}** (${input.partyId})`,
+      `작업공간: ${input.workspacePath}`,
+      "",
+      "멤버마다 스레드가 하나씩 있습니다. 지시는 해당 **멤버 스레드**에 적어주세요 — 이 채널 본문에 쓴 글은 전달되지 않습니다.",
+    ].join("\n");
+    try {
+      const message = await rest.createMessage(channelId, header);
+      await rest.pinMessage(channelId, message.id);
+    } catch (error) {
+      // A missing Manage Messages permission must not block bridging — but it is
+      // reported rather than swallowed.
+      this.log(`Discord: could not pin the channel header — ${describe(error)}`);
+    }
   }
 
   /**
@@ -170,10 +241,10 @@ export class DiscordBridgeService {
     }
     const binding = this.bindingFor(workspacePath, party, member);
     if (!binding) {
-      throw new Error(`Member '${member}' has no Discord channel yet. Call discord-connect first.`);
+      throw new Error(`Member '${member}' has no Discord thread yet. Call discord-connect first.`);
     }
-    await new DiscordRest(settings.botToken).createMessage(binding.channelId, text);
-    return { channelName: binding.channelName };
+    await new DiscordRest(settings.botToken).createMessage(binding.threadId, text);
+    return { channelName: `${binding.channelName} > ${binding.threadName}` };
   }
 
   /** Drops the binding. The channel and its history stay in Discord. */
@@ -288,15 +359,21 @@ export class DiscordBridgeService {
     if (this.botUser ? message.authorId === this.botUser.id : message.authorIsBot) {
       return;
     }
-    const binding = this.bindings.find((b) => b.channelId === message.channelId);
+    // Only THREAD messages address a member. A message in the party channel body
+    // names nobody, so it is logged and dropped — the pinned header already tells
+    // the user to write in a member thread, and the bot never posts there itself.
+    const binding = this.bindings.find((b) => b.threadId === message.channelId);
     if (!binding) {
-      return; // a channel this app does not own
+      if (this.bindings.some((b) => b.channelId === message.channelId)) {
+        this.log("Discord: ignored a message posted in a party channel body (instructions belong in a member thread).");
+      }
+      return;
     }
     const allowed = this.settings().allowedUserIds;
     if (!allowed.includes(message.authorId)) {
       // Logged, never delivered: this is the line between "my remote console" and
       // "anyone in the channel can run code on my machine".
-      this.log(`Discord: dropped a message from unlisted user ${message.authorName} (${message.authorId}) in #${binding.channelName}.`);
+      this.log(`Discord: dropped a message from unlisted user ${message.authorName} (${message.authorId}) in #${binding.channelName} > ${binding.threadName}.`);
       return;
     }
     if (!message.content.trim()) {
@@ -308,7 +385,7 @@ export class DiscordBridgeService {
       // Tell the user in the channel; a dropped instruction must not be silent.
       try {
         await new DiscordRest(this.settings().botToken).createMessage(
-          binding.channelId,
+          binding.threadId,
           `⚠️ 전달 실패: ${result.error || "member is not available"}`,
         );
       } catch (error) {
@@ -342,7 +419,15 @@ export class DiscordBridgeService {
         return [];
       }
       const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as StoredBindings;
-      return Array.isArray(parsed?.bindings) ? parsed.bindings : [];
+      const stored = Array.isArray(parsed?.bindings) ? parsed.bindings : [];
+      // Bindings written before members moved into threads name a channel but no
+      // thread. Sending to one would post to `undefined`, so they are dropped —
+      // the member re-connects and gets its thread. Reported, not silent.
+      const usable = stored.filter((binding) => Boolean(binding?.threadId));
+      if (usable.length !== stored.length) {
+        this.log(`Discord: dropped ${stored.length - usable.length} binding(s) from the pre-thread layout — those members need discord-connect again.`);
+      }
+      return usable;
     } catch {
       return [];
     }

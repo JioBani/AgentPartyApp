@@ -46,10 +46,19 @@ export interface DiscordChannel {
   id: string;
   name: string;
   type: number;
+  topic?: string;
+  parent_id?: string | null;
+  thread_metadata?: { archived?: boolean; locked?: boolean };
 }
 
 /** Text channel. */
-const CHANNEL_TYPE_TEXT = 0;
+export const CHANNEL_TYPE_TEXT = 0;
+/** Category ("channel group") — the per-desktop container. */
+export const CHANNEL_TYPE_CATEGORY = 4;
+/** Public thread. */
+export const CHANNEL_TYPE_PUBLIC_THREAD = 11;
+/** Discord's maximum thread auto-archive window (7 days), in minutes. */
+const THREAD_ARCHIVE_MINUTES = 10080;
 
 export class DiscordRest {
   constructor(private readonly token: string) {}
@@ -66,8 +75,49 @@ export class DiscordRest {
     return this.call("GET", `/guilds/${guildId}/channels`);
   }
 
-  createTextChannel(guildId: string, name: string, topic?: string): Promise<DiscordChannel> {
-    return this.call("POST", `/guilds/${guildId}/channels`, { name, type: CHANNEL_TYPE_TEXT, topic });
+  createCategory(guildId: string, name: string): Promise<DiscordChannel> {
+    return this.call("POST", `/guilds/${guildId}/channels`, { name, type: CHANNEL_TYPE_CATEGORY });
+  }
+
+  createTextChannel(guildId: string, name: string, options?: { topic?: string; parentId?: string }): Promise<DiscordChannel> {
+    return this.call("POST", `/guilds/${guildId}/channels`, {
+      name,
+      type: CHANNEL_TYPE_TEXT,
+      topic: options?.topic,
+      parent_id: options?.parentId,
+    });
+  }
+
+  /** Threads that are currently active (not archived) in a guild. */
+  async activeThreads(guildId: string): Promise<DiscordChannel[]> {
+    const result = await this.call<{ threads?: DiscordChannel[] }>("GET", `/guilds/${guildId}/threads/active`);
+    return result?.threads || [];
+  }
+
+  async archivedThreads(channelId: string): Promise<DiscordChannel[]> {
+    const result = await this.call<{ threads?: DiscordChannel[] }>("GET", `/channels/${channelId}/threads/archived/public?limit=100`);
+    return result?.threads || [];
+  }
+
+  createThread(channelId: string, name: string): Promise<DiscordChannel> {
+    return this.call("POST", `/channels/${channelId}/threads`, {
+      name,
+      type: CHANNEL_TYPE_PUBLIC_THREAD,
+      auto_archive_duration: THREAD_ARCHIVE_MINUTES,
+    });
+  }
+
+  /** Brings an auto-archived thread back so a report is not swallowed. */
+  unarchiveThread(threadId: string): Promise<DiscordChannel> {
+    return this.call("PATCH", `/channels/${threadId}`, { archived: false, auto_archive_duration: THREAD_ARCHIVE_MINUTES });
+  }
+
+  pinMessage(channelId: string, messageId: string): Promise<void> {
+    return this.call("PUT", `/channels/${channelId}/pins/${messageId}`);
+  }
+
+  pinnedMessages(channelId: string): Promise<Array<{ id: string; content: string }>> {
+    return this.call("GET", `/channels/${channelId}/pins`);
   }
 
   createMessage(channelId: string, content: string): Promise<{ id: string }> {

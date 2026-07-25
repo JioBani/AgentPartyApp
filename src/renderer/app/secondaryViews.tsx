@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -348,7 +348,8 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
  * bridge (docs/기획 노트.md §11). The token is write-only here: the app returns a
  * mask, so an empty field means "keep the stored one", never "clear it".
  */
-function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; onSave: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void }) {
+function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; onSave: (patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void }) {
+  const [desktopName, setDesktopName] = useState(status?.desktopName || "");
   const [token, setToken] = useState("");
   const [guildId, setGuildId] = useState(status?.guildId || "");
   const [allowed, setAllowed] = useState((status?.allowedUserIds || []).join(", "));
@@ -367,7 +368,8 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
     : status?.configured ? "연결된 멤버 없음" : "봇 토큰을 입력하세요";
 
   function save() {
-    const patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] } = {
+    const patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] } = {
+      desktopName: desktopName.trim(),
       guildId: guildId.trim(),
       allowedUserIds: allowed.split(/[,\s]+/).map((id) => id.trim()).filter(Boolean),
     };
@@ -395,6 +397,13 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
       </div>
       {status?.error && <div className="set-inline-note" role="alert"><InfoIcon size={14} /><span>{status.error}</span></div>}
       <div className="set-card-fields">
+      <label className="set-field">
+        <span className="set-field-label">이 PC 이름</span>
+        <div className="set-input">
+          <MonitorSmartphone size={14} />
+          <input placeholder="디스코드에서 이 PC의 카테고리 이름이 됩니다" value={desktopName} onChange={(event) => setDesktopName(event.target.value)} />
+        </div>
+      </label>
       <label className="set-field">
         <span className="set-field-label">봇 토큰{status?.tokenMask ? ` (저장됨: ${status.tokenMask})` : ""}</span>
         <div className="set-input">
@@ -431,7 +440,7 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
       {Boolean(status?.bindings?.length) && (
         <div className="set-inline-note">
           <InfoIcon size={14} />
-          <span>연결된 멤버: {status!.bindings.map((binding) => `${binding.member} → #${binding.channelName}`).join(", ")}</span>
+          <span>연결된 멤버: {status!.bindings.map((binding) => `${binding.member} → #${binding.channelName} ▸ ${binding.threadName}`).join(", ")}</span>
         </div>
       )}
     </>

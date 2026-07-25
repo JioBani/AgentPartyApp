@@ -693,7 +693,7 @@ export class AppController {
   }
 
   /** Same operation the member's `discord-connect` tool performs, for UI/QA. */
-  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; created: boolean }> {
+  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const listing = await this.listPartyMembers(workspacePath, windowId, party);
     const result = await this.requireDiscord().connectMember({
@@ -703,7 +703,7 @@ export class AppController {
       member: name,
       channelName,
     });
-    return { ok: true, channel: result.channelName, channelId: result.channelId, created: result.created };
+    return { ok: true, channel: result.channelName, channelId: result.channelId, thread: result.threadName, threadId: result.threadId, created: result.created };
   }
 
   async discordSendAsMember(workspacePath: string, name: string, content: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string }> {

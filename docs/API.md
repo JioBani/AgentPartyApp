@@ -237,9 +237,24 @@ The default key is a loopback client key, not an OpenAI or Anthropic credential.
 
 ## Discord bridge
 
-Lets one member report to (and be instructed from) a Discord channel, so the user
-can follow a run from a phone or another PC without exposing the app to the
-network. Design: `docs/기획 노트.md` §11.
+Lets a member report to (and be instructed from) Discord, so the user can follow a
+run from a phone or another PC without exposing the app to the network. Design:
+`docs/기획 노트.md` §11.
+
+Layout — one level per thing that can collide:
+
+```
+category  "<desktop name>"        this PC
+  channel #<party>-<id slice>     one party  (pinned header: desktop, party, cwd)
+    thread <member>               one member (all traffic happens here)
+```
+
+Names alone identify nothing: two PCs — or two workspaces on one PC — routinely
+hold a party called `dev` with a member called `main`. A channel is therefore
+matched by the identity stamped in its **topic** (desktop + workspace + party id),
+never by its name, so two machines can never be joined to one channel. Only
+**thread** messages are delivered; a message typed in the party channel body names
+no member, so it is logged and dropped (the bot does not reply there).
 
 Deliberate limits — these are the design, not gaps:
 
@@ -261,6 +276,7 @@ Bridge status. Never returns the token itself.
 
 ```json
 {
+  "desktopName": "WORK-PC",
   "configured": true,
   "connection": "connected",
   "botUser": { "id": "1530586029264867499", "username": "AgentParty" },
@@ -269,7 +285,8 @@ Bridge status. Never returns the token itself.
   "allowedUserIds": ["1530583970272514279"],
   "bindings": [
     { "workspacePath": "C:/work", "party": "party-1", "member": "reporter",
-      "channelId": "1530587845813731339", "channelName": "reporter" }
+      "channelId": "1530587845813731339", "channelName": "dev-7bd616",
+      "threadId": "1530608537422532678", "threadName": "reporter" }
   ]
 }
 ```
@@ -279,8 +296,9 @@ field carries the reason (a dead bridge must be visible, not silent).
 
 ### `POST /api/discord/settings`
 
-Body (all optional): `botToken`, `guildId`, `allowedUserIds` (array of Discord
-user ids). Returns the same shape as `GET /api/discord`. Changing the token or
+Body (all optional): `desktopName` (the category this PC's channels live under —
+defaults to the OS hostname), `botToken`, `guildId`, `allowedUserIds` (array of
+Discord user ids). Returns the same shape as `GET /api/discord`. Changing the token or
 guild drops the gateway so the next connect re-authenticates.
 
 Leave `guildId` empty to auto-detect — allowed only when the bot is in exactly
@@ -288,10 +306,11 @@ one server; with several the call fails and lists them rather than guessing.
 
 ### `POST /api/party/members/:name/discord/connect`
 
-Gives that member its own text channel (creating it, or reusing one with the same
-name) and starts inbound delivery. Body: `{ "channelName": "optional-override" }`.
-Returns `{ ok, channel, channelId, created }`. Same operation as the member's own
-`discord-connect` tool.
+Places the member in Discord — desktop category → party channel → member thread,
+creating whatever is missing — and starts inbound delivery. Body:
+`{ "channelName": "optional-thread-name" }`. Returns
+`{ ok, channel, channelId, thread, threadId, created }` (`created` refers to the
+party channel). Same operation as the member's own `discord-connect` tool.
 
 ### `POST /api/party/members/:name/discord/send`
 
@@ -300,7 +319,7 @@ the content is over the limit or Discord rate limits the request.
 
 ### `POST /api/party/members/:name/discord/disconnect`
 
-Stops bridging that member. The channel and its history remain in Discord.
+Stops bridging that member. The thread and its history remain in Discord.
 Returns `{ ok, removed }`.
 
 ## Models

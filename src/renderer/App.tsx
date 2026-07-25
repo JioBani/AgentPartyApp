@@ -578,7 +578,7 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
-  async function saveDiscordSettings(patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) {
+  async function saveDiscordSettings(patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) {
     setDiscord(await window.agentParty.updateDiscordSettings(patch) as DiscordBridgeStatus);
   }
 
