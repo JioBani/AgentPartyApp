@@ -355,11 +355,16 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
   const [saved, setSaved] = useState(false);
 
   const connection = status?.connection || "off";
-  const dotClass = connection === "connected" ? "is-success" : connection === "error" ? "is-error" : "";
+  const dotClass = connection === "connected" ? "is-success" : connection === "error" ? "is-error" : "is-idle";
   const connectionLabel = connection === "connected" ? "연결됨"
     : connection === "connecting" ? "연결 중…"
     : connection === "error" ? "오류"
-    : status?.configured ? "대기 중 (연결된 멤버 없음)" : "미설정";
+    : status?.configured ? "대기 중" : "미설정";
+  // The right-hand side answers "what is it bound to", not "what is the token" —
+  // the mask already lives on the token field's own label.
+  const connectionDetail = status?.botUser
+    ? `${status.botUser.username} · 채널 ${status.bindings.length}개`
+    : status?.configured ? "연결된 멤버 없음" : "봇 토큰을 입력하세요";
 
   function save() {
     const patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] } = {
@@ -385,10 +390,11 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
       <div className="set-router-row">
         <span className="set-router-id"><span className={"set-dot " + dotClass} /> {connectionLabel}</span>
         <span className="set-router-end">
-          <span className="wb-mono">{status?.botUser ? `${status.botUser.username} · ${status.bindings.length}개 채널` : status?.tokenMask || "토큰 없음"}</span>
+          <span className="wb-mono">{connectionDetail}</span>
         </span>
       </div>
       {status?.error && <div className="set-inline-note" role="alert"><InfoIcon size={14} /><span>{status.error}</span></div>}
+      <div className="set-card-fields">
       <label className="set-field">
         <span className="set-field-label">봇 토큰{status?.tokenMask ? ` (저장됨: ${status.tokenMask})` : ""}</span>
         <div className="set-input">
@@ -414,6 +420,7 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
           <input placeholder="쉼표로 구분 · 비우면 아무도 멤버에게 말을 걸 수 없음" value={allowed} onChange={(event) => setAllowed(event.target.value)} />
         </div>
       </label>
+      </div>
       <div className="set-inline-note">
         <InfoIcon size={14} />
         <span>여기 적힌 사용자만 멤버에게 지시할 수 있습니다. 멤버는 이 PC에서 파일을 고치고 명령을 실행하므로, 비워두면 인바운드는 전부 차단됩니다.</span>
