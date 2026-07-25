@@ -24,6 +24,8 @@ import { SubscriptionProxyService } from "./subscriptionProxyService";
 import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
 import type { GateReviewer } from "../shared/messageGate";
+import { DiscordBridgeService } from "./discordBridgeService";
+import { loadDotEnv } from "./dotenv";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -58,6 +60,7 @@ let workspaceManager: WorkspaceManager | undefined;
 let windowRegistry: WindowRegistry | undefined;
 let automationApi: AutomationApiServer | undefined;
 let appController: AppController | undefined;
+let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 
@@ -170,6 +173,13 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
 async function bootstrap(): Promise<void> {
   setUserDataDir(app.getPath("userData"));
   initLogger();
+  // Development/QA convenience: a .env next to the app fills env vars that are
+  // not already set (e.g. DISCORD_BOT_TOKEN). Logged so a credential's origin is
+  // never a mystery. Production credentials live in settings.json.
+  const dotEnvKeys = loadDotEnv(app.getAppPath());
+  if (dotEnvKeys.length) {
+    log("info", "env", ".env values loaded", { keys: dotEnvKeys });
+  }
   const settings = getSettings();
   setDebugLoggingEnabled(settings.debugEnabled);
   subscriptionProxyService = new SubscriptionProxyService({
@@ -187,6 +197,33 @@ async function bootstrap(): Promise<void> {
   const acpRelayScript = app.isPackaged
     ? path.join(process.resourcesPath, "bin", "agentparty-acp-mcp-relay.mjs")
     : path.join(app.getAppPath(), "scripts", "agentparty-acp-mcp-relay.mjs");
+  // The Discord bridge: outbound is the member's MCP tools, inbound is injected
+  // through the ordinary party-message path so an idle member is woken and a busy
+  // one queues it. See docs/기획 노트.md §11.
+  discordBridge = new DiscordBridgeService({
+    deliver: async ({ binding, authorName, content }) => {
+      if (!appController) {
+        return { delivered: false, error: "app is still starting" };
+      }
+      // Same wrapper convention as party messages, so a member reads its origin.
+      const wrapped = `<channel source="discord" from="${authorName}">
+${content}
+</channel>`;
+      try {
+        const result: any = await appController.sendMemberMessage(binding.workspacePath, binding.member, wrapped, undefined, undefined);
+        const delivered = result?.partyMessage?.delivered ?? result?.delivered ?? true;
+        return { delivered: Boolean(delivered), error: result?.partyMessage?.error || result?.error };
+      } catch (error) {
+        return { delivered: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    onStatusChanged: (status) => {
+      for (const entry of registry().all()) {
+        entry.window.webContents.send("discord:update", status);
+      }
+    },
+    log: (message) => log("info", "discord", message),
+  });
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
     router: {
@@ -196,6 +233,9 @@ async function bootstrap(): Promise<void> {
       cursorAcpRelayScriptPath: acpRelayScript,
       cursorExecutablePath: () => getSettings().cursorExecutablePath || undefined,
     },
+    // Members reach Discord through their party tools; the bridge itself is
+    // desktop-owned (it holds the token and the gateway socket).
+    discord: discordBridge,
     // Desktop only: a WSL workspace is served by an engine spawned in the distro.
     createRemoteEngine: (location, serialized) => {
       if (location.host.kind !== "wsl") {
@@ -292,6 +332,7 @@ async function bootstrap(): Promise<void> {
     openWindow: (workspacePath) => createWindow(workspacePath),
     onSettingsChanged: () => applyRuntimeSettings(),
     onWorkspacesChanged: () => reconcileDiscovery(),
+    discord: discordBridge,
   });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
@@ -310,6 +351,9 @@ async function bootstrap(): Promise<void> {
   await createWindow(launched || defaultWorkspace());
   await automationApi.start();
   reconcileDiscovery();
+  // Re-open the Discord gateway for members bridged in an earlier run, so a
+  // restart does not silently stop delivering what the user types there.
+  discordBridge.resume();
 }
 
 /** Stamp identifying this process run, written into each discovery file. */
@@ -502,6 +546,8 @@ function registerIpc(): void {
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
 
+  handle("discord:get", async () => controller().discordStatus());
+  handle("discord:update", async (_event, patch) => controller().updateDiscordSettings(patch as any));
   handle("usage:get", async () => controller().getUsageLimits());
   handle("usage:refresh", async () => controller().refreshUsageLimits());
   handle("tokenUsage:get", async (event, query: unknown) => controller().getTokenUsage(senderWorkspace(event), query as any));

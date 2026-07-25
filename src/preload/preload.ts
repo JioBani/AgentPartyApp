@@ -13,6 +13,8 @@ const api = {
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
+  getDiscordStatus: () => ipcRenderer.invoke("discord:get"),
+  updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
   refreshUsageLimits: () => ipcRenderer.invoke("usage:refresh"),
   getTokenUsage: (query: unknown) => ipcRenderer.invoke("tokenUsage:get", query),
@@ -96,6 +98,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("auth:update", listener);
     return () => ipcRenderer.off("auth:update", listener);
+  },
+  onDiscordUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("discord:update", listener);
+    return () => ipcRenderer.off("discord:update", listener);
   },
   onUsageUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

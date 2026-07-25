@@ -5,6 +5,7 @@ import { WorkspaceManager, type ReviewGate } from "../workspaceManager";
 import { setUserDataDir } from "../userDataDir";
 import { EngineRegistry } from "./engineRegistry";
 import type { EngineRegistryDeps } from "./engineRegistry";
+import type { DiscordBridgePort } from "../application/partyApplicationService";
 
 export interface EngineHostConfig {
   /** Base dir for harness debug logs (Electron userData on desktop; an
@@ -26,6 +27,11 @@ export interface EngineHostConfig {
    * subscription bridge and embedded router cannot be reached directly.
    */
   reviewGate?: ReviewGate;
+  /**
+   * Discord bridge for the party tools. Desktop-only: a headless engine has no
+   * bridge, and the tools then report that plainly instead of doing nothing.
+   */
+  discord?: DiscordBridgePort;
 }
 
 /**
@@ -60,7 +66,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
       : undefined,
   });
   const sessionManager = new SessionManager(router, config.storageDir);
-  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate);
+  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord);
   const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {

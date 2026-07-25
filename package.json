@@ -44,6 +44,7 @@
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",
+    "test:e2e:discord-bridge": "npm run build && node scripts/e2e-discord-bridge.mjs",
     "test:e2e:auto-compact": "npm run build && node scripts/e2e-auto-compact.mjs",
     "test:e2e:compact": "npm run build && node scripts/e2e-compact.mjs",
     "test:e2e:usage-limits": "npm run build && node scripts/e2e-usage-limits.mjs",
@@ -169,12 +170,14 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",
     "remark-gfm": "^4.0.1",
+    "ws": "^8.21.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/ws": "^8.18.1",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",

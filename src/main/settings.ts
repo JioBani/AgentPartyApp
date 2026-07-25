@@ -7,6 +7,7 @@ import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
+import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -52,6 +53,7 @@ const defaults: AppSettings = {
   transcriptFontScale: 1,
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
+  discord: { ...DEFAULT_DISCORD_SETTINGS },
 };
 
 /** Transcript zoom bounds — keep in sync with the renderer's Ctrl+wheel step. */
@@ -150,7 +152,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   }
   const compactDefault = normalizeAutoCompact(withRuntimeOverrides.compactDefault) || { ...DEFAULT_AUTO_COMPACT };
   const gateDefaults = normalizeGateDefaults(withRuntimeOverrides.gateDefaults);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const discord = normalizeDiscordSettings(withRuntimeOverrides.discord || DEFAULT_DISCORD_SETTINGS);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {
@@ -159,6 +162,8 @@ export function getPublicSettings(): AppSettings {
     ...settings,
     openRouterApiKey: settings.openRouterApiKey ? maskSecret(settings.openRouterApiKey) || "" : "",
     routerAuthToken: settings.routerAuthToken ? "[redacted]" : "",
+    // The bot token is a bot credential — never leaves the main process in clear.
+    discord: { ...settings.discord!, botToken: settings.discord?.botToken ? maskSecret(settings.discord.botToken) || "" : "" },
   };
 }
 

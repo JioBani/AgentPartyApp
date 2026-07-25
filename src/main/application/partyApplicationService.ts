@@ -57,6 +57,22 @@ export interface PartyApplicationDeps {
    * `core/messageGateReviewer.ts`.
    */
   reviewGate?: (message: GateReviewMessage, reviewer: GateReviewer) => Promise<GateReviewResult>;
+  /**
+   * Discord bridge, injected by the wiring layer. Absent → the discord-* tools
+   * report that the bridge is unavailable in this process (a headless/QA engine),
+   * rather than silently doing nothing. See `main/discordBridgeService.ts`.
+   */
+  discord?: DiscordBridgePort;
+}
+
+/**
+ * What the party tools need from the Discord bridge. Scoped to ONE member — the
+ * caller — so an agent can never bridge or post as a teammate.
+ */
+export interface DiscordBridgePort {
+  connectMember(input: { workspacePath: string; party: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; created: boolean }>;
+  sendAsMember(workspacePath: string, party: string, member: string, content: string): Promise<{ channelName: string }>;
+  disconnectMember(workspacePath: string, party: string, member: string): { removed: boolean };
 }
 
 // Mirrors the renderer's BUSY_STATUSES (src/renderer/workbench/memberStatus.ts):
@@ -1491,6 +1507,45 @@ export class PartyApplicationService {
           const result = await this.broadcastMessage(content, selfMember, party, { interrupt });
           notify();
           return { ok: true, data: { delivered: result.delivered, failed: result.failed } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      // Discord tools act on the CALLER only — `selfMember` is closure-bound, so
+      // there is no member argument an agent could point at someone else.
+      discordConnect: async (channelName) => {
+        const discord = this.deps.discord;
+        if (!discord) {
+          return { ok: false, error: "The Discord bridge is not available in this process." };
+        }
+        try {
+          const result = await discord.connectMember({ workspacePath: this.workspacePath(), party, member: selfMember, channelName });
+          return { ok: true, data: { channel: result.channelName, channelId: result.channelId, created: result.created } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      discordSend: async (content) => {
+        const discord = this.deps.discord;
+        if (!discord) {
+          return { ok: false, error: "The Discord bridge is not available in this process." };
+        }
+        try {
+          const result = await discord.sendAsMember(this.workspacePath(), party, selfMember, content);
+          return { ok: true, data: { channel: result.channelName } };
+        } catch (error) {
+          // Rate limits and the length rejection both land here; the message
+          // carries what the agent must do next (wait N ms / split the text).
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      discordDisconnect: async () => {
+        const discord = this.deps.discord;
+        if (!discord) {
+          return { ok: false, error: "The Discord bridge is not available in this process." };
+        }
+        try {
+          return { ok: true, data: discord.disconnectMember(this.workspacePath(), party, selfMember) };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
