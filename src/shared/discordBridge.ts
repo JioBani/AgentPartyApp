@@ -11,14 +11,24 @@
 /** Discord's hard per-message limit. Longer content is REJECTED, never truncated. */
 export const DISCORD_MESSAGE_LIMIT = 2000;
 
-/** Channel name Discord accepts: lowercase, no spaces. */
-export function discordChannelNameOf(member: string): string {
-  const slug = member
+/**
+ * Channel name Discord accepts: lowercase, no spaces. Built from PARTY + MEMBER
+ * because member names repeat across parties (every party has a `main`), and a
+ * channel list of bare member names would be unreadable once two parties are
+ * bridged. Non-ASCII party names (Korean) survive — Discord lowercases and
+ * accepts them; only characters it rejects are folded to `-`.
+ */
+export function discordChannelNameOf(party: string, member: string): string {
+  return [party, member].map(slugPart).filter(Boolean).join("-").slice(0, 90) || "member";
+}
+
+function slugPart(value: string): string {
+  return String(value || "")
     .toLowerCase()
-    .replace(/[^a-z0-9\-_]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 90);
-  return slug || "member";
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^\p{L}\p{N}\-]+/gu, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 export interface DiscordBridgeSettings {

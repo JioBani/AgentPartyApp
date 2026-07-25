@@ -694,9 +694,12 @@ export class AppController {
 
   /** Same operation the member's `discord-connect` tool performs, for UI/QA. */
   async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; created: boolean }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const listing = await this.listPartyMembers(workspacePath, windowId, party);
     const result = await this.requireDiscord().connectMember({
       workspacePath,
-      party: await this.partyOfMember(workspacePath, name, windowId, partyId),
+      party,
+      partyLabel: (listing as any)?.parties?.find((entry: any) => entry?.id === party)?.name,
       member: name,
       channelName,
     });

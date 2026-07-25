@@ -52,8 +52,10 @@ interface StoredBindings {
 export interface DiscordConnectRequest {
   workspacePath: string;
   party: string;
+  /** Human-readable party name for the channel name; falls back to the party id. */
+  partyLabel?: string;
   member: string;
-  /** Override the channel name; defaults to a slug of the member name. */
+  /** Override the channel name entirely. */
   channelName?: string;
 }
 
@@ -122,7 +124,9 @@ export class DiscordBridgeService {
     const settings = this.requireSettings();
     const rest = new DiscordRest(settings.botToken);
     const guildId = await this.resolveGuild(rest, settings.guildId);
-    const wanted = discordChannelNameOf(request.channelName || request.member);
+    const wanted = request.channelName
+      ? discordChannelNameOf("", request.channelName)
+      : discordChannelNameOf(request.partyLabel || request.party, request.member);
 
     const existing = this.bindingFor(request.workspacePath, request.party, request.member);
     if (existing) {

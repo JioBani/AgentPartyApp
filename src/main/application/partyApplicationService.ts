@@ -70,7 +70,7 @@ export interface PartyApplicationDeps {
  * caller — so an agent can never bridge or post as a teammate.
  */
 export interface DiscordBridgePort {
-  connectMember(input: { workspacePath: string; party: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; created: boolean }>;
+  connectMember(input: { workspacePath: string; party: string; partyLabel?: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; created: boolean }>;
   sendAsMember(workspacePath: string, party: string, member: string, content: string): Promise<{ channelName: string }>;
   disconnectMember(workspacePath: string, party: string, member: string): { removed: boolean };
 }
@@ -1519,7 +1519,14 @@ export class PartyApplicationService {
           return { ok: false, error: "The Discord bridge is not available in this process." };
         }
         try {
-          const result = await discord.connectMember({ workspacePath: this.workspacePath(), party, member: selfMember, channelName });
+          const result = await discord.connectMember({
+            workspacePath: this.workspacePath(),
+            party,
+            // The channel is named after the party the user SEES, not its id.
+            partyLabel: this.partyLabelOf(party),
+            member: selfMember,
+            channelName,
+          });
           return { ok: true, data: { channel: result.channelName, channelId: result.channelId, created: result.created } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
@@ -1555,6 +1562,11 @@ export class PartyApplicationService {
 
   private workspacePath(): string {
     return this.deps.getWorkspacePath() || process.cwd();
+  }
+
+  /** The party's display name (falls back to its id when it cannot be resolved). */
+  partyLabelOf(partyId: string): string {
+    return this.list().parties.find((party) => party.id === partyId)?.name || partyId;
   }
 }
 

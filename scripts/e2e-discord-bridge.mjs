@@ -27,7 +27,7 @@ const runId = `${process.pid}-${Math.floor(Number(process.hrtime.bigint() % 1000
 const ws = path.join(os.tmpdir(), `agentparty-discord-bridge-ws-${runId}`);
 const userData = path.join(os.tmpdir(), `agentparty-discord-bridge-user-data-${runId}`);
 const memberName = "reporter";
-const channelName = `e2e-reporter-${process.pid}`;
+const partyName = `e2e-discord-${process.pid}`;
 const model = process.env.AGENTPARTY_DISCORD_E2E_MODEL || "sonnet";
 const waitForInbound = !process.argv.includes("--no-inbound");
 
@@ -84,7 +84,7 @@ async function main() {
     assert(Array.isArray(status.allowedUserIds) && status.allowedUserIds.includes(userId), "whitelist carries the user id");
     step(`status: configured=${status.configured} tokenMask=${status.tokenMask} allowed=${status.allowedUserIds.join(",")}`);
 
-    await post("/api/parties", { name: "discord bridge e2e" });
+    await post("/api/parties", { name: partyName });
     await post("/api/party/members", {
       name: memberName,
       requirement: "Report progress to the user over Discord.",
@@ -95,10 +95,11 @@ async function main() {
     });
 
     // 2. HTTP path: connect + send, verified against Discord itself.
-    const connected = await post(`/api/party/members/${memberName}/discord/connect`, { channelName });
+    const connected = await post(`/api/party/members/${memberName}/discord/connect`, {});
     channelId = connected.channelId;
     assert(connected.ok && channelId, "connect returned a channel");
     assert(connected.created === true, "a fresh channel was created");
+    assert(connected.channel === `${partyName}-${memberName}`, `the channel is named party-member (got #${connected.channel})`);
     step(`connected: #${connected.channel} (${channelId})`);
 
     const marker = `http-path-${Date.now()}`;

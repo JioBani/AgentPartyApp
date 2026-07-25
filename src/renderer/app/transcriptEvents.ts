@@ -20,7 +20,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       // <channel> envelope; render it as a clean message card, not raw XML.
       const channel = event.status === "sent" ? parseChannel(event.detail) : null;
       if (channel) {
-        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", from: channel.from, to: channel.to, text: channel.text, at: nowTime() });
+        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime() });
       } else {
         next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), at: nowTime() });
       }
@@ -190,12 +190,16 @@ function appendText(current: Record<string, TranscriptBlock[]>, sessionId: strin
   return { ...current, [sessionId]: items };
 }
 
-// Matches the inbound envelope produced by the main process
-// (`buildChannelPayload`): <channel source="agentparty" from=".." to="..">body</channel>.
+// Matches an inbound envelope produced by the main process: a member-to-member
+// message (`buildChannelPayload`)
+//   <channel source="agentparty" from=".." to="..">body</channel>
+// or one relayed from the Discord bridge, which has no `to` (it is addressed to
+// whichever member owns the channel)
+//   <channel source="discord" from="..">body</channel>
 // from/to attributes are entity-escaped (& " <); the body is raw.
-const CHANNEL_RE = /^<channel source="agentparty" from="([^"]*)" to="([^"]*)">\s*([\s\S]*?)\s*<\/channel>/;
+const CHANNEL_RE = /^<channel source="(agentparty|discord)" from="([^"]*)"(?: to="([^"]*)")?>\s*([\s\S]*?)\s*<\/channel>/;
 
-function parseChannel(detail: unknown): { from: string; to: string; text: string } | null {
+function parseChannel(detail: unknown): { source: "agentparty" | "discord"; from: string; to: string; text: string } | null {
   if (typeof detail !== "string") {
     return null;
   }
@@ -203,7 +207,7 @@ function parseChannel(detail: unknown): { from: string; to: string; text: string
   if (!match) {
     return null;
   }
-  return { from: unescapeAttr(match[1]), to: unescapeAttr(match[2]), text: match[3] };
+  return { source: match[1] as "agentparty" | "discord", from: unescapeAttr(match[2]), to: unescapeAttr(match[3] || ""), text: match[4] };
 }
 
 function unescapeAttr(value: string): string {

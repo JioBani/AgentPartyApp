@@ -4455,6 +4455,16 @@ body.wb-resizing {
    gutter (it is designed to sit inside `.set-harness-pick`), so without this the
    inputs run edge to edge while every sibling block is inset by 20px. */
 .set-card-fields { display: flex; flex-direction: column; gap: 12px; margin: 15px 20px 0; }
+/* `.set-input` is `flex: 1`, which inside a COLUMN flex field sets flex-basis on
+   the height and collapses its 38px down to the text height. Pin it back to the
+   same 38px the selects and buttons use so stacked fields match every other
+   control on the settings screen. */
+.set-card-fields .set-input { flex: none; height: 38px; }
+/* Discord-origin channel card: same layout as an inter-member message, with the
+   origin named so "the user wrote this from their phone" is never mistaken for
+   "a teammate member sent this". */
+.wb-channel-source { display: inline-flex; align-items: center; height: 17px; padding: 0 6px; margin-right: 2px; border-radius: 5px; background: var(--accent-dim); color: var(--accent); font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; }
+.wb-channel.is-discord .wb-channel-icon { color: var(--accent); }
 .set-router-end { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-1); }
 .set-icon-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: var(--border-width) solid var(--border); border-radius: 6px; color: var(--text-3); cursor: pointer; }
 .set-icon-btn:hover { background: var(--bg-3); color: var(--text-0); }
