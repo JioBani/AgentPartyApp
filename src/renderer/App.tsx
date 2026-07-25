@@ -16,6 +16,7 @@ import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
+import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
@@ -47,6 +48,7 @@ export function App() {
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
   const [usageLimits, setUsageLimits] = useState<UsageLimitsSnapshot>({});
+  const [discord, setDiscord] = useState<DiscordBridgeStatus | undefined>();
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
@@ -253,6 +255,10 @@ export function App() {
     // The push sends the raw snapshot; the initial fetch wraps it in `{ usage }`.
     const offUsageUpdate = window.agentParty.onUsageUpdate?.((payload) => setUsageLimits((payload as UsageLimitsSnapshot) || {}));
     void window.agentParty.getUsageLimits?.().then((res) => { if (res?.usage) setUsageLimits(res.usage); });
+    // Discord bridge status: pushed on every state change (connect/error), and
+    // fetched once at load so Settings shows the stored credentials immediately.
+    const offDiscordUpdate = window.agentParty.onDiscordUpdate?.((payload) => setDiscord(payload as DiscordBridgeStatus));
+    void window.agentParty.getDiscordStatus?.().then((status) => setDiscord(status as DiscordBridgeStatus));
     const offNavigate = window.agentParty.onNavigate((view) => {
       if (isViewId(view)) setCurrentView(view);
     });
@@ -266,6 +272,7 @@ export function App() {
       offPartyUpdate();
       offModelsUpdate();
       offSettingsUpdate?.();
+      offDiscordUpdate?.();
       offAuthUpdate?.();
       offUsageUpdate?.();
       offQaLayout();
@@ -569,6 +576,10 @@ export function App() {
   async function saveGateDefault(reviewer: GateReviewer) {
     const settings = await window.agentParty.updateSettings({ gateDefaults: reviewer });
     setState((current) => ({ ...current, settings }));
+  }
+
+  async function saveDiscordSettings(patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) {
+    setDiscord(await window.agentParty.updateDiscordSettings(patch) as DiscordBridgeStatus);
   }
 
   // --- Workbench actions (addressed by member name) -----------------------
@@ -1116,6 +1127,8 @@ export function App() {
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveGateDefault={saveGateDefault}
+                  discord={discord}
+                  onSaveDiscord={saveDiscordSettings}
                 />
               )}
               {currentView === "usage" && (

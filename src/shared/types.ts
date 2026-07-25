@@ -5,6 +5,7 @@ import type { CursorPolicy } from "./cursorPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
+import type { DiscordBridgeSettings } from "./discordBridge";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -79,6 +80,11 @@ export interface AppSettings {
    * Settings → Runtime. See `shared/messageGate.ts` / docs/MESSAGE_GATE.md.
    */
   gateDefaults: GateReviewer;
+  /**
+   * Discord bridge credentials and inbound whitelist. Edited in Settings →
+   * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
+   */
+  discord?: DiscordBridgeSettings;
 }
 
 /** All harnesses that have defaults, in a stable order. */

@@ -30,6 +30,8 @@ import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
+import type { DiscordBridgeService } from "../discordBridgeService";
+import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -44,6 +46,8 @@ export interface AppControllerDeps {
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
   onWorkspacesChanged: () => void;
+  /** Discord bridge. Desktop-owned; absent in a headless remote engine. */
+  discord?: DiscordBridgeService;
 }
 
 /** Public model discovery shared by the UI and automation/member-tool clients. */
@@ -672,6 +676,70 @@ export class AppController {
     const result = await this.engineFor(workspacePath).setPartyGate(target, gate);
     await this.broadcastParty(workspacePath);
     return result;
+  }
+
+  // --- Discord bridge (docs/기획 노트.md §11) ------------------------------
+  // UI, HTTP and the member's MCP tools all land here, so there is one code path
+  // per capability. The token never leaves this process: status carries a mask.
+
+  discordStatus(): DiscordBridgeStatus {
+    return this.requireDiscord().status();
+  }
+
+  updateDiscordSettings(patch: Partial<DiscordBridgeSettings>): DiscordBridgeStatus {
+    const status = this.requireDiscord().updateSettings(patch);
+    this.deps.onSettingsChanged();
+    return status;
+  }
+
+  /** Same operation the member's `discord-connect` tool performs, for UI/QA. */
+  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const listing = await this.listPartyMembers(workspacePath, windowId, party);
+    const result = await this.requireDiscord().connectMember({
+      workspacePath,
+      party,
+      partyLabel: (listing as any)?.parties?.find((entry: any) => entry?.id === party)?.name,
+      member: name,
+      channelName,
+    });
+    return { ok: true, channel: result.channelName, channelId: result.channelId, thread: result.threadName, threadId: result.threadId, created: result.created };
+  }
+
+  async discordSendAsMember(workspacePath: string, name: string, content: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const result = await this.requireDiscord().sendAsMember(workspacePath, party, name, content);
+    return { ok: true, channel: result.channelName };
+  }
+
+  async discordDisconnectMember(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<{ ok: true; removed: boolean }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const result = this.requireDiscord().disconnectMember(workspacePath, party, name);
+    return { ok: true, removed: result.removed };
+  }
+
+  /**
+   * The party a member actually belongs to — NOT merely the caller's active one.
+   * A binding is keyed by (workspace, party, member), and the member's own MCP
+   * tools key it with their real party id; resolving from the window instead
+   * would key the same member two different ways and silently bind a second
+   * channel. Explicit `partyId` still wins.
+   */
+  private async partyOfMember(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<string> {
+    if (partyId) {
+      return partyId;
+    }
+    const listing = await this.listPartyMembers(workspacePath, windowId);
+    const member = (listing as any)?.members?.find((entry: any) => entry?.name === name);
+    return member?.partyId || (await this.pinnedPartyForWindow(workspacePath, windowId)) || "";
+  }
+
+  private requireDiscord(): DiscordBridgeService {
+    if (!this.deps.discord) {
+      // Explicit, not a silent no-op: a headless engine has no bridge.
+      throw new Error("The Discord bridge is not available in this process.");
+    }
+    return this.deps.discord;
   }
 
   getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {

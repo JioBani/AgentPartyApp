@@ -136,6 +136,32 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.disconnectSubscriptionProvider(subscriptionDisconnectMatch[1] as "codex" | "claude" | "cursor"));
         return;
       }
+      // --- Discord bridge (docs/기획 노트.md §11) ---------------------------
+      if (method === "GET" && url.pathname === "/api/discord") {
+        sendJson(res, 200, c.discordStatus());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/discord/settings") {
+        sendJson(res, 200, c.updateDiscordSettings(await readJson(req)));
+        return;
+      }
+      const discordConnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/connect$/);
+      if (method === "POST" && discordConnectMatch) {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordConnectMember(workspace, decodeURIComponent(discordConnectMatch[1]), body.channelName ? String(body.channelName) : undefined, windowId, partyId));
+        return;
+      }
+      const discordSendMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/send$/);
+      if (method === "POST" && discordSendMatch) {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordSendAsMember(workspace, decodeURIComponent(discordSendMatch[1]), String(body.content || ""), windowId, partyId));
+        return;
+      }
+      const discordDisconnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/disconnect$/);
+      if (method === "POST" && discordDisconnectMatch) {
+        sendJson(res, 200, await c.discordDisconnectMember(workspace, decodeURIComponent(discordDisconnectMatch[1]), windowId, partyId));
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/models") {
         sendJson(res, 200, await c.listModels(workspace));
         return;

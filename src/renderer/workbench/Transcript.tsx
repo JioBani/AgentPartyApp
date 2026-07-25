@@ -222,14 +222,18 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
  */
 function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "channel" }>; view: MemberView }) {
   const incoming = block.direction === "in";
+  const fromDiscord = block.source === "discord";
   const from = incoming ? block.from : view.name;
   const to = incoming ? view.name : block.to;
   const failed = block.state === "failed";
   return (
-    <div className={"wb-block wb-channel" + (incoming ? " is-in" : " is-out") + (failed ? " is-failed" : "")}>
+    <div className={"wb-block wb-channel" + (incoming ? " is-in" : " is-out") + (failed ? " is-failed" : "") + (fromDiscord ? " is-discord" : "")}>
       <div className="wb-channel-head">
         <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
         <span className="wb-channel-route">
+          {/* Same card as a member-to-member message, but the origin is stated:
+              a Discord message comes from the USER on another device, not a peer. */}
+          {fromDiscord && <span className="wb-channel-source">Discord</span>}
           <span className="wb-channel-peer">{from || "?"}</span>
           <ArrowRight size={12} className="wb-channel-arrow" />
           <span className="wb-channel-peer">{to || "?"}</span>

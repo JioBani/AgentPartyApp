@@ -235,6 +235,93 @@ Override the local deployment with `AGENTPARTY_SUBSCRIPTION_PROXY_URL` and
 `AGENTPARTY_SUBSCRIPTION_PROXY_CONFIG` override local binary/config discovery.
 The default key is a loopback client key, not an OpenAI or Anthropic credential.
 
+## Discord bridge
+
+Lets a member report to (and be instructed from) Discord, so the user can follow a
+run from a phone or another PC without exposing the app to the network. Design:
+`docs/기획 노트.md` §11.
+
+Layout — one level per thing that can collide:
+
+```
+category  "<desktop name>"        this PC
+  channel #<party>-<id slice>     one party  (pinned header: desktop, party, cwd)
+    thread <member>               one member (all traffic happens here)
+```
+
+Names alone identify nothing: two PCs — or two workspaces on one PC — routinely
+hold a party called `dev` with a member called `main`. A channel is therefore
+matched by the identity stamped in its **topic** (desktop + workspace + party id),
+never by its name, so two machines can never be joined to one channel. Only
+**thread** messages are delivered; a message typed in the party channel body names
+no member, so it is logged and dropped (the bot does not reply there).
+
+Deliberate limits — these are the design, not gaps:
+
+- **Text only.** No buttons, select menus, modals or uploads.
+- **No throttling here.** A Discord 429 is returned to the caller with
+  `retry_after_ms`; nothing is queued or retried for you.
+- **2000 characters max.** Longer content is rejected, never truncated.
+- **Inbound is whitelist-only.** A message from a Discord user id that is not in
+  `allowedUserIds` is dropped and logged. An empty list allows nobody.
+
+The bot token is stored in `settings.json` (outside the repo) and only ever read
+back masked. For development it can also come from `DISCORD_BOT_TOKEN` (and
+`DISCORD_USER_ID` / `DISCORD_GUILD_ID`) via the environment or a `.env` next to
+the app; stored settings win over the environment.
+
+### `GET /api/discord`
+
+Bridge status. Never returns the token itself.
+
+```json
+{
+  "desktopName": "WORK-PC",
+  "configured": true,
+  "connection": "connected",
+  "botUser": { "id": "1530586029264867499", "username": "AgentParty" },
+  "guildId": "1530584277505544343",
+  "tokenMask": "********wxyz",
+  "allowedUserIds": ["1530583970272514279"],
+  "bindings": [
+    { "workspacePath": "C:/work", "party": "party-1", "member": "reporter",
+      "channelId": "1530587845813731339", "channelName": "dev-7bd616",
+      "threadId": "1530608537422532678", "threadName": "reporter" }
+  ]
+}
+```
+
+`connection` is `off | connecting | connected | error`; on `error` an `error`
+field carries the reason (a dead bridge must be visible, not silent).
+
+### `POST /api/discord/settings`
+
+Body (all optional): `desktopName` (the category this PC's channels live under —
+defaults to the OS hostname), `botToken`, `guildId`, `allowedUserIds` (array of
+Discord user ids). Returns the same shape as `GET /api/discord`. Changing the token or
+guild drops the gateway so the next connect re-authenticates.
+
+Leave `guildId` empty to auto-detect — allowed only when the bot is in exactly
+one server; with several the call fails and lists them rather than guessing.
+
+### `POST /api/party/members/:name/discord/connect`
+
+Places the member in Discord — desktop category → party channel → member thread,
+creating whatever is missing — and starts inbound delivery. Body:
+`{ "channelName": "optional-thread-name" }`. Returns
+`{ ok, channel, channelId, thread, threadId, created }` (`created` refers to the
+party channel). Same operation as the member's own `discord-connect` tool.
+
+### `POST /api/party/members/:name/discord/send`
+
+Body: `{ "content": "text" }`. Posts as that member. Fails with the reason when
+the content is over the limit or Discord rate limits the request.
+
+### `POST /api/party/members/:name/discord/disconnect`
+
+Stops bridging that member. The thread and its history remain in Discord.
+Returns `{ ok, removed }`.
+
 ## Models
 
 ### `GET /api/models`

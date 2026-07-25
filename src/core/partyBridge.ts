@@ -105,13 +105,19 @@ export interface PartyBridge {
   interrupt(target: string): Promise<PartyToolResult>;
   /** Send a message to every other member of the caller's party. */
   broadcast(content: string, interrupt?: boolean): Promise<PartyToolResult>;
+  /** Give THIS member its own Discord channel (creating it if needed). */
+  discordConnect(channelName?: string): Promise<PartyToolResult>;
+  /** Post one message from THIS member into its Discord channel. */
+  discordSend(content: string): Promise<PartyToolResult>;
+  /** Stop bridging THIS member; the Discord channel and its history remain. */
+  discordDisconnect(): Promise<PartyToolResult>;
 }
 
 /** MCP server name for the in-process party tool surface. */
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-disconnect"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -125,6 +131,9 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
+  "discord-connect": "Bridge YOURSELF to Discord so the user can read your reports and reply from a phone or another PC. Creates (or reuses) a text channel named after you in the user's server. Call this once, before discord-send. Only affects you — you cannot bridge another member.",
+  "discord-send": "Post one message from you into YOUR Discord channel. Plain text only — Discord's limit is 2000 characters and longer content is REJECTED, not truncated, so split long reports into several sends. If Discord rate limits you the tool returns an error containing retry_after_ms: wait that long, then send again yourself (nothing is queued or retried for you). Write for a person reading on a phone: summarize, do not paste raw logs or diffs.",
+  "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
   broadcast: "Send a message to EVERY other member of your party at once. Like send, each delivery is QUEUED: a member that is mid-turn only picks it up after its current turn finishes (for a Codex member, at its next tool call). Set interrupt=true to stop their current turns so the message is handled right away.",
 };
 
@@ -268,6 +277,22 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     required: ["target"],
     additionalProperties: false,
   },
+  "discord-connect": {
+    type: "object",
+    properties: {
+      channelName: { type: "string", description: "Optional channel name. Defaults to your member name (lowercased, spaces become dashes)." },
+    },
+    additionalProperties: false,
+  },
+  "discord-send": {
+    type: "object",
+    properties: {
+      content: { type: "string", description: "Message text, at most 2000 characters. Longer content is rejected — split it yourself." },
+    },
+    required: ["content"],
+    additionalProperties: false,
+  },
+  "discord-disconnect": { type: "object", properties: {}, additionalProperties: false },
   broadcast: {
     type: "object",
     properties: {
@@ -430,6 +455,17 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       }
       return bridge.broadcast(content, input.interrupt === true);
     }
+    case "discord-connect":
+      return bridge.discordConnect(typeof input.channelName === "string" && input.channelName ? input.channelName : undefined);
+    case "discord-send": {
+      const content = typeof input.content === "string" ? input.content : "";
+      if (!content) {
+        return { ok: false, error: "discord-send requires string argument: content." };
+      }
+      return bridge.discordSend(content);
+    }
+    case "discord-disconnect":
+      return bridge.discordDisconnect();
   }
 }
 
@@ -467,6 +503,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- \`${tool("party-gate-set")}\` — set the PARTY-WIDE gate every inheriting member follows: \`enabled\`, \`rule\`, \`reviewer\`. It moves every inheriting member at once, so reach for \`${tool("gate-set")}\` when only one member should change.`,
     `- \`${tool("list")}\` — list your party's members and their status.`,
     `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
+    `- \`${tool("discord-connect")}\` / \`${tool("discord-send")}\` / \`${tool("discord-disconnect")}\` — bridge YOURSELF to Discord so the user can follow you from a phone or another PC. See the section below.`,
     "",
     "⚠️ Other similarly-named tools — e.g. `mcp__agentparty__*` or `mcp__plugin_*_agentparty__*` — are LEGACY and must not be used. Drive every party action through the `agentparty-app__*` tools above.",
     "",
@@ -482,6 +519,15 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     `- If a message genuinely must go through even though it would be rejected (a real blocker/urgent alert), call \`${tool("send")}\` with \`force: true\` and a short \`forceReason\`. Use this sparingly — every forced send is surfaced to the user.`,
     "- The gate is fail-open: if the reviewer itself errors, your message is delivered unreviewed (with a visible notice), so a gate problem never blocks your work.",
     `- You can also configure another member's gate with \`${tool("gate-set")}\` when coordinating (e.g. tighten or relax a teammate's outgoing-message rules).`,
+    "",
+    "## Discord bridge — reporting to the user when they are away",
+    `- If the user asks you to "connect to Discord" (or to report there), call \`${tool("discord-connect")}\` once. It creates or reuses a channel named after you in the user's server. Then use \`${tool("discord-send")}\` to report.`,
+    "- Messages the user types in that channel arrive here as an ordinary user turn wrapped in `<channel source=\"discord\" from=\"…\">…</channel>`. Reply the same way you reply to the user in the app — and when the reply is meant for Discord, send it with `discord-send` as well, because the user is reading there, not in the app.",
+    "- **Write for a person on a phone.** Summarize the situation in a few lines. Do NOT paste raw logs, diffs, stack traces or file dumps.",
+    `- **2000 characters is a hard limit.** \`${tool("discord-send")}\` REJECTS longer content instead of truncating it — split the report into several sends yourself.`,
+    "- **Rate limits are yours to handle.** Nothing is queued or retried for you. If the tool returns an error containing `retry_after_ms`, wait at least that long, then send again.",
+    "- **Text only.** There are no buttons, menus, modals or file uploads, by design. Never claim the user can click something — ask them to reply in plain text.",
+    "- Approvals and permission prompts are NOT available over Discord. If you are blocked on one, say so in the channel and ask the user to handle it in the app.",
   ].join("\n");
 }
 
@@ -625,6 +671,24 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         interrupt: z.boolean().optional().describe("Stop each recipient's in-flight turn first (default false)."),
       },
       async (args: { content: string; interrupt?: boolean }) => envelope(await bridge.broadcast(args.content, args.interrupt === true)),
+    ),
+    tool(
+      "discord-connect",
+      "Bridge YOURSELF to Discord so the user can read your reports and reply from a phone or another PC. Creates (or reuses) a text channel named after you. Call once, before discord-send. Affects only you.",
+      { channelName: z.string().optional().describe("Optional channel name. Defaults to your member name.") },
+      async (args: { channelName?: string }) => envelope(await bridge.discordConnect(args.channelName)),
+    ),
+    tool(
+      "discord-send",
+      "Post one message from you into YOUR Discord channel. Plain text only, at most 2000 characters — longer content is REJECTED, not truncated, so split it yourself. On a rate limit the error carries retry_after_ms: wait that long and send again (nothing is queued or retried for you). Write for a person on a phone: summarize, never paste raw logs or diffs.",
+      { content: z.string().describe("Message text, at most 2000 characters.") },
+      async (args: { content: string }) => envelope(await bridge.discordSend(args.content)),
+    ),
+    tool(
+      "discord-disconnect",
+      "Stop bridging yourself to Discord. The channel and its history stay in Discord.",
+      {},
+      async () => envelope(await bridge.discordDisconnect()),
     ),
   ];
 }

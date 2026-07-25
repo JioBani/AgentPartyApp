@@ -1,4 +1,4 @@
-import { PartyApplicationService } from "./application/partyApplicationService";
+import { PartyApplicationService, type DiscordBridgePort } from "./application/partyApplicationService";
 import { workspaceKey } from "../shared/workspaceLocation";
 import type { SessionManager } from "./sessionManager";
 import { getSettings } from "./settings";
@@ -14,10 +14,11 @@ import type { GateReviewer, GateReviewResult } from "../shared/messageGate";
 export class WorkspaceContext {
   readonly party: PartyApplicationService;
 
-  constructor(readonly workspacePath: string, sessionManager: SessionManager, reviewGate?: ReviewGate) {
+  constructor(readonly workspacePath: string, sessionManager: SessionManager, reviewGate?: ReviewGate, discord?: DiscordBridgePort) {
     this.party = new PartyApplicationService({
       sessionManager,
       getWorkspacePath: () => this.workspacePath,
+      discord,
       // Headless Message Gate reviewer, bound to the LIVE router + current
       // settings + subscription proxy — the same transports real sessions use.
       reviewGate: reviewGate || ((message: GateReviewMessage, reviewer: GateReviewer) => {
@@ -46,13 +47,13 @@ export class WorkspaceManager {
    * there — without it every review throws and the fail-open policy delivers
    * messages unreviewed.
    */
-  constructor(private readonly sessionManager: SessionManager, private readonly reviewGate?: ReviewGate) {}
+  constructor(private readonly sessionManager: SessionManager, private readonly reviewGate?: ReviewGate, private readonly discord?: DiscordBridgePort) {}
 
   context(workspacePath: string): WorkspaceContext {
     const key = workspaceKey(workspacePath || process.cwd());
     let context = this.contexts.get(key);
     if (!context) {
-      context = new WorkspaceContext(key, this.sessionManager, this.reviewGate);
+      context = new WorkspaceContext(key, this.sessionManager, this.reviewGate, this.discord);
       this.contexts.set(key, context);
     }
     return context;

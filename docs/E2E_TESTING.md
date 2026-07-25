@@ -100,6 +100,24 @@ reports MERGE, and a re-report replaces only its own window), served by
 `GET /api/usage`, and pushed to the titlebar pill (a `usage-limits.png` capture
 shows the live Claude/Codex rings). Starts empty (no fabricated 0%).
 
+`node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
+the real app on an isolated userData + temp workspace and proves the Discord
+bridge end-to-end **against Discord's own REST API**, not against our return
+values: `/api/discord` reports the stored credentials without ever echoing the
+token, `…/discord/connect` creates the member's channel, `…/discord/send` lands a
+message in it, content over 2000 characters is REJECTED with the limit stated
+(never truncated), and a **live model turn** has the member itself call the
+`discord-connect`/`discord-send` MCP tools. It then navigates to Settings →
+Runtime and captures the Discord card. The e2e channel is deleted on exit.
+
+Needs `DISCORD_BOT_TOKEN` + `DISCORD_USER_ID` (a `.env` next to the app is read).
+By default it also runs the **inbound** leg, which is MANUAL: the bridge ignores
+its own posts, so no bot can stand in for the user. The script prints the channel
+to type in and waits (5 min) for the member to answer what you wrote. Pass
+`--no-inbound` for an unattended run. Inbound also requires MESSAGE CONTENT INTENT
+to be enabled for the bot — without it the gateway closes with 4014, and the app
+says exactly that instead of showing a bare code.
+
 `node scripts/e2e-auto-compact.mjs` (or `npm run test:e2e:auto-compact`) boots the
 real app on an isolated userData + temp workspace (offline — mock members, no
 model) and proves per-member auto-compaction end-to-end: `POST /api/party/members/

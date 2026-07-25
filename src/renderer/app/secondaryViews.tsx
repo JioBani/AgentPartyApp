@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -14,6 +14,7 @@ import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { RouteLike } from "../workbench/routes";
+import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
 
 const permissionModes = [
@@ -342,20 +343,126 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
   );
 }
 
+/**
+ * Settings → Discord. Credentials plus the inbound whitelist for the member
+ * bridge (docs/기획 노트.md §11). The token is write-only here: the app returns a
+ * mask, so an empty field means "keep the stored one", never "clear it".
+ */
+function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; onSave: (patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void }) {
+  const [desktopName, setDesktopName] = useState(status?.desktopName || "");
+  const [token, setToken] = useState("");
+  const [guildId, setGuildId] = useState(status?.guildId || "");
+  const [allowed, setAllowed] = useState((status?.allowedUserIds || []).join(", "));
+  const [saved, setSaved] = useState(false);
+
+  const connection = status?.connection || "off";
+  const dotClass = connection === "connected" ? "is-success" : connection === "error" ? "is-error" : "is-idle";
+  const connectionLabel = connection === "connected" ? "연결됨"
+    : connection === "connecting" ? "연결 중…"
+    : connection === "error" ? "오류"
+    : status?.configured ? "대기 중" : "미설정";
+  // The right-hand side answers "what is it bound to", not "what is the token" —
+  // the mask already lives on the token field's own label.
+  const connectionDetail = status?.botUser
+    ? `${status.botUser.username} · 채널 ${status.bindings.length}개`
+    : status?.configured ? "연결된 멤버 없음" : "봇 토큰을 입력하세요";
+
+  function save() {
+    const patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] } = {
+      desktopName: desktopName.trim(),
+      guildId: guildId.trim(),
+      allowedUserIds: allowed.split(/[,\s]+/).map((id) => id.trim()).filter(Boolean),
+    };
+    // Only send the token when the user actually typed a new one.
+    if (token.trim()) {
+      patch.botToken = token.trim();
+    }
+    onSave(patch);
+    setToken("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <>
+      <div className="set-inline-note">
+        <InfoIcon size={14} />
+        <span>멤버가 디스코드 채널로 보고하고, 그 채널에서 받은 지시를 이어받습니다. 멤버에게 “디스코드 연결해”라고 말하면 채널이 만들어집니다.</span>
+      </div>
+      <div className="set-router-row">
+        <span className="set-router-id"><span className={"set-dot " + dotClass} /> {connectionLabel}</span>
+        <span className="set-router-end">
+          <span className="wb-mono">{connectionDetail}</span>
+        </span>
+      </div>
+      {status?.error && <div className="set-inline-note" role="alert"><InfoIcon size={14} /><span>{status.error}</span></div>}
+      <div className="set-card-fields">
+      <label className="set-field">
+        <span className="set-field-label">이 PC 이름</span>
+        <div className="set-input">
+          <MonitorSmartphone size={14} />
+          <input placeholder="디스코드에서 이 PC의 카테고리 이름이 됩니다" value={desktopName} onChange={(event) => setDesktopName(event.target.value)} />
+        </div>
+      </label>
+      <label className="set-field">
+        <span className="set-field-label">봇 토큰{status?.tokenMask ? ` (저장됨: ${status.tokenMask})` : ""}</span>
+        <div className="set-input">
+          <KeyRound size={14} />
+          <input
+            type="password"
+            placeholder={status?.tokenMask ? "변경할 때만 입력" : "Discord 개발자 포털 → Bot → Reset Token"}
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+          />
+        </div>
+      </label>
+      <label className="set-field">
+        <span className="set-field-label">서버(길드) ID</span>
+        <div className="set-input">
+          <input placeholder="비워두면 자동 감지 (봇이 서버 1개일 때)" value={guildId} onChange={(event) => setGuildId(event.target.value)} />
+        </div>
+      </label>
+      <label className="set-field">
+        <span className="set-field-label">허용 사용자 ID</span>
+        <div className="set-input">
+          <ShieldCheck size={14} />
+          <input placeholder="쉼표로 구분 · 비우면 아무도 멤버에게 말을 걸 수 없음" value={allowed} onChange={(event) => setAllowed(event.target.value)} />
+        </div>
+      </label>
+      </div>
+      <div className="set-inline-note">
+        <InfoIcon size={14} />
+        <span>여기 적힌 사용자만 멤버에게 지시할 수 있습니다. 멤버는 이 PC에서 파일을 고치고 명령을 실행하므로, 비워두면 인바운드는 전부 차단됩니다.</span>
+      </div>
+      <div className="set-harness-pick">
+        <button type="button" className="set-btn-accent" onClick={save}><Check size={14} /> {saved ? "저장됨" : "저장"}</button>
+      </div>
+      {Boolean(status?.bindings?.length) && (
+        <div className="set-inline-note">
+          <InfoIcon size={14} />
+          <span>연결된 멤버: {status!.bindings.map((binding) => `${binding.member} → #${binding.channelName} ▸ ${binding.threadName}`).join(", ")}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveDiscord }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
+  discord?: DiscordBridgeStatus;
   onRefreshCodexModels?: () => void;
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
+  onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
 }) {
   const [copied, setCopied] = useState(false);
   function copyRouter() {
@@ -398,6 +505,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
       <section className="set-card">
         <div className="set-card-label">Message Gate</div>
         <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
+      </section>
+
+      {/* Discord bridge — credentials + inbound whitelist */}
+      <section className="set-card">
+        <div className="set-card-label">Discord</div>
+        <DiscordBridgeCard status={discord} onSave={onSaveDiscord} />
       </section>
 
       {/* global auto-compact default (inherited by members without their own) */}
