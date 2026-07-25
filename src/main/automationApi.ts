@@ -256,7 +256,7 @@ export class AutomationApiServer {
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);
       if (method === "POST" && memberMessageMatch) {
         const body = await readJson(req);
-        sendJson(res, 200, await c.sendMemberMessage(workspace, decodeURIComponent(memberMessageMatch[1]), String(body.text || ""), sanitizeAttachments(body.attachments), windowId));
+        sendJson(res, 200, await c.sendMemberMessage(workspace, decodeURIComponent(memberMessageMatch[1]), String(body.text || ""), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true }));
         return;
       }
       if (method === "POST" && url.pathname === "/api/party/members") {

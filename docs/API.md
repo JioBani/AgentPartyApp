@@ -607,6 +607,13 @@ Sends a user turn. `attachments` is an optional array of provider-neutral images
 }
 ```
 
+Optional `interrupt: true` stops the member's in-flight turn first, so the message
+is handled immediately instead of queueing behind it (the adapters' queued-turn
+drain delivers it once the interrupt settles). A **compaction is never
+interrupted** — tearing it down half-way would waste the work and leave context
+partial, so the message queues behind it. The Discord bridge always sends with
+`interrupt`, because a person typed it and is waiting.
+
 ### `POST /api/sessions/:id/close`
 
 Disposes the local session and removes it from the active session list.
@@ -907,6 +914,13 @@ through the embedded router to the local Codex/ChatGPT subscription proxy.
   ]
 }
 ```
+
+Optional `interrupt: true` stops the member's in-flight turn first, so the message
+is handled immediately instead of queueing behind it (the adapters' queued-turn
+drain delivers it once the interrupt settles). A **compaction is never
+interrupted** — tearing it down half-way would waste the work and leave context
+partial, so the message queues behind it. The Discord bridge always sends with
+`interrupt`, because a person typed it and is waiting.
 
 ### `POST /api/party/members/:name/send`
 
