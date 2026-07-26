@@ -106,6 +106,12 @@ export class DiscordBridgeService {
       this.resolvedGuildId = undefined;
       this.stopGateway();
     }
+    // Saving settings is also the "try again" button: a gateway that stopped on a
+    // fatal close (intent off / bad token) only comes back when the user has
+    // changed something — which is exactly now.
+    if (this.bindings.length) {
+      this.ensureGateway(true);
+    }
     return this.status();
   }
 
@@ -305,12 +311,12 @@ export class DiscordBridgeService {
     );
   }
 
-  private ensureGateway(): void {
+  private ensureGateway(restart = false): void {
     const settings = this.settings();
     if (!settings.botToken) {
       return;
     }
-    if (this.gateway && this.tokenInUse === settings.botToken) {
+    if (!restart && this.gateway && this.tokenInUse === settings.botToken) {
       return;
     }
     this.stopGateway();
