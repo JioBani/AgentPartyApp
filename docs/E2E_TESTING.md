@@ -126,6 +126,16 @@ the USER attaches) and the 📨 → ⚙️ → ✅ delivery receipt only apply t
 person typed, so they are checked in the manual inbound leg — the script prints
 what to look for.
 
+`node scripts/qa-discord-control-panel.mjs` sets up an **attended** QA session for
+exactly those legs and then gets out of the way: it launches the real app on an
+isolated userData + temp workspace under the desktop name `QA-PC`, creates a
+party and a member, registers the channel and connects the member *through the
+control panel itself*, and leaves the app running with a printed checklist
+(receipt reactions, typed commands, image in both directions, a second desktop
+staying silent). `--status` shows what is bound and each binding's owning pid;
+`--stop` kills that app's process tree and deletes the QA channel and category.
+Needs `DISCORD_BOT_TOKEN` + `DISCORD_USER_ID`.
+
 `--wsl` runs the same assertions against a workspace **inside a WSL distro**
 (`AGENTPARTY_WSL_DISTRO`, default `Ubuntu-22.04`). That path matters: the party
 tools then execute in the headless in-distro engine while the bridge stays on the
