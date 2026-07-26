@@ -113,12 +113,50 @@ async function main() {
       permissionMode: "auto",
     });
 
-    // 2. HTTP path: connect + send, verified against Discord itself.
+    // 2. Control panel (§11.14): a party channel exists because someone ASKED for
+    //    it from Discord — never because the app started. These commands run
+    //    through the same dispatcher a typed Discord message goes through.
+    assert(!(await getJson("/api/discord")).partyChannels?.length, "opening the app registered nothing on its own");
+    const help = await post("/api/discord/command", { content: "!도움말", post: false });
+    assert(help.handled && /!등록/.test(help.reply), "the help command answers with the command list");
+    const unknown = await post("/api/discord/command", { content: "!없는명령", post: false });
+    assert(unknown.handled && /알 수 없는 명령/.test(unknown.reply), "an unknown command is answered, not swallowed");
+
+    const partyList = await post("/api/discord/command", { content: "!파티", post: false });
+    assert(partyList.handled && partyList.reply.includes(partyName), `!파티 lists the e2e party (got: ${partyList.reply})`);
+    const shortId = (partyList.reply.match(/`([0-9a-z]{6})`/) || [])[1];
+    assert(shortId, `!파티 shows a short party id to register with (got: ${partyList.reply})`);
+
+    const registered = await post("/api/discord/command", { content: `!등록 ${shortId}`, post: false });
+    assert(registered.handled && /채널을 만들었습니다/.test(registered.reply), `!등록 created the channel (got: ${registered.reply})`);
+    const registeredChannelId = (registered.reply.match(/<#(\d+)>/) || [])[1];
+    assert(registeredChannelId, "the registration reply links the new channel");
+    channelId = registeredChannelId;
+    step(`!등록 → channel ${registeredChannelId}`);
+
+    const panelStatus = await post("/api/discord/command", { content: "!상태", channelId: registeredChannelId, post: false });
+    assert(panelStatus.handled && panelStatus.reply.includes(memberName), `!상태 lists the member (got: ${panelStatus.reply})`);
+    assert(/스레드 없음/.test(panelStatus.reply), "registering a party creates no member threads on its own");
+    step("!상태 verified before any member thread exists");
+
+    const panelConnect = await post("/api/discord/command", { content: `!연결 ${memberName}`, channelId: registeredChannelId, post: false });
+    assert(panelConnect.handled && /<#(\d+)>/.test(panelConnect.reply), `!연결 created the member thread (got: ${panelConnect.reply})`);
+    const panelThreadId = panelConnect.reply.match(/<#(\d+)>/)[1];
+    const panelThread = await discord("GET", `/channels/${panelThreadId}`);
+    assert(panelThread?.parent_id === registeredChannelId, "the member thread sits inside the registered party channel");
+    step(`!연결 → thread ${panelThread.name} (${panelThreadId})`);
+
+    // Every binding names the instance that delivers for it; without that, two
+    // app processes sharing userData would both answer one typed instruction.
+    const owned = (await getJson("/api/discord")).bindings.find((b) => b.member === memberName);
+    assert(owned?.owner?.pid > 0, "the binding records the owning app instance");
+
+    // 3. HTTP path: connect + send, verified against Discord itself.
     const connected = await post(`/api/party/members/${memberName}/discord/connect`, {});
-    channelId = connected.channelId;
     threadId = connected.threadId;
-    assert(connected.ok && channelId, "connect returned a channel");
-    assert(connected.created === true, "a fresh channel was created");
+    assert(connected.ok && connected.channelId, "connect returned a channel");
+    assert(connected.channelId === registeredChannelId, "connect reused the registered channel instead of creating a second one");
+    assert(connected.threadId === panelThreadId, "connect reused the member thread the control panel created");
     assert(connected.channel.startsWith(`${partyName}-`), `the channel is named after the party + a party-id slice (got #${connected.channel})`);
     assert(connected.thread === memberName, `the member has its own thread (got ${connected.thread})`);
 
@@ -136,13 +174,13 @@ async function main() {
     assert(await discordHasMessage(marker), "the HTTP send is visible in the Discord channel");
     step("HTTP send verified in Discord");
 
-    // 3. The 2000-char rule REJECTS rather than truncating.
+    // 4. The 2000-char rule REJECTS rather than truncating.
     const tooLong = await postRaw(`/api/party/members/${memberName}/discord/send`, { content: "x".repeat(2001) });
     assert(tooLong.status >= 400 || tooLong.body?.error, `over-long content is rejected (status ${tooLong.status})`);
     assert(/2000/.test(JSON.stringify(tooLong.body || "")), "the rejection explains the 2000 limit");
     step("over-long content rejected, not truncated");
 
-    // 4. Agent path: a REAL model turn where the member drives the MCP tools.
+    // 5. Agent path: a REAL model turn where the member drives the MCP tools.
     const started = await post(`/api/party/members/${memberName}/start`, { model, permissionMode: "auto" });
     const sessionId = await waitForSession(started.session?.id);
     step(`member session ${sessionId} running (${model})`);
@@ -154,7 +192,7 @@ async function main() {
     assert(await discordHasMessage(agentMarker, 180_000), "the member's own discord-send reached Discord");
     step("agent-driven discord-send verified in Discord");
 
-    // 5. A message delivered while the member is mid-turn must INTERRUPT it —
+    // 6. A message delivered while the member is mid-turn must INTERRUPT it —
     // the same path Discord inbound takes (sendUserMessage with interrupt).
     await post(`/api/party/members/${memberName}/message`, {
       text: "1부터 300까지 한 줄에 하나씩 세어줘. 절대 멈추지 말고 끝까지 세.",
@@ -168,7 +206,20 @@ async function main() {
     assert(await discordHasMessage(interruptMarker, 120_000), "the interrupting message was handled instead of queueing behind the long turn");
     step("interrupt-and-inject verified on a busy member");
 
-    // 6. The Settings → Discord screen must actually render the stored state.
+    // Control-panel actions on a LIVE session, typed in the member's own thread
+    // (so the member name is implied). These are the commands that have to work
+    // when the member is wedged, which is why they never involve the model.
+    await post(`/api/party/members/${memberName}/message`, {
+      text: "1부터 300까지 한 줄에 하나씩 세어줘. 절대 멈추지 말고 끝까지 세.",
+    });
+    assert(await memberBusy(60_000), "the member is mid-turn before !중단");
+    const stopped = await post("/api/discord/command", { content: "!중단", channelId: panelThreadId, post: false });
+    assert(/턴을 중단했습니다/.test(stopped.reply), `!중단 stopped the in-flight turn (got: ${stopped.reply})`);
+    const respawned = await post("/api/discord/command", { content: "!재시작", channelId: panelThreadId, post: false });
+    assert(/재시작했습니다/.test(respawned.reply), `!재시작 restarted the member session (got: ${respawned.reply})`);
+    step("!중단 / !재시작 verified on a live member session");
+
+    // 7. The Settings → Discord screen must actually render the stored state.
     await post("/api/navigation", { view: "runtime" });
     await sleep(1200);
     const shot = path.join(os.tmpdir(), `agentparty-discord-settings-${runId}.png`);
@@ -177,7 +228,7 @@ async function main() {
     step(`settings screenshot: ${shot}`);
     await post("/api/navigation", { view: "workbench" });
 
-    // 7. Inbound — manual leg (the bridge ignores its own posts by design).
+    // 8. Inbound — manual leg (the bridge ignores its own posts by design).
     if (waitForInbound) {
       const replyMarker = `inbound-${Date.now()}`;
       await post(`/api/party/members/${memberName}/discord/send`, {

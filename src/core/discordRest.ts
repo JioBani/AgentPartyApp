@@ -71,6 +71,11 @@ export class DiscordRest {
     return this.call("GET", "/users/@me/guilds");
   }
 
+  /** One channel or thread — used to read a channel's identity topic. */
+  channel(channelId: string): Promise<DiscordChannel> {
+    return this.call("GET", `/channels/${channelId}`);
+  }
+
   guildChannels(guildId: string): Promise<DiscordChannel[]> {
     return this.call("GET", `/guilds/${guildId}/channels`);
   }

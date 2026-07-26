@@ -286,13 +286,27 @@ Bridge status. Never returns the token itself.
   "bindings": [
     { "workspacePath": "C:/work", "party": "party-1", "member": "reporter",
       "channelId": "1530587845813731339", "channelName": "dev-7bd616",
-      "threadId": "1530608537422532678", "threadName": "reporter" }
-  ]
+      "threadId": "1530608537422532678", "threadName": "reporter",
+      "owner": { "pid": 12345, "startedAt": "2026-07-26T02:00:00.000Z" } }
+  ],
+  "partyChannels": [
+    { "workspacePath": "C:/work", "party": "party-1", "partyName": "dev",
+      "channelId": "1530587845813731339", "channelName": "dev-7bd616",
+      "owner": { "pid": 12345, "startedAt": "2026-07-26T02:00:00.000Z" } }
+  ],
+  "instance": { "pid": 12345, "startedAt": "2026-07-26T02:00:00.000Z" }
 }
 ```
 
 `connection` is `off | connecting | connected | error`; on `error` an `error`
 field carries the reason (a dead bridge must be visible, not silent).
+
+`owner` names the app instance that delivers for that channel. Several AgentParty
+processes share one `userData`, so all of them see the same bindings and all of
+them receive the message — only the owner acts, which is what stops one typed
+instruction from being delivered twice or starting a second session for the same
+member. A dead owner's binding is adopted by the elected (lowest live pid)
+instance serving that workspace.
 
 ### `POST /api/discord/settings`
 
@@ -303,6 +317,28 @@ guild drops the gateway so the next connect re-authenticates.
 
 Leave `guildId` empty to auto-detect — allowed only when the bot is in exactly
 one server; with several the call fails and lists them rather than guessing.
+
+### `POST /api/discord/command`
+
+Runs a control-panel command — the same dispatcher a message typed in Discord
+goes through. Body: `{ "content": "!상태", "channelId": "…", "post": true }`.
+`channelId` supplies the party/member scope (a party channel or a member thread);
+`post: false` returns the reply without posting it. Returns
+`{ ok, handled, reply }`.
+
+This exists because the bot ignores its own posts, so it cannot type as the user
+— without a second entrance the panel could only be exercised by hand. Command
+reference: `!도움말` (or `!help`) lists them; see docs/기획 노트.md §11.14.
+
+### `POST /api/discord/register`
+
+Registers a party's Discord channel **without** touching its members — the same
+operation the `!등록` control command performs. Body: `{ "partyId": "party-…" }`
+(defaults to the window's active party). Returns `{ ok, channel, channelId,
+created }`.
+
+Opening the app registers nothing on its own; a channel exists only because
+someone asked for it, from Discord or through this endpoint.
 
 ### `POST /api/party/members/:name/discord/connect`
 

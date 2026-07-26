@@ -110,6 +110,15 @@ message in it, content over 2000 characters is REJECTED with the limit stated
 `discord-connect`/`discord-send` MCP tools. It then navigates to Settings →
 Runtime and captures the Discord card. The e2e channel is deleted on exit.
 
+It also covers the **control panel** (docs/기획 노트.md §11.14): starting the app
+registers nothing, `!파티` lists the party with the short id to register by,
+`!등록` creates the channel under this desktop's category with the identity topic,
+`!상태` reports the member as having no thread yet, `!연결` creates the thread
+inside that channel, the binding records the owning app instance, a later HTTP
+`connect` reuses both, and `!중단`/`!재시작` act on a live model turn. Commands are
+driven through `POST /api/discord/command` — the same dispatcher a typed Discord
+message reaches, since the bot cannot post as the user.
+
 `--wsl` runs the same assertions against a workspace **inside a WSL distro**
 (`AGENTPARTY_WSL_DISTRO`, default `Ubuntu-22.04`). That path matters: the party
 tools then execute in the headless in-distro engine while the bridge stays on the

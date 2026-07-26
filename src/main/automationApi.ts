@@ -145,6 +145,21 @@ export class AutomationApiServer {
         sendJson(res, 200, c.updateDiscordSettings(await readJson(req)));
         return;
       }
+      if (method === "POST" && url.pathname === "/api/discord/command") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordRunCommand({
+          content: String(body.content || ""),
+          channelId: body.channelId ? String(body.channelId) : undefined,
+          authorId: body.authorId ? String(body.authorId) : undefined,
+          post: body.post !== false,
+        }));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/discord/register") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordRegisterParty(workspace, body.partyId ? String(body.partyId) : partyId, windowId));
+        return;
+      }
       const discordConnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/connect$/);
       if (method === "POST" && discordConnectMatch) {
         const body = await readJson(req);

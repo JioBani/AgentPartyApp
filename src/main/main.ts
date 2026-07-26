@@ -25,6 +25,7 @@ import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
 import type { GateReviewer } from "../shared/messageGate";
 import { DiscordBridgeService } from "./discordBridgeService";
+import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 
 // Let webContents.capturePage() return real pixels even when the window is
@@ -235,7 +236,50 @@ ${content}
       }
     },
     log: (message) => log("info", "discord", message),
+    // Identifies this process run on a machine where several instances share
+    // userData; bindings record it so exactly one of them delivers (§11.14).
+    instance: { pid: process.pid, startedAt: discoveryStartedAt },
   });
+  // The control panel: mechanical commands typed in Discord, executed through the
+  // same AppController methods the UI and HTTP use. Wired after construction
+  // because the two reference each other.
+  discordBridge.setControl(new DiscordControlService({
+    bridge: () => requireBridge(),
+    log: (message) => log("info", "discord", message),
+    app: {
+      // Only workspaces with an open window: a command must act on what this
+      // instance is actually running, not on every folder it has ever opened.
+      workspaces: () => [...new Set(registry().all().map((entry) => entry.workspacePath))],
+      listParties: async (workspacePath) => {
+        const listing: any = await controller().listPartyMembers(workspacePath);
+        const members: any[] = Array.isArray(listing?.members) ? listing.members : [];
+        return (Array.isArray(listing?.parties) ? listing.parties : []).map((party: any) => ({
+          id: String(party?.id || ""),
+          name: String(party?.name || party?.id || ""),
+          memberCount: members.filter((member) => member?.partyId === party?.id).length,
+        }));
+      },
+      listMembers: async (workspacePath, partyId) => {
+        const listing: any = await controller().listPartyMembers(workspacePath, undefined, partyId);
+        return (Array.isArray(listing?.members) ? listing.members : [])
+          .filter((member: any) => !member?.partyId || member.partyId === partyId)
+          .map((member: any) => ({
+            name: String(member?.name || ""),
+            status: String(member?.status || "unknown"),
+            model: member?.model ? String(member.model) : undefined,
+            runtime: member?.runtime ? String(member.runtime) : undefined,
+          }));
+      },
+      interruptMember: async (workspacePath, partyId, member) => {
+        const result: any = await controller().handlePartyAction(workspacePath, member, "interrupt", {}, undefined, partyId);
+        return { interrupted: Boolean(result?.interrupted), message: String(result?.message || "") };
+      },
+      respawnMember: async (workspacePath, partyId, member) => {
+        const result: any = await controller().handlePartyAction(workspacePath, member, "respawn", {}, undefined, partyId);
+        return { message: String(result?.message || "") };
+      },
+    },
+  }));
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
     router: {

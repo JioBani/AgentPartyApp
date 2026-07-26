@@ -13,6 +13,8 @@ export const automationEndpoints = [
   "DELETE /api/auth/subscriptions/:provider",
   "GET /api/discord",
   "POST /api/discord/settings",
+  "POST /api/discord/register",
+  "POST /api/discord/command",
   "POST /api/party/members/:name/discord/connect",
   "POST /api/party/members/:name/discord/send",
   "POST /api/party/members/:name/discord/disconnect",
