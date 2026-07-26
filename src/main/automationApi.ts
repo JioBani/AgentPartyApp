@@ -172,6 +172,19 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.discordSendAsMember(workspace, decodeURIComponent(discordSendMatch[1]), String(body.content || ""), windowId, partyId));
         return;
       }
+      const discordImageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/send-image$/);
+      if (method === "POST" && discordImageMatch) {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordSendImageAsMember(
+          workspace,
+          decodeURIComponent(discordImageMatch[1]),
+          { dataBase64: String(body.dataBase64 || ""), filename: String(body.filename || "image.png"), mediaType: String(body.mediaType || "image/png") },
+          body.caption ? String(body.caption) : undefined,
+          windowId,
+          partyId,
+        ));
+        return;
+      }
       const discordDisconnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/disconnect$/);
       if (method === "POST" && discordDisconnectMatch) {
         sendJson(res, 200, await c.discordDisconnectMember(workspace, decodeURIComponent(discordDisconnectMatch[1]), windowId, partyId));

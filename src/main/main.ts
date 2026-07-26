@@ -210,20 +210,23 @@ async function bootstrap(): Promise<void> {
   // through the ordinary party-message path so an idle member is woken and a busy
   // one queues it. See docs/기획 노트.md §11.
   discordBridge = new DiscordBridgeService({
-    deliver: async ({ binding, authorName, content }) => {
+    deliver: async ({ binding, authorName, content, attachments }) => {
       if (!appController) {
         return { delivered: false, error: "app is still starting" };
       }
       // Same wrapper convention as party messages, so a member reads its origin.
+      // An image-only message still needs a body: an empty turn reads as "the
+      // user said nothing" rather than "look at this".
+      const body = content.trim() || `(이미지 ${attachments?.length || 0}장)`;
       const wrapped = `<channel source="discord" from="${authorName}">
-${content}
+${body}
 </channel>`;
       try {
         // interrupt: a person typed this from their phone and is waiting. Queuing
         // it behind a long autonomous turn would swallow the instruction for
         // minutes; the adapters' queued-turn drain delivers it once the interrupt
         // settles (a compaction is never torn down — see sendUserMessage).
-        const result: any = await appController.sendMemberMessage(binding.workspacePath, binding.member, wrapped, undefined, undefined, { interrupt: true });
+        const result: any = await appController.sendMemberMessage(binding.workspacePath, binding.member, wrapped, attachments, undefined, { interrupt: true });
         const delivered = result?.partyMessage?.delivered ?? result?.delivered ?? true;
         return { delivered: Boolean(delivered), error: result?.partyMessage?.error || result?.error };
       } catch (error) {
@@ -239,6 +242,13 @@ ${content}
     // Identifies this process run on a machine where several instances share
     // userData; bindings record it so exactly one of them delivers (§11.14).
     instance: { pid: process.pid, startedAt: discoveryStartedAt },
+    // Harness truth behind the delivery receipt: turnCount rises when the message
+    // is really submitted to the model, so "received" is observed, not promised.
+    memberTurn: async (binding) => {
+      const status: any = await controller().handlePartyAction(binding.workspacePath, binding.member, "status", {}, undefined, binding.party);
+      const entry = Array.isArray(status?.members) ? status.members.find((m: any) => m?.name === binding.member) : undefined;
+      return { turnCount: Number(entry?.turnCount) || 0, turnActive: Boolean(entry?.turnActive) };
+    },
   });
   // The control panel: mechanical commands typed in Discord, executed through the
   // same AppController methods the UI and HTTP use. Wired after construction
@@ -330,6 +340,8 @@ ${content}
         discordConnect: (input: any) => requireBridge().connectMember({ ...input, workspacePath: serialized }),
         discordSend: (_workspacePath: string, party: string, member: string, content: string) =>
           requireBridge().sendAsMember(serialized, party, member, content),
+        discordSendImage: (_workspacePath: string, party: string, member: string, image: any, caption?: string) =>
+          requireBridge().sendImageAsMember(serialized, party, member, image, caption),
         discordDisconnect: async (_workspacePath: string, party: string, member: string) =>
           requireBridge().disconnectMember(serialized, party, member),
         reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {

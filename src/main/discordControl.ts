@@ -254,7 +254,10 @@ export class DiscordControlService {
         partyLabel: scope.partyName,
         member,
       });
-      return `${result.created ? "✅" : "ℹ️"} **${member}** → <#${result.threadId}>\n이 스레드에 적은 글이 멤버에게 전달됩니다.`;
+      // Reports whether the THREAD is new — the channel usually already exists
+      // (registration created it), so channel-level "created" would read as
+      // "already connected" for a member that was just bridged.
+      return `${result.threadCreated ? "✅" : "ℹ️"} **${member}** → <#${result.threadId}>\n이 스레드에 적은 글이 멤버에게 전달됩니다.`;
     } catch (error) {
       return `⚠️ 연결 실패: ${describeError(error)}`;
     }

@@ -47,6 +47,10 @@ if (!token) {
   fail("DISCORD_BOT_TOKEN is not set (put it in .env next to the app).");
 }
 
+/** A 1x1 PNG — the smallest thing that is genuinely an image to Discord. */
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 const port = Number(process.env.AGENTPARTY_DISCORD_E2E_PORT || "") || 48971;
 let base = `http://127.0.0.1:${port}`;
 let channelId = "";
@@ -174,6 +178,26 @@ async function main() {
     assert(await discordHasMessage(marker), "the HTTP send is visible in the Discord channel");
     step("HTTP send verified in Discord");
 
+    // An image goes up as a real Discord attachment, and an over-size one is
+    // rejected with the limit stated rather than silently dropped.
+    const imageName = `e2e-${runId}.png`;
+    const imageSent = await post(`/api/party/members/${memberName}/discord/send-image`, {
+      dataBase64: TINY_PNG_BASE64,
+      filename: imageName,
+      mediaType: "image/png",
+      caption: "e2e image",
+    });
+    assert(imageSent.ok, "the image upload was accepted");
+    assert(await discordHasAttachment(imageName), "the uploaded image is visible as a Discord attachment");
+    const hugeImage = await postRaw(`/api/party/members/${memberName}/discord/send-image`, {
+      dataBase64: "A".repeat(15 * 1024 * 1024),
+      filename: "huge.png",
+      mediaType: "image/png",
+    });
+    assert(hugeImage.status >= 400 || hugeImage.body?.error, `an over-size image is rejected (status ${hugeImage.status})`);
+    assert(/limit/i.test(JSON.stringify(hugeImage.body || "")), "the rejection states the upload limit");
+    step("image upload verified in Discord (and over-size rejected)");
+
     // 4. The 2000-char rule REJECTS rather than truncating.
     const tooLong = await postRaw(`/api/party/members/${memberName}/discord/send`, { content: "x".repeat(2001) });
     assert(tooLong.status >= 400 || tooLong.body?.error, `over-long content is rejected (status ${tooLong.status})`);
@@ -234,8 +258,11 @@ async function main() {
       await post(`/api/party/members/${memberName}/discord/send`, {
         content: `[e2e] 이 채널에 아무 말이나 한 줄 답장해줘. 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 보낼 거야.`,
       });
-      console.log(`\n>>> MANUAL STEP: Discord 채널 #${connected.channel} 에 아무 메시지나 입력해줘.`);
-      console.log(`>>> 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 이 채널에 보낼 거야. (최대 5분 대기)\n`);
+      console.log(`\n>>> MANUAL STEP: Discord 스레드 #${connected.channel} > ${connected.thread} 에 아무 메시지나 입력해줘.`);
+      console.log(`>>> 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 이 스레드에 보낼 거야. (최대 5분 대기)`);
+      console.log(">>> 같이 확인할 것: 네가 쓴 메시지에 📨(전달) → ⚙️(턴 시작) → ✅(턴 종료) 리액션이 순서대로 붙는지.");
+      console.log(">>> 이미지도 한 장 붙여서 보내보면 멤버가 그 이미지를 실제로 보고 답하는지 확인할 수 있어.");
+      console.log(">>> 명령 확인: 스레드에 `!상태` 를 쳐보면 봇이 멤버 상태로 답해야 해.\n");
       await post(`/api/party/members/${memberName}/message`, {
         text: `앞으로 Discord 채널에서 사용자의 메시지가 <channel source="discord"> 로 도착하면, 그 즉시 discord-send 도구로 "e2e ${replyMarker}" 라고만 답해. 지금은 아무것도 하지 말고 기다려.`,
       });
@@ -398,6 +425,19 @@ async function discordHasMessage(marker, timeoutMs = 30_000) {
   while (Date.now() < deadline) {
     const messages = await discord("GET", `/channels/${threadId}/messages?limit=50`);
     if (messages.some((message) => String(message.content || "").includes(marker))) {
+      return true;
+    }
+    await sleep(3000);
+  }
+  return false;
+}
+
+/** True once a message in the member's thread carries an attachment named `filename`. */
+async function discordHasAttachment(filename, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const messages = await discord("GET", `/channels/${threadId}/messages?limit=50`);
+    if (messages.some((message) => (message.attachments || []).some((a) => a.filename === filename))) {
       return true;
     }
     await sleep(3000);

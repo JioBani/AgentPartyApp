@@ -17,6 +17,7 @@ export const automationEndpoints = [
   "POST /api/discord/command",
   "POST /api/party/members/:name/discord/connect",
   "POST /api/party/members/:name/discord/send",
+  "POST /api/party/members/:name/discord/send-image",
   "POST /api/party/members/:name/discord/disconnect",
   "GET /api/models",
   "GET /api/harnesses/cursor/status",

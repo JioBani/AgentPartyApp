@@ -34,6 +34,14 @@ const OP_INVALID_SESSION = 9;
 const OP_HELLO = 10;
 const OP_HEARTBEAT_ACK = 11;
 
+export interface DiscordInboundAttachment {
+  id: string;
+  filename: string;
+  size: number;
+  contentType?: string;
+  url: string;
+}
+
 export interface DiscordInboundMessage {
   channelId: string;
   messageId: string;
@@ -41,6 +49,8 @@ export interface DiscordInboundMessage {
   authorName: string;
   authorIsBot: boolean;
   content: string;
+  /** Files the user attached — images become user-turn attachments. */
+  attachments: DiscordInboundAttachment[];
 }
 
 export interface DiscordGatewayEvents {
@@ -161,6 +171,13 @@ export class DiscordGateway extends EventEmitter {
       authorName: String(data.author?.username || ""),
       authorIsBot: Boolean(data.author?.bot),
       content: typeof data.content === "string" ? data.content : "",
+      attachments: (Array.isArray(data.attachments) ? data.attachments : []).map((attachment: any) => ({
+        id: String(attachment?.id || ""),
+        filename: String(attachment?.filename || ""),
+        size: Number(attachment?.size) || 0,
+        contentType: attachment?.content_type ? String(attachment.content_type) : undefined,
+        url: String(attachment?.url || ""),
+      })),
     } satisfies DiscordInboundMessage);
   }
 

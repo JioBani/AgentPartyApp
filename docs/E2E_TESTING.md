@@ -119,6 +119,13 @@ inside that channel, the binding records the owning app instance, a later HTTP
 driven through `POST /api/discord/command` — the same dispatcher a typed Discord
 message reaches, since the bot cannot post as the user.
 
+Image upload is covered too: a real PNG posted through
+`…/discord/send-image` is verified as an actual Discord attachment, and an
+over-size one is rejected with the limit stated. The other direction (an image
+the USER attaches) and the 📨 → ⚙️ → ✅ delivery receipt only apply to messages a
+person typed, so they are checked in the manual inbound leg — the script prints
+what to look for.
+
 `--wsl` runs the same assertions against a workspace **inside a WSL distro**
 (`AGENTPARTY_WSL_DISTRO`, default `Ubuntu-22.04`). That path matters: the party
 tools then execute in the headless in-distro engine while the bridge stays on the

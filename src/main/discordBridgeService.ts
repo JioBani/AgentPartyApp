@@ -22,6 +22,7 @@ import {
 import { DISCORD_COMMAND_PREFIX, parseDiscordCommand, type DiscordCommandInput } from "../shared/discordCommands";
 import type { DiscordControlService } from "./discordControl";
 import { isProcessAlive, listLiveInstances } from "./discovery";
+import { DEFAULT_MAX_IMAGE_BYTES, type ImageAttachment } from "../shared/attachments";
 import { getSettings, maskSecret, updateSettings } from "./settings";
 import { getUserDataDir } from "./userDataDir";
 
@@ -41,10 +42,34 @@ import { getUserDataDir } from "./userDataDir";
  *   agent that edits files and runs shell commands on this machine. §11.6.
  */
 
+/**
+ * Attachment ceiling for a free (unboosted) Discord server. Boosted servers allow
+ * more, but assuming the smaller limit turns a would-be 40x rejection from
+ * Discord into a message the agent can act on before spending the upload.
+ */
+const DISCORD_UPLOAD_LIMIT = 10 * 1024 * 1024;
+
+/** Receipt marks put on the user's own message (§11.14.3). */
+const RECEIPT_DELIVERED = "📨";
+const RECEIPT_WORKING = "⚙️";
+const RECEIPT_DONE = "✅";
+const RECEIPT_STALLED = "⚠️";
+const RECEIPT_POLL_MS = 1500;
+/**
+ * How long a member may take to START on the message. Generous, because an
+ * interrupted turn has to unwind first — but finite, so "the member is wedged"
+ * becomes visible instead of looking like ordinary thinking.
+ */
+const RECEIPT_START_TIMEOUT_MS = 90_000;
+/** A turn may legitimately run a long time; stop watching rather than promise ✅. */
+const RECEIPT_DONE_TIMEOUT_MS = 30 * 60_000;
+
 export interface DiscordDeliverInput {
   binding: DiscordChannelBinding;
   authorName: string;
   content: string;
+  /** Images the user attached in Discord, already downloaded and decoded. */
+  attachments?: ImageAttachment[];
 }
 
 export interface DiscordBridgeDeps {
@@ -52,6 +77,13 @@ export interface DiscordBridgeDeps {
   deliver: (input: DiscordDeliverInput) => Promise<{ delivered: boolean; error?: string }>;
   /** Identifies THIS process run; stamped on every binding it owns. */
   instance: DiscordBindingOwner;
+  /**
+   * Harness-derived turn state for a bound member, used for delivery receipts.
+   * `turnCount` comes from the adapter and increments when a message is actually
+   * submitted to the model — which is what makes the receipt a FACT rather than
+   * the agent being asked to promise it replied.
+   */
+  memberTurn?: (binding: DiscordChannelBinding) => Promise<{ turnCount: number; turnActive: boolean }>;
   /** Called whenever status changes so the UI can re-render. */
   onStatusChanged?: (status: DiscordBridgeStatus) => void;
   log?: (message: string) => void;
@@ -223,7 +255,7 @@ export class DiscordBridgeService {
    * name would quietly join them to one channel and deliver every instruction the
    * user typed to BOTH machines.
    */
-  async connectMember(request: DiscordConnectRequest): Promise<DiscordChannelBinding & { created: boolean }> {
+  async connectMember(request: DiscordConnectRequest): Promise<DiscordChannelBinding & { created: boolean; threadCreated: boolean }> {
     const settings = this.requireSettings();
     const rest = new DiscordRest(settings.botToken);
     const guildId = await this.resolveGuild(rest, settings.guildId);
@@ -237,7 +269,7 @@ export class DiscordBridgeService {
         store.bindings = [...store.bindings.filter((b) => !sameMember(b, owned)), owned];
       });
       this.ensureGateway();
-      return { ...owned, created: false };
+      return { ...owned, created: false, threadCreated: false };
     }
 
     const channel = await this.ensurePartyChannel(rest, guildId, settings, request);
@@ -259,7 +291,7 @@ export class DiscordBridgeService {
     this.ensureGateway();
     this.notify();
     this.log(`Discord: member '${request.member}' bound to #${channel.channelName} > ${thread.name}${channel.created ? " (channel created)" : ""}.`);
-    return { ...binding, created: channel.created };
+    return { ...binding, created: channel.created, threadCreated: thread.created };
   }
 
   /**
@@ -312,19 +344,19 @@ export class DiscordBridgeService {
   }
 
   /** Finds the member's thread, reviving an auto-archived one, else creates it. */
-  private async resolveThread(rest: DiscordRest, guildId: string, channelId: string, name: string): Promise<DiscordChannel> {
+  private async resolveThread(rest: DiscordRest, guildId: string, channelId: string, name: string): Promise<DiscordChannel & { created: boolean }> {
     const active = (await rest.activeThreads(guildId)).find((thread) => thread.parent_id === channelId && thread.name === name);
     if (active) {
-      return active;
+      return { ...active, created: false };
     }
     const archived = (await rest.archivedThreads(channelId)).find((thread) => thread.name === name);
     if (archived) {
       // Archived threads still accept messages, but reviving one keeps the member
       // visible in the thread list instead of hidden behind "archived".
       await rest.unarchiveThread(archived.id);
-      return archived;
+      return { ...archived, created: false };
     }
-    return rest.createThread(channelId, name);
+    return { ...(await rest.createThread(channelId, name)), created: true };
   }
 
   /**
@@ -372,6 +404,43 @@ export class DiscordBridgeService {
       throw new Error(`Member '${member}' has no Discord thread yet. Call discord-connect first.`);
     }
     await new DiscordRest(settings.botToken).createMessage(binding.threadId, text);
+    return { channelName: `${binding.channelName} > ${binding.threadName}` };
+  }
+
+  /**
+   * Uploads one image as the member. Over-size content is REJECTED with the limit
+   * stated, the same attitude as the 2000-character rule — a silently dropped
+   * screenshot is worse than an error the agent can act on.
+   */
+  async sendImageAsMember(
+    workspacePath: string,
+    party: string,
+    member: string,
+    image: { dataBase64: string; filename: string; mediaType: string },
+    caption?: string,
+  ): Promise<{ channelName: string }> {
+    const settings = this.requireSettings();
+    const bytes = Buffer.from(image.dataBase64 || "", "base64");
+    if (!bytes.length) {
+      throw new Error("The image is empty.");
+    }
+    if (bytes.length > DISCORD_UPLOAD_LIMIT) {
+      throw new Error(
+        `The image is ${Math.round(bytes.length / 1024)} KB; Discord's upload limit on this server is ${Math.round(DISCORD_UPLOAD_LIMIT / 1024 / 1024)} MB. It was NOT sent — shrink or crop it.`,
+      );
+    }
+    if ((caption || "").length > DISCORD_MESSAGE_LIMIT) {
+      throw new Error(`The caption is ${caption!.length} characters; Discord's limit is ${DISCORD_MESSAGE_LIMIT}.`);
+    }
+    const binding = this.bindingFor(workspacePath, party, member);
+    if (!binding) {
+      throw new Error(`Member '${member}' has no Discord thread yet. Call discord-connect first.`);
+    }
+    await new DiscordRest(settings.botToken).createMessageWithFile(
+      binding.threadId,
+      { filename: image.filename || "image.png", contentType: image.mediaType || "image/png", bytes },
+      caption,
+    );
     return { channelName: `${binding.channelName} > ${binding.threadName}` };
   }
 
@@ -528,8 +597,9 @@ export class DiscordBridgeService {
       }
       return;
     }
-    if (!message.content.trim()) {
-      return; // attachment-only message; nothing to inject
+    const attachments = await this.imagesOf(binding, message);
+    if (!message.content.trim() && !attachments.length) {
+      return; // nothing to inject (e.g. a non-image file we already reported)
     }
     if (!this.claimForDelivery(binding)) {
       // Another instance on this machine runs that member's session. Staying
@@ -537,7 +607,10 @@ export class DiscordBridgeService {
       // twice — and from starting a second session for the same member.
       return;
     }
-    const result = await this.deps.deliver({ binding, authorName: message.authorName, content: message.content });
+    // Read the turn counter BEFORE injecting: the receipt is "a turn started that
+    // was not running when I sent this", which needs the earlier value.
+    const before = await this.turnCountOf(binding);
+    const result = await this.deps.deliver({ binding, authorName: message.authorName, content: message.content, attachments });
     if (!result.delivered) {
       this.log(`Discord: could not deliver to member '${binding.member}' — ${result.error || "unknown error"}`);
       // Tell the user in the channel; a dropped instruction must not be silent.
@@ -549,6 +622,141 @@ export class DiscordBridgeService {
       } catch (error) {
         this.log(`Discord: failed to report the delivery error — ${describe(error)}`);
       }
+      return;
+    }
+    // Not awaited: the receipt outlives this handler by design (a turn can run for
+    // half an hour) and must not hold up the next inbound message.
+    void this.trackReceipt(binding, message.messageId, before);
+  }
+
+  /**
+   * Downloads the images a user attached in Discord so they ride along as
+   * ordinary user-turn attachments — the same shape the app's own composer
+   * produces, so vision support and per-model limits are already handled.
+   *
+   * Anything that cannot be delivered (a non-image file, an over-size image, a
+   * failed download) is REPORTED in the thread. Sending a photo and having the
+   * agent answer as if there were none is exactly the silent failure this
+   * project forbids.
+   */
+  private async imagesOf(binding: DiscordChannelBinding, message: DiscordInboundMessage): Promise<ImageAttachment[]> {
+    const images: ImageAttachment[] = [];
+    const skipped: string[] = [];
+    for (const attachment of message.attachments || []) {
+      const mediaType = attachment.contentType?.split(";")[0]?.trim() || "";
+      if (!mediaType.startsWith("image/")) {
+        skipped.push(`${attachment.filename} (이미지가 아님)`);
+        continue;
+      }
+      if (attachment.size > DEFAULT_MAX_IMAGE_BYTES) {
+        skipped.push(`${attachment.filename} (${Math.round(attachment.size / 1024)} KB > ${Math.round(DEFAULT_MAX_IMAGE_BYTES / 1024)} KB 제한)`);
+        continue;
+      }
+      try {
+        const response = await fetch(attachment.url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        images.push({
+          kind: "image",
+          mediaType,
+          dataBase64: Buffer.from(await response.arrayBuffer()).toString("base64"),
+          name: attachment.filename,
+        });
+      } catch (error) {
+        skipped.push(`${attachment.filename} (내려받기 실패: ${describe(error)})`);
+      }
+    }
+    if (skipped.length) {
+      await this.postQuietly(binding.threadId, `⚠️ 첨부 ${skipped.length}건은 전달하지 못했습니다: ${skipped.join(", ")}`);
+    }
+    return images;
+  }
+
+  // --- Delivery receipt (docs/기획 노트.md §11.14.3) -------------------------
+
+  /**
+   * Marks the user's own message with what actually happened to it:
+   *
+   *   📨 delivered → ⚙️ the model started a turn → ✅ that turn finished
+   *   ⚠️ nothing started (the member never picked it up)
+   *
+   * Every step is read from the HARNESS (`turnCount` increments when a message is
+   * really submitted to the model, `turnActive` while it runs), not from the agent
+   * being asked to confirm. An agent can forget, misread the instruction, or die
+   * mid-turn — and those are exactly the cases a receipt has to catch.
+   */
+  private async trackReceipt(binding: DiscordChannelBinding, messageId: string, before: number): Promise<void> {
+    if (!this.deps.memberTurn) {
+      return; // no turn source in this process (headless engine): no receipt
+    }
+    const react = async (emoji: string): Promise<boolean> => {
+      try {
+        await new DiscordRest(this.requireSettings().botToken).addReaction(binding.threadId, messageId, emoji);
+        return true;
+      } catch (error) {
+        // Usually a missing "Add Reactions" permission. Say so once, in the
+        // thread, rather than leaving the user waiting for a mark that can
+        // never appear.
+        this.log(`Discord: could not add the '${emoji}' receipt — ${describe(error)}`);
+        return false;
+      }
+    };
+    if (!(await react(RECEIPT_DELIVERED))) {
+      await this.postQuietly(binding.threadId, "ℹ️ 수신 표시(리액션)를 달 수 없습니다 — 봇에 '반응 추가' 권한이 없습니다. 전달 자체는 정상입니다.");
+      return;
+    }
+    const started = await this.waitForTurn(binding, (turn) => turn.turnCount > before, RECEIPT_START_TIMEOUT_MS);
+    if (!started) {
+      await react(RECEIPT_STALLED);
+      await this.postQuietly(
+        binding.threadId,
+        `⚠️ **${binding.member}** 가 ${Math.round(RECEIPT_START_TIMEOUT_MS / 1000)}초 안에 이 메시지를 처리하기 시작하지 않았습니다. \`!상태\` 로 확인하거나 \`!재시작 ${binding.member}\` 를 쓰세요.`,
+      );
+      return;
+    }
+    await react(RECEIPT_WORKING);
+    if (await this.waitForTurn(binding, (turn) => !turn.turnActive, RECEIPT_DONE_TIMEOUT_MS)) {
+      await react(RECEIPT_DONE);
+    }
+  }
+
+  /** Polls the member's harness state until `done`, or gives up. */
+  private async waitForTurn(
+    binding: DiscordChannelBinding,
+    done: (turn: { turnCount: number; turnActive: boolean }) => boolean,
+    timeoutMs: number,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await delay(RECEIPT_POLL_MS);
+      const turn = await this.turnOf(binding);
+      if (turn && done(turn)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async turnOf(binding: DiscordChannelBinding): Promise<{ turnCount: number; turnActive: boolean } | undefined> {
+    try {
+      return await this.deps.memberTurn?.(binding);
+    } catch (error) {
+      this.log(`Discord: could not read '${binding.member}' turn state — ${describe(error)}`);
+      return undefined;
+    }
+  }
+
+  private async turnCountOf(binding: DiscordChannelBinding): Promise<number> {
+    return (await this.turnOf(binding))?.turnCount ?? 0;
+  }
+
+  /** Posts a note whose failure must not break the caller. */
+  private async postQuietly(channelId: string, content: string): Promise<void> {
+    try {
+      await new DiscordRest(this.requireSettings().botToken).createMessage(channelId, content);
+    } catch (error) {
+      this.log(`Discord: could not post a note — ${describe(error)}`);
     }
   }
 
@@ -769,6 +977,10 @@ export class DiscordBridgeService {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ bindings: this.bindings, channels: this.channels } satisfies StoredBindings, null, 2), "utf8");
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Pulls the display name back out of `… · 파티 'name' · …`. */

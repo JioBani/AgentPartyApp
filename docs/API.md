@@ -345,13 +345,30 @@ someone asked for it, from Discord or through this endpoint.
 Places the member in Discord — desktop category → party channel → member thread,
 creating whatever is missing — and starts inbound delivery. Body:
 `{ "channelName": "optional-thread-name" }`. Returns
-`{ ok, channel, channelId, thread, threadId, created }` (`created` refers to the
-party channel). Same operation as the member's own `discord-connect` tool.
+`{ ok, channel, channelId, thread, threadId, created, threadCreated }` —
+`created` refers to the party CHANNEL, `threadCreated` to the member's thread.
+They differ routinely: registering a party makes the channel, so the first
+`connect` for a member creates only the thread. Same operation as the member's
+own `discord-connect` tool.
 
 ### `POST /api/party/members/:name/discord/send`
 
 Body: `{ "content": "text" }`. Posts as that member. Fails with the reason when
 the content is over the limit or Discord rate limits the request.
+
+### `POST /api/party/members/:name/discord/send-image`
+
+Body: `{ "dataBase64": "…", "filename": "shot.png", "mediaType": "image/png",
+"caption": "optional" }`. Uploads the image into that member's thread. Over the
+server's attachment limit (10 MB assumed) it is REJECTED with the limit stated,
+never silently dropped. The member's own `discord-send-image` tool takes a FILE
+PATH instead and reads it in the process the member runs in — for a WSL member
+that path exists only inside the distro, so only the bytes cross to the desktop.
+
+Images the user attaches in Discord travel the other way automatically: they are
+downloaded and delivered as ordinary user-turn attachments, and anything that
+cannot be delivered (not an image, too large, download failed) is reported in the
+thread.
 
 ### `POST /api/party/members/:name/discord/disconnect`
 

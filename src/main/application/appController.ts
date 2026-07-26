@@ -719,7 +719,7 @@ export class AppController {
   }
 
   /** Same operation the member's `discord-connect` tool performs, for UI/QA. */
-  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean }> {
+  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean; threadCreated: boolean }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const listing = await this.listPartyMembers(workspacePath, windowId, party);
     const result = await this.requireDiscord().connectMember({
@@ -729,12 +729,34 @@ export class AppController {
       member: name,
       channelName,
     });
-    return { ok: true, channel: result.channelName, channelId: result.channelId, thread: result.threadName, threadId: result.threadId, created: result.created };
+    return {
+      ok: true,
+      channel: result.channelName,
+      channelId: result.channelId,
+      thread: result.threadName,
+      threadId: result.threadId,
+      created: result.created,
+      threadCreated: (result as { threadCreated?: boolean }).threadCreated === true,
+    };
   }
 
   async discordSendAsMember(workspacePath: string, name: string, content: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const result = await this.requireDiscord().sendAsMember(workspacePath, party, name, content);
+    return { ok: true, channel: result.channelName };
+  }
+
+  /** Uploads one image as that member — the `discord-send-image` tool's path. */
+  async discordSendImageAsMember(
+    workspacePath: string,
+    name: string,
+    image: { dataBase64: string; filename: string; mediaType: string },
+    caption?: string,
+    windowId?: string,
+    partyId?: string,
+  ): Promise<{ ok: true; channel: string }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const result = await this.requireDiscord().sendImageAsMember(workspacePath, party, name, image, caption);
     return { ok: true, channel: result.channelName };
   }
 

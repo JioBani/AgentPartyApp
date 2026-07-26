@@ -129,16 +129,46 @@ export class DiscordRest {
     return this.call("POST", `/channels/${channelId}/messages`, { content });
   }
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /**
+   * Reacts to a message as the bot. Used for delivery receipts: a reaction on the
+   * user's OWN message says what happened to it without adding a line of chat
+   * noise for every step.
+   */
+  addReaction(channelId: string, messageId: string, emoji: string): Promise<void> {
+    return this.call("PUT", `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`);
+  }
+
+  /**
+   * Posts a file. Discord takes uploads as multipart, so this cannot go through
+   * the JSON path; everything else (429 handling, error shape) is shared.
+   */
+  createMessageWithFile(
+    channelId: string,
+    file: { filename: string; contentType: string; bytes: Uint8Array },
+    content?: string,
+  ): Promise<{ id: string }> {
+    const form = new FormData();
+    form.append("payload_json", JSON.stringify({ content: content || "", attachments: [{ id: 0, filename: file.filename }] }));
+    // Copy into a plain ArrayBuffer: a Buffer's backing store may be a shared
+    // pool slice, which Blob's type does not accept.
+    const bytes = new Uint8Array(file.bytes.byteLength);
+    bytes.set(file.bytes);
+    form.append("files[0]", new Blob([bytes], { type: file.contentType }), file.filename);
+    return this.call("POST", `/channels/${channelId}/messages`, undefined, form);
+  }
+
+  private async call<T>(method: string, path: string, body?: unknown, form?: FormData): Promise<T> {
     let response: Response;
     try {
       response = await fetch(`${API_BASE}${path}`, {
         method,
         headers: {
           Authorization: `Bot ${this.token}`,
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+          // fetch sets multipart's own Content-Type (with the boundary); setting
+          // it by hand here would produce a body Discord cannot parse.
+          ...(form || body === undefined ? {} : { "Content-Type": "application/json" }),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: form || (body === undefined ? undefined : JSON.stringify(body)),
       });
     } catch (error) {
       // Network failure: no status to report, but it must not look like success.
