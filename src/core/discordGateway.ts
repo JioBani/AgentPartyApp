@@ -18,6 +18,13 @@ import { DISCORD_GATEWAY_INTENTS, type DiscordConnectionState } from "../shared/
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 
+/** Closes that a retry can never fix — only a settings change can. */
+const FATAL_CLOSE_CODES = new Set([
+  4004, // authentication failed (bad token)
+  4013, // invalid intents
+  4014, // disallowed intents (MESSAGE CONTENT not enabled)
+]);
+
 /** Opcodes used here; the rest are ignored. */
 const OP_DISPATCH = 0;
 const OP_HEARTBEAT = 1;
@@ -92,6 +99,16 @@ export class DiscordGateway extends EventEmitter {
         return;
       }
       this.emitState("error", closeReason(code, String(reason || "")));
+      if (FATAL_CLOSE_CODES.has(code)) {
+        // Retrying cannot succeed until the USER changes something (enable the
+        // intent, fix the token). Looping anyway would burn Discord's daily
+        // gateway session budget (~1000 identifies/day) — a 30s retry loop spends
+        // ~2880 — and then the bridge stays broken even after the fix. Stop, stay
+        // visibly errored, and reconnect when settings are saved or the app
+        // restarts.
+        this.closed = true;
+        return;
+      }
       this.scheduleReconnect();
     });
   }
