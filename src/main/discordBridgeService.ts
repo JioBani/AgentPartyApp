@@ -261,7 +261,12 @@ export class DiscordBridgeService {
     const guildId = await this.resolveGuild(rest, settings.guildId);
 
     const existing = this.bindingFor(request.workspacePath, request.party, request.member);
-    if (existing) {
+    // A binding is only reusable if what it points at STILL EXISTS. Discord is
+    // edited by people: deleting a channel takes its threads with it, and the
+    // stale binding then fails every send with "Unknown Channel" forever — the
+    // one thing re-connecting is supposed to fix. Observed in QA after a channel
+    // was deleted by hand.
+    if (existing && (await this.threadIsUsable(rest, existing))) {
       // Re-connecting is also how a member is handed to THIS instance after a
       // restart: take ownership so the caller is the one that delivers.
       const owned = { ...existing, owner: this.deps.instance };
@@ -270,6 +275,9 @@ export class DiscordBridgeService {
       });
       this.ensureGateway();
       return { ...owned, created: false, threadCreated: false };
+    }
+    if (existing) {
+      this.log(`Discord: '${request.member}' was bound to a thread that no longer exists — rebuilding it.`);
     }
 
     const channel = await this.ensurePartyChannel(rest, guildId, settings, request);
@@ -343,6 +351,30 @@ export class DiscordBridgeService {
     return { ...record, created };
   }
 
+  /**
+   * Whether a binding's thread is still there — and still inside the party's
+   * current channel. Both can change without the app knowing: someone deletes
+   * the channel in Discord, or the party is registered again and gets a new one.
+   */
+  private async threadIsUsable(rest: DiscordRest, binding: DiscordChannelBinding): Promise<boolean> {
+    const current = this.partyChannelFor(binding.workspacePath, binding.party);
+    if (current && current.channelId !== binding.channelId) {
+      return false;
+    }
+    try {
+      const thread = await rest.channel(binding.threadId);
+      return Boolean(thread?.id);
+    } catch (error) {
+      if (error instanceof DiscordRestError && error.status === 404) {
+        return false;
+      }
+      // A network blip is not proof the thread is gone; keep the binding and let
+      // the actual send report the failure rather than silently rebuilding.
+      this.log(`Discord: could not verify '${binding.member}' thread — ${describe(error)}`);
+      return true;
+    }
+  }
+
   /** Finds the member's thread, reviving an auto-archived one, else creates it. */
   private async resolveThread(rest: DiscordRest, guildId: string, channelId: string, name: string): Promise<DiscordChannel & { created: boolean }> {
     const active = (await rest.activeThreads(guildId)).find((thread) => thread.parent_id === channelId && thread.name === name);
@@ -403,7 +435,7 @@ export class DiscordBridgeService {
     if (!binding) {
       throw new Error(`Member '${member}' has no Discord thread yet. Call discord-connect first.`);
     }
-    await new DiscordRest(settings.botToken).createMessage(binding.threadId, text);
+    await this.guardMissingThread(binding, () => new DiscordRest(settings.botToken).createMessage(binding.threadId, text));
     return { channelName: `${binding.channelName} > ${binding.threadName}` };
   }
 
@@ -436,12 +468,33 @@ export class DiscordBridgeService {
     if (!binding) {
       throw new Error(`Member '${member}' has no Discord thread yet. Call discord-connect first.`);
     }
-    await new DiscordRest(settings.botToken).createMessageWithFile(
-      binding.threadId,
-      { filename: image.filename || "image.png", contentType: image.mediaType || "image/png", bytes },
-      caption,
+    await this.guardMissingThread(binding, () =>
+      new DiscordRest(settings.botToken).createMessageWithFile(
+        binding.threadId,
+        { filename: image.filename || "image.png", contentType: image.mediaType || "image/png", bytes },
+        caption,
+      ),
     );
     return { channelName: `${binding.channelName} > ${binding.threadName}` };
+  }
+
+  /**
+   * Turns "Unknown Channel" into an instruction. A thread deleted in Discord
+   * would otherwise fail every send with an opaque 404 and no way out; dropping
+   * the binding means the next `discord-connect` rebuilds it.
+   */
+  private async guardMissingThread<T>(binding: DiscordChannelBinding, action: () => Promise<T>): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof DiscordRestError && error.status === 404) {
+        this.disconnectMember(binding.workspacePath, binding.party, binding.member);
+        throw new Error(
+          `The Discord thread for '${binding.member}' no longer exists (it was deleted in Discord). The binding has been cleared — call discord-connect again to get a new thread. Nothing was sent.`,
+        );
+      }
+      throw error;
+    }
   }
 
   /** Drops the binding. The channel and its history stay in Discord. */

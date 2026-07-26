@@ -140,7 +140,10 @@ async function start() {
     throw new Error(`!연결 did not return a thread: ${connected.reply}`);
   }
   await post(base, `/api/party/members/${memberName}/start`, { model, permissionMode: "auto" });
-  writeState({ pid: child.pid, base, channelId, threadId, guildId: discord.guildId, startedAt: new Date().toISOString() });
+  // Re-read status: the guild is auto-detected on the first REST call, so the
+  // status taken before registration has no id to build channel links from.
+  const guildId = (await getJson(base, "/api/discord")).guildId;
+  writeState({ pid: child.pid, base, channelId, threadId, guildId, startedAt: new Date().toISOString() });
   step(`channel ${channelId} · thread ${threadId} · member session started`);
 
   // A first post so the thread is easy to find on a phone.
@@ -148,7 +151,7 @@ async function start() {
     content: `🧪 **QA 준비 완료** — 데스크톱 \`${desktopName}\`, 파티 \`${partyName}\`, 멤버 \`${memberName}\`.\n이 스레드에 그냥 말을 걸거나 \`!도움말\` 을 쳐보세요.`,
   });
 
-  printManualChecklist(discord.guildId, channelId, threadId);
+  printManualChecklist(guildId, channelId, threadId);
 }
 
 function printManualChecklist(guildId, channelId, threadId) {

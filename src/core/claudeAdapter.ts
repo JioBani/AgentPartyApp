@@ -25,7 +25,7 @@ import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usa
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
-import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
+import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 
 export interface ClaudeAdapterOptions {
@@ -626,6 +626,13 @@ export class ClaudeAdapter extends EventEmitter {
         // ("...session was not launched with --dangerously-skip-permissions").
         allowDangerouslySkipPermissions: true,
         resume: this.resumeSessionId,
+        // Declare the app's own party tools as permitted for member sessions.
+        // They are schema-validated, scoped to the calling member, and routed
+        // through AppController; inbound Discord is whitelist-only, so an
+        // unlisted sender never reaches the model at all. Stating this as a
+        // permission rule (not only inside canUseTool) is what makes a member's
+        // reporting tools usable in every permission mode.
+        allowedTools: this.options.partyIdentity ? PARTY_TOOL_NAMES.map((name) => `${PARTY_TOOL_PREFIX}${name}`) : undefined,
         canUseTool: this.canUseTool,
         includePartialMessages: true,
         includeHookEvents: true,
