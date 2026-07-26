@@ -47,6 +47,10 @@ if (!token) {
   fail("DISCORD_BOT_TOKEN is not set (put it in .env next to the app).");
 }
 
+/** A 1x1 PNG — the smallest thing that is genuinely an image to Discord. */
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 const port = Number(process.env.AGENTPARTY_DISCORD_E2E_PORT || "") || 48971;
 let base = `http://127.0.0.1:${port}`;
 let channelId = "";
@@ -113,12 +117,50 @@ async function main() {
       permissionMode: "auto",
     });
 
-    // 2. HTTP path: connect + send, verified against Discord itself.
+    // 2. Control panel (§11.14): a party channel exists because someone ASKED for
+    //    it from Discord — never because the app started. These commands run
+    //    through the same dispatcher a typed Discord message goes through.
+    assert(!(await getJson("/api/discord")).partyChannels?.length, "opening the app registered nothing on its own");
+    const help = await post("/api/discord/command", { content: "!도움말", post: false });
+    assert(help.handled && /!등록/.test(help.reply), "the help command answers with the command list");
+    const unknown = await post("/api/discord/command", { content: "!없는명령", post: false });
+    assert(unknown.handled && /알 수 없는 명령/.test(unknown.reply), "an unknown command is answered, not swallowed");
+
+    const partyList = await post("/api/discord/command", { content: "!파티", post: false });
+    assert(partyList.handled && partyList.reply.includes(partyName), `!파티 lists the e2e party (got: ${partyList.reply})`);
+    const shortId = (partyList.reply.match(/`([0-9a-z]{6})`/) || [])[1];
+    assert(shortId, `!파티 shows a short party id to register with (got: ${partyList.reply})`);
+
+    const registered = await post("/api/discord/command", { content: `!등록 ${shortId}`, post: false });
+    assert(registered.handled && /채널을 만들었습니다/.test(registered.reply), `!등록 created the channel (got: ${registered.reply})`);
+    const registeredChannelId = (registered.reply.match(/<#(\d+)>/) || [])[1];
+    assert(registeredChannelId, "the registration reply links the new channel");
+    channelId = registeredChannelId;
+    step(`!등록 → channel ${registeredChannelId}`);
+
+    const panelStatus = await post("/api/discord/command", { content: "!상태", channelId: registeredChannelId, post: false });
+    assert(panelStatus.handled && panelStatus.reply.includes(memberName), `!상태 lists the member (got: ${panelStatus.reply})`);
+    assert(/스레드 없음/.test(panelStatus.reply), "registering a party creates no member threads on its own");
+    step("!상태 verified before any member thread exists");
+
+    const panelConnect = await post("/api/discord/command", { content: `!연결 ${memberName}`, channelId: registeredChannelId, post: false });
+    assert(panelConnect.handled && /<#(\d+)>/.test(panelConnect.reply), `!연결 created the member thread (got: ${panelConnect.reply})`);
+    const panelThreadId = panelConnect.reply.match(/<#(\d+)>/)[1];
+    const panelThread = await discord("GET", `/channels/${panelThreadId}`);
+    assert(panelThread?.parent_id === registeredChannelId, "the member thread sits inside the registered party channel");
+    step(`!연결 → thread ${panelThread.name} (${panelThreadId})`);
+
+    // Every binding names the instance that delivers for it; without that, two
+    // app processes sharing userData would both answer one typed instruction.
+    const owned = (await getJson("/api/discord")).bindings.find((b) => b.member === memberName);
+    assert(owned?.owner?.pid > 0, "the binding records the owning app instance");
+
+    // 3. HTTP path: connect + send, verified against Discord itself.
     const connected = await post(`/api/party/members/${memberName}/discord/connect`, {});
-    channelId = connected.channelId;
     threadId = connected.threadId;
-    assert(connected.ok && channelId, "connect returned a channel");
-    assert(connected.created === true, "a fresh channel was created");
+    assert(connected.ok && connected.channelId, "connect returned a channel");
+    assert(connected.channelId === registeredChannelId, "connect reused the registered channel instead of creating a second one");
+    assert(connected.threadId === panelThreadId, "connect reused the member thread the control panel created");
     assert(connected.channel.startsWith(`${partyName}-`), `the channel is named after the party + a party-id slice (got #${connected.channel})`);
     assert(connected.thread === memberName, `the member has its own thread (got ${connected.thread})`);
 
@@ -136,13 +178,33 @@ async function main() {
     assert(await discordHasMessage(marker), "the HTTP send is visible in the Discord channel");
     step("HTTP send verified in Discord");
 
-    // 3. The 2000-char rule REJECTS rather than truncating.
+    // An image goes up as a real Discord attachment, and an over-size one is
+    // rejected with the limit stated rather than silently dropped.
+    const imageName = `e2e-${runId}.png`;
+    const imageSent = await post(`/api/party/members/${memberName}/discord/send-image`, {
+      dataBase64: TINY_PNG_BASE64,
+      filename: imageName,
+      mediaType: "image/png",
+      caption: "e2e image",
+    });
+    assert(imageSent.ok, "the image upload was accepted");
+    assert(await discordHasAttachment(imageName), "the uploaded image is visible as a Discord attachment");
+    const hugeImage = await postRaw(`/api/party/members/${memberName}/discord/send-image`, {
+      dataBase64: "A".repeat(15 * 1024 * 1024),
+      filename: "huge.png",
+      mediaType: "image/png",
+    });
+    assert(hugeImage.status >= 400 || hugeImage.body?.error, `an over-size image is rejected (status ${hugeImage.status})`);
+    assert(/limit/i.test(JSON.stringify(hugeImage.body || "")), "the rejection states the upload limit");
+    step("image upload verified in Discord (and over-size rejected)");
+
+    // 4. The 2000-char rule REJECTS rather than truncating.
     const tooLong = await postRaw(`/api/party/members/${memberName}/discord/send`, { content: "x".repeat(2001) });
     assert(tooLong.status >= 400 || tooLong.body?.error, `over-long content is rejected (status ${tooLong.status})`);
     assert(/2000/.test(JSON.stringify(tooLong.body || "")), "the rejection explains the 2000 limit");
     step("over-long content rejected, not truncated");
 
-    // 4. Agent path: a REAL model turn where the member drives the MCP tools.
+    // 5. Agent path: a REAL model turn where the member drives the MCP tools.
     const started = await post(`/api/party/members/${memberName}/start`, { model, permissionMode: "auto" });
     const sessionId = await waitForSession(started.session?.id);
     step(`member session ${sessionId} running (${model})`);
@@ -154,7 +216,7 @@ async function main() {
     assert(await discordHasMessage(agentMarker, 180_000), "the member's own discord-send reached Discord");
     step("agent-driven discord-send verified in Discord");
 
-    // 5. A message delivered while the member is mid-turn must INTERRUPT it —
+    // 6. A message delivered while the member is mid-turn must INTERRUPT it —
     // the same path Discord inbound takes (sendUserMessage with interrupt).
     await post(`/api/party/members/${memberName}/message`, {
       text: "1부터 300까지 한 줄에 하나씩 세어줘. 절대 멈추지 말고 끝까지 세.",
@@ -168,7 +230,20 @@ async function main() {
     assert(await discordHasMessage(interruptMarker, 120_000), "the interrupting message was handled instead of queueing behind the long turn");
     step("interrupt-and-inject verified on a busy member");
 
-    // 6. The Settings → Discord screen must actually render the stored state.
+    // Control-panel actions on a LIVE session, typed in the member's own thread
+    // (so the member name is implied). These are the commands that have to work
+    // when the member is wedged, which is why they never involve the model.
+    await post(`/api/party/members/${memberName}/message`, {
+      text: "1부터 300까지 한 줄에 하나씩 세어줘. 절대 멈추지 말고 끝까지 세.",
+    });
+    assert(await memberBusy(60_000), "the member is mid-turn before !중단");
+    const stopped = await post("/api/discord/command", { content: "!중단", channelId: panelThreadId, post: false });
+    assert(/턴을 중단했습니다/.test(stopped.reply), `!중단 stopped the in-flight turn (got: ${stopped.reply})`);
+    const respawned = await post("/api/discord/command", { content: "!재시작", channelId: panelThreadId, post: false });
+    assert(/재시작했습니다/.test(respawned.reply), `!재시작 restarted the member session (got: ${respawned.reply})`);
+    step("!중단 / !재시작 verified on a live member session");
+
+    // 7. The Settings → Discord screen must actually render the stored state.
     await post("/api/navigation", { view: "runtime" });
     await sleep(1200);
     const shot = path.join(os.tmpdir(), `agentparty-discord-settings-${runId}.png`);
@@ -177,14 +252,17 @@ async function main() {
     step(`settings screenshot: ${shot}`);
     await post("/api/navigation", { view: "workbench" });
 
-    // 7. Inbound — manual leg (the bridge ignores its own posts by design).
+    // 8. Inbound — manual leg (the bridge ignores its own posts by design).
     if (waitForInbound) {
       const replyMarker = `inbound-${Date.now()}`;
       await post(`/api/party/members/${memberName}/discord/send`, {
         content: `[e2e] 이 채널에 아무 말이나 한 줄 답장해줘. 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 보낼 거야.`,
       });
-      console.log(`\n>>> MANUAL STEP: Discord 채널 #${connected.channel} 에 아무 메시지나 입력해줘.`);
-      console.log(`>>> 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 이 채널에 보낼 거야. (최대 5분 대기)\n`);
+      console.log(`\n>>> MANUAL STEP: Discord 스레드 #${connected.channel} > ${connected.thread} 에 아무 메시지나 입력해줘.`);
+      console.log(`>>> 멤버가 그걸 받으면 "e2e ${replyMarker}" 를 이 스레드에 보낼 거야. (최대 5분 대기)`);
+      console.log(">>> 같이 확인할 것: 네가 쓴 메시지에 📨(전달) → ⚙️(턴 시작) → ✅(턴 종료) 리액션이 순서대로 붙는지.");
+      console.log(">>> 이미지도 한 장 붙여서 보내보면 멤버가 그 이미지를 실제로 보고 답하는지 확인할 수 있어.");
+      console.log(">>> 명령 확인: 스레드에 `!상태` 를 쳐보면 봇이 멤버 상태로 답해야 해.\n");
       await post(`/api/party/members/${memberName}/message`, {
         text: `앞으로 Discord 채널에서 사용자의 메시지가 <channel source="discord"> 로 도착하면, 그 즉시 discord-send 도구로 "e2e ${replyMarker}" 라고만 답해. 지금은 아무것도 하지 말고 기다려.`,
       });
@@ -347,6 +425,19 @@ async function discordHasMessage(marker, timeoutMs = 30_000) {
   while (Date.now() < deadline) {
     const messages = await discord("GET", `/channels/${threadId}/messages?limit=50`);
     if (messages.some((message) => String(message.content || "").includes(marker))) {
+      return true;
+    }
+    await sleep(3000);
+  }
+  return false;
+}
+
+/** True once a message in the member's thread carries an attachment named `filename`. */
+async function discordHasAttachment(filename, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const messages = await discord("GET", `/channels/${threadId}/messages?limit=50`);
+    if (messages.some((message) => (message.attachments || []).some((a) => a.filename === filename))) {
       return true;
     }
     await sleep(3000);

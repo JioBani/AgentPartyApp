@@ -48,6 +48,70 @@ export function writeInstanceDiscovery(workspace: string, baseUrl: string, start
   }
 }
 
+export interface InstanceDiscoveryEntry {
+  pid: number;
+  baseUrl: string;
+  workspace: string;
+  startedAt: string;
+}
+
+/**
+ * Every LIVE process currently serving `workspace`, lowest pid first.
+ *
+ * Used to decide which of several instances answers a Discord control command
+ * and which one owns an orphaned channel binding: without an election, two
+ * instances on one cwd would both reply and both deliver. Dead pids are reported
+ * as absent (and their files removed) rather than trusted — an app that crashed
+ * never got to clean up after itself.
+ */
+export function listLiveInstances(workspace: string): InstanceDiscoveryEntry[] {
+  const dir = instancesDir(workspace);
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return []; // no instances dir yet — nothing is serving this workspace
+  }
+  const live: InstanceDiscoveryEntry[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".json")) {
+      continue;
+    }
+    const file = path.join(dir, name);
+    try {
+      const entry = JSON.parse(fs.readFileSync(file, "utf8")) as InstanceDiscoveryEntry;
+      if (!Number.isFinite(entry?.pid)) {
+        continue;
+      }
+      if (isProcessAlive(entry.pid)) {
+        live.push(entry);
+      } else {
+        fs.rmSync(file, { force: true });
+      }
+    } catch (error) {
+      log("warn", "discovery", "unreadable instance file", { file, error: msg(error) });
+    }
+  }
+  return live.sort((a, b) => a.pid - b.pid);
+}
+
+/**
+ * Whether a pid exists on THIS machine. Signal 0 performs the permission and
+ * existence checks without delivering anything.
+ */
+export function isProcessAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user — still alive.
+    return (error as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
 /** Removes THIS process's discovery entry for a workspace (best-effort). */
 export function removeInstanceDiscovery(workspace: string): void {
   try {

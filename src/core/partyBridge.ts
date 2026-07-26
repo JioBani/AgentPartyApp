@@ -109,6 +109,8 @@ export interface PartyBridge {
   discordConnect(channelName?: string): Promise<PartyToolResult>;
   /** Post one message from THIS member into its Discord channel. */
   discordSend(content: string): Promise<PartyToolResult>;
+  /** Upload one image file from THIS member's machine into its Discord thread. */
+  discordSendImage(path: string, caption?: string): Promise<PartyToolResult>;
   /** Stop bridging THIS member; the Discord channel and its history remain. */
   discordDisconnect(): Promise<PartyToolResult>;
 }
@@ -117,7 +119,7 @@ export interface PartyBridge {
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-disconnect"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -133,6 +135,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
   "discord-connect": "Bridge YOURSELF to Discord so the user can read your reports and reply from a phone or another PC. Creates (or reuses) a text channel named after you in the user's server. Call this once, before discord-send. Only affects you — you cannot bridge another member.",
   "discord-send": "Post one message from you into YOUR Discord channel. Plain text only — Discord's limit is 2000 characters and longer content is REJECTED, not truncated, so split long reports into several sends. If Discord rate limits you the tool returns an error containing retry_after_ms: wait that long, then send again yourself (nothing is queued or retried for you). Write for a person reading on a phone: summarize, do not paste raw logs or diffs.",
+  "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
   broadcast: "Send a message to EVERY other member of your party at once. Like send, each delivery is QUEUED: a member that is mid-turn only picks it up after its current turn finishes (for a Codex member, at its next tool call). Set interrupt=true to stop their current turns so the message is handled right away.",
 };
@@ -290,6 +293,15 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       content: { type: "string", description: "Message text, at most 2000 characters. Longer content is rejected — split it yourself." },
     },
     required: ["content"],
+    additionalProperties: false,
+  },
+  "discord-send-image": {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "Path to an image file on the machine you are running on." },
+      caption: { type: "string", description: "Optional text posted with the image, at most 2000 characters." },
+    },
+    required: ["path"],
     additionalProperties: false,
   },
   "discord-disconnect": { type: "object", properties: {}, additionalProperties: false },
@@ -464,6 +476,13 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       }
       return bridge.discordSend(content);
     }
+    case "discord-send-image": {
+      const imagePath = input.path;
+      if (typeof imagePath !== "string" || !imagePath) {
+        return { ok: false, error: "discord-send-image requires string argument: path." };
+      }
+      return bridge.discordSendImage(imagePath, typeof input.caption === "string" ? input.caption : undefined);
+    }
     case "discord-disconnect":
       return bridge.discordDisconnect();
   }
@@ -526,8 +545,10 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     "- **Write for a person on a phone.** Summarize the situation in a few lines. Do NOT paste raw logs, diffs, stack traces or file dumps.",
     `- **2000 characters is a hard limit.** \`${tool("discord-send")}\` REJECTS longer content instead of truncating it — split the report into several sends yourself.`,
     "- **Rate limits are yours to handle.** Nothing is queued or retried for you. If the tool returns an error containing `retry_after_ms`, wait at least that long, then send again.",
-    "- **Text only.** There are no buttons, menus, modals or file uploads, by design. Never claim the user can click something — ask them to reply in plain text.",
+    `- **Images work both ways.** \`${tool("discord-send-image")}\` uploads a screenshot or chart from this machine; an image the user attaches in Discord arrives as an ordinary attachment on the user turn. Everything else (buttons, menus, modals, non-image files) does not exist — never claim the user can click something.`,
     "- Approvals and permission prompts are NOT available over Discord. If you are blocked on one, say so in the channel and ask the user to handle it in the app.",
+    "- **Do not send a bare acknowledgement** (\"받았습니다\", \"on it\"). The app already marks the user's message 📨 delivered → ⚙️ working → ✅ done from the harness itself, so a receipt message only costs a turn. Send content, not confirmation.",
+    "- The user can also drive the app from Discord with `!` commands (`!상태`, `!연결`, `!중단`, `!재시작`). Those are handled by the app, never by you — you will not see them.",
   ].join("\n");
 }
 
@@ -683,6 +704,15 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "Post one message from you into YOUR Discord channel. Plain text only, at most 2000 characters — longer content is REJECTED, not truncated, so split it yourself. On a rate limit the error carries retry_after_ms: wait that long and send again (nothing is queued or retried for you). Write for a person on a phone: summarize, never paste raw logs or diffs.",
       { content: z.string().describe("Message text, at most 2000 characters.") },
       async (args: { content: string }) => envelope(await bridge.discordSend(args.content)),
+    ),
+    tool(
+      "discord-send-image",
+      "Upload an image FILE from this machine into your Discord thread, so the user can SEE a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Over-size images are REJECTED with the limit stated, never silently dropped. Images only — not a general file transfer.",
+      {
+        path: z.string().describe("Path to an image file on the machine you are running on."),
+        caption: z.string().optional().describe("Optional text posted with the image, at most 2000 characters."),
+      },
+      async (args: { path: string; caption?: string }) => envelope(await bridge.discordSendImage(args.path, args.caption)),
     ),
     tool(
       "discord-disconnect",

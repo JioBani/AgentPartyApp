@@ -72,6 +72,13 @@ export interface PartyApplicationDeps {
 export interface DiscordBridgePort {
   connectMember(input: { workspacePath: string; party: string; partyLabel?: string; member: string; channelName?: string }): Promise<{ channelName: string; channelId: string; threadName: string; threadId: string; created: boolean }>;
   sendAsMember(workspacePath: string, party: string, member: string, content: string): Promise<{ channelName: string }>;
+  sendImageAsMember(
+    workspacePath: string,
+    party: string,
+    member: string,
+    image: { dataBase64: string; filename: string; mediaType: string },
+    caption?: string,
+  ): Promise<{ channelName: string }>;
   disconnectMember(workspacePath: string, party: string, member: string): Promise<{ removed: boolean }> | { removed: boolean };
 }
 
@@ -1557,6 +1564,27 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
+      discordSendImage: async (imagePath, caption) => {
+        const discord = this.deps.discord;
+        if (!discord) {
+          return { ok: false, error: "The Discord bridge is not available in this process." };
+        }
+        // The file is read HERE, in the process the member runs in: a WSL member's
+        // path exists only inside the distro, while the bridge (and the token) live
+        // on the desktop. Only the decoded bytes cross that boundary.
+        let image: { dataBase64: string; filename: string; mediaType: string };
+        try {
+          image = readImageFile(imagePath);
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+        try {
+          const result = await discord.sendImageAsMember(this.workspacePath(), party, selfMember, image, caption);
+          return { ok: true, data: { channel: result.channelName } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       discordDisconnect: async () => {
         const discord = this.deps.discord;
         if (!discord) {
@@ -1666,4 +1694,36 @@ function sessionOwnerMayBeAlive(bootId: string | undefined): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/** Image types Discord renders inline and every vision model accepts. */
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+/**
+ * Reads an image file for `discord-send-image`, in the process the member runs
+ * in. Every rejection states what is wrong so the agent can fix it instead of
+ * retrying blindly: a missing file, a directory, an unsupported extension.
+ */
+function readImageFile(filePath: string): { dataBase64: string; filename: string; mediaType: string } {
+  const resolved = path.resolve(filePath);
+  const mediaType = IMAGE_MEDIA_TYPES[path.extname(resolved).toLowerCase()];
+  if (!mediaType) {
+    throw new Error(`'${filePath}' is not a supported image (png, jpg, gif, webp). Nothing was sent.`);
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    throw new Error(`No such file: '${resolved}'. Note the path must exist on the machine YOU run on.`);
+  }
+  if (!stat.isFile()) {
+    throw new Error(`'${resolved}' is not a file.`);
+  }
+  return { dataBase64: fs.readFileSync(resolved).toString("base64"), filename: path.basename(resolved), mediaType };
 }

@@ -54,6 +54,10 @@ async function main(): Promise<void> {
     discord: {
       connectMember: (input) => hostChannel.call("discordConnect", input),
       sendAsMember: (workspacePath, party, member, content) => hostChannel.call("discordSend", workspacePath, party, member, content),
+      // Only the decoded bytes cross the boundary: the file path exists inside
+      // this distro, and the upload has to happen where the token is.
+      sendImageAsMember: (workspacePath, party, member, image, caption) =>
+        hostChannel.call("discordSendImage", workspacePath, party, member, image, caption),
       disconnectMember: (workspacePath, party, member) => hostChannel.call("discordDisconnect", workspacePath, party, member),
     },
   });

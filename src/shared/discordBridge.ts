@@ -54,6 +54,33 @@ export function discordChannelTopic(input: { desktop: string; workspacePath: str
   return `${discordChannelIdentity(input)} · 파티 '${input.partyName}' · ${input.workspacePath}`.slice(0, 1024);
 }
 
+/**
+ * Reads the identity back out of a channel topic.
+ *
+ * The topic is the ONLY durable record of what a channel serves: every desktop
+ * in the guild receives every message, so a control command typed in a channel
+ * has to tell them apart. A desktop that is not the one named here must stay
+ * silent instead of answering for a machine it knows nothing about. It also
+ * lets a desktop recognise its own channel again after its local bindings file
+ * is lost.
+ */
+export function parseDiscordChannelIdentity(topic?: string): { desktop: string; workspacePath: string; partyId: string } | undefined {
+  const head = String(topic || "").split(" · ")[0];
+  if (!head.startsWith("agentparty:")) {
+    return undefined;
+  }
+  const parts = head.slice("agentparty:".length).split("|");
+  if (parts.length < 3) {
+    return undefined;
+  }
+  // A workspace path may itself contain '|', so only the first and last fields
+  // are fixed; everything between them is the path.
+  const desktop = parts[0];
+  const partyId = parts[parts.length - 1];
+  const workspacePath = parts.slice(1, -1).join("|");
+  return desktop && partyId && workspacePath ? { desktop, workspacePath, partyId } : undefined;
+}
+
 function slugPart(value: string): string {
   return String(value || "")
     .toLowerCase()
@@ -91,6 +118,32 @@ export const DEFAULT_DISCORD_SETTINGS: DiscordBridgeSettings = {
 
 export type DiscordConnectionState = "off" | "connecting" | "connected" | "error";
 
+/**
+ * Which app instance is responsible for a channel or thread.
+ *
+ * Bindings live in userData, which is shared by every AgentParty process on this
+ * machine — and one cwd routinely has two instances open on different parties. If
+ * all of them delivered, one Discord message would reach the member twice, and an
+ * instance that does not run that member's session would START A SECOND ONE.
+ * So a binding names its owner, and only the owner acts. A dead owner's binding
+ * is re-claimed (see DiscordBridgeService.claimIfOrphaned).
+ */
+export interface DiscordBindingOwner {
+  pid: number;
+  /** Process-run stamp — tells a re-used pid apart from the original owner. */
+  startedAt: string;
+}
+
+/** One party ↔ channel registration. Created on request FROM Discord (§11.14). */
+export interface DiscordPartyChannel {
+  workspacePath: string;
+  party: string;
+  partyName: string;
+  channelId: string;
+  channelName: string;
+  owner?: DiscordBindingOwner;
+}
+
 /** One member ↔ thread binding, plus the party channel that holds it. */
 export interface DiscordChannelBinding {
   workspacePath: string;
@@ -102,6 +155,7 @@ export interface DiscordChannelBinding {
   /** The member's thread inside that channel — where messages actually flow. */
   threadId: string;
   threadName: string;
+  owner?: DiscordBindingOwner;
 }
 
 /** What the UI and `GET /api/discord` report. Never includes the token. */
@@ -120,6 +174,10 @@ export interface DiscordBridgeStatus {
   tokenMask?: string;
   allowedUserIds: string[];
   bindings: DiscordChannelBinding[];
+  /** Party channels registered from Discord (§11.14). */
+  partyChannels: DiscordPartyChannel[];
+  /** This process, so a multi-instance machine can be read at a glance. */
+  instance: DiscordBindingOwner;
 }
 
 export function normalizeDiscordSettings(value: unknown): DiscordBridgeSettings {

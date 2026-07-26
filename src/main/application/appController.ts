@@ -692,8 +692,34 @@ export class AppController {
     return status;
   }
 
+  /**
+   * Runs a Discord control-panel command (`!상태`, `!등록 …`) without typing it in
+   * Discord. Same dispatcher the gateway uses — the bot cannot post as the user,
+   * so this is how the panel is driven from the UI, HTTP and QA.
+   */
+  discordRunCommand(input: { content: string; channelId?: string; authorId?: string; post?: boolean }): Promise<{ ok: true; handled: boolean; reply?: string }> {
+    return this.requireDiscord().runControlCommand(input);
+  }
+
+  /**
+   * Registers a party's Discord channel without touching its members — the same
+   * operation the `!등록` control command performs (docs/기획 노트.md §11.14).
+   * Exposed over HTTP so QA and agents can drive it without typing in Discord.
+   */
+  async discordRegisterParty(workspacePath: string, partyId?: string, windowId?: string): Promise<{ ok: true; channel: string; channelId: string; created: boolean }> {
+    const target = partyId || (await this.pinnedPartyForWindow(workspacePath, windowId)) || "";
+    const listing = await this.listPartyMembers(workspacePath, windowId, target);
+    const party = (listing as any)?.parties?.find((entry: any) => entry?.id === target);
+    const result = await this.requireDiscord().registerParty({
+      workspacePath,
+      party: target,
+      partyLabel: party?.name,
+    });
+    return { ok: true, channel: result.channelName, channelId: result.channelId, created: result.created };
+  }
+
   /** Same operation the member's `discord-connect` tool performs, for UI/QA. */
-  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean }> {
+  async discordConnectMember(workspacePath: string, name: string, channelName?: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string; channelId: string; thread: string; threadId: string; created: boolean; threadCreated: boolean }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const listing = await this.listPartyMembers(workspacePath, windowId, party);
     const result = await this.requireDiscord().connectMember({
@@ -703,12 +729,34 @@ export class AppController {
       member: name,
       channelName,
     });
-    return { ok: true, channel: result.channelName, channelId: result.channelId, thread: result.threadName, threadId: result.threadId, created: result.created };
+    return {
+      ok: true,
+      channel: result.channelName,
+      channelId: result.channelId,
+      thread: result.threadName,
+      threadId: result.threadId,
+      created: result.created,
+      threadCreated: (result as { threadCreated?: boolean }).threadCreated === true,
+    };
   }
 
   async discordSendAsMember(workspacePath: string, name: string, content: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const result = await this.requireDiscord().sendAsMember(workspacePath, party, name, content);
+    return { ok: true, channel: result.channelName };
+  }
+
+  /** Uploads one image as that member — the `discord-send-image` tool's path. */
+  async discordSendImageAsMember(
+    workspacePath: string,
+    name: string,
+    image: { dataBase64: string; filename: string; mediaType: string },
+    caption?: string,
+    windowId?: string,
+    partyId?: string,
+  ): Promise<{ ok: true; channel: string }> {
+    const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
+    const result = await this.requireDiscord().sendImageAsMember(workspacePath, party, name, image, caption);
     return { ok: true, channel: result.channelName };
   }
 

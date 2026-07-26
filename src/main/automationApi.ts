@@ -145,6 +145,21 @@ export class AutomationApiServer {
         sendJson(res, 200, c.updateDiscordSettings(await readJson(req)));
         return;
       }
+      if (method === "POST" && url.pathname === "/api/discord/command") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordRunCommand({
+          content: String(body.content || ""),
+          channelId: body.channelId ? String(body.channelId) : undefined,
+          authorId: body.authorId ? String(body.authorId) : undefined,
+          post: body.post !== false,
+        }));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/discord/register") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordRegisterParty(workspace, body.partyId ? String(body.partyId) : partyId, windowId));
+        return;
+      }
       const discordConnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/connect$/);
       if (method === "POST" && discordConnectMatch) {
         const body = await readJson(req);
@@ -155,6 +170,19 @@ export class AutomationApiServer {
       if (method === "POST" && discordSendMatch) {
         const body = await readJson(req);
         sendJson(res, 200, await c.discordSendAsMember(workspace, decodeURIComponent(discordSendMatch[1]), String(body.content || ""), windowId, partyId));
+        return;
+      }
+      const discordImageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/send-image$/);
+      if (method === "POST" && discordImageMatch) {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.discordSendImageAsMember(
+          workspace,
+          decodeURIComponent(discordImageMatch[1]),
+          { dataBase64: String(body.dataBase64 || ""), filename: String(body.filename || "image.png"), mediaType: String(body.mediaType || "image/png") },
+          body.caption ? String(body.caption) : undefined,
+          windowId,
+          partyId,
+        ));
         return;
       }
       const discordDisconnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/disconnect$/);
