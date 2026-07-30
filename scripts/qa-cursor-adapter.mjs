@@ -177,6 +177,37 @@ assert.deepEqual(
 );
 failing.dispose();
 
+// Stop (interrupt) must release the turn cleanly — never as a cursor-cli error.
+process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS = "30000";
+const stopping = new CursorAdapter({
+  id: "qa-cursor-interrupt",
+  cwd: root,
+  executablePath: process.execPath,
+  model: "Grok 4.5",
+  effort: "high",
+  debugEnabled: false,
+  storageDir: temp,
+});
+const stopEvents = [];
+stopping.on("event", (event) => stopEvents.push(event));
+stopping.sendUserTurn("hold then stop");
+await waitFor(() => stopEvents.some((event) => event.type === "status" && event.status === "sent"));
+await waitFor(() => stopping.getSnapshot().status === "responding" || stopping.getSnapshot().pid);
+stopping.interrupt();
+await waitFor(() => stopEvents.some((event) => event.type === "status" && event.status === "interrupted"));
+assert.equal(stopping.getSnapshot().status, "idle");
+assert.equal(stopping.getSnapshot().lastError, undefined);
+assert(
+  !stopEvents.some((event) => event.type === "diagnostic" && event.category === "cursor-cli"),
+  "Stop must not emit a Cursor Agent turn failed diagnostic",
+);
+assert(
+  !stopEvents.some((event) => event.type === "error"),
+  "Stop must not emit an error event",
+);
+stopping.dispose();
+delete process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS;
+
 console.log("CURSOR ADAPTER QA PASSED");
 
 async function waitFor(predicate, timeoutMs = 10_000) {

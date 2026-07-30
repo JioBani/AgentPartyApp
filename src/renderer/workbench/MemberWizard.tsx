@@ -376,12 +376,12 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
               {executionHarness === "codex" ? (
                 <>
-                  <CodexPermissionControl policy={codexPolicy} onChange={setCodexPolicy} />
+                  <CodexPermissionControl policy={codexPolicy} onChange={setCodexPolicy} variant="inline" />
                   <p className="wb-wizard-hint">Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.</p>
                 </>
               ) : executionHarness === "cursor" ? (
                 <>
-                  <CursorPermissionControl policy={cursorPolicy} onChange={setCursorPolicy} />
+                  <CursorPermissionControl policy={cursorPolicy} onChange={setCursorPolicy} variant="inline" />
                   <p className="wb-wizard-hint">Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.</p>
                 </>
               ) : (

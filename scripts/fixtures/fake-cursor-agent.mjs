@@ -24,6 +24,12 @@ const emit = (value) => process.stdout.write(JSON.stringify({ ...value, session_
 emit({ type: "system", subtype: "init", model: "Cursor Grok 4.5 High", permissionMode: "default" });
 emit({ type: "thinking", subtype: "delta", text: "checking" });
 
+const holdMs = Number(process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS || 0);
+if (Number.isFinite(holdMs) && holdMs > 0) {
+  // Stay mid-turn until the adapter kills us (Stop / interrupt QA).
+  await new Promise((resolve) => setTimeout(resolve, holdMs));
+}
+
 if (process.env.AGENTPARTY_FAKE_CURSOR_NAMED_ERROR === "1") {
   process.stdout.write("ActionRequiredError: Named models unavailable Free plans can only use Auto.\n");
   process.exit(1);

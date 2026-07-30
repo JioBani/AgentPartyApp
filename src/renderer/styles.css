@@ -455,6 +455,9 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  /* Keep the label fixed and let .wb-member-list consume leftover height. */
+  display: flex;
+  flex-direction: column;
 }
 
 .wb-section-label {
@@ -592,10 +595,13 @@
   gap: var(--space-1);
 }
 
+/* Take remaining sidebar height after the section label (not 100% of the
+ * section — that overflows past the label and gets clipped with no usable
+ * scrollbar when many members accumulate). */
 .wb-member-list {
-  overflow-y: auto;
+  flex: 1;
   min-height: 0;
-  height: 100%;
+  overflow-y: auto;
 }
 
 .wb-party-row {
@@ -2710,6 +2716,15 @@ body.wb-resizing {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* Inline variant for the member wizard — full-width, no floating menu chrome. */
+.wb-codex-perm-menu.is-inline {
+  width: 100%;
+  padding: 14px 14px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
 }
 
 .wb-codex-perm-head {

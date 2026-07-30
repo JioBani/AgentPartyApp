@@ -73,6 +73,8 @@ export class CursorAdapter extends EventEmitter {
   private stderrTail = "";
   private resultSeen = false;
   private turnFailed = false;
+  /** True after the user (or party interrupt) asked Stop — exit must not look like a crash. */
+  private interruptRequested = false;
   private partyMcpConnected = false;
   private usageRefreshTimer?: NodeJS.Timeout;
   private lastUsageStatus = "";
@@ -185,6 +187,7 @@ export class CursorAdapter extends EventEmitter {
       this.emitEvent({ type: "status", status: "interrupt", detail: "no active Cursor turn", at: now() });
       return;
     }
+    this.interruptRequested = true;
     this.status = "interrupting";
     this.turnState = "interrupting";
     this.process.kill();
@@ -193,8 +196,13 @@ export class CursorAdapter extends EventEmitter {
 
   forceStop(): void {
     if (!this.process) return;
+    // Force-stop is still a deliberate user action — release the turn cleanly
+    // instead of surfacing a fake "Cursor Agent turn failed" diagnostic.
+    this.interruptRequested = true;
+    this.status = "interrupting";
+    this.turnState = "interrupting";
     this.process.kill("SIGKILL");
-    this.finishWithError(new Error("Cursor Agent turn was force-stopped."));
+    this.emitEvent({ type: "status", status: "interrupt", detail: "force-stop requested", at: now() });
   }
 
   restart(): void {
@@ -207,6 +215,7 @@ export class CursorAdapter extends EventEmitter {
     this.turnCount = 0;
     this.queuedTurns = [];
     this.lastError = undefined;
+    this.interruptRequested = false;
     this.contextTokens = undefined;
     this.partyMcpConnected = false;
     this.status = "idle";
@@ -369,6 +378,7 @@ export class CursorAdapter extends EventEmitter {
     this.ensureLogger();
     this.resultSeen = false;
     this.turnFailed = false;
+    this.interruptRequested = false;
     this.lastError = undefined;
     this.stderrTail = "";
     this.turnCount += 1;
@@ -392,13 +402,21 @@ export class CursorAdapter extends EventEmitter {
       this.stderrTail = (this.stderrTail + value).slice(-16_000);
       this.logger?.write("stderr", value);
     });
-    child.on("error", (error) => this.finishWithError(error));
+    child.on("error", (error) => {
+      if (this.interruptRequested) {
+        this.finishInterrupted();
+        return;
+      }
+      this.finishWithError(error);
+    });
     child.on("exit", (code, signal) => {
       if (this.process !== child) return;
       this.process = undefined;
       this.lineReader?.close();
       this.lineReader = undefined;
-      if (!this.resultSeen && !this.turnFailed) {
+      if (this.interruptRequested && !this.resultSeen) {
+        this.finishInterrupted(signal ? `stopped (${signal})` : "stopped");
+      } else if (!this.resultSeen && !this.turnFailed) {
         const detail = this.stderrTail.trim() || `Cursor Agent exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}.`;
         this.finishWithError(new Error(detail));
       } else if (this.turnFailed) {
@@ -487,6 +505,12 @@ export class CursorAdapter extends EventEmitter {
       this.lastTokens = input == null && output == null && cache == null
         ? undefined
         : { input: input ?? undefined, output: output ?? undefined, cacheRead: cache ?? undefined, context: this.contextTokens };
+      // Stop/force-stop may still race a CLI error result — treat that as a clean
+      // interrupt, not a turn failure.
+      if (this.interruptRequested) {
+        this.finishInterrupted();
+        return;
+      }
       if (message.is_error || message.subtype !== "success") {
         this.finishWithError(new Error(String(message.result || "Cursor Agent turn failed.")));
       } else {
@@ -497,6 +521,7 @@ export class CursorAdapter extends EventEmitter {
 
   private finishTurn(result: string, success: boolean): void {
     this.resultSeen = true;
+    this.interruptRequested = false;
     if (success) this.lastError = undefined;
     const handingOff = success && this.queuedTurns.length > 0;
     this.status = success ? (handingOff ? "responding" : "idle") : "error";
@@ -506,7 +531,27 @@ export class CursorAdapter extends EventEmitter {
       : { type: "error", message: result, at: now() });
   }
 
+  /** Completes a Stop/force-stop without treating it as a harness failure. */
+  private finishInterrupted(detail = "stopped"): void {
+    this.resultSeen = true;
+    this.interruptRequested = false;
+    this.turnFailed = false;
+    this.lastError = undefined;
+    this.status = "idle";
+    this.turnState = undefined;
+    this.emitEvent({ type: "status", status: "interrupted", detail, at: now() });
+    if (!this.process) {
+      this.lineReader?.close();
+      this.lineReader = undefined;
+      this.drainQueue();
+    }
+  }
+
   private finishWithError(error: unknown): void {
+    if (this.interruptRequested) {
+      this.finishInterrupted();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     this.lastError = message;
     this.turnFailed = true;

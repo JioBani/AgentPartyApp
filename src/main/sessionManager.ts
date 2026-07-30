@@ -665,13 +665,18 @@ export class SessionManager extends EventEmitter {
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
-    adapter.start();
-    this.emit("sessions", this.listSessions());
-    // This session becomes the active source for its provider's account-usage
-    // read — its `usage_limit` events will drive the merge, and any prior
-    // background poller's emissions for the same provider will be dropped.
+    // Claim the provider's usage fan-in slot BEFORE start(). Cursor/Claude/Codex
+    // adapters emit `usage_limit` from start() (and the Cursor poller can fire
+    // almost immediately). Claiming after start() left `bg-${provider}` active,
+    // so the new session's first readings were dropped ("dropped usage_limit
+    // from non-active source") and the titlebar kept the background poller's
+    // empty/not-logged-in state.
     if (provider) {
       this.activeUsageSource.set(provider, id);
+    }
+    adapter.start();
+    this.emit("sessions", this.listSessions());
+    if (provider) {
       this.reconcileUsageAdapters();
     }
     return this.toView(session);
