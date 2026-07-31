@@ -208,6 +208,35 @@ assert(
 stopping.dispose();
 delete process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS;
 
+// Cursor logger.js broken-pipe teardown must not stick the session in error /
+// "Cursor Agent turn failed" — surface cursor-stdio and return to idle.
+process.env.AGENTPARTY_FAKE_CURSOR_PIPE_NOISE = "1";
+const piping = new CursorAdapter({
+  id: "qa-cursor-pipe-noise",
+  cwd: root,
+  executablePath: process.execPath,
+  model: "Grok 4.5",
+  effort: "high",
+  debugEnabled: false,
+  storageDir: temp,
+});
+const pipeEvents = [];
+piping.on("event", (event) => pipeEvents.push(event));
+piping.sendUserTurn("pipe noise");
+await waitFor(() => pipeEvents.some((event) => event.type === "diagnostic" && event.category === "cursor-stdio"));
+assert.equal(piping.getSnapshot().status, "idle");
+assert.equal(piping.getSnapshot().lastError, undefined);
+assert(
+  !pipeEvents.some((event) => event.type === "diagnostic" && event.category === "cursor-cli"),
+  "Pipe noise must not emit a Cursor Agent turn failed diagnostic",
+);
+assert(
+  !pipeEvents.some((event) => event.type === "error"),
+  "Pipe noise must not emit an error event",
+);
+piping.dispose();
+delete process.env.AGENTPARTY_FAKE_CURSOR_PIPE_NOISE;
+
 console.log("CURSOR ADAPTER QA PASSED");
 
 async function waitFor(predicate, timeoutMs = 10_000) {

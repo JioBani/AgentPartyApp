@@ -35,6 +35,18 @@ if (process.env.AGENTPARTY_FAKE_CURSOR_NAMED_ERROR === "1") {
   process.exit(1);
 }
 
+if (process.env.AGENTPARTY_FAKE_CURSOR_PIPE_NOISE === "1") {
+  // Mirrors Cursor context logger.js writing to a closed stdout pipe mid-turn.
+  process.stderr.write(
+    "Error: write EPIPE\n" +
+    "    at afterWriteDispatched (node:internal/stream_base_commons:161:15)\n" +
+    "    at writeGeneric (node:internal/stream_base_commons:152:3)\n" +
+    "    at Socket._writeGeneric (node:net:958:11)\n" +
+    "    at log (logger.js:91:17)\n",
+  );
+  process.exit(1);
+}
+
 if (process.env.AGENTPARTY_FAKE_CURSOR_MCP === "1") {
   emit({
     type: "tool_call",

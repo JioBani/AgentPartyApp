@@ -10,6 +10,17 @@
 import readline from "node:readline";
 import fs from "node:fs";
 
+// Cursor owns the stdio MCP pipe. When it tears the session down (Stop, member
+// remove, process recycle), writes here race the close and throw EPIPE. That
+// uncaught exception used to crash this server and show up in Cursor's own
+// logger.js stack as "broken pipe". Swallow pipe teardown; keep real errors.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error) => {
+    if (isPipeClosedError(error)) return;
+    throw error;
+  });
+}
+
 const baseUrl = process.env.AGENTPARTY_AUTOMATION_BASE_URL || "";
 const member = process.env.AGENTPARTY_MEMBER || "agent";
 const party = process.env.AGENTPARTY_PARTY || "";
@@ -351,5 +362,16 @@ function recordCall(name, args) {
 }
 
 function send(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  try {
+    if (!process.stdout.writable) return;
+    process.stdout.write(`${JSON.stringify(message)}\n`);
+  } catch (error) {
+    if (isPipeClosedError(error)) return;
+    throw error;
+  }
+}
+
+function isPipeClosedError(error) {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_PREMATURE_CLOSE";
 }

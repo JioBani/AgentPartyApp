@@ -402,6 +402,16 @@ export class CursorAdapter extends EventEmitter {
       this.stderrTail = (this.stderrTail + value).slice(-16_000);
       this.logger?.write("stderr", value);
     });
+    // Parent-side EPIPE when Cursor closes a stdio end mid-drain must not become
+    // an uncaught exception in Electron main.
+    child.stdout.on("error", (error) => {
+      if (isPipeClosedError(error)) return;
+      this.logger?.write("stdout-error", String(error));
+    });
+    child.stderr.on("error", (error) => {
+      if (isPipeClosedError(error)) return;
+      this.logger?.write("stderr-error", String(error));
+    });
     child.on("error", (error) => {
       if (this.interruptRequested) {
         this.finishInterrupted();
@@ -418,7 +428,14 @@ export class CursorAdapter extends EventEmitter {
         this.finishInterrupted(signal ? `stopped (${signal})` : "stopped");
       } else if (!this.resultSeen && !this.turnFailed) {
         const detail = this.stderrTail.trim() || `Cursor Agent exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}.`;
-        this.finishWithError(new Error(detail));
+        // Cursor's context logger writes info/debug via console.log → stdout. When
+        // that pipe is already closed (MCP teardown, Stop race), the CLI dumps a
+        // "broken pipe" stack at logger.js:91 and exits without a result frame.
+        if (isCursorStdioPipeNoise(detail)) {
+          this.finishWithPipeNoise(detail);
+        } else {
+          this.finishWithError(new Error(detail));
+        }
       } else if (this.turnFailed) {
         this.emit("snapshot", this.getSnapshot());
         this.drainQueue();
@@ -512,7 +529,12 @@ export class CursorAdapter extends EventEmitter {
         return;
       }
       if (message.is_error || message.subtype !== "success") {
-        this.finishWithError(new Error(String(message.result || "Cursor Agent turn failed.")));
+        const detail = String(message.result || "Cursor Agent turn failed.");
+        if (isCursorStdioPipeNoise(detail)) {
+          this.finishWithPipeNoise(detail);
+        } else {
+          this.finishWithError(new Error(detail));
+        }
       } else {
         this.finishTurn(String(message.result || ""), true);
       }
@@ -540,6 +562,33 @@ export class CursorAdapter extends EventEmitter {
     this.status = "idle";
     this.turnState = undefined;
     this.emitEvent({ type: "status", status: "interrupted", detail, at: now() });
+    if (!this.process) {
+      this.lineReader?.close();
+      this.lineReader = undefined;
+      this.drainQueue();
+    }
+  }
+
+  /**
+   * Cursor CLI logger.js EPIPE / broken-pipe teardown: keep the session usable
+   * and surface a stdio diagnostic instead of a fake model/plan failure.
+   */
+  private finishWithPipeNoise(detail: string): void {
+    this.resultSeen = true;
+    this.interruptRequested = false;
+    this.turnFailed = false;
+    this.lastError = undefined;
+    this.status = "idle";
+    this.turnState = undefined;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "cursor-stdio",
+      title: "Cursor Agent stdio pipe closed",
+      detail: summarizeCursorPipeNoise(detail),
+      recovery: "Usually MCP/stdio teardown (logger.js broken pipe). Retry the turn. If every new Cursor member hits this, check the session MCP plugin can reach the automation API.",
+      at: now(),
+    });
     if (!this.process) {
       this.lineReader?.close();
       this.lineReader = undefined;
@@ -644,6 +693,35 @@ function isCursorAuto(model: string): boolean {
 
 function isSupportedCursorModel(model: string): boolean {
   return isCursorAuto(model) || isCursorGrok45(model);
+}
+
+/** Parent/child stdio closed while the other side still wrote. */
+function isPipeClosedError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_PREMATURE_CLOSE";
+}
+
+/**
+ * Cursor's context `logger.js` writes info/debug through `console.log` (stdout).
+ * When that pipe is already closed, Node throws and the CLI dumps a stack that
+ * mentions `logger.js:91` / `broken pipe` / `EPIPE` instead of a model result.
+ */
+function isCursorStdioPipeNoise(detail: string): boolean {
+  const text = detail.trim();
+  if (!text) return false;
+  const pipe = /broken pipe|\bEPIPE\b|ERR_STREAM_DESTROYED|ERR_STREAM_PREMATURE_CLOSE/i.test(text);
+  const loggerFrame = /logger\.js:\d+/i.test(text);
+  // Pure pipe teardown, or Cursor's logger frame paired with a write failure.
+  return pipe || (loggerFrame && /write|pipe|EPIPE|broken/i.test(text));
+}
+
+function summarizeCursorPipeNoise(detail: string): string {
+  const first = detail.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || detail.trim();
+  if (/logger\.js:\d+/i.test(detail) || /broken pipe/i.test(detail)) {
+    return `Cursor CLI closed its stdio pipe while logging (${first.slice(0, 240)}).`;
+  }
+  return first.slice(0, 400);
 }
 
 function cursorPolicyArgs(policy: CursorPolicy): string[] {
