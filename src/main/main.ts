@@ -27,6 +27,7 @@ import type { GateReviewer } from "../shared/messageGate";
 import { DiscordBridgeService } from "./discordBridgeService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
+import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -296,6 +297,7 @@ ${body}
       preferredPort: parsePort(settings.routerBaseUrl),
       authToken: settings.routerAuthToken,
       openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+      deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
       cursorAcpRelayScriptPath: acpRelayScript,
       cursorExecutablePath: () => getSettings().cursorExecutablePath || undefined,
     },
@@ -322,6 +324,7 @@ ${body}
         codexMcpServerWinPath: codexMcpServer,
         acpRelayWinPath: acpRelayScript,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+        deepseekApiKey: getSettings().deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
       });
       const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose, {
         // The distro engine owns the gate decision but cannot reach a provider:
@@ -571,12 +574,14 @@ function applyRuntimeSettings(): void {
   router?.updateOptions({
     authToken: settings.routerAuthToken,
     openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+    deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
   });
   log("info", "settings", "runtime settings applied", {
     routerBaseUrl: router?.baseUrl,
     selectedHarnessId: settings.selectedHarnessId,
     harnessDefaults: settings.harnessDefaults,
     openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY),
+    deepseekConfigured: Boolean(settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV]),
   });
 }
 
@@ -609,6 +614,9 @@ function registerIpc(): void {
   });
 
   handle("auth:list", async () => controller().listAuthProviders());
+  handle("auth:setDeepseekKey", async (_event, value: string) => controller().setDeepseekKey(value || ""));
+  handle("auth:clearDeepseekKey", async () => controller().clearDeepseekKey());
+  handle("auth:testDeepseekKey", async () => controller().testDeepseekKey());
   handle("auth:setOpenRouterKey", async (_event, value: string) => controller().setOpenRouterKey(value || ""));
   handle("auth:clearOpenRouterKey", async () => controller().clearOpenRouterKey());
   handle("auth:testOpenRouterKey", async () => controller().testOpenRouterKey());

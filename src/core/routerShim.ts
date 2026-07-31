@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as http from "node:http";
 import * as net from "node:net";
+import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
@@ -15,6 +16,9 @@ export interface EmbeddedHarnessRouterOptions {
   openRouterApiKey?: string;
   /** Override exists for protocol-contract QA; production uses OpenRouter. */
   openRouterBaseUrl?: string;
+  deepseekApiKey?: string;
+  /** Override exists for protocol-contract QA; production uses DeepSeek. */
+  deepseekAnthropicBaseUrl?: string;
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
@@ -207,6 +211,9 @@ export class EmbeddedHarnessRouter {
     if (target.kind === "cursor-subscription") {
       return this.forwardToCursorBridge(body, target, accountingKey);
     }
+    if (target.kind === "deepseek") {
+      return this.forwardToDeepSeek(body, incomingHeaders, target, signal);
+    }
     return target.kind === "codex-subscription"
       ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
       : this.forwardToOpenRouter(body, incomingHeaders, target, signal);
@@ -253,6 +260,37 @@ export class EmbeddedHarnessRouter {
     const response = await fetch(apiEndpoint(config.baseUrl, CLAUDE_PROTOCOL.endpoint), {
       method: "POST",
       headers: anthropicUpstreamHeaders(incomingHeaders, config.apiKey),
+      body: JSON.stringify(rewriteAnthropicRequestModel(body, target.model)),
+      signal,
+    });
+    return { response, openRouter: false };
+  }
+
+  /**
+   * DeepSeek's own Anthropic-format endpoint. It speaks the same Messages
+   * contract this gateway already carries, so the body passes through with only
+   * the model rewritten — no translation, same as the OpenRouter leg.
+   *
+   * The documented base is `.../anthropic` and the caller appends `/v1/messages`,
+   * so the version segment is added here rather than baked into the constant.
+   * Auth is `x-api-key`, which anthropicUpstreamHeaders already sends.
+   */
+  private async forwardToDeepSeek(
+    body: any,
+    incomingHeaders: http.IncomingHttpHeaders,
+    target: RouterTarget & { kind: "deepseek" },
+    signal: AbortSignal,
+  ): Promise<UpstreamRoute> {
+    const apiKey = this.deepseekApiKey();
+    if (!apiKey) {
+      throw new Error(
+        `${DEEPSEEK_API_KEY_ENV} is not configured. Open AgentParty Authentication and connect DeepSeek. No fallback was attempted.`,
+      );
+    }
+    const base = `${(this.options.deepseekAnthropicBaseUrl || DEEPSEEK_ANTHROPIC_BASE_URL).replace(/\/+$/, "")}/v1`;
+    const response = await fetch(apiEndpoint(base, CLAUDE_PROTOCOL.endpoint), {
+      method: "POST",
+      headers: anthropicUpstreamHeaders(incomingHeaders, apiKey),
       body: JSON.stringify(rewriteAnthropicRequestModel(body, target.model)),
       signal,
     });
@@ -321,6 +359,10 @@ export class EmbeddedHarnessRouter {
 
   private openRouterApiKey(): string {
     return this.options.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
+  }
+
+  private deepseekApiKey(): string {
+    return this.options.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "";
   }
 
   private subscriptionProxy() {

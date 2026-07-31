@@ -226,18 +226,25 @@ function disconnectableProviderOf(id: string): DisconnectableProvider | undefine
   return id === "codex" || id === "claude" || id === "cursor" ? id : undefined;
 }
 
-export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscription, onDisconnectSubscription }: {
+/** Key-shape hints; an unlisted provider falls back to a generic label. */
+const API_KEY_PLACEHOLDERS: Record<string, string> = {
+  openrouter: "새 OpenRouter API 키 입력 (sk-or-…)",
+  deepseek: "새 DeepSeek API 키 입력 (sk-…)",
+};
+
+export function AuthView({ auth, drafts, onDraft, onSave, onTest, onConnectSubscription, onDisconnectSubscription }: {
   auth: InitialAppState["auth"];
-  draft: string;
-  onDraft: (value: string) => void;
-  onSave: () => void;
-  onTest: () => void;
+  /** Per-provider key drafts. One shared draft would let a second API-key card
+   *  overwrite the first provider's credential. */
+  drafts: Record<string, string>;
+  onDraft: (providerId: string, value: string) => void;
+  onSave: (providerId: string) => void;
+  onTest: (providerId: string) => void;
   onConnectSubscription: (provider: "codex" | "claude") => void;
   onDisconnectSubscription: (provider: DisconnectableProvider) => Promise<void>;
 }) {
   const subscriptions = auth.filter((provider) => provider.kind === "subscription");
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
-  const canSave = draft.trim().length > 0;
   const [disconnectArmed, setDisconnectArmed] = useState<DisconnectableProvider | undefined>();
   const [disconnecting, setDisconnecting] = useState<DisconnectableProvider | undefined>();
 
@@ -331,10 +338,20 @@ export function AuthView({ auth, draft, onDraft, onSave, onTest, onConnectSubscr
             <div className="set-key-input">
               <div className="set-input">
                 <KeyRound size={14} />
-                <input value={draft} onChange={(event) => onDraft(event.target.value)} placeholder="새 OpenRouter API 키 입력 (sk-or-…)" type="password" />
+                <input
+                  value={drafts[provider.id] || ""}
+                  onChange={(event) => onDraft(provider.id, event.target.value)}
+                  placeholder={API_KEY_PLACEHOLDERS[provider.id] || `새 ${provider.label} API 키 입력`}
+                  type="password"
+                />
               </div>
-              <button type="button" className="set-btn-accent" disabled={!canSave} onClick={onSave}><Check size={14} /> 저장</button>
-              <button type="button" className="set-btn-soft" onClick={onTest}><FlaskConical size={14} /> 테스트</button>
+              <button
+                type="button"
+                className="set-btn-accent"
+                disabled={!(drafts[provider.id] || "").trim()}
+                onClick={() => onSave(provider.id)}
+              ><Check size={14} /> 저장</button>
+              <button type="button" className="set-btn-soft" onClick={() => onTest(provider.id)}><FlaskConical size={14} /> 테스트</button>
             </div>
           </div>
         ))}

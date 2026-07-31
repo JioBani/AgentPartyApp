@@ -5,6 +5,7 @@ import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
 import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
+import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
@@ -49,6 +50,7 @@ const defaults: AppSettings = {
   routerBaseUrl: "",
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
+  deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
@@ -161,6 +163,7 @@ export function getPublicSettings(): AppSettings {
   return {
     ...settings,
     openRouterApiKey: settings.openRouterApiKey ? maskSecret(settings.openRouterApiKey) || "" : "",
+    deepseekApiKey: settings.deepseekApiKey ? maskSecret(settings.deepseekApiKey) || "" : "",
     routerAuthToken: settings.routerAuthToken ? "[redacted]" : "",
     // The bot token is a bot credential — never leaves the main process in clear.
     discord: { ...settings.discord!, botToken: settings.discord?.botToken ? maskSecret(settings.discord.botToken) || "" : "" },

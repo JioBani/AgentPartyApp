@@ -2,6 +2,7 @@ import { getSettings, maskSecret, updateSettings } from "./settings";
 import { AuthProviderState } from "../shared/types";
 import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core/subscriptionProxy";
 import { isE2E } from "./runtimeMode";
+import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "../shared/deepseekDefaults";
 import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
 
 const CURSOR_AUTH_TTL_MS = 30_000;
@@ -56,6 +57,7 @@ export function withCursorCliAuth(states: AuthProviderState[], auth: CursorAgent
 export function getAuthState(): AuthProviderState[] {
   const settings = getSettings();
   const openRouterKey = settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
+  const deepseekKey = settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "";
   let cursorSource: string | undefined;
   let cursorError: string | undefined;
   try {
@@ -102,6 +104,16 @@ export function getAuthState(): AuthProviderState[] {
       source: settings.openRouterApiKey ? "AgentParty app settings" : process.env.OPENROUTER_API_KEY ? "OPENROUTER_API_KEY" : undefined,
       maskedValue: maskSecret(openRouterKey),
       detail: openRouterKey ? "Configured. Use Test to verify provider access." : "Missing. Router-backed models need this key.",
+    },
+    {
+      id: "deepseek",
+      label: "DeepSeek",
+      kind: "apiKey",
+      status: deepseekKey ? "configured" : "missing",
+      description: "Used by DeepSeek V4 models on DeepSeek's own API.",
+      source: settings.deepseekApiKey ? "AgentParty app settings" : process.env[DEEPSEEK_API_KEY_ENV] ? DEEPSEEK_API_KEY_ENV : undefined,
+      maskedValue: maskSecret(deepseekKey),
+      detail: deepseekKey ? "Configured. Use Test to verify provider access." : "Missing. DeepSeek V4 models need this key.",
     },
   ];
 }
@@ -177,6 +189,52 @@ export function setOpenRouterKey(value: string): AuthProviderState[] {
 export function clearOpenRouterKey(): AuthProviderState[] {
   updateSettings({ openRouterApiKey: "" });
   return getAuthState();
+}
+
+export function setDeepseekKey(value: string): AuthProviderState[] {
+  updateSettings({ deepseekApiKey: value.trim() });
+  return getAuthState();
+}
+
+export function clearDeepseekKey(): AuthProviderState[] {
+  updateSettings({ deepseekApiKey: "" });
+  return getAuthState();
+}
+
+/**
+ * Verifies the key against DeepSeek's model list — the cheapest authenticated
+ * call, and it doubles as a check that the account can see the V4 models the
+ * catalog routes to.
+ */
+export async function testDeepseekKey(): Promise<AuthProviderState[]> {
+  const settings = getSettings();
+  const key = settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "";
+  if (isE2E()) {
+    return withProviderResult("deepseek", "valid", "Mocked by AGENTPARTY_E2E; no provider network call was made.");
+  }
+  if (!key) {
+    return getAuthState();
+  }
+  try {
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/models`, { headers: { Authorization: `Bearer ${key}` } });
+    return withProviderResult(
+      "deepseek",
+      response.ok ? "valid" : "invalid",
+      response.ok ? "DeepSeek accepted the key." : `DeepSeek rejected the key (${response.status}).`,
+    );
+  } catch (error) {
+    return withProviderResult("deepseek", "network_error", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function withProviderResult(id: string, status: AuthProviderState["status"], detail: string): AuthProviderState[] {
+  const states = getAuthState();
+  const provider = states.find((item) => item.id === id);
+  if (provider) {
+    provider.status = status;
+    provider.detail = detail;
+  }
+  return states;
 }
 
 export async function testOpenRouterKey(): Promise<AuthProviderState[]> {

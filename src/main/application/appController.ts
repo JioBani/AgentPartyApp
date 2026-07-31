@@ -13,7 +13,7 @@ import type { McpServerSnapshot } from "../../shared/mcp";
 import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
-import { clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setOpenRouterKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearDeepseekKey, clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -326,6 +326,27 @@ export class AppController {
 
   async testOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
     return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testOpenRouterKey()), await this.getSubscriptionStatus()));
+  }
+
+  async setDeepseekKey(key: string): Promise<ReturnType<typeof getAuthState>> {
+    const state = setDeepseekKey(key || "");
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+  }
+
+  async clearDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
+    const state = clearDeepseekKey();
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+  }
+
+  async testDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testDeepseekKey()), await this.getSubscriptionStatus()));
+  }
+
+  /** The full provider list, for the automation API's GET /api/auth. */
+  async getAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
+    return withSubscriptionProxyAuth(await this.authStateWithCursor(getAuthState()), await this.getSubscriptionStatus());
   }
 
   /** Live OAuth-backed model availability from the local CLIProxyAPI. */

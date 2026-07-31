@@ -8,7 +8,7 @@
 import type { RouteLike } from "./routes";
 import { modelProviderLabel } from "../../shared/modelProviders";
 
-export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "custom";
+export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "custom";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   // Internal catalog ids name API vendors; the product surface names the
@@ -17,6 +17,7 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: modelProviderLabel("openai"),
   cursor: modelProviderLabel("cursor"),
   openrouter: modelProviderLabel("openrouter"),
+  deepseek: modelProviderLabel("deepseek"),
   custom: "Custom",
 };
 
@@ -25,6 +26,7 @@ export const PROVIDER_DOTS: Record<ProviderId, string> = {
   openai: "#54b585",
   cursor: "#5b8cff",
   openrouter: "#a07bff",
+  deepseek: "#4d6bfe",
   custom: "#79808d",
 };
 
@@ -42,7 +44,7 @@ export interface ModelView {
   context: string;
 }
 
-const PROVIDERS: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "custom"];
+const PROVIDERS: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "custom"];
 
 export function routeProvider(route: RouteLike): ProviderId {
   const provider = route.providerId as ProviderId;

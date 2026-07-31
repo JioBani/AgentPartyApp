@@ -140,6 +140,29 @@ Cursor `cursorPolicy` mirrors Cursor CLI's separate controls:
 
 ## Authentication
 
+### `GET /api/auth`
+
+Lists every credential provider (subscriptions and API keys) with its status,
+masked value, and where the credential came from.
+
+### `POST /api/auth/deepseek`
+
+Stores a DeepSeek API key (DeepSeek's own API, used by the DeepSeek V4 models).
+
+```json
+{ "key": "sk-..." }
+```
+
+### `DELETE /api/auth/deepseek`
+
+Clears the stored DeepSeek API key.
+
+### `POST /api/auth/deepseek/test`
+
+Calls DeepSeek's model endpoint to verify the configured key.
+
+When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call DeepSeek.
+
 ### `POST /api/auth/openrouter`
 
 Stores an OpenRouter API key.

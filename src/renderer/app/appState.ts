@@ -33,6 +33,7 @@ export const initialState: InitialAppState = {
     routerBaseUrl: "http://127.0.0.1:3455",
     routerAuthToken: "dummy",
     openRouterApiKey: "",
+    deepseekApiKey: "",
     automationApiPort: 47831,
     transcriptFontScale: 1,
     compactDefault: { on: false, at: 80 },

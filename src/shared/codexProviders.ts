@@ -1,4 +1,5 @@
-import { catalogModelByClaudeSubscriptionModel, orRoutedModels } from "./modelCatalog";
+import { catalogModelByClaudeSubscriptionModel, codexDirectDeepseekModel, orRoutedModels } from "./modelCatalog";
+import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "./deepseekDefaults";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
 import { HARNESS_PROTOCOLS } from "./harnessProtocols";
 
@@ -40,9 +41,26 @@ export const CODEX_CLAUDE_SUBSCRIPTION_PROVIDER: CodexCustomProvider = {
   envKey: SUBSCRIPTION_PROXY_KEY_ENV,
 };
 
+/**
+ * DeepSeek's own API. It serves the OpenAI Responses wire — the only one codex
+ * speaks — but as of 2026-07-31 only for `deepseek-v4-flash`; `deepseek-v4-pro`
+ * is documented as "planned for early August 2026". Models are opted in one at a
+ * time by the catalog's `deepseekResponsesApi` flag rather than assumed, so a
+ * model that is not actually served never reaches a spawn.
+ * https://api-docs.deepseek.com/guides/responses_api/
+ */
+export const CODEX_DEEPSEEK_PROVIDER: CodexCustomProvider = {
+  id: "deepseek",
+  name: "DeepSeek",
+  baseUrl: DEEPSEEK_BASE_URL,
+  wireApi: HARNESS_PROTOCOLS.codex.wireApi,
+  envKey: DEEPSEEK_API_KEY_ENV,
+};
+
 const PROVIDERS: Record<string, CodexCustomProvider> = {
   [CODEX_OPENROUTER_PROVIDER.id]: CODEX_OPENROUTER_PROVIDER,
   [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id]: CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
+  [CODEX_DEEPSEEK_PROVIDER.id]: CODEX_DEEPSEEK_PROVIDER,
 };
 
 export function codexCustomProvider(id: string | undefined): CodexCustomProvider | undefined {
@@ -60,6 +78,9 @@ export function codexProviderForModel(model: string): CodexCustomProvider | unde
   const lower = model.toLowerCase();
   if (catalogModelByClaudeSubscriptionModel(model)) {
     return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
+  }
+  if (codexDirectDeepseekModel(model)) {
+    return CODEX_DEEPSEEK_PROVIDER;
   }
   const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;

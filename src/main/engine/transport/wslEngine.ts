@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { log } from "../../logger";
 import type { RemoteTransport } from "./remoteEngineClient";
+import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
 
 export interface WslEngineOptions {
   distro: string;
@@ -14,6 +15,7 @@ export interface WslEngineOptions {
   acpRelayWinPath?: string;
   /** Forwarded to the distro engine's router for router-backed models. */
   openRouterApiKey?: string;
+  deepseekApiKey?: string;
 }
 
 export interface WslEngineHandle {
@@ -52,6 +54,9 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     // Forward the OpenRouter key into the distro via WSLENV (not on the command
     // line, so it never appears in args/logs); the distro engine's router reads it.
     const env = { ...process.env };
+    if (options.deepseekApiKey) {
+      env[DEEPSEEK_API_KEY_ENV] = options.deepseekApiKey;
+    }
     if (options.openRouterApiKey) {
       env.OPENROUTER_API_KEY = options.openRouterApiKey;
       env.WSLENV = appendWslEnv(env.WSLENV, "OPENROUTER_API_KEY");

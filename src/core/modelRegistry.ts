@@ -3,6 +3,7 @@ import {
   catalogModelByRuntime,
   claudeSubscriptionModels,
   codexAccountModels,
+  deepseekModels,
   modelCatalog,
   orRoutedModels,
   resolveCatalogModel,
@@ -10,10 +11,10 @@ import {
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
-import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
+import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 
 export type HarnessId = "claude-code" | "codex" | "cursor";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -194,6 +195,12 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of claudeSubscriptionModels()) {
     addRoute(routes, seen, codexClaudeSubscriptionRoute(model));
   }
+  // DeepSeek's own API on the codex harness. Added after the OpenRouter loop so
+  // a DeepSeek model that also has an `orModelId` offers both routes, each
+  // labelled with the key it bills.
+  for (const model of deepseekModels()) {
+    addRoute(routes, seen, codexDeepseekRoute(model));
+  }
   addRoute(routes, seen, cursorAutoRoute());
   for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
     addRoute(routes, seen, cursorRouteFromCatalog(model));
@@ -332,6 +339,58 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
       context: model.context,
     },
     enabled: true,
+  };
+}
+
+/**
+ * A DeepSeek model on the codex harness, talking to DeepSeek's own API.
+ *
+ * Codex only speaks the OpenAI Responses wire, and DeepSeek serves that wire for
+ * some models but not all (verified 2026-07-31: flash yes, pro "early August
+ * 2026"). A model DeepSeek does not serve there stays VISIBLE with the reason
+ * spelled out rather than disappearing or being quietly rerouted — the same
+ * contract the Cursor placeholder routes use.
+ */
+export function codexDeepseekRoute(model: CatalogModel): ModelRoute {
+  const effort = model.reasoning?.effort;
+  const served = model.deepseekResponsesApi === true;
+  return {
+    harnessId: "codex",
+    providerId: model.provider,
+    model: model.deepseekModel || model.id,
+    runtimeModel: model.deepseekModel || model.id,
+    modelProvider: CODEX_DEEPSEEK_PROVIDER.id,
+    label: model.label,
+    description: `${model.description || ""} Runs on the Codex harness against DeepSeek's own API (billed to your DeepSeek key).`.trim(),
+    pricing: { ...pricingFromCatalog(model), billing: "token" },
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: visionFromCatalog(model),
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: served,
+    ...(served
+      ? {}
+      : {
+          unavailableReason:
+            "DeepSeek does not serve this model on the OpenAI Responses API, which is the only wire the Codex harness speaks. No fallback will be attempted.",
+        }),
   };
 }
 

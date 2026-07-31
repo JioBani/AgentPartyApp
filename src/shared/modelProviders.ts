@@ -1,11 +1,11 @@
 /** Credential/model providers exposed by Authentication and Workbench. */
-export type ModelProviderId = "claude" | "codex" | "cursor" | "openrouter";
-export type ModelRouteProviderId = "anthropic" | "openai" | "cursor" | "openrouter";
+export type ModelProviderId = "claude" | "codex" | "cursor" | "openrouter" | "deepseek";
+export type ModelRouteProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek";
 
 export interface ModelProviderDescriptor {
   /** Stable user-facing provider identity. */
   id: ModelProviderId;
-  label: "Claude" | "Codex" | "Cursor" | "OpenRouter";
+  label: "Claude" | "Codex" | "Cursor" | "OpenRouter" | "DeepSeek";
   /** Existing internal route id retained at adapter/catalog boundaries. */
   routeProviderId: ModelRouteProviderId;
   /** Provider id returned by Authentication. */
@@ -18,6 +18,7 @@ export const MODEL_PROVIDERS: readonly ModelProviderDescriptor[] = [
   { id: "codex", label: "Codex", routeProviderId: "openai", authProviderId: "codex", authKind: "subscription" },
   { id: "cursor", label: "Cursor", routeProviderId: "cursor", authProviderId: "cursor", authKind: "subscription" },
   { id: "openrouter", label: "OpenRouter", routeProviderId: "openrouter", authProviderId: "openrouter", authKind: "apiKey" },
+  { id: "deepseek", label: "DeepSeek", routeProviderId: "deepseek", authProviderId: "deepseek", authKind: "apiKey" },
 ] as const;
 
 export function modelProviderLabel(routeProviderId: string): string {

@@ -44,7 +44,7 @@ export function App() {
   // Persisted transcripts restored from disk, keyed by member name — shown for a
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
-  const [openRouterDraft, setOpenRouterDraft] = useState("");
+  const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<string, string>>({});
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
   const [usageLimits, setUsageLimits] = useState<UsageLimitsSnapshot>({});
@@ -495,12 +495,33 @@ export function App() {
     setActiveSessionId(session.id);
   }
 
-  async function saveOpenRouterKey() {
-    if (!openRouterDraft.trim()) {
+  /**
+   * One Authentication card per API-key provider. The save/test call is picked
+   * by provider id — an unknown id is surfaced instead of being written to
+   * whichever provider happens to be first.
+   */
+  const API_KEY_ACTIONS: Record<string, { save: (value: string) => Promise<InitialAppState["auth"]>; test: () => Promise<InitialAppState["auth"]> }> = {
+    openrouter: { save: (value) => window.agentParty.setOpenRouterKey(value), test: () => window.agentParty.testOpenRouterKey() },
+    deepseek: { save: (value) => window.agentParty.setDeepseekKey(value), test: () => window.agentParty.testDeepseekKey() },
+  };
+
+  async function saveApiKey(providerId: string) {
+    const value = (apiKeyDrafts[providerId] || "").trim();
+    const actions = API_KEY_ACTIONS[providerId];
+    if (!value || !actions) {
       return;
     }
-    const auth = await window.agentParty.setOpenRouterKey(openRouterDraft.trim());
-    setOpenRouterDraft("");
+    const auth = await actions.save(value);
+    setApiKeyDrafts((current) => ({ ...current, [providerId]: "" }));
+    setState((current) => ({ ...current, auth }));
+  }
+
+  async function testApiKey(providerId: string) {
+    const actions = API_KEY_ACTIONS[providerId];
+    if (!actions) {
+      return;
+    }
+    const auth = await actions.test();
     setState((current) => ({ ...current, auth }));
   }
 
@@ -1013,7 +1034,7 @@ export function App() {
         <nav className="nav-rail" aria-label="기본 탐색">
           <div className="nav-items">
             {navItems.map((item) => (
-              <button key={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => setCurrentView(item.id)} title={item.label}>
+              <button key={item.id} data-view={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => setCurrentView(item.id)} title={item.label}>
                 {item.icon}
               </button>
             ))}
@@ -1106,10 +1127,10 @@ export function App() {
               {currentView === "auth" && (
                 <AuthView
                   auth={state.auth}
-                  draft={openRouterDraft}
-                  onDraft={setOpenRouterDraft}
-                  onSave={saveOpenRouterKey}
-                  onTest={async () => { const auth = await window.agentParty.testOpenRouterKey(); setState((current) => ({ ...current, auth })); }}
+                  drafts={apiKeyDrafts}
+                  onDraft={(providerId, value) => setApiKeyDrafts((current) => ({ ...current, [providerId]: value }))}
+                  onSave={saveApiKey}
+                  onTest={testApiKey}
                   onConnectSubscription={connectSubscription}
                   onDisconnectSubscription={disconnectSubscription}
                 />

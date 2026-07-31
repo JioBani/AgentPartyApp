@@ -21,7 +21,7 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, orRoutedModels, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
 const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
@@ -54,8 +54,10 @@ const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 P
 // OpenRouter models appear on BOTH harnesses: as claude-code routes (router-backed)
 // and as codex routes (Phase 2, modelProvider=openrouter). `byId` keys off the
 // claude-code label; codex OR routes are keyed by the orModelId slug.
-const orClaudeRoutes = routes.filter((r) => r.providerId === "openrouter" && r.harnessId === "claude-code");
-assert(orClaudeRoutes.length === orRoutedModels().length, `all ${orRoutedModels().length} OpenRouter models are on the claude-code harness (got ${orClaudeRoutes.length})`);
+// Grouped by HOME provider, so a DeepSeek entry that is also OR-routable sits in
+// the DeepSeek bucket on claude-code while keeping its codex OpenRouter route.
+const orClaudeRoutes = routes.filter((r) => ["openrouter", "deepseek"].includes(r.providerId) && r.harnessId === "claude-code");
+assert(orClaudeRoutes.length === orRoutedModels().length + deepseekModels().filter((m) => !m.orModelId).length, `every OR-routable and DeepSeek model is on the claude-code harness (got ${orClaudeRoutes.length})`);
 assert(expectedOr.every((id) => byId[id]), "all leaderboard OR-O models are present");
 // Only actual OpenRouter catalog models use modelProvider=openrouter.
 const orCodexRoutes = routes.filter((r) => r.modelProvider === "openrouter" && r.harnessId === "codex");
@@ -126,7 +128,24 @@ const codexAccountCount = modelCatalog().filter((m) => m.provider === "openai" &
 const cursorModelCount = modelCatalog().filter((m) => m.cursorModel).length;
 const cursorBridgeServesClaudeCode = modelCatalog().some((m) => m.provider === "cursor" && m.cursorAcpModelId);
 const unavailableCursorProviderCount = cursorModelCount * (cursorBridgeServesClaudeCode ? 1 : 2);
-assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + modelCatalog().length + unavailableCursorProviderCount + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
+const deepseekCodexCount = deepseekModels().length;
+assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + deepseekCodexCount + modelCatalog().length + unavailableCursorProviderCount + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
+// DeepSeek direct API: claude-code reaches every model through the Anthropic
+// endpoint; codex only reaches the ones DeepSeek serves on the Responses wire.
+console.log("\nDeepSeek direct API routes:");
+for (const m of deepseekModels()) {
+  assert(routerTargetForModel(m.runtimeModel)?.kind === "deepseek", `${m.id} targets DeepSeek's own API on claude-code`);
+  assert(routerTargetForModel(m.runtimeModel)?.model === m.deepseekModel, `${m.id} carries the native slug '${m.deepseekModel}'`);
+  const codexRoute = routes.find((r) => r.harnessId === "codex" && r.modelProvider === "deepseek" && r.model === m.deepseekModel);
+  assert(Boolean(codexRoute), `${m.id} is listed on the codex harness`);
+  assert(codexRoute?.enabled === (m.deepseekResponsesApi === true), `${m.id} codex route enabled matches Responses API support (${m.deepseekResponsesApi === true})`);
+  if (!m.deepseekResponsesApi) {
+    assert(/Responses API/.test(codexRoute?.unavailableReason || ""), `${m.id} explains why codex cannot run it instead of hiding the route`);
+  }
+  assert(m.vision?.image === false, `${m.id} is declared text-only (DeepSeek serves no image input)`);
+}
+assert(deepseekModels().some((m) => m.deepseekResponsesApi === true), "at least one DeepSeek model is executable on codex");
+
 const cursorRoutes = routes.filter((route) => route.harnessId === "cursor");
 assert(cursorRoutes.length === modelCatalog().length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness catalogues every model plus Auto");
 assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");

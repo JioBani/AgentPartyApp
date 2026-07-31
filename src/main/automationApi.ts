@@ -110,6 +110,23 @@ export class AutomationApiServer {
         sendJson(res, 200, c.updateSettings(await readJson(req)));
         return;
       }
+      if (method === "GET" && url.pathname === "/api/auth") {
+        sendJson(res, 200, { providers: await c.getAuthProviders() });
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/auth/deepseek") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.setDeepseekKey(String(body.key || "")));
+        return;
+      }
+      if (method === "DELETE" && url.pathname === "/api/auth/deepseek") {
+        sendJson(res, 200, await c.clearDeepseekKey());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/auth/deepseek/test") {
+        sendJson(res, 200, await c.testDeepseekKey());
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/auth/openrouter") {
         const body = await readJson(req);
         sendJson(res, 200, c.setOpenRouterKey(String(body.key || "")));

@@ -27,6 +27,7 @@ import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../shared/codexAuthentication";
 import { CodexAuthenticationStore } from "./codexAuthenticationStore";
+import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 
 interface ManagedSession {
   id: string;
@@ -1066,6 +1067,7 @@ export class SessionManager extends EventEmitter {
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,
+        deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || undefined,
         authenticationGeneration: this.codexAuthenticationGeneration,
         usageSourceId,
       });

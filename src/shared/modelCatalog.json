@@ -753,12 +753,14 @@
     {
       "id": "DeepSeek V4 Pro",
       "label": "DeepSeek V4 Pro",
-      "provider": "openrouter",
+      "provider": "deepseek",
       "runtimeModel": "claude-deepseek-pro",
+      "deepseekModel": "deepseek-v4-pro",
+      "deepseekResponsesApi": false,
       "orModelId": "deepseek/deepseek-v4-pro",
       "subscription": false,
-      "description": "AgentParty router alias for deepseek/deepseek-v4-pro.",
-      "context": "1.05M",
+      "description": "DeepSeek-V4-Pro (1.6T total / 49B active) on DeepSeek's own API. 384K max output, cache-hit input $0.003625/M. Verified 2026-07-31.",
+      "context": "1M",
       "perf": 2,
       "costTier": 1,
       "inPerM": 0.435,
@@ -767,6 +769,42 @@
       "reasoning": {
         "effort": {
           "options": [
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "enabled",
+            "disabled"
+          ],
+          "default": "enabled"
+        }
+      },
+      "vision": {
+        "image": false
+      }
+    },
+    {
+      "id": "DeepSeek V4 Flash",
+      "label": "DeepSeek V4 Flash",
+      "provider": "deepseek",
+      "runtimeModel": "claude-deepseek-flash",
+      "deepseekModel": "deepseek-v4-flash",
+      "deepseekResponsesApi": true,
+      "subscription": false,
+      "description": "DeepSeek-V4-Flash-0731 (284B total / 13B active) on DeepSeek's own API. 384K max output, cache-hit input $0.0028/M. The only DeepSeek model on the Responses API today, so the only one the codex harness can reach directly. Verified 2026-07-31.",
+      "context": "1M",
+      "perf": 1,
+      "costTier": 1,
+      "inPerM": 0.14,
+      "outPerM": 0.28,
+      "ioPerM": 0.175,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
             "high",
             "max"
           ],

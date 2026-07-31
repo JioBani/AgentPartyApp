@@ -18,7 +18,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-render` | renderer smoke render |
 | `qa-askq` | AskUserQuestion choice-card rendering |
 | `qa-interaction-api` | QA interaction API (inject AskUserQuestion) |
-| `qa-model-catalog` | model catalog / routing |
+| `qa-model-catalog` | model catalog / routing, incl. DeepSeek direct-API routes and the codex Responses-API gate |
 | `qa-party-bridge` | in-process party bridge (send/create/remove/permission/list), explicit initial permissions, concrete execution-harness discovery, idempotent start + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail + explicit initial permission step |
@@ -193,6 +193,16 @@ auto-creates a `resume-*` session without an explicit `/start`, retains the
 persisted transcript, keeps the same harness thread, and preserves model context.
 Cross-provider routing is tested separately so local OAuth/proxy state cannot
 mask this lifecycle regression.
+
+`node scripts/e2e-live-deepseek.mjs` (or `npm run test:e2e:live-deepseek`) is the
+billed, real-process proof that DeepSeek's OWN API serves both harnesses from one
+key: DeepSeek V4 Pro runs in Claude Code against `https://api.deepseek.com/anthropic`
+(Anthropic Messages), and DeepSeek V4 Flash runs in Codex app-server against
+`https://api.deepseek.com/responses` with `modelProvider: "deepseek"`. It also
+asserts the honest-unavailability contract: V4 Pro stays VISIBLE on codex but
+disabled, because DeepSeek does not serve pro on the Responses API yet
+(verified live 2026-07-31) — a disabled route is never silently rerouted to
+OpenRouter. Needs `DEEPSEEK_API_KEY`; no subscription is involved.
 
 `node scripts/e2e-live-cross-harness.mjs` (or
 `npm run test:e2e:live-cross-harness`) is the billed, real-process interruption

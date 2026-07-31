@@ -7,7 +7,7 @@
  */
 import catalog from "./modelCatalog.json";
 
-export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor";
+export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek";
 
 /** Effort levels transportable to the harness (SDK `effort`). */
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -77,6 +77,20 @@ export interface CatalogModel {
   cursorAcpModelId?: string;
   /** Concrete OpenRouter model id the harness protocol gateway selects. */
   orModelId?: string;
+  /**
+   * Model id on DeepSeek's own API (e.g. "deepseek-v4-pro"). Presence + provider
+   * "deepseek" routes the claude-code gateway at https://api.deepseek.com/anthropic
+   * instead of OpenRouter. The entry keeps its `orModelId` so the OpenRouter route
+   * stays selectable as a separate, visibly-labelled provider route.
+   */
+  deepseekModel?: string;
+  /**
+   * Whether DeepSeek serves this model on the OpenAI Responses API. The codex
+   * harness only speaks `responses`, so a DeepSeek model without it cannot run
+   * on codex directly. Verified 2026-07-31: flash yes, pro "early August 2026".
+   * https://api-docs.deepseek.com/guides/responses_api/
+   */
+  deepseekResponsesApi?: boolean;
   subscription: boolean;
   description?: string;
   context?: string;
@@ -232,20 +246,42 @@ export function claudeSubscriptionModels(): CatalogModel[] {
   return MODELS.filter((m) => m.provider === "anthropic" && Boolean(m.claudeSubscriptionModel));
 }
 
+/** Models served by DeepSeek's own API (provider deepseek with a concrete id). */
+export function deepseekModels(): CatalogModel[] {
+  return MODELS.filter((m) => m.provider === "deepseek" && Boolean(m.deepseekModel));
+}
+
 /**
- * Every model with a concrete OpenRouter id, ANY provider — the set the codex
- * harness routes through its OpenRouter custom provider. Superset of
- * openRouterModels(): anthropic entries with an orModelId (Opus/Sonnet/Haiku)
- * are OpenRouter-routable on codex while staying native on claude-code.
+ * The DeepSeek entry a codex model slug names, but only when DeepSeek actually
+ * serves it on the Responses wire codex speaks. A DeepSeek model without
+ * `deepseekResponsesApi` deliberately resolves to undefined here so it cannot be
+ * spawned onto a provider that would reject every request.
+ */
+export function codexDirectDeepseekModel(model: string): CatalogModel | undefined {
+  const lower = model.toLowerCase();
+  return deepseekModels().find(
+    (m) => m.deepseekResponsesApi === true && m.deepseekModel?.toLowerCase() === lower,
+  );
+}
+
+/**
+ * The set the codex harness routes through its OpenRouter custom provider:
+ * OpenRouter-native entries plus DeepSeek entries, which keep an `orModelId` as
+ * a second route while their home provider is DeepSeek's own API.
+ *
+ * Anthropic/OpenAI entries carry an `orModelId` too but are deliberately NOT
+ * here — they reach codex through their own subscription providers instead.
  */
 export function orRoutedModels(): CatalogModel[] {
-  return openRouterModels();
+  return MODELS.filter(
+    (m) => Boolean(m.orModelId) && (m.provider === "openrouter" || m.provider === "deepseek"),
+  );
 }
 
 /** runtimeModel/id -> OpenRouter model id, for the embedded protocol gateway. */
 export function openRouterAliasMap(): Record<string, string> {
   const map: Record<string, string> = {};
-  for (const m of openRouterModels()) {
+  for (const m of orRoutedModels()) {
     if (m.runtimeModel && m.orModelId) {
       map[(m.runtimeModel || m.id).toLowerCase()] = m.orModelId;
       map[m.id.toLowerCase()] = m.orModelId;
@@ -257,7 +293,8 @@ export function openRouterAliasMap(): Record<string, string> {
 export type RouterTarget =
   | { kind: "codex-subscription"; model: string }
   | { kind: "openrouter"; model: string }
-  | { kind: "cursor-subscription"; model: string };
+  | { kind: "cursor-subscription"; model: string }
+  | { kind: "deepseek"; model: string };
 
 /** Exact provider target for one Claude Code gateway alias. */
 export function routerTargetForModel(model: string): RouterTarget | undefined {
@@ -267,6 +304,9 @@ export function routerTargetForModel(model: string): RouterTarget | undefined {
   }
   if (entry.provider === "openai" && entry.codexModel) {
     return { kind: "codex-subscription", model: entry.codexModel };
+  }
+  if (entry.provider === "deepseek" && entry.deepseekModel) {
+    return { kind: "deepseek", model: entry.deepseekModel };
   }
   if (entry.provider === "openrouter" && entry.orModelId) {
     return { kind: "openrouter", model: entry.orModelId };

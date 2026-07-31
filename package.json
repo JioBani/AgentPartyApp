@@ -38,6 +38,7 @@
     "test:e2e:member-respawn": "npm run build && node scripts/e2e-member-respawn.mjs",
     "test:e2e:live-session-reopen": "npm run build && node scripts/e2e-live-session-reopen.mjs",
     "test:e2e:live-cross-harness": "npm run build && node scripts/e2e-live-cross-harness.mjs",
+    "test:e2e:live-deepseek": "npm run build && node scripts/e2e-live-deepseek.mjs",
     "test:e2e:usage-poller": "npm run build && node scripts/e2e-usage-poller.mjs",
     "test:e2e:live-fable": "npm run build && node scripts/e2e-live-fable.mjs",
     "test:e2e:live-opus5": "npm run build && node scripts/e2e-live-opus5.mjs",
