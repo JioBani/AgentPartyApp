@@ -1,11 +1,13 @@
 import * as http from "node:http";
-import * as net from "node:net";
 import { automationApiSpec } from "../shared/apiSpec";
 import { sanitizeAttachments } from "../shared/attachments";
 import { log } from "./logger";
 import type { AppController } from "./application/appController";
 import type { WindowRegistry } from "./windowRegistry";
-import { TOKEN_TRIGGERS, type TokenTrigger, type TokenUsageQuery, type TokenUsageTurnsQuery } from "../shared/tokenUsage";
+import { handleDiscordRoute } from "./automation/discordRoutes";
+import { listen, readJson, sendJson } from "./automation/http";
+import { handleQaRoute } from "./automation/qaRoutes";
+import { tokenUsageQueryFrom, tokenUsageTurnsQueryFrom } from "./automation/tokenUsageQueries";
 
 export interface AutomationApiDeps {
   port: number;
@@ -21,7 +23,6 @@ export interface AutomationApiDeps {
    */
   defaultWorkspace?: string;
 }
-
 export class AutomationApiServer {
   private server: http.Server | undefined;
   private port = 0;
@@ -137,57 +138,16 @@ export class AutomationApiServer {
         return;
       }
       // --- Discord bridge (docs/기획 노트.md §11) ---------------------------
-      if (method === "GET" && url.pathname === "/api/discord") {
-        sendJson(res, 200, c.discordStatus());
-        return;
-      }
-      if (method === "POST" && url.pathname === "/api/discord/settings") {
-        sendJson(res, 200, c.updateDiscordSettings(await readJson(req)));
-        return;
-      }
-      if (method === "POST" && url.pathname === "/api/discord/command") {
-        const body = await readJson(req);
-        sendJson(res, 200, await c.discordRunCommand({
-          content: String(body.content || ""),
-          channelId: body.channelId ? String(body.channelId) : undefined,
-          authorId: body.authorId ? String(body.authorId) : undefined,
-          post: body.post !== false,
-        }));
-        return;
-      }
-      if (method === "POST" && url.pathname === "/api/discord/register") {
-        const body = await readJson(req);
-        sendJson(res, 200, await c.discordRegisterParty(workspace, body.partyId ? String(body.partyId) : partyId, windowId));
-        return;
-      }
-      const discordConnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/connect$/);
-      if (method === "POST" && discordConnectMatch) {
-        const body = await readJson(req);
-        sendJson(res, 200, await c.discordConnectMember(workspace, decodeURIComponent(discordConnectMatch[1]), body.channelName ? String(body.channelName) : undefined, windowId, partyId));
-        return;
-      }
-      const discordSendMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/send$/);
-      if (method === "POST" && discordSendMatch) {
-        const body = await readJson(req);
-        sendJson(res, 200, await c.discordSendAsMember(workspace, decodeURIComponent(discordSendMatch[1]), String(body.content || ""), windowId, partyId));
-        return;
-      }
-      const discordImageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/send-image$/);
-      if (method === "POST" && discordImageMatch) {
-        const body = await readJson(req);
-        sendJson(res, 200, await c.discordSendImageAsMember(
-          workspace,
-          decodeURIComponent(discordImageMatch[1]),
-          { dataBase64: String(body.dataBase64 || ""), filename: String(body.filename || "image.png"), mediaType: String(body.mediaType || "image/png") },
-          body.caption ? String(body.caption) : undefined,
-          windowId,
-          partyId,
-        ));
-        return;
-      }
-      const discordDisconnectMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/discord\/disconnect$/);
-      if (method === "POST" && discordDisconnectMatch) {
-        sendJson(res, 200, await c.discordDisconnectMember(workspace, decodeURIComponent(discordDisconnectMatch[1]), windowId, partyId));
+      if (await handleDiscordRoute({
+        method,
+        url,
+        req,
+        res,
+        controller: c,
+        workspace,
+        windowId,
+        partyId,
+      })) {
         return;
       }
       if (method === "GET" && url.pathname === "/api/models") {
@@ -333,7 +293,16 @@ export class AutomationApiServer {
         return;
       }
       if (url.pathname.startsWith("/api/qa/")) {
-        await this.handleQa(method, url, req, res, workspace, windowId);
+        await handleQaRoute({
+          method,
+          url,
+          req,
+          res,
+          controller: c,
+          workspace,
+          windowId,
+          partyId,
+        });
         return;
       }
       sendJson(res, 404, { error: "not_found" });
@@ -342,164 +311,4 @@ export class AutomationApiServer {
       sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
     }
   }
-
-  private async handleQa(method: string, url: URL, req: http.IncomingMessage, res: http.ServerResponse, workspace: string, windowId: string | undefined): Promise<void> {
-    const c = this.deps.controller;
-    if (!c.isQaEnabled()) {
-      sendJson(res, 403, { error: "qa_disabled", detail: "Launch with AGENTPARTY_QA=1 (or E2E mode) to use /api/qa/*." });
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/seed") {
-      sendJson(res, 200, await c.qaSeed(workspace, await readJson(req)));
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/members") {
-      sendJson(res, 200, await c.qaCreateMockMember(workspace, await readJson(req)));
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/open") {
-      const body = await readJson(req);
-      sendJson(res, 200, c.qaOpen(windowId, Array.isArray(body.panels) ? body.panels : []));
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/usage") {
-      sendJson(res, 200, c.qaEmitUsage(await readJson(req)));
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/reset") {
-      sendJson(res, 200, await c.qaReset(workspace));
-      return;
-    }
-    const emitMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/emit$/);
-    if (method === "POST" && emitMatch) {
-      sendJson(res, 200, await c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));
-      return;
-    }
-    const subagentsMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/subagents$/);
-    if (method === "POST" && subagentsMatch) {
-      sendJson(res, 200, await c.qaEmitSubagents(workspace, decodeURIComponent(subagentsMatch[1]), await readJson(req)));
-      return;
-    }
-    const openSubMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/subagents\/open$/);
-    if (method === "POST" && openSubMatch) {
-      const body = await readJson(req);
-      sendJson(res, 200, c.qaOpenSubagent(windowId, decodeURIComponent(openSubMatch[1]), String(body?.subId || "")));
-      return;
-    }
-    const interactionMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/interaction$/);
-    if (method === "POST" && interactionMatch) {
-      sendJson(res, 200, await c.qaInteraction(workspace, decodeURIComponent(interactionMatch[1]), await readJson(req)));
-      return;
-    }
-    if (method === "POST" && url.pathname === "/api/qa/gate/open") {
-      const body = await readJson(req);
-      sendJson(res, 200, c.qaOpenGate(windowId, body?.kind === "party" ? "party" : "member", String(body?.member || "")));
-      return;
-    }
-    sendJson(res, 404, { error: "not_found" });
-  }
-
-}
-
-/** Named time ranges the dashboard offers, resolved to a [fromMs, toMs) range. */
-const TOKEN_USAGE_RANGE_MS: Record<string, number> = {
-  "1h": 60 * 60_000,
-  "4h": 4 * 60 * 60_000,
-  "5h": 5 * 60 * 60_000,
-  "24h": 24 * 60 * 60_000,
-  today: 24 * 60 * 60_000,
-  week: 7 * 24 * 60 * 60_000,
-  weekly: 7 * 24 * 60 * 60_000,
-};
-
-/**
- * Builds a {@link TokenUsageQuery} from `GET /api/token-usage` query params.
- * NOTE: the range preset param is `range`, NOT `window` — `?window=` is reserved
- * API-wide for selecting the target app window (see {@link targetWindowId}).
- *   - `range` (5h|weekly|today|24h|4h|1h — default 5h) OR explicit `from`/`to`
- *     epoch-ms bounds (explicit bounds win).
- *   - `bucket` bucket width in minutes (default 5).
- *   - `party` restrict to one party id; `trigger` restrict to one trigger.
- */
-function tokenUsageQueryFrom(url: URL): TokenUsageQuery {
-  const now = Date.now();
-  const fromParam = Number(url.searchParams.get("from"));
-  const toParam = Number(url.searchParams.get("to"));
-  const rangeMs = TOKEN_USAGE_RANGE_MS[url.searchParams.get("range") || "5h"] ?? TOKEN_USAGE_RANGE_MS["5h"];
-  const toMs = Number.isFinite(toParam) && toParam > 0 ? toParam : now;
-  const fromMs = Number.isFinite(fromParam) && fromParam > 0 ? fromParam : toMs - rangeMs;
-  const bucketMinutes = Math.max(1, Number(url.searchParams.get("bucket")) || 5);
-  const triggerParam = url.searchParams.get("trigger") || undefined;
-  const trigger = triggerParam && (TOKEN_TRIGGERS as string[]).includes(triggerParam) ? (triggerParam as TokenTrigger) : undefined;
-  return {
-    fromMs,
-    toMs,
-    bucketMinutes,
-    partyId: url.searchParams.get("party") || undefined,
-    trigger,
-  };
-}
-
-/**
- * Builds a {@link TokenUsageTurnsQuery} for `GET /api/token-usage/turns` — the raw
- * per-turn records behind the member drill-in. Same range params as the aggregate
- * (`range`|`from`/`to`, `party`) plus `member` and an optional `limit`.
- */
-function tokenUsageTurnsQueryFrom(url: URL): TokenUsageTurnsQuery {
-  const now = Date.now();
-  const fromParam = Number(url.searchParams.get("from"));
-  const toParam = Number(url.searchParams.get("to"));
-  const rangeMs = TOKEN_USAGE_RANGE_MS[url.searchParams.get("range") || "5h"] ?? TOKEN_USAGE_RANGE_MS["5h"];
-  const toMs = Number.isFinite(toParam) && toParam > 0 ? toParam : now;
-  const fromMs = Number.isFinite(fromParam) && fromParam > 0 ? fromParam : toMs - rangeMs;
-  const limit = Number(url.searchParams.get("limit"));
-  return {
-    fromMs,
-    toMs,
-    partyId: url.searchParams.get("party") || undefined,
-    member: url.searchParams.get("member") || undefined,
-    limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
-  };
-}
-
-function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "http://127.0.0.1",
-  });
-  res.end(JSON.stringify(payload));
-}
-
-function readJson(req: http.IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => { data += chunk; });
-    req.on("end", () => {
-      try {
-        resolve(data ? JSON.parse(data) : {});
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function listen(server: http.Server, preferredPort: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const onError = (error: NodeJS.ErrnoException) => {
-      server.off("error", onError);
-      if (error.code === "EADDRINUSE") {
-        server.listen(0, "127.0.0.1");
-        return;
-      }
-      reject(error);
-    };
-    server.once("error", onError);
-    server.on("listening", () => {
-      server.off("error", onError);
-      resolve((server.address() as net.AddressInfo).port);
-    });
-    server.listen(preferredPort, "127.0.0.1");
-  });
 }

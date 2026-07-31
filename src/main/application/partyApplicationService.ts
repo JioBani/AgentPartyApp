@@ -579,6 +579,40 @@ export class PartyApplicationService {
   }
 
   /**
+   * Applies one persisted runtime-setting change to the member that owns a
+   * session. Callers retain responsibility for validating and comparing their
+   * setting; this method owns the shared lookup, timestamp, persistence, and
+   * diagnostic lifecycle.
+   */
+  private updateMemberOwnedBySession(
+    sessionId: string,
+    logMessage: string,
+    update: (member: PartyMember) => Record<string, unknown> | undefined,
+  ): void {
+    if (!sessionId) {
+      return;
+    }
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member) {
+      return;
+    }
+    const details = update(member);
+    if (!details) {
+      return;
+    }
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", logMessage, {
+      workspace,
+      partyId: member.partyId,
+      member: member.name,
+      ...details,
+    });
+  }
+
+  /**
    * Persists a runtime permission-mode change back to the member that owns the
    * live session, so reopening the member (or restarting the app) restores the
    * mode the user last chose — the analogue of {@link saveMemberTranscript}
@@ -596,16 +630,13 @@ export class PartyApplicationService {
       log("warn", "party", "ignoring unknown permission mode for member persistence", { sessionId, permissionMode });
       return;
     }
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || member.permissionMode === permissionMode) {
-      return;
-    }
-    member.permissionMode = permissionMode;
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member permission mode persisted", { workspace, partyId: member.partyId, member: member.name, permissionMode });
+    this.updateMemberOwnedBySession(sessionId, "member permission mode persisted", (member) => {
+      if (member.permissionMode === permissionMode) {
+        return undefined;
+      }
+      member.permissionMode = permissionMode;
+      return { permissionMode };
+    });
   }
 
   /** Persists a live Codex policy change on the owning party member. */
@@ -617,40 +648,36 @@ export class PartyApplicationService {
       log("warn", "party", "invalid Codex policy reached member persistence", { sessionId, policy });
       return;
     }
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || (
-      member.codexPolicy?.sandbox === policy.sandbox
-      && member.codexPolicy?.approval === policy.approval
-      && member.codexPolicy?.guardian === policy.guardian
-    )) {
-      return;
-    }
-    member.codexPolicy = { ...policy };
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member Codex policy persisted", { workspace, partyId: member.partyId, member: member.name, policy });
+    this.updateMemberOwnedBySession(sessionId, "member Codex policy persisted", (member) => {
+      if (
+        member.codexPolicy?.sandbox === policy.sandbox
+        && member.codexPolicy?.approval === policy.approval
+        && member.codexPolicy?.guardian === policy.guardian
+      ) {
+        return undefined;
+      }
+      member.codexPolicy = { ...policy };
+      return { policy };
+    });
   }
 
   /** Persists a live Cursor agent-mode + approval-mode change. */
   syncMemberCursorPolicy(sessionId: string, policy: CursorPolicy): void {
-    if (!sessionId) return;
-    const validated = requireCursorPolicy(policy);
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || (
-      member.cursorPolicy?.mode === validated.mode
-      && member.cursorPolicy?.approval === validated.approval
-    )) {
+    if (!sessionId) {
       return;
     }
-    member.cursorPolicy = { ...validated };
-    member.permissionMode = undefined;
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member Cursor policy persisted", { workspace, partyId: member.partyId, member: member.name, policy: validated });
+    const validated = requireCursorPolicy(policy);
+    this.updateMemberOwnedBySession(sessionId, "member Cursor policy persisted", (member) => {
+      if (
+        member.cursorPolicy?.mode === validated.mode
+        && member.cursorPolicy?.approval === validated.approval
+      ) {
+        return undefined;
+      }
+      member.cursorPolicy = { ...validated };
+      member.permissionMode = undefined;
+      return { policy: validated };
+    });
   }
 
   /**
@@ -671,16 +698,13 @@ export class PartyApplicationService {
     // OpenRouter route and re-billed a subscription model to the OR key.
     const entry = resolveCatalogModel(model);
     const value = entry && entry.provider === "anthropic" ? entry.id : model;
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || member.model === value) {
-      return;
-    }
-    member.model = value;
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member model persisted", { workspace, partyId: member.partyId, member: member.name, model: value });
+    this.updateMemberOwnedBySession(sessionId, "member model persisted", (member) => {
+      if (member.model === value) {
+        return undefined;
+      }
+      member.model = value;
+      return { model: value };
+    });
   }
 
   /** Persists a runtime thinking change back to the owning member (same rationale as {@link syncMemberModel}). */
@@ -688,19 +712,16 @@ export class PartyApplicationService {
     if (!sessionId || !reasoning) {
       return;
     }
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || (member.reasoning === reasoning && (reasoningBudget === undefined || member.reasoningBudget === reasoningBudget))) {
-      return;
-    }
-    member.reasoning = reasoning;
-    if (reasoningBudget !== undefined) {
-      member.reasoningBudget = reasoningBudget;
-    }
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member thinking persisted", { workspace, partyId: member.partyId, member: member.name, reasoning, reasoningBudget });
+    this.updateMemberOwnedBySession(sessionId, "member thinking persisted", (member) => {
+      if (member.reasoning === reasoning && (reasoningBudget === undefined || member.reasoningBudget === reasoningBudget)) {
+        return undefined;
+      }
+      member.reasoning = reasoning;
+      if (reasoningBudget !== undefined) {
+        member.reasoningBudget = reasoningBudget;
+      }
+      return { reasoning, reasoningBudget };
+    });
   }
 
   /** Persists a runtime effort change back to the owning member (same rationale as {@link syncMemberModel}). */
@@ -708,16 +729,13 @@ export class PartyApplicationService {
     if (!sessionId || !effort) {
       return;
     }
-    const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || member.effort === effort) {
-      return;
-    }
-    member.effort = effort;
-    member.updatedAt = new Date().toISOString();
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member effort persisted", { workspace, partyId: member.partyId, member: member.name, effort });
+    this.updateMemberOwnedBySession(sessionId, "member effort persisted", (member) => {
+      if (member.effort === effort) {
+        return undefined;
+      }
+      member.effort = effort;
+      return { effort };
+    });
   }
 
   bindMember(name: string, sessionId: string, partyId?: string): PartyCommandResult {
