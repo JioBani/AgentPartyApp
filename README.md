@@ -69,4 +69,7 @@ The smoke test starts the app, calls the automation API, verifies settings/model
 - `src/renderer`: React desktop UI.
 - `src/shared`: IPC and app state contracts shared by main and renderer.
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for dependency rules and
+[docs/CODEMAP.md](docs/CODEMAP.md) for the current module and runtime-flow map.
+
 New harnesses should be added behind the main-process orchestration boundary instead of being called directly from the renderer.

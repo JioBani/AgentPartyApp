@@ -2,6 +2,9 @@
 
 The app follows a pragmatic clean architecture split. The goal is to keep behavior easy for AI agents and humans to find, modify, and verify.
 
+For the current module index and end-to-end call flows, see
+[`CODEMAP.md`](CODEMAP.md).
+
 ## Layers
 
 ### Shared contracts
@@ -29,7 +32,9 @@ IPC and HTTP both call this controller. If a feature can be triggered from the U
 ### Infrastructure adapters
 
 - `src/main/main.ts`: Electron lifecycle, menu, window creation, IPC channel registration.
-- `src/main/automationApi.ts`: local HTTP parsing and route dispatch.
+- `src/main/automationApi.ts`: local HTTP request coordination.
+- `src/main/automation`: shared HTTP mechanics, query parsing, and
+  feature-scoped route adapters.
 - `src/main/sessionManager.ts`: live harness process/session ownership.
 - `src/main/settings.ts`, `src/main/authService.ts`, `src/main/partyRepository.ts`, `src/main/logger.ts`: local persistence and app infrastructure.
 - `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates `main` and immediately init-starts its session so slash commands and skills can be discovered for the palette. Opening non-main members does not start a harness; their first chat message starts the member session at the project root before sending input.

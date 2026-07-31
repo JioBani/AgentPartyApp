@@ -16,3 +16,6 @@ release-pkg/
 scripts/_tmp_*
 *.xlsx
 release-out/
+
+# Local scratch / e2e run artifacts
+.tmp/
