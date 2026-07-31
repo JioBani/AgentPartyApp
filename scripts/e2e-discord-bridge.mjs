@@ -46,6 +46,9 @@ const userId = (process.env.DISCORD_USER_ID || "").trim();
 if (!token) {
   fail("DISCORD_BOT_TOKEN is not set (put it in .env next to the app).");
 }
+if (!userId) {
+  fail("DISCORD_USER_ID is not set (the inbound whitelist cannot be verified without it).");
+}
 
 /** A 1x1 PNG — the smallest thing that is genuinely an image to Discord. */
 const TINY_PNG_BASE64 =
