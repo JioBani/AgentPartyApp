@@ -40,7 +40,8 @@ const props = {
   views: [mkView("main"), mkView("alice")], openMembers: new Set(), workingByParty: { p1: 0 }, memberCountByParty: { p1: 2 },
   width: 240, routes: [], defaultProfile: { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" },
   onSelectParty: () => {}, onCreateParty: () => {}, onCreateMember: () => {}, onOpenMember: () => {},
-  onRemoveMember: (name) => removed.push(name), onRemoveParty: (id) => removedParties.push(id), onCollapse: () => {},
+  onRemoveMember: (name) => removed.push(name), onRemoveParty: (id) => removedParties.push(id),
+  onOpenPartyGate: () => {}, onCollapse: () => {},
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(PartySidebar, props));
 await new Promise((r) => setTimeout(r, 80));
@@ -84,7 +85,8 @@ assert(removedParties.length === 0, "the first step does not delete the party");
 
 // First click arms the confirm; still no deletion.
 click(step1); await tick();
-const confirm = document.querySelector(".wb-ctx-menu .wb-ctx-item");
+const confirm = [...document.querySelectorAll(".wb-ctx-menu .wb-ctx-item")]
+  .find((button) => /한 번 더 클릭/.test(button.textContent || ""));
 assert(confirm && /한 번 더 클릭/.test(confirm.textContent || ""), "first click arms a '한 번 더 클릭' confirm");
 assert(removedParties.length === 0, "arming the confirm still does not delete the party");
 

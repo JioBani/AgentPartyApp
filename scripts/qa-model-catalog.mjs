@@ -124,13 +124,16 @@ assert(routes.some((route) => route.harnessId === "codex" && route.model === "gp
 console.log("\nHarness×model cross-routing (one catalog entry per model):");
 const codexAccountCount = modelCatalog().filter((m) => m.provider === "openai" && m.codexModel).length;
 const cursorModelCount = modelCatalog().filter((m) => m.cursorModel).length;
-assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + modelCatalog().length + (cursorModelCount * 2) + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
+const cursorBridgeServesClaudeCode = modelCatalog().some((m) => m.provider === "cursor" && m.cursorAcpModelId);
+const unavailableCursorProviderCount = cursorModelCount * (cursorBridgeServesClaudeCode ? 1 : 2);
+assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + modelCatalog().length + unavailableCursorProviderCount + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
 const cursorRoutes = routes.filter((route) => route.harnessId === "cursor");
 assert(cursorRoutes.length === modelCatalog().length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness catalogues every model plus Auto");
 assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.runtimeModel === "cursor-grok-4.5-high", "Cursor Grok route carries the verified named-model slug");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.serviceTier?.options.map((o) => o.id).join() === "standard,fast", "Cursor Grok exposes independent Standard/Fast service modes");
-assert(routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5")?.enabled === false, "Claude Code × Cursor Grok is visible but explicitly unavailable without a compatible protocol");
+assert(routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor")?.enabled === true, "Claude Code exposes the executable Cursor ACP bridge route");
+assert(!routes.some((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5" && route.enabled === false), "Claude Code omits the obsolete disabled Cursor Grok duplicate");
 for (const [id, slug, perf, costTier] of [["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
   const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
   assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
