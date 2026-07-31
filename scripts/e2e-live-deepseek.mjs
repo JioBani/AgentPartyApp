@@ -82,18 +82,26 @@ async function main() {
       runtime: "codex",
       model: "deepseek-v4-flash",
       effort: "low",
-      codexPolicy: { sandbox: "read-only", approval: "never", guardian: false },
+      codexPolicy: { sandbox: "workspace-write", approval: "never", guardian: false },
     });
     const codexStarted = await post(`/api/party/members/${codexName}/start`, {
       model: "deepseek-v4-flash",
       effort: "low",
-      codexPolicy: { sandbox: "read-only", approval: "never", guardian: false },
+      codexPolicy: { sandbox: "workspace-write", approval: "never", guardian: false },
     });
     assert(codexStarted.member?.runtime === "codex", "DeepSeek member retains runtime=codex");
 
     // Sequential: one billed turn per harness, each attributable.
     await proveTurn(claudeName, "DEEPSEEK_CLAUDE_OK");
     await proveTurn(codexName, "DEEPSEEK_CODEX_OK");
+
+    // Tool calling + conversation continuity. These are the two things a
+    // provider swap silently breaks: DeepSeek returns reasoning alongside the
+    // answer, and a follow-up turn has to carry that history back without the
+    // provider rejecting it. Proven with a real file on disk (the model cannot
+    // fake a tool result) and a follow-up that can only be answered from history.
+    await proveToolAndMultiTurn(claudeName, "CLAUDE_TOOL_TOKEN");
+    await proveToolAndMultiTurn(codexName, "CODEX_TOOL_TOKEN");
 
     const state = await getJson("/api/state");
     const routerHealth = await getJsonFrom(state.router?.baseUrl, "/health");
@@ -140,6 +148,33 @@ function launchApp() {
   });
   console.log(`app output -> ${appLog}`);
   return child;
+}
+
+/**
+ * One turn that must really run a tool, then a second turn answerable ONLY from
+ * the conversation so far. The second turn is where a provider that mishandles
+ * returned reasoning blocks fails with a 400 instead of continuing.
+ */
+async function proveToolAndMultiTurn(name, token) {
+  const file = `deepseek-tool-proof-${name}.txt`;
+  const onDisk = path.join(ws, file);
+  await post(`/api/party/members/${encodeURIComponent(name)}/message`, {
+    text: `Use your file-writing tool to create a file named ${file} in the current working directory whose entire contents are exactly ${token}. After the tool call succeeds, reply with exactly TOOL_DONE.`,
+  });
+  await waitForAssistant(name, "TOOL_DONE");
+  assert(fs.existsSync(onDisk), `${name}: the tool really ran (${file} exists on disk)`);
+  assert(fs.readFileSync(onDisk, "utf8").includes(token), `${name}: the tool wrote the requested content`);
+
+  const transcript = await getJson(`/api/party/members/${encodeURIComponent(name)}/transcript`);
+  assert((transcript.blocks || []).some((block) => block?.kind === "tool"),
+    `${name}: the tool call is visible in the transcript, not just claimed in prose`);
+
+  // No tools allowed: the answer can only come from the history round-trip.
+  await post(`/api/party/members/${encodeURIComponent(name)}/message`, {
+    text: `Without using any tool, reply with exactly the file contents you wrote a moment ago, and nothing else.`,
+  });
+  await waitForAssistant(name, token);
+  assert(true, `${name}: a follow-up turn carried the tool+reasoning history back to DeepSeek without a rejection`);
 }
 
 async function proveTurn(name, expected) {
