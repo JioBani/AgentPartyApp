@@ -76,7 +76,7 @@ async function main() {
       // React renders the menu on the next tick — measuring synchronously here
       // would report "no menu" for a perfectly working dropdown.
       await new Promise((resolve) => setTimeout(resolve, 200));
-      const el = document.querySelector(".wb-dd-menu");
+      const el = trigger.closest(".wb-dd")?.querySelector(".wb-dd-menu");
       if (!el) return { found: true, opened: false };
       const rect = el.getBoundingClientRect();
       const style = getComputedStyle(el);
@@ -109,10 +109,15 @@ async function main() {
     const all = await cdp.eval(`(async () => {
       const out = [];
       const triggers = [...document.querySelectorAll(".wb-dd-trigger")];
+      let strays = 0;
       for (const trigger of triggers) {
         trigger.click();
         await new Promise((resolve) => setTimeout(resolve, 150));
-        const el = document.querySelector(".wb-dd-menu");
+        // Scoped to THIS trigger's own .wb-dd. A document-wide query would
+        // silently measure a previous menu that failed to close, and the
+        // count-match below would still pass.
+        const el = trigger.closest(".wb-dd")?.querySelector(".wb-dd-menu");
+        if (document.querySelectorAll(".wb-dd-menu").length > 1) strays += 1;
         if (el) {
           const r = el.getBoundingClientRect();
           out.push({
@@ -124,11 +129,12 @@ async function main() {
         trigger.click();
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      return { count: triggers.length, menus: out };
+      return { count: triggers.length, menus: out, strays, leftOpen: document.querySelectorAll(".wb-dd-menu").length };
     })()`);
     // Count-matched on purpose: "no menu opened" would make the containment
     // check below vacuously true, since nothing cannot overflow anything.
     assert(all.count > 0 && all.menus.length === all.count, `every dropdown trigger opened a menu (${all.menus.length}/${all.count})`);
+    assert(all.strays === 0 && all.leftOpen === 0, `each menu closed before the next opened, so every measurement belongs to its own trigger (strays ${all.strays}, left open ${all.leftOpen})`);
     const offScreen = all.menus.filter((m) => !m.onScreen);
     assert(offScreen.length === 0, `all ${all.menus.length} open menus stay inside the window${offScreen.length ? ` — off-window: ${JSON.stringify(offScreen)}` : ""}`);
 
@@ -180,8 +186,11 @@ async function main() {
     assert(sections.memberListHeight > 100, `the Members list keeps usable height (${sections.memberListHeight}px)`);
 
     const shot = path.join(os.tmpdir(), "sidebar-overflow-e2e.png");
+    // A record only. Whether the list really scrolled is asserted above from CDP
+    // measurements; this call proves nothing about it and the message must not
+    // imply otherwise (the endpoint reports no scroll outcome today).
     const cap = await post("/api/capture", { path: shot, scrollSelector: ".wb-party-list", scrollY: "bottom" });
-    assert(cap.ok && cap.bytes > 0, `captured the scrolled sidebar → ${cap.path} (${cap.bytes} bytes)`);
+    assert(cap.ok && cap.bytes > 0, `saved a screenshot for the record → ${cap.path} (${cap.bytes} bytes)`);
 
     cdp.close();
     await post("/api/window/close", {});
