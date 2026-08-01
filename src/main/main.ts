@@ -19,6 +19,7 @@ import type { MemberPermissionInput, StartPartyMemberInput, TranscriptSave, Wind
 import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
+import { parseQueueCommand } from "../shared/messageQueue";
 import type { UsageLimitsSnapshot } from "../shared/usageLimits";
 import { SubscriptionProxyService } from "./subscriptionProxyService";
 import { subscriptionProxyConfig } from "../core/subscriptionProxy";
@@ -693,6 +694,10 @@ function registerIpc(): void {
   handle("party:create", async (event, input) => controller().createPartyMember(senderWorkspace(event), input, senderWindowId(event)));
   handle("party:send", async (event, to: string, content: string, from?: string, attachments?: unknown) => controller().sendPartyMessage(senderWorkspace(event), to, content, from, sanitizeAttachments(attachments), senderWindowId(event)));
   handle("party:message", async (event, name: string, text: string, attachments?: unknown, options?: { interrupt?: boolean }) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event), { interrupt: options?.interrupt === true }));
+  handle("party:queue:get", async (event, name: string) => controller().getMemberQueue(senderWorkspace(event), name, senderWindowId(event)));
+  // Untrusted-shape validation runs here too, not only on the HTTP edge, so a
+  // malformed command from either caller is refused instead of guessed at.
+  handle("party:queue:command", async (event, name: string, command: unknown) => controller().runQueueCommand(senderWorkspace(event), name, parseQueueCommand(command), senderWindowId(event)));
   handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:respawn", async (event, name: string, input?: StartPartyMemberInput) => controller().respawnPartyMember(senderWorkspace(event), name, optionalArg(input), senderWindowId(event)));

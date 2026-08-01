@@ -157,5 +157,29 @@ console.log("\nreadQueue (restored from disk):");
   assert(Q.readQueue({ items: [], merge: false, collapsed: true }).merge === false, "preferences survive the read");
 }
 
+// ============ 8) untrusted command parsing ============
+console.log("\nparseQueueCommand (HTTP/IPC edge):");
+{
+  const bad = (body, why) => {
+    let threw = false;
+    try { Q.parseQueueCommand(body); } catch { threw = true; }
+    assert(threw, why);
+  };
+
+  assert(Q.parseQueueCommand({ action: "send" }).action === "send", "a bare action parses");
+  assert(Q.parseQueueCommand({ action: "cancel", itemId: "q1" }).itemId === "q1", "an item action keeps its id");
+  assert(Q.parseQueueCommand({ action: "move", itemId: "q1", direction: -1 }).direction === -1, "move keeps its direction");
+
+  bad({ action: "nope" }, "an unknown action is REFUSED, not defaulted into some other mutation");
+  bad({}, "a missing action is refused");
+  bad({ action: "cancel" }, "an item action without an itemId is refused");
+  bad({ action: "move", itemId: "q1", direction: 3 }, "an out-of-range direction is refused");
+  bad({ action: "move", itemId: "q1" }, "move without a direction is refused");
+  bad({ action: "preference" }, "a preference command that sets nothing is refused");
+
+  const pref = Q.parseQueueCommand({ action: "preference", merge: false });
+  assert(pref.merge === false && pref.collapsed === undefined, "an omitted preference field stays undefined (left alone, not reset)");
+}
+
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "All message queue assertions passed"}`);
 process.exit(failures.length ? 1 : 0);

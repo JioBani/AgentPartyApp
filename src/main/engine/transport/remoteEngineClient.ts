@@ -3,6 +3,7 @@ import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPart
 import type { CodexPolicy } from "../../../shared/codexPolicy";
 import type { CursorPolicy } from "../../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../../shared/attachments";
+import type { QueueCommand } from "../../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc";
@@ -141,6 +142,8 @@ export class RemoteEngineClient implements EngineConnection {
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
   sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId, options); }
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments, partyId, options); }
+  getMemberQueue(name: string, partyId?: string) { return this.call<Result<"getMemberQueue">>("getMemberQueue", name, partyId); }
+  runQueueCommand(name: string, command: QueueCommand, partyId?: string) { return this.call<Result<"runQueueCommand">>("runQueueCommand", name, command, partyId); }
   closeMember(name: string, partyId?: string) { return this.call<Result<"closeMember">>("closeMember", name, partyId); }
   resumeMember(name: string, partyId?: string) { return this.call<Result<"resumeMember">>("resumeMember", name, partyId); }
   respawnMember(name: string, input?: StartPartyMemberInput, partyId?: string) { return this.call<Result<"respawnMember">>("respawnMember", name, input, partyId); }

@@ -741,12 +741,72 @@ Sends a user turn. `attachments` is an optional array of provider-neutral images
 }
 ```
 
+If the member is **busy**, the message is not delivered — it is parked on that
+member's message queue and the response carries `"queued": true` plus the
+resulting `queue`. It is handed over when the member next goes idle. Callers must
+honour the flag: a queued message has NOT been seen by the agent yet.
+
 Optional `interrupt: true` stops the member's in-flight turn first, so the message
-is handled immediately instead of queueing behind it (the adapters' queued-turn
-drain delivers it once the interrupt settles). A **compaction is never
+is handled immediately and **skips the queue entirely**. A **compaction is never
 interrupted** — tearing it down half-way would waste the work and leave context
 partial, so the message queues behind it. The Discord bridge always sends with
 `interrupt`, because a person typed it and is waiting.
+
+### `GET /api/party/members/{name}/queue`
+
+Reads what the member has been sent but has not been handed yet.
+
+```json
+{
+  "ok": true,
+  "queue": {
+    "items": [
+      { "id": "q-…", "text": "401 전환 패치 끝나면…", "from": null, "at": "2026-08-02T12:00:00.000Z" }
+    ],
+    "merge": true,
+    "collapsed": false
+  }
+}
+```
+
+`from` is `null` for the user, otherwise the sending member's name; it is also
+the merge boundary (below). The queue is **persisted**, so it survives an app
+restart — and nothing is auto-delivered into a session that did not exist when
+the message was queued.
+
+### `POST /api/party/members/{name}/queue`
+
+Every queue mutation, as one discriminated `action`. The UI's row buttons drive
+this same controller method.
+
+| `action` | Extra fields | Effect |
+|---|---|---|
+| `send` | — | Delivers the leading run now (합쳐서 지금 보내기) |
+| `sendItem` | `itemId` | Delivers exactly that row now |
+| `cancel` | `itemId` | Removes that row |
+| `edit` | `itemId` | Removes that row and returns its `text` for the composer |
+| `move` | `itemId`, `direction` (`-1` \| `1`) | Reorders that row |
+| `mergeUp` | `itemId` | Folds that row into the one above it |
+| `clear` | — | Empties the queue |
+| `preference` | `merge` and/or `collapsed` | Persists a per-member preference |
+
+```json
+{ "action": "cancel", "itemId": "q-abc123" }
+```
+
+Responses carry the resulting `queue`; `edit` additionally returns `text`.
+
+**Failures are errors, never silent no-ops.** Cancelling, editing, moving or
+merging a row that is no longer queued returns an error — the item was almost
+certainly delivered a moment ago, and reporting success would leave the caller
+believing it stopped a message the agent is already answering. Merging across
+senders is refused for the same reason (it would forge attribution), as is
+enqueueing past the 20-item limit.
+
+**Merging.** With `merge` on (the default), a send folds the **leading run** —
+the consecutive items at the front that share one sender — into a single turn,
+joined by a blank line, verbatim and in order. A different sender ends the run
+and stays queued. With `merge` off, exactly one item goes per turn.
 
 ### `POST /api/sessions/:id/close`
 

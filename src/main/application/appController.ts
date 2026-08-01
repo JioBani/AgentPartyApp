@@ -10,6 +10,7 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
+import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
@@ -656,6 +657,20 @@ export class AppController {
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
   sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId), options));
+  }
+
+  /** Messages a busy member has been sent but not yet handed (shared/messageQueue.ts). */
+  getMemberQueue(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["getMemberQueue"]>> {
+    return this.engineFor(workspacePath).getMemberQueue(name, this.partyForWindow(windowId));
+  }
+
+  /**
+   * The shared path for every queue mutation — the row buttons in the UI and the
+   * HTTP endpoint both land here, so an agent can drive the queue exactly as a
+   * person does. Broadcasts, because a queue nobody can see is worse than none.
+   */
+  runQueueCommand(workspacePath: string, name: string, command: QueueCommand, windowId?: string): Promise<ReturnType<PartyApplicationService["runQueueCommand"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.runQueueCommand(name, command, this.partyForWindow(windowId)));
   }
 
   async handlePartyAction(workspacePath: string, name: string, action: string, body: any, windowId?: string, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {

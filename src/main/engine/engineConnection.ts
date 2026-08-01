@@ -13,6 +13,7 @@ import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
+import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
@@ -102,6 +103,10 @@ export interface EngineConnection {
   sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyMutationResult>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
+  /** Messages addressed to a busy member that it has not been handed yet (shared/messageQueue.ts). */
+  getMemberQueue(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberQueue"]>>;
+  /** Every queue mutation — send / cancel / edit / move / mergeUp / clear / preference. */
+  runQueueCommand(name: string, command: QueueCommand, partyId?: string): Promise<ReturnType<PartyApplicationService["runQueueCommand"]>>;
   closeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["closeMember"]>>;
   resumeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["resumeMember"]>>;
   /** Reloads the member's session, resuming the same conversation (respawn). */

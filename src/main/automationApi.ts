@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import { automationApiSpec } from "../shared/apiSpec";
 import { sanitizeAttachments } from "../shared/attachments";
+import { parseQueueCommand } from "../shared/messageQueue";
 import { log } from "./logger";
 import type { AppController } from "./application/appController";
 import type { WindowRegistry } from "./windowRegistry";
@@ -271,6 +272,23 @@ export class AutomationApiServer {
       if (method === "POST" && url.pathname === "/api/party/members") {
         sendJson(res, 200, await c.createPartyMember(workspace, await readJson(req), windowId));
         return;
+      }
+      // Message queue: what a busy member has been sent but not yet handed.
+      // One mutating endpoint carrying a discriminated action, so the HTTP
+      // surface and the UI buttons provably run the same code path.
+      const queueMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/queue$/);
+      if (queueMatch) {
+        const member = decodeURIComponent(queueMatch[1]);
+        if (method === "GET") {
+          sendJson(res, 200, { ok: true, queue: await c.getMemberQueue(workspace, member, windowId) });
+          return;
+        }
+        if (method === "POST") {
+          // An unknown or malformed action is rejected here rather than being
+          // coerced into some default mutation the caller never asked for.
+          sendJson(res, 200, await c.runQueueCommand(workspace, member, parseQueueCommand(await readJson(req)), windowId));
+          return;
+        }
       }
       const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
       if (method === "GET" && transcriptMatch) {

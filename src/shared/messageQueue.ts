@@ -274,3 +274,77 @@ export function takeItem(state: MemberQueueState, id: string): QueueResult<{ sta
 export function clearQueue(state: MemberQueueState): MemberQueueState {
   return { ...state, items: [] };
 }
+
+/**
+ * Every mutation the UI and the HTTP API can ask for, as one discriminated
+ * command. A single command travels the whole stack (renderer → AppController →
+ * engine RPC → service) instead of nine near-identical methods repeated at each
+ * layer, so adding a queue operation is one case, not four signatures.
+ */
+export type QueueCommand =
+  /** Deliver the leading run now ("합쳐서 지금 보내기"). */
+  | { action: "send" }
+  /** Drop everything waiting ("모두 취소"). */
+  | { action: "clear" }
+  /** Persist a per-member preference; omitted fields are left alone. */
+  | { action: "preference"; merge?: boolean; collapsed?: boolean }
+  /** Deliver exactly one row now ("지금 보내기"). */
+  | { action: "sendItem"; itemId: string }
+  /** Remove one row ("삭제"). */
+  | { action: "cancel"; itemId: string }
+  /** Remove one row and hand its text back for the composer ("편집"). */
+  | { action: "edit"; itemId: string }
+  /** Reorder one row ("위로" = -1). */
+  | { action: "move"; itemId: string; direction: -1 | 1 }
+  /** Fold one row into the row above it ("위와 합치기"). */
+  | { action: "mergeUp"; itemId: string };
+
+/**
+ * Validates an untrusted command (HTTP body). Rejects rather than guessing: a
+ * misspelled action that silently fell through to a default would be a mutation
+ * the caller never asked for.
+ */
+export function parseQueueCommand(body: unknown): QueueCommand {
+  const input = (body || {}) as Record<string, unknown>;
+  const action = String(input.action || "");
+  const itemId = typeof input.itemId === "string" ? input.itemId : "";
+  const needsItem = (): string => {
+    if (!itemId) {
+      throw new Error(`Queue action '${action}' requires an 'itemId'.`);
+    }
+    return itemId;
+  };
+  switch (action) {
+    case "send":
+      return { action: "send" };
+    case "clear":
+      return { action: "clear" };
+    case "preference": {
+      if (input.merge === undefined && input.collapsed === undefined) {
+        throw new Error("Queue action 'preference' requires 'merge' and/or 'collapsed'.");
+      }
+      return {
+        action: "preference",
+        merge: input.merge === undefined ? undefined : input.merge === true,
+        collapsed: input.collapsed === undefined ? undefined : input.collapsed === true,
+      };
+    }
+    case "sendItem":
+      return { action: "sendItem", itemId: needsItem() };
+    case "cancel":
+      return { action: "cancel", itemId: needsItem() };
+    case "edit":
+      return { action: "edit", itemId: needsItem() };
+    case "mergeUp":
+      return { action: "mergeUp", itemId: needsItem() };
+    case "move": {
+      const direction = Number(input.direction);
+      if (direction !== -1 && direction !== 1) {
+        throw new Error("Queue action 'move' requires 'direction' of -1 or 1.");
+      }
+      return { action: "move", itemId: needsItem(), direction };
+    }
+    default:
+      throw new Error(`Unknown queue action '${action}'.`);
+  }
+}

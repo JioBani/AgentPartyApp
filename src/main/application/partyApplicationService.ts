@@ -28,6 +28,7 @@ import {
   takeNext,
   type DequeuedTurn,
   type MemberQueueState,
+  type QueueCommand,
   type QueuedMessage,
 } from "../../shared/messageQueue";
 import { log } from "../logger";
@@ -629,6 +630,33 @@ export class PartyApplicationService {
       queued: true,
       queue: result.value,
     };
+  }
+
+  /**
+   * The single entry point for every queue mutation, so the UI button and the
+   * HTTP endpoint provably run the same code. Failures propagate as thrown
+   * errors — the caller turns them into a visible notice rather than a silent
+   * no-op (see {@link describeQueueFailure}).
+   */
+  runQueueCommand(name: string, command: QueueCommand, partyId?: string): PartyCommandResult & { text?: string } {
+    switch (command.action) {
+      case "send":
+        return this.sendQueuedNow(name, partyId);
+      case "clear":
+        return this.clearMemberQueue(name, partyId);
+      case "preference":
+        return this.setMemberQueuePreference(name, { merge: command.merge, collapsed: command.collapsed }, partyId);
+      case "sendItem":
+        return this.sendQueuedItem(name, command.itemId, partyId);
+      case "cancel":
+        return this.cancelQueuedMessage(name, command.itemId, partyId);
+      case "edit":
+        return this.editQueuedMessage(name, command.itemId, partyId);
+      case "move":
+        return this.moveQueuedMessage(name, command.itemId, command.direction, partyId);
+      case "mergeUp":
+        return this.mergeQueuedMessageUp(name, command.itemId, partyId);
+    }
   }
 
   /** Reads a member's queue without mutating anything (the HTTP GET and the UI's initial paint). */
