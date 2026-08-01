@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(__dirname, "..");
 const qaWorkspace = path.join(os.tmpdir(), "agentparty-app-e2e-workspace");
 // Isolated userData: the smoke app must NEVER share the real app's settings/
 // parties (a shared userData once let this driver mutate the user's live app).

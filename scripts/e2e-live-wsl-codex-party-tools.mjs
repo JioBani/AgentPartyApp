@@ -22,8 +22,9 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distro = process.env.AGENTPARTY_WSL_DISTRO || "Ubuntu-20.04";
 const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.6-luna";
 const port = Number(process.env.AGENTPARTY_LIVE_WSL_PORT || "") || 48947;

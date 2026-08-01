@@ -13,9 +13,10 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { discoverBaseUrls } from "./lib/discovery.mjs";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ud = fs.mkdtempSync(path.join(os.tmpdir(), "ap-mp-ud-"));
 const wsShared = fs.mkdtempSync(path.join(os.tmpdir(), "ap-mp-shared-"));
 const wsOther = fs.mkdtempSync(path.join(os.tmpdir(), "ap-mp-other-"));

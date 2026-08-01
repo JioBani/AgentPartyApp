@@ -11,9 +11,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createElectronE2eApp } from "./lib/electron-e2e.mjs";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "ap-party-store-e2e-ws");
 const userData = path.join(os.tmpdir(), "ap-party-store-e2e-ud");
 const port = Number(process.env.AGENTPARTY_PARTY_STORE_PORT || "") || 48942;

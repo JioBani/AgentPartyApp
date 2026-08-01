@@ -12,8 +12,9 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fakeServer = path.join(root, "scripts", "fake-codex-appserver.mjs");
 const qaWorkspace = path.join(os.tmpdir(), "agentparty-codex-approval-e2e-workspace");
 const qaUserData = path.join(os.tmpdir(), "agentparty-codex-approval-e2e-user-data");
