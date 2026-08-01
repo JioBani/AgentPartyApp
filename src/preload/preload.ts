@@ -1,7 +1,16 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 
 const api = {
+  /**
+   * The absolute path of a dropped or picked `File`. Electron 32 removed the
+   * non-standard `File.path`, and `webUtils` is not reachable from the isolated
+   * renderer world — so this bridge is the only way the UI can turn a dropped
+   * file into a path to hand a member. Throws for a file with no path on disk
+   * (e.g. one synthesized in the page); the caller reports that per file rather
+   * than dropping it silently.
+   */
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
   getInitialState: () => ipcRenderer.invoke("app:getInitialState"),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
   chooseWorkspace: () => ipcRenderer.invoke("workspace:choose"),

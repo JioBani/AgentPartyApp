@@ -152,13 +152,51 @@ export function Composer({ view, density, actions }: ComposerProps) {
     void addFiles(files);
   }
 
+  /**
+   * Drop splits by kind: an image is ATTACHED (the existing behaviour), and
+   * anything else has its path inserted into the draft, which is what a member
+   * can actually act on — it reads files itself, so handing it a path beats
+   * uploading bytes it would then have nowhere to put. Non-image drops used to
+   * be swallowed with no attachment and no message.
+   */
   function onDrop(event: DragEvent) {
-    const files = Array.from(event.dataTransfer?.files || []);
-    if (files.some((file) => file.type.startsWith("image/"))) {
-      event.preventDefault();
-      void addFiles(files);
-    }
     setDragging(false);
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    const others = files.filter((file) => !file.type.startsWith("image/"));
+    if (images.length) {
+      void addFiles(images);
+    }
+    if (others.length) {
+      insertPaths(others);
+    }
+  }
+
+  /** Appends the dropped files' paths to the draft, reporting any it cannot resolve. */
+  function insertPaths(files: File[]) {
+    const paths: string[] = [];
+    const unresolved: string[] = [];
+    for (const file of files) {
+      let filePath = "";
+      try {
+        filePath = window.agentParty.pathForFile?.(file) || "";
+      } catch {
+        filePath = ""; // reported below — never a silent drop
+      }
+      if (filePath) {
+        paths.push(quotePath(filePath));
+      } else {
+        unresolved.push(file.name || "이름 없는 항목");
+      }
+    }
+    if (paths.length) {
+      setDraft((current) => (current.trim() ? `${current.replace(/\s+$/, "")} ${paths.join(" ")}` : paths.join(" ")));
+    }
+    setAttachError(unresolved.length ? `${unresolved.join(", ")}의 경로를 확인하지 못했습니다.` : "");
   }
 
   function onDragOver(event: DragEvent) {
@@ -328,9 +366,22 @@ export function Composer({ view, density, actions }: ComposerProps) {
           </div>
         </div>
       </div>
-      {dragging && !imageBlocked && <div className="wb-composer-dropzone">여기에 이미지를 놓으세요</div>}
+      {/* Shown for ANY drag: a text-only model still accepts a dropped path. */}
+      {dragging && (
+        <div className="wb-composer-dropzone">
+          {imageBlocked ? "여기에 파일을 놓으면 경로가 입력됩니다" : "이미지는 첨부되고, 그 외 파일은 경로가 입력됩니다"}
+        </div>
+      )}
     </form>
   );
+}
+
+/**
+ * Quotes a path that contains whitespace, so a member reading the message can
+ * tell one dropped path from the next.
+ */
+function quotePath(filePath: string): string {
+  return /\s/.test(filePath) ? `"${filePath}"` : filePath;
 }
 
 /** Reads a File to its base64 body (strips the `data:...;base64,` prefix). */
