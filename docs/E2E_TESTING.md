@@ -205,6 +205,17 @@ permission endpoint works while the target is idle, and that a member-tool
 party header still targets its spawning party after the desktop selects another
 party.
 
+`node scripts/e2e-member-permission-ui.mjs` (or `npm run test:e2e:permission-ui`)
+is the same guarantee one layer up, driven through the REAL composer widgets:
+it clicks `.wb-codex-perm-trigger` → a preset segment (and the Claude 권한
+dropdown) via `POST /api/capture {click}` and asserts the choice reaches
+`party.json` and survives a restart — **both with a live session and with the
+member's session closed**. The closed-session case is the regression: the
+composer's setters used to be session-scoped (`if (sessionId) …`), so a
+permission changed while the session was down was dropped and the control
+snapped back, which users reported as "the Codex permission resets itself".
+It picks an OS-assigned free port, so lanes can run it concurrently.
+
 `node scripts/e2e-live-codex-party-tools.mjs` (or
 `npm run test:e2e:live-codex-party-tools`) is a billed one-turn GPT mini check of
 the actual Codex stdio MCP surface. It requires the model to call

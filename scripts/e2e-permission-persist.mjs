@@ -11,9 +11,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createElectronE2eApp } from "./lib/electron-e2e.mjs";
 
-const root = "C:\\Project\\AgentPartyApp";
+// Derived from this script so the test always drives the checkout it lives in —
+// a hardcoded absolute root silently tested a DIFFERENT worktree when this ran
+// from a parallel one.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "ap-perm-persist-e2e-ws");
 const userData = path.join(os.tmpdir(), "ap-perm-persist-e2e-ud");
 const port = Number(process.env.AGENTPARTY_PERM_PERSIST_PORT || "") || 48947;

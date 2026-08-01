@@ -15,7 +15,7 @@ import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
+import type { MemberPermissionInput, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
@@ -698,6 +698,9 @@ function registerIpc(): void {
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:autoCompact", async (event, name: string, autoCompact: unknown) => controller().setMemberAutoCompact(senderWorkspace(event), name, autoCompact, senderWindowId(event)));
+  // Member-scoped permission: persists AND applies to the live adapter, so a
+  // change made while the member's session is down is not dropped.
+  handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));

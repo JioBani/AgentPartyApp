@@ -596,6 +596,10 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = state.members.find((item) => item.sessionId === sessionId);
     if (!member) {
+      // No owning member means this runtime change has nowhere to be persisted
+      // and WILL be lost on the next restart. Surface it instead of dropping it
+      // quietly, so a broken session↔member binding stays diagnosable.
+      log("warn", "party", "runtime change not persisted — no member owns this session", { workspace, sessionId, change: logMessage });
       return;
     }
     const details = update(member);

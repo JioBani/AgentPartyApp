@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -684,6 +684,17 @@ export class AppController {
   /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */
   setMemberAutoCompact(workspacePath: string, name: string, autoCompact: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>> {
     return this.handlePartyAction(workspacePath, name, "auto-compact", { autoCompact }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>>;
+  }
+
+  /**
+   * Persists a member's permission (Claude mode / Codex policy / Cursor policy)
+   * and applies it to the live adapter when one is running. This is the member
+   * -scoped route the composer's permission control drives, so a change made
+   * while the session is down is still recorded instead of being dropped — the
+   * session-scoped setters below only reach a live adapter.
+   */
+  setMemberPermission(workspacePath: string, name: string, permission: MemberPermissionInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberPermission"]>> {
+    return this.handlePartyAction(workspacePath, name, "permission", permission, windowId) as Promise<ReturnType<PartyApplicationService["setMemberPermission"]>>;
   }
 
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */
