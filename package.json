@@ -50,6 +50,7 @@
     "test:e2e:auto-compact": "npm run build && node scripts/e2e-auto-compact.mjs",
     "test:e2e:compact": "npm run build && node scripts/e2e-compact.mjs",
     "test:e2e:usage-limits": "npm run build && node scripts/e2e-usage-limits.mjs",
+    "test:e2e:sidebar-overflow": "npm run build && node scripts/e2e-sidebar-overflow.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
     "test:subagent-tracker": "node scripts/qa-subagent-tracker.mjs",
     "test:party-store": "node scripts/qa-party-store.mjs",
