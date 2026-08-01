@@ -5117,9 +5117,13 @@ body.wb-resizing {
 .wb-working-dots i:nth-child(2) { animation-delay: .15s; }
 .wb-working-dots i:nth-child(3) { animation-delay: .3s; }
 
-/* The pill's own opacity pulse is redundant now that the dots carry the motion;
-   two animations at once read as flicker. Added as a new rule rather than an
-   edit to the base `.wb-status-pill.is-working` block above. */
+/* Deliberate, not leftover — do not delete as a stray "why is an animation off
+   here?". The base `.wb-status-pill.is-working` rule above pulses the whole
+   pill's opacity, which made sense while the pill was the WORD "working". The
+   pill now holds the bouncing dots, and a pill fading in and out underneath dots
+   that are already moving reads as flicker rather than as progress. Turned off
+   here as a new rule instead of by editing the base block, so this lane's
+   additions to the file stay append-only. */
 .wb-status-pill.is-working { animation: none; }
 
 /* The sidebar row's status column has no color of its own — give the dots the
