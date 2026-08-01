@@ -99,6 +99,27 @@ linkCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelab
 await new Promise((res) => setTimeout(res, 20));
 assert(copied[0] === "https://example.com", "the copy control writes the link target to the clipboard");
 
+console.log("\nOne-click copy of code blocks and whole replies (P-3.3):");
+const preCopy = body?.querySelector("pre .wb-copy-btn");
+assert(Boolean(preCopy), "a fenced code block carries a copy control");
+assert(body?.querySelectorAll(".wb-md > pre").length === 1, "the control lives INSIDE the <pre> (no wrapper element around the block)");
+copied.length = 0;
+preCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === '{ "ok": true, "issues": 1 }\n', "copying a code block yields exactly the block's code");
+const replyCopy = document.querySelector(".wb-assistant-head .wb-copy-btn");
+assert(Boolean(replyCopy), "the assistant reply carries a whole-reply copy control");
+copied.length = 0;
+replyCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === md, "copying a reply yields its markdown SOURCE (what you paste elsewhere)");
+
+// A refused clipboard write must be shown, never swallowed as a fake success.
+Object.defineProperty(window.navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) }, configurable: true });
+replyCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 30));
+assert(replyCopy?.getAttribute("data-copy-state") === "failed", "a refused clipboard write paints the failure state (no silent fake success)");
+
 // No raw markdown source should leak into the rendered text.
 const text = body?.textContent || "";
 assert(!text.includes("##") && !text.includes("**") && !text.includes("```"), "raw markdown tokens (##, **, ```) are not shown literally");

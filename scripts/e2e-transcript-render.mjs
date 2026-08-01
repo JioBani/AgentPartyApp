@@ -81,6 +81,7 @@ async function main() {
     await post("/api/qa/open", { panels: [["renderer"]] });
 
     await linkOpensInOsBrowser();
+    await oneClickCopy();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -127,6 +128,29 @@ async function linkOpensInOsBrowser() {
   const copyShot = path.join(shotDir, "p3-5-link-copy.png");
   const copied = await post("/api/capture", { click: ".wb-md-link .wb-copy-btn", path: copyShot });
   ok(copied.ok && copied.bytes > 0, `clicked the link copy control; state captured → ${copied.path}`);
+}
+
+/**
+ * [P-3]3 — a code block and a whole reply are one click from the clipboard.
+ * jsdom locks WHAT gets copied; what only the real app can show is that the
+ * controls are reachable in the rendered transcript and that the real Electron
+ * clipboard accepts the write (the button paints its check only on a write that
+ * actually resolved).
+ */
+async function oneClickCopy() {
+  console.log("\n[P-3]3 one-click copy of code blocks and replies:");
+  await post("/api/qa/members/renderer/emit", {
+    events: [{ type: "assistant_text_delta", text: "\n\n수정안:\n\n```ts\nexport const answer = 42;\n```\n" }],
+  });
+  await delay(600);
+
+  const codeShot = path.join(shotDir, "p3-3-code-copy.png");
+  const code = await post("/api/capture", { click: ".wb-md pre .wb-copy-btn", path: codeShot });
+  ok(code.ok && code.bytes > 0, `clicked the code-block copy control → ${code.path}`);
+
+  const replyShot = path.join(shotDir, "p3-3-reply-copy.png");
+  const reply = await post("/api/capture", { click: ".wb-assistant-head .wb-copy-btn", path: replyShot });
+  ok(reply.ok && reply.bytes > 0, `clicked the whole-reply copy control → ${reply.path}`);
 }
 
 async function discover() {

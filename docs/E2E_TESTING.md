@@ -450,6 +450,32 @@ Run it in the background. `--workspace` accepts a local path or a
 (the distro is logged in) — local Windows may not be. Members there run on the
 remote engine (billed on the distro's subscription).
 
+⚠️ **A script that spawns the app itself must derive the app root from
+`import.meta.url`, never a hardcoded `C:\Project\AgentPartyApp`.** A hardcoded
+root builds and runs the MAIN worktree, so a script run from any other worktree
+tests code that does not contain the change under test — and reports a pass:
+```js
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+```
+Note `scripts/lib/electron-e2e.mjs` takes `root` as an argument, so the caller is
+what has to be right.
+
+⚠️ **A script that spawns the app itself must point it at a workspace through the
+isolated `settings.json`, not an env var.** The app reads its launch workspace
+from `<AGENTPARTY_USER_DATA>/settings.json` `workspacePath`; there is **no
+`AGENTPARTY_WORKSPACE` env var** (`scripts/lib/electron-e2e.mjs` used to set one
+— it was never read). Without it the app falls back to its **cwd**, which for a
+script run from the repo is the source tree, and it drops its discovery dir
+(`.agent_party_app/`) there — polluting the worktree it was supposed to leave
+alone. So, before launching:
+```js
+fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: ws }));
+```
+and then assert the served workspace is yours (`GET /api/windows`) before driving
+anything. `scripts/e2e-transcript-render.mjs` is the reference. Keep
+`AGENTPARTY_ALLOW_MULTI_INSTANCE=1` and do **not** pin `automationApiPort` — the
+port stays ephemeral and is found through the instance file (step 3).
+
 ### 3. Discover the automation API port
 The port is ephemeral — **never hardcode it**. Discovery is **per-workspace** (no
 machine-global file, so multiple processes on different cwds never shadow each

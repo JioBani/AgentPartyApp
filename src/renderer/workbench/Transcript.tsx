@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, C
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
+import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl } from "../../shared/attachments";
@@ -138,6 +139,9 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
             <span className="wb-dot" />
             <strong>{view.name}</strong>
             {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+            {/* Copies the reply's markdown SOURCE — that is what the user pastes
+                back into an editor or another member, not the rendered HTML. */}
+            {block.text && <CopyButton text={block.text} title="응답 전체 복사" className="wb-assistant-copy" />}
           </div>
           <div className="wb-assistant-body"><Markdown text={block.text} /></div>
         </div>

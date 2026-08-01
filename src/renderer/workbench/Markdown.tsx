@@ -14,7 +14,7 @@ import { CopyButton } from "./copy";
  * `inline` prop by checking for a language class or a newline in the content.
  *
  * Links open in the OS default browser (never inside an Electron window) and
- * carry a copy control for the target URL.
+ * carry a copy control for the target URL; so does every fenced code block.
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
@@ -23,6 +23,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} {...props}>{children}</MarkdownLink>,
+          pre: ({ node: _node, children, ...props }) => <MarkdownPre {...props}>{children}</MarkdownPre>,
           code({ node: _node, className, children, ...props }) {
             const content = String(children ?? "");
             const isBlock = /language-/.test(className || "") || content.includes("\n");
@@ -38,6 +39,41 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     </div>
   );
 });
+
+/**
+ * A fenced code block with a one-click copy control. The control lives INSIDE
+ * the `<pre>` (absolutely positioned) rather than in a wrapper element, so the
+ * markdown block structure `.wb-md` styles — including the first/last-child
+ * margin rules — is untouched.
+ */
+function MarkdownPre({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) {
+  const code = textOf(children);
+  return (
+    <pre {...props}>
+      {children}
+      {code && <CopyButton text={code} title="코드 복사" className="wb-md-pre-copy" />}
+    </pre>
+  );
+}
+
+/**
+ * The plain text behind a rendered markdown subtree — what a copy control must
+ * put on the clipboard. react-markdown hands `<pre>` its `<code>` element, so
+ * the string content is one or two levels down.
+ */
+function textOf(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") {
+    return "";
+  }
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(textOf).join("");
+  }
+  const children = (node as { props?: { children?: ReactNode } }).props?.children;
+  return children === undefined ? "" : textOf(children);
+}
 
 /**
  * A link in model-authored markdown. Clicking hands the URL to the OS default

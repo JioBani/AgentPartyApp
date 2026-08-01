@@ -5075,3 +5075,23 @@ body.wb-resizing {
    hiding it buys a gap in the sentence and costs discoverability. */
 .wb-md-link { white-space: nowrap; }
 .wb-md-link-copy { padding: 1px 2px; margin-left: 1px; }
+
+/* Code-block copy control. `position: relative` is added here as a NEW rule (the
+   base `.wb-md pre` block above is untouched) so the button can pin to the block's
+   top-right without a wrapper element. */
+.wb-md pre { position: relative; }
+.wb-md-pre-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--bg-2);
+  border-color: var(--border-subtle);
+}
+
+/* Whole-reply copy: quiet until the reply is hovered, so a long transcript is
+   not a column of icons. Focus keeps it reachable by keyboard. */
+.wb-assistant-copy { opacity: 0; margin-left: auto; }
+.wb-assistant:hover .wb-assistant-copy,
+.wb-assistant-copy:focus-visible,
+.wb-assistant-copy.is-copied,
+.wb-assistant-copy.is-failed { opacity: 1; }
