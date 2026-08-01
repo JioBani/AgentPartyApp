@@ -93,6 +93,8 @@ export const automationEndpoints = [
   "POST /api/qa/members/:name/interaction",
   "POST /api/qa/gate/open",
   "POST /api/qa/open",
+  "POST /api/qa/input",
+  "POST /api/qa/window/bounds",
   "POST /api/qa/usage",
   "POST /api/qa/reset",
 ] as const;

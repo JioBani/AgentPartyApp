@@ -317,6 +317,8 @@ endpoints return 403 otherwise. (`npm run qa:seed` runs a canned scenario via
 | `POST /api/qa/members/:name/subagents` `{scenario}` | inject a named **subagent** scenario (`claude-test-shards` / `codex-call-tracer` / `codex-web-research` in `src/shared/subagentScenarios.ts`) as `subagent` normalized events — drives the dock + detail through the real fold with no real subagent spawned |
 | `POST /api/qa/members/:name/subagents/open` `{subId}` | open a subagent's drill-in detail (`subId` = the subagent id, or `"first"`) |
 | `POST /api/qa/gate/open` `{kind:"member"\|"party", member}` | open a **Message Gate** modal over HTTP (member editor for `member`, or party manager for `member`=partyId) so an agent can drive the real UI route + `/api/capture` it |
+| `POST /api/qa/input` `{selector, text, key, modifiers}` | focus a field, set its text, and press a key as a **real input event** — so the browser's own default action for that key runs (a script-dispatched DOM event never fires one). The input counterpart of `/api/capture`'s `click`; this is what makes keyboard-driven UI behaviour testable end-to-end |
+| `POST /api/qa/window/bounds` `{x, y, width, height}` | resize/move the window, so **responsive** behaviour can be checked at a real width (the app switches layout on measured element width — no state injection stands in for it) |
 | `POST /api/qa/reset` | remove mock members |
 
 **Inter-member messaging** is the key party-feature primitive. Because

@@ -1499,6 +1499,47 @@ consuming a real quota. Returns the merged snapshot (same shape as
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
 
+### `POST /api/qa/input`
+
+Types into a field and/or presses a key in the targeted window — the input
+counterpart of `/api/capture`'s `click`, so a keyboard-driven workflow can be
+driven through the real UI instead of calling the mutation behind it.
+Window-scoped (`?window=<id>`; focused window when omitted).
+
+```json
+{ "selector": "textarea.wb-composer-textarea", "text": "상태 알려줘", "key": "Enter", "modifiers": ["control"] }
+```
+
+Every field is optional and applied in order:
+
+- `selector` — focuses the matching element first. If nothing matches, the call
+  **fails** rather than typing into whatever held focus.
+- `text` — set through the field's native value setter plus an `input` event,
+  which is how a React-controlled field takes a value.
+- `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
+  browser's own default action for that key still runs. This is the reason the
+  endpoint exists: a synthetic DOM event dispatched from a script never fires a
+  default action, so behaviour that depends on one — Enter submitting the form
+  a single-line input sits in — cannot be verified any other way.
+- `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
+
+Returns `{ ok, selector, key, value }`, where `value` is the field's value after
+the input (or `null` if the target has none).
+
+### `POST /api/qa/window/bounds`
+
+Resizes/moves the targeted window, so responsive behaviour can be verified at a
+real width. The app switches layout on measured element width, which no state
+injection stands in for. Window-scoped (`?window=<id>`).
+
+```json
+{ "width": 700, "height": 900 }
+```
+
+Only the given fields change (`x`, `y`, `width`, `height`); a maximized window is
+restored first, since bounds are ignored while maximized. Returns the resulting
+`{ bounds }`.
+
 ### `POST /api/qa/reset`
 
 Removes every mock member (real members are left untouched).

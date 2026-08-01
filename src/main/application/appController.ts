@@ -1087,6 +1087,99 @@ export class AppController {
     return { ok: true, ...listing };
   }
 
+  /**
+   * Types into a field and/or presses a key — the input counterpart of
+   * `/api/capture`'s `click`, so a driver can run a keyboard-driven workflow
+   * through the real UI instead of calling the mutation behind it.
+   *
+   * The key goes through `sendInputEvent`, which produces an ACTUAL input event,
+   * so the browser's own default action for that key still runs — a bare Enter
+   * inside a `<form>` submits it. That fidelity is the point: a synthetic DOM
+   * event dispatched from a script never triggers a default action, so any
+   * behaviour that hinges on one (or on suppressing one) cannot be verified
+   * end-to-end without this.
+   *
+   * `text` is applied through the field's native value setter plus an `input`
+   * event, which is how a React-controlled field takes a value; typing it
+   * character by character would be slower and would not survive IME text.
+   */
+  async qaInput(
+    windowId: string | undefined,
+    body: { selector?: string; text?: string; key?: string; modifiers?: string[] },
+  ): Promise<{ ok: true; selector: string; value: string | null; key: string }> {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    const selector = String(body?.selector || "").trim();
+    if (selector) {
+      const focused = await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return document.activeElement === el; })()`,
+      );
+      if (!focused) {
+        // Never silently type into whatever happened to hold focus instead.
+        throw new Error(`No focusable element matches selector '${selector}'.`);
+      }
+    }
+    if (typeof body?.text === "string") {
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const el = document.activeElement;
+          if (!el || !("value" in el)) return null;
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(body.text)});
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          return el.value;
+        })()`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    const key = String(body?.key || "").trim();
+    if (key) {
+      const modifiers = (Array.isArray(body?.modifiers) ? body.modifiers : []).map((m) => String(m).toLowerCase());
+      for (const type of ["keyDown", "char", "keyUp"] as const) {
+        win.webContents.sendInputEvent({ type, keyCode: key, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    const read = selector ? `document.querySelector(${JSON.stringify(selector)})` : "document.activeElement";
+    const value = await win.webContents
+      .executeJavaScript(`(() => { const el = ${read}; return el && "value" in el ? el.value : null; })()`)
+      .catch(() => null);
+    return { ok: true, selector, value, key };
+  }
+
+  /**
+   * Resizes/moves the window so a driver can verify RESPONSIVE behaviour at a
+   * real width — the app switches layout on measured element width, which no
+   * amount of state injection stands in for. Only the given fields change, and
+   * a maximized window is restored first because setBounds is ignored while
+   * maximized.
+   */
+  qaWindowBounds(
+    windowId: string | undefined,
+    body: { x?: number; y?: number; width?: number; height?: number },
+  ): { ok: true; bounds: { x: number; y: number; width: number; height: number } } {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    if (win.isMaximized()) {
+      win.unmaximize();
+    }
+    const current = win.getBounds();
+    const pick = (value: unknown, fallback: number) => (Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback);
+    win.setBounds({
+      x: pick(body?.x, current.x),
+      y: pick(body?.y, current.y),
+      width: pick(body?.width, current.width),
+      height: pick(body?.height, current.height),
+    });
+    return { ok: true, bounds: win.getBounds() };
+  }
+
   // --- internals ----------------------------------------------------------
   private async mutateParty<T>(workspacePath: string, op: (engine: EngineConnection) => Promise<T> | T): Promise<T> {
     const result = await op(this.engineFor(workspacePath));
