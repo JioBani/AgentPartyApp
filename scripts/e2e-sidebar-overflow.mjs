@@ -126,7 +126,9 @@ async function main() {
       }
       return { count: triggers.length, menus: out };
     })()`);
-    assert(all.menus.length > 0, `every dropdown trigger opens a menu (${all.menus.length}/${all.count})`);
+    // Count-matched on purpose: "no menu opened" would make the containment
+    // check below vacuously true, since nothing cannot overflow anything.
+    assert(all.count > 0 && all.menus.length === all.count, `every dropdown trigger opened a menu (${all.menus.length}/${all.count})`);
     const offScreen = all.menus.filter((m) => !m.onScreen);
     assert(offScreen.length === 0, `all ${all.menus.length} open menus stay inside the window${offScreen.length ? ` — off-window: ${JSON.stringify(offScreen)}` : ""}`);
 
