@@ -596,7 +596,7 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
       </div>
       <div className="set-inline-note">
         <InfoIcon size={14} />
-        <span>켜면 멤버가 작업 중이어도 즉시 중단하고 새 메시지를 처리합니다. 끄면(기본) 진행 중인 턴이 끝난 뒤에 처리됩니다. 압축 중에는 어느 쪽이든 중단하지 않습니다.</span>
+        <span>켜면 멤버가 작업 중이어도 즉시 중단하고 새 메시지를 처리합니다. 끄면(기본) 진행 중인 턴이 끝난 뒤에 처리됩니다. 압축 중에는 어느 쪽이든 중단하지 않습니다. 이 설정은 <b>이 입력창에만</b> 적용됩니다 — HTTP API 로 보내는 쪽은 호출할 때마다 직접 지정합니다.</span>
       </div>
     </>
   );

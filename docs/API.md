@@ -1040,6 +1040,13 @@ interrupted** — tearing it down half-way would waste the work and leave contex
 partial, so the message queues behind it. The Discord bridge always sends with
 `interrupt`, because a person typed it and is waiting.
 
+**Every caller states `interrupt` for itself; omitting it means `false`.** The
+app's own Send button fills its value in from the `composer.interruptOnSend`
+setting — and that setting is named for the composer because it applies to the
+composer ALONE. An HTTP caller is a program: letting a human's input preference
+silently redirect an API would have it tear down another member's turn without
+ever asking for it. The boundary is explicit, not an oversight.
+
 ### `POST /api/party/members/:name/send`
 
 Lower-level compatibility endpoint that routes a message as an inter-member **channel** payload (wraps it with channel tags). Prefer `/message` for a plain user turn. Accepts the same optional `attachments`.
