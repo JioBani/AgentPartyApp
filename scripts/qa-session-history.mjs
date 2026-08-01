@@ -48,6 +48,11 @@ const S = await bundleNode("src/main/application/partyApplicationService.ts", "p
 const createCalls = [];
 let seq = 0;
 const sessionManager = {
+  // Present because the real dependency is an EventEmitter the service
+  // subscribes to (it records the harness thread as soon as a turn commits,
+  // #19). This fake never emits, so the reopen behaviour asserted below is
+  // driven purely by the explicit calls, exactly as before.
+  on: () => undefined,
   createSession(input, resumeSessionId, binding) { createCalls.push({ resumeSessionId, member: binding?.identity?.member }); return { id: `session-${++seq}`, title: "", workspace: input.workspacePath, snapshot: {} }; },
   createMockSession() { throw new Error("mock not used"); },
   harnessSessionId() { return "harness-thread-9"; },

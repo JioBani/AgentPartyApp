@@ -142,8 +142,21 @@ async function main() {
     rejected = false;
     await post("/api/capture", { scrollX: 200 }).catch(() => { rejected = true; });
     assert(rejected, "a capture scrollX without scrollSelector fails instead of doing nothing");
-    const scrolled = await post("/api/capture", { scrollY: 0 });
-    assert(scrolled?.applied?.scrollY === 0, "a capture scroll reports the position it actually reached");
+    // Reporting "0" for a request of 0 proves nothing — it is exactly what a
+    // no-op returns. Fill the transcript so the region genuinely overflows, then
+    // check a ROUND TRIP: bottom must land somewhere past the top, and coming
+    // back must land at the top. Only a reading of the real position can do both.
+    await post("/api/qa/members", { name: "claudey", autoReply: false }); // its session was closed above
+    await post("/api/qa/open", { panels: [["claudey"]] });
+    await delay(400);
+    await post("/api/qa/members/claudey/emit", {
+      events: Array.from({ length: 80 }, (_, i) => ({ type: "assistant_text_delta", text: `overflow filler line ${i} — ${"x".repeat(100)}\n` })),
+    });
+    await delay(700);
+    const bottom = await post("/api/capture", { scrollY: "bottom", scrollSelector: ".wb-transcript" });
+    assert(Number(bottom?.applied?.scrollY) > 0, `scrolling to the bottom reports a real position past the top (got ${bottom?.applied?.scrollY})`);
+    const top = await post("/api/capture", { scrollY: 0, scrollSelector: ".wb-transcript" });
+    assert(top?.applied?.scrollY === 0 && Number(bottom?.applied?.scrollY) !== 0, "coming back reports the top — the value tracks the element, not the request");
 
     await post("/api/capture", {});
 
