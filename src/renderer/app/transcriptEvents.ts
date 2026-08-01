@@ -22,7 +22,10 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       if (channel) {
         next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime() });
       } else {
-        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), at: nowTime() });
+        // A plain "sent" status is the harness echoing back the turn the app just
+        // submitted — the user's own message, tagged so it does not cut a reply
+        // that is still streaming ([#14]).
+        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), sent: event.status === "sent", at: nowTime() });
       }
     } else if (event.type === "tool_call") {
       // Party write-tools render as purpose-built cards instead of raw tool boxes.
@@ -179,15 +182,49 @@ export function upsertSession(sessions: SessionView[], session: SessionView): Se
     : [session, ...sessions];
 }
 
+/**
+ * Appends a streamed delta to the block it belongs to.
+ *
+ * The block being streamed is the newest one of `kind` — but the user can send a
+ * message WHILE it streams, and that echo is inserted straight into the
+ * transcript (App.tsx). Looking only at the very last block therefore ended the
+ * assistant's block at the user's message and started a fresh one for the rest
+ * of the same reply. A markdown fence opened before the interruption was then
+ * never closed in its own block, so the code block rendered as broken prose
+ * ([#14]).
+ *
+ * The user's own message is the only thing that can land inside a running turn
+ * without ending it, and it arrives TWICE: as the app's optimistic `user` echo
+ * and as the harness's `sent` status line (every adapter emits one per turn), so
+ * both are skipped. Anything else — a tool call, any other status line, an
+ * error, and above all the `turn_complete` status that ends every turn — still
+ * closes the block, which is what keeps two replies from merging into one.
+ */
 function appendText(current: Record<string, TranscriptBlock[]>, sessionId: string, kind: "assistant" | "reasoning", text: string): Record<string, TranscriptBlock[]> {
   const items = [...(current[sessionId] || [])];
-  const last = items[items.length - 1];
-  if (last && last.kind === kind) {
-    items[items.length - 1] = { ...last, text: last.text + text };
+  const streaming = indexOfStreamingBlock(items, kind);
+  const block = streaming >= 0 ? items[streaming] : undefined;
+  if (block && block.kind === kind) {
+    items[streaming] = { ...block, text: block.text + text };
   } else {
     items.push({ id: crypto.randomUUID(), kind, text, at: nowTime() });
   }
   return { ...current, [sessionId]: items };
+}
+
+/** The index of the still-open block of `kind`, or -1 when the stream must start a new one. */
+function indexOfStreamingBlock(items: TranscriptBlock[], kind: "assistant" | "reasoning"): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const block = items[index];
+    if (block.kind === kind) {
+      return index;
+    }
+    const isUserTurnEcho = block.kind === "user" || (block.kind === "status" && block.sent === true);
+    if (!isUserTurnEcho) {
+      return -1;
+    }
+  }
+  return -1;
 }
 
 // Matches an inbound envelope produced by the main process: a member-to-member

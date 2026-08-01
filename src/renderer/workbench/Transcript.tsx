@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, C
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
+import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl } from "../../shared/attachments";
@@ -138,6 +139,9 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
             <span className="wb-dot" />
             <strong>{view.name}</strong>
             {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+            {/* Copies the reply's markdown SOURCE — that is what the user pastes
+                back into an editor or another member, not the rendered HTML. */}
+            {block.text && <CopyButton text={block.text} title="응답 전체 복사" className="wb-assistant-copy" />}
           </div>
           <div className="wb-assistant-body"><Markdown text={block.text} /></div>
         </div>
@@ -435,9 +439,10 @@ function previewOf(text: string): string {
 /**
  * A message body shown as a preview by default; when it's long, a "전체 보기"
  * control opens the full text in a popup. Used for sent/received messages so the
- * transcript stays scannable (the full content is one click away).
+ * transcript stays scannable (the full content is one click away), and by the
+ * subagent detail view for the delegated task prompt.
  */
-function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
+export function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
   const [full, setFull] = useState(false);
   const clip = needsClip(text);
   const shown = clip ? previewOf(text) : text;
@@ -458,7 +463,14 @@ function ExpandableText({ text, title, markdown }: { text: string; title: string
   );
 }
 
-/** A centered popup with a titled body — the shared shell for "전체 보기" overlays. */
+/**
+ * A centered popup with a titled body — the shared shell for "전체 보기" overlays.
+ *
+ * The backdrop does not dismiss: selecting text inside a long command or result
+ * regularly ends with the pointer outside the popup, which closed it and lost
+ * the selection. Closing is explicit (✕) or Escape — a key the user presses on
+ * purpose, unlike a stray click.
+ */
 function DetailModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -466,8 +478,8 @@ function DetailModal({ title, onClose, children }: { title: string; onClose: () 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="wb-tool-modal-backdrop" onClick={onClose}>
-      <div className="wb-tool-modal" onClick={(event) => event.stopPropagation()}>
+    <div className="wb-tool-modal-backdrop">
+      <div className="wb-tool-modal">
         <div className="wb-tool-modal-head">
           <span className="wb-mono wb-tool-name">{title}</span>
           <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>

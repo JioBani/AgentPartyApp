@@ -13,6 +13,7 @@ import { SubagentDock } from "./SubagentDock";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { SubagentDetail } from "./SubagentDetail";
 import { ContextDonut } from "./ContextDonut";
+import { WorkingDots } from "./StatusIndicator";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 
 interface PanelProps {
@@ -103,7 +104,13 @@ export function Panel(props: PanelProps) {
           <div className="wb-toolbar-id">
             <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
             <strong>{view.name}</strong>
-            {wide && <span className={"wb-status-pill is-" + view.status}>{statusLabel(view.status)}</span>}
+            {/* A running turn shows motion instead of the word "working"; every
+                other state is a stable fact and stays a label. */}
+            {wide && (
+              <span className={"wb-status-pill is-" + view.status}>
+                {view.status === "working" ? <WorkingDots label="작업 중" /> : statusLabel(view.status)}
+              </span>
+            )}
             {wide && (() => {
               const diag = latestDiagnostic(view.transcript);
               return diag ? <span className={"wb-diag-badge is-" + diag.severity} title={diag.title}>{diag.category}</span> : null;

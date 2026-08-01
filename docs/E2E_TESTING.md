@@ -25,9 +25,10 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-member-remove` | sidebar delete via right-click context menu: **member** delete (`삭제하기`, `main` protected) **and party** delete (two-step confirm `파티 삭제…` → `한 번 더 클릭` → `onRemoveParty`) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
-| `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) |
+| `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) + links routed to the OS browser: a click is `preventDefault`ed and handed to `openExternal`, and the adjacent copy control writes the target URL |
 | `qa-tool-output` | tool-call (bash) rendering: long command/result show a clipped **preview** inline with a summary "전체 보기" control that opens a popup holding the FULL command + result; short content has no expand control; content-array results render as plain text |
 | `qa-message-preview` | sent/received **message** bodies (user + channel) preview by default and open the FULL text in a popup via "전체 보기"; short messages show in full with no expand control |
+| `qa-harness-badge` | the execution harness shown wherever a member is identified ([P-8]): the shared `harnessLabel`/`harnessShort` helper (full + short names, an UNKNOWN harness id surfaced as-is instead of mapped to a guess, no default for a member with none), and the TabStrip DOM — each tab carries ITS OWN badge, the tooltip names the harness in full, and the badge yields to the member name when narrow. The sidebar row's badge is covered by `qa-render`. |
 | `qa-command-palette` | composer `/` command/skill palette: harness-aware trigger, **live harness-reported inventory** (plugin/MCP/custom commands) merged with static built-ins, filter, action vs insert select |
 | `qa-default-profile` | member-creation default derived per-harness (`defaultMemberProfileOf`); RuntimeModal **harness lock** after first turn |
 | `qa-harness-defaults` | **per-harness creation defaults** (harness-general): `harnessDefaultsOf`/`defaultMemberProfileOf` resolve each harness's own defaults; `buildPartyMember` creates a member from ITS harness's defaults (Codex → codex default model + 2-axis policy, Claude → claude default + permission mode); legacy flat settings.json migrates into `harnessDefaults["claude-code"]` |
@@ -40,12 +41,12 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
 | `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the Claude Code gateway preserves Anthropic image blocks without rebuilding or silently dropping them. |
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
-| `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
+| `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. Also covers [#13] **dead vs never-started**: a member reported `missing_session` reads as `disconnected` (never `idle` = ready to chat), outranks a restored pending approval and a mid-flight busy status, and is never `busy` so no progress indicator can appear over it — while a member after an app RESTART still reads `not started`, because the restart clears the stale binding and its conversation resumes on the next message. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 | `qa-auto-compact` | per-member auto-compaction pure logic (`src/shared/autoCompact.ts`): threshold clamp/step-snap (50–95), OFF-by-default, stored/HTTP `normalizeAutoCompact`, inheritance (member setting → global `compactDefault` → built-in), token estimate (never against an unknown window), and `shouldAutoCompact` crossing test the renderer trigger fires on (off / unknown-window / unknown-usage never fire). |
 | `qa-compact-dialog` | context donut + Auto-compact dialog render (jsdom), locking `design_handoff_auto_compact`: the donut is a **ring** (not a bar) with a threshold **tick** only when on, and clicking it opens the dialog; the dialog carries the current-usage card (used/total/%), the enable toggle, the 50–95 step-5 threshold slider, and a footer with **지금 압축 실행** (fires `compact` + closes; disabled with no live session) beside **완료**. |
 | `qa-usage-limits` | account/provider-scoped rate-limit indicator (titlebar). Pure logic in `src/shared/usageLimits.ts` — window merge by kind (unreported windows preserved), level-color escalation (brand <75 → `--live` ≥75 → `--danger` ≥90; unknown → muted, never brand), reset-countdown formatting, epoch-seconds→ms normalization, and the full `buildUsageView` view model across known / unknown-loading / N/A (API key) / empty states (no fabricated 0%). Plus a jsdom render of `<UsageLimitPill>`: segments paint, click opens the popover with 5h + weekly meters + countdown, and ≥75% paints the warning border. |
-| `qa-subagents` | subagent-observation view-models (dock + drill-in detail) + the `applySubagentEvents` fold that keeps subagent output in a SEPARATE slice from the parent transcript: status→style mapping, live one-line `currentAction` selection (`deriveSubagentAction`, the swap point in `src/shared/subagentActivity.ts`), responsive dock thresholds, empty assistant/status blocks dropped so a query-less/empty item never renders as a blank "선처럼" strip. Driven by the mock scenarios in `src/shared/subagentScenarios.ts`. |
+| `qa-subagents` | subagent-observation view-models (dock + drill-in detail) + the `applySubagentEvents` fold that keeps subagent output in a SEPARATE slice from the parent transcript: status→style mapping, live one-line `currentAction` selection (`deriveSubagentAction`, the swap point in `src/shared/subagentActivity.ts`), responsive dock thresholds, empty assistant/status blocks dropped so a query-less/empty item never renders as a blank "선처럼" strip. Driven by the mock scenarios in `src/shared/subagentScenarios.ts`. Also locks that a LONG delegated prompt collapses to a preview + "전체 보기" popup instead of filling the drill-in view, while a short one still shows whole. |
 | `qa-party-store` | party storage **split** (`PartyRepository`): the on-disk layout is a SHARED index `parties.json` + PER-PARTY `parties/<id>/party.json` (members/messages), so two processes editing different parties of one workspace never clobber. Locks in: legacy single-`state.json` → split migration (data intact, blob kept as backup, no re-migrate on the 2nd read), per-party **write isolation** (editing party A leaves party B's file byte-identical + mtime unchanged), and **authoritative partyId** (a member's party is its FILE — a missing/wrong stored `partyId` is corrected, never silently mis-routed). |
 | `qa-subagent-tracker` | subagent **attribution** replayed against RECORDED real harness traffic (`scripts/fixtures/subagents/*.jsonl`, captured live from Haiku + gpt-mini): `ClaudeSubagentTracker` (task_started/progress/updated keyed by task_id+tool_use_id; `local_bash` steps never become their own rows) and `CodexSubagentTracker` (child-`threadId` routing, `collabAgentToolCall` prompt capture, powershell/bash launcher unwrap, `web_search` card with `action.queries` fallback so an empty top-level `query` still shows). Locks correct attribution + parent/child separation against the ACTUAL protocol shapes. |
 
@@ -126,6 +127,32 @@ actually spent in, its totals are marked `+?`, and the timeline caption states
 how many turns are missing from its bars. Guards the AGENTS.md no-silent-
 fallback rule at the exact spot it was violated (a `return 0` that summed into
 `≈$0.000`).
+
+`node scripts/e2e-transcript-render.mjs` (or `npm run test:e2e:transcript-render`)
+boots the real app on an isolated userData + temp workspace (offline — a mock
+member, no model) and drives the transcript-rendering surfaces the W2 lane owns.
+It discovers the app through the **per-workspace instance file** (no fixed port)
+and asserts the served workspace is its own. First leg — **links open in the OS
+default browser**: a markdown link is clicked in the REAL renderer and the main
+process's own IPC log is checked for `shell:openExternal` carrying that URL,
+proving the renderer→preload→main path that no jsdom test can see; the app is
+then confirmed not to have navigated away. The link's copy control is clicked and
+captured so its honest outcome (check on success, ✗ when the clipboard refuses)
+is visible. Further legs cover **one-click copy** (code block + whole reply),
+**a long subagent prompt collapsing** (a `subagent` event with a 40-line
+`assignedTask` injected over `/api/qa/…/emit` — every canned scenario's task is
+short — then drilled into through `/api/qa/…/subagents/open`), **the progress
+indicator** across a real working→idle transition, **the harness badge** with
+REAL codex/cursor members (creation starts no session, so it stays offline),
+**a code block surviving a message sent mid-stream** ([#14]), **modals ignoring
+an outside click** ([#16] — the popup is opened, the backdrop clicked, and the
+popup then closed by its own button, which only proves anything because it was
+still there), and **a dead member reading as `disconnected`** ([#13] — the
+harness is really ended through `/api/qa/…/kill-harness`).
+
+Every click asserts `applied.clicked`, so a selector that matches nothing fails
+the run instead of passing on a screenshot of something else. Step 0 asserts
+`runtime.appRoot` is under this script's own root (see §1b).
 
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord
@@ -429,6 +456,51 @@ separate, possibly-stale artifact):
 npm run build
 ```
 
+### 1b. Assert IN THE SCRIPT that the build now running is your worktree
+
+An e2e launched from a worktree can measure a **different checkout** and report a
+pass — this is not hypothetical: 21 scripts here hardcoded
+`C:\Project\AgentPartyApp` as the app root, so any of them run from a worktree
+built and drove the MAIN tree while the author read green output. Deriving the
+root from `import.meta.url` (§ below) prevents it; asserting it proves it.
+
+Make it the first assertion, before any behaviour is exercised:
+
+```js
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = (await get("/api/state")).runtime?.appRoot || "";
+// BOUNDARY comparison — see the warning below.
+const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
+```
+
+⚠️ **Compare on a path boundary, never a bare prefix.**
+`C:\Project\AgentPartyApp` is a string prefix of `C:\Project\AgentPartyApp-w2`,
+so a plain `startsWith` accepts a main-worktree build as your own — reproducing,
+inside the check, the exact false pass the check exists to prevent. Append
+`path.sep` to both sides.
+
+Three instruments exist. **Only the first stays valid after a merge:**
+
+| Form | How | Valid |
+|---|---|---|
+| `runtime.appRoot` (preferred) | `/api/state` (and `/api/health`) reports where the RUNNING module was loaded from — the app's own knowledge, not a value the driver supplied | always |
+| A branch-only endpoint | assert `/api/spec` lists an endpoint only your branch serves | **before merge only** |
+| A branch-only DOM class | `POST /api/capture` with `click` on a class only your branch renders (a selector miss fails the request, so the match IS the assertion) | **before merge only** |
+
+⚠️ The last two **stop discriminating the moment your branch merges** — every
+branch then has that endpoint or class, and the assertion passes forever while
+proving nothing. That is the same trajectory as the dead knobs this project has
+had to dig out (`AGENTPARTY_WORKSPACE` that nothing read, an
+`AGENTPARTY_ALLOW_MULTI_INSTANCE` that stopped meaning anything when the
+single-instance lock was removed). They all worked at first. If you use form 2
+or 3 because `appRoot` is unavailable, say so in a comment *next to the
+assertion* — the person who copies it into the next cycle will not read this
+table.
+
+Do NOT assert on `settings.workspacePath` or `logs.logFilePath` for this: both
+are values the driver itself wrote into the isolated userData, so the check is
+self-fulfilling.
+
 ### 2. Launch the real app (optionally targeting a workspace)
 ```
 node scripts/launch-electron.mjs --workspace wsl+Ubuntu-22.04:/home/dev/agentparty-wsl-e2e
@@ -437,6 +509,32 @@ Run it in the background. `--workspace` accepts a local path or a
 `wsl+<distro>:<posix-path>` URI. A **WSL workspace gives members real Claude auth**
 (the distro is logged in) — local Windows may not be. Members there run on the
 remote engine (billed on the distro's subscription).
+
+⚠️ **A script that spawns the app itself must derive the app root from
+`import.meta.url`, never a hardcoded `C:\Project\AgentPartyApp`.** A hardcoded
+root builds and runs the MAIN worktree, so a script run from any other worktree
+tests code that does not contain the change under test — and reports a pass:
+```js
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+```
+Note `scripts/lib/electron-e2e.mjs` takes `root` as an argument, so the caller is
+what has to be right.
+
+⚠️ **A script that spawns the app itself must point it at a workspace through the
+isolated `settings.json`, not an env var.** The app reads its launch workspace
+from `<AGENTPARTY_USER_DATA>/settings.json` `workspacePath`; there is **no
+`AGENTPARTY_WORKSPACE` env var** (`scripts/lib/electron-e2e.mjs` used to set one
+— it was never read). Without it the app falls back to its **cwd**, which for a
+script run from the repo is the source tree, and it drops its discovery dir
+(`.agent_party_app/`) there — polluting the worktree it was supposed to leave
+alone. So, before launching:
+```js
+fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: ws }));
+```
+and then assert the served workspace is yours (`GET /api/windows`) before driving
+anything. `scripts/e2e-transcript-render.mjs` is the reference. Keep
+`AGENTPARTY_ALLOW_MULTI_INSTANCE=1` and do **not** pin `automationApiPort` — the
+port stays ephemeral and is found through the instance file (step 3).
 
 ### 3. Discover the automation API port
 The port is ephemeral — **never hardcode it**. Discovery is **per-workspace** (no

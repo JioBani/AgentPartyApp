@@ -81,6 +81,45 @@ assert([...(table?.querySelectorAll("td") || [])].some((td) => td.textContent ==
 const link = body?.querySelector("a");
 assert(link?.getAttribute("href") === "https://example.com" && link?.getAttribute("target") === "_blank" && link?.getAttribute("rel") === "noreferrer", "link opens externally (target=_blank, rel=noreferrer)");
 
+console.log("\nLinks open in the OS browser (P-3.5):");
+const opened = [];
+window.agentParty = { openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); } };
+globalThis.window.agentParty = window.agentParty;
+const clickEvent = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+link?.dispatchEvent(clickEvent);
+await new Promise((res) => setTimeout(res, 20));
+assert(opened[0] === "https://example.com", "clicking a link hands the URL to shell.openExternal");
+assert(clickEvent.defaultPrevented, "the in-app navigation is prevented (no Electron window navigation)");
+const linkCopy = body?.querySelector(".wb-md-link .wb-copy-btn");
+assert(Boolean(linkCopy), "a copy control sits next to the link");
+const copied = [];
+Object.defineProperty(window.navigator, "clipboard", { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+def("navigator", window.navigator);
+linkCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === "https://example.com", "the copy control writes the link target to the clipboard");
+
+console.log("\nOne-click copy of code blocks and whole replies (P-3.3):");
+const preCopy = body?.querySelector("pre .wb-copy-btn");
+assert(Boolean(preCopy), "a fenced code block carries a copy control");
+assert(body?.querySelectorAll(".wb-md > pre").length === 1, "the control lives INSIDE the <pre> (no wrapper element around the block)");
+copied.length = 0;
+preCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === '{ "ok": true, "issues": 1 }\n', "copying a code block yields exactly the block's code");
+const replyCopy = document.querySelector(".wb-assistant-head .wb-copy-btn");
+assert(Boolean(replyCopy), "the assistant reply carries a whole-reply copy control");
+copied.length = 0;
+replyCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === md, "copying a reply yields its markdown SOURCE (what you paste elsewhere)");
+
+// A refused clipboard write must be shown, never swallowed as a fake success.
+Object.defineProperty(window.navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) }, configurable: true });
+replyCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 30));
+assert(replyCopy?.getAttribute("data-copy-state") === "failed", "a refused clipboard write paints the failure state (no silent fake success)");
+
 // No raw markdown source should leak into the rendered text.
 const text = body?.textContent || "";
 assert(!text.includes("##") && !text.includes("**") && !text.includes("```"), "raw markdown tokens (##, **, ```) are not shown literally");

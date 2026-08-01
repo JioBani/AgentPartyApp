@@ -32,7 +32,10 @@ export interface Subagent {
 
 /** Per-member transcript block — the rendering contract filled by agent events. */
 export type TranscriptBlock =
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; at?: string }
+  // `sent` marks a status line that is the harness echoing back a user turn the
+  // app just submitted. It is the user's own message, not agent output, so it
+  // does not end a reply that is still streaming (see appendText, [#14]).
+  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
   // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
   | { id: string; kind: "plan"; steps: import("../../shared/codexItems").CodexPlanStep[]; explanation?: string; at?: string }
@@ -67,7 +70,13 @@ export type TranscriptBlock =
       at?: string;
     };
 
-export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled";
+/**
+ * `disconnected` is the member's own `missing_session`: it is bound to a session
+ * that nothing is behind any more. It is deliberately NOT folded into
+ * `not-started`, which means "never started, message it and it begins" — telling
+ * a user that about a member they cannot reach is worse than saying nothing.
+ */
+export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected";
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 

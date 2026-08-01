@@ -180,9 +180,12 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
   const selectedMeta = selected?.meta;
 
+  // The scrim does not dismiss: a stray click outside would throw away a
+  // half-filled wizard. Closing is explicit (취소 / ✕) — the same contract as
+  // every other modal in the app.
   return (
-    <div className="wb-modal-scrim" onMouseDown={onCancel}>
-      <div className="wb-modal wb-wizard" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="wb-modal-scrim">
+      <div className="wb-modal wb-wizard" role="dialog" aria-modal="true">
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <UserPlus size={16} />

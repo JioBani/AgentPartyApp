@@ -55,11 +55,16 @@ const byText = (re) => buttons().find((b) => re.test(b.textContent || ""));
 const click = (el) => el?.dispatchEvent(new window.Event("click", { bubbles: true }));
 
 const root = reactDom.createRoot(document.getElementById("root"));
-root.render(React.createElement(McpModal, { view, actions, onClose: () => {} }));
+let closed = 0;
+root.render(React.createElement(McpModal, { view, actions, onClose: () => { closed += 1; } }));
 await tick(120);
 
 console.log("\nrender:");
 assert(/MCP 서버/.test(document.querySelector(".mcp-head-name")?.textContent || ""), "header shows 'MCP 서버'");
+// [#16] A stray click outside must not dismiss the panel mid-inspection.
+document.querySelector(".wb-modal-scrim")?.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+await tick(40);
+assert(closed === 0 && Boolean(document.querySelector(".mcp-modal")), "clicking outside does NOT close the MCP panel");
 assert(document.querySelectorAll(".mcp-card").length === 3, "renders all 3 server cards");
 const states = [...document.querySelectorAll(".mcp-state")].map((s) => s.textContent.trim());
 assert(states.some((t) => /연결됨/.test(t)) && states.some((t) => /인증 필요/.test(t)) && states.some((t) => /실패/.test(t)), "state badges: 연결됨 / 인증 필요 / 실패");

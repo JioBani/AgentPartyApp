@@ -106,6 +106,12 @@ console.log("\nauto-compact dialog (usage card, toggle, slider, footer):");
   assert(buttons.some((t) => /지금 압축 실행/.test(t)), "footer has '지금 압축 실행'");
   assert(buttons.some((t) => /완료/.test(t)), "footer has '완료'");
 
+  // [#16] A drag on the threshold slider regularly ends outside the dialog; that
+  // must not dismiss it mid-adjustment.
+  document.querySelector(".wb-modal-scrim")?.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await flush();
+  assert(closed === 0 && !!host.querySelector(".wb-compact-dialog"), "clicking outside does NOT close the dialog");
+
   // Run-now fires a compaction AND closes.
   const runNow = [...host.querySelectorAll("button")].find((b) => /지금 압축 실행/.test(b.textContent));
   click(runNow); await flush();

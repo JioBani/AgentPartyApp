@@ -54,6 +54,9 @@ export function createElectronE2eApp({ root, workspace, userData, port, env = {}
     await removePath(userData);
     fs.mkdirSync(workspace, { recursive: true });
     fs.mkdirSync(userData, { recursive: true });
+    // `workspacePath` here is the ONLY thing that points the app at the e2e
+    // workspace — the app reads no workspace env var. Without it the app falls
+    // back to its cwd (the source tree) and drops `.agent_party_app/` there.
     fs.writeFileSync(
       path.join(userData, "settings.json"),
       JSON.stringify({ workspacePath: workspace, automationApiPort: port }, null, 2),
@@ -75,7 +78,6 @@ export function createElectronE2eApp({ root, workspace, userData, port, env = {}
         AGENTPARTY_AUTOMATION_PORT: String(port),
         AGENTPARTY_USER_DATA: userData,
         AGENTPARTY_WINDOW_DISPLAY: "left",
-        AGENTPARTY_WORKSPACE: workspace,
         ...env,
       },
     });

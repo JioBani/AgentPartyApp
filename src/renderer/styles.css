@@ -5045,3 +5045,117 @@ body.wb-resizing {
   flex-direction: column;
   gap: 4px;
 }
+
+/* ── W2: transcript copy controls + external links ───────────────────────── */
+
+/* Shared copy-to-clipboard control (link targets, code blocks, whole replies).
+   Confirms with a check and shows an explicit mark when the write was refused. */
+.wb-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1;
+  vertical-align: middle;
+  flex: none;
+  transition: background .15s ease, color .15s ease, opacity .15s ease;
+}
+.wb-copy-btn:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-copy-btn.is-copied { color: var(--success); }
+.wb-copy-btn.is-failed { color: var(--danger); }
+.wb-copy-btn-label { white-space: nowrap; }
+
+/* A markdown link and its copy control stay on one line together. The control
+   is muted but always visible: a hover-only icon still occupies the line, so
+   hiding it buys a gap in the sentence and costs discoverability. */
+.wb-md-link { white-space: nowrap; }
+.wb-md-link-copy { padding: 1px 2px; margin-left: 1px; }
+
+/* Code-block copy control. `position: relative` is added here as a NEW rule (the
+   base `.wb-md pre` block above is untouched) so the button can pin to the block's
+   top-right without a wrapper element. */
+.wb-md pre { position: relative; }
+.wb-md-pre-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--bg-2);
+  border-color: var(--border-subtle);
+}
+
+/* Whole-reply copy: quiet until the reply is hovered, so a long transcript is
+   not a column of icons. Focus keeps it reachable by keyboard. */
+.wb-assistant-copy { opacity: 0; margin-left: auto; }
+.wb-assistant:hover .wb-assistant-copy,
+.wb-assistant-copy:focus-visible,
+.wb-assistant-copy.is-copied,
+.wb-assistant-copy.is-failed { opacity: 1; }
+
+/* ── W2: in-progress indicator ([P-3]7) ─────────────────────────────────── */
+
+/* Three bouncing dots standing in for the word "working" wherever a member's
+   turn is in flight (panel header pill, sidebar member row). Inherits the
+   surrounding color, so each surface keeps its own status palette. */
+.wb-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+.wb-working-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: wb-bounce 1.2s ease-in-out infinite;
+}
+.wb-working-dots i:nth-child(2) { animation-delay: .15s; }
+.wb-working-dots i:nth-child(3) { animation-delay: .3s; }
+
+/* Deliberate, not leftover — do not delete as a stray "why is an animation off
+   here?". The base `.wb-status-pill.is-working` rule above pulses the whole
+   pill's opacity, which made sense while the pill was the WORD "working". The
+   pill now holds the bouncing dots, and a pill fading in and out underneath dots
+   that are already moving reads as flicker rather than as progress. Turned off
+   here as a new rule instead of by editing the base block, so this lane's
+   additions to the file stay append-only. */
+.wb-status-pill.is-working { animation: none; }
+
+/* The sidebar row's status column has no color of its own — give the dots the
+   live-activity color instead of the muted status text color. */
+.wb-member-row .wb-working-dots { color: var(--live); }
+
+/* ── W2: harness badge ([P-8]) ──────────────────────────────────────────── */
+
+/* Which harness a member runs on, shown wherever the member is identified
+   (sidebar row, tab). Short form only — these surfaces are dense — with the
+   full name on hover (title). Muted so it reads as provenance, not status. */
+.wb-harness-chip {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-3);
+}
+.wb-member-row.is-open .wb-harness-chip,
+.wb-tab.is-active .wb-harness-chip { color: var(--text-2); }
+
+/* ── W2: disconnected member ([#13]) ────────────────────────────────────── */
+
+/* A member bound to a session nothing is behind any more. Muted, not alarming:
+   nothing is broken and nothing is lost — messaging it starts a fresh session
+   and the conversation resumes. Distinct from `is-idle` (green = ready) so the
+   two are not read as the same thing. */
+.wb-status-pill.is-disconnected {
+  color: var(--text-3);
+  background: var(--bg-4);
+}

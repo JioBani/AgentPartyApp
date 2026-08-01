@@ -144,9 +144,11 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
 
   const anyReconnectable = servers.some((s) => s.canReconnect && s.state !== "needs-auth" && s.state !== "disabled");
 
+  // The scrim does not dismiss — closing is explicit (닫기 / ✕), as in every
+  // other modal in the app.
   return (
-    <div className="wb-modal-scrim" onMouseDown={onClose}>
-      <div className="mcp-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="wb-modal-scrim">
+      <div className="mcp-modal" role="dialog" aria-modal="true">
         {/* header */}
         <header className="mcp-head">
           <span className="mcp-head-icon"><Plug size={16} /></span>

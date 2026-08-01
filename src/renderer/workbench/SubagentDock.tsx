@@ -46,7 +46,11 @@ export function SubagentDock({ view, onToggle, onOpen }: SubagentDockProps) {
               </span>
               <span className="wb-mono wb-subrow-name">{row.name}</span>
               {row.hint && <span className="wb-mono wb-subrow-hint">{row.hint}</span>}
-              {row.showLine && <span className="wb-subrow-line">{row.line}</span>}
+              {/* The dock row is a single ~20px line, so the delegated task /
+                  live activity is clipped to it by CSS and the full text is a
+                  hover away — the drill-in detail is where it expands. An
+                  expand control would not fit here without breaking the row. */}
+              {row.showLine && <span className="wb-subrow-line" title={row.line}>{row.line}</span>}
               <span className="wb-subrow-spacer" />
               {row.showMeta && row.meta && <span className="wb-mono wb-subrow-meta">{row.meta}</span>}
               <span className="wb-subrow-status" style={{ background: row.statusBg, color: row.statusColor }}>{row.statusLabel}</span>

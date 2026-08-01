@@ -129,6 +129,24 @@ assert(detailHost.textContent.includes("auth 도메인"), "the delegated task te
 assert(detailHost.textContent.includes("tester"), "breadcrumb shows the parent member");
 assert(Boolean(detailHost.querySelector(".wb-subblock-tool")), "the subagent's own tool block renders");
 assert(detailHost.textContent.includes("run_tests"), "tool name shown in detail transcript");
+assert(!detailHost.querySelector(".wb-subdetail-task .wb-expand-inline"), "a SHORT delegated task shows in full, with no expand control");
+
+console.log("\nLong delegated task is collapsed (#6):");
+// The reported symptom: a delegated prompt of hundreds of lines rendered whole,
+// pushing the subagent's actual work off screen.
+const longTask = Array.from({ length: 40 }, (_, i) => `${i + 1}. 리팩터링 대상 파일과 검증 절차를 순서대로 기술한 지시 라인`).join("\n");
+const longDetail = { ...detail, task: longTask };
+const longHost = mount(React.createElement(SubagentDetail, { detail: longDetail, parentName: "tester", parentColor: "#e0a14e", density: "wide", onBack: () => {} }));
+await settle();
+const band = longHost.querySelector(".wb-subdetail-task");
+assert(Boolean(band) && band.textContent.length < longTask.length, "a long delegated task renders as a clipped preview, not in full");
+assert(band.textContent.includes("1. 리팩터링"), "the preview keeps the beginning of the prompt");
+const expand = band.querySelector(".wb-expand-inline");
+assert(Boolean(expand), "…and offers 전체 보기");
+expand.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await settle();
+const popup = document.querySelector(".wb-tool-modal");
+assert(Boolean(popup) && popup.textContent.includes("40. 리팩터링"), "전체 보기 opens the FULL prompt in a popup (nothing is lost)");
 
 console.log(failures.length ? `\nSUBAGENTS FAILED (${failures.length})` : "\nSUBAGENTS PASSED");
 process.exit(failures.length ? 1 : 0);
