@@ -90,6 +90,11 @@ async function main() {
     assert(killed, "a member whose harness ended stops reporting as running");
     const status = await turnStatus();
     assert(status?.running === false, "the member status an agent reads also stops claiming it is running");
+    // Death must not arrive as a BUSY value. A dead member rendered as "working"
+    // would put a spinner on it — dressing a wrong state up as a plausible one,
+    // which is the failure mode this whole cycle is about.
+    assert(status?.turnActive === false, "a dead member is not reported as mid-turn");
+    assert(!["requesting", "responding", "interrupting"].includes(String(status?.status)), `a dead member's status is not a busy one (got ${status?.status})`);
 
     // --- #19: the conversation survives a close + restart --------------------
     await post("/api/party/members/worker/close", {});
