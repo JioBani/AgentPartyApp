@@ -127,6 +127,13 @@ export class PartyApplicationService {
    */
   private seededHint = false;
 
+  /**
+   * Sessions last seen mid-turn, so the queue drains on the busy → idle EDGE
+   * rather than on every idle snapshot. Membership is the previous observation,
+   * not a lock: {@link drainQueueForSession} re-checks liveness itself.
+   */
+  private readonly busySessions = new Set<string>();
+
   constructor(private readonly deps: PartyApplicationDeps) {
     // Record the harness thread as soon as it becomes real — the turn that
     // commits it — instead of hoping something later asks for it. It used to be
@@ -141,10 +148,28 @@ export class PartyApplicationService {
         return;
       }
       this.persistHarnessThread(payload.sessionId);
-      // The member just went idle — hand it whatever has been waiting. This is
-      // the queue's normal delivery trigger; the on-demand buttons are the
-      // exception, not the rule.
-      this.drainQueueForSession(payload.sessionId);
+    });
+    // The queue's delivery trigger: a session leaving a busy status. Driven off
+    // the SNAPSHOT rather than `turn_complete` because a turn that is
+    // interrupted, errors out, or is force-stopped never completes — and a queue
+    // that only drains on clean completion would strand every message behind
+    // one stuck turn, which is precisely the state it exists to make visible.
+    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; snapshot?: { status?: unknown } }) => {
+      if (!payload?.sessionId) {
+        return;
+      }
+      const busy = BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
+      const wasBusy = this.busySessions.has(payload.sessionId);
+      if (busy) {
+        this.busySessions.add(payload.sessionId);
+        return;
+      }
+      this.busySessions.delete(payload.sessionId);
+      // Only on the busy → idle EDGE. Every idle snapshot would otherwise
+      // re-enter the drain for a queue that is simply waiting to be sent by hand.
+      if (wasBusy) {
+        this.drainQueueForSession(payload.sessionId);
+      }
     });
   }
 
@@ -1291,13 +1316,16 @@ export class PartyApplicationService {
         // tagged with its sender so it keeps its own chip and never merges into
         // someone else's text. Recorded as queued — not delivered — because it
         // has not reached the member yet.
-        const queued = this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from });
+        // Record the routing first, THEN enqueue. The other order writes this
+        // (pre-enqueue) state snapshot over the queue the enqueue just saved,
+        // silently losing the message — the exact failure the queue exists to
+        // prevent. `enqueueForMember` re-reads, so it sees this write.
         message.error = "queued_for_busy_member";
         target.updatedAt = message.createdAt;
         state.messages.push(message);
         this.persistParty(workspace, state, this.partyIdOf(target));
         log("info", "party", "message queued for busy member", { workspace, partyId: target.partyId, from: message.from, to: message.to });
-        return { ...queued, partyMessage: message };
+        return { ...this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from }), partyMessage: message };
       }
       // A member-to-member message drove this turn — tag it so the usage ledger
       // attributes the recipient's spend to `party-message` (an overhead trigger).
@@ -1406,7 +1434,7 @@ export class PartyApplicationService {
    * routing/persistence/optional interrupt); per-member failures — including a
    * gate rejection — are collected, never silently dropped.
    */
-  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyCommandResult & { delivered: string[]; failed: Array<{ name: string; error: string }> }> {
+  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyCommandResult & { delivered: string[]; queuedMembers: string[]; failed: Array<{ name: string; error: string }> }> {
     if (!content.trim()) {
       throw new Error("broadcast requires a non-empty content.");
     }
@@ -1417,11 +1445,17 @@ export class PartyApplicationService {
       throw new Error("No other members in the party to broadcast to.");
     }
     const delivered: string[] = [];
+    // A member that was busy has the message WAITING, not lost. Reporting that
+    // as `failed` would tell the sender its message never arrived and invite a
+    // duplicate resend, so queued members get their own bucket.
+    const queuedMembers: string[] = [];
     const failed: Array<{ name: string; error: string }> = [];
     for (const target of targets) {
       try {
         const result = await this.sendGatedMessage(target.name, content, from, undefined, party.id, options);
-        if (result.partyMessage?.delivered) {
+        if (result.queued) {
+          queuedMembers.push(target.name);
+        } else if (result.partyMessage?.delivered) {
           delivered.push(target.name);
         } else {
           failed.push({ name: target.name, error: result.partyMessage?.error || "not_delivered" });
@@ -1430,9 +1464,10 @@ export class PartyApplicationService {
         failed.push({ name: target.name, error: errorMessage(error) });
       }
     }
-    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
+    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
-    return { ...this.result(`Broadcast delivered to ${delivered.length}/${targets.length} member(s).`, state, undefined, party.id), delivered, failed };
+    const reach = queuedMembers.length ? `${delivered.length} delivered, ${queuedMembers.length} queued` : `${delivered.length}`;
+    return { ...this.result(`Broadcast reached ${reach}/${targets.length} member(s).`, state, undefined, party.id), delivered, queuedMembers, failed };
   }
 
   private turnStatusOf(member: PartyMember): Record<string, unknown> {
@@ -1938,7 +1973,10 @@ export class PartyApplicationService {
         try {
           const result = await this.broadcastMessage(content, selfMember, party, { interrupt });
           notify();
-          return { ok: true, data: { delivered: result.delivered, failed: result.failed } };
+          // `queuedMembers` is reported apart from BOTH: those members will get
+          // the message when their current turn ends. Folding them into `failed`
+          // would prompt the sending agent to send a duplicate.
+          return { ok: true, data: { delivered: result.delivered, queuedMembers: result.queuedMembers, failed: result.failed } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }

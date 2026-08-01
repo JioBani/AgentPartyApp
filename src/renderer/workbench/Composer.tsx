@@ -1,5 +1,6 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { AtSign, Check, CircleStop, Copy, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { ArrowDownToLine, AtSign, Check, CircleStop, Copy, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
@@ -300,22 +301,30 @@ export function Composer({ view, density, actions }: ComposerProps) {
     <div className="wb-attach-hint"><ImageOff size={12} /> 이 모델은 이미지를 지원하지 않습니다</div>
   ) : null;
 
-  const stop = view.busy;
-  // Once a Stop has gone unanswered this long, the same control becomes a force
-  // stop. The harness clears "interrupting" as soon as it closes the turn, so a
-  // healthy interrupt never reaches this — only a turn that will never complete
-  // does, which is the state that used to silently queue every later message.
   const stopLabel = forceStop ? "강제 종료" : "Stop";
   const onStop = () => (forceStop ? actions.forceStop(view.name) : actions.interrupt(view.name));
-  const iconOnly = stop ? (
+  // While the member works this button ADDS TO ITS QUEUE — it no longer turns
+  // into Stop. Stop moved to the panel toolbar, because the one control that
+  // puts a message in the queue has to stay available exactly when the queue is
+  // in use; taking the slot over left no way to queue from the UI at all.
+  // A turn that will never complete is the exception: once Stop has gone
+  // unanswered that long, the force stop surfaces here rather than staying
+  // buried, since at that point queueing behind it is pointless.
+  const queueing = view.busy;
+  const sendTitle = queueing ? "대기열에 추가" : "Send";
+  const iconOnly = forceStop ? (
     <button type="button" className="wb-send is-stop" title={stopLabel} onClick={onStop}><CircleStop size={15} /></button>
   ) : (
-    <button type="submit" className="wb-send" title="Send" disabled={!canSend}><Send size={15} /></button>
+    <button type="submit" className={"wb-send" + (queueing ? " is-queueing" : "")} title={sendTitle} disabled={!canSend}>
+      {queueing ? <ArrowDownToLine size={15} /> : <Send size={15} />}
+    </button>
   );
-  const labeled = stop ? (
+  const labeled = forceStop ? (
     <button type="button" className="wb-send-labeled is-stop" title={stopLabel} onClick={onStop}>{stopLabel} <CircleStop size={14} /></button>
   ) : (
-    <button type="submit" className="wb-send-labeled" title="Send" disabled={!canSend}>Send <Send size={14} /></button>
+    <button type="submit" className={"wb-send-labeled" + (queueing ? " is-queueing" : "")} title={sendTitle} disabled={!canSend}>
+      {queueing ? <>대기열에 추가 <ArrowDownToLine size={14} /></> : <>Send <Send size={14} /></>}
+    </button>
   );
   // Permission control next to Send: Codex members get the two-axis
   // (sandbox × approval + guardian) control; Claude members get the single mode.
@@ -347,10 +356,24 @@ export function Composer({ view, density, actions }: ComposerProps) {
     onDrop,
   };
 
+  /**
+   * "편집" on a queued row hands the text back here. Appended rather than
+   * substituted, so recalling a message never destroys something already typed.
+   */
+  function takeBackForEdit(text: string) {
+    setDraft((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n${text}` : text));
+    textareaRef.current?.focus();
+  }
+
+  // Sits between the transcript and the composer, inside the same border-top
+  // block, and never scrolls — the transcript gives up the space instead.
+  const queuePanel = <MessageQueue view={view} density={density} actions={actions} onEditBack={takeBackForEdit} />;
+
   if (density === "narrow" && !expanded) {
     return (
       <form className={"wb-composer is-narrow" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
         {palettePopover}
+        {queuePanel}
         {attachmentStrip}
         {attachHint}
         <div className="wb-composer-bar">
@@ -360,7 +383,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => onKeyDown(event, false)}
             onPaste={onPaste}
-            placeholder={`${view.name}에게…`}
+            placeholder={queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`}
           />
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
           {iconOnly}
@@ -373,6 +396,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   return (
     <form className={"wb-composer" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
       {palettePopover}
+      {queuePanel}
       <div className="wb-composer-box">
         {attachmentStrip}
         {attachHint}
@@ -384,7 +408,16 @@ export function Composer({ view, density, actions }: ComposerProps) {
           onKeyDown={(event) => onKeyDown(event, true)}
           onPaste={onPaste}
           rows={2}
-          placeholder={imageBlocked ? `${view.name}에게 메시지 보내기…` : `${view.name}에게 메시지 보내기… (이미지 붙여넣기/끌어놓기 가능)`}
+          // While the member works, say where the text will actually GO. Without
+          // this the box still reads "send a message" at the exact moment it no
+          // longer sends one.
+          placeholder={
+            queueing
+              ? `${view.name}가 작업 중 — 보내면 대기열에 쌓입니다`
+              : imageBlocked
+                ? `${view.name}에게 메시지 보내기…`
+                : `${view.name}에게 메시지 보내기… (이미지 붙여넣기/끌어놓기 가능)`
+          }
         />
         <div className="wb-composer-row">
           <div className="wb-composer-tools">

@@ -5,6 +5,7 @@ import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { MemberGateOverride, PartyGate } from "../../shared/messageGate";
+import type { QueueCommand } from "../../shared/messageQueue";
 
 /** A member-gate PATCH: any axis omitted is unchanged; `null` clears to inherit. */
 export type MemberGatePatch = MemberGateOverride;
@@ -18,6 +19,15 @@ export interface WorkbenchActions {
   /** Sends a turn to the member (starting its session first if needed), with
    *  optional image attachments (provider-neutral). */
   sendMessage(memberName: string, text: string, attachments?: ImageAttachment[]): void | Promise<void>;
+  /**
+   * Runs one message-queue mutation (send / sendItem / cancel / edit / move /
+   * mergeUp / clear / preference) — the same controller path the HTTP API takes.
+   * REJECTS on failure instead of resolving with an unchanged queue, so the
+   * caller can show it: a cancel that quietly did nothing would read as success
+   * while the agent answers the message anyway. `edit` resolves with the removed
+   * `text` for the composer to take back.
+   */
+  runQueueCommand(memberName: string, command: QueueCommand): Promise<{ text?: string } | undefined>;
   /**
    * Starts the member's session ahead of the first turn (no message sent), so
    * the harness reports its live command/skill inventory for the palette. Idempotent

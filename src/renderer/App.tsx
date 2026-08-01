@@ -809,6 +809,14 @@ export function App() {
         setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
       }
     },
+    async runQueueCommand(name, command) {
+      // Deliberately NOT swallowed here. The queue panel shows the failure, and
+      // the likeliest failure — the item was delivered a moment ago — is exactly
+      // what the user needs to be told.
+      const result = await window.agentParty.runQueueCommand(name, command);
+      await applyPartyResult(result, false);
+      return result;
+    },
     prewarm(name) {
       // Init the visible member ahead of the first turn. Panel owns WHEN to try
       // (on activation/remount); ensureSession only deduplicates an in-flight
