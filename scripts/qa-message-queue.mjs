@@ -181,5 +181,28 @@ console.log("\nparseQueueCommand (HTTP/IPC edge):");
   assert(pref.merge === false && pref.collapsed === undefined, "an omitted preference field stays undefined (left alone, not reset)");
 }
 
+// ============ 9) the OTHER queue is never hidden ============
+// There are two queues: this app's, and the one each harness adapter keeps on
+// its own `isTurnActive()`. A turn reaches the adapter's while invisible here in
+// two ways — `interrupt: true` sends mid-turn on purpose (the Discord bridge
+// always does), and the window where the session snapshot still reads idle but
+// the adapter's turn has begun. Those items cannot be cancelled. The view model
+// must therefore SHOW them; hiding them would rebuild the invisible queue this
+// whole feature exists to abolish, one layer down.
+console.log("\nharness-held messages are disclosed, not hidden:");
+{
+  const V = await load("src/renderer/workbench/queueView.ts", "queue-view.mjs");
+  const view = (over) => V.buildQueueView({
+    queue: { items: [] }, density: "wide", working: true, detached: false,
+    memberName: "backend", openRows: new Set(), handedOver: over,
+  });
+
+  assert(view(0).empty === true, "with nothing anywhere, the panel stays out of the way");
+  assert(view(2).empty === false, "an EMPTY app queue still renders when the harness holds messages");
+  assert(view(2).handedOver === 2, "…and reports how many, so the count is never understated");
+  assert(view(2).count === 0, "they are NOT folded into the cancellable count — 취소 must not be offered for them");
+  assert(view(undefined).handedOver === 0, "a member with no live session reports none rather than NaN");
+}
+
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "All message queue assertions passed"}`);
 process.exit(failures.length ? 1 : 0);

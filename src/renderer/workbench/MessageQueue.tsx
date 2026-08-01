@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { AlignLeft, ArrowRight, ArrowUp, ArrowUpFromLine, ChevronDown, Pencil, X } from "lucide-react";
+import { AlignLeft, ArrowRight, ArrowUp, ArrowUpFromLine, ChevronDown, Lock, Pencil, X } from "lucide-react";
 import type { QueueCommand } from "../../shared/messageQueue";
 import { memberColorVars } from "../theme/memberColors";
 import { buildQueueView, type QueueRowView } from "./queueView";
@@ -40,6 +40,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     detached: !view.session,
     memberName: view.name,
     openRows,
+    handedOver: view.session?.snapshot.queuedTurnCount,
   });
 
   // No queue, no panel. An empty queue must not hold space it is not using —
@@ -73,6 +74,26 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     });
 
   const notice = error ? <div className="wb-queue-error" role="alert">{error}</div> : null;
+
+  /**
+   * Messages already inside the harness. Shown apart from the list and WITHOUT
+   * controls, because there is nothing left to control — they cannot be
+   * cancelled or edited. Silence here would just move the invisible queue one
+   * layer down: the count would read low and 취소 would appear to work.
+   */
+  const handedOver = model.handedOver > 0 ? (
+    <div className="wb-queue-handed" title="이미 하네스로 전달되어 앱에서 취소할 수 없는 메시지입니다">
+      <Lock size={10} />
+      전달됨 {model.handedOver}건 — 이미 넘어가 취소할 수 없습니다
+    </div>
+  ) : null;
+
+  // Nothing left that can still be acted on — only in-flight messages. Header,
+  // merge row and 모두 취소 would all be controls over an empty set, so the
+  // disclosure stands alone.
+  if (model.count === 0) {
+    return <div className="wb-queue" style={memberColorVars(view.name)} aria-live="polite">{handedOver}</div>;
+  }
 
   if (model.narrow) {
     return (
@@ -110,6 +131,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
             <button type="button" className="wb-queue-send-all is-block" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
           </>
         )}
+        {handedOver}
         {notice}
       </div>
     );
@@ -176,6 +198,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           ))}
         </>
       )}
+      {handedOver}
       {notice}
     </div>
   );

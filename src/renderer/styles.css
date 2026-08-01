@@ -2708,6 +2708,23 @@ body.wb-resizing {
 }
 .wb-queue.is-narrow .wb-queue-text { font-size: 11px; line-height: 1.4; }
 
+/* Messages the HARNESS already holds. Solid, not dashed, and with no controls:
+   the dashed language means "still waiting, still yours"; these have crossed
+   over and cannot be cancelled. Muted so they read as a footnote to the queue
+   rather than another row of it — but present, because hiding them would put an
+   invisible queue one layer below the one this panel exists to expose. */
+.wb-queue-handed {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 /* A failed cancel/edit/move is shown, never swallowed — the likeliest cause is
    that the message was delivered a moment ago, which the user must know. */
 .wb-queue-error {

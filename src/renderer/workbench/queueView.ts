@@ -47,8 +47,26 @@ export interface QueueRowView {
 
 export interface QueueView {
   count: number;
-  /** Nothing waiting — the panel renders nothing at all. */
+  /** Nothing waiting anywhere — the panel renders nothing at all. */
   empty: boolean;
+  /**
+   * Messages the HARNESS is holding, which this app can no longer reach.
+   *
+   * The app queue is not the only queue: each adapter buffers turns on its own
+   * `isTurnActive()`, and that is a different source of truth from the session
+   * snapshot this app reads. Two paths put a turn there:
+   *   1. `interrupt: true` — the app deliberately sends mid-turn (the Discord
+   *      bridge always does), and the adapter buffers it until the interrupt
+   *      settles. Not a race: guaranteed.
+   *   2. the genuine window where the snapshot still reads idle but the
+   *      adapter's turn has already begun.
+   * Those items cannot be cancelled or edited — they are past the point of no
+   * return. Counting them into the main total would offer a 취소 button that
+   * cannot work; hiding them would recreate, one layer down, exactly the
+   * invisible queue this feature exists to abolish. So they are shown, apart,
+   * and labelled as unreachable.
+   */
+  handedOver: number;
   collapsed: boolean;
   merge: boolean;
   narrow: boolean;
@@ -81,10 +99,13 @@ export interface QueueViewInput {
   memberName: string;
   /** Row ids whose body the user expanded. */
   openRows: ReadonlySet<string>;
+  /** `snapshot.queuedTurnCount` — turns the harness itself is holding. See {@link QueueView.handedOver}. */
+  handedOver?: number;
 }
 
 export function buildQueueView(input: QueueViewInput): QueueView {
   const { queue, density, working, detached, memberName, openRows } = input;
+  const handedOver = Math.max(0, input.handedOver || 0);
   const items = queue.items;
   const merge = mergeOn(queue);
   const narrow = density === "narrow";
@@ -98,7 +119,11 @@ export function buildQueueView(input: QueueViewInput): QueueView {
 
   return {
     count: items.length,
-    empty: items.length === 0,
+    // Harness-held messages keep the panel open on their own. Otherwise an app
+    // queue that just drained would hide the very items that are still in
+    // flight, which is the invisible queue all over again.
+    empty: items.length === 0 && handedOver === 0,
+    handedOver,
     collapsed,
     merge,
     narrow,
