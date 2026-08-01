@@ -1,13 +1,13 @@
 /**
- * Cost + model encoding helpers for the Token Usage dashboard (new handoff:
- * cost-first, model×effort encoded by color-tint + fill-height). Pure, so the
- * pricing/encoding rules live in one testable place.
+ * Model encoding + cost FORMATTING helpers for the Token Usage dashboard (new
+ * handoff: cost-first, model×effort encoded by color-tint + fill-height). Pure,
+ * so the encoding rules live in one testable place.
  *
- * Cost is a DETERMINISTIC list-price conversion (실측 토큰 × 공개 단가), not an
- * estimate — matching the ledger's `estimatedTurnCostUsd`.
+ * Cost itself is computed in ONE place — `estimatedTurnCostUsd` in
+ * src/shared/tokenUsage.ts. This module used to carry a second copy of that
+ * arithmetic; two copies means the next fix lands in one of them, which is the
+ * exact trap that let unpriceable turns be summed as $0 here.
  */
-
-import { resolveCatalogModel } from "../../shared/modelCatalog";
 
 /** Model family → identity color for the transposed table's cell tint (design §토큰). */
 const MODEL_COLOR: Record<string, string> = {
@@ -91,19 +91,6 @@ export function effortMix(color: string, effort: string | undefined): string {
 /** Cell background = model color at 30% over the card bg (theme-adaptive). */
 export function cellTint(model: string | undefined): string {
   return `color-mix(in srgb, ${modelColor(model)} 30%, var(--bg-2))`;
-}
-
-/** List-price cost (USD) for a token split at a model's catalog rate. Cache reads
- *  are cheap (0.1×), cache writes 1.25× vs base input. Returns 0 when unpriceable. */
-export function turnCost(model: string | undefined, t: { input?: number; cacheRead?: number; cacheWrite?: number; output?: number }): number {
-  const cat = model ? resolveCatalogModel(model) : undefined;
-  const inPerM = cat?.inPerM;
-  const outPerM = cat?.outPerM ?? cat?.ioPerM;
-  if (typeof inPerM !== "number" && typeof outPerM !== "number") return 0;
-  const inUnits = (t.input || 0) + (t.cacheWrite || 0) * 1.25 + (t.cacheRead || 0) * 0.1;
-  const inCost = typeof inPerM === "number" ? (inUnits / 1e6) * inPerM : 0;
-  const outCost = typeof outPerM === "number" ? ((t.output || 0) / 1e6) * outPerM : 0;
-  return inCost + outCost;
 }
 
 /** `≈$` cost, precision scaled to magnitude (design fmtCost). */
