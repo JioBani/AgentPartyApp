@@ -1085,7 +1085,10 @@ export class PartyApplicationService {
     const status = view ? String(view.snapshot.status) : member.sessionId ? "missing_session" : "not_started";
     return {
       name: member.name,
-      running: Boolean(view),
+      // A session entry outlives its harness, so "we hold a session object" is
+      // not the same claim as "this member is running" — reporting it as such
+      // told agents a dead member was available to receive work.
+      running: Boolean(view) && status !== "closed",
       turnActive: Boolean(view && BUSY_SESSION_STATUSES.has(status)),
       status,
       turnCount: view?.snapshot.turnCount,
@@ -1346,15 +1349,38 @@ export class PartyApplicationService {
     return member;
   }
 
+  /**
+   * The member's status as it actually is, not as the bookkeeping remembers it.
+   *
+   * "Running" used to mean nothing more than "an entry exists in the in-memory
+   * session map". The map keeps that entry after the harness process is gone —
+   * the adapter reports `closed` when its stream ends, and nothing removed it —
+   * so a member whose harness had died still read as running, and the UI offered
+   * it as ready to chat (#13). The adapter's own last report is the honest
+   * source, and the codebase already treats this exact signal as death for the
+   * background usage adapters ({@link SessionManager} `bind`/usage handlers);
+   * member sessions were the ones missing the rule.
+   *
+   * Reported through the EXISTING `missing_session` value rather than a new one:
+   * the binding is still there, the harness behind it is not.
+   */
   private withLiveStatus(member: PartyMember): PartyMember {
-    if (member.sessionId && this.deps.sessionManager.hasSession(member.sessionId)) {
+    if (!member.sessionId) {
+      return member;
+    }
+    if (this.deps.sessionManager.hasSession(member.sessionId) && !this.harnessIsGone(member.sessionId)) {
       return { ...member, status: "running" };
     }
-    if (member.sessionId) {
-      return { ...member, status: "missing_session" };
-    }
-    return member;
+    return { ...member, status: "missing_session" };
   }
+
+  /** Whether the session's harness reported that it ended (process gone). */
+  private harnessIsGone(sessionId: string): boolean {
+    return this.sessionViewOf(sessionId)?.snapshot.status === "closed";
+  }
+
+
+
 
   private writeRoleFile(workspace: string, member: PartyMember, initialTask?: string): void {
     const dir = this.repository.memberDir(workspace, this.partyIdOf(member), member.name);

@@ -1050,6 +1050,25 @@ export class AppController {
     return { ok: true, kind, member };
   }
 
+  /**
+   * Test-only: make a member's harness report that it ENDED, without removing
+   * the session — the state a crashed/exited harness leaves behind. There is no
+   * other way to reach it offline, and it is the state #13 is about: the session
+   * entry outlives the process, so anything inferring liveness from the entry
+   * alone keeps calling a dead member "running".
+   */
+  async qaKillHarness(workspacePath: string, name: string): Promise<{ ok: true; sessionId: string }> {
+    this.requireQa();
+    const party = await this.engineFor(workspacePath).listParty();
+    const sessionId = party.members?.find((member) => member.name === name)?.sessionId;
+    if (!sessionId) {
+      throw new Error(`Member '${name}' has no live session to end.`);
+    }
+    this.deps.sessionManager.setMockStatus(sessionId, "closed");
+    await this.broadcastParty(workspacePath);
+    return { ok: true, sessionId };
+  }
+
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {
     this.requireQa();
     const listing = await this.engineFor(workspacePath).qaReset();
