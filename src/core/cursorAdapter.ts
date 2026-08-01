@@ -285,6 +285,12 @@ export class CursorAdapter extends EventEmitter {
     return {
       id: this.options.id,
       pid: this.process?.pid,
+      // Cursor spawns the CLI per TURN, so between turns it legitimately holds
+      // no process — that is idle, not dead. A turn's process dying is a failed
+      // TURN (surfaced as an error); the next turn spawns a new one. So the only
+      // thing that ends this session's ability to serve turns is disposal, and
+      // claiming otherwise would mark every healthy idle Cursor member dead.
+      harnessAlive: !this.disposed,
       cwd: this.options.cwd,
       sessionId: this.sessionId || undefined,
       model: this.model,

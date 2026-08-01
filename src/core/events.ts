@@ -47,6 +47,21 @@ export interface ClaudeSessionSnapshot {
   permissionMode?: string;
   cursorPolicy?: CursorPolicy;
   status: string;
+  /**
+   * Whether this session's harness can still serve turns.
+   *
+   * Deliberately NOT derived from `status`: the three harnesses use different
+   * words for the same fact, and one of them uses none at all. Claude reports
+   * `closed` when its stream ends. Codex sets `error` when its app-server dies
+   * mid-turn but leaves the status UNTOUCHED when it dies while idle. Cursor
+   * spawns a process per TURN, so holding no process is its healthy resting
+   * state rather than death. Matching one status string therefore left a dead
+   * Codex member reading as `idle` forever (#21).
+   *
+   * Each adapter answers from what it actually knows, so callers get one fact
+   * instead of a string match that only ever fit Claude.
+   */
+  harnessAlive: boolean;
   turnState?: string;
   startedAt: string;
   lastEventAt?: string;

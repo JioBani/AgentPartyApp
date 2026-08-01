@@ -1097,22 +1097,40 @@ export class AppController {
   }
 
   /**
-   * Test-only: make a member's harness report that it ENDED, without removing
-   * the session — the state a crashed/exited harness leaves behind. There is no
-   * other way to reach it offline, and it is the state #13 is about: the session
-   * entry outlives the process, so anything inferring liveness from the entry
-   * alone keeps calling a dead member "running".
+   * Test-only: KILL a member's harness process, leaving the session behind —
+   * the state a crashed harness actually leaves. The adapter then reports
+   * whatever it really reports, which is the only way an e2e can discover that
+   * different harnesses signal death differently.
+   *
+   * This used to inject `status: "closed"` instead. That is the value Claude
+   * happens to use, so the test was handing itself the answer and could never
+   * reveal that Codex and Cursor never produce it — the bug (#21) hid inside
+   * the tool built to catch it. Killing for real, or failing when it cannot,
+   * is the difference between observing and asserting what we already assumed.
    */
-  async qaKillHarness(workspacePath: string, name: string): Promise<{ ok: true; sessionId: string }> {
+  async qaKillHarness(workspacePath: string, name: string): Promise<{ ok: true; sessionId: string; pid: number }> {
     this.requireQa();
     const party = await this.engineFor(workspacePath).listParty();
     const sessionId = party.members?.find((member) => member.name === name)?.sessionId;
     if (!sessionId) {
       throw new Error(`Member '${name}' has no live session to end.`);
     }
-    this.deps.sessionManager.setMockStatus(sessionId, "closed");
+    const pid = (await this.engineFor(workspacePath).listWorkspaceSessions())
+      .find((session) => session.id === sessionId)?.snapshot.pid;
+    if (!pid) {
+      // Refuse rather than simulate. The previous version injected the status
+      // string Claude happens to use, which handed the test the answer: the
+      // other adapters never produce that value, and no e2e could reveal it.
+      // A QA tool that cannot do the real thing must say so (#21).
+      throw new Error(
+        `Member '${name}' reports no harness process id, so its harness cannot be killed for real. `
+          + "Only harnesses that own an OS process (Codex, Cursor mid-turn) can be ended this way; "
+          + "do not substitute a simulated status.",
+      );
+    }
+    process.kill(pid);
     await this.broadcastParty(workspacePath);
-    return { ok: true, sessionId };
+    return { ok: true, sessionId, pid };
   }
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {

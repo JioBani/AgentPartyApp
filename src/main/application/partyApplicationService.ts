@@ -1149,8 +1149,10 @@ export class PartyApplicationService {
       name: member.name,
       // A session entry outlives its harness, so "we hold a session object" is
       // not the same claim as "this member is running" — reporting it as such
-      // told agents a dead member was available to receive work.
-      running: Boolean(view) && status !== "closed",
+      // told agents a dead member was available to receive work. Uses the
+      // adapter's own liveness rather than a status string, which only ever
+      // described Claude (#21).
+      running: Boolean(view) && view?.snapshot.harnessAlive !== false,
       turnActive: Boolean(view && BUSY_SESSION_STATUSES.has(status)),
       status,
       turnCount: view?.snapshot.turnCount,
@@ -1436,9 +1438,18 @@ export class PartyApplicationService {
     return { ...member, status: "missing_session" };
   }
 
-  /** Whether the session's harness reported that it ended (process gone). */
+  /**
+   * Whether the session's harness can no longer serve turns.
+   *
+   * Asks the adapter for the fact instead of matching a status string. Only
+   * Claude ever writes `"closed"`, so the string test reported Codex and Cursor
+   * members as alive whatever had happened to them — and a Codex app-server
+   * that exits while IDLE changes no status at all, so nothing could have been
+   * matched (#21).
+   */
   private harnessIsGone(sessionId: string): boolean {
-    return this.sessionViewOf(sessionId)?.snapshot.status === "closed";
+    const snapshot = this.sessionViewOf(sessionId)?.snapshot;
+    return snapshot ? snapshot.harnessAlive === false : false;
   }
 
 
