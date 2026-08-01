@@ -116,6 +116,22 @@ step that silently did nothing turns every downstream assertion — and every
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
 ```
 
+### `POST /api/clipboard/image`
+
+Puts an image on the OS clipboard, so it can be pasted into any other app. The
+same `AppController` method the composer's thumbnail copy button calls.
+
+```json
+{ "mediaType": "image/png", "dataBase64": "<base64 without the data: prefix>" }
+```
+
+`mediaType` defaults to `image/png`. Bytes that do not decode to an image are an
+**error**, not an empty write: writing an empty image would clear the clipboard
+while reporting success, and the user would paste nothing with no way to tell
+why. On success the response carries the image actually written —
+`{ ok, width, height, bytes }` — so a caller can assert on it instead of trusting
+`ok`.
+
 ## Settings
 
 ### `POST /api/settings`

@@ -5,6 +5,7 @@ export const automationEndpoints = [
   "GET /api/logs",
   "POST /api/capture",
   "POST /api/settings",
+  "POST /api/clipboard/image",
   "GET /api/auth",
   "POST /api/auth/deepseek",
   "DELETE /api/auth/deepseek",

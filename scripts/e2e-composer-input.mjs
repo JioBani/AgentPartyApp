@@ -15,6 +15,9 @@
  *            Enter used to submit that form no matter the setting.
  *   P-14   — `composer.interruptOnSend` reaches the send path, stopping a busy
  *            member's in-flight turn instead of queueing behind it.
+ *   [P-3]9 — POST /api/clipboard/image writes to the real OS clipboard (the
+ *            same method behind the thumbnail's copy button), and REFUSES bytes
+ *            it cannot decode instead of silently writing an empty image.
  *
  * Root is derived from import.meta.url (never a hardcoded project path — a
  * hardcoded root builds and tests a DIFFERENT worktree), no port is fixed (the
@@ -23,6 +26,7 @@
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,6 +153,22 @@ async function main() {
     const cap = await post("/api/capture", { path: shot });
     assert(cap.ok && cap.bytes > 0, `설정 화면 캡처 → ${cap.path} (${cap.bytes} bytes)`);
 
+    // --- 5) [P-3]9 clipboard route, against the real OS clipboard ----------
+    // The composer's copy button and this endpoint are the same AppController
+    // method, so this exercises the write the button performs. The payload is
+    // the screenshot just taken — a real image of a real size, rather than a
+    // synthetic 1x1 that Electron's decoder rejects on its own.
+    const png = fs.readFileSync(shot).toString("base64");
+    const copied = await post("/api/clipboard/image", { mediaType: "image/png", dataBase64: png });
+    assert(copied.ok && copied.width === cap.width && copied.height === cap.height, `클립보드에 실제로 쓴 이미지를 응답이 되돌려준다 (${copied.width}x${copied.height}, ${copied.bytes}B)`);
+    // A small real image copies too, so nothing here is size-gated by accident.
+    const small = await post("/api/clipboard/image", { mediaType: "image/png", dataBase64: smallPng(16, 16).toString("base64") });
+    assert(small.ok && small.width === 16 && small.height === 16, `작은 실제 이미지도 복사된다 (${small.width}x${small.height})`);
+    // Undecodable bytes must FAIL. Writing an empty image would wipe the
+    // clipboard while reporting success — the user pastes nothing, silently.
+    const rejected = await postRaw("/api/clipboard/image", { mediaType: "image/png", dataBase64: "bm90LWFuLWltYWdl" });
+    assert(rejected.status === 500 && /decode/i.test(rejected.body), `이미지가 아닌 바이트는 조용히 빈 복사가 아니라 에러다 (${rejected.status})`);
+
     await post("/api/window/close", {});
     await waitForExit(child);
     console.log(failures.length ? `\nCOMPOSER INPUT E2E FAILED (${failures.length})` : "\nCOMPOSER INPUT E2E PASSED");
@@ -224,6 +244,37 @@ async function waitForApi() {
 
 async function getJson(u) { const r = await fetch(base + u); if (!r.ok) throw new Error(`${u} returned ${r.status}`); return r.json(); }
 async function post(u, b) { const r = await fetch(base + u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); if (!r.ok) throw new Error(`${u} returned ${r.status}: ${await r.text()}`); return r.json(); }
+/** A valid opaque-red RGBA PNG of the given size, built without a dependency. */
+function smallPng(w, h) {
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const o = y * (w * 4 + 1) + 1 + x * 4;
+      raw[o] = 255; raw[o + 1] = 0; raw[o + 2] = 0; raw[o + 3] = 255;
+    }
+  }
+  const crc32 = (b) => { let c = ~0; for (const x of b) { c ^= x; for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const tb = Buffer.from(type);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([tb, data])));
+    return Buffer.concat([len, tb, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** POST that tolerates a non-2xx, for asserting that a bad request FAILS. */
+async function postRaw(u, b) {
+  const r = await fetch(base + u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) });
+  return { status: r.status, body: await r.text() };
+}
 async function removePath(target) { for (let i = 0; i < 10; i += 1) { try { fs.rmSync(target, { recursive: true, force: true }); return; } catch (e) { if (e?.code !== "EBUSY" || i === 9) return; await delay(300); } } }
 function waitForExit(child) { return new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("App did not exit after close API.")), 10000); child.once("exit", () => { clearTimeout(t); resolve(); }); }); }
 function killProcessTree(pid) { if (!pid) return; try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { try { process.kill(pid); } catch {} } }

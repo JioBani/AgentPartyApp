@@ -1,5 +1,5 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { AtSign, CircleStop, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { AtSign, Check, CircleStop, Copy, ImageOff, Maximize2, Send, X } from "lucide-react";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
@@ -57,6 +57,8 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
+  // Which thumbnail just went to the clipboard (a brief ✓ on its copy button).
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const prefs = useComposerPrefs();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
@@ -210,6 +212,26 @@ export function Composer({ view, density, actions }: ComposerProps) {
     setAttachments((current) => current.filter((_, i) => i !== index));
   }
 
+  /**
+   * Puts an attached image on the OS clipboard so it can be pasted elsewhere —
+   * an image dropped in here is often the one you also want in a ticket or a
+   * chat, and until now the only thing you could do with it was remove it.
+   * Writing goes through the main process (`clipboard.writeImage`), the same
+   * route `POST /api/clipboard/image` takes.
+   */
+  async function copyAttachment(image: ImageAttachment, index: number) {
+    try {
+      await window.agentParty.copyImageToClipboard({ dataBase64: image.dataBase64, mediaType: image.mediaType });
+      setAttachError("");
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1400);
+    } catch (error) {
+      // Never a silent no-op: a copy that did not happen has to say so, or the
+      // user pastes stale clipboard content and blames the other app.
+      setAttachError(`이미지를 클립보드로 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   function submit(event?: FormEvent) {
     event?.preventDefault();
     const text = draft.trim();
@@ -258,6 +280,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
       {attachments.map((image, index) => (
         <div className="wb-attachment" key={`${image.name || "img"}-${index}`} title={image.name}>
           <img src={imageDataUrl(image)} alt={image.name || "attached image"} />
+          <button
+            type="button"
+            className="wb-attachment-copy"
+            title={copiedIndex === index ? "복사됨" : "클립보드로 복사"}
+            onClick={() => copyAttachment(image, index)}
+          >
+            {copiedIndex === index ? <Check size={11} /> : <Copy size={11} />}
+          </button>
           <button type="button" className="wb-attachment-x" title="제거" onClick={() => removeAttachment(index)}><X size={11} /></button>
         </div>
       ))}

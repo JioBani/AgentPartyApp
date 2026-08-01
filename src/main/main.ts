@@ -674,6 +674,9 @@ function registerIpc(): void {
     }
     return { ok: false, error: "Only http(s) URLs can be opened." };
   });
+  // Same AppController method as POST /api/clipboard/image — one route for the
+  // thumbnail's copy button and for an agent driving it.
+  handle("clipboard:writeImage", async (_event, image: unknown) => controller().writeImageToClipboard((image || {}) as { dataBase64?: string; mediaType?: string }));
 
   handle("window:minimize", async (event) => controller().minimizeWindow(senderWindowId(event)));
   handle("window:maximize", async (event) => controller().toggleMaximizeWindow(senderWindowId(event)));

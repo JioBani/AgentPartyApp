@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { clipboard, nativeImage } from "electron";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -972,6 +973,40 @@ export class AppController {
       // Kept alongside `applied.clicked` because callers already assert on it.
       ...(applied.clicked ? { clicked: true as const } : {}),
     };
+  }
+
+  /**
+   * Puts an image on the OS clipboard, so an image attached in the composer can
+   * be pasted into any other app. The one route behind both the thumbnail's copy
+   * button and `POST /api/clipboard/image`.
+   *
+   * Decoding is the check: `nativeImage` returns an EMPTY image for bytes it
+   * cannot read, and writing that would clear the clipboard while reporting
+   * success — the user would paste nothing and never learn why. So an empty
+   * decode is an error, and the size actually written comes back for the caller
+   * to assert on.
+   */
+  writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): { ok: true; width: number; height: number; bytes: number } {
+    const dataBase64 = String(input?.dataBase64 || "").trim();
+    if (!dataBase64) {
+      throw new Error("clipboard image requires 'dataBase64' (base64 bytes, no data: prefix).");
+    }
+    const mediaType = String(input?.mediaType || "image/png").trim() || "image/png";
+    // From the BUFFER rather than a data URL — one decode step instead of two,
+    // and no size limit on the URL string for a large screenshot.
+    //
+    // Measured on Electron 33/Windows: the decoder rejects a 1x1 PNG (returns an
+    // empty image) while reading a 16x16 one fine. So `isEmpty` here can mean
+    // "genuinely undecodable" OR "degenerate size" — either way the bytes did not
+    // become an image, and saying so beats writing an empty one.
+    const image = nativeImage.createFromBuffer(Buffer.from(dataBase64, "base64"));
+    if (image.isEmpty()) {
+      throw new Error(`Could not decode a ${mediaType} image from the given bytes.`);
+    }
+    clipboard.writeImage(image);
+    const size = image.getSize();
+    log("info", "clipboard", "image copied", { mediaType, width: size.width, height: size.height });
+    return { ok: true, width: size.width, height: size.height, bytes: image.toPNG().length };
   }
 
   // --- QA (test-only, workspace + window aware) ---------------------------

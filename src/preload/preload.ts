@@ -52,6 +52,7 @@ const api = {
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
   authenticateMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpAuthenticate", sessionId, server),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
+  copyImageToClipboard: (image: { dataBase64: string; mediaType: string }) => ipcRenderer.invoke("clipboard:writeImage", image),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
