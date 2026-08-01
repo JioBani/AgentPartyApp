@@ -92,6 +92,7 @@ async function main() {
     await mergeOffChangesWhatLeaves(cdp);
     await mutationsWork();
     await failuresAreVisible(cdp);
+    await originSurvivesDelivery(cdp);
     await goingIdleDelivers(cdp);
     await queueSurvivesRestart();
 
@@ -336,6 +337,61 @@ async function goingIdleDelivers(cdp) {
 
   const shot = path.join(shotDir, "05-dequeued-merged.png");
   assert((await post("/api/capture", { path: shot })).bytes > 0, `captured → ${shot}`);
+}
+
+/**
+ * §6/§8 — where a message came from must outlive the queue row, and a hidden
+ * member's queue must still be countable from its tab.
+ */
+async function originSurvivesDelivery(cdp) {
+  console.log("\n§6/§8 origin survives delivery, and a hidden member's queue is still visible:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(250);
+  await post("/api/party/messages", { to: "backend", from: "reviewer", content: "리뷰 지적: 이 경로의 예외 처리를 좁혀줘." });
+  await delay(400);
+
+  const badge = await cdp.eval(`(() => {
+    const tab = [...document.querySelectorAll(".wb-tab")].find((t) => /backend/.test(t.textContent || ""));
+    const chip = tab && tab.querySelector(".wb-tab-queue");
+    if (!chip) return { found: false, tabs: document.querySelectorAll(".wb-tab").length };
+    const cs = getComputedStyle(chip);
+    return { found: true, text: chip.textContent.trim(), dashed: cs.borderTopStyle, title: chip.getAttribute("title") || "" };
+  })()`);
+  assert(badge.found, "the tab carries a queue badge");
+  assert(badge.text === "1", `it states the depth (got "${badge.text}")`);
+  assert(badge.dashed === "dashed", `and is DASHED — not yet delivered (got ${badge.dashed})`);
+  assert(/응답 완료 후/.test(badge.title), "its tooltip says when it will go out");
+  const tabShot = path.join(shotDir, "08-tab-badge.png");
+  assert((await post("/api/capture", { path: tabShot })).bytes > 0, `captured → ${tabShot}`);
+
+  // Deliver it, then check the conversation still says who sent it.
+  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await delay(1200);
+
+  // A member's message renders as the app's inbound channel CARD (its established,
+  // richer form: from → to, direction). The dequeue event must lend that card its
+  // queue provenance rather than adding a second, duplicate user bubble.
+  const origin = await cdp.eval(`(() => {
+    const cards = [...document.querySelectorAll(".wb-channel")].filter((b) => /리뷰 지적/.test(b.textContent || ""));
+    const bubbles = [...document.querySelectorAll(".wb-user")].filter((b) => /리뷰 지적/.test(b.textContent || ""));
+    const card = cards[0];
+    return {
+      cards: cards.length,
+      bubbles: bubbles.length,
+      peers: card ? [...card.querySelectorAll(".wb-channel-peer")].map((p) => p.textContent.trim()) : [],
+      origins: card ? [...card.querySelectorAll(".wb-user-origin")].map((o) => o.textContent.trim()) : [],
+    };
+  })()`);
+  assert(origin.cards === 1, `the delivered message is in the conversation exactly ONCE (got ${origin.cards} cards)`);
+  assert(origin.bubbles === 0, `and is NOT also duplicated as a user bubble (got ${origin.bubbles})`);
+  assert(origin.peers[0] === "reviewer", `it is attributed to reviewer, NOT to the user (got "${origin.peers[0]}")`);
+  assert(origin.origins.some((o) => /대기열에서 전송됨/.test(o)), "and is permanently marked as having come through the queue");
+
+  const shot = path.join(shotDir, "09-member-origin-dequeued.png");
+  assert((await post("/api/capture", { path: shot })).bytes > 0, `captured → ${shot}`);
+
+  const gone = await cdp.eval(`document.querySelectorAll(".wb-tab-queue").length`);
+  assert(gone === 0, "the tab badge clears once nothing is waiting");
 }
 
 /** The queue is persisted — it must not evaporate with the process ([#19]). */

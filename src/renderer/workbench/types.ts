@@ -52,7 +52,10 @@ export type TranscriptBlock =
   | { id: string; kind: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; repeat?: number; at?: string }
   // Inter-member (agentparty channel) message. `direction` is relative to the
   // member whose transcript this is: "in" = received, "out" = this member sent.
-  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord" }
+  // `fromQueue` marks an inbound card whose message WAITED in this member's
+  // queue before delivery. Member-to-member traffic renders as this card rather
+  // than a user bubble, so the queue provenance rides here too — see applyEvents.
+  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord"; fromQueue?: boolean; queuedN?: number }
   // A party write-action this member drove (member-create / member-remove).
   | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
   // A Message Gate outcome for an OUTGOING send by this member (inline badge).

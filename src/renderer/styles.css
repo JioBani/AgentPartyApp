@@ -789,6 +789,27 @@
   color: #fff;
 }
 
+/* Queue depth for a member whose panel is hidden behind another tab — without
+   it, that member's waiting messages have nowhere at all to appear. Dashed and
+   unfilled on purpose: a solid badge reads as "arrived" (승인/unread both are),
+   and these have not. */
+.wb-tab-queue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  border: var(--border-width) dashed var(--member-wait-bd, var(--border));
+  color: var(--member, var(--text-2));
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .wb-member-unread,
 .wb-tab-unread {
   background: var(--bg-4);
@@ -1419,14 +1440,46 @@ body.wb-resizing {
 
 .wb-user-head {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   font-size: 10px;
   color: var(--text-3);
 }
 
 .wb-user-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 600;
   color: var(--text-2);
+}
+
+/* A member's message keeps its author's colour after delivery, exactly as the
+   queue row showed it — otherwise the conversation reads as if the user typed it. */
+.wb-user[style*="--member"] .wb-user-who { color: var(--member); }
+.wb-user-who-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--member, var(--text-3));
+}
+
+/* "This arrived later than it was typed." PERMANENT: in scrollback it is the
+   only thing that explains why a reply above it does not answer it. Solid, not
+   dashed — dashed means still waiting, and this one has landed. */
+.wb-user-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 15px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .wb-user-bubble {
@@ -1439,6 +1492,11 @@ body.wb-resizing {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* A member-sent message carries its author's colour on the bubble's own edge,
+   so origin survives even when the meta row scrolls out of reach. The user's
+   own messages keep the plain border. */
+.wb-user[style*="--member"] .wb-user-bubble { border-right: 3px solid var(--member); }
 
 .wb-assistant {
   display: flex;

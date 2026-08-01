@@ -1,5 +1,5 @@
 import { PointerEvent } from "react";
-import { MoreHorizontal, Plus, SquareSplitHorizontal, X } from "lucide-react";
+import { AlignLeft, MoreHorizontal, Plus, SquareSplitHorizontal, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel, harnessShort } from "./harnessLabel";
@@ -51,6 +51,14 @@ export function TabStrip({ panel, views, density, draggingMember, canAdd, onSele
               {density !== "narrow" && <span className="wb-mono wb-harness-chip">{harnessShort(view.member.runtime)}</span>}
               {view.pendingApproval && <span className="wb-tab-badge">승인</span>}
               {!view.pendingApproval && view.unread > 0 && <span className="wb-tab-unread">{view.unread}</span>}
+              {/* A hidden member's queue is otherwise completely invisible: the
+                  panel that would show it sits behind another tab. Dashed, like
+                  every "not delivered yet" mark in the queue UI. */}
+              {(view.member.queue?.items.length || 0) > 0 && (
+                <span className="wb-tab-queue" title={`대기열 ${view.member.queue?.items.length}건 — 응답 완료 후 순서대로 전송`}>
+                  <AlignLeft size={8} />{view.member.queue?.items.length}
+                </span>
+              )}
               <button
                 type="button"
                 className="wb-tab-close"
