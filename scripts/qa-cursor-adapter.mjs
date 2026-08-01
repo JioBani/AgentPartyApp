@@ -205,8 +205,73 @@ assert(
   !stopEvents.some((event) => event.type === "error"),
   "Stop must not emit an error event",
 );
+assert(
+  stopEvents.some((event) => event.type === "status" && event.status === "interrupted" && /replayed with your next message/.test(event.detail)),
+  "Stop says where the unsaved message went",
+);
 stopping.dispose();
 delete process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS;
+
+// Cursor commits a turn to its chat only when the turn FINISHES, so a stopped
+// turn is missing from the `--resume` history: the model never learns the user
+// said it. The adapter must replay it (and the partial answer) on the next turn,
+// and must not spend the party primer on a turn that never committed.
+const promptsOut = path.join(temp, "prompts.ndjson");
+process.env.AGENTPARTY_FAKE_CURSOR_PROMPT_OUT = promptsOut;
+process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS = "30000";
+process.env.AGENTPARTY_FAKE_CURSOR_PARTIAL_TEXT = "PARTIAL_ANSWER_BEFORE_STOP";
+const replaying = new CursorAdapter({
+  id: "qa-cursor-replay",
+  cwd: root,
+  executablePath: process.execPath,
+  model: "Grok 4.5",
+  effort: "high",
+  debugEnabled: false,
+  storageDir: temp,
+  partyPrimer: "PARTY_PRIMER_MARKER",
+});
+const replayEvents = [];
+replaying.on("event", (event) => replayEvents.push(event));
+replaying.sendUserTurn("FIRST_LOST_QUESTION");
+await waitFor(() => replayEvents.some((event) => event.type === "assistant_text_delta" && event.text === "PARTIAL_ANSWER_BEFORE_STOP"));
+replaying.interrupt();
+await waitFor(() => replayEvents.some((event) => event.type === "status" && event.status === "interrupted"));
+
+// A second stop in a row must accumulate, not overwrite — "stop, rephrase, stop
+// again" is exactly how the bug was hit. Wait for the CLI to actually reach the
+// model (`session`) so the stop is a mid-turn stop, not a pre-spawn kill.
+replaying.sendUserTurn("SECOND_LOST_QUESTION");
+await waitFor(() => replayEvents.filter((event) => event.type === "session").length === 2);
+replaying.interrupt();
+await waitFor(() => replayEvents.filter((event) => event.type === "status" && event.status === "interrupted").length === 2);
+
+delete process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS;
+delete process.env.AGENTPARTY_FAKE_CURSOR_PARTIAL_TEXT;
+replaying.sendUserTurn("THIRD_QUESTION");
+await waitFor(() => replayEvents.some((event) => event.type === "turn_complete"));
+
+const prompts = fs.readFileSync(promptsOut, "utf8").trim().split(/\r?\n/).map(JSON.parse);
+assert.equal(prompts.length, 3);
+assert(prompts[0].includes("PARTY_PRIMER_MARKER"), "the first turn carries the party primer");
+assert(prompts[0].endsWith("FIRST_LOST_QUESTION"));
+assert(
+  prompts[1].includes("PARTY_PRIMER_MARKER"),
+  "a stopped first turn never committed, so the primer rides again instead of being lost",
+);
+assert(prompts[1].includes("<unsaved_history>"), "replayed turns are labelled as history, not as a new instruction");
+assert(prompts[1].includes("FIRST_LOST_QUESTION"), "the stopped question is replayed on the next turn");
+assert(prompts[1].includes("PARTIAL_ANSWER_BEFORE_STOP"), "the partial answer is replayed with it");
+assert(prompts[1].endsWith("SECOND_LOST_QUESTION"), "the new message stays last");
+assert(prompts[2].includes("FIRST_LOST_QUESTION") && prompts[2].includes("SECOND_LOST_QUESTION"), "consecutive stops accumulate");
+assert(prompts[2].endsWith("THIRD_QUESTION"));
+
+// The committed turn wrote everything to the chat: nothing is replayed again.
+replaying.sendUserTurn("FOURTH_QUESTION");
+await waitFor(() => replayEvents.filter((event) => event.type === "turn_complete").length === 2);
+const afterCommit = fs.readFileSync(promptsOut, "utf8").trim().split(/\r?\n/).map(JSON.parse)[3];
+assert.equal(afterCommit, "FOURTH_QUESTION", "a committed turn releases the replay backlog and the primer");
+replaying.dispose();
+delete process.env.AGENTPARTY_FAKE_CURSOR_PROMPT_OUT;
 
 // Cursor logger.js broken-pipe teardown must not stick the session in error /
 // "Cursor Agent turn failed" — surface cursor-stdio and return to idle.

@@ -721,6 +721,16 @@ export class SessionManager extends EventEmitter {
           if (!session.turnActive) session.turnStartedAt = Date.now();
           session.turnActive = true;
         }
+        // A stopped turn is a FINISHED turn. Claude/Codex close it with a
+        // result, but Cursor's one-process-per-turn CLI is killed outright and
+        // reports only this — without it the app-side turn stayed open forever,
+        // so the stall watchdog could never flag a genuinely stuck Cursor member
+        // and the usage ledger measured the next turn from the stopped one.
+        if (status === "interrupted") {
+          session.turnActive = false;
+          session.awaitingUser = false;
+          session.compacting = false;
+        }
         // The harness's compaction outcome (success both adapters emit) clears the
         // in-flight flag; failure arrives as a `diagnostic` handled below.
         if (status === "compacted") {

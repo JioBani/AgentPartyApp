@@ -41,6 +41,23 @@ interface QueuedTurn {
 }
 
 /**
+ * A turn whose text never reached the Cursor chat. See
+ * {@link CursorAdapter.uncommittedTurns}.
+ */
+interface UncommittedTurn {
+  text: string;
+  /** What the model had said before the turn broke, if anything. */
+  assistant: string;
+  /** Why it never committed, shown to the model in the replay block. */
+  reason: string;
+}
+
+/** Replay budget — enough to keep a conversation coherent, bounded per turn. */
+const MAX_REPLAYED_TURNS = 8;
+const MAX_REPLAYED_USER_CHARS = 4_000;
+const MAX_REPLAYED_ASSISTANT_CHARS = 1_500;
+
+/**
  * Cursor Agent's headless protocol is one process per turn. Conversation
  * continuity comes from the CLI's own chat id (`--resume <id>`), not from
  * keeping a terminal process alive. This adapter normalizes each NDJSON record
@@ -78,6 +95,23 @@ export class CursorAdapter extends EventEmitter {
   private partyMcpConnected = false;
   private usageRefreshTimer?: NodeJS.Timeout;
   private lastUsageStatus = "";
+  /**
+   * Turns whose text never reached the Cursor chat. cursor-agent writes a turn
+   * to its chat only when that turn FINISHES, so a Stop (or a turn that died)
+   * drops the user's message and the partial answer entirely — `--resume` then
+   * hands the model a conversation in which the user never said it. They are
+   * replayed as context on the next turn and released only once a turn really
+   * commits. Without this, "stop and rephrase" silently lost the question.
+   */
+  private uncommittedTurns: UncommittedTurn[] = [];
+  /** The in-flight turn's text plus what the model said before it broke. */
+  private activeTurn?: { text: string; assistant: string };
+  /**
+   * True once a turn has actually been committed to the chat. The party primer
+   * rides on the first COMMITTED turn, not the first attempted one — a stopped
+   * first turn used to consume it and leave the member without its identity.
+   */
+  private primerDelivered = false;
 
   constructor(private readonly options: CursorAdapterOptions) {
     super();
@@ -218,6 +252,10 @@ export class CursorAdapter extends EventEmitter {
     this.interruptRequested = false;
     this.contextTokens = undefined;
     this.partyMcpConnected = false;
+    // A new chat: nothing is owed to the old one, and the primer must ride again.
+    this.uncommittedTurns = [];
+    this.activeTurn = undefined;
+    this.primerDelivered = false;
     this.status = "idle";
     this.turnState = undefined;
     this.startedAt = now();
@@ -359,9 +397,7 @@ export class CursorAdapter extends EventEmitter {
       this.finishWithError(error);
       return;
     }
-    const prompt = this.turnCount === 0 && this.options.partyPrimer
-      ? `${this.options.partyPrimer}\n\n${text}`
-      : text;
+    const prompt = this.buildPrompt(text);
     const args = [
       ...resolved.argsPrefix,
       "-p",
@@ -381,6 +417,7 @@ export class CursorAdapter extends EventEmitter {
     this.interruptRequested = false;
     this.lastError = undefined;
     this.stderrTail = "";
+    this.activeTurn = { text, assistant: "" };
     this.turnCount += 1;
     this.lastUserMessageAt = now();
     this.status = "requesting";
@@ -453,6 +490,93 @@ export class CursorAdapter extends EventEmitter {
     this.emit("snapshot", this.getSnapshot());
   }
 
+  /**
+   * The prompt actually handed to `cursor-agent`: the party primer while it is
+   * still undelivered, then any turns the chat never recorded, then the new
+   * message.
+   */
+  private buildPrompt(text: string): string {
+    const parts: string[] = [];
+    if (!this.primerDelivered && this.options.partyPrimer) {
+      parts.push(this.options.partyPrimer);
+    }
+    const replay = this.replayBlock();
+    if (replay) {
+      parts.push(replay);
+    }
+    parts.push(text);
+    return parts.join("\n\n");
+  }
+
+  /**
+   * Renders {@link uncommittedTurns} for the model. It is labelled as history
+   * the user already sent — not as a new instruction — so a "stop and rephrase"
+   * reads exactly as it happened instead of the model silently answering an old
+   * request.
+   */
+  private replayBlock(): string {
+    if (!this.uncommittedTurns.length) {
+      return "";
+    }
+    const lines = this.uncommittedTurns.map((turn) => {
+      const parts = [`[user] ${clamp(turn.text, MAX_REPLAYED_USER_CHARS)}`];
+      if (turn.assistant.trim()) {
+        parts.push(`[your partial answer] ${clamp(turn.assistant.trim(), MAX_REPLAYED_ASSISTANT_CHARS)}`);
+      }
+      parts.push(`[${turn.reason}]`);
+      return parts.join("\n");
+    });
+    return [
+      "<unsaved_history>",
+      "The user already sent the turns below in THIS conversation, but Cursor never",
+      "saved them to the chat because each turn ended before it finished, so they are",
+      "missing from the history you were resumed with. Treat them as things the user",
+      "really said. Do not answer them again unless the new message asks you to.",
+      "",
+      lines.join("\n\n"),
+      "</unsaved_history>",
+    ].join("\n");
+  }
+
+  /**
+   * The turn reached a result, so Cursor has now written it — and everything
+   * replayed alongside it — into the chat. Releases the replay backlog and
+   * settles the party primer.
+   */
+  private commitTurn(): void {
+    this.activeTurn = undefined;
+    this.uncommittedTurns = [];
+    this.primerDelivered = true;
+  }
+
+  /**
+   * Records a turn the Cursor chat will never contain, so the next turn can
+   * replay it. Called from every path that ends a turn WITHOUT a committed
+   * result (stop, force-stop, CLI failure, stdio teardown).
+   */
+  private rememberUncommittedTurn(reason: string): void {
+    const turn = this.activeTurn;
+    this.activeTurn = undefined;
+    if (!turn) {
+      return;
+    }
+    this.uncommittedTurns.push({ text: turn.text, assistant: turn.assistant, reason });
+    if (this.uncommittedTurns.length > MAX_REPLAYED_TURNS) {
+      // Never drop silently: the oldest entries fall out of the replay budget,
+      // so say so where the user (and the model) can see it.
+      const dropped = this.uncommittedTurns.splice(0, this.uncommittedTurns.length - MAX_REPLAYED_TURNS);
+      this.emitEvent({
+        type: "diagnostic",
+        severity: "warning",
+        category: "cursor-cli",
+        title: "중단된 이전 메시지가 대화에서 밀려났습니다",
+        detail: `Cursor는 완료된 턴만 채팅에 저장합니다. 중단된 턴이 ${MAX_REPLAYED_TURNS}개를 넘어 가장 오래된 ${dropped.length}개는 더 이상 모델에게 전달되지 않습니다.`,
+        recovery: "필요한 내용은 새 메시지에 다시 적어 주세요.",
+        at: now(),
+      });
+    }
+  }
+
   private readLine(line: string): void {
     this.logger?.write("stdout", line);
     let message: any;
@@ -491,6 +615,9 @@ export class CursorAdapter extends EventEmitter {
       for (const block of message.message?.content || []) {
         if (block?.type === "text" && typeof block.text === "string") {
           this.lastAssistantMessageAt = at;
+          if (this.activeTurn) {
+            this.activeTurn.assistant += block.text;
+          }
           this.emitEvent({ type: "assistant_text_delta", text: block.text, at });
         }
       }
@@ -525,6 +652,11 @@ export class CursorAdapter extends EventEmitter {
       // Stop/force-stop may still race a CLI error result — treat that as a clean
       // interrupt, not a turn failure.
       if (this.interruptRequested) {
+        // The CLI beat the Stop. A successful result means Cursor DID write this
+        // turn to its chat, so it must not be replayed as unsaved history.
+        if (!message.is_error && message.subtype === "success") {
+          this.commitTurn();
+        }
         this.finishInterrupted();
         return;
       }
@@ -544,7 +676,12 @@ export class CursorAdapter extends EventEmitter {
   private finishTurn(result: string, success: boolean): void {
     this.resultSeen = true;
     this.interruptRequested = false;
-    if (success) this.lastError = undefined;
+    if (success) {
+      this.lastError = undefined;
+      this.commitTurn();
+    } else {
+      this.rememberUncommittedTurn("this turn failed");
+    }
     const handingOff = success && this.queuedTurns.length > 0;
     this.status = success ? (handingOff ? "responding" : "idle") : "error";
     this.turnState = handingOff ? "in_progress" : undefined;
@@ -561,7 +698,16 @@ export class CursorAdapter extends EventEmitter {
     this.lastError = undefined;
     this.status = "idle";
     this.turnState = undefined;
-    this.emitEvent({ type: "status", status: "interrupted", detail, at: now() });
+    const carried = Boolean(this.activeTurn);
+    this.rememberUncommittedTurn("the user stopped this turn before it finished");
+    this.emitEvent({
+      type: "status",
+      status: "interrupted",
+      // Say where the stopped message went: Cursor drops it, so the next turn
+      // carries it. Otherwise the user reasonably assumes the model heard it.
+      detail: carried ? `${detail}; Cursor did not save it, so it is replayed with your next message` : detail,
+      at: now(),
+    });
     if (!this.process) {
       this.lineReader?.close();
       this.lineReader = undefined;
@@ -580,6 +726,7 @@ export class CursorAdapter extends EventEmitter {
     this.lastError = undefined;
     this.status = "idle";
     this.turnState = undefined;
+    this.rememberUncommittedTurn("this turn died before it finished (Cursor stdio teardown)");
     this.emitEvent({
       type: "diagnostic",
       severity: "warning",
@@ -606,6 +753,7 @@ export class CursorAdapter extends EventEmitter {
     this.turnFailed = true;
     this.status = "error";
     this.turnState = undefined;
+    this.rememberUncommittedTurn("this turn failed before it finished");
     this.emitEvent({
       type: "diagnostic",
       severity: "error",
@@ -757,6 +905,11 @@ function isAgentPartyMcpCall(
     if (payload.includes("agentparty-app")) return true;
   }
   return JSON.stringify(message).includes("agentparty-app");
+}
+
+/** Truncates visibly — a cut is marked, never silent. */
+function clamp(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max)}… (${value.length - max} chars omitted)`;
 }
 
 function finiteNumber(value: unknown): number | undefined {

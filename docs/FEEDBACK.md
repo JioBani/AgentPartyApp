@@ -10,6 +10,20 @@
 
 ## 이슈 목록
 
+### #10 Cursor CLI: 턴을 정지하면 그 메시지가 모델 대화에서 통째로 사라짐 ✅ FIXED
+
+- **상태**: FIXED
+- **심각도**: 높음 — 사용자는 보냈다고 믿는데 모델은 들은 적이 없음(무성 데이터 손실)
+- **증상**: Cursor 멤버에게 질문 → Stop → 다시 질문하면 모델이 "이 대화에는 이전 맥락이 거의 없어요"라며 정지된 질문을 전혀 모름. 실사용 트랜스크립트에서 `유녀전기`(정지) → `카구야`(정지) → "뭐 물어봤었지?" 에 대해 모델이 두 질문 모두 모른다고 답함.
+- **근본 원인**: `cursor-agent`는 **턴이 완료될 때만** 그 턴을 채팅에 기록한다. AgentParty의 Stop은 프로세스를 SIGTERM으로 죽이므로 그 유저 메시지와 부분 답변은 채팅에 저장되지 않고, 다음 턴의 `--resume`는 사용자가 그 말을 한 적 없는 히스토리를 넘겨받는다. 앱 트랜스크립트에는 그대로 남아 있어서 손실이 보이지 않았다. (Claude/Codex는 인터럽트해도 하네스가 히스토리를 보존하므로 Cursor 전용 문제.)
+- **수정**: `src/core/cursorAdapter.ts` — 커밋되지 않은 턴(정지/실패/stdio 사망)을 `uncommittedTurns`에 모아 다음 프롬프트에 `<unsaved_history>` 블록으로 재생하고, 턴이 실제로 커밋될 때만 비운다. 부분 답변도 함께 재생한다. 재생 예산(8턴) 초과 시 조용히 버리지 않고 경고 진단을 띄운다. Stop 상태 줄에도 "Cursor가 저장하지 않아 다음 메시지에 함께 보낸다"고 표시.
+- **함께 고친 것**:
+  - 파티 primer가 `turnCount === 0`에만 실려서 **첫 턴을 정지하면 멤버가 primer를 영구히 못 받던 문제** → 실제로 커밋된 턴 기준(`primerDelivered`)으로 변경.
+  - `src/main/sessionManager.ts` — 앱 쪽 턴이 `turn_complete`/`error`로만 닫혀서 Cursor의 `interrupted`로는 `turnActive`가 영원히 열려 있었다(→ Cursor 멤버는 stall 워치독이 영영 못 잡고, 사용량 원장의 턴 활동시간이 부풀려짐). `interrupted`를 턴 종료로 처리.
+- **검증**: `npm run test:cursor`(정지 턴/부분 답변/연속 정지 누적/primer 재전송/커밋 후 backlog 해제 회귀 추가), `npm run typecheck`, `npm run test:stall-status`, `npm run test:interrupt-recovery`, 실 `cursor-agent` 어댑터 검증(정지된 질문을 모델이 기억: UNKNOWN → BANANA), **실제 앱 전체 프로세스 E2E**로 위 유녀전기/카구야 시나리오 재현 → 모델이 두 질문 모두 나열.
+
+---
+
 ### #9 Codex 하네스에서 agent-party-app MCP 도구가 노출되지 않음 ✅ FIXED
 
 - **FIXED 요약**: Codex 세션 시작 시 `mcp_servers.agentparty-app` stdio MCP 서버를 인라인 config로 주입하고, 해당 서버가 로컬 자동화 HTTP API를 통해 같은 AppController/PartyApplicationService 경로를 호출하도록 구현. 사용자 `~/.codex/config.toml`은 수정하지 않음.

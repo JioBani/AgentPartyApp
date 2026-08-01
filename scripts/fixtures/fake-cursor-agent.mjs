@@ -17,6 +17,11 @@ if (args.includes("--list-models")) {
 if (process.env.AGENTPARTY_FAKE_CURSOR_ARGS_OUT) {
   fs.appendFileSync(process.env.AGENTPARTY_FAKE_CURSOR_ARGS_OUT, JSON.stringify(args) + "\n");
 }
+// The prompt is always the last argument — recorded so QA can assert what the
+// model actually received (primer, replayed turns, the message itself).
+if (process.env.AGENTPARTY_FAKE_CURSOR_PROMPT_OUT) {
+  fs.appendFileSync(process.env.AGENTPARTY_FAKE_CURSOR_PROMPT_OUT, JSON.stringify(args[args.length - 1]) + "\n");
+}
 
 const resumeAt = args.indexOf("--resume");
 const sessionId = resumeAt >= 0 ? args[resumeAt + 1] : "cursor-fake-session";
@@ -25,6 +30,10 @@ emit({ type: "system", subtype: "init", model: "Cursor Grok 4.5 High", permissio
 emit({ type: "thinking", subtype: "delta", text: "checking" });
 
 const holdMs = Number(process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS || 0);
+if (process.env.AGENTPARTY_FAKE_CURSOR_PARTIAL_TEXT) {
+  // Answer partially, then hang: the shape of a turn the user stops mid-answer.
+  emit({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: process.env.AGENTPARTY_FAKE_CURSOR_PARTIAL_TEXT }] } });
+}
 if (Number.isFinite(holdMs) && holdMs > 0) {
   // Stay mid-turn until the adapter kills us (Stop / interrupt QA).
   await new Promise((resolve) => setTimeout(resolve, holdMs));
