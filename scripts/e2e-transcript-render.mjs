@@ -94,6 +94,7 @@ async function main() {
     await progressIndicator();
     await longSubagentTaskCollapses();
     await harnessIsVisible();
+    await codeBlockSurvivesInterjection();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -219,6 +220,37 @@ async function harnessIsVisible() {
   await delay(700);
   const shot = path.join(shotDir, "p8-harness.png");
   ok((await post("/api/capture", { path: shot })).bytes > 0, `sidebar rows + tabs carrying each member's harness → ${shot}`);
+}
+
+/**
+ * [#14] — a message sent WHILE a reply streams used to end the assistant's block
+ * mid-markdown, leaving a fence opened in one block and closed in another, which
+ * renders as broken prose. Streams an unterminated fence, sends a real user turn
+ * through the same AppController path the composer uses, then finishes the fence.
+ */
+async function codeBlockSurvivesInterjection() {
+  console.log("\n[#14] a code block survives a message sent mid-stream:");
+  await post("/api/qa/open", { panels: [["talker"]] }).catch(() => {});
+  // autoReply off: a real harness QUEUES a message sent mid-turn and answers it
+  // only after the running turn completes. The mock would answer instantly,
+  // which is a sequence the real app never produces.
+  await post("/api/qa/members", { name: "talker", role: "스트리밍 재현", model: "claude-sonnet-4.5", autoReply: false });
+  await post("/api/qa/open", { panels: [["talker"]] });
+  await delay(400);
+
+  await post("/api/qa/members/talker/emit", {
+    events: [{ type: "assistant_text_delta", text: "패치는 이렇습니다:\n\n```ts\nexport function a() {\n" }],
+  });
+  await delay(400);
+  await post("/api/party/members/talker/message", { text: "테스트도 같이 넣어줘" });
+  await delay(400);
+  await post("/api/qa/members/talker/emit", {
+    events: [{ type: "assistant_text_delta", text: "  return 1;\n}\n```\n\n이상입니다." }],
+  });
+  await delay(700);
+
+  const shot = path.join(shotDir, "issue-14-stream.png");
+  ok((await post("/api/capture", { path: shot })).bytes > 0, `reply + interjected message + finished code block → ${shot}`);
 }
 
 /**

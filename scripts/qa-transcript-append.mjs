@@ -28,7 +28,7 @@ async function load(entry, name) {
   return import(pathToFileURL(file).href);
 }
 
-const { buildTranscriptSave } = await load("src/renderer/app/transcriptEvents.ts", "transcript-events.mjs");
+const { buildTranscriptSave, applyEvents, appendBlock } = await load("src/renderer/app/transcriptEvents.ts", "transcript-events.mjs");
 const { PartyRepository } = await load("src/main/partyRepository.ts", "party-repo-append.mjs");
 
 const block = (id, text) => ({ id, kind: "assistant", text });
@@ -95,6 +95,55 @@ console.log("\nwriteTranscript (engine anchoring):");
   assert(cold.readTranscript(ws, "p1", "main").map((x) => x.id).join(",") === "a,b2,d", "cold-cache append is correct");
 
   rmSync(ws, { recursive: true, force: true });
+}
+
+// ============ 3) streamed text survives a user message mid-turn ([#14]) ======
+// The renderer inserts the user's own message straight into the transcript, so
+// it can land BETWEEN two deltas of one reply. The reply must keep filling the
+// same block; splitting it left a markdown fence opened in one block and closed
+// in another, which renders as broken prose instead of a code block.
+console.log("\nappendText across an interjected user message (#14):");
+{
+  const sid = "s1";
+  const deltas = (state, ...texts) => texts.reduce((acc, text) => applyEvents(acc, sid, [{ type: "assistant_text_delta", text }]), state);
+  const userTurn = (state, text) => appendBlock(state, sid, { id: "u-" + text, kind: "user", text });
+
+  // The user's turn lands twice: the app's optimistic echo AND the harness's own
+  // "sent" status (every adapter emits one — claudeAdapter.ts, codexAdapter.ts).
+  // Both must be transparent to the stream; the real app only broke because the
+  // second one was not.
+  let state = deltas({}, "여기 있습니다:\n\n```ts\nconst a = 1;\n");
+  state = userTurn(state, "타입도 붙여줘");
+  state = applyEvents(state, sid, [{ type: "status", status: "sent", detail: "타입도 붙여줘" }]);
+  state = deltas(state, "const b = 2;\n```\n끝났습니다.");
+
+  const blocks = state[sid];
+  const assistants = blocks.filter((b) => b.kind === "assistant");
+  assert(assistants.length === 1, "the interrupted reply stays ONE assistant block");
+  const fences = (assistants[0].text.match(/```/g) || []).length;
+  assert(fences === 2, `the code fence is opened and closed in the same block (found ${fences} markers)`);
+  assert(assistants[0].text.includes("const a = 1;") && assistants[0].text.includes("const b = 2;"), "both sides of the interruption are in that block");
+  assert(blocks.filter((b) => b.kind === "user").length === 1, "the user's message is still in the transcript, where it was sent");
+
+  // A turn boundary must still close the block, or two replies would merge.
+  let next = applyEvents(state, sid, [{ type: "turn_complete", result: "ok" }]);
+  next = userTurn(next, "다음 질문");
+  next = deltas(next, "새 답변입니다.");
+  const replies = next[sid].filter((b) => b.kind === "assistant");
+  assert(replies.length === 2, "a completed turn closes the block — the next reply starts a new one");
+  assert(replies[1].text === "새 답변입니다.", "…and carries only its own text");
+
+  // Any other block between deltas ends the block exactly as before.
+  let tooled = deltas({}, "확인해보겠습니다.");
+  tooled = applyEvents(tooled, sid, [{ type: "tool_call", id: "t1", name: "read_file", status: "completed" }]);
+  tooled = deltas(tooled, "찾았습니다.");
+  assert(tooled[sid].filter((b) => b.kind === "assistant").length === 2, "a tool call between deltas still splits the reply (unchanged)");
+
+  // Only the SENT status is transparent — an ordinary status line is not.
+  let noticed = deltas({}, "시작합니다.");
+  noticed = applyEvents(noticed, sid, [{ type: "status", status: "interrupted" }]);
+  noticed = deltas(noticed, "다시 시작합니다.");
+  assert(noticed[sid].filter((b) => b.kind === "assistant").length === 2, "an ordinary status line still splits the reply (only 'sent' is transparent)");
 }
 
 console.log(failures.length ? `\n${failures.length} FAILED` : "\nall passed");
