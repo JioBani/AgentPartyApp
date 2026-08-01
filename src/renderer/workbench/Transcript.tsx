@@ -439,9 +439,10 @@ function previewOf(text: string): string {
 /**
  * A message body shown as a preview by default; when it's long, a "전체 보기"
  * control opens the full text in a popup. Used for sent/received messages so the
- * transcript stays scannable (the full content is one click away).
+ * transcript stays scannable (the full content is one click away), and by the
+ * subagent detail view for the delegated task prompt.
  */
-function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
+export function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
   const [full, setFull] = useState(false);
   const clip = needsClip(text);
   const shown = clip ? previewOf(text) : text;

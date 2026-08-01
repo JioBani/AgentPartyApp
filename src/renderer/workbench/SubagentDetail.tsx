@@ -3,6 +3,7 @@ import type { PanelDensity } from "./types";
 import type { SubDetailView } from "./subagentModel";
 import { formatSubDuration } from "./subagentModel";
 import { Markdown } from "./Markdown";
+import { ExpandableText } from "./Transcript";
 
 interface SubagentDetailProps {
   detail: SubDetailView;
@@ -45,7 +46,10 @@ export function SubagentDetail({ detail, parentName, parentColor, density, onBac
           <ListChecks size={13} className="wb-subdetail-task-ic" />
           <div className="wb-subdetail-task-body">
             <span className="wb-subdetail-task-label">위임된 작업</span>
-            <span className="wb-subdetail-task-text">{detail.task}</span>
+            {/* A delegated prompt is often hundreds of lines; rendering it whole
+                pushed the subagent's actual work off screen. Same preview +
+                "전체 보기" popup the transcript uses for long messages. */}
+            <span className="wb-subdetail-task-text"><ExpandableText text={detail.task} title="위임된 작업" /></span>
           </div>
         </div>
       )}

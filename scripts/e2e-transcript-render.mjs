@@ -82,6 +82,7 @@ async function main() {
 
     await linkOpensInOsBrowser();
     await oneClickCopy();
+    await longSubagentTaskCollapses();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -151,6 +152,41 @@ async function oneClickCopy() {
   const replyShot = path.join(shotDir, "p3-3-reply-copy.png");
   const reply = await post("/api/capture", { click: ".wb-assistant-head .wb-copy-btn", path: replyShot });
   ok(reply.ok && reply.bytes > 0, `clicked the whole-reply copy control → ${reply.path}`);
+}
+
+/**
+ * [#6] — a long delegated prompt filled the whole drill-in view. Injected as a
+ * real `subagent` event (not a canned scenario, since every canned task is
+ * short), so the whole normalization → fold → render path runs. The capture is
+ * the assertion the DOM tests cannot make: that the subagent's own work is still
+ * on screen next to the prompt.
+ */
+async function longSubagentTaskCollapses() {
+  console.log("\n[#6] a long subagent prompt is collapsed:");
+  const longTask = Array.from({ length: 40 }, (_, i) => `${i + 1}. 리팩터링 대상 파일과 검증 절차를 순서대로 기술한 지시 라인`).join("\n");
+  const at = new Date().toISOString();
+  await post("/api/qa/members/renderer/emit", {
+    events: [
+      { type: "subagent", agentId: "long-1", at, lifecycle: { phase: "working", label: "refactorer", hint: "src/**", assignedTask: longTask } },
+      { type: "subagent", agentId: "long-1", at, block: { kind: "assistant", text: "대상 파일 12개를 확인했습니다." } },
+    ],
+  });
+  await delay(700);
+
+  // The dock is expanded by default, so the row is already on screen.
+  const dockShot = path.join(shotDir, "issue-6-dock.png");
+  ok((await post("/api/capture", { path: dockShot })).bytes > 0, `subagent dock row → ${dockShot}`);
+
+  // Drill in through the app's own UI route (not a blind DOM click): this one
+  // reports whether it actually ran.
+  const opened = await post("/api/qa/members/renderer/subagents/open", { subId: "long-1" });
+  ok(opened.ok && opened.subId === "long-1", "drilled into the subagent through the real open route");
+  await delay(400);
+  const detailShot = path.join(shotDir, "issue-6-detail.png");
+  ok((await post("/api/capture", { path: detailShot })).bytes > 0, `drill-in detail with the collapsed prompt → ${detailShot}`);
+
+  const fullShot = path.join(shotDir, "issue-6-detail-full.png");
+  ok((await post("/api/capture", { click: ".wb-subdetail-task .wb-expand-inline", path: fullShot })).bytes > 0, `전체 보기 on the delegated prompt → ${fullShot}`);
 }
 
 async function discover() {
