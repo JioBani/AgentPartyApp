@@ -112,7 +112,42 @@ export class PartyApplicationService {
    */
   private seededHint = false;
 
-  constructor(private readonly deps: PartyApplicationDeps) {}
+  constructor(private readonly deps: PartyApplicationDeps) {
+    // Record the harness thread as soon as it becomes real — the turn that
+    // commits it — instead of hoping something later asks for it. It used to be
+    // written only by the renderer's debounced transcript save, which meant a
+    // member driven with NO WINDOW OPEN (the normal shape for agent-run party
+    // members) never had it written at all, and every one of those members lost
+    // its conversation on the next start. Quitting or closing right after a turn
+    // lost it for the same reason. Owning the fact here makes all three cases the
+    // same case. See #19.
+    this.deps.sessionManager.on("events", (payload: { sessionId?: string; events?: { type?: string }[] }) => {
+      if (!payload?.sessionId || !payload.events?.some((event) => event?.type === "turn_complete")) {
+        return;
+      }
+      this.persistHarnessThread(payload.sessionId);
+    });
+  }
+
+  /**
+   * Persists the owning member's harness thread id for a session whose turn just
+   * committed. Silent when nothing changed (the common case: the id is stable for
+   * the life of a conversation), and never stores an id the harness would refuse
+   * — {@link SessionManager.harnessSessionId} yields nothing before a turn.
+   */
+  private persistHarnessThread(sessionId: string): void {
+    const harnessId = this.deps.sessionManager.harnessSessionId(sessionId);
+    if (!harnessId) {
+      return;
+    }
+    this.updateMemberOwnedBySession(sessionId, "member harness thread persisted", (member) => {
+      if (member.harnessSessionId === harnessId) {
+        return undefined;
+      }
+      member.harnessSessionId = harnessId;
+      return { harnessSessionId: harnessId };
+    });
+  }
 
   /**
    * Resolves a party id to view/act on: the explicit choice if valid, else this
@@ -758,11 +793,38 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' bound to active session.`, state, member);
   }
 
+  /**
+   * Records the member's live harness thread id onto the in-hand record so the
+   * conversation stays reachable. Mutates without persisting — the caller owns
+   * the state it read and writes it back, so persisting here would be clobbered
+   * by that later write. Safe at any teardown point: `harnessSessionId` yields
+   * nothing before a turn has committed, so this never stores an id the harness
+   * would refuse to resume.
+   */
+  private captureHarnessThread(member: PartyMember): boolean {
+    if (!member.sessionId) {
+      return false;
+    }
+    const harnessId = this.deps.sessionManager.harnessSessionId(member.sessionId);
+    if (!harnessId || harnessId === member.harnessSessionId) {
+      return false;
+    }
+    member.harnessSessionId = harnessId;
+    log("info", "party", "captured harness thread at teardown", { member: member.name, partyId: member.partyId, harnessSessionId: harnessId });
+    return true;
+  }
+
   closeMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     if (member.sessionId) {
+      // Capture the harness thread BEFORE tearing the session down: it is the
+      // only way back into this conversation. It used to be recorded solely by
+      // the renderer's debounced transcript save, so closing right after a turn
+      // — or closing a member driven with no window open at all — dropped it,
+      // and the member's next message silently began an empty conversation.
+      this.captureHarnessThread(member);
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     member.sessionId = undefined;
