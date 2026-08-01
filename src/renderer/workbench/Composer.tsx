@@ -18,6 +18,8 @@ import {
   imageDataUrl,
   type ImageAttachment,
 } from "../../shared/attachments";
+import { sendsOnEnter } from "../../shared/composerSettings";
+import { useComposerPrefs } from "../app/composerPrefs";
 
 interface ComposerProps {
   view: MemberView;
@@ -29,6 +31,8 @@ interface ComposerProps {
  * Per-member message composer. Wide/mid render a two-row textarea with a tool
  * row; narrow collapses to a single-line input so the Send/Stop control stays
  * reachable. Stop replaces Send while the member is working.
+ *
+ * Which keystroke sends is a global preference (Settings → 입력창).
  *
  * Images attach by clipboard paste (Ctrl+V) or drag-and-drop. Attaching is gated
  * on the effective model's vision support: a text-only model refuses images with
@@ -51,6 +55,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const prefs = useComposerPrefs();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
 
@@ -183,7 +188,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (palette.handleKeyDown(event)) {
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    if (event.key !== "Enter") {
+      return;
+    }
+    if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
+      event.preventDefault();
       submit();
     }
   }

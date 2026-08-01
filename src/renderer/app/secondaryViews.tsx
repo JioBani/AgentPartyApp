@@ -13,6 +13,7 @@ import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
+import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
@@ -466,7 +467,7 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
 
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveDiscord }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveComposer, onSaveDiscord }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -479,6 +480,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onToggleDebug: (enabled: boolean) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
+  onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -518,6 +520,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </div>
       </section>
 
+      {/* message input preferences (send key) */}
+      <section className="set-card">
+        <div className="set-card-label">입력창</div>
+        <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
+      </section>
+
       {/* Message Gate reviewer default (model + effort, no harness — headless) */}
       <section className="set-card">
         <div className="set-card-label">Message Gate</div>
@@ -552,6 +560,36 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         ))}
       </div>
     </div>
+  );
+}
+
+const SEND_KEY_LABELS: Record<ComposerSendKey, string> = {
+  "ctrl-enter": "Ctrl+Enter 로 전송 (Enter 는 줄바꿈)",
+  enter: "Enter 로 전송 (Shift+Enter 는 줄바꿈)",
+};
+
+/**
+ * Message input preferences. Applies immediately (no save button) — each control
+ * is a single switch whose effect is visible in the composer on the next
+ * keystroke, so a staged "save" would only add a step.
+ */
+function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings | undefined; onSave: (patch: Partial<ComposerSettings>) => void }) {
+  const sendKey = settings?.sendKey || "ctrl-enter";
+  return (
+    <>
+      <div className="set-inline-note">
+        <InfoIcon size={14} />
+        <span>멤버에게 메시지를 보낼 때 쓰는 키입니다. 패널 폭과 관계없이 동일하게 동작합니다.</span>
+      </div>
+      <div className="set-harness-pick">
+        <label className="set-field">
+          <span className="set-field-label">전송 키</span>
+          <select className="set-select" value={sendKey} onChange={(event) => onSave({ sendKey: event.target.value as ComposerSendKey })}>
+            {COMPOSER_SEND_KEYS.map((id) => <option key={id} value={id}>{SEND_KEY_LABELS[id]}</option>)}
+          </select>
+        </label>
+      </div>
+    </>
   );
 }
 

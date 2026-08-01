@@ -9,6 +9,7 @@ import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
+import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/composerSettings";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -55,6 +56,7 @@ const defaults: AppSettings = {
   transcriptFontScale: 1,
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
+  composer: { ...DEFAULT_COMPOSER_SETTINGS },
   discord: { ...DEFAULT_DISCORD_SETTINGS },
 };
 
@@ -155,7 +157,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const compactDefault = normalizeAutoCompact(withRuntimeOverrides.compactDefault) || { ...DEFAULT_AUTO_COMPACT };
   const gateDefaults = normalizeGateDefaults(withRuntimeOverrides.gateDefaults);
   const discord = normalizeDiscordSettings(withRuntimeOverrides.discord || DEFAULT_DISCORD_SETTINGS);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const composer = normalizeComposerSettings(withRuntimeOverrides.composer);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, composer, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {
