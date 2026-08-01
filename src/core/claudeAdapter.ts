@@ -148,6 +148,12 @@ export class ClaudeAdapter extends EventEmitter {
    */
   private readonly weeklyVariants = new Map<string, UsageWindow>();
   private sessionId = "";
+  /**
+   * Whether this adapter has ever been started. `started` alone cannot answer
+   * "is the harness alive": it is also false BEFORE the first start, and a
+   * not-yet-started session is not a dead one.
+   */
+  private hasStarted = false;
   private permissionMode: PermissionMode = "default";
   private model: string;
   private runtimeModel: string;
@@ -212,6 +218,7 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
     this.started = true;
+    this.hasStarted = true;
     this.currentStatus = "starting";
     this.abortController = new AbortController();
     this.input = new AsyncInputQueue();
@@ -575,6 +582,11 @@ export class ClaudeAdapter extends EventEmitter {
   getSnapshot(): ClaudeSessionSnapshot {
     return {
       id: this.options.id,
+      // One SDK query serves the whole session, so the harness is alive exactly
+      // while that query loop is running. `started` drops when the stream ends
+      // (run's finally) or on dispose — but it is also false before the first
+      // start, which is "not yet", not "dead".
+      harnessAlive: !this.hasStarted || this.started,
       cwd: this.options.cwd,
       sessionId: this.sessionId || undefined,
       model: this.model,

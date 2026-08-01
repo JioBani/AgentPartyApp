@@ -64,7 +64,7 @@ async function main() {
     const partyId = member.partyId;
     const detailFile = path.join(partyRoot, "parties", partyId, "party.json");
     const onDisk = () => readJson(detailFile).members.find((m) => m.name === "worker");
-    const live = async () => (await get("/api/party")).members.find((m) => m.name === "worker");
+    const live = async (who = "worker") => (await get("/api/party")).members.find((m) => m.name === who);
     const turnStatus = async () => (await post("/api/party/members/worker/status", {})).members?.[0]
       ?? (await post("/api/party/members/worker/status", {}));
 
@@ -90,21 +90,46 @@ async function main() {
     const thread = onDisk()?.harnessSessionId;
     assert(Boolean(thread), "the harness thread is recorded as soon as the turn commits, not on a later save");
 
-    // --- #13: the harness dies -----------------------------------------------
-    await post("/api/qa/members/worker/kill-harness", {});
-    let killed = false;
-    for (let i = 0; i < 20; i += 1) {
-      if ((await live())?.status === "missing_session") { killed = true; break; }
+    // --- #13/#21: the harness dies, for real ---------------------------------
+    // A REAL Codex member: its app-server is one long-lived process per session
+    // and spawns without any turn, so this costs nothing and can be killed for
+    // real. Simulating death here (injecting the status Claude uses) is what
+    // hid #21 — the other adapters never produce that value.
+    await post("/api/party/members", {
+      partyId,
+      name: "codey",
+      requirement: "harness death QA",
+      runtime: "codex",
+      model: "gpt-5.4-mini",
+    });
+    await post("/api/party/members/codey/start", {});
+    let codexPid;
+    for (let i = 0; i < 60; i += 1) {
+      const codexSessionId = (await live("codey"))?.sessionId;
+      const view = ((await get("/api/state")).sessions || []).find((session) => session.id === codexSessionId);
+      codexPid = view?.snapshot?.pid;
+      if (codexPid) break;
       await new Promise((r) => setTimeout(r, 250));
     }
-    assert(killed, "a member whose harness ended stops reporting as running");
-    const status = await turnStatus();
-    assert(status?.running === false, "the member status an agent reads also stops claiming it is running");
-    // Death must not arrive as a BUSY value. A dead member rendered as "working"
-    // would put a spinner on it — dressing a wrong state up as a plausible one,
-    // which is the failure mode this whole cycle is about.
-    assert(status?.turnActive === false, "a dead member is not reported as mid-turn");
-    assert(!["requesting", "responding", "interrupting"].includes(String(status?.status)), `a dead member's status is not a busy one (got ${status?.status})`);
+    assert(Boolean(codexPid), `the Codex member spawned a real app-server process (pid ${codexPid})`);
+    assert((await live("codey"))?.status === "running", "and reports running while it is alive");
+
+    await post("/api/qa/members/codey/kill-harness", {});
+    let codexDead = false;
+    for (let i = 0; i < 40; i += 1) {
+      if ((await live("codey"))?.status === "missing_session") { codexDead = true; break; }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    assert(codexDead, "a Codex member whose app-server was KILLED stops reporting as running");
+    const codexStatus = (await post("/api/party/members/codey/status", {}));
+    const codexRow = codexStatus.members?.[0] ?? codexStatus;
+    assert(codexRow?.running === false, "the status an agent reads also stops claiming the Codex member is running");
+    assert(codexRow?.turnActive === false, "a dead Codex member is not reported as mid-turn");
+
+    // The QA tool must refuse to fake it where it cannot do the real thing.
+    let refused = false;
+    await post("/api/qa/members/worker/kill-harness", {}).catch(() => { refused = true; });
+    assert(refused, "killing a harness that owns no process is refused, not simulated");
 
     // --- #19: the conversation survives a close + restart --------------------
     await post("/api/party/members/worker/close", {});

@@ -364,6 +364,11 @@ export class CodexAdapter extends EventEmitter {
     return {
       id: this.options.id,
       pid: this.process?.pid,
+      // The app-server is spawned once and lives for the whole session, so once
+      // we have started, holding no process IS death — including the exit-while
+      // -idle case, which deliberately changes no status (see handleExit) and so
+      // was invisible to anything reading `status` alone.
+      harnessAlive: !this.disposed && (!this.started || Boolean(this.process)),
       cwd: this.options.cwd,
       sessionId: this.sessionId || undefined,
       model: this.options.model,

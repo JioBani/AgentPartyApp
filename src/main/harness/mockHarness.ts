@@ -55,6 +55,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       id: options.id,
       cwd: options.cwd,
       sessionId: `mock-${options.id}`,
+      // The mock owns no process, so it is alive until disposed. It must never
+      // be used to stand in for a DEAD harness: doing so meant the QA kill tool
+      // handed the test the very value Claude uses, hiding the fact that the
+      // other adapters never produce it (#21).
+      harnessAlive: true,
       model: options.model,
       effort: options.effort as ClaudeSessionSnapshot["effort"],
       permissionMode: options.permissionMode,
