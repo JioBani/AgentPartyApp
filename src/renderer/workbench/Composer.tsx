@@ -30,12 +30,18 @@ interface ComposerProps {
 
 /**
  * Per-member message composer. Wide/mid render a two-row textarea with a tool
- * row; narrow collapses to a single-line input so the Send/Stop control stays
- * reachable. Stop replaces Send while the member is working.
+ * row; narrow collapses to a single-line input so the send control stays
+ * reachable. While the member is working that control ADDS TO ITS QUEUE — Stop
+ * lives in the panel toolbar, because the send slot is the only way to queue a
+ * message and cannot be the thing that disappears exactly when the queue is in
+ * use. The member's message queue renders directly above, inside this same
+ * bordered block.
  *
  * Which keystroke sends is a global preference (Settings → 입력창), applied
  * identically in both layouts — the narrow input must never send on a key the
- * wide textarea treats as a newline.
+ * wide textarea treats as a newline. Ctrl/Cmd+Enter sends under both settings
+ * and additionally SKIPS THE WAIT: the message is queued and handed over at
+ * once. ArrowUp in an empty composer takes the last queued message back.
  *
  * Images attach by clipboard paste (Ctrl+V) or drag-and-drop. Attaching is gated
  * on the effective model's vision support: a text-only model refuses images with
@@ -233,7 +239,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
     }
   }
 
-  function submit(event?: FormEvent) {
+  /**
+   * `bypassQueue` is Ctrl/Cmd+Enter — already this app's universal "send now".
+   * With a busy member that now also means "do not wait your turn": the message
+   * is parked like any other (so it is never lost if the delivery fails) and
+   * then immediately handed over, which is exactly what the row's 지금 보내기
+   * does. An idle member is unaffected; nothing was queued to skip.
+   */
+  function submit(event?: FormEvent, bypassQueue = false) {
     event?.preventDefault();
     const text = draft.trim();
     if (!text && attachments.length === 0) {
@@ -243,7 +256,20 @@ export function Composer({ view, density, actions }: ComposerProps) {
     setDraft("");
     setAttachments([]);
     setAttachError("");
-    void actions.sendMessage(view.name, text, images);
+    void (async () => {
+      const result = await actions.sendMessage(view.name, text, images);
+      if (!bypassQueue || !result?.queued) {
+        return;
+      }
+      const parked = result.queue?.items?.at(-1);
+      if (parked) {
+        await actions.runQueueCommand(view.name, { action: "sendItem", itemId: parked.id });
+      }
+    })().catch((error) => {
+      // The message is still in the queue if this failed — say so rather than
+      // leaving the user thinking Ctrl+Enter did nothing.
+      setAttachError(`지금 보내기에 실패했습니다 (메시지는 대기열에 있습니다): ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   /**
@@ -258,12 +284,26 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (palette.handleKeyDown(event)) {
       return;
     }
+    // ArrowUp in an EMPTY composer takes the last queued message back for
+    // editing — the fastest correction path when you have just realised the
+    // message waiting at the bottom of the queue is wrong. Only when empty, so
+    // it never fights with cursor movement in real text.
+    if (event.key === "ArrowUp" && !draft) {
+      const last = view.member.queue?.items.at(-1);
+      if (last) {
+        event.preventDefault();
+        void actions.runQueueCommand(view.name, { action: "edit", itemId: last.id })
+          .then((result) => result?.text && takeBackForEdit(result.text))
+          .catch((error) => setAttachError(`대기열에서 되돌리지 못했습니다: ${error instanceof Error ? error.message : String(error)}`));
+      }
+      return;
+    }
     if (event.key !== "Enter") {
       return;
     }
     if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
       event.preventDefault();
-      submit();
+      submit(undefined, event.ctrlKey || event.metaKey);
       return;
     }
     if (!multiline) {

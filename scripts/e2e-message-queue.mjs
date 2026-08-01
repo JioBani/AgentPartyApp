@@ -92,6 +92,8 @@ async function main() {
     await mergeOffChangesWhatLeaves(cdp);
     await mutationsWork();
     await failuresAreVisible(cdp);
+    await keyboardShortcuts(cdp);
+    await narrowPanelCollapses(cdp);
     await originSurvivesDelivery(cdp);
     await goingIdleDelivers(cdp);
     await queueSurvivesRestart();
@@ -125,10 +127,6 @@ async function queuedInsteadOfConversation() {
   await delay(400);
 
   const queue = (await get("/api/party/members/backend/queue")).queue;
-  if (queue.items.length !== 3) {
-    console.log("    queue:", JSON.stringify(queue.items.map((i) => ({ from: i.from, text: String(i.text).slice(0, 24) })), null, 0));
-    console.log("    status:", JSON.stringify((await post("/api/party/members/backend/status", {})).members?.[0] || {}));
-  }
   assert(queue.items.length === 3, `three messages are waiting (got ${queue.items.length})`);
   assert(queue.items[0].from === null && queue.items[2].from === "reviewer", "sender is recorded: the user's two, then reviewer's");
   assert(!String(queue.items[2].text).includes("<channel"), "a member's item stores its RAW body — the channel envelope is added at delivery, not in the queue");
@@ -337,6 +335,110 @@ async function goingIdleDelivers(cdp) {
 
   const shot = path.join(shotDir, "05-dequeued-merged.png");
   assert((await post("/api/capture", { path: shot })).bytes > 0, `captured → ${shot}`);
+}
+
+/** §11 keyboard — ArrowUp takes the last queued message back into the composer. */
+async function keyboardShortcuts(cdp) {
+  console.log("\n§11 keyboard — ↑ in an empty composer takes the last message back:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(250);
+  await post("/api/party/members/backend/message", { text: "되돌리기로 회수될 메시지." });
+  await delay(400);
+
+  const back = await cdp.eval(`(async () => {
+    const box = document.querySelector(".wb-composer-textarea");
+    if (!box) return { ran: false };
+    const before = document.querySelectorAll(".wb-queue-row").length;
+    box.focus();
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    await new Promise((r) => setTimeout(r, 700));
+    return { ran: true, before, after: document.querySelectorAll(".wb-queue-row").length, draft: box.value };
+  })()`);
+  assert(back.ran, "the composer is focusable");
+  assert(back.after === back.before - 1, `the row left the queue (${back.before} → ${back.after})`);
+  assert(/되돌리기로 회수될/.test(back.draft), `and its text is back in the composer (got "${back.draft.slice(0, 30)}")`);
+
+  // Typed text must not be destroyed by a recall — the message is appended.
+  const guard = await cdp.eval(`(async () => {
+    const box = document.querySelector(".wb-composer-textarea");
+    box.value = "";
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    return { queue: document.querySelectorAll(".wb-queue-row").length };
+  })()`);
+  assert(guard.queue === 0, "↑ on an empty queue does nothing rather than erroring");
+}
+
+/** §5 narrow (<408px): the queue folds to a single chip and drops the wide-only controls. */
+async function narrowPanelCollapses(cdp) {
+  console.log("\n§5 narrow panel — the queue folds to one chip:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(200);
+  await post("/api/party/members/backend/message", { text: "좁은 패널에서 확인할 첫 번째 메시지." });
+  await post("/api/party/members/backend/message", { text: "좁은 패널에서 확인할 두 번째 메시지." });
+  await delay(400);
+
+  // Get under the 408px breakpoint the way a user actually does: split the
+  // workbench into three panels. (Shrinking the window cannot do it — the window
+  // has a minimum width, so the panel never gets narrow enough.)
+  await post("/api/qa/open", { panels: [["backend"], ["reviewer"], ["main"]] });
+  await delay(900);
+
+  const m = await cdp.eval(`(() => {
+    const q = document.querySelector(".wb-queue");
+    if (!q) return { found: false };
+    return {
+      found: true,
+      narrow: q.classList.contains("is-narrow"),
+      chip: Boolean(q.querySelector(".wb-queue-chip")),
+      chipLabel: q.querySelector(".wb-queue-chip-label")?.textContent || "",
+      dots: q.querySelectorAll(".wb-queue-dots .wb-queue-dot").length,
+      pill: q.querySelector(".wb-queue-pill")?.textContent || "",
+      rows: q.querySelectorAll(".wb-queue-row").length,
+      // narrow deliberately drops reorder/edit/merge rather than shrinking them
+      // into unhittable targets; delete must survive at EVERY width.
+      edits: q.querySelectorAll(".wb-queue-btn").length,
+      deletes: q.querySelectorAll(".wb-queue-del").length,
+      overflows: q.scrollWidth > q.clientWidth + 1,
+    };
+  })()`);
+
+  assert(m.found && m.narrow, "the queue switched to its narrow form");
+  assert(m.chip && /대기열 2건/.test(m.chipLabel), `it is one summary chip (got "${m.chipLabel}")`);
+  assert(m.dots >= 1, "sender dots stand in for the chips");
+  assert(m.pill === "합침" || m.pill === "개별", `the merge toggle is a pill (got "${m.pill}")`);
+  assert(m.rows === 0, "and it starts COLLAPSED at this width — the transcript keeps the space");
+  assert(!m.overflows, "nothing overflows the narrow panel");
+
+  const collapsedShot = path.join(shotDir, "06-narrow-collapsed.png");
+  assert((await post("/api/capture", { path: collapsedShot })).bytes > 0, `captured → ${collapsedShot}`);
+
+  // Expand it: the featherweight rows appear, without the wide-only controls.
+  await post("/api/party/members/backend/queue", { action: "preference", collapsed: false });
+  await delay(500);
+  const open = await cdp.eval(`(() => {
+    const q = document.querySelector(".wb-queue");
+    return {
+      rows: q.querySelectorAll(".wb-queue-row").length,
+      edits: q.querySelectorAll(".wb-queue-btn").length,
+      deletes: q.querySelectorAll(".wb-queue-del").length,
+      sendAllBlock: Boolean(q.querySelector(".wb-queue-send-all.is-block")),
+      overflows: q.scrollWidth > q.clientWidth + 1,
+    };
+  })()`);
+  assert(open.rows === 2, `both rows render when expanded (got ${open.rows})`);
+  assert(open.edits === 0, "위로 · 편집 · 위와 합치기 are dropped at this width, not shrunk");
+  assert(open.deletes === 2, "but 삭제 survives on every row — cancelling must never need a resize");
+  assert(open.sendAllBlock, "the send button spans the full width");
+  assert(!open.overflows, "the expanded narrow queue still does not overflow");
+
+  const expandedShot = path.join(shotDir, "07-narrow-expanded.png");
+  assert((await post("/api/capture", { path: expandedShot })).bytes > 0, `captured → ${expandedShot}`);
+
+  await post("/api/qa/open", { panels: [["backend"]] });
+  await delay(700);
+  await post("/api/party/members/backend/queue", { action: "clear" });
+  await delay(300);
 }
 
 /**

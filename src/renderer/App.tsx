@@ -795,12 +795,12 @@ export function App() {
         if (known) {
           setLogsBySession((current) => removeBlock(current, known, echoId));
         }
-        return;
+        return result;
       }
       const sessionId = result.member?.sessionId || known;
       if (!sessionId) {
         setPartyNotice(`'${name}' 세션을 시작하지 못했습니다.`);
-        return;
+        return result;
       }
       if (!known) {
         // Freshly started: seed the restored history, then echo the just-sent turn.
@@ -808,6 +808,7 @@ export function App() {
         seedRestoredTranscript(sessionId, restored);
         setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
       }
+      return result;
     },
     async runQueueCommand(name, command) {
       // Deliberately NOT swallowed here. The queue panel shows the failure, and

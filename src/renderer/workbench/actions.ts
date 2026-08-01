@@ -5,7 +5,7 @@ import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { MemberGateOverride, PartyGate } from "../../shared/messageGate";
-import type { QueueCommand } from "../../shared/messageQueue";
+import type { MemberQueueState, QueueCommand } from "../../shared/messageQueue";
 
 /** A member-gate PATCH: any axis omitted is unchanged; `null` clears to inherit. */
 export type MemberGatePatch = MemberGateOverride;
@@ -16,9 +16,14 @@ export type MemberGatePatch = MemberGateOverride;
  * components never touch `window.agentParty` directly.
  */
 export interface WorkbenchActions {
-  /** Sends a turn to the member (starting its session first if needed), with
-   *  optional image attachments (provider-neutral). */
-  sendMessage(memberName: string, text: string, attachments?: ImageAttachment[]): void | Promise<void>;
+  /**
+   * Sends a turn to the member (starting its session first if needed), with
+   * optional image attachments (provider-neutral). Resolves
+   * with `queued: true` and the new queue when the member was busy, so the
+   * caller can act on the item that was just parked — Ctrl/Cmd+Enter uses this
+   * to park and immediately deliver, bypassing the wait.
+   */
+  sendMessage(memberName: string, text: string, attachments?: ImageAttachment[]): Promise<{ queued?: boolean; queue?: MemberQueueState } | undefined>;
   /**
    * Runs one message-queue mutation (send / sendItem / cancel / edit / move /
    * mergeUp / clear / preference) — the same controller path the HTTP API takes.
