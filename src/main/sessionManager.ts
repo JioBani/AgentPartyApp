@@ -816,6 +816,25 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Publishes an app-authored event on a session's stream, so it reaches the
+   * renderer (and the persisted transcript) through the exact same path harness
+   * events take. Used by the message queue to announce a delivery the harness
+   * itself cannot describe: it sees an ordinary turn and has no idea the text
+   * waited in a queue first.
+   *
+   * Returns false when the session is gone — the caller must surface that rather
+   * than assume the event landed.
+   */
+  emitAppEvent(id: string, event: ClaudeNormalizedEvent): boolean {
+    const session = this.sessions.get(id);
+    if (!session) {
+      return false;
+    }
+    this.queueEvent(session, event);
+    return true;
+  }
+
+  /**
    * The live harness thread id (Claude/Codex) for an app session — but only once
    * a turn has committed. A zero-turn session is not yet persisted by the harness,
    * so storing its id and resuming it later fails with "No conversation found".

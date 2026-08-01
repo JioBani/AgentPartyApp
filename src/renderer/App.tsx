@@ -19,7 +19,7 @@ import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSu
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
-import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -773,8 +773,9 @@ export function App() {
       // for a not-yet-started member the echo is appended once the shared send
       // path returns its session id below.
       const known = sessionIdFor(name);
+      const echoId = crypto.randomUUID();
       if (known) {
-        setLogsBySession((current) => appendBlock(current, known, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
+        setLogsBySession((current) => appendBlock(current, known, { id: echoId, kind: "user", text, attachments, at: nowTime() }));
       }
       // Same route as the HTTP API: the backend ensures the member's session
       // (starting it with the member's own config if needed) and delivers the
@@ -786,6 +787,16 @@ export function App() {
         interrupt: state.settings.composer?.interruptOnSend === true,
       });
       await applyPartyResult(result, false);
+      if (result.queued) {
+        // The member was busy, so this is WAITING — not sent. It belongs in the
+        // queue list, not mixed into the conversation ahead of replies the agent
+        // wrote before it ever saw the message. Retract the optimistic echo; the
+        // `queue_dequeued` event puts the bubble back at the moment of delivery.
+        if (known) {
+          setLogsBySession((current) => removeBlock(current, known, echoId));
+        }
+        return;
+      }
       const sessionId = result.member?.sessionId || known;
       if (!sessionId) {
         setPartyNotice(`'${name}' 세션을 시작하지 못했습니다.`);

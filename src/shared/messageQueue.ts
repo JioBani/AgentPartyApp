@@ -1,0 +1,276 @@
+/**
+ * Message queue — what a member has been told but has NOT yet been handed.
+ *
+ * Every harness already buffers turns internally (`queuedUserTurns` in the
+ * Claude/Codex/Cursor adapters), but that buffer is write-only from the app's
+ * point of view: it leaks a *count* and nothing else, it lives in process
+ * memory, and once a turn is in it there is no way to take it back. That makes
+ * the three things the user actually wants — see what is waiting, cancel it,
+ * edit it — impossible to build on top of.
+ *
+ * So the queue is owned HERE, one level above the harness: a message aimed at a
+ * busy member is held by the app, and `sendUserTurn` is not called at all until
+ * the item is dequeued. The adapter buffer stays as the race-window safety net
+ * (a member can go idle between our check and the send) but is no longer the
+ * place a message waits.
+ *
+ * Pure logic — no I/O — so main (ownership + persistence) and renderer (the
+ * queue UI) agree by construction and the rules are unit-testable in isolation.
+ *
+ * Every mutation returns a discriminated result rather than a best-effort new
+ * array. A cancel that matched nothing is a REAL failure the user must see: the
+ * item it targeted was almost certainly already handed to the harness, and
+ * silently returning the unchanged queue would render as "cancelled" while the
+ * agent answers it anyway.
+ */
+
+import type { ImageAttachment } from "./attachments";
+
+/** One waiting message. `from: null` means the user typed it; otherwise a member sent it. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  /** Member name that sent it, or null for the user. Drives the sender chip and the merge boundary. */
+  from: string | null;
+  /** Enqueue time, ISO. */
+  at: string;
+  attachments?: ImageAttachment[];
+}
+
+/** Per-member queue state as persisted on the member record. */
+export interface MemberQueueState {
+  items: QueuedMessage[];
+  /** Merge-on-send preference. Undefined inherits {@link DEFAULT_QUEUE_MERGE}. */
+  merge?: boolean;
+  /** Collapsed preference. Undefined lets the panel width decide (narrow starts collapsed). */
+  collapsed?: boolean;
+}
+
+/**
+ * Merging defaults ON: the overwhelmingly common case is a person firing off
+ * several lines of one thought while the agent works, and delivering those as
+ * separate turns makes the agent answer the first line before it has read the
+ * rest.
+ */
+export const DEFAULT_QUEUE_MERGE = true;
+
+/**
+ * Upper bound on a single member's queue. Not a silent drop — {@link enqueue}
+ * refuses past this point and the caller surfaces the refusal, because a queue
+ * that quietly stops accepting is indistinguishable from a message that was
+ * sent and ignored.
+ */
+export const QUEUE_LIMIT = 20;
+
+/** Separator between merged items. A blank line, so paragraph structure survives. */
+export const MERGE_SEPARATOR = "\n\n";
+
+export type QueueFailure =
+  | "not_found"
+  | "queue_full"
+  | "empty_text"
+  | "already_first"
+  | "already_last"
+  | "different_sender"
+  | "empty_queue";
+
+export type QueueResult<T> = { ok: true; value: T } | { ok: false; reason: QueueFailure };
+
+const ok = <T>(value: T): QueueResult<T> => ({ ok: true, value });
+const fail = <T>(reason: QueueFailure): QueueResult<T> => ({ ok: false, reason });
+
+/** Human-readable reason, surfaced in the UI notice and the HTTP error body. */
+export function describeQueueFailure(reason: QueueFailure): string {
+  switch (reason) {
+    case "not_found":
+      return "그 메시지는 이미 대기열에 없습니다 — 먼저 전송되었을 수 있습니다.";
+    case "queue_full":
+      return `대기열이 가득 찼습니다 (최대 ${QUEUE_LIMIT}건). 기존 항목을 보내거나 취소한 뒤 다시 시도하세요.`;
+    case "empty_text":
+      return "빈 메시지는 대기열에 넣을 수 없습니다.";
+    case "already_first":
+      return "이미 맨 위 항목입니다.";
+    case "already_last":
+      return "이미 맨 아래 항목입니다.";
+    case "different_sender":
+      return "보낸 사람이 다른 메시지끼리는 합칠 수 없습니다.";
+    case "empty_queue":
+      return "대기열이 비어 있습니다.";
+  }
+}
+
+export function emptyQueue(): MemberQueueState {
+  return { items: [] };
+}
+
+/** Normalizes whatever was read off disk into a well-formed queue (tolerates older records with no queue). */
+export function readQueue(state: MemberQueueState | undefined): MemberQueueState {
+  if (!state || !Array.isArray(state.items)) {
+    return emptyQueue();
+  }
+  return { items: state.items.filter(isQueuedMessage), merge: state.merge, collapsed: state.collapsed };
+}
+
+function isQueuedMessage(item: unknown): item is QueuedMessage {
+  const candidate = item as QueuedMessage | undefined;
+  return Boolean(candidate && typeof candidate.id === "string" && typeof candidate.text === "string");
+}
+
+/** Effective merge setting for a member (its own preference, else the global default). */
+export function mergeOn(state: MemberQueueState): boolean {
+  return state.merge === undefined ? DEFAULT_QUEUE_MERGE : state.merge;
+}
+
+/**
+ * The leading run: from the front, every consecutive item with the SAME sender.
+ * This — not the whole queue — is the merge unit, because merging a member's
+ * message into the user's would forge attribution and lose the sender chip that
+ * tells the agent who is asking. `[me, me, reviewer]` sends the two `me` items
+ * as one message and leaves reviewer's for the next turn.
+ */
+export function leadRun(items: QueuedMessage[]): QueuedMessage[] {
+  if (!items.length) {
+    return [];
+  }
+  const sender = items[0].from ?? null;
+  const run: QueuedMessage[] = [];
+  for (const item of items) {
+    if ((item.from ?? null) !== sender) {
+      break;
+    }
+    run.push(item);
+  }
+  return run;
+}
+
+/** True when the queue holds more than one distinct sender (drives the "같은 것끼리만" hint). */
+export function hasMixedSenders(items: QueuedMessage[]): boolean {
+  if (items.length < 2) {
+    return false;
+  }
+  const first = items[0].from ?? null;
+  return items.some((item) => (item.from ?? null) !== first);
+}
+
+/**
+ * Merged body for a run. Original order and original wording are preserved
+ * verbatim — no summarizing, no numbering. The agent must read exactly what the
+ * sender wrote.
+ */
+export function mergeTexts(items: QueuedMessage[]): string {
+  return items.map((item) => item.text).join(MERGE_SEPARATOR);
+}
+
+/** Attachments of a run, flattened in order, so merging never drops an image. */
+export function mergeAttachments(items: QueuedMessage[]): ImageAttachment[] | undefined {
+  const all = items.flatMap((item) => item.attachments || []);
+  return all.length ? all : undefined;
+}
+
+export function enqueue(state: MemberQueueState, item: QueuedMessage): QueueResult<MemberQueueState> {
+  if (!item.text.trim() && !(item.attachments || []).length) {
+    return fail("empty_text");
+  }
+  if (state.items.length >= QUEUE_LIMIT) {
+    return fail("queue_full");
+  }
+  // Always appended. Arrival order IS the order the sender intended.
+  return ok({ ...state, items: [...state.items, item] });
+}
+
+export function removeItem(state: MemberQueueState, id: string): QueueResult<{ state: MemberQueueState; removed: QueuedMessage }> {
+  const index = state.items.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return fail("not_found");
+  }
+  const items = state.items.slice();
+  const [removed] = items.splice(index, 1);
+  return ok({ state: { ...state, items }, removed });
+}
+
+export function moveItem(state: MemberQueueState, id: string, direction: -1 | 1): QueueResult<MemberQueueState> {
+  const index = state.items.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return fail("not_found");
+  }
+  const target = index + direction;
+  if (target < 0) {
+    return fail("already_first");
+  }
+  if (target >= state.items.length) {
+    return fail("already_last");
+  }
+  const items = state.items.slice();
+  [items[index], items[target]] = [items[target], items[index]];
+  return ok({ ...state, items });
+}
+
+/**
+ * Folds an item into the one above it. Only within a sender — see {@link leadRun}
+ * for why crossing that boundary is not a merge but a forgery.
+ */
+export function mergeUp(state: MemberQueueState, id: string): QueueResult<MemberQueueState> {
+  const index = state.items.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return fail("not_found");
+  }
+  if (index === 0) {
+    return fail("already_first");
+  }
+  const previous = state.items[index - 1];
+  const current = state.items[index];
+  if ((previous.from ?? null) !== (current.from ?? null)) {
+    return fail("different_sender");
+  }
+  const items = state.items.slice();
+  items[index - 1] = {
+    ...previous,
+    text: mergeTexts([previous, current]),
+    attachments: mergeAttachments([previous, current]),
+  };
+  items.splice(index, 1);
+  return ok({ ...state, items });
+}
+
+/** What a dequeue hands to the harness: one turn, plus how many items it came from. */
+export interface DequeuedTurn {
+  text: string;
+  attachments?: ImageAttachment[];
+  from: string | null;
+  /** Item count folded into this turn (>1 renders the "N건 합쳐서 보냄" badge). */
+  count: number;
+}
+
+/**
+ * Takes what should go out next. With merge ON the whole leading run leaves as
+ * one turn; with it OFF exactly one item does. Either way the returned state is
+ * what remains — the caller sends `turn` and persists `state` together, so a
+ * crash between the two can only ever re-send, never silently swallow.
+ */
+export function takeNext(state: MemberQueueState): QueueResult<{ state: MemberQueueState; turn: DequeuedTurn }> {
+  if (!state.items.length) {
+    return fail("empty_queue");
+  }
+  const run = mergeOn(state) ? leadRun(state.items) : state.items.slice(0, 1);
+  return ok({
+    state: { ...state, items: state.items.slice(run.length) },
+    turn: { text: mergeTexts(run), attachments: mergeAttachments(run), from: run[0].from ?? null, count: run.length },
+  });
+}
+
+/** Takes one specific item out for immediate delivery ("지금 보내기" on a row). */
+export function takeItem(state: MemberQueueState, id: string): QueueResult<{ state: MemberQueueState; turn: DequeuedTurn }> {
+  const removal = removeItem(state, id);
+  if (!removal.ok) {
+    return fail(removal.reason);
+  }
+  const { state: next, removed } = removal.value;
+  return ok({
+    state: next,
+    turn: { text: removed.text, attachments: removed.attachments, from: removed.from ?? null, count: 1 },
+  });
+}
+
+export function clearQueue(state: MemberQueueState): MemberQueueState {
+  return { ...state, items: [] };
+}

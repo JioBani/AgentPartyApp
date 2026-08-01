@@ -27,6 +27,19 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         // that is still streaming ([#14]).
         next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), sent: event.status === "sent", at: nowTime() });
       }
+    } else if (event.type === "queue_dequeued") {
+      // A message that had been waiting in the queue was just handed over. THIS
+      // is when it enters the conversation — not when it was typed — so the
+      // transcript order matches what the agent actually read.
+      next = appendBlock(next, sessionId, {
+        id: crypto.randomUUID(),
+        kind: "user",
+        text: event.text || "",
+        fromQueue: true,
+        queuedN: event.count || 1,
+        from: event.from ?? null,
+        at: nowTime(),
+      });
     } else if (event.type === "tool_call") {
       // Party write-tools render as purpose-built cards instead of raw tool boxes.
       if (event.name === PARTY_SEND_TOOL) {
@@ -64,6 +77,21 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
 
 export function appendBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, item: TranscriptBlock): Record<string, TranscriptBlock[]> {
   return { ...current, [sessionId]: [...(current[sessionId] || []), item] };
+}
+
+/**
+ * Retracts a block the app optimistically added and then learned was wrong —
+ * specifically the echo of a message the backend parked in the member's queue
+ * rather than delivering. The message is not lost: it is in the queue list, and
+ * a `queue_dequeued` event re-adds it to the transcript when it is really sent.
+ * A no-op when the id is already gone, so a double retraction is harmless.
+ */
+export function removeBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, id: string): Record<string, TranscriptBlock[]> {
+  const items = current[sessionId];
+  if (!items?.some((item) => item.id === id)) {
+    return current;
+  }
+  return { ...current, [sessionId]: items.filter((item) => item.id !== id) };
 }
 
 /**

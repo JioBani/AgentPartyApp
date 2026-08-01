@@ -129,6 +129,13 @@ export type ClaudeNormalizedEvent =
   | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
+  // A message that waited in the app-level queue has just been handed to the
+  // harness. Authored by the app, not by any harness — it is the only record
+  // that a queued message became a real turn, so the renderer can place the user
+  // bubble in the transcript at the moment of DELIVERY rather than the moment of
+  // typing. `count` > 1 means several queued items merged into this one turn.
+  // See src/shared/messageQueue.ts.
+  | { type: "queue_dequeued"; text: string; from: string | null; count: number; at: string }
   | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; changes?: import("../shared/codexItems").CodexFileEdit[]; status?: string; at: string }
   // `usage` carries the per-turn token split (fresh/cacheRead/cacheWrite/output +
   // context occupancy) as far as the harness reports it — the raw accounting the

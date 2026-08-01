@@ -35,7 +35,12 @@ export type TranscriptBlock =
   // `sent` marks a status line that is the harness echoing back a user turn the
   // app just submitted. It is the user's own message, not agent output, so it
   // does not end a reply that is still streaming (see appendText, [#14]).
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string }
+  // `fromQueue` marks a user block that WAITED in the member's message queue
+  // before being handed over. It is permanent on purpose: scrolling back, the
+  // badge is the only way to tell that this message reached the agent later than
+  // it was typed. `queuedN` > 1 means several queued items merged into it, and
+  // `from` names the sending member (absent = the user). See shared/messageQueue.ts.
+  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
   // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
   | { id: string; kind: "plan"; steps: import("../../shared/codexItems").CodexPlanStep[]; explanation?: string; at?: string }

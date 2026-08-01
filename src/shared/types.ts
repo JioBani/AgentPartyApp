@@ -5,6 +5,7 @@ import type { CursorPolicy } from "./cursorPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
+import type { MemberQueueState } from "./messageQueue";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { ComposerSettings } from "./composerSettings";
 
@@ -192,6 +193,14 @@ export interface PartyMember {
    * `shared/messageGate.ts`.
    */
   gate?: MemberGateOverride;
+  /**
+   * Messages addressed to this member that it has NOT been handed yet, because
+   * it was busy when they arrived. Owned by the app rather than the harness so
+   * they can be shown, cancelled and edited before delivery; see
+   * `shared/messageQueue.ts`. Persisted, so a queue survives a restart instead
+   * of evaporating with the process.
+   */
+  queue?: MemberQueueState;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -231,6 +240,16 @@ export interface PartyCommandResult {
   member?: PartyMember;
   partyMessage?: PartyMessage;
   session?: SessionView;
+  /**
+   * True when the message was parked in the member's queue instead of being
+   * delivered, because the member was busy. The caller MUST distinguish the two:
+   * the renderer echoes a delivered message into the transcript, but a queued one
+   * belongs in the queue list until it is actually handed over. See
+   * `shared/messageQueue.ts`.
+   */
+  queued?: boolean;
+  /** Queue snapshot after the command, so a queue mutation needs no follow-up read. */
+  queue?: MemberQueueState;
 }
 
 export interface CreatePartyInput {
