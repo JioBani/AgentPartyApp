@@ -65,6 +65,13 @@ async function main() {
   await app.prepare();
   try {
     await app.launch();
+    // Assert WHICH workspace this app is serving before touching anything. The
+    // routes that change a window's workspace also rewrite the stored default
+    // even when the window lookup fails, so a driver that assumes instead of
+    // checking is how an e2e once repointed a real installation.
+    const served = (await get("/api/state")).workspacePath || (await get("/api/windows")).windows?.[0]?.workspacePath;
+    assert(served === ws, `the app under test serves the isolated QA workspace (got ${served})`);
+
     await post("/api/qa/reset").catch(() => {});
     await post("/api/qa/seed", { party: "permui", members: [{ name: "claudey", role: "claude permission UI QA" }] });
     let party = await get("/api/party");
