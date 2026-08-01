@@ -32,7 +32,9 @@ interface ComposerProps {
  * row; narrow collapses to a single-line input so the Send/Stop control stays
  * reachable. Stop replaces Send while the member is working.
  *
- * Which keystroke sends is a global preference (Settings → 입력창).
+ * Which keystroke sends is a global preference (Settings → 입력창), applied
+ * identically in both layouts — the narrow input must never send on a key the
+ * wide textarea treats as a newline.
  *
  * Images attach by clipboard paste (Ctrl+V) or drag-and-drop. Attaching is gated
  * on the effective model's vision support: a text-only model refuses images with
@@ -183,7 +185,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
     void actions.sendMessage(view.name, text, images);
   }
 
-  function onKeyDown(event: KeyboardEvent) {
+  /**
+   * `multiline` is the ONLY thing the layout gets to decide, and it decides a
+   * newline — never whether Enter sends. An Enter that must not send is still
+   * consumed in the single-line input, because that input sits in a `<form>`
+   * where the browser's default action for Enter is "submit": leaving the key
+   * alone there made merely narrowing the panel start sending on Enter.
+   */
+  function onKeyDown(event: KeyboardEvent, multiline: boolean) {
     // The palette claims navigation/selection keys while it is open.
     if (palette.handleKeyDown(event)) {
       return;
@@ -194,6 +203,10 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
       event.preventDefault();
       submit();
+      return;
+    }
+    if (!multiline) {
+      event.preventDefault(); // no newline to insert here — just don't submit the form
     }
   }
 
@@ -277,7 +290,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
             className="wb-composer-input"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={(event) => onKeyDown(event, false)}
             onPaste={onPaste}
             placeholder={`${view.name}에게…`}
           />
@@ -300,7 +313,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
           className="wb-composer-textarea"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={(event) => onKeyDown(event, true)}
           onPaste={onPaste}
           rows={2}
           placeholder={imageBlocked ? `${view.name}에게 메시지 보내기…` : `${view.name}에게 메시지 보내기… (이미지 붙여넣기/끌어놓기 가능)`}

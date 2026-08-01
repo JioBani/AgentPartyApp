@@ -1,12 +1,20 @@
 /*
- * Composer send key (jsdom). Locks [P-3]8: the global `composer.sendKey`
- * preference decides what Enter does.
- *   "ctrl-enter" (default) → Enter is a newline, Ctrl/Cmd+Enter sends.
- *   "enter"                → Enter sends, Shift+Enter is a newline.
+ * Composer send key (jsdom). Locks two user-visible contracts:
  *
- * `defaultPrevented` is asserted alongside "was a message sent", because a key
- * the composer sends on must also be consumed — the composer is a <form>, and a
- * key left to the browser has its own default action there.
+ *  [P-3]8 — the global `composer.sendKey` preference decides what Enter does.
+ *    "ctrl-enter" (default) → Enter is a newline, Ctrl/Cmd+Enter sends.
+ *    "enter"                → Enter sends, Shift+Enter is a newline.
+ *
+ *  [#15] — the SAME thing happens at every panel width. Narrow renders a
+ *    single-line <input> inside the composer <form>, where the browser's default
+ *    action for Enter is "submit the form". So whenever Enter must NOT send, the
+ *    narrow input has to consume the key — otherwise merely narrowing the panel
+ *    starts sending on Enter.
+ *
+ * jsdom does not implement a form's implicit submission, so the narrow case is
+ * asserted through `defaultPrevented` — the exact thing that suppresses it —
+ * plus "no message was sent". Real key input at a real window width is covered
+ * by the full-process scripts/e2e-composer-send-key.mjs.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -105,12 +113,14 @@ const cases = [
   ["ctrl-enter", "wide", { ctrlKey: true }, true, true, "기본값: Ctrl+Enter 는 전송한다"],
   ["ctrl-enter", "wide", { metaKey: true }, true, true, "기본값: Cmd+Enter 도 전송한다"],
   ["ctrl-enter", "narrow", { ctrlKey: true }, true, true, "기본값: 좁은 폭에서도 Ctrl+Enter 는 전송한다"],
+  ["ctrl-enter", "narrow", {}, false, true, "[#15] 기본값: 좁은 폭의 Enter 도 전송하지 않는다 (폼 기본 submit 차단)"],
   ["enter", "wide", {}, true, true, "enter 설정: Enter 는 전송한다"],
   ["enter", "wide", { shiftKey: true }, false, false, "enter 설정: Shift+Enter 는 전송하지 않는다 (줄바꿈)"],
   ["enter", "narrow", {}, true, true, "enter 설정: 좁은 폭에서도 Enter 는 전송한다"],
+  ["enter", "narrow", { shiftKey: true }, false, true, "[#15] enter 설정: 좁은 폭의 Shift+Enter 도 전송하지 않는다"],
 ];
 
-console.log("composer send key ([P-3]8)");
+console.log("composer send key ([P-3]8 / [#15])");
 for (const [sendKey, density, modifiers, expectSent, expectConsumed, label] of cases) {
   const { root, field } = await mount({ sendKey, density });
   const consumed = pressEnter(field, modifiers);
