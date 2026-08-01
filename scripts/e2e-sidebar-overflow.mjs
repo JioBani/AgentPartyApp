@@ -72,6 +72,7 @@ async function main() {
       const trigger = document.querySelector(".wb-dd-trigger");
       if (!trigger) return { found: false };
       trigger.click();
+
       // React renders the menu on the next tick — measuring synchronously here
       // would report "no menu" for a perfectly working dropdown.
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -85,7 +86,7 @@ async function main() {
         bounded: style.maxHeight !== "none",
         maxHeight: style.maxHeight,
         overflowY: style.overflowY,
-        verticallyOnScreen: rect.top >= 0 && rect.bottom <= window.innerHeight,
+        onScreen: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
         rect: { top: Math.round(rect.top), bottom: Math.round(rect.bottom), left: Math.round(rect.left), right: Math.round(rect.right) },
         viewport: { w: window.innerWidth, h: window.innerHeight },
         label: (trigger.getAttribute("title") || trigger.textContent || "").trim().slice(0, 40),
@@ -95,16 +96,39 @@ async function main() {
     assert(menu.found && menu.opened, `a dropdown menu opens in the workbench`);
     assert(menu.bounded, `the dropdown menu is height-bounded (max-height ${menu.maxHeight}) so a long one scrolls instead of running off-window`);
     assert(menu.overflowY === "auto" || menu.overflowY === "scroll", `the bounded menu scrolls its overflow (overflow-y "${menu.overflowY}")`);
-    // Vertical only, deliberately. HORIZONTAL containment is NOT asserted because
-    // it does not hold today: <Dropdown> defaults to align="left" (`left: 0`), so
-    // a trigger near the right edge puts its 180px-min-width menu partly past the
-    // window. That is a placement bug in src/renderer/workbench/Dropdown.tsx —
-    // no CSS rule can flip the anchor — and is reported separately rather than
-    // quietly dropped here. Extend this to `rect.right <= viewport.w` when the
-    // dropdown learns to flip its alignment.
-    assert(menu.verticallyOnScreen, `the open "${menu.label}" menu is vertically inside the window (rect ${JSON.stringify(menu.rect)} in ${JSON.stringify(menu.viewport)})`);
+    // Both axes. The horizontal one is [#18]: the panel-header trigger sits near
+    // the right edge, so with the old fixed align="left" its menu ran ~30px past
+    // the window. <Dropdown> now flips its anchor, and this is what proves it.
+    assert(menu.onScreen, `the open "${menu.label}" menu lies entirely inside the window (rect ${JSON.stringify(menu.rect)} in ${JSON.stringify(menu.viewport)})`);
     assert(menu.uncut, "today's tallest menu still renders whole (the cap is not clipping normal menus)");
     await cdp.eval(`document.querySelector(".wb-dd-trigger")?.click()`);
+
+    // Every dropdown in the workbench, not just the first: the fix flips the
+    // anchor per trigger, so a right-anchored one (the composer's) must stay
+    // correct too, not merely the left-anchored one that was broken.
+    const all = await cdp.eval(`(async () => {
+      const out = [];
+      const triggers = [...document.querySelectorAll(".wb-dd-trigger")];
+      for (const trigger of triggers) {
+        trigger.click();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const el = document.querySelector(".wb-dd-menu");
+        if (el) {
+          const r = el.getBoundingClientRect();
+          out.push({
+            label: (trigger.getAttribute("title") || trigger.textContent || "?").trim().slice(0, 30),
+            onScreen: r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth,
+            right: Math.round(r.right),
+          });
+        }
+        trigger.click();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return { count: triggers.length, menus: out };
+    })()`);
+    assert(all.menus.length > 0, `every dropdown trigger opens a menu (${all.menus.length}/${all.count})`);
+    const offScreen = all.menus.filter((m) => !m.onScreen);
+    assert(offScreen.length === 0, `all ${all.menus.length} open menus stay inside the window${offScreen.length ? ` — off-window: ${JSON.stringify(offScreen)}` : ""}`);
 
     // Now far more parties and members than any window height can show at once.
     for (let i = 2; i <= PARTIES; i += 1) {
