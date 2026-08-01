@@ -37,6 +37,21 @@ function deriveStatus(member: PartyMember, session: SessionView | undefined, tra
   if (!member.sessionId || !session) {
     return "not-started";
   }
+  // The member is bound to a session that nothing is behind any more: its
+  // harness process is gone, or this process does not hold that session. Either
+  // way it reads as ready but cannot be used, which is what the user hit.
+  //
+  // This is checked FIRST on purpose. Everything below describes a live session
+  // — an unresolved approval restored from disk would otherwise pin a dead
+  // member in "approval" forever (the shape of the #4-class bug), and a status
+  // left mid-flight would read as busy.
+  //
+  // Note this is NOT the app-restart case: a restart clears the stale binding,
+  // so a restarted member arrives with no sessionId and correctly reads
+  // "not-started" above — its conversation is intact and messaging it resumes.
+  if (member.status === "missing_session") {
+    return "disconnected";
+  }
   if (hasPendingApproval(transcript, session)) {
     return "approval";
   }
@@ -178,6 +193,12 @@ export function statusLabel(status: MemberStatus): string {
       return "approval";
     case "not-started":
       return "not started";
+    // States only the fact: the session this member is bound to is not there.
+    // Not "closed"/"crashed" — we do not know why, and guessing would be its own
+    // lie. Not "error"/"failed" either: nothing is broken and nothing is lost;
+    // messaging the member starts a fresh session and the conversation resumes.
+    case "disconnected":
+      return "disconnected";
     default:
       return "idle";
   }

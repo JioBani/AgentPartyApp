@@ -81,8 +81,10 @@ function textOf(node: ReactNode): string {
  * Electron navigate the app window away from the workbench. A copy control sits
  * next to it so the target can be taken without opening it.
  *
- * Only http(s) is routed externally — the main handler rejects anything else —
- * so a non-web href (an anchor, a mailto) is left as a plain, inert link.
+ * Only http(s) is routed out: the main handler rejects anything else, so there is
+ * no point intercepting it here. Any other href (an anchor, a mailto) is left
+ * exactly as this app already handled it — this component neither improves nor
+ * worsens that case, and it is NOT inert.
  */
 function MarkdownLink({ href, children, ...props }: { href?: string; children?: ReactNode } & Record<string, unknown>) {
   const external = Boolean(href && /^https?:\/\//i.test(href));

@@ -5148,3 +5148,14 @@ body.wb-resizing {
 }
 .wb-member-row.is-open .wb-harness-chip,
 .wb-tab.is-active .wb-harness-chip { color: var(--text-2); }
+
+/* ── W2: disconnected member ([#13]) ────────────────────────────────────── */
+
+/* A member bound to a session nothing is behind any more. Muted, not alarming:
+   nothing is broken and nothing is lost — messaging it starts a fresh session
+   and the conversation resumes. Distinct from `is-idle` (green = ready) so the
+   two are not read as the same thing. */
+.wb-status-pill.is-disconnected {
+  color: var(--text-3);
+  background: var(--bg-4);
+}

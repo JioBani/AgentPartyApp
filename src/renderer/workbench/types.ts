@@ -70,7 +70,13 @@ export type TranscriptBlock =
       at?: string;
     };
 
-export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled";
+/**
+ * `disconnected` is the member's own `missing_session`: it is bound to a session
+ * that nothing is behind any more. It is deliberately NOT folded into
+ * `not-started`, which means "never started, message it and it begins" — telling
+ * a user that about a member they cannot reach is worse than saying nothing.
+ */
+export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected";
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 

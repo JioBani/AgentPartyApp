@@ -41,7 +41,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
 | `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the Claude Code gateway preserves Anthropic image blocks without rebuilding or silently dropping them. |
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
-| `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. |
+| `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. Also covers [#13] **dead vs never-started**: a member reported `missing_session` reads as `disconnected` (never `idle` = ready to chat), outranks a restored pending approval and a mid-flight busy status, and is never `busy` so no progress indicator can appear over it — while a member after an app RESTART still reads `not started`, because the restart clears the stale binding and its conversation resumes on the next message. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 | `qa-auto-compact` | per-member auto-compaction pure logic (`src/shared/autoCompact.ts`): threshold clamp/step-snap (50–95), OFF-by-default, stored/HTTP `normalizeAutoCompact`, inheritance (member setting → global `compactDefault` → built-in), token estimate (never against an unknown window), and `shouldAutoCompact` crossing test the renderer trigger fires on (off / unknown-window / unknown-usage never fire). |
 | `qa-compact-dialog` | context donut + Auto-compact dialog render (jsdom), locking `design_handoff_auto_compact`: the donut is a **ring** (not a bar) with a threshold **tick** only when on, and clicking it opens the dialog; the dialog carries the current-usage card (used/total/%), the enable toggle, the 50–95 step-5 threshold slider, and a footer with **지금 압축 실행** (fires `compact` + closes; disabled with no live session) beside **완료**. |
@@ -138,17 +138,21 @@ process's own IPC log is checked for `shell:openExternal` carrying that URL,
 proving the renderer→preload→main path that no jsdom test can see; the app is
 then confirmed not to have navigated away. The link's copy control is clicked and
 captured so its honest outcome (check on success, ✗ when the clipboard refuses)
-is visible. Further legs cover **one-click copy** (code block + whole reply, both
-clicked in the real app) and **a long subagent prompt collapsing** (a `subagent`
-event with a 40-line `assignedTask` injected over `/api/qa/…/emit` — every canned
-scenario's task is short — then drilled into through
-`/api/qa/…/subagents/open`, so the drill-in is driven by a route that reports
-whether it ran).
+is visible. Further legs cover **one-click copy** (code block + whole reply),
+**a long subagent prompt collapsing** (a `subagent` event with a 40-line
+`assignedTask` injected over `/api/qa/…/emit` — every canned scenario's task is
+short — then drilled into through `/api/qa/…/subagents/open`), **the progress
+indicator** across a real working→idle transition, **the harness badge** with
+REAL codex/cursor members (creation starts no session, so it stays offline),
+**a code block surviving a message sent mid-stream** ([#14]), **modals ignoring
+an outside click** ([#16] — the popup is opened, the backdrop clicked, and the
+popup then closed by its own button, which only proves anything because it was
+still there), and **a dead member reading as `disconnected`** ([#13] — the
+harness is really ended through `/api/qa/…/kill-harness`).
 
-⚠️ `POST /api/capture`'s `click` is a **silent no-op when the selector matches
-nothing** — it returns the same `{ok:true}`. Never assert on the capture result
-alone: click through a route that reports its outcome where one exists, and read
-the PNG.
+Every click asserts `applied.clicked`, so a selector that matches nothing fails
+the run instead of passing on a screenshot of something else. Step 0 asserts
+`runtime.appRoot` is under this script's own root (see §1b).
 
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord
@@ -451,6 +455,51 @@ separate, possibly-stale artifact):
 ```
 npm run build
 ```
+
+### 1b. Assert IN THE SCRIPT that the build now running is your worktree
+
+An e2e launched from a worktree can measure a **different checkout** and report a
+pass — this is not hypothetical: 21 scripts here hardcoded
+`C:\Project\AgentPartyApp` as the app root, so any of them run from a worktree
+built and drove the MAIN tree while the author read green output. Deriving the
+root from `import.meta.url` (§ below) prevents it; asserting it proves it.
+
+Make it the first assertion, before any behaviour is exercised:
+
+```js
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = (await get("/api/state")).runtime?.appRoot || "";
+// BOUNDARY comparison — see the warning below.
+const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
+```
+
+⚠️ **Compare on a path boundary, never a bare prefix.**
+`C:\Project\AgentPartyApp` is a string prefix of `C:\Project\AgentPartyApp-w2`,
+so a plain `startsWith` accepts a main-worktree build as your own — reproducing,
+inside the check, the exact false pass the check exists to prevent. Append
+`path.sep` to both sides.
+
+Three instruments exist. **Only the first stays valid after a merge:**
+
+| Form | How | Valid |
+|---|---|---|
+| `runtime.appRoot` (preferred) | `/api/state` (and `/api/health`) reports where the RUNNING module was loaded from — the app's own knowledge, not a value the driver supplied | always |
+| A branch-only endpoint | assert `/api/spec` lists an endpoint only your branch serves | **before merge only** |
+| A branch-only DOM class | `POST /api/capture` with `click` on a class only your branch renders (a selector miss fails the request, so the match IS the assertion) | **before merge only** |
+
+⚠️ The last two **stop discriminating the moment your branch merges** — every
+branch then has that endpoint or class, and the assertion passes forever while
+proving nothing. That is the same trajectory as the dead knobs this project has
+had to dig out (`AGENTPARTY_WORKSPACE` that nothing read, an
+`AGENTPARTY_ALLOW_MULTI_INSTANCE` that stopped meaning anything when the
+single-instance lock was removed). They all worked at first. If you use form 2
+or 3 because `appRoot` is unavailable, say so in a comment *next to the
+assertion* — the person who copies it into the next cycle will not read this
+table.
+
+Do NOT assert on `settings.workspacePath` or `logs.logFilePath` for this: both
+are values the driver itself wrote into the isolated userData, so the check is
+self-fulfilling.
 
 ### 2. Launch the real app (optionally targeting a workspace)
 ```

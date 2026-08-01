@@ -7,17 +7,15 @@
  * member, streams real normalized events into its transcript and drives the
  * rendered UI over HTTP. Offline: no model call, no billing.
  *
- * Legs (added as the lane lands each item):
- *   [P-3]5  a markdown link click reaches the main process `shell:openExternal`
- *           handler — proving the whole renderer→preload→IPC path, which no
- *           jsdom test can see — and the link's copy control reports success.
+ * Legs, one per lane item: [P-3]5 external links · [P-3]3 one-click copy ·
+ * [P-3]7 progress indicator · [#6] long subagent prompt · [#16] modals ignoring
+ * an outside click · [P-8] harness badge · [#14] a code block surviving a
+ * message sent mid-stream · [#13] a dead member reading as disconnected.
  *
- * ⚠️ `POST /api/capture`'s `click` does NOT report whether its selector matched —
- * a miss returns the same `{ok:true}`. So a leg that only checks the capture
- * result proves the app rendered SOMETHING, not that the click happened. Legs
- * below either drive through a route that reports its outcome, or read the main
- * process's log; where neither is possible the capture is named in the output so
- * a human reads the PNG. Once capture reports `clicked`, assert on it here.
+ * Every click asserts `applied.clicked`. A selector that matches nothing now
+ * FAILS the request, so a click leg can no longer pass by rendering something
+ * else — before that landed these legs only checked that a PNG came back, and
+ * a human had to read it.
  *
  * Run: node scripts/e2e-transcript-render.mjs   (after `npm run build`)
  */
@@ -76,6 +74,7 @@ async function main() {
     base = await discover();
     const health = await get("/api/health");
     ok(health.ok, `app is up at ${base}`);
+    await assertRunningBuildIsThisWorktree();
     // The served workspace must be OURS — never the user's real one.
     const windows = (await get("/api/windows")).windows || [];
     ok(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
@@ -95,6 +94,8 @@ async function main() {
     await longSubagentTaskCollapses();
     await harnessIsVisible();
     await codeBlockSurvivesInterjection();
+    await modalsIgnoreOutsideClicks();
+    await deadMemberReadsAsDisconnected();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -105,6 +106,43 @@ async function main() {
 
   console.log(failures.length ? `\nW2 TRANSCRIPT E2E FAILED (${failures.length})` : "\nW2 TRANSCRIPT E2E PASSED");
   process.exit(failures.length ? 1 : 0);
+}
+
+/**
+ * Step 0 — the build now running IS this worktree.
+ *
+ * A driver launched from a worktree can easily end up measuring a DIFFERENT
+ * checkout (a hardcoded root did exactly that across this project's scripts), and
+ * every later assertion would then describe someone else's code while passing.
+ * `runtime.appRoot` is read by the app from its OWN running module, so unlike
+ * `workspacePath` it is not a value this script fed in.
+ *
+ * Compared on a path BOUNDARY, never a bare prefix: `C:\…\AgentPartyApp` is a
+ * string prefix of `C:\…\AgentPartyApp-w2`, so `startsWith` alone would accept a
+ * main-worktree build as this one — reproducing, inside the check, the exact
+ * false green the check exists to prevent.
+ */
+async function assertRunningBuildIsThisWorktree() {
+  const appRoot = (await get("/api/state")).runtime?.appRoot || "";
+  const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
+  ok(Boolean(appRoot) && within, `running build is THIS worktree (appRoot=${appRoot || "<missing>"}, expected under ${root})`);
+}
+
+/**
+ * Clicks a selector in the real window and asserts the click actually landed.
+ * A selector matching nothing fails the request outright, so `applied.clicked`
+ * is a real signal rather than a restatement of `ok`.
+ */
+async function clickAndCapture(selector, shotName, message) {
+  const shot = path.join(shotDir, shotName);
+  try {
+    const result = await post("/api/capture", { click: selector, path: shot });
+    ok(result.applied?.clicked === true && result.bytes > 0, `${message} → ${shotName}`);
+    return result;
+  } catch (error) {
+    ok(false, `${message} — click failed: ${error.message}`);
+    return null;
+  }
 }
 
 /**
@@ -121,9 +159,7 @@ async function linkOpensInOsBrowser() {
   await delay(600);
 
   const before = ipcLogLines().length;
-  const shot = path.join(shotDir, "p3-5-link.png");
-  const capture = await post("/api/capture", { click: `.wb-md-link a[href="${LINK}"]`, path: shot });
-  ok(capture.ok && capture.bytes > 0, `captured the rendered link → ${capture.path}`);
+  await clickAndCapture(`.wb-md-link a[href="${LINK}"]`, "p3-5-link.png", "clicked the rendered link");
   await delay(500);
 
   const opened = ipcLogLines().slice(before).filter((line) => line.includes("shell:openExternal"));
@@ -138,9 +174,7 @@ async function linkOpensInOsBrowser() {
   // The copy control writes the target; the capture right after the click shows
   // its honest outcome — a check when the write landed, an ✗ when the platform
   // refused (it never claims a copy that did not happen).
-  const copyShot = path.join(shotDir, "p3-5-link-copy.png");
-  const copied = await post("/api/capture", { click: ".wb-md-link .wb-copy-btn", path: copyShot });
-  ok(copied.ok && copied.bytes > 0, `clicked the link copy control; state captured → ${copied.path}`);
+  await clickAndCapture(".wb-md-link .wb-copy-btn", "p3-5-link-copy.png", "clicked the link copy control");
 }
 
 /**
@@ -157,13 +191,8 @@ async function oneClickCopy() {
   });
   await delay(600);
 
-  const codeShot = path.join(shotDir, "p3-3-code-copy.png");
-  const code = await post("/api/capture", { click: ".wb-md pre .wb-copy-btn", path: codeShot });
-  ok(code.ok && code.bytes > 0, `clicked the code-block copy control → ${code.path}`);
-
-  const replyShot = path.join(shotDir, "p3-3-reply-copy.png");
-  const reply = await post("/api/capture", { click: ".wb-assistant-head .wb-copy-btn", path: replyShot });
-  ok(reply.ok && reply.bytes > 0, `clicked the whole-reply copy control → ${reply.path}`);
+  await clickAndCapture(".wb-md pre .wb-copy-btn", "p3-3-code-copy.png", "clicked the code-block copy control");
+  await clickAndCapture(".wb-assistant-head .wb-copy-btn", "p3-3-reply-copy.png", "clicked the whole-reply copy control");
 }
 
 /**
@@ -197,8 +226,7 @@ async function longSubagentTaskCollapses() {
   const detailShot = path.join(shotDir, "issue-6-detail.png");
   ok((await post("/api/capture", { path: detailShot })).bytes > 0, `drill-in detail with the collapsed prompt → ${detailShot}`);
 
-  const fullShot = path.join(shotDir, "issue-6-detail-full.png");
-  ok((await post("/api/capture", { click: ".wb-subdetail-task .wb-expand-inline", path: fullShot })).bytes > 0, `전체 보기 on the delegated prompt → ${fullShot}`);
+  await clickAndCapture(".wb-subdetail-task .wb-expand-inline", "issue-6-detail-full.png", "opened 전체 보기 on the delegated prompt");
 }
 
 /**
@@ -251,6 +279,55 @@ async function codeBlockSurvivesInterjection() {
 
   const shot = path.join(shotDir, "issue-14-stream.png");
   ok((await post("/api/capture", { path: shot })).bytes > 0, `reply + interjected message + finished code block → ${shot}`);
+}
+
+/**
+ * [#16] — a modal must close by its own control, never by a stray click outside.
+ * Only the real app can show this: the popup has to be OPEN, the backdrop has to
+ * be a real element under a real pointer, and the modal has to still be there
+ * afterwards. Both clicks assert `applied.clicked`, so a mistyped selector fails
+ * instead of "proving" the modal survived a click that never happened.
+ */
+async function modalsIgnoreOutsideClicks() {
+  console.log("\n[#16] modals ignore a click outside:");
+  await post("/api/qa/open", { panels: [["renderer"]] });
+  await post("/api/qa/members/renderer/emit", {
+    events: [{ type: "assistant_text_delta", text: "\n\n" + "긴 메시지 줄\n".repeat(40) }],
+  });
+  await delay(700);
+
+  await clickAndCapture(".wb-expand-inline", "issue-16-open.png", "opened the 전체 보기 popup");
+  await clickAndCapture(".wb-tool-modal-backdrop", "issue-16-outside-click.png", "clicked the backdrop OUTSIDE the popup");
+  // The decisive assertion: the popup is still mounted after that click. If the
+  // backdrop still dismissed, this selector would be gone and the click fails.
+  await clickAndCapture(".wb-tool-modal-head .wb-icon-btn", "issue-16-closed.png", "the popup survived, and closes on its own 닫기 button");
+}
+
+/**
+ * [#13] — a member whose harness is gone must not read as ready to chat. The
+ * dead state is created for real through W1's `kill-harness` QA route (the
+ * session object stays, the harness behind it does not), which is the exact
+ * condition users hit and which no state injection reproduces.
+ */
+async function deadMemberReadsAsDisconnected() {
+  console.log("\n[#13] a member whose session is gone reads as disconnected:");
+  const before = memberByName(await get("/api/party"), "talker");
+  ok(before?.status !== "missing_session", `the member starts alive (status=${before?.status})`);
+
+  await post("/api/qa/members/talker/kill-harness", {});
+  await delay(900);
+
+  const after = memberByName(await get("/api/party"), "talker");
+  ok(after?.status === "missing_session", `the app now reports the member as missing_session (got ${after?.status})`);
+  ok(Boolean(after?.sessionId), "…while still bound to a session — this is the dead-binding case, not the app-restart one");
+
+  const shot = path.join(shotDir, "issue-13-disconnected.png");
+  ok((await post("/api/capture", { path: shot })).bytes > 0, `sidebar + panel header showing the member's state → ${shot}`);
+}
+
+/** Finds a member in a `/api/party` listing by name. */
+function memberByName(listing, name) {
+  return (listing.members || []).find((member) => member.name === name);
 }
 
 /**
