@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -208,6 +208,16 @@ export class AppController {
   }
 
   // --- Global state -------------------------------------------------------
+  /**
+   * Where THIS build was loaded from, read off the running module rather than
+   * any configured path. Constant for the life of the process, and different in
+   * every worktree — which is the point: an e2e can compare it against its own
+   * location and prove it is driving the build it just made. Parallel worktrees
+   * previously ran each other's builds and reported green for code that was
+   * never under test.
+   */
+  private static readonly APP_ROOT = __dirname;
+
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
@@ -229,6 +239,7 @@ export class AppController {
         spec: `${this.deps.getAutomationBaseUrl()}/api/spec`,
       },
       logs: { logFilePath: getLogFilePath() },
+      runtime: { appRoot: AppController.APP_ROOT },
       party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
@@ -686,6 +697,17 @@ export class AppController {
     return this.handlePartyAction(workspacePath, name, "auto-compact", { autoCompact }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>>;
   }
 
+  /**
+   * Persists a member's permission (Claude mode / Codex policy / Cursor policy)
+   * and applies it to the live adapter when one is running. This is the member
+   * -scoped route the composer's permission control drives, so a change made
+   * while the session is down is still recorded instead of being dropped — the
+   * session-scoped setters below only reach a live adapter.
+   */
+  setMemberPermission(workspacePath: string, name: string, permission: MemberPermissionInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberPermission"]>> {
+    return this.handlePartyAction(workspacePath, name, "permission", permission, windowId) as Promise<ReturnType<PartyApplicationService["setMemberPermission"]>>;
+  }
+
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */
   setMemberGate(workspacePath: string, name: string, gate: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberGate"]>> {
     return this.handlePartyAction(workspacePath, name, "gate", { gate }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberGate"]>>;
@@ -845,7 +867,7 @@ export class AppController {
     return { ok: true, view };
   }
 
-  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
+  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true; applied?: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } }> {
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
@@ -857,37 +879,78 @@ export class AppController {
     // Optional `theme`: flip the active theme before capturing so both light and
     // dark fidelity can be screenshotted over HTTP (the theme is a user-toggleable
     // display attribute, so setting it here is harmless).
+    const applied: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } = {};
+    /** Runs a pre-capture step, attributing any failure to the option that asked for it. */
+    const evaluate = async (option: string, script: string): Promise<any> =>
+      win.webContents.executeJavaScript(script).catch((error: unknown) => {
+        throw new Error(`Capture ${option} could not be applied: ${error instanceof Error ? error.message : String(error)}`);
+      });
     if (typeof body?.theme === "string" && (body.theme === "light" || body.theme === "dark")) {
-      await win.webContents.executeJavaScript(
+      await evaluate(
+        "theme",
         `(() => { document.documentElement.setAttribute("data-theme", ${JSON.stringify(body.theme)}); try { localStorage.setItem("agentparty.theme", ${JSON.stringify(body.theme)}); } catch {} })()`,
-      ).catch(() => undefined);
+      );
+      applied.theme = body.theme;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     // Optional `click`: dispatch a click on a selector before capturing, so an
     // interactive state (compare toggle, a drill-in row) can be screenshotted over
-    // HTTP. Repeatable via a CSS selector; no-op if the element isn't found.
-    if (typeof body?.click === "string" && body.click.trim()) {
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(body.click.trim())}); if (el) { el.click(); return true; } return false; })()`,
-      ).catch(() => undefined);
+    // HTTP.
+    //
+    // A selector that matches NOTHING is an error, not a no-op. This used to
+    // resolve `false` internally and still answer `{ok:true}`, so every e2e that
+    // drove the UI through a mistyped or since-renamed selector passed green
+    // without having clicked anything — the verification tooling itself was
+    // lying. Failing loudly is the only form a caller cannot skip past.
+    const clickSelector = typeof body?.click === "string" ? body.click.trim() : "";
+    if (clickSelector) {
+      const clicked = await evaluate(
+        `click '${clickSelector}'`,
+        `(() => { const el = document.querySelector(${JSON.stringify(clickSelector)}); if (el) { el.click(); return true; } return false; })()`,
+      );
+      if (!clicked) {
+        throw new Error(`Capture click matched no element for selector '${clickSelector}' — nothing was clicked.`);
+      }
+      applied.clicked = true;
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    // `scrollY`/`scrollX` carry the same hazard as `click`, and it is harder to
+    // notice: a screenshot of the WRONG scroll position looks just as plausible
+    // as the right one, so a below-the-fold check that never scrolled reads as a
+    // pass. Both now report the position actually reached, and a NAMED selector
+    // that does not exist fails instead of silently scrolling something else (or
+    // nothing). Only the default region keeps the scrollingElement fallback.
+    const scrollSelector = typeof body?.scrollSelector === "string" ? body.scrollSelector.trim() : "";
     if (body?.scrollY !== undefined) {
-      const target = typeof body?.scrollSelector === "string" && body.scrollSelector.trim() ? body.scrollSelector.trim() : ".program-scroll";
+      const target = scrollSelector || ".program-scroll";
+      const fallback = scrollSelector ? "null" : "document.scrollingElement";
       const y = body.scrollY === "bottom" ? Number.MAX_SAFE_INTEGER : Number(body.scrollY) || 0;
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(target)}) || document.scrollingElement; if (el) el.scrollTop = ${y}; return el ? el.scrollTop : 0; })()`,
-      ).catch(() => undefined);
+      const reached = await evaluate(
+        `scrollY '${target}'`,
+        `(() => { const el = document.querySelector(${JSON.stringify(target)}) || ${fallback}; if (!el) return null; el.scrollTop = ${y}; return el.scrollTop; })()`,
+      );
+      if (reached === null) {
+        throw new Error(`Capture scrollY found no element for selector '${target}' — the page was not scrolled.`);
+      }
+      applied.scrollY = reached;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     // Optional `scrollX`: horizontal scroll of a selector (e.g. a wide table) so a
     // frozen-first-column / far-right section can be screenshotted. Requires
     // `scrollSelector`; pass pixels or "right".
-    if (body?.scrollX !== undefined && typeof body?.scrollSelector === "string" && body.scrollSelector.trim()) {
+    if (body?.scrollX !== undefined) {
+      if (!scrollSelector) {
+        throw new Error("Capture scrollX requires `scrollSelector` naming the element to scroll horizontally.");
+      }
       const x = body.scrollX === "right" ? Number.MAX_SAFE_INTEGER : Number(body.scrollX) || 0;
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(body.scrollSelector.trim())}); if (el) el.scrollLeft = ${x}; return el ? el.scrollLeft : 0; })()`,
-      ).catch(() => undefined);
+      const reached = await evaluate(
+        `scrollX '${scrollSelector}'`,
+        `(() => { const el = document.querySelector(${JSON.stringify(scrollSelector)}); if (!el) return null; el.scrollLeft = ${x}; return el.scrollLeft; })()`,
+      );
+      if (reached === null) {
+        throw new Error(`Capture scrollX found no element for selector '${scrollSelector}' — nothing was scrolled.`);
+      }
+      applied.scrollX = reached;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     const { image, buffer } = await this.captureNonEmptyPage(win);
@@ -902,6 +965,12 @@ export class AppController {
       width: image.getSize().width,
       height: image.getSize().height,
       bytes: buffer.length,
+      // What each requested pre-capture step actually achieved (the position
+      // reached, the theme set, the click landed). A caller checking that its
+      // scroll took effect reads it here instead of inferring it from `ok`.
+      ...(Object.keys(applied).length ? { applied } : {}),
+      // Kept alongside `applied.clicked` because callers already assert on it.
+      ...(applied.clicked ? { clicked: true as const } : {}),
     };
   }
 
@@ -990,6 +1059,25 @@ export class AppController {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:open-gate", { kind, member });
     return { ok: true, kind, member };
+  }
+
+  /**
+   * Test-only: make a member's harness report that it ENDED, without removing
+   * the session — the state a crashed/exited harness leaves behind. There is no
+   * other way to reach it offline, and it is the state #13 is about: the session
+   * entry outlives the process, so anything inferring liveness from the entry
+   * alone keeps calling a dead member "running".
+   */
+  async qaKillHarness(workspacePath: string, name: string): Promise<{ ok: true; sessionId: string }> {
+    this.requireQa();
+    const party = await this.engineFor(workspacePath).listParty();
+    const sessionId = party.members?.find((member) => member.name === name)?.sessionId;
+    if (!sessionId) {
+      throw new Error(`Member '${name}' has no live session to end.`);
+    }
+    this.deps.sessionManager.setMockStatus(sessionId, "closed");
+    await this.broadcastParty(workspacePath);
+    return { ok: true, sessionId };
   }
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {

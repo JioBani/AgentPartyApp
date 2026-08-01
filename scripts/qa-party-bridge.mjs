@@ -52,6 +52,12 @@ let seq = 0;
 // thread id is deterministic (`thread-<sessionId>`).
 const resumedWith = [];
 const sessionManager = {
+  // The service subscribes to session events (it records a member's harness
+  // thread as soon as a turn commits, #19). This fake emits nothing, so the
+  // subscription is inert here — but it has to EXIST, because the real
+  // dependency is an EventEmitter and a stand-in missing part of that contract
+  // breaks at construction instead of in an assertion.
+  on: () => undefined,
   createSession(input, resume, binding) {
     const id = `sess-${++seq}`;
     live.add(id);

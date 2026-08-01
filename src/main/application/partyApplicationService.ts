@@ -112,7 +112,42 @@ export class PartyApplicationService {
    */
   private seededHint = false;
 
-  constructor(private readonly deps: PartyApplicationDeps) {}
+  constructor(private readonly deps: PartyApplicationDeps) {
+    // Record the harness thread as soon as it becomes real — the turn that
+    // commits it — instead of hoping something later asks for it. It used to be
+    // written only by the renderer's debounced transcript save, which meant a
+    // member driven with NO WINDOW OPEN (the normal shape for agent-run party
+    // members) never had it written at all, and every one of those members lost
+    // its conversation on the next start. Quitting or closing right after a turn
+    // lost it for the same reason. Owning the fact here makes all three cases the
+    // same case. See #19.
+    this.deps.sessionManager.on("events", (payload: { sessionId?: string; events?: { type?: string }[] }) => {
+      if (!payload?.sessionId || !payload.events?.some((event) => event?.type === "turn_complete")) {
+        return;
+      }
+      this.persistHarnessThread(payload.sessionId);
+    });
+  }
+
+  /**
+   * Persists the owning member's harness thread id for a session whose turn just
+   * committed. Silent when nothing changed (the common case: the id is stable for
+   * the life of a conversation), and never stores an id the harness would refuse
+   * — {@link SessionManager.harnessSessionId} yields nothing before a turn.
+   */
+  private persistHarnessThread(sessionId: string): void {
+    const harnessId = this.deps.sessionManager.harnessSessionId(sessionId);
+    if (!harnessId) {
+      return;
+    }
+    this.updateMemberOwnedBySession(sessionId, "member harness thread persisted", (member) => {
+      if (member.harnessSessionId === harnessId) {
+        return undefined;
+      }
+      member.harnessSessionId = harnessId;
+      return { harnessSessionId: harnessId };
+    });
+  }
 
   /**
    * Resolves a party id to view/act on: the explicit choice if valid, else this
@@ -596,6 +631,10 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = state.members.find((item) => item.sessionId === sessionId);
     if (!member) {
+      // No owning member means this runtime change has nowhere to be persisted
+      // and WILL be lost on the next restart. Surface it instead of dropping it
+      // quietly, so a broken session↔member binding stays diagnosable.
+      log("warn", "party", "runtime change not persisted — no member owns this session", { workspace, sessionId, change: logMessage });
       return;
     }
     const details = update(member);
@@ -754,11 +793,38 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' bound to active session.`, state, member);
   }
 
+  /**
+   * Records the member's live harness thread id onto the in-hand record so the
+   * conversation stays reachable. Mutates without persisting — the caller owns
+   * the state it read and writes it back, so persisting here would be clobbered
+   * by that later write. Safe at any teardown point: `harnessSessionId` yields
+   * nothing before a turn has committed, so this never stores an id the harness
+   * would refuse to resume.
+   */
+  private captureHarnessThread(member: PartyMember): boolean {
+    if (!member.sessionId) {
+      return false;
+    }
+    const harnessId = this.deps.sessionManager.harnessSessionId(member.sessionId);
+    if (!harnessId || harnessId === member.harnessSessionId) {
+      return false;
+    }
+    member.harnessSessionId = harnessId;
+    log("info", "party", "captured harness thread at teardown", { member: member.name, partyId: member.partyId, harnessSessionId: harnessId });
+    return true;
+  }
+
   closeMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     if (member.sessionId) {
+      // Capture the harness thread BEFORE tearing the session down: it is the
+      // only way back into this conversation. It used to be recorded solely by
+      // the renderer's debounced transcript save, so closing right after a turn
+      // — or closing a member driven with no window open at all — dropped it,
+      // and the member's next message silently began an empty conversation.
+      this.captureHarnessThread(member);
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     member.sessionId = undefined;
@@ -1081,7 +1147,10 @@ export class PartyApplicationService {
     const status = view ? String(view.snapshot.status) : member.sessionId ? "missing_session" : "not_started";
     return {
       name: member.name,
-      running: Boolean(view),
+      // A session entry outlives its harness, so "we hold a session object" is
+      // not the same claim as "this member is running" — reporting it as such
+      // told agents a dead member was available to receive work.
+      running: Boolean(view) && status !== "closed",
       turnActive: Boolean(view && BUSY_SESSION_STATUSES.has(status)),
       status,
       turnCount: view?.snapshot.turnCount,
@@ -1342,15 +1411,38 @@ export class PartyApplicationService {
     return member;
   }
 
+  /**
+   * The member's status as it actually is, not as the bookkeeping remembers it.
+   *
+   * "Running" used to mean nothing more than "an entry exists in the in-memory
+   * session map". The map keeps that entry after the harness process is gone —
+   * the adapter reports `closed` when its stream ends, and nothing removed it —
+   * so a member whose harness had died still read as running, and the UI offered
+   * it as ready to chat (#13). The adapter's own last report is the honest
+   * source, and the codebase already treats this exact signal as death for the
+   * background usage adapters ({@link SessionManager} `bind`/usage handlers);
+   * member sessions were the ones missing the rule.
+   *
+   * Reported through the EXISTING `missing_session` value rather than a new one:
+   * the binding is still there, the harness behind it is not.
+   */
   private withLiveStatus(member: PartyMember): PartyMember {
-    if (member.sessionId && this.deps.sessionManager.hasSession(member.sessionId)) {
+    if (!member.sessionId) {
+      return member;
+    }
+    if (this.deps.sessionManager.hasSession(member.sessionId) && !this.harnessIsGone(member.sessionId)) {
       return { ...member, status: "running" };
     }
-    if (member.sessionId) {
-      return { ...member, status: "missing_session" };
-    }
-    return member;
+    return { ...member, status: "missing_session" };
   }
+
+  /** Whether the session's harness reported that it ended (process gone). */
+  private harnessIsGone(sessionId: string): boolean {
+    return this.sessionViewOf(sessionId)?.snapshot.status === "closed";
+  }
+
+
+
 
   private writeRoleFile(workspace: string, member: PartyMember, initialTask?: string): void {
     const dir = this.repository.memberDir(workspace, this.partyIdOf(member), member.name);

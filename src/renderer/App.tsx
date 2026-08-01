@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, InitialAppState, PartyCommandResult, PartyMember, SessionView } from "../shared/types";
+import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
@@ -609,6 +609,21 @@ export function App() {
     return sessionId && sessions.some((session) => session.id === sessionId) ? sessionId : undefined;
   }
 
+  /**
+   * Changes a member's permission through the MEMBER-scoped route, which
+   * persists it and applies it to the live adapter when one is running.
+   * The session-scoped setters only reach a live adapter, so driving them from
+   * here dropped every change made while the member's session was down — the
+   * control then snapped back to the stored value, read as "permission reset".
+   */
+  async function persistMemberPermission(name: string, permission: MemberPermissionInput): Promise<void> {
+    try {
+      await applyPartyResult(await window.agentParty.setMemberPermission(name, permission) as PartyCommandResult, false);
+    } catch (error) {
+      setPartyNotice(`'${name}' 권한을 변경하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   async function connectSubscription(provider: "codex" | "claude") {
     try {
       const result = await window.agentParty.loginSubscription(provider);
@@ -902,16 +917,10 @@ export function App() {
       }
     },
     setCodexPolicy(name, policy) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) {
-        void window.agentParty.setCodexPolicy(sessionId, policy);
-      }
+      void persistMemberPermission(name, { codexPolicy: policy });
     },
     setCursorPolicy(name, policy) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) {
-        void window.agentParty.setCursorPolicy(sessionId, policy);
-      }
+      void persistMemberPermission(name, { cursorPolicy: policy });
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], cursorPolicy: policy } }));
     },
     async listMcp(name) {
@@ -943,10 +952,7 @@ export function App() {
       return window.agentParty.authenticateMcpServer(sessionId, server) as Promise<McpAuthResult>;
     },
     setPermissionMode(name, mode) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) {
-        void window.agentParty.setPermissionMode(sessionId, mode);
-      }
+      void persistMemberPermission(name, { permissionMode: mode as PermissionModeSetting });
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], permissionMode: mode } }));
     },
   };

@@ -32,6 +32,11 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
     sendJson(res, 200, await c.qaReset(workspace));
     return;
   }
+  const killHarnessMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/kill-harness$/);
+  if (method === "POST" && killHarnessMatch) {
+    sendJson(res, 200, await c.qaKillHarness(workspace, decodeURIComponent(killHarnessMatch[1])));
+    return;
+  }
   const emitMatch = url.pathname.match(/^\/api\/qa\/members\/([^/]+)\/emit$/);
   if (method === "POST" && emitMatch) {
     sendJson(res, 200, await c.qaEmit(workspace, decodeURIComponent(emitMatch[1]), await readJson(req)));

@@ -63,6 +63,7 @@ const api = {
   startPartyMember: (name: string, input?: unknown) => ipcRenderer.invoke("party:start", name, input),
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
   setMemberAutoCompact: (name: string, autoCompact: unknown) => ipcRenderer.invoke("party:autoCompact", name, autoCompact),
+  setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),

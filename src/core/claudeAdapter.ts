@@ -65,6 +65,13 @@ export interface ClaudeAdapterOptions {
    */
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  /**
+   * Supplies the Claude Agent SDK module. Production leaves this unset and the
+   * real package is imported. QA passes a fake so adapter behaviour can be
+   * driven without a harness process — `scripts/qa-*.mjs` already relied on this
+   * seam, and without it those tests were quietly exercising the real SDK.
+   */
+  sdkLoader?: () => Promise<SdkModule>;
 }
 
 type SdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -523,9 +530,21 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   restart(resumeCurrentSession = false): void {
-    if (resumeCurrentSession && this.sessionId) {
-      this.resumeSessionId = this.sessionId;
-    } else if (!resumeCurrentSession) {
+    if (resumeCurrentSession) {
+      // Only a TURN-COMMITTED conversation can be resumed. The harness reports a
+      // session id as soon as the query opens, but it does not persist the
+      // conversation until a turn completes — so adopting that id here made the
+      // next start resume something that does not exist ("No conversation found
+      // with session ID ..."), which is the error users hit when they adjusted a
+      // member's settings right after creating it (#17). With no committed turn
+      // there is nothing to continue, so keep whatever we were already
+      // continuing (a genuinely resumed thread, or nothing at all).
+      // `SessionManager.harnessSessionId` gates the persisted id on the same
+      // condition; this is that rule applied to the in-process restart.
+      if (this.turnCount > 0) {
+        this.resumeSessionId = this.sessionId || this.resumeSessionId;
+      }
+    } else {
       this.resumeSessionId = this.options.resumeSessionId;
     }
     this.dispose();
@@ -594,7 +613,7 @@ export class ClaudeAdapter extends EventEmitter {
   private async run(): Promise<void> {
     let activeQuery: Query | undefined;
     try {
-      const sdk = await loadSdk();
+      const sdk = await (this.options.sdkLoader ?? loadSdk)();
       const executable = resolveClaudeExecutable(this.options.executablePath);
       if (this.usesRouterBackend() && !isRoutableRouterModel(this.runtimeModel)) {
         throw new Error(`No explicit AgentParty router mapping for '${this.model}' (${this.runtimeModel}). Refusing to fall back to another model.`);
@@ -1849,18 +1868,39 @@ function isRoutableRouterModel(model: string): boolean {
 
 async function assertRouterReachable(baseUrl: string, model: string): Promise<void> {
   const target = parseRouterTarget(baseUrl);
+  const kind = routerTargetForModel(model)?.kind;
+  // A router-backed model depends on a CHAIN, and naming only the first link
+  // left users unable to act: a GPT/Codex-subscription model on the Claude Code
+  // harness is served by the router forwarding to a local CLIProxyAPI, so
+  // "router is not reachable" pointed at the wrong thing when the real problem
+  // was that the proxy was never started or signed in. Each message now names
+  // the component that actually has to be running for THIS model.
+  const dependency = kind === "codex-subscription" || kind === "cursor-subscription"
+    ? " This model is served by the router forwarding to the local CLIProxyAPI (subscription proxy), so both must be running."
+    : "";
   const ok = await canConnect(target.host, target.port, 1200);
   if (!ok) {
     throw new Error(
       `AgentParty router is not reachable at ${target.host}:${target.port} (${baseUrl}). ` +
-        "Start the local router before using router-backed models such as MiniMax M3; refusing to let Claude Code retry against an unavailable backend.",
+        "Start the local router before using router-backed models such as MiniMax M3; refusing to let Claude Code retry against an unavailable backend." +
+        dependency,
     );
   }
   const health = await readRouterHealth(baseUrl);
-  if (routerTargetForModel(model)?.kind === "openrouter" && health && health.openRouterConfigured === false) {
+  if (kind === "openrouter" && health && health.openRouterConfigured === false) {
     throw new Error(
       "AgentParty Native embedded router is running, but OpenRouter is not configured. " +
         "Set agentpartyNative.router.openRouterApiKey or OPENROUTER_API_KEY before using router-backed models such as MiniMax M3.",
+    );
+  }
+  // The router itself answers with whether the subscription proxy is configured.
+  // Reporting that here turns a downstream "backend does not work" into a stated
+  // cause the user can fix.
+  if ((kind === "codex-subscription" || kind === "cursor-subscription") && health && health.subscriptionProxyConfigured === false) {
+    throw new Error(
+      `AgentParty router is running, but the local CLIProxyAPI (subscription proxy) it forwards '${model}' to is not configured` +
+        `${health.subscriptionProxyBaseUrl ? ` at ${health.subscriptionProxyBaseUrl}` : ""}. ` +
+        "Start CLIProxyAPI and connect the subscription in Settings → Authentication; refusing to let Claude Code retry against a backend that cannot answer.",
     );
   }
 }
@@ -1893,7 +1933,7 @@ function canConnect(host: string, port: number, timeoutMs: number): Promise<bool
   });
 }
 
-async function readRouterHealth(baseUrl: string): Promise<{ openRouterConfigured?: boolean } | undefined> {
+async function readRouterHealth(baseUrl: string): Promise<{ openRouterConfigured?: boolean; subscriptionProxyConfigured?: boolean; subscriptionProxyBaseUrl?: string } | undefined> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1200);
   try {
@@ -1901,7 +1941,7 @@ async function readRouterHealth(baseUrl: string): Promise<{ openRouterConfigured
     if (!response.ok) {
       return undefined;
     }
-    return (await response.json()) as { openRouterConfigured?: boolean };
+    return (await response.json()) as { openRouterConfigured?: boolean; subscriptionProxyConfigured?: boolean; subscriptionProxyBaseUrl?: string };
   } catch {
     return undefined;
   } finally {

@@ -332,6 +332,18 @@ export interface InitialAppState {
   router: { baseUrl: string };
   automationApi?: { baseUrl: string; spec: string };
   logs?: { logFilePath: string };
+  /**
+   * Where the RUNNING code was loaded from (the compiled main directory),
+   * derived from the running module's own location.
+   *
+   * Deliberately distinct from every other path in this payload:
+   * `settings.workspacePath` and `logs.logFilePath` are values a caller handed
+   * in, so a test asserting on them is asserting on its own input. This is the
+   * app stating a fact about itself, which is what lets an e2e prove it is
+   * driving the build it just produced rather than another checkout's — the
+   * failure that made parallel worktrees silently test the wrong code.
+   */
+  runtime?: { appRoot: string };
   party: { parties?: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
   windows?: WindowInfo[];
   resumableSessions?: ResumableSessionInfo[];

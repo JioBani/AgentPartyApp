@@ -21,7 +21,8 @@ If the port is already in use, the app binds to a free local port. The current U
 
 ### `GET /api/health`
 
-Returns current app state, router URL, automation URL, and log file path.
+Returns current app state, router URL, automation URL, log file path, and
+`runtime.appRoot` (which build is running — see `GET /api/state` below).
 
 ### `GET /api/spec`
 
@@ -30,6 +31,32 @@ Returns a machine-readable list of supported endpoints.
 ### `GET /api/state`
 
 Returns settings, auth provider states, sessions, model routes, harnesses, router status, logs, and AgentParty member state.
+
+#### `runtime.appRoot` — which build is actually running
+
+```json
+{ "runtime": { "appRoot": "C:\\Project\\AgentPartyApp-w1\\dist\\main\\application" } }
+```
+
+The directory the running code was loaded from, read off the running module.
+**Every other path in this payload was supplied by the caller** —
+`settings.workspacePath` and `logs.logFilePath` are configured, so a test that
+asserts on them is asserting on its own input. `appRoot` is the app stating a
+fact about itself, so an e2e can prove it is driving the build it just made.
+
+Parallel worktrees each build to their own `dist`, and an e2e that launched the
+wrong one still reported green. Assert this first:
+
+```js
+const { runtime } = await get("/api/state");
+// Compare on a path BOUNDARY: ".../AgentPartyApp" is a string prefix of
+// ".../AgentPartyApp-w1", so a bare startsWith accepts a sibling's build.
+const ok = (runtime.appRoot + path.sep).toLowerCase()
+  .startsWith(myRoot.toLowerCase() + path.sep);
+```
+
+where `myRoot` comes from the script's own `import.meta.url`. See
+`scripts/e2e-member-liveness.mjs` for the live example.
 
 Each session's live `snapshot` carries the harness runtime status. Two fields drive
 the per-member **context-capacity meter** (all harnesses):
@@ -75,6 +102,15 @@ fidelity shots. Optional `click` (CSS selector) dispatches a click before
 capturing, so an interactive state can be shot — e.g. the Token Usage compare
 toggle `[data-tu=compare-toggle]` or a member drill-in row
 `[data-tu=member-row][data-member=backend]`.
+
+**Every pre-capture step is verified, and the response reports what it achieved
+in `applied` (`{theme, clicked, scrollY, scrollX}`).** A `click` selector, or a
+`scrollSelector` you name explicitly, that matches no element **fails the
+request**; `scrollX` without `scrollSelector` fails too. `applied.scrollY` /
+`applied.scrollX` carry the position actually reached, so a caller can confirm
+the view moved. These options are how e2e tests drive and frame the real UI: a
+step that silently did nothing turns every downstream assertion — and every
+"I checked the section below the fold" screenshot — into a false pass.
 
 ```json
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
