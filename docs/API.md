@@ -21,7 +21,8 @@ If the port is already in use, the app binds to a free local port. The current U
 
 ### `GET /api/health`
 
-Returns current app state, router URL, automation URL, and log file path.
+Returns current app state, router URL, automation URL, log file path, and
+`runtime.appRoot` (which build is running — see `GET /api/state` below).
 
 ### `GET /api/spec`
 
@@ -30,6 +31,32 @@ Returns a machine-readable list of supported endpoints.
 ### `GET /api/state`
 
 Returns settings, auth provider states, sessions, model routes, harnesses, router status, logs, and AgentParty member state.
+
+#### `runtime.appRoot` — which build is actually running
+
+```json
+{ "runtime": { "appRoot": "C:\\Project\\AgentPartyApp-w1\\dist\\main\\application" } }
+```
+
+The directory the running code was loaded from, read off the running module.
+**Every other path in this payload was supplied by the caller** —
+`settings.workspacePath` and `logs.logFilePath` are configured, so a test that
+asserts on them is asserting on its own input. `appRoot` is the app stating a
+fact about itself, so an e2e can prove it is driving the build it just made.
+
+Parallel worktrees each build to their own `dist`, and an e2e that launched the
+wrong one still reported green. Assert this first:
+
+```js
+const { runtime } = await get("/api/state");
+// Compare on a path BOUNDARY: ".../AgentPartyApp" is a string prefix of
+// ".../AgentPartyApp-w1", so a bare startsWith accepts a sibling's build.
+const ok = (runtime.appRoot + path.sep).toLowerCase()
+  .startsWith(myRoot.toLowerCase() + path.sep);
+```
+
+where `myRoot` comes from the script's own `import.meta.url`. See
+`scripts/e2e-member-liveness.mjs` for the live example.
 
 Each session's live `snapshot` carries the harness runtime status. Two fields drive
 the per-member **context-capacity meter** (all harnesses):

@@ -44,6 +44,16 @@ async function main() {
   await app.prepare();
   try {
     await app.launch();
+    // Step 0: prove we are driving THIS worktree's build. `appRoot` is read off
+    // the running module, so unlike the workspace (which this driver supplied)
+    // it cannot be satisfied by an app started from another checkout.
+    const appRoot = (await get("/api/state")).runtime?.appRoot;
+    // Compare on a path BOUNDARY. "C:\...\AgentPartyApp" is a string prefix of
+    // "C:\...\AgentPartyApp-w1", so a bare startsWith would accept a sibling
+    // worktree's build — the exact false green this assertion exists to catch.
+    const withinRoot = typeof appRoot === "string"
+      && (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
+    assert(withinRoot, `the running build is this worktree's (root ${root}, app reports ${appRoot})`);
     const served = (await get("/api/state")).workspacePath || (await get("/api/windows")).windows?.[0]?.workspacePath;
     assert(served === ws, `the app under test serves the isolated QA workspace (got ${served})`);
 

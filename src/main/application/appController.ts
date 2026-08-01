@@ -208,6 +208,16 @@ export class AppController {
   }
 
   // --- Global state -------------------------------------------------------
+  /**
+   * Where THIS build was loaded from, read off the running module rather than
+   * any configured path. Constant for the life of the process, and different in
+   * every worktree — which is the point: an e2e can compare it against its own
+   * location and prove it is driving the build it just made. Parallel worktrees
+   * previously ran each other's builds and reported green for code that was
+   * never under test.
+   */
+  private static readonly APP_ROOT = __dirname;
+
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
@@ -229,6 +239,7 @@ export class AppController {
         spec: `${this.deps.getAutomationBaseUrl()}/api/spec`,
       },
       logs: { logFilePath: getLogFilePath() },
+      runtime: { appRoot: AppController.APP_ROOT },
       party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
