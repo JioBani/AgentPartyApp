@@ -5125,3 +5125,22 @@ body.wb-resizing {
 /* The sidebar row's status column has no color of its own — give the dots the
    live-activity color instead of the muted status text color. */
 .wb-member-row .wb-working-dots { color: var(--live); }
+
+/* ── W2: harness badge ([P-8]) ──────────────────────────────────────────── */
+
+/* Which harness a member runs on, shown wherever the member is identified
+   (sidebar row, tab). Short form only — these surfaces are dense — with the
+   full name on hover (title). Muted so it reads as provenance, not status. */
+.wb-harness-chip {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-3);
+}
+.wb-member-row.is-open .wb-harness-chip,
+.wb-tab.is-active .wb-harness-chip { color: var(--text-2); }

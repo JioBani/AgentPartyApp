@@ -280,6 +280,15 @@ assert(Boolean(workingRow?.querySelector(".wb-working-dots")), "sidebar row show
 assert(!/working/.test(workingRow?.textContent || ""), "…instead of the grey word 'working'");
 const idleRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.textContent.includes("frontend"));
 assert(/not started|idle/.test(idleRow?.textContent || "") && !idleRow?.querySelector(".wb-working-dots"), "a member that is not running keeps its status label and shows no indicator");
+
+// [P-8] The model alone does not identify a member — the same model behaves
+// differently per harness — so the harness is shown where the member is named.
+const rowChip = workingRow?.querySelector(".wb-harness-chip");
+assert(rowChip?.textContent === "CC" && rowChip?.getAttribute("title") === "Claude Code", "sidebar row shows the harness (short badge + full name on hover)");
+const tabChip = document.querySelector(".wb-tab .wb-harness-chip");
+assert(tabChip?.textContent === "CC", "tab strip shows the harness badge");
+const activeTab = document.querySelector(".wb-tab.is-active");
+assert(/Claude Code/.test(activeTab?.getAttribute("title") || ""), "the tab's tooltip names the harness in full");
 // The context indicator is now a DONUT (ring), not a bar. Clicking it opens the
 // Auto-compact dialog (covered by qa-compact-dialog); here we lock that it renders
 // with the live K/K range + % on a wide panel.

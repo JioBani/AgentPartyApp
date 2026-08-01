@@ -93,6 +93,7 @@ async function main() {
     // overlay that covers the panel header the indicator lives in.
     await progressIndicator();
     await longSubagentTaskCollapses();
+    await harnessIsVisible();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -197,6 +198,27 @@ async function longSubagentTaskCollapses() {
 
   const fullShot = path.join(shotDir, "issue-6-detail-full.png");
   ok((await post("/api/capture", { click: ".wb-subdetail-task .wb-expand-inline", path: fullShot })).bytes > 0, `전체 보기 on the delegated prompt → ${fullShot}`);
+}
+
+/**
+ * [P-8] — which harness a member runs on, wherever the member is named. Creates
+ * REAL members on all three harnesses (member creation does not start a session,
+ * so this stays offline) and opens them as tabs, proving the badge is driven by
+ * each member's own persisted `runtime` rather than a render-time default.
+ */
+async function harnessIsVisible() {
+  console.log("\n[P-8] the harness is shown next to the member:");
+  for (const [name, runtime] of [["codexy", "codex"], ["cursory", "cursor"]]) {
+    await post("/api/party/members", { name, runtime, requirement: "harness badge e2e" });
+  }
+  const listed = (await get("/api/party")).members || [];
+  const runtimes = Object.fromEntries(listed.map((m) => [m.name, m.runtime]));
+  ok(runtimes.codexy === "codex" && runtimes.cursory === "cursor", `members persist their own harness (${JSON.stringify(runtimes)})`);
+
+  await post("/api/qa/open", { panels: [["renderer", "codexy", "cursory"]] });
+  await delay(700);
+  const shot = path.join(shotDir, "p8-harness.png");
+  ok((await post("/api/capture", { path: shot })).bytes > 0, `sidebar rows + tabs carrying each member's harness → ${shot}`);
 }
 
 /**
