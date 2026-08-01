@@ -5,6 +5,7 @@ export const automationEndpoints = [
   "GET /api/logs",
   "POST /api/capture",
   "POST /api/settings",
+  "POST /api/clipboard/image",
   "GET /api/auth",
   "POST /api/auth/deepseek",
   "DELETE /api/auth/deepseek",
@@ -93,6 +94,8 @@ export const automationEndpoints = [
   "POST /api/qa/members/:name/interaction",
   "POST /api/qa/gate/open",
   "POST /api/qa/open",
+  "POST /api/qa/input",
+  "POST /api/qa/window/bounds",
   "POST /api/qa/usage",
   "POST /api/qa/reset",
 ] as const;

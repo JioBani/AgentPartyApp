@@ -41,7 +41,11 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-codex-models` | Codex live model catalog: `model/list` normalization (default-first, hidden dropped) + codex routes (per-model effort caps, leaderboard meta enrichment, static fallback without discovery) + MemberWizard DOM (all discovered models listed, pending hint, error banner + retry — no silent fallback) |
 | `qa-vision` | Image (vision) support single-source gate: every model route carries `capabilities.vision`; `visionForModel` resolves by id/runtime/orModelId + Codex gpt-slug twin; Codex+OpenRouter routes inherit catalog vision; and the Claude Code gateway preserves Anthropic image blocks without rebuilding or silently dropping them. |
 | `qa-composer-vision` | Composer image-attach gating (jsdom): on a vision model a dropped image adds a thumbnail and submit forwards `{kind:image,mediaType,dataBase64}` to `sendMessage`; on a text-only model the same drop is refused with a **visible reason** (no silent drop) and nothing is sent; the placeholder advertises image attach only when supported |
+| `qa-composer-send-key` | Composer send key ([P-3]8) **and width-independence** ([#15], jsdom): the global `composer.sendKey` preference decides what Enter does — `ctrl-enter` (the default) makes Enter a newline and Ctrl/Cmd+Enter send; `enter` makes Enter send and Shift+Enter a newline — and the SAME thing happens at both panel densities. The narrow layout renders a single-line `<input>` inside the composer `<form>`, where the browser's default action for Enter is submit, so an Enter that must not send is asserted **consumed** (`defaultPrevented`) as well as "nothing was sent" |
 | `qa-stall-status` | Stall watchdog renderer contract (harness-general): a `stall` diagnostic as the newest block makes a busy member read as **stalled** (not an endless "responding" spinner), later activity clears it back to working, turn end → idle, and a stalled member is not `busy` (panel offers restart). Backed by `SessionManager.scanForStalls` which flags an active turn silent past 120s. Also covers [#13] **dead vs never-started**: a member reported `missing_session` reads as `disconnected` (never `idle` = ready to chat), outranks a restored pending approval and a mid-flight busy status, and is never `busy` so no progress indicator can appear over it — while a member after an app RESTART still reads `not started`, because the restart clears the stale binding and its conversation resumes on the next message. |
+| `qa-composer-interrupt` | Interrupt-on-send default (P-14) through the **real App tree** in jsdom: pressing Send forwards `{interrupt}` to the IPC bridge following the global `composer.interruptOnSend` setting (the UI used to drop the option entirely, so a Send could only ever queue). Locks the built-in default OFF — including for a settings.json written before the feature existed — because interrupting kills a turn that is already doing work |
+| `qa-composer-drop-path` | Non-image file drop ([P-3]10, jsdom): dropping a non-image inserts its **path** into the draft (a member reads files itself, so a path is what it can act on) — it used to be swallowed entirely, since `onDrop` only reacted when some file was an image. Covers space-quoting, appending to an existing draft, mixed image+file drops doing both, a text-only model still accepting a path, and an unresolvable file being **reported** rather than skipped. `pathForFile` (the `webUtils` preload bridge) is mocked — see the script header for why no tier can drop a real file |
+| `qa-composer-copy-image` | Copy an attached image to the clipboard ([P-3]9, jsdom): every thumbnail gains a copy control beside remove, it hands the bridge the bytes of **that** thumbnail (checked by copying the 2nd of two different images), it confirms visibly and transiently, and a FAILED copy is reported on screen — a silent one is the worst case, since the user pastes stale clipboard content and blames the app they pasted into. The main-process write is asserted for real via `POST /api/clipboard/image` in `e2e-composer-input` |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 | `qa-auto-compact` | per-member auto-compaction pure logic (`src/shared/autoCompact.ts`): threshold clamp/step-snap (50–95), OFF-by-default, stored/HTTP `normalizeAutoCompact`, inheritance (member setting → global `compactDefault` → built-in), token estimate (never against an unknown window), and `shouldAutoCompact` crossing test the renderer trigger fires on (off / unknown-window / unknown-usage never fire). |
 | `qa-compact-dialog` | context donut + Auto-compact dialog render (jsdom), locking `design_handoff_auto_compact`: the donut is a **ring** (not a bar) with a threshold **tick** only when on, and clicking it opens the dialog; the dialog carries the current-usage card (used/total/%), the enable toggle, the 50–95 step-5 threshold slider, and a footer with **지금 압축 실행** (fires `compact` + closes; disabled with no live session) beside **완료**. |
@@ -206,6 +210,26 @@ to type in and waits (5 min) for the member to answer what you wrote. Pass
 to be enabled for the bot — without it the gateway closes with 4014, and the app
 says exactly that instead of showing a bare code.
 
+`node scripts/e2e-composer-input.mjs` (or `npm run test:e2e:composer-input`) boots
+the real app on an isolated userData + temp workspace (offline — mock members, no
+model) and presses REAL keys at REAL panel widths, which is the only tier that can
+prove the composer's input contract: the behaviour under test is a browser
+DEFAULT ACTION (Enter submitting the form a single-line `<input>` sits in) at a
+layout chosen from MEASURED element width. It covers [P-3]8 (the `composer.sendKey`
+preference decides Enter, and round-trips through `POST /api/settings` to the live
+window), [#15] (the same thing happens in a narrow panel — reached by SPLITTING
+into three panels, since the window has a 1100px minimum and a single panel is
+therefore never narrow), and P-14 (`composer.interruptOnSend` stops a busy
+member's turn instead of queueing behind it; mock members are seeded
+`autoReply:false` so "still busy" means "not interrupted" rather than "the mock
+had not finished answering"). It first asserts `GET /api/spec` serves
+`POST /api/qa/input` — an endpoint that exists only alongside this change — so a
+run can never silently be measuring a different build. It also covers [P-3]9 by
+writing to the **real OS clipboard** through `POST /api/clipboard/image` (the same
+method behind the composer's copy button), asserting the response reports the
+image actually written and that undecodable bytes are an error rather than a
+silent empty write. Capture: `composer-input-e2e.png`.
+
 `node scripts/e2e-auto-compact.mjs` (or `npm run test:e2e:auto-compact`) boots the
 real app on an isolated userData + temp workspace (offline — mock members, no
 model) and proves per-member auto-compaction end-to-end: `POST /api/party/members/
@@ -315,6 +339,8 @@ endpoints return 403 otherwise. (`npm run qa:seed` runs a canned scenario via
 | `POST /api/qa/members/:name/subagents` `{scenario}` | inject a named **subagent** scenario (`claude-test-shards` / `codex-call-tracer` / `codex-web-research` in `src/shared/subagentScenarios.ts`) as `subagent` normalized events — drives the dock + detail through the real fold with no real subagent spawned |
 | `POST /api/qa/members/:name/subagents/open` `{subId}` | open a subagent's drill-in detail (`subId` = the subagent id, or `"first"`) |
 | `POST /api/qa/gate/open` `{kind:"member"\|"party", member}` | open a **Message Gate** modal over HTTP (member editor for `member`, or party manager for `member`=partyId) so an agent can drive the real UI route + `/api/capture` it |
+| `POST /api/qa/input` `{selector, text, key, modifiers}` | focus a field, set its text, and press a key as a **real input event** — so the browser's own default action for that key runs (a script-dispatched DOM event never fires one). The input counterpart of `/api/capture`'s `click`; this is what makes keyboard-driven UI behaviour testable end-to-end |
+| `POST /api/qa/window/bounds` `{x, y, width, height}` | resize/move the window, so **responsive** behaviour can be checked at a real width (the app switches layout on measured element width — no state injection stands in for it) |
 | `POST /api/qa/reset` | remove mock members |
 
 **Inter-member messaging** is the key party-feature primitive. Because

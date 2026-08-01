@@ -106,6 +106,10 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.captureWindow(windowId, await readJson(req)));
         return;
       }
+      if (method === "POST" && url.pathname === "/api/clipboard/image") {
+        sendJson(res, 200, c.writeImageToClipboard(await readJson(req)));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/settings") {
         sendJson(res, 200, c.updateSettings(await readJson(req)));
         return;

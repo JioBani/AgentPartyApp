@@ -5159,3 +5159,24 @@ body.wb-resizing {
   color: var(--text-3);
   background: var(--bg-4);
 }
+
+/* [P-3]9 — copy an attached image to the clipboard. Sits beside the existing
+   remove button on the thumbnail (which owns the top-RIGHT corner), so this
+   takes the top-LEFT and inherits that button's shape. Appended rather than
+   folded into .wb-attachment-x above: styles.css is W4-owned this cycle. */
+.wb-attachment-copy {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.wb-attachment-copy:hover {
+  background: rgba(0, 0, 0, 0.8);
+}

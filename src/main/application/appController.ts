@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { clipboard, nativeImage } from "electron";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -974,6 +975,40 @@ export class AppController {
     };
   }
 
+  /**
+   * Puts an image on the OS clipboard, so an image attached in the composer can
+   * be pasted into any other app. The one route behind both the thumbnail's copy
+   * button and `POST /api/clipboard/image`.
+   *
+   * Decoding is the check: `nativeImage` returns an EMPTY image for bytes it
+   * cannot read, and writing that would clear the clipboard while reporting
+   * success — the user would paste nothing and never learn why. So an empty
+   * decode is an error, and the size actually written comes back for the caller
+   * to assert on.
+   */
+  writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): { ok: true; width: number; height: number; bytes: number } {
+    const dataBase64 = String(input?.dataBase64 || "").trim();
+    if (!dataBase64) {
+      throw new Error("clipboard image requires 'dataBase64' (base64 bytes, no data: prefix).");
+    }
+    const mediaType = String(input?.mediaType || "image/png").trim() || "image/png";
+    // From the BUFFER rather than a data URL — one decode step instead of two,
+    // and no size limit on the URL string for a large screenshot.
+    //
+    // Measured on Electron 33/Windows: the decoder rejects a 1x1 PNG (returns an
+    // empty image) while reading a 16x16 one fine. So `isEmpty` here can mean
+    // "genuinely undecodable" OR "degenerate size" — either way the bytes did not
+    // become an image, and saying so beats writing an empty one.
+    const image = nativeImage.createFromBuffer(Buffer.from(dataBase64, "base64"));
+    if (image.isEmpty()) {
+      throw new Error(`Could not decode a ${mediaType} image from the given bytes.`);
+    }
+    clipboard.writeImage(image);
+    const size = image.getSize();
+    log("info", "clipboard", "image copied", { mediaType, width: size.width, height: size.height });
+    return { ok: true, width: size.width, height: size.height, bytes: image.toPNG().length };
+  }
+
   // --- QA (test-only, workspace + window aware) ---------------------------
   isQaEnabled(): boolean {
     return isE2E() || process.env.AGENTPARTY_QA === "1";
@@ -1085,6 +1120,107 @@ export class AppController {
     const listing = await this.engineFor(workspacePath).qaReset();
     await this.broadcastParty(workspacePath);
     return { ok: true, ...listing };
+  }
+
+  /**
+   * Types into a field and/or presses a key — the input counterpart of
+   * `/api/capture`'s `click`, so a driver can run a keyboard-driven workflow
+   * through the real UI instead of calling the mutation behind it.
+   *
+   * The key goes through `sendInputEvent`, which produces an ACTUAL input event,
+   * so the browser's own default action for that key still runs — a bare Enter
+   * inside a `<form>` submits it. That fidelity is the point: a synthetic DOM
+   * event dispatched from a script never triggers a default action, so any
+   * behaviour that hinges on one (or on suppressing one) cannot be verified
+   * end-to-end without this.
+   *
+   * `text` is applied through the field's native value setter plus an `input`
+   * event, which is how a React-controlled field takes a value; typing it
+   * character by character would be slower and would not survive IME text.
+   */
+  async qaInput(
+    windowId: string | undefined,
+    body: { selector?: string; text?: string; key?: string; modifiers?: string[] },
+  ): Promise<{ ok: true; selector: string; value: string | null; key: string }> {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    const selector = String(body?.selector || "").trim();
+    if (selector) {
+      const focused = await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return document.activeElement === el; })()`,
+      );
+      if (!focused) {
+        // Never silently type into whatever happened to hold focus instead.
+        throw new Error(`No focusable element matches selector '${selector}'.`);
+      }
+    }
+    if (typeof body?.text === "string") {
+      // "Could not do it" is a failure, not a quiet success: asked to type into
+      // something with no editable value, this used to return ok with a null
+      // value and let the caller read a no-op as a pass. The focused element's
+      // tag comes back in the error, because knowing WHAT it tried to type into
+      // is what lets the caller fix the selector.
+      const typed = await win.webContents.executeJavaScript(
+        `(() => {
+          const el = document.activeElement;
+          if (!el || !("value" in el)) return { ok: false, tag: el ? el.tagName.toLowerCase() : "none" };
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(body.text)});
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          return { ok: true, value: el.value };
+        })()`,
+      );
+      if (!typed?.ok) {
+        throw new Error(`Cannot type into the focused element <${typed?.tag || "none"}> — it has no editable value.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    const key = String(body?.key || "").trim();
+    if (key) {
+      const modifiers = (Array.isArray(body?.modifiers) ? body.modifiers : []).map((m) => String(m).toLowerCase());
+      for (const type of ["keyDown", "char", "keyUp"] as const) {
+        win.webContents.sendInputEvent({ type, keyCode: key, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    const read = selector ? `document.querySelector(${JSON.stringify(selector)})` : "document.activeElement";
+    const value = await win.webContents
+      .executeJavaScript(`(() => { const el = ${read}; return el && "value" in el ? el.value : null; })()`)
+      .catch(() => null);
+    return { ok: true, selector, value, key };
+  }
+
+  /**
+   * Resizes/moves the window so a driver can verify RESPONSIVE behaviour at a
+   * real width — the app switches layout on measured element width, which no
+   * amount of state injection stands in for. Only the given fields change, and
+   * a maximized window is restored first because setBounds is ignored while
+   * maximized.
+   */
+  qaWindowBounds(
+    windowId: string | undefined,
+    body: { x?: number; y?: number; width?: number; height?: number },
+  ): { ok: true; bounds: { x: number; y: number; width: number; height: number } } {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    if (win.isMaximized()) {
+      win.unmaximize();
+    }
+    const current = win.getBounds();
+    const pick = (value: unknown, fallback: number) => (Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback);
+    win.setBounds({
+      x: pick(body?.x, current.x),
+      y: pick(body?.y, current.y),
+      width: pick(body?.width, current.width),
+      height: pick(body?.height, current.height),
+    });
+    return { ok: true, bounds: win.getBounds() };
   }
 
   // --- internals ----------------------------------------------------------

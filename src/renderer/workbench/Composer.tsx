@@ -1,5 +1,5 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { AtSign, CircleStop, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { AtSign, Check, CircleStop, Copy, ImageOff, Maximize2, Send, X } from "lucide-react";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
@@ -18,6 +18,8 @@ import {
   imageDataUrl,
   type ImageAttachment,
 } from "../../shared/attachments";
+import { sendsOnEnter } from "../../shared/composerSettings";
+import { useComposerPrefs } from "../app/composerPrefs";
 
 interface ComposerProps {
   view: MemberView;
@@ -29,6 +31,10 @@ interface ComposerProps {
  * Per-member message composer. Wide/mid render a two-row textarea with a tool
  * row; narrow collapses to a single-line input so the Send/Stop control stays
  * reachable. Stop replaces Send while the member is working.
+ *
+ * Which keystroke sends is a global preference (Settings → 입력창), applied
+ * identically in both layouts — the narrow input must never send on a key the
+ * wide textarea treats as a newline.
  *
  * Images attach by clipboard paste (Ctrl+V) or drag-and-drop. Attaching is gated
  * on the effective model's vision support: a text-only model refuses images with
@@ -51,6 +57,9 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
+  // Which thumbnail just went to the clipboard (a brief ✓ on its copy button).
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const prefs = useComposerPrefs();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
 
@@ -145,13 +154,51 @@ export function Composer({ view, density, actions }: ComposerProps) {
     void addFiles(files);
   }
 
+  /**
+   * Drop splits by kind: an image is ATTACHED (the existing behaviour), and
+   * anything else has its path inserted into the draft, which is what a member
+   * can actually act on — it reads files itself, so handing it a path beats
+   * uploading bytes it would then have nowhere to put. Non-image drops used to
+   * be swallowed with no attachment and no message.
+   */
   function onDrop(event: DragEvent) {
-    const files = Array.from(event.dataTransfer?.files || []);
-    if (files.some((file) => file.type.startsWith("image/"))) {
-      event.preventDefault();
-      void addFiles(files);
-    }
     setDragging(false);
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    const others = files.filter((file) => !file.type.startsWith("image/"));
+    if (images.length) {
+      void addFiles(images);
+    }
+    if (others.length) {
+      insertPaths(others);
+    }
+  }
+
+  /** Appends the dropped files' paths to the draft, reporting any it cannot resolve. */
+  function insertPaths(files: File[]) {
+    const paths: string[] = [];
+    const unresolved: string[] = [];
+    for (const file of files) {
+      let filePath = "";
+      try {
+        filePath = window.agentParty.pathForFile?.(file) || "";
+      } catch {
+        filePath = ""; // reported below — never a silent drop
+      }
+      if (filePath) {
+        paths.push(quotePath(filePath));
+      } else {
+        unresolved.push(file.name || "이름 없는 항목");
+      }
+    }
+    if (paths.length) {
+      setDraft((current) => (current.trim() ? `${current.replace(/\s+$/, "")} ${paths.join(" ")}` : paths.join(" ")));
+    }
+    setAttachError(unresolved.length ? `${unresolved.join(", ")}의 경로를 확인하지 못했습니다.` : "");
   }
 
   function onDragOver(event: DragEvent) {
@@ -163,6 +210,26 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   function removeAttachment(index: number) {
     setAttachments((current) => current.filter((_, i) => i !== index));
+  }
+
+  /**
+   * Puts an attached image on the OS clipboard so it can be pasted elsewhere —
+   * an image dropped in here is often the one you also want in a ticket or a
+   * chat, and until now the only thing you could do with it was remove it.
+   * Writing goes through the main process (`clipboard.writeImage`), the same
+   * route `POST /api/clipboard/image` takes.
+   */
+  async function copyAttachment(image: ImageAttachment, index: number) {
+    try {
+      await window.agentParty.copyImageToClipboard({ dataBase64: image.dataBase64, mediaType: image.mediaType });
+      setAttachError("");
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1400);
+    } catch (error) {
+      // Never a silent no-op: a copy that did not happen has to say so, or the
+      // user pastes stale clipboard content and blames the other app.
+      setAttachError(`이미지를 클립보드로 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   function submit(event?: FormEvent) {
@@ -178,13 +245,28 @@ export function Composer({ view, density, actions }: ComposerProps) {
     void actions.sendMessage(view.name, text, images);
   }
 
-  function onKeyDown(event: KeyboardEvent) {
+  /**
+   * `multiline` is the ONLY thing the layout gets to decide, and it decides a
+   * newline — never whether Enter sends. An Enter that must not send is still
+   * consumed in the single-line input, because that input sits in a `<form>`
+   * where the browser's default action for Enter is "submit": leaving the key
+   * alone there made merely narrowing the panel start sending on Enter.
+   */
+  function onKeyDown(event: KeyboardEvent, multiline: boolean) {
     // The palette claims navigation/selection keys while it is open.
     if (palette.handleKeyDown(event)) {
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    if (event.key !== "Enter") {
+      return;
+    }
+    if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
+      event.preventDefault();
       submit();
+      return;
+    }
+    if (!multiline) {
+      event.preventDefault(); // no newline to insert here — just don't submit the form
     }
   }
 
@@ -198,6 +280,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
       {attachments.map((image, index) => (
         <div className="wb-attachment" key={`${image.name || "img"}-${index}`} title={image.name}>
           <img src={imageDataUrl(image)} alt={image.name || "attached image"} />
+          <button
+            type="button"
+            className="wb-attachment-copy"
+            title={copiedIndex === index ? "복사됨" : "클립보드로 복사"}
+            onClick={() => copyAttachment(image, index)}
+          >
+            {copiedIndex === index ? <Check size={11} /> : <Copy size={11} />}
+          </button>
           <button type="button" className="wb-attachment-x" title="제거" onClick={() => removeAttachment(index)}><X size={11} /></button>
         </div>
       ))}
@@ -268,7 +358,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
             className="wb-composer-input"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={(event) => onKeyDown(event, false)}
             onPaste={onPaste}
             placeholder={`${view.name}에게…`}
           />
@@ -291,7 +381,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
           className="wb-composer-textarea"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={(event) => onKeyDown(event, true)}
           onPaste={onPaste}
           rows={2}
           placeholder={imageBlocked ? `${view.name}에게 메시지 보내기…` : `${view.name}에게 메시지 보내기… (이미지 붙여넣기/끌어놓기 가능)`}
@@ -306,9 +396,22 @@ export function Composer({ view, density, actions }: ComposerProps) {
           </div>
         </div>
       </div>
-      {dragging && !imageBlocked && <div className="wb-composer-dropzone">여기에 이미지를 놓으세요</div>}
+      {/* Shown for ANY drag: a text-only model still accepts a dropped path. */}
+      {dragging && (
+        <div className="wb-composer-dropzone">
+          {imageBlocked ? "여기에 파일을 놓으면 경로가 입력됩니다" : "이미지는 첨부되고, 그 외 파일은 경로가 입력됩니다"}
+        </div>
+      )}
     </form>
   );
+}
+
+/**
+ * Quotes a path that contains whitespace, so a member reading the message can
+ * tell one dropped path from the next.
+ */
+function quotePath(filePath: string): string {
+  return /\s/.test(filePath) ? `"${filePath}"` : filePath;
 }
 
 /** Reads a File to its base64 body (strips the `data:...;base64,` prefix). */

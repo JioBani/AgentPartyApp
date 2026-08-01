@@ -116,6 +116,22 @@ step that silently did nothing turns every downstream assertion — and every
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
 ```
 
+### `POST /api/clipboard/image`
+
+Puts an image on the OS clipboard, so it can be pasted into any other app. The
+same `AppController` method the composer's thumbnail copy button calls.
+
+```json
+{ "mediaType": "image/png", "dataBase64": "<base64 without the data: prefix>" }
+```
+
+`mediaType` defaults to `image/png`. Bytes that do not decode to an image are an
+**error**, not an empty write: writing an empty image would clear the clipboard
+while reporting success, and the user would paste nothing with no way to tell
+why. On success the response carries the image actually written —
+`{ ok, width, height, bytes }` — so a caller can assert on it instead of trusting
+`ok`.
+
 ## Settings
 
 ### `POST /api/settings`
@@ -1040,6 +1056,13 @@ interrupted** — tearing it down half-way would waste the work and leave contex
 partial, so the message queues behind it. The Discord bridge always sends with
 `interrupt`, because a person typed it and is waiting.
 
+**Every caller states `interrupt` for itself; omitting it means `false`.** The
+app's own Send button fills its value in from the `composer.interruptOnSend`
+setting — and that setting is named for the composer because it applies to the
+composer ALONE. An HTTP caller is a program: letting a human's input preference
+silently redirect an API would have it tear down another member's turn without
+ever asking for it. The boundary is explicit, not an oversight.
+
 ### `POST /api/party/members/:name/send`
 
 Lower-level compatibility endpoint that routes a message as an inter-member **channel** payload (wraps it with channel tags). Prefer `/message` for a plain user turn. Accepts the same optional `attachments`.
@@ -1498,6 +1521,49 @@ consuming a real quota. Returns the merged snapshot (same shape as
 (`"five_hour"` | `"weekly"` | `"monthly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
+
+### `POST /api/qa/input`
+
+Types into a field and/or presses a key in the targeted window — the input
+counterpart of `/api/capture`'s `click`, so a keyboard-driven workflow can be
+driven through the real UI instead of calling the mutation behind it.
+Window-scoped (`?window=<id>`; focused window when omitted).
+
+```json
+{ "selector": "textarea.wb-composer-textarea", "text": "상태 알려줘", "key": "Enter", "modifiers": ["control"] }
+```
+
+Every field is optional and applied in order:
+
+- `selector` — focuses the matching element first. If nothing matches, the call
+  **fails** rather than typing into whatever held focus.
+- `text` — set through the field's native value setter plus an `input` event,
+  which is how a React-controlled field takes a value. If the focused element has
+  no editable value the call **fails**, naming that element's tag: being unable
+  to type is a failure, not a quiet no-op.
+- `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
+  browser's own default action for that key still runs. This is the reason the
+  endpoint exists: a synthetic DOM event dispatched from a script never fires a
+  default action, so behaviour that depends on one — Enter submitting the form
+  a single-line input sits in — cannot be verified any other way.
+- `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
+
+Returns `{ ok, selector, key, value }`, where `value` is the field's value after
+the input (or `null` if the target has none).
+
+### `POST /api/qa/window/bounds`
+
+Resizes/moves the targeted window, so responsive behaviour can be verified at a
+real width. The app switches layout on measured element width, which no state
+injection stands in for. Window-scoped (`?window=<id>`).
+
+```json
+{ "width": 700, "height": 900 }
+```
+
+Only the given fields change (`x`, `y`, `width`, `height`); a maximized window is
+restored first, since bounds are ignored while maximized. Returns the resulting
+`{ bounds }`.
 
 ### `POST /api/qa/reset`
 

@@ -4,6 +4,8 @@ import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyComm
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
+import type { ComposerSettings } from "../shared/composerSettings";
+import { usePublishComposerPrefs } from "./app/composerPrefs";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
@@ -85,6 +87,11 @@ export function App() {
   membersRef.current = members;
   const restoredRef = useRef(restoredByMember);
   restoredRef.current = restoredByMember;
+
+  // Publish the composer preferences to the input, which sits two layers down
+  // (Workbench → Panel → Composer) and is the only consumer. App stays the sole
+  // owner of settings state; see app/composerPrefs.ts.
+  usePublishComposerPrefs(state.settings.composer);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
   const fontScale = state.settings.transcriptFontScale ?? 1;
@@ -599,6 +606,12 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  /** Persists a message-input preference (send key). */
+  async function saveComposerSettings(patch: Partial<ComposerSettings>) {
+    const settings = await window.agentParty.updateSettings({ composer: { ...state.settings.composer, ...patch } });
+    setState((current) => ({ ...current, settings }));
+  }
+
   async function saveDiscordSettings(patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) {
     setDiscord(await window.agentParty.updateDiscordSettings(patch) as DiscordBridgeStatus);
   }
@@ -766,7 +779,12 @@ export function App() {
       // Same route as the HTTP API: the backend ensures the member's session
       // (starting it with the member's own config if needed) and delivers the
       // user turn. UI and agents go through the identical AppController method.
-      const result = await window.agentParty.sendMemberMessage(name, text, attachments);
+      // `interrupt` is the composer's preference: OFF queues behind the member's
+      // in-flight turn, ON stops it so this message is handled now. The backend
+      // never interrupts a compaction, and an idle member is unaffected.
+      const result = await window.agentParty.sendMemberMessage(name, text, attachments, {
+        interrupt: state.settings.composer?.interruptOnSend === true,
+      });
       await applyPartyResult(result, false);
       const sessionId = result.member?.sessionId || known;
       if (!sessionId) {
@@ -1154,6 +1172,7 @@ export function App() {
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveGateDefault={saveGateDefault}
+                  onSaveComposer={saveComposerSettings}
                   discord={discord}
                   onSaveDiscord={saveDiscordSettings}
                 />

@@ -6,6 +6,7 @@ import type { AutoCompactSetting } from "./autoCompact";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { ComposerSettings } from "./composerSettings";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -82,6 +83,11 @@ export interface AppSettings {
    * Settings → Runtime. See `shared/messageGate.ts` / docs/MESSAGE_GATE.md.
    */
   gateDefaults: GateReviewer;
+  /**
+   * Message input preferences (send key, interrupt-on-send). Edited in
+   * Settings → Runtime. See `shared/composerSettings.ts`.
+   */
+  composer: ComposerSettings;
   /**
    * Discord bridge credentials and inbound whitelist. Edited in Settings →
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
