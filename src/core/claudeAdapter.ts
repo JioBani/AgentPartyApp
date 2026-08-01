@@ -65,6 +65,13 @@ export interface ClaudeAdapterOptions {
    */
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  /**
+   * Supplies the Claude Agent SDK module. Production leaves this unset and the
+   * real package is imported. QA passes a fake so adapter behaviour can be
+   * driven without a harness process — `scripts/qa-*.mjs` already relied on this
+   * seam, and without it those tests were quietly exercising the real SDK.
+   */
+  sdkLoader?: () => Promise<SdkModule>;
 }
 
 type SdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -523,9 +530,21 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   restart(resumeCurrentSession = false): void {
-    if (resumeCurrentSession && this.sessionId) {
-      this.resumeSessionId = this.sessionId;
-    } else if (!resumeCurrentSession) {
+    if (resumeCurrentSession) {
+      // Only a TURN-COMMITTED conversation can be resumed. The harness reports a
+      // session id as soon as the query opens, but it does not persist the
+      // conversation until a turn completes — so adopting that id here made the
+      // next start resume something that does not exist ("No conversation found
+      // with session ID ..."), which is the error users hit when they adjusted a
+      // member's settings right after creating it (#17). With no committed turn
+      // there is nothing to continue, so keep whatever we were already
+      // continuing (a genuinely resumed thread, or nothing at all).
+      // `SessionManager.harnessSessionId` gates the persisted id on the same
+      // condition; this is that rule applied to the in-process restart.
+      if (this.turnCount > 0) {
+        this.resumeSessionId = this.sessionId || this.resumeSessionId;
+      }
+    } else {
       this.resumeSessionId = this.options.resumeSessionId;
     }
     this.dispose();
@@ -594,7 +613,7 @@ export class ClaudeAdapter extends EventEmitter {
   private async run(): Promise<void> {
     let activeQuery: Query | undefined;
     try {
-      const sdk = await loadSdk();
+      const sdk = await (this.options.sdkLoader ?? loadSdk)();
       const executable = resolveClaudeExecutable(this.options.executablePath);
       if (this.usesRouterBackend() && !isRoutableRouterModel(this.runtimeModel)) {
         throw new Error(`No explicit AgentParty router mapping for '${this.model}' (${this.runtimeModel}). Refusing to fall back to another model.`);

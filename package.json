@@ -114,6 +114,7 @@
     "test:member-start-model": "node scripts/qa-member-start-model.mjs",
     "test:transcript-append": "node scripts/qa-transcript-append.mjs",
     "test:interrupt-recovery": "node scripts/qa-interrupt-recovery.mjs",
+    "test:resume-target": "node scripts/qa-resume-target.mjs",
     "test:subscription-auth-url": "node scripts/qa-subscription-auth-url.mjs",
     "test:subscription-disconnect-ui": "node scripts/qa-subscription-disconnect-ui.mjs",
     "test:codex-authentication-store": "node scripts/qa-codex-authentication-store.mjs",
