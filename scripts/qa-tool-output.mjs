@@ -82,10 +82,17 @@ assert(Boolean(modal), "clicking expand opens the full-view popup");
 const modalText = modal?.textContent || "";
 assert(modalText.includes(longCommand), "popup shows the FULL command (untruncated)");
 assert(modalText.includes("line 0:") && modalText.includes("line 149:"), "popup shows the full result (first + last line)");
-// Close via backdrop click.
+// [#16] INVERTED ON PURPOSE. This used to require the popup to close on a
+// backdrop click — the defect, recorded as if it were the intent. The app's rule
+// is that a modal closes by its own control, never by a stray click outside:
+// selecting text in a long command or result routinely ends with the pointer
+// outside the popup, which used to close it and lose the selection.
 document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
-assert(!document.querySelector(".wb-tool-modal"), "popup closes on backdrop click");
+assert(Boolean(document.querySelector(".wb-tool-modal")), "popup survives a backdrop click (does NOT close on outside click)");
+document.querySelector(".wb-tool-modal-head .wb-icon-btn")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((res) => setTimeout(res, 40));
+assert(!document.querySelector(".wb-tool-modal"), "popup closes on its own 닫기 button");
 
 console.log(failures.length ? `\nTOOL OUTPUT FAILED (${failures.length})` : "\nTOOL OUTPUT PASSED");
 process.exit(failures.length ? 1 : 0);

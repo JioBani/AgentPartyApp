@@ -463,7 +463,14 @@ export function ExpandableText({ text, title, markdown }: { text: string; title:
   );
 }
 
-/** A centered popup with a titled body — the shared shell for "전체 보기" overlays. */
+/**
+ * A centered popup with a titled body — the shared shell for "전체 보기" overlays.
+ *
+ * The backdrop does not dismiss: selecting text inside a long command or result
+ * regularly ends with the pointer outside the popup, which closed it and lost
+ * the selection. Closing is explicit (✕) or Escape — a key the user presses on
+ * purpose, unlike a stray click.
+ */
 function DetailModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -471,8 +478,8 @@ function DetailModal({ title, onClose, children }: { title: string; onClose: () 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="wb-tool-modal-backdrop" onClick={onClose}>
-      <div className="wb-tool-modal" onClick={(event) => event.stopPropagation()}>
+    <div className="wb-tool-modal-backdrop">
+      <div className="wb-tool-modal">
         <div className="wb-tool-modal-head">
           <span className="wb-mono wb-tool-name">{title}</span>
           <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>

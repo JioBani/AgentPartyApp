@@ -168,9 +168,12 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
   const fillPct = ((atInBand - DIALOG_MIN) / (DIALOG_MAX - DIALOG_MIN)) * 100;
   const dialogTrack = `linear-gradient(90deg, var(--live) 0 ${fillPct}%, var(--bg-4) ${fillPct}% 100%)`;
 
+  // The scrim does not dismiss — closing is explicit (완료 / ✕), as in every
+  // other modal in the app. A slider drag that ends outside the dialog used to
+  // close it mid-adjustment.
   return (
-    <div className="wb-modal-scrim" onMouseDown={onClose}>
-      <div className="wb-modal wb-compact-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="wb-modal-scrim">
+      <div className="wb-modal wb-compact-dialog" role="dialog" aria-modal="true">
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <FoldVertical size={16} className="wb-compact-glyph" />

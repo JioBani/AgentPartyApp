@@ -62,9 +62,16 @@ await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
 assert(Boolean(modal), "clicking '전체 보기' opens the popup");
 assert((modal?.textContent || "").includes("paragraph 39"), "popup shows the FULL message (including the clipped tail)");
+// [#16] INVERTED ON PURPOSE. This used to require the popup to close on a
+// backdrop click — the defect, recorded as if it were the intent. The app's rule
+// is that a modal closes by its own control, never by a stray click outside:
+// selecting text in a long message routinely ends with the pointer outside.
 document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
-assert(!document.querySelector(".wb-tool-modal"), "popup closes on backdrop click");
+assert(Boolean(document.querySelector(".wb-tool-modal")), "popup survives a backdrop click (does NOT close on outside click)");
+document.querySelector(".wb-tool-modal-head .wb-icon-btn")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((res) => setTimeout(res, 40));
+assert(!document.querySelector(".wb-tool-modal"), "popup closes on its own 닫기 button");
 
 console.log(failures.length ? `\nMESSAGE PREVIEW FAILED (${failures.length})` : "\nMESSAGE PREVIEW PASSED");
 process.exit(failures.length ? 1 : 0);

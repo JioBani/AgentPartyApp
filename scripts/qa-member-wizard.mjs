@@ -56,7 +56,8 @@ let created = null;
 const root = reactDom.createRoot(document.getElementById("root"));
 const defaultProfile = { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" };
 const harnessDefaults = { "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } };
-root.render(React.createElement(MemberWizard, { routes, defaultProfile, harnessDefaults, onCancel: () => {}, onCreate: (input) => { created = input; } }));
+let cancelled = 0;
+root.render(React.createElement(MemberWizard, { routes, defaultProfile, harnessDefaults, onCancel: () => { cancelled += 1; }, onCreate: (input) => { created = input; } }));
 await tick(80);
 
 const q = (sel) => document.querySelector(sel);
@@ -69,6 +70,10 @@ const text = () => document.body.textContent || "";
 
 console.log("\nMember wizard assertions:");
 assert(all(".wb-wizard-step").length === 6, "6 step indicators rendered (including initial permission)");
+// [#16] A stray click outside must not throw away a half-filled wizard.
+q(".wb-modal-scrim")?.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+await tick(40);
+assert(cancelled === 0 && Boolean(q(".wb-wizard")), "clicking outside does NOT cancel the wizard");
 
 // Step 1 — name
 assert(nextBtn().disabled, "Next disabled with empty name");
