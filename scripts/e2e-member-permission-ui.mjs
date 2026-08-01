@@ -49,8 +49,18 @@ async function main() {
   const port = await freePort();
   const app = createElectronE2eApp({ root, workspace: ws, userData, port });
   const { get, post } = app;
-  /** Clicks a real DOM node in the running renderer and lets React settle. */
-  const click = async (selector) => { await post("/api/capture", { click: selector }); await delay(250); };
+  /**
+   * Clicks a real DOM node in the running renderer and lets React settle.
+   * `/api/capture` rejects a selector that matches nothing, so a stale selector
+   * fails this test instead of quietly clicking nothing and still going green.
+   */
+  const click = async (selector) => {
+    const result = await post("/api/capture", { click: selector });
+    if (!result?.clicked) {
+      throw new Error(`capture did not confirm the click on '${selector}'`);
+    }
+    await delay(250);
+  };
 
   await app.prepare();
   try {
@@ -110,6 +120,12 @@ async function main() {
     await click(CLAUDE_PERM_ITEM(3)); // plan
     await delay(300);
     assert(onDisk("claudey")?.permissionMode === "plan", "Claude permission mode picked with no live session is persisted");
+
+    // The click driver itself must be trustworthy: a selector that matches
+    // nothing has to fail, or every UI assertion above is worthless.
+    let rejected = false;
+    await post("/api/capture", { click: ".wb-no-such-element-anywhere" }).catch(() => { rejected = true; });
+    assert(rejected, "a capture click that matches nothing is reported as a failure, not a silent no-op");
 
     await post("/api/capture", {});
 

@@ -856,7 +856,7 @@ export class AppController {
     return { ok: true, view };
   }
 
-  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
+  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true }> {
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
@@ -876,11 +876,23 @@ export class AppController {
     }
     // Optional `click`: dispatch a click on a selector before capturing, so an
     // interactive state (compare toggle, a drill-in row) can be screenshotted over
-    // HTTP. Repeatable via a CSS selector; no-op if the element isn't found.
-    if (typeof body?.click === "string" && body.click.trim()) {
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(body.click.trim())}); if (el) { el.click(); return true; } return false; })()`,
-      ).catch(() => undefined);
+    // HTTP.
+    //
+    // A selector that matches NOTHING is an error, not a no-op. This used to
+    // resolve `false` internally and still answer `{ok:true}`, so every e2e that
+    // drove the UI through a mistyped or since-renamed selector passed green
+    // without having clicked anything — the verification tooling itself was
+    // lying. Failing loudly is the only form a caller cannot skip past.
+    const clickSelector = typeof body?.click === "string" ? body.click.trim() : "";
+    if (clickSelector) {
+      const clicked = await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector(${JSON.stringify(clickSelector)}); if (el) { el.click(); return true; } return false; })()`,
+      ).catch((error: unknown) => {
+        throw new Error(`Capture click could not evaluate selector '${clickSelector}': ${error instanceof Error ? error.message : String(error)}`);
+      });
+      if (!clicked) {
+        throw new Error(`Capture click matched no element for selector '${clickSelector}' — nothing was clicked.`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     if (body?.scrollY !== undefined) {
@@ -913,6 +925,9 @@ export class AppController {
       width: image.getSize().width,
       height: image.getSize().height,
       bytes: buffer.length,
+      // Present only when a click was requested — stating plainly that it landed,
+      // so a caller reading the response never has to infer it from `ok`.
+      ...(clickSelector ? { clicked: true as const } : {}),
     };
   }
 

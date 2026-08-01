@@ -74,7 +74,10 @@ test a frozen first column. Optional `theme`
 fidelity shots. Optional `click` (CSS selector) dispatches a click before
 capturing, so an interactive state can be shot — e.g. the Token Usage compare
 toggle `[data-tu=compare-toggle]` or a member drill-in row
-`[data-tu=member-row][data-member=backend]`.
+`[data-tu=member-row][data-member=backend]`. A `click` selector that matches
+**no element fails the request**; on success the response carries `clicked:
+true`. A click is how e2e tests drive the real UI, so a selector that silently
+hits nothing would turn every downstream assertion into a false pass.
 
 ```json
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
