@@ -208,6 +208,23 @@ to type in and waits (5 min) for the member to answer what you wrote. Pass
 to be enabled for the bot — without it the gateway closes with 4014, and the app
 says exactly that instead of showing a bare code.
 
+`node scripts/e2e-composer-input.mjs` (or `npm run test:e2e:composer-input`) boots
+the real app on an isolated userData + temp workspace (offline — mock members, no
+model) and presses REAL keys at REAL panel widths, which is the only tier that can
+prove the composer's input contract: the behaviour under test is a browser
+DEFAULT ACTION (Enter submitting the form a single-line `<input>` sits in) at a
+layout chosen from MEASURED element width. It covers [P-3]8 (the `composer.sendKey`
+preference decides Enter, and round-trips through `POST /api/settings` to the live
+window), [#15] (the same thing happens in a narrow panel — reached by SPLITTING
+into three panels, since the window has a 1100px minimum and a single panel is
+therefore never narrow), and P-14 (`composer.interruptOnSend` stops a busy
+member's turn instead of queueing behind it; mock members are seeded
+`autoReply:false` so "still busy" means "not interrupted" rather than "the mock
+had not finished answering"). It first asserts `GET /api/spec` serves
+`POST /api/qa/input` — an endpoint that exists only alongside this change — so a
+run can never silently be measuring a different build. Capture:
+`composer-input-e2e.png`.
+
 `node scripts/e2e-auto-compact.mjs` (or `npm run test:e2e:auto-compact`) boots the
 real app on an isolated userData + temp workspace (offline — mock members, no
 model) and proves per-member auto-compaction end-to-end: `POST /api/party/members/

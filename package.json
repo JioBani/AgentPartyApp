@@ -44,6 +44,7 @@
     "test:e2e:live-opus5": "npm run build && node scripts/e2e-live-opus5.mjs",
     "test:e2e:live-claude-opus-routing": "npm run build && node scripts/e2e-live-claude-opus-routing.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
+    "test:e2e:composer-input": "npm run build && node scripts/e2e-composer-input.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",
     "test:e2e:permission-ui": "npm run build && node scripts/e2e-member-permission-ui.mjs",
