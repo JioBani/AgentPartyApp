@@ -25,7 +25,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-member-remove` | sidebar delete via right-click context menu: **member** delete (`삭제하기`, `main` protected) **and party** delete (two-step confirm `파티 삭제…` → `한 번 더 클릭` → `onRemoveParty`) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |
-| `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) |
+| `qa-markdown` | markdown rendering of model output (headings/list/code/JSON/table/link) + links routed to the OS browser: a click is `preventDefault`ed and handed to `openExternal`, and the adjacent copy control writes the target URL |
 | `qa-tool-output` | tool-call (bash) rendering: long command/result show a clipped **preview** inline with a summary "전체 보기" control that opens a popup holding the FULL command + result; short content has no expand control; content-array results render as plain text |
 | `qa-message-preview` | sent/received **message** bodies (user + channel) preview by default and open the FULL text in a popup via "전체 보기"; short messages show in full with no expand control |
 | `qa-command-palette` | composer `/` command/skill palette: harness-aware trigger, **live harness-reported inventory** (plugin/MCP/custom commands) merged with static built-ins, filter, action vs insert select |
@@ -126,6 +126,18 @@ actually spent in, its totals are marked `+?`, and the timeline caption states
 how many turns are missing from its bars. Guards the AGENTS.md no-silent-
 fallback rule at the exact spot it was violated (a `return 0` that summed into
 `≈$0.000`).
+
+`node scripts/e2e-transcript-render.mjs` (or `npm run test:e2e:transcript-render`)
+boots the real app on an isolated userData + temp workspace (offline — a mock
+member, no model) and drives the transcript-rendering surfaces the W2 lane owns.
+It discovers the app through the **per-workspace instance file** (no fixed port)
+and asserts the served workspace is its own. First leg — **links open in the OS
+default browser**: a markdown link is clicked in the REAL renderer and the main
+process's own IPC log is checked for `shell:openExternal` carrying that URL,
+proving the renderer→preload→main path that no jsdom test can see; the app is
+then confirmed not to have navigated away. The link's copy control is clicked and
+captured so its honest outcome (check on success, ✗ when the clipboard refuses)
+is visible.
 
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord

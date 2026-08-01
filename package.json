@@ -54,6 +54,7 @@
     "test:e2e:usage-limits": "npm run build && node scripts/e2e-usage-limits.mjs",
     "test:e2e:sidebar-overflow": "npm run build && node scripts/e2e-sidebar-overflow.mjs",
     "test:e2e:usage-unpriced": "npm run build && node scripts/e2e-usage-unpriced.mjs",
+    "test:e2e:transcript-render": "npm run build && node scripts/e2e-transcript-render.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
     "test:subagent-tracker": "node scripts/qa-subagent-tracker.mjs",
     "test:party-store": "node scripts/qa-party-store.mjs",

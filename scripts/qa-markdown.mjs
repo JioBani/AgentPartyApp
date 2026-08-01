@@ -81,6 +81,24 @@ assert([...(table?.querySelectorAll("td") || [])].some((td) => td.textContent ==
 const link = body?.querySelector("a");
 assert(link?.getAttribute("href") === "https://example.com" && link?.getAttribute("target") === "_blank" && link?.getAttribute("rel") === "noreferrer", "link opens externally (target=_blank, rel=noreferrer)");
 
+console.log("\nLinks open in the OS browser (P-3.5):");
+const opened = [];
+window.agentParty = { openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); } };
+globalThis.window.agentParty = window.agentParty;
+const clickEvent = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+link?.dispatchEvent(clickEvent);
+await new Promise((res) => setTimeout(res, 20));
+assert(opened[0] === "https://example.com", "clicking a link hands the URL to shell.openExternal");
+assert(clickEvent.defaultPrevented, "the in-app navigation is prevented (no Electron window navigation)");
+const linkCopy = body?.querySelector(".wb-md-link .wb-copy-btn");
+assert(Boolean(linkCopy), "a copy control sits next to the link");
+const copied = [];
+Object.defineProperty(window.navigator, "clipboard", { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+def("navigator", window.navigator);
+linkCopy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === "https://example.com", "the copy control writes the link target to the clipboard");
+
 // No raw markdown source should leak into the rendered text.
 const text = body?.textContent || "";
 assert(!text.includes("##") && !text.includes("**") && !text.includes("```"), "raw markdown tokens (##, **, ```) are not shown literally");
