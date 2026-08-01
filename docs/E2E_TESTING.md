@@ -466,13 +466,20 @@ party tools to create another member and they message each other), verified via
 ### 5. Visual check — `POST /api/capture`
 ```
 POST /api/capture  {}                    →  { ok, path, width, height, bytes }
-POST /api/capture  {click: "<selector>"} →  { ok, …, clicked: true }
+POST /api/capture  {click: "<selector>"} →  { ok, …, clicked: true,
+                                              applied: { clicked: true } }
+POST /api/capture  {scrollY: "bottom"}   →  { ok, …, applied: { scrollY: 1840 } }
 ```
 `click` dispatches a real click before capturing, which is how an e2e drives the
-actual UI over HTTP. **A selector that matches nothing FAILS the request** (and
-`clicked` is only present when a click landed). It used to answer `{ok:true}`
-regardless, so an e2e driving a mistyped or since-renamed selector passed green
-without clicking anything — assert on `clicked`, and let the failure surface.
+actual UI over HTTP. **A selector that matches nothing FAILS the request.** It
+used to answer `{ok:true}` regardless, so an e2e driving a mistyped or
+since-renamed selector passed green without clicking anything.
+
+The same applies to framing: `scrollY`/`scrollX` report the position actually
+reached in `applied`, an explicitly named `scrollSelector` that does not exist
+fails, and `scrollX` without `scrollSelector` fails. A screenshot of the wrong
+scroll position looks exactly as plausible as the right one, so "I checked the
+section below the fold" has to be checkable — assert on `applied`.
 Then read the PNG. **Background capture works** — even when the window is behind
 others. `src/main/main.ts` disables Chromium's native window occlusion
 (`disable-features=CalculateNativeWinOcclusion` + occluded/renderer backgrounding

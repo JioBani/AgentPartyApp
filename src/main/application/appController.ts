@@ -856,7 +856,7 @@ export class AppController {
     return { ok: true, view };
   }
 
-  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true }> {
+  async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true; applied?: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } }> {
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
@@ -868,10 +868,18 @@ export class AppController {
     // Optional `theme`: flip the active theme before capturing so both light and
     // dark fidelity can be screenshotted over HTTP (the theme is a user-toggleable
     // display attribute, so setting it here is harmless).
+    const applied: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } = {};
+    /** Runs a pre-capture step, attributing any failure to the option that asked for it. */
+    const evaluate = async (option: string, script: string): Promise<any> =>
+      win.webContents.executeJavaScript(script).catch((error: unknown) => {
+        throw new Error(`Capture ${option} could not be applied: ${error instanceof Error ? error.message : String(error)}`);
+      });
     if (typeof body?.theme === "string" && (body.theme === "light" || body.theme === "dark")) {
-      await win.webContents.executeJavaScript(
+      await evaluate(
+        "theme",
         `(() => { document.documentElement.setAttribute("data-theme", ${JSON.stringify(body.theme)}); try { localStorage.setItem("agentparty.theme", ${JSON.stringify(body.theme)}); } catch {} })()`,
-      ).catch(() => undefined);
+      );
+      applied.theme = body.theme;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     // Optional `click`: dispatch a click on a selector before capturing, so an
@@ -885,32 +893,53 @@ export class AppController {
     // lying. Failing loudly is the only form a caller cannot skip past.
     const clickSelector = typeof body?.click === "string" ? body.click.trim() : "";
     if (clickSelector) {
-      const clicked = await win.webContents.executeJavaScript(
+      const clicked = await evaluate(
+        `click '${clickSelector}'`,
         `(() => { const el = document.querySelector(${JSON.stringify(clickSelector)}); if (el) { el.click(); return true; } return false; })()`,
-      ).catch((error: unknown) => {
-        throw new Error(`Capture click could not evaluate selector '${clickSelector}': ${error instanceof Error ? error.message : String(error)}`);
-      });
+      );
       if (!clicked) {
         throw new Error(`Capture click matched no element for selector '${clickSelector}' — nothing was clicked.`);
       }
+      applied.clicked = true;
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    // `scrollY`/`scrollX` carry the same hazard as `click`, and it is harder to
+    // notice: a screenshot of the WRONG scroll position looks just as plausible
+    // as the right one, so a below-the-fold check that never scrolled reads as a
+    // pass. Both now report the position actually reached, and a NAMED selector
+    // that does not exist fails instead of silently scrolling something else (or
+    // nothing). Only the default region keeps the scrollingElement fallback.
+    const scrollSelector = typeof body?.scrollSelector === "string" ? body.scrollSelector.trim() : "";
     if (body?.scrollY !== undefined) {
-      const target = typeof body?.scrollSelector === "string" && body.scrollSelector.trim() ? body.scrollSelector.trim() : ".program-scroll";
+      const target = scrollSelector || ".program-scroll";
+      const fallback = scrollSelector ? "null" : "document.scrollingElement";
       const y = body.scrollY === "bottom" ? Number.MAX_SAFE_INTEGER : Number(body.scrollY) || 0;
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(target)}) || document.scrollingElement; if (el) el.scrollTop = ${y}; return el ? el.scrollTop : 0; })()`,
-      ).catch(() => undefined);
+      const reached = await evaluate(
+        `scrollY '${target}'`,
+        `(() => { const el = document.querySelector(${JSON.stringify(target)}) || ${fallback}; if (!el) return null; el.scrollTop = ${y}; return el.scrollTop; })()`,
+      );
+      if (reached === null) {
+        throw new Error(`Capture scrollY found no element for selector '${target}' — the page was not scrolled.`);
+      }
+      applied.scrollY = reached;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     // Optional `scrollX`: horizontal scroll of a selector (e.g. a wide table) so a
     // frozen-first-column / far-right section can be screenshotted. Requires
     // `scrollSelector`; pass pixels or "right".
-    if (body?.scrollX !== undefined && typeof body?.scrollSelector === "string" && body.scrollSelector.trim()) {
+    if (body?.scrollX !== undefined) {
+      if (!scrollSelector) {
+        throw new Error("Capture scrollX requires `scrollSelector` naming the element to scroll horizontally.");
+      }
       const x = body.scrollX === "right" ? Number.MAX_SAFE_INTEGER : Number(body.scrollX) || 0;
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector(${JSON.stringify(body.scrollSelector.trim())}); if (el) el.scrollLeft = ${x}; return el ? el.scrollLeft : 0; })()`,
-      ).catch(() => undefined);
+      const reached = await evaluate(
+        `scrollX '${scrollSelector}'`,
+        `(() => { const el = document.querySelector(${JSON.stringify(scrollSelector)}); if (!el) return null; el.scrollLeft = ${x}; return el.scrollLeft; })()`,
+      );
+      if (reached === null) {
+        throw new Error(`Capture scrollX found no element for selector '${scrollSelector}' — nothing was scrolled.`);
+      }
+      applied.scrollX = reached;
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
     const { image, buffer } = await this.captureNonEmptyPage(win);
@@ -925,9 +954,12 @@ export class AppController {
       width: image.getSize().width,
       height: image.getSize().height,
       bytes: buffer.length,
-      // Present only when a click was requested — stating plainly that it landed,
-      // so a caller reading the response never has to infer it from `ok`.
-      ...(clickSelector ? { clicked: true as const } : {}),
+      // What each requested pre-capture step actually achieved (the position
+      // reached, the theme set, the click landed). A caller checking that its
+      // scroll took effect reads it here instead of inferring it from `ok`.
+      ...(Object.keys(applied).length ? { applied } : {}),
+      // Kept alongside `applied.clicked` because callers already assert on it.
+      ...(applied.clicked ? { clicked: true as const } : {}),
     };
   }
 

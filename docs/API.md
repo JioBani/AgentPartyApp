@@ -74,10 +74,16 @@ test a frozen first column. Optional `theme`
 fidelity shots. Optional `click` (CSS selector) dispatches a click before
 capturing, so an interactive state can be shot — e.g. the Token Usage compare
 toggle `[data-tu=compare-toggle]` or a member drill-in row
-`[data-tu=member-row][data-member=backend]`. A `click` selector that matches
-**no element fails the request**; on success the response carries `clicked:
-true`. A click is how e2e tests drive the real UI, so a selector that silently
-hits nothing would turn every downstream assertion into a false pass.
+`[data-tu=member-row][data-member=backend]`.
+
+**Every pre-capture step is verified, and the response reports what it achieved
+in `applied` (`{theme, clicked, scrollY, scrollX}`).** A `click` selector, or a
+`scrollSelector` you name explicitly, that matches no element **fails the
+request**; `scrollX` without `scrollSelector` fails too. `applied.scrollY` /
+`applied.scrollX` carry the position actually reached, so a caller can confirm
+the view moved. These options are how e2e tests drive and frame the real UI: a
+step that silently did nothing turns every downstream assertion — and every
+"I checked the section below the fold" screenshot — into a false pass.
 
 ```json
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }

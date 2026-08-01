@@ -127,6 +127,17 @@ async function main() {
     await post("/api/capture", { click: ".wb-no-such-element-anywhere" }).catch(() => { rejected = true; });
     assert(rejected, "a capture click that matches nothing is reported as a failure, not a silent no-op");
 
+    // The same hazard in the scroll options: a capture of the WRONG position
+    // looks as plausible as the right one, so these must not fail quietly either.
+    rejected = false;
+    await post("/api/capture", { scrollY: 400, scrollSelector: ".no-such-scroll-region" }).catch(() => { rejected = true; });
+    assert(rejected, "a capture scrollY naming a missing element fails instead of scrolling something else");
+    rejected = false;
+    await post("/api/capture", { scrollX: 200 }).catch(() => { rejected = true; });
+    assert(rejected, "a capture scrollX without scrollSelector fails instead of doing nothing");
+    const scrolled = await post("/api/capture", { scrollY: 0 });
+    assert(scrolled?.applied?.scrollY === 0, "a capture scroll reports the position it actually reached");
+
     await post("/api/capture", {});
 
     // --- Restart: the value the user picked must come back ------------------
