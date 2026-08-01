@@ -10,9 +10,10 @@
  */
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createElectronE2eApp, delay } from "./lib/electron-e2e.mjs";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "ap-usage-e2e-ws");
 const userData = path.join(os.tmpdir(), "ap-usage-e2e-ud");
 const port = Number(process.env.AGENTPARTY_USAGE_PORT || "") || 48951;

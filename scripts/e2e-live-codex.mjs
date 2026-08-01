@@ -2,8 +2,9 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const qaWorkspace = path.join(os.tmpdir(), "agentparty-live-codex-e2e-workspace");
 const qaUserData = path.join(os.tmpdir(), "agentparty-live-codex-e2e-user-data");
 const automationPort = Number(process.env.AGENTPARTY_LIVE_E2E_PORT || "") || 48932;

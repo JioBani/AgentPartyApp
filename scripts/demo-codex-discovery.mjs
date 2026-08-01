@@ -9,8 +9,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fakeServer = path.join(root, "scripts", "fake-codex-appserver.mjs");
 const ws = path.join(os.tmpdir(), "agentparty-discovery-demo");
 const userData = path.join(os.tmpdir(), "agentparty-discovery-demo-user-data");

@@ -1,13 +1,13 @@
 /**
- * Cost + model encoding helpers for the Token Usage dashboard (new handoff:
- * cost-first, model×effort encoded by color-tint + fill-height). Pure, so the
- * pricing/encoding rules live in one testable place.
+ * Model encoding + cost FORMATTING helpers for the Token Usage dashboard (new
+ * handoff: cost-first, model×effort encoded by color-tint + fill-height). Pure,
+ * so the encoding rules live in one testable place.
  *
- * Cost is a DETERMINISTIC list-price conversion (실측 토큰 × 공개 단가), not an
- * estimate — matching the ledger's `estimatedTurnCostUsd`.
+ * Cost itself is computed in ONE place — `estimatedTurnCostUsd` in
+ * src/shared/tokenUsage.ts. This module used to carry a second copy of that
+ * arithmetic; two copies means the next fix lands in one of them, which is the
+ * exact trap that let unpriceable turns be summed as $0 here.
  */
-
-import { resolveCatalogModel } from "../../shared/modelCatalog";
 
 /** Model family → identity color for the transposed table's cell tint (design §토큰). */
 const MODEL_COLOR: Record<string, string> = {
@@ -19,39 +19,59 @@ const MODEL_COLOR: Record<string, string> = {
   fable: "#c25b8f",
 };
 
-/** Coarse model family from any catalog id/alias (e.g. `gpt-5.4-mini` → `gpt-5-mini`). */
-export function modelFamily(model: string | undefined): string {
+/** Unidentified model: a neutral that is NOT any family's identity colour (and
+ *  deliberately lighter than haiku's grey, so the two do not read alike). */
+const UNKNOWN_COLOR = "#b0b5be";
+
+/**
+ * Coarse model family from any catalog id/alias (e.g. `gpt-5.4-mini` →
+ * `gpt-5-mini`), or `undefined` when the id matches none of them.
+ *
+ * It must NOT guess. This used to fall through to "sonnet", which made an
+ * uncatalogued model render as `sonnet medium` in the dashboard with sonnet's
+ * colour and tier — the user would be reading the identity of a model they
+ * never ran. A fabricated identity is worse than a fabricated number.
+ */
+export function modelFamily(model: string | undefined): string | undefined {
   const m = (model || "").toLowerCase();
-  if (!m) return "sonnet";
+  if (!m) return undefined;
   if (m.includes("opus")) return "opus";
   if (m.includes("haiku")) return "haiku";
   if (m.includes("fable")) return "fable";
   if (m.includes("mini")) return "gpt-5-mini";
   if (m.includes("gpt")) return "gpt-5";
   if (m.includes("sonnet")) return "sonnet";
-  return "sonnet";
+  return undefined;
 }
 
+/** Identity colour, or the neutral when the family is unknown. */
 export function modelColor(model: string | undefined): string {
-  return MODEL_COLOR[modelFamily(model)] || "#8b8f99";
+  const fam = modelFamily(model);
+  return (fam && MODEL_COLOR[fam]) || UNKNOWN_COLOR;
 }
 
-/** Short display label for a model (family, since effort is shown separately). */
+/**
+ * Short display label (family, since effort is shown separately). For an
+ * unrecognized id the RAW id is shown — it is the one true thing known about
+ * the model — and a missing id says so instead of naming a family.
+ */
 export function modelLabel(model: string | undefined): string {
-  const fam = modelFamily(model);
-  return fam;
+  return modelFamily(model) || model?.trim() || "모델 미상";
 }
 
-/** Capability tier 1–3 (haiku/mini=1, sonnet=2, opus/gpt-5=3) for the ▰▱ bars. */
-export function modelTier(model: string | undefined): number {
+/** Capability tier 1–3 (haiku/mini=1, sonnet=2, opus/gpt-5=3), or undefined. */
+export function modelTier(model: string | undefined): number | undefined {
   const fam = modelFamily(model);
+  if (!fam) return undefined;
   if (fam === "opus" || fam === "gpt-5") return 3;
   if (fam === "sonnet") return 2;
   return 1;
 }
 
+/** ▰▱ capability bars, or "—" when the model's tier is not known. */
 export function tierBars(model: string | undefined): string {
   const t = modelTier(model);
+  if (t === undefined) return "—";
   return "▰".repeat(t) + "▱".repeat(3 - t);
 }
 
@@ -71,19 +91,6 @@ export function effortMix(color: string, effort: string | undefined): string {
 /** Cell background = model color at 30% over the card bg (theme-adaptive). */
 export function cellTint(model: string | undefined): string {
   return `color-mix(in srgb, ${modelColor(model)} 30%, var(--bg-2))`;
-}
-
-/** List-price cost (USD) for a token split at a model's catalog rate. Cache reads
- *  are cheap (0.1×), cache writes 1.25× vs base input. Returns 0 when unpriceable. */
-export function turnCost(model: string | undefined, t: { input?: number; cacheRead?: number; cacheWrite?: number; output?: number }): number {
-  const cat = model ? resolveCatalogModel(model) : undefined;
-  const inPerM = cat?.inPerM;
-  const outPerM = cat?.outPerM ?? cat?.ioPerM;
-  if (typeof inPerM !== "number" && typeof outPerM !== "number") return 0;
-  const inUnits = (t.input || 0) + (t.cacheWrite || 0) * 1.25 + (t.cacheRead || 0) * 0.1;
-  const inCost = typeof inPerM === "number" ? (inUnits / 1e6) * inPerM : 0;
-  const outCost = typeof outPerM === "number" ? ((t.output || 0) / 1e6) * outPerM : 0;
-  return inCost + outCost;
 }
 
 /** `≈$` cost, precision scaled to magnitude (design fmtCost). */

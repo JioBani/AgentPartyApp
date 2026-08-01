@@ -10,8 +10,9 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-subagents-demo-workspace");
 const userData = path.join(os.tmpdir(), "agentparty-subagents-demo-user-data");
 const port = Number(process.env.AGENTPARTY_SUBAGENTS_DEMO_PORT || "") || 48939;

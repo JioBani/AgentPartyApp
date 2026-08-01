@@ -108,7 +108,14 @@ export interface TokenUsageQuery {
 
 export interface SeriesTotals {
   costUsd: number;      // real bill sum (0 when all subscription/unavailable)
-  estCostUsd: number;   // list-price ≈$ conversion (always computable from tokens)
+  estCostUsd: number;   // list-price ≈$ conversion of the turns that HAVE a rate
+  /** Turns whose model carries no catalog rate, so they are missing from
+   *  `estCostUsd` entirely. Non-zero ⇒ the total is a floor, not the cost, and
+   *  the UI must say so; `unpricedTurns === turns` ⇒ nothing is known at all
+   *  and showing ≈$0.000 would be a lie. */
+  unpricedTurns: number;
+  /** Tokens belonging to those turns — the size of what is unaccounted for. */
+  unpricedTokens: number;
   input: number;
   cacheRead: number;
   cacheWrite: number;
@@ -194,7 +201,8 @@ export interface TokenUsageAggregate {
 
 function emptyTotals(): SeriesTotals {
   return {
-    costUsd: 0, estCostUsd: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, turns: 0,
+    costUsd: 0, estCostUsd: 0, unpricedTurns: 0, unpricedTokens: 0,
+    input: 0, cacheRead: 0, cacheWrite: 0, output: 0, turns: 0,
     overheadTokens: 0, firstHalfTokens: 0, secondHalfTokens: 0,
   };
 }
@@ -232,14 +240,19 @@ const CACHE_READ_MULT = 0.1;
  * List-price `≈$` for one turn: real token counts × the model's catalog per-1M
  * rate. This is a DETERMINISTIC comparison value (not a bill) — it lets
  * subscription turns (Claude/Codex), which carry no per-turn bill, still be
- * ranked by cost. Returns 0 when the model/rate is unknown (never fabricated).
+ * ranked by cost.
+ *
+ * Returns `undefined` when the model carries no catalog rate — NOT 0. A 0 sums
+ * into a total that then reads as "this cost nothing", which is exactly the
+ * silent fallback the project forbids; the caller has to be able to say
+ * "알 수 없음" instead. See {@link SeriesTotals.unpricedTurns}.
  */
-export function estimatedTurnCostUsd(record: TurnUsageRecord): number {
+export function estimatedTurnCostUsd(record: TurnUsageRecord): number | undefined {
   const catalog = record.model ? resolveCatalogModel(record.model) : undefined;
   const inPerM = catalog?.inPerM;
   const outPerM = catalog?.outPerM ?? catalog?.ioPerM;
   if (typeof inPerM !== "number" && typeof outPerM !== "number") {
-    return 0;
+    return undefined;
   }
   const t = record.tokens;
   const inputUnits = (t.input || 0) + (t.cacheWrite || 0) * CACHE_WRITE_MULT + (t.cacheRead || 0) * CACHE_READ_MULT;
@@ -250,13 +263,19 @@ export function estimatedTurnCostUsd(record: TurnUsageRecord): number {
 
 function addTurn(into: SeriesTotals, record: TurnUsageRecord, midMs?: number): void {
   into.costUsd += typeof record.costUsd === "number" ? record.costUsd : 0;
-  into.estCostUsd += estimatedTurnCostUsd(record);
   into.input += record.tokens.input || 0;
   into.cacheRead += record.tokens.cacheRead || 0;
   into.cacheWrite += record.tokens.cacheWrite || 0;
   into.output += record.tokens.output || 0;
   into.turns += 1;
   const total = turnTokensTotal(record.tokens);
+  const est = estimatedTurnCostUsd(record);
+  if (est === undefined) {
+    into.unpricedTurns += 1;
+    into.unpricedTokens += total;
+  } else {
+    into.estCostUsd += est;
+  }
   if (OVERHEAD_TRIGGERS.has(record.trigger)) {
     into.overheadTokens += total;
   }

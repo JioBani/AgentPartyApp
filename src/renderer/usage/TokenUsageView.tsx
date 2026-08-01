@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { estimatedTurnCostUsd } from "../../shared/tokenUsage";
 import type { RollupRow, TokenUsageAggregate, TokenUsageQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { UsageLimitsSnapshot, UsageWindowKind } from "../../shared/usageLimits";
 import { memberColor } from "../theme/memberColors";
 import { fmtActive, fmtBucketLabel, fmtRate, fmtTokens, fmtTokensAxis, INTERVAL_PRESETS, isMemberModelTurn, RANGE_PRESETS } from "./usageFormat";
 import {
-  cellTint, effortHeight, effortMix, fmtCost, fmtMoneyAxis, modelColor, modelLabel, modelTier, tierBars, turnCost,
+  cellTint, effortHeight, effortMix, fmtCost, fmtMoneyAxis, modelColor, modelLabel, modelTier, tierBars,
 } from "./usageCost";
 
 /**
@@ -14,6 +15,26 @@ import {
  * who-table. Cost is a deterministic list-price conversion of measured tokens
  * (not an estimate). Absent data reads "아직 없음"/"—", never a fabricated 0.
  */
+
+/** A row's turns whose model has no catalog rate — see SeriesTotals.unpricedTurns. */
+type CostRow = { estCostUsd: number; unpricedTurns: number; unpricedTokens: number; turns: number };
+
+/**
+ * `≈$` for an aggregate, honest about turns that carry no price. Every unpriced
+ * turn is MISSING from `estCostUsd`, so the plain sum understates the row: all
+ * unpriced reads "알 수 없음" (≈$0.000 would claim it was free) and a partial
+ * one is marked `+?` to say the number is a floor.
+ */
+function fmtRowCost(row: CostRow): string {
+  if (row.turns > 0 && row.unpricedTurns >= row.turns) return "알 수 없음";
+  return fmtCost(row.estCostUsd) + (row.unpricedTurns > 0 ? " +?" : "");
+}
+
+/** Tooltip naming what is missing, so `+?`/"알 수 없음" is not a bare glyph. */
+function unpricedHint(row: CostRow): string | undefined {
+  if (!row.unpricedTurns) return undefined;
+  return `${row.unpricedTurns}/${row.turns}턴은 모델 단가가 카탈로그에 없어 비용을 계산할 수 없습니다 (${fmtTokens(row.unpricedTokens)} tok). 표시된 값은 나머지 턴의 합계입니다.`;
+}
 
 interface TokenUsageViewProps {
   usage: UsageLimitsSnapshot;
@@ -38,7 +59,8 @@ function colorForKey(name: string): string { return memberColor(name); }
 // ── one derived series over the timeline ────────────────────────────────────
 interface Series {
   key: string; name: string; color: string;
-  cost: number[];       // per-bucket cost (USD)
+  cost: number[];       // per-bucket cost (USD) — priced turns only
+  unpriced: number[];   // per-bucket count of turns with no catalog rate (missing from `cost`)
   ctx: number[];        // per-bucket context occupancy (tokens), carried
   resets: number[];     // bucket indices where a compact dropped context
   segs: Array<{ model?: string; effort?: string; n: number }>; // model×effort run-length segments
@@ -307,6 +329,7 @@ function buildSeries(
   const build = (key: string, rows: TurnUsageRecord[]): Series => {
     rows.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     const cost = new Array(nB).fill(0);
+    const unpriced = new Array(nB).fill(0);
     const ctx = new Array(nB).fill(NaN);
     const resets: number[] = [];
     let lastCtx = 0;
@@ -314,7 +337,11 @@ function buildSeries(
     for (const r of rows) {
       const bi = bucketOf(Date.parse(r.at));
       if (bi < 0) continue; // outside the visible window (buffered turn) — don't fold into an edge bar
-      cost[bi] += turnCost(r.model, r.tokens);
+      // An unpriceable turn is COUNTED, not added as 0: the bar would otherwise
+      // silently understate the bucket and look like a cheap one.
+      const est = estimatedTurnCostUsd(r);
+      if (est === undefined) unpriced[bi] += 1;
+      else cost[bi] += est;
       const c = r.tokens.context;
       if (typeof c === "number") {
         if (r.trigger === "compact" && c < lastCtx) resets.push(bi);
@@ -333,7 +360,7 @@ function buildSeries(
     let carry = NaN;
     for (let i = 0; i < nB; i += 1) { if (!Number.isNaN(ctx[i])) carry = ctx[i]; else if (!Number.isNaN(carry)) ctx[i] = carry; }
     const name = scope === "all" ? partyName(key) : key;
-    return { key, name, color: colorForKey(name), cost, ctx, resets, segs };
+    return { key, name, color: colorForKey(name), cost, unpriced, ctx, resets, segs };
   };
 
   let series = [...groups.entries()].map(([k, rows]) => build(k, rows));
@@ -342,9 +369,9 @@ function buildSeries(
   if (scope === "all" && series.length > 6) {
     const head = series.slice(0, 6);
     const rest = series.slice(6);
-    const cost = new Array(nB).fill(0), ctx = new Array(nB).fill(0);
-    rest.forEach((s) => s.cost.forEach((v, i) => { cost[i] += v; }));
-    head.push({ key: REST_KEY, name: `기타 ${rest.length}개`, color: "var(--text-3)", cost, ctx, resets: [], segs: [] });
+    const cost = new Array(nB).fill(0), unpriced = new Array(nB).fill(0), ctx = new Array(nB).fill(0);
+    rest.forEach((s) => { s.cost.forEach((v, i) => { cost[i] += v; }); s.unpriced.forEach((v, i) => { unpriced[i] += v; }); });
+    head.push({ key: REST_KEY, name: `기타 ${rest.length}개`, color: "var(--text-3)", cost, unpriced, ctx, resets: [], segs: [] });
     series = head;
   }
   return { series, buckets };
@@ -367,9 +394,13 @@ function TimelineSection(props: {
   const { series: allSeries, isHidden, buckets, ctxOn, interval, hover, hoverBucket } = props;
   const series = allSeries.filter((s) => !isHidden(s.key));
   const [scopeQuery, setScopeQuery] = useState("");
+  // Bars only carry priced turns, so say when some are missing instead of
+  // letting a short bar read as a cheap bucket.
+  const unpricedAt = (i: number) => series.reduce((a, s) => a + (s.unpriced[i] || 0), 0);
+  const unpricedTotal = buckets.reduce((a, _b, i) => a + unpricedAt(i), 0);
   const readout = hoverBucket != null && buckets[hoverBucket] != null
-    ? `${fmtBucketLabel(buckets[hoverBucket], interval.minutes)} · ${fmtCost(series.reduce((a, s) => a + (s.cost[hoverBucket] || 0), 0))} · ${fmtTokens(series.reduce((a, s) => a + (Number.isFinite(s.ctx[hoverBucket]) ? s.ctx[hoverBucket] : 0), 0))} tok`
-    : "막대=비용, 점선=컨텍스트 보유량 · 좌우로 드래그해 시간 이동 · 더블클릭=지금";
+    ? `${fmtBucketLabel(buckets[hoverBucket], interval.minutes)} · ${fmtCost(series.reduce((a, s) => a + (s.cost[hoverBucket] || 0), 0))}${unpricedAt(hoverBucket) ? ` +${unpricedAt(hoverBucket)}턴 단가 미상` : ""} · ${fmtTokens(series.reduce((a, s) => a + (Number.isFinite(s.ctx[hoverBucket]) ? s.ctx[hoverBucket] : 0), 0))} tok`
+    : `막대=비용, 점선=컨텍스트 보유량 · 좌우로 드래그해 시간 이동 · 더블클릭=지금${unpricedTotal ? ` · ${unpricedTotal}턴은 모델 단가가 없어 막대에서 빠져 있습니다` : ""}`;
 
   return (
     <section style={cardSection}>
@@ -595,9 +626,14 @@ function CompareCard({ a, b, rangeLabel }: { a: TokenUsageAggregate | null; b: T
   if (!a) return null;
   const costA = a.parties.reduce((x, p) => x + p.estCostUsd, 0);
   const costB = b ? b.parties.reduce((x, p) => x + p.estCostUsd, 0) : undefined;
+  // Either window may hold turns with no rate; a comparison of two floors has to
+  // say so, otherwise a pricing gap reads as a real drop in spend.
+  const unpricedA = a.parties.reduce((x, p) => x + p.unpricedTurns, 0);
+  const unpricedB = b ? b.parties.reduce((x, p) => x + p.unpricedTurns, 0) : 0;
+  const markUnpriced = unpricedA > 0 || unpricedB > 0;
   const lowSample = (a.recordCount || 0) < 8 || (b?.recordCount || 0) < 8;
   const rows: Array<{ label: string; av?: number; bv?: number; fmt: (n?: number) => string; higherWorse: boolean }> = [
-    { label: "비용", av: costA, bv: costB, fmt: (n) => fmtCost(n), higherWorse: true },
+    { label: markUnpriced ? "비용 (+단가 미상)" : "비용", av: costA, bv: costB, fmt: (n) => fmtCost(n) + (markUnpriced && n !== undefined ? " +?" : ""), higherWorse: true },
     { label: "시간당", av: a.ratePerHour, bv: b?.ratePerHour, fmt: (n) => fmtRate(n), higherWorse: true },
     { label: "오버헤드", av: a.overheadRatio, bv: b?.overheadRatio, fmt: (n) => (n == null ? "—" : `${Math.round(n * 100)}%`), higherWorse: true },
     { label: "턴", av: a.totals.turns, bv: b?.totals.turns, fmt: (n) => (n == null ? "—" : String(Math.round(n))), higherWorse: false },
@@ -663,7 +699,7 @@ function Catalog(props: {
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: colorForKey(p.name), flex: "none" }} />
                     <span style={{ fontSize: 11.5, color: "var(--text-1)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
                     <span className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>#{p.id.slice(-4)}</span>
-                    <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-2)" }}>{fmtCost(p.cost)}</span>
+                    <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-2)" }} title={unpricedHint(p.row)}>{fmtRowCost(p.row)}</span>
                     {archPinned[p.id] && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2.4}><path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                   </button>
                 ))}
@@ -688,7 +724,7 @@ function Catalog(props: {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flex: "none" }}>
-                  <div className="wb-mono" style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-0)" }}>{fmtCost(p.cost)}</div>
+                  <div className="wb-mono" style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-0)" }} title={unpricedHint(p.row)}>{fmtRowCost(p.row)}</div>
                   <div className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>↑{fmtTokens(p.inTok)} ↓{fmtTokens(p.outTok)}</div>
                 </div>
               </div>
@@ -699,7 +735,7 @@ function Catalog(props: {
                     <div key={m.key} onClick={(e) => { e.stopPropagation(); props.onToggleMember(p.id, m.label); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", opacity: moff ? 0.45 : 1 }}>
                       <span style={{ width: 7, height: 7, borderRadius: 2, background: moff ? "var(--border-strong)" : colorForKey(m.label), flex: "none" }} />
                       <span style={{ fontSize: 10.5, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, textDecoration: moff ? "line-through" : "none" }}>{m.label}</span>
-                      <div style={{ textAlign: "right" }}><span className="wb-mono" style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-1)" }}>{fmtCost(m.estCostUsd)}</span><div className="wb-mono" style={{ fontSize: 8.5, color: "var(--text-3)" }}>↑{fmtTokens(io.inTok)} ↓{fmtTokens(io.outTok)}</div></div>
+                      <div style={{ textAlign: "right" }}><span className="wb-mono" style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-1)" }} title={unpricedHint(m)}>{fmtRowCost(m)}</span><div className="wb-mono" style={{ fontSize: 8.5, color: "var(--text-3)" }}>↑{fmtTokens(io.inTok)} ↓{fmtTokens(io.outTok)}</div></div>
                     </div>
                   );
                 })}
@@ -776,6 +812,8 @@ function BucketCostTable(props: {
   }, [series, meta, buckets]);
 
   const bucketTotals = buckets.map((_, i) => series.reduce((a, s) => a + (s.cost[i] || 0), 0));
+  /** Turns per bucket carrying no rate — absent from bucketTotals, so marked `+?`. */
+  const bucketUnpriced = buckets.map((_, i) => series.reduce((a, s) => a + (s.unpriced[i] || 0), 0));
 
   // Collapse consecutive buckets where EVERY visible member is idle (total 0) into
   // one narrow "⋯N" column — the table then shows the active buckets instead of a
@@ -785,7 +823,9 @@ function BucketCostTable(props: {
     let run: number[] = [];
     const flush = () => { if (run.length) { displayCols.push({ kind: "gap", from: run[0], to: run[run.length - 1], count: run.length }); run = []; } };
     for (let i = 0; i < buckets.length; i += 1) {
-      if (foldIdle && (bucketTotals[i] || 0) <= 0) run.push(i);
+      // A bucket holding only unpriceable turns has a 0 total but is NOT idle —
+      // folding it away would hide real activity behind a pricing gap.
+      if (foldIdle && (bucketTotals[i] || 0) <= 0 && (bucketUnpriced[i] || 0) === 0) run.push(i);
       else { flush(); displayCols.push({ kind: "b", i }); }
     }
     flush();
@@ -824,13 +864,17 @@ function BucketCostTable(props: {
               const i = c.i;
               const md = meta.get(`${s.key}:${i}`);
               const v = s.cost[i] || 0;
+              // Turns with no catalog rate contribute nothing to `v`, so a cell
+              // that is only unpriced must read "?" — "$0.000" would claim the
+              // member spent nothing in that bucket.
+              const u = s.unpriced[i] || 0;
               const fillH = v > 0 && md ? effortHeight(md.effort) : 0;
               const chg = changes.get(`${s.key}:${i}`);
               return (
                 <span key={ci} className="wb-mono" style={{ position: "relative", padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: v > 0 ? "var(--text-0)" : "var(--text-3)", overflow: "visible" }}>
                   {v > 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${fillH}%`, background: cellTint(md?.model), zIndex: 0 }} />}
                   {chg && <button title="모델·effort 변경" onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPin({ x: r.left, y: r.bottom + 4, series: s.name, time: times[i], prev: chg.prev, next: chg.next }); }} style={{ position: "absolute", left: 3, top: 3, zIndex: 2, width: 17, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 4, cursor: "pointer", padding: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--live)" strokeWidth={2.4}><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
-                  <span style={{ position: "relative", zIndex: 1 }}>{dataMode === "cost" ? fmtCost(v, "$") : (bucketTotals[i] > 0 ? `${Math.round(v / bucketTotals[i] * 100)}%` : "0%")}</span>
+                  <span style={{ position: "relative", zIndex: 1 }} title={u ? `${u}턴은 모델 단가가 카탈로그에 없어 비용을 계산할 수 없습니다.` : undefined}>{dataMode === "cost" ? (v > 0 ? fmtCost(v, "$") + (u ? "+?" : "") : u ? "?" : fmtCost(v, "$")) : (bucketTotals[i] > 0 ? `${Math.round(v / bucketTotals[i] * 100)}%` : u ? "?" : "0%")}</span>
                 </span>
               );
             })}
@@ -839,7 +883,7 @@ function BucketCostTable(props: {
         <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-1)" }}>
           <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}>합계</span>
           {displayCols.map((c, ci) => c.kind === "b"
-            ? <span key={ci} className="wb-mono" style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(bucketTotals[c.i], "$") : "100%"}</span>
+            ? <span key={ci} className="wb-mono" title={bucketUnpriced[c.i] ? `${bucketUnpriced[c.i]}턴은 모델 단가가 없어 합계에서 빠져 있습니다.` : undefined} style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(bucketTotals[c.i], "$") + (bucketUnpriced[c.i] ? "+?" : "") : "100%"}</span>
             : <span key={ci} style={{ background: "var(--bg-1)", borderLeft: "1px dashed var(--border-subtle)", borderRight: "1px dashed var(--border-subtle)" }} />)}
         </div>
       </div>
@@ -927,7 +971,7 @@ function WhoTable(props: {
                 </div>
                 <span className="wb-mono" style={numCell("var(--text-1)")}>{fmtActive(p.activeMs)}</span>
                 <span className="wb-mono" style={numCell("var(--text-2)")}>{p.turns}</span>
-                <div style={{ textAlign: "right" }}><div className="wb-mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-0)" }}>{fmtCost(p.estCostUsd)}</div><div className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>↑{fmtTokens(io.inTok)} ↓{fmtTokens(io.outTok)}</div></div>
+                <div style={{ textAlign: "right" }}><div className="wb-mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-0)" }} title={unpricedHint(p)}>{fmtRowCost(p)}</div><div className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>↑{fmtTokens(io.inTok)} ↓{fmtTokens(io.outTok)}</div></div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}><div style={barTrack}><div style={{ height: "100%", width: `${share}%`, background: "var(--accent)", borderRadius: 4 }} /></div><span className="wb-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-1)", width: 34, textAlign: "right" }}>{Math.round(share)}%</span></div>
                 <span className="wb-mono" style={numCell("var(--text-1)")}>{fmtRate(p.ratePerHour)}</span>
                 <span className="wb-mono" style={numCell((p.cacheHitRate ?? 1) < 0.5 ? "var(--live)" : "var(--text-1)")}>{p.cacheHitRate == null ? "—" : `${Math.round(p.cacheHitRate * 100)}%`}</span>
@@ -948,7 +992,7 @@ function WhoTable(props: {
                     </div>
                     <span className="wb-mono" style={numCell("var(--text-1)")}>{fmtActive(m.activeMs)}</span>
                     <span className="wb-mono" style={numCell("var(--text-2)")}>{m.turns}</span>
-                    <div style={{ textAlign: "right" }}><div className="wb-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-0)" }}>{fmtCost(m.estCostUsd)}</div><div className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>↑{fmtTokens(io2.inTok)} ↓{fmtTokens(io2.outTok)}</div></div>
+                    <div style={{ textAlign: "right" }}><div className="wb-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-0)" }} title={unpricedHint(m)}>{fmtRowCost(m)}</div><div className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>↑{fmtTokens(io2.inTok)} ↓{fmtTokens(io2.outTok)}</div></div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}><div style={{ ...barTrack, height: 6 }}><div style={{ height: "100%", width: `${mShare}%`, background: color, borderRadius: 3 }} /></div><span className="wb-mono" style={{ fontSize: 11.5, color: "var(--text-1)", width: 34, textAlign: "right" }}>{Math.round(mShare)}%</span></div>
                     <span className="wb-mono" style={numCell("var(--text-1)")}>{fmtRate(m.ratePerHour)}</span>
                     <span className="wb-mono" style={numCell((m.cacheHitRate ?? 1) < 0.5 ? "var(--live)" : "var(--text-1)")}>{m.cacheHitRate == null ? "—" : `${Math.round(m.cacheHitRate * 100)}%`}</span>
@@ -985,7 +1029,18 @@ function MemberDrillIn(props: { drill: { partyId: string; member: string; color:
     return () => { alive = false; };
   }, [drill.partyId, drill.member, windowBounds]);
 
-  const cost = useMemo(() => (turns || []).reduce((a, t) => a + turnCost(t.model, t.tokens), 0), [turns]);
+  // Unpriced turns are counted, not silently added as 0 — the drill-in header
+  // has to be able to say "알 수 없음" rather than claim a member spent nothing.
+  const costRow = useMemo<CostRow>(() => {
+    const rows = turns || [];
+    return rows.reduce<CostRow>((acc, t) => {
+      const est = estimatedTurnCostUsd(t);
+      if (est === undefined) { acc.unpricedTurns += 1; acc.unpricedTokens += (t.tokens.input || 0) + (t.tokens.cacheRead || 0) + (t.tokens.cacheWrite || 0) + (t.tokens.output || 0); }
+      else acc.estCostUsd += est;
+      acc.turns += 1;
+      return acc;
+    }, { estCostUsd: 0, unpricedTurns: 0, unpricedTokens: 0, turns: 0 });
+  }, [turns]);
   const io = row ? ioOf(row) : { inTok: 0, outTok: 0 };
   const segs = useMemo(() => segments(turns || []), [turns]);
   const dom = segs.slice().sort((a, b) => b.n - a.n)[0];
@@ -998,7 +1053,7 @@ function MemberDrillIn(props: { drill: { partyId: string; member: string; color:
           <span style={{ width: 12, height: 12, borderRadius: 4, background: drill.color, flex: "none" }} /><span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-0)" }}>{drill.member}</span><span className="wb-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>#{drill.partyId.slice(-4)}</span>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <DrillStat label="환산 비용" value={fmtCost(cost)} sub={`↑${fmtTokens(io.inTok)} ↓${fmtTokens(io.outTok)}`} />
+          <DrillStat label="환산 비용" value={fmtRowCost(costRow)} sub={`↑${fmtTokens(io.inTok)} ↓${fmtTokens(io.outTok)}`} title={unpricedHint(costRow)} />
           <DrillStat label="지배 모델" value={dom ? `${modelLabel(dom.model)} ${dom.effort || ""}` : "—"} sub={dom ? tierBars(dom.model) : ""} />
           <DrillStat label="캐시 적중" value={row?.cacheHitRate == null ? "—" : `${Math.round(row.cacheHitRate * 100)}%`} color={(row?.cacheHitRate ?? 1) < 0.5 ? "var(--live)" : undefined} />
           <DrillStat label="활성 시간" value={fmtActive(row?.activeMs || 0)} />
@@ -1063,7 +1118,10 @@ function ContextCurve({ turns, color }: { turns: TurnUsageRecord[] | null; color
 }
 
 function ExpensiveTurns({ turns }: { turns: TurnUsageRecord[] }) {
-  const top = [...turns].map((t) => ({ t, cost: turnCost(t.model, t.tokens) })).sort((a, b) => b.cost - a.cost).slice(0, 8);
+  // `cost: undefined` = unpriceable, which sorts last: an unknown turn must not
+  // masquerade as the cheapest one just because 0 sorts that way.
+  const top = [...turns].map((t) => ({ t, cost: estimatedTurnCostUsd(t) }))
+    .sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1)).slice(0, 8);
   const maxOut = Math.max(...top.map((x) => x.t.tokens.output || 0), 1);
   return (
     <>
@@ -1074,7 +1132,7 @@ function ExpensiveTurns({ turns }: { turns: TurnUsageRecord[] }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-1)", background: "var(--bg-3)", padding: "1px 6px", borderRadius: 4, flex: "none" }}>{t.trigger}</span><span style={{ fontSize: 12, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelLabel(t.model)} {t.effort || ""}</span></div>
           <span className="wb-mono" style={{ textAlign: "right", fontSize: 11.5, color: "var(--text-2)" }}>{new Date(t.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}><div style={{ ...barTrack, height: 6 }}><div style={{ height: "100%", width: `${(t.tokens.output || 0) / maxOut * 100}%`, background: modelColor(t.model), borderRadius: 3 }} /></div></div>
-          <span className="wb-mono" style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, color: "var(--text-0)" }}>{fmtCost(cost)}</span>
+          <span className="wb-mono" style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, color: cost === undefined ? "var(--text-3)" : "var(--text-0)" }} title={cost === undefined ? `${t.model || "모델 미상"}의 단가가 카탈로그에 없어 비용을 계산할 수 없습니다.` : undefined}>{cost === undefined ? "알 수 없음" : fmtCost(cost)}</span>
         </div>
       ))}
     </>
@@ -1096,9 +1154,9 @@ function GaugeRow({ label, pct, reset, accent }: { label: string; pct?: number; 
   );
 }
 
-function DrillStat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function DrillStat({ label, value, sub, color, title }: { label: string; value: string; sub?: string; color?: string; title?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "8px 14px", background: "var(--bg-2)", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
+    <div title={title} style={{ display: "flex", flexDirection: "column", gap: 1, padding: "8px 14px", background: "var(--bg-2)", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
       <span style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</span>
       <span className="wb-mono" style={{ fontSize: 15, fontWeight: 600, color: color || "var(--text-0)" }}>{value}</span>
       {sub && <span className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>{sub}</span>}

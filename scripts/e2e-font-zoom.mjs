@@ -11,8 +11,9 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "C:\\Project\\AgentPartyApp";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-font-zoom-ws");
 const userData = path.join(os.tmpdir(), "agentparty-font-zoom-ud");
 const port = Number(process.env.AGENTPARTY_FONT_ZOOM_PORT || "") || 48951;

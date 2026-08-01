@@ -100,6 +100,33 @@ reports MERGE, and a re-report replaces only its own window), served by
 `GET /api/usage`, and pushed to the titlebar pill (a `usage-limits.png` capture
 shows the live Claude/Codex rings). Starts empty (no fabricated 0%).
 
+`node scripts/e2e-sidebar-overflow.mjs` (or `npm run test:e2e:sidebar-overflow`)
+boots the real app on an isolated userData + temp workspace (offline — mock
+members, no model) and locks the OVERFLOW-SAFETY invariant behind [#11]: with 16
+parties and 27 members the sidebar lists must SCROLL, not clip. Unlike a
+screenshot check it MEASURES the running renderer over the Chrome DevTools
+Protocol (`--remote-debugging-port=0`, port read from `<userData>/
+DevToolsActivePort` — nothing hardcoded), asserting each list overflows, has a
+computed `overflow-y` that actually scrolls, stays inside the window, keeps the
+Members section usable beside it, and — the decisive one — that after scrolling
+to the bottom `document.elementFromPoint()` over the LAST row hits that row, i.e.
+it is clickable. It also asserts an open `.wb-dd-menu` is height-bounded and
+scrolls. Horizontal menu containment is deliberately NOT asserted (see the note
+in the script): `<Dropdown>`'s default `align="left"` can push a menu past the
+right window edge, which needs a placement fix in `Dropdown.tsx`.
+
+`node scripts/e2e-usage-unpriced.mjs` (or `npm run test:e2e:usage-unpriced`)
+seeds a usage ledger holding one member on a priced model and one on a model
+that is deliberately absent from the catalog, boots the real app on that
+workspace (offline, no model call) and proves the dashboard never prices what it
+cannot price: `GET /api/token-usage` reports `unpricedTurns`/`unpricedTokens`
+instead of folding those turns into `estCostUsd`, and — measured in the running
+renderer over CDP — the per-bucket table shows `?` for the bucket that member
+actually spent in, its totals are marked `+?`, and the timeline caption states
+how many turns are missing from its bars. Guards the AGENTS.md no-silent-
+fallback rule at the exact spot it was violated (a `return 0` that summed into
+`≈$0.000`).
+
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord
 bridge end-to-end **against Discord's own REST API**, not against our return
