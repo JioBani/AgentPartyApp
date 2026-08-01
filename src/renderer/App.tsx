@@ -779,7 +779,12 @@ export function App() {
       // Same route as the HTTP API: the backend ensures the member's session
       // (starting it with the member's own config if needed) and delivers the
       // user turn. UI and agents go through the identical AppController method.
-      const result = await window.agentParty.sendMemberMessage(name, text, attachments);
+      // `interrupt` is the composer's preference: OFF queues behind the member's
+      // in-flight turn, ON stops it so this message is handled now. The backend
+      // never interrupts a compaction, and an idle member is unaffected.
+      const result = await window.agentParty.sendMemberMessage(name, text, attachments, {
+        interrupt: state.settings.composer?.interruptOnSend === true,
+      });
       await applyPartyResult(result, false);
       const sessionId = result.member?.sessionId || known;
       if (!sessionId) {

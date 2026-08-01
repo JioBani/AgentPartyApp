@@ -569,12 +569,13 @@ const SEND_KEY_LABELS: Record<ComposerSendKey, string> = {
 };
 
 /**
- * Message input preferences. Applies immediately (no save button) — each control
- * is a single switch whose effect is visible in the composer on the next
- * keystroke, so a staged "save" would only add a step.
+ * Message input preferences (send key, interrupt-on-send). Applies immediately
+ * (no save button) — each control is a single switch whose effect is visible in
+ * the composer on the next keystroke, so a staged "save" would only add a step.
  */
 function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings | undefined; onSave: (patch: Partial<ComposerSettings>) => void }) {
   const sendKey = settings?.sendKey || "ctrl-enter";
+  const interruptOnSend = settings?.interruptOnSend === true;
   return (
     <>
       <div className="set-inline-note">
@@ -588,6 +589,14 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
             {COMPOSER_SEND_KEYS.map((id) => <option key={id} value={id}>{SEND_KEY_LABELS[id]}</option>)}
           </select>
         </label>
+        <button type="button" className="set-toggle" onClick={() => onSave({ interruptOnSend: !interruptOnSend })}>
+          <span className={"set-switch" + (interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
+          <span className="set-toggle-label">전송 시 진행 중인 턴 중단</span>
+        </button>
+      </div>
+      <div className="set-inline-note">
+        <InfoIcon size={14} />
+        <span>켜면 멤버가 작업 중이어도 즉시 중단하고 새 메시지를 처리합니다. 끄면(기본) 진행 중인 턴이 끝난 뒤에 처리됩니다. 압축 중에는 어느 쪽이든 중단하지 않습니다.</span>
       </div>
     </>
   );

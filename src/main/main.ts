@@ -689,7 +689,7 @@ function registerIpc(): void {
   handle("party:deleteParty", async (event, partyId: string) => controller().removeParty(senderWorkspace(event), partyId, senderWindowId(event)));
   handle("party:create", async (event, input) => controller().createPartyMember(senderWorkspace(event), input, senderWindowId(event)));
   handle("party:send", async (event, to: string, content: string, from?: string, attachments?: unknown) => controller().sendPartyMessage(senderWorkspace(event), to, content, from, sanitizeAttachments(attachments), senderWindowId(event)));
-  handle("party:message", async (event, name: string, text: string, attachments?: unknown) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event)));
+  handle("party:message", async (event, name: string, text: string, attachments?: unknown, options?: { interrupt?: boolean }) => controller().sendMemberMessage(senderWorkspace(event), name, text, sanitizeAttachments(attachments), senderWindowId(event), { interrupt: options?.interrupt === true }));
   handle("party:close", async (event, name: string) => controller().closePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:resume", async (event, name: string) => controller().resumePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:respawn", async (event, name: string, input?: StartPartyMemberInput) => controller().respawnPartyMember(senderWorkspace(event), name, optionalArg(input), senderWindowId(event)));
