@@ -19,39 +19,59 @@ const MODEL_COLOR: Record<string, string> = {
   fable: "#c25b8f",
 };
 
-/** Coarse model family from any catalog id/alias (e.g. `gpt-5.4-mini` → `gpt-5-mini`). */
-export function modelFamily(model: string | undefined): string {
+/** Unidentified model: a neutral that is NOT any family's identity colour (and
+ *  deliberately lighter than haiku's grey, so the two do not read alike). */
+const UNKNOWN_COLOR = "#b0b5be";
+
+/**
+ * Coarse model family from any catalog id/alias (e.g. `gpt-5.4-mini` →
+ * `gpt-5-mini`), or `undefined` when the id matches none of them.
+ *
+ * It must NOT guess. This used to fall through to "sonnet", which made an
+ * uncatalogued model render as `sonnet medium` in the dashboard with sonnet's
+ * colour and tier — the user would be reading the identity of a model they
+ * never ran. A fabricated identity is worse than a fabricated number.
+ */
+export function modelFamily(model: string | undefined): string | undefined {
   const m = (model || "").toLowerCase();
-  if (!m) return "sonnet";
+  if (!m) return undefined;
   if (m.includes("opus")) return "opus";
   if (m.includes("haiku")) return "haiku";
   if (m.includes("fable")) return "fable";
   if (m.includes("mini")) return "gpt-5-mini";
   if (m.includes("gpt")) return "gpt-5";
   if (m.includes("sonnet")) return "sonnet";
-  return "sonnet";
+  return undefined;
 }
 
+/** Identity colour, or the neutral when the family is unknown. */
 export function modelColor(model: string | undefined): string {
-  return MODEL_COLOR[modelFamily(model)] || "#8b8f99";
+  const fam = modelFamily(model);
+  return (fam && MODEL_COLOR[fam]) || UNKNOWN_COLOR;
 }
 
-/** Short display label for a model (family, since effort is shown separately). */
+/**
+ * Short display label (family, since effort is shown separately). For an
+ * unrecognized id the RAW id is shown — it is the one true thing known about
+ * the model — and a missing id says so instead of naming a family.
+ */
 export function modelLabel(model: string | undefined): string {
-  const fam = modelFamily(model);
-  return fam;
+  return modelFamily(model) || model?.trim() || "모델 미상";
 }
 
-/** Capability tier 1–3 (haiku/mini=1, sonnet=2, opus/gpt-5=3) for the ▰▱ bars. */
-export function modelTier(model: string | undefined): number {
+/** Capability tier 1–3 (haiku/mini=1, sonnet=2, opus/gpt-5=3), or undefined. */
+export function modelTier(model: string | undefined): number | undefined {
   const fam = modelFamily(model);
+  if (!fam) return undefined;
   if (fam === "opus" || fam === "gpt-5") return 3;
   if (fam === "sonnet") return 2;
   return 1;
 }
 
+/** ▰▱ capability bars, or "—" when the model's tier is not known. */
 export function tierBars(model: string | undefined): string {
   const t = modelTier(model);
+  if (t === undefined) return "—";
   return "▰".repeat(t) + "▱".repeat(3 - t);
 }
 

@@ -104,6 +104,9 @@ async function main() {
         pricedCells: rowCells("priced-guy"),
         markedTotal: text.includes("+?"),
         note: grab(/[^\\n]*단가[^\\n]*/),
+        // The model·effort rane labels every segment. An uncatalogued model must
+        // appear under its own id, never under a guessed family.
+        raneLabels: [...document.querySelectorAll("[title]")].map((el) => el.getAttribute("title")).filter((t) => /medium/.test(t || "")),
       };
     })()`);
     assert(Array.isArray(seen.cells) && seen.cells.length > 0, `the unpriceable member has a row in the bucket table (${JSON.stringify(seen.cells)})`);
@@ -114,6 +117,14 @@ async function main() {
     assert(!(seen.cells || []).some((c) => /\$\d*[1-9]/.test(c)), `and no bucket of its row shows a fabricated cost (${JSON.stringify(seen.cells)})`);
     assert((seen.pricedCells || []).some((c) => /^\$\d/.test(c)), `the priced member still shows real costs (${JSON.stringify(seen.pricedCells)})`);
     assert(seen.markedTotal, "totals that omit unpriceable turns are marked +?");
+    // Fabricated IDENTITY is worse than a fabricated number: the uncatalogued
+    // model used to render as "sonnet medium", complete with sonnet's colour.
+    assert((seen.raneLabels || []).some((t) => t.includes(UNPRICED_MODEL)),
+      `the uncatalogued model is labelled with its own id (${JSON.stringify(seen.raneLabels)})`);
+    const sonnetLabels = (seen.raneLabels || []).filter((t) => t.includes("sonnet"));
+    const unknownLabels = (seen.raneLabels || []).filter((t) => t.includes(UNPRICED_MODEL));
+    assert(sonnetLabels.length === unknownLabels.length,
+      `and "sonnet" is claimed exactly as often as the uncatalogued id appears — i.e. once per member, not borrowed (${sonnetLabels.length} vs ${unknownLabels.length})`);
     assert(/단가/.test(seen.note), `the timeline states what is missing from its bars (${seen.note})`);
 
     cdp.close();
