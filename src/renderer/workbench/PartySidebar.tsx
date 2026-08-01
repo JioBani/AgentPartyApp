@@ -11,6 +11,7 @@ import type { RouteLike } from "./routes";
 import { memberColorVars } from "../theme/memberColors";
 import { statusLabel } from "./memberStatus";
 import { MemberWizard } from "./MemberWizard";
+import { WorkingDots } from "./StatusIndicator";
 import { MessageGateIcon } from "./MessageGateIcon";
 
 export interface CreateMemberInput {
@@ -195,7 +196,11 @@ export function PartySidebar(props: PartySidebarProps) {
                 <span className="wb-member-name">{view.name}</span>
                 {view.pendingApproval && <span className="wb-member-badge">승인</span>}
                 {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
-                {!view.pendingApproval && <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>}
+                {/* A running turn is motion, not the grey word "working" that
+                    read as a label and was easy to miss down the list. */}
+                {!view.pendingApproval && (view.status === "working"
+                  ? <WorkingDots label="작업 중" />
+                  : <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>)}
               </div>
             );
           })}

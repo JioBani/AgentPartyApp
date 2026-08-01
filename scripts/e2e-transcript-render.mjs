@@ -12,6 +12,13 @@
  *           handler — proving the whole renderer→preload→IPC path, which no
  *           jsdom test can see — and the link's copy control reports success.
  *
+ * ⚠️ `POST /api/capture`'s `click` does NOT report whether its selector matched —
+ * a miss returns the same `{ok:true}`. So a leg that only checks the capture
+ * result proves the app rendered SOMETHING, not that the click happened. Legs
+ * below either drive through a route that reports its outcome, or read the main
+ * process's log; where neither is possible the capture is named in the output so
+ * a human reads the PNG. Once capture reports `clicked`, assert on it here.
+ *
  * Run: node scripts/e2e-transcript-render.mjs   (after `npm run build`)
  */
 import { execFileSync, spawn } from "node:child_process";
@@ -82,6 +89,9 @@ async function main() {
 
     await linkOpensInOsBrowser();
     await oneClickCopy();
+    // The indicator leg runs before the subagent leg: the drill-in detail is an
+    // overlay that covers the panel header the indicator lives in.
+    await progressIndicator();
     await longSubagentTaskCollapses();
 
     await post("/api/window/close", {}).catch(() => {});
@@ -187,6 +197,25 @@ async function longSubagentTaskCollapses() {
 
   const fullShot = path.join(shotDir, "issue-6-detail-full.png");
   ok((await post("/api/capture", { click: ".wb-subdetail-task .wb-expand-inline", path: fullShot })).bytes > 0, `전체 보기 on the delegated prompt → ${fullShot}`);
+}
+
+/**
+ * [P-3]7 — a running turn reads as motion, not as the word "working". The state
+ * is driven by the session status the harness reports (`responding`), so this
+ * exercises the same status → view → render path a live turn does. The capture
+ * is what proves the indicator is legible at real size in both surfaces.
+ */
+async function progressIndicator() {
+  console.log("\n[P-3]7 in-flight turns show a moving indicator:");
+  await post("/api/qa/members/renderer/emit", { status: "working" });
+  await delay(600);
+  const busyShot = path.join(shotDir, "p3-7-working.png");
+  ok((await post("/api/capture", { path: busyShot })).bytes > 0, `member mid-turn (panel pill + sidebar row) → ${busyShot}`);
+
+  await post("/api/qa/members/renderer/emit", { status: "idle" });
+  await delay(600);
+  const idleShot = path.join(shotDir, "p3-7-idle.png");
+  ok((await post("/api/capture", { path: idleShot })).bytes > 0, `same member back at idle (labels, no indicator) → ${idleShot}`);
 }
 
 async function discover() {

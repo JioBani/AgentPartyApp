@@ -5095,3 +5095,33 @@ body.wb-resizing {
 .wb-assistant-copy:focus-visible,
 .wb-assistant-copy.is-copied,
 .wb-assistant-copy.is-failed { opacity: 1; }
+
+/* ── W2: in-progress indicator ([P-3]7) ─────────────────────────────────── */
+
+/* Three bouncing dots standing in for the word "working" wherever a member's
+   turn is in flight (panel header pill, sidebar member row). Inherits the
+   surrounding color, so each surface keeps its own status palette. */
+.wb-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+.wb-working-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: wb-bounce 1.2s ease-in-out infinite;
+}
+.wb-working-dots i:nth-child(2) { animation-delay: .15s; }
+.wb-working-dots i:nth-child(3) { animation-delay: .3s; }
+
+/* The pill's own opacity pulse is redundant now that the dots carry the motion;
+   two animations at once read as flicker. Added as a new rule rather than an
+   edit to the base `.wb-status-pill.is-working` block above. */
+.wb-status-pill.is-working { animation: none; }
+
+/* The sidebar row's status column has no color of its own — give the dots the
+   live-activity color instead of the muted status text color. */
+.wb-member-row .wb-working-dots { color: var(--live); }

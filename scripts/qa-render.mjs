@@ -269,6 +269,17 @@ assert(text.includes("read_file"), "tool block rendered");
 assert(text.includes("Approval required"), "reviewer approval card rendered");
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
+
+// [P-3]7 A member whose turn is in flight shows a moving indicator, not the word
+// "working". Other states stay as labels — they are facts, not progress.
+const workingPill = document.querySelector(".wb-status-pill.is-working");
+assert(Boolean(workingPill?.querySelector(".wb-working-dots")), "panel header shows the progress indicator while a turn runs");
+assert(!/working/.test(workingPill?.textContent || ""), "…and no longer prints the word 'working'");
+const workingRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.textContent.includes("backend"));
+assert(Boolean(workingRow?.querySelector(".wb-working-dots")), "sidebar row shows the progress indicator for a working member");
+assert(!/working/.test(workingRow?.textContent || ""), "…instead of the grey word 'working'");
+const idleRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.textContent.includes("frontend"));
+assert(/not started|idle/.test(idleRow?.textContent || "") && !idleRow?.querySelector(".wb-working-dots"), "a member that is not running keeps its status label and shows no indicator");
 // The context indicator is now a DONUT (ring), not a bar. Clicking it opens the
 // Auto-compact dialog (covered by qa-compact-dialog); here we lock that it renders
 // with the live K/K range + % on a wide panel.
