@@ -4418,7 +4418,11 @@ body.wb-resizing {
 @keyframes wb-spin { to { transform: rotate(360deg); } }
 
 /* ===================== Settings pages (auth / runtime) =================== */
-.set-page { max-width: 760px; display: flex; flex-direction: column; gap: 22px; padding: 6px 4px 40px; animation: mcp-rise 0.22s ease both; }
+/* Horizontal padding matches .screen-header's var(--space-7), so the settings
+ * content lines up with the title above it instead of sitting 16px further out
+ * — and, on a window too narrow for max-width to bite, stops hugging the right
+ * edge with 4px to spare. */
+.set-page { max-width: 760px; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
 .set-page-wide { max-width: 1180px; }
 
 /* section header with rule */
