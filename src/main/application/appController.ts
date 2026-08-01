@@ -1158,16 +1158,24 @@ export class AppController {
       }
     }
     if (typeof body?.text === "string") {
-      await win.webContents.executeJavaScript(
+      // "Could not do it" is a failure, not a quiet success: asked to type into
+      // something with no editable value, this used to return ok with a null
+      // value and let the caller read a no-op as a pass. The focused element's
+      // tag comes back in the error, because knowing WHAT it tried to type into
+      // is what lets the caller fix the selector.
+      const typed = await win.webContents.executeJavaScript(
         `(() => {
           const el = document.activeElement;
-          if (!el || !("value" in el)) return null;
+          if (!el || !("value" in el)) return { ok: false, tag: el ? el.tagName.toLowerCase() : "none" };
           const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(body.text)});
           el.dispatchEvent(new Event("input", { bubbles: true }));
-          return el.value;
+          return { ok: true, value: el.value };
         })()`,
       );
+      if (!typed?.ok) {
+        throw new Error(`Cannot type into the focused element <${typed?.tag || "none"}> — it has no editable value.`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
     const key = String(body?.key || "").trim();

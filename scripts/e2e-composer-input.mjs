@@ -70,15 +70,27 @@ async function main() {
     assert((await getJson("/api/health")).ok, "health ok");
 
     // --- 0) Prove the RUNNING build is this worktree -----------------------
-    // Both endpoints exist only on this branch. If a hardcoded root had built a
-    // different worktree, the spec would not list them and every later step
-    // would be measuring someone else's code.
-    const spec = await getJson("/api/spec");
-    const endpoints = spec?.spec?.endpoints || spec?.endpoints || [];
-    assert(endpoints.includes("POST /api/qa/input"), "running build serves POST /api/qa/input (this worktree, not another)");
-    assert(endpoints.includes("POST /api/qa/window/bounds"), "running build serves POST /api/qa/window/bounds");
-    const served = (await getJson("/api/state")).settings?.workspacePath;
-    assert(served === ws, `serving the e2e workspace (${served})`);
+    // `runtime.appRoot` is the app stating where its own code was loaded from —
+    // the one path in the payload this script did not supply. (An earlier version
+    // asserted that /api/spec listed endpoints unique to this branch; that works
+    // only until the branch merges, after which every build serves them and the
+    // check passes forever without proving anything. See docs/E2E_TESTING.md §1b.)
+    const state = await getJson("/api/state");
+    const appRoot = String(state.runtime?.appRoot || "");
+    // Boundary compare: "…\AgentPartyApp" is a string PREFIX of
+    // "…\AgentPartyApp-w3", so a bare startsWith accepts a sibling's build.
+    const underRoot = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
+    assert(underRoot, `the running build came from THIS worktree (appRoot ${appRoot || "missing"})`);
+    assert(state.settings?.workspacePath === ws, `serving the e2e workspace (${state.settings?.workspacePath})`);
+
+    // The driving tool has to hold itself to the rule it exists to enforce:
+    // asked to do something it cannot, it FAILS instead of returning ok. Both
+    // ways of missing are checked, since a silent pass here would quietly
+    // weaken every assertion below it.
+    const noSuchSelector = await postRaw("/api/qa/input", { selector: "#definitely-not-here", text: "x" });
+    assert(noSuchSelector.status === 500 && /matches/.test(noSuchSelector.body), `a selector matching nothing fails (${noSuchSelector.status})`);
+    const notTypable = await postRaw("/api/qa/input", { selector: "body", text: "x" });
+    assert(notTypable.status === 500 && /no editable value/.test(notTypable.body), `typing into an element with no value fails, naming it (${notTypable.body.slice(0, 90)})`);
 
     await post("/api/qa/reset").catch(() => {});
     // Three members: the narrow composer is reached by SPLITTING panels, which

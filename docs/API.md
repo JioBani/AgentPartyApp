@@ -1538,7 +1538,9 @@ Every field is optional and applied in order:
 - `selector` — focuses the matching element first. If nothing matches, the call
   **fails** rather than typing into whatever held focus.
 - `text` — set through the field's native value setter plus an `input` event,
-  which is how a React-controlled field takes a value.
+  which is how a React-controlled field takes a value. If the focused element has
+  no editable value the call **fails**, naming that element's tag: being unable
+  to type is a failure, not a quiet no-op.
 - `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
   browser's own default action for that key still runs. This is the reason the
   endpoint exists: a synthetic DOM event dispatched from a script never fires a
