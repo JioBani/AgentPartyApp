@@ -18,11 +18,17 @@
  * a chip that got split, or edited from the inside, would take its path with it
  * and the loss would be silent.
  */
-import { quoteReferencePath, type FileReference, type ReferenceKind } from "../../shared/fileReferences";
+import { fileReference, quoteReferencePath, type FileReference, type ReferenceKind } from "../../shared/fileReferences";
+import { tokenizeMessage } from "./messageTokens";
+import { mentionTitle } from "./mentionModel";
 
 /** Marks a chip element and carries the path it stands for. */
 const PATH_ATTR = "data-path";
 const KIND_ATTR = "data-ref-kind";
+/** Marks a mention chip and carries the member name it stands for. */
+const MENTION_ATTR = "data-mention";
+/** Any chip — the atoms the caret must never land inside. */
+const CHIP_SELECTOR = `[${PATH_ATTR}],[${MENTION_ATTR}]`;
 
 /* Two clearly different silhouettes — a document versus a folder tab — because
    "is this a folder?" has to be answerable at a glance, not by reading. */
@@ -37,7 +43,7 @@ export function chipAncestor(node: Node | null): HTMLElement | null {
   while (current) {
     if (current.nodeType === Node.ELEMENT_NODE) {
       const el = current as HTMLElement;
-      if (el.hasAttribute?.(PATH_ATTR)) {
+      if (el.hasAttribute?.(PATH_ATTR) || el.hasAttribute?.(MENTION_ATTR)) {
         return el;
       }
     }
@@ -76,6 +82,23 @@ export function createChip(doc: Document, reference: FileReference): HTMLElement
   return chip;
 }
 
+/** Builds a mention chip. Serializes back to `@name`, which is what is sent. */
+export function createMentionChip(doc: Document, name: string, color: string): HTMLElement {
+  const chip = doc.createElement("span");
+  chip.className = "wb-mention-chip";
+  chip.setAttribute("contenteditable", "false");
+  chip.setAttribute(MENTION_ATTR, name);
+  chip.style.setProperty("--member", color);
+  chip.title = mentionTitle(name);
+
+  const at = doc.createElement("span");
+  at.className = "wb-mention-chip-at";
+  at.textContent = "@";
+  chip.appendChild(at);
+  chip.appendChild(doc.createTextNode(name));
+  return chip;
+}
+
 /**
  * Reads the editor back as the text that will be sent.
  *
@@ -97,6 +120,11 @@ export function serializeDraft(root: HTMLElement): string {
       const chipPath = el.getAttribute(PATH_ATTR);
       if (chipPath) {
         out += quoteReferencePath(chipPath);
+        continue;
+      }
+      const mention = el.getAttribute(MENTION_ATTR);
+      if (mention) {
+        out += `@${mention}`;
         continue;
       }
       if (el.tagName === "BR") {
@@ -194,49 +222,40 @@ export function endOfDraft(root: HTMLElement): Range {
 }
 
 /**
- * Rebuilds the editor from plain text, turning any known reference path back
- * into a chip.
+ * Rebuilds the editor from plain text, turning mentions and known paths back
+ * into chips.
  *
  * Used only when the draft changes from OUTSIDE the editor (cleared after send,
- * restored from the queue). A path that no longer has a known reference stays
- * visible as plain text rather than vanishing — the same thing the user saw
- * before chips existed, and never a silent loss.
+ * restored from the queue). It shares `tokenizeMessage` with the transcript, so
+ * a recalled message and the same message already sent are recognised by one
+ * set of rules rather than two that can drift.
+ *
+ * A path with no matching reference stays plain text rather than vanishing —
+ * the same thing the user saw before chips existed, and never a silent loss.
  */
-export function rehydrateDraft(root: HTMLElement, text: string, references: readonly FileReference[]): void {
+export function rehydrateDraft(
+  root: HTMLElement,
+  text: string,
+  references: readonly FileReference[],
+  members: readonly { name: string; color: string }[] = [],
+): void {
   const doc = root.ownerDocument;
   root.textContent = "";
   if (!text) {
     return;
   }
-  // Longest first, so a folder does not shadow a file nested beneath it.
-  const known = [...references].sort((a, b) => b.path.length - a.path.length);
-  let rest = text;
-  const appendText = (value: string) => {
-    if (value) {
-      root.appendChild(doc.createTextNode(value));
+  const refByPath = new Map(references.map((reference) => [reference.path, reference]));
+  for (const token of tokenizeMessage(text, members.map((member) => member.name))) {
+    if (token.kind === "mention") {
+      const color = members.find((member) => member.name === token.name)?.color || "var(--text-2)";
+      root.appendChild(createMentionChip(doc, token.name, color));
+      continue;
     }
-  };
-
-  while (rest) {
-    let bestAt = -1;
-    let bestRef: FileReference | undefined;
-    let bestToken = "";
-    for (const reference of known) {
-      for (const token of [quoteReferencePath(reference.path), reference.path]) {
-        const at = rest.indexOf(token);
-        if (at >= 0 && (bestAt < 0 || at < bestAt)) {
-          bestAt = at;
-          bestRef = reference;
-          bestToken = token;
-        }
-      }
+    if (token.kind === "path") {
+      const known = refByPath.get(token.path);
+      root.appendChild(createChip(doc, known || fileReference(token.path)));
+      continue;
     }
-    if (!bestRef || bestAt < 0) {
-      appendText(rest);
-      return;
-    }
-    appendText(rest.slice(0, bestAt));
-    root.appendChild(createChip(doc, bestRef));
-    rest = rest.slice(bestAt + bestToken.length);
+    root.appendChild(doc.createTextNode(token.text));
   }
 }

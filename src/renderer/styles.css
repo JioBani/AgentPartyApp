@@ -2970,10 +2970,9 @@ body.wb-resizing {
 
 /* `@` member popover — anchored above the composer, like the `/` palette. */
 .wb-mention-pop {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 40;
+  /* Positioned against the CARET (in a portal on the body), not the composer. */
+  position: fixed;
+  z-index: 1400;
   width: 272px;
   max-height: 236px;
   overflow-y: auto;
@@ -2988,10 +2987,50 @@ body.wb-resizing {
 }
 
 .wb-mention-pop.is-compact {
-  width: auto;
-  right: 0;
+  width: 232px;
   max-height: 180px;
   padding: 4px;
+}
+
+.wb-mention-everyone-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wb-mention-row.is-everyone .wb-mention-name {
+  color: var(--text-0);
+}
+
+/* A mention, in the composer and in a sent message. Same shape in both, so the
+   message reads as what was typed. */
+.wb-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 var(--space-2) 0 6px;
+  margin: 0 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--member, var(--text-2)) 13%, transparent);
+  box-shadow: inset 0 0 0 var(--border-width) color-mix(in srgb, var(--member, var(--text-2)) 34%, transparent);
+  color: var(--member, var(--text-1));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  vertical-align: -3px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.wb-mention-chip-at {
+  opacity: .6;
+  font-weight: 700;
+}
+
+/* In the transcript the chips are read-only. */
+.wb-ref-chip.is-static {
+  cursor: default;
+  vertical-align: -3px;
 }
 
 .wb-mention-head {
