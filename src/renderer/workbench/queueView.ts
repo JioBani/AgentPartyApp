@@ -154,7 +154,9 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     title: `대기열 ${items.length}`,
     chipLabel: `대기열 ${items.length}건`,
     note: headerNote({ memberName, working, detached, merge, count: items.length, cutInCount }),
-    mergeNote: mergeNote({ merge, mixed, count: items.length }),
+    // The run, not the queue: with a cut-in at the front the merge unit is just
+    // that row, and saying "3건을 합쳐서" would name a send that cannot happen.
+    mergeNote: mergeNote({ merge, mixed, count: run.length, total: items.length }),
     // Naming a count that is not actually a merge would overstate what the
     // button does, so a single-item send is just "지금 보내기". While the member
     // is working, sending sooner means stopping the turn — see
@@ -278,13 +280,22 @@ function headerNote(args: {
   return `${args.memberName} 응답이 끝나면 ${how} 전송됩니다`;
 }
 
-function mergeNote(args: { merge: boolean; mixed: boolean; count: number }): string {
+function mergeNote(args: { merge: boolean; mixed: boolean; count: number; total: number }): string {
   if (!args.merge) {
     return "한 건씩 순서대로 보냅니다";
   }
-  // With several senders queued, promising "N건을 한 메시지로" would be wrong —
-  // only the leading same-sender run merges.
-  return args.mixed ? "보낸 사람이 같은 것끼리만 합쳐집니다" : `전송 시 ${args.count}건을 한 메시지로 합쳐서 보냅니다`;
+  // Only the LEADING RUN merges, so this must never promise the whole queue.
+  // Two things end a run, and each needs its own explanation:
+  //   - a different sender (merging those would forge attribution)
+  //   - a cut-in row (merging it into the waiting pile would send the pile too,
+  //     which is the opposite of what 지금 처리 asked for)
+  if (args.mixed) {
+    return "보낸 사람이 같은 것끼리만 합쳐집니다";
+  }
+  if (args.count < args.total) {
+    return `지금 처리할 ${args.count}건만 먼저 나가고, 나머지는 다음 차례에 합쳐집니다`;
+  }
+  return `전송 시 ${args.count}건을 한 메시지로 합쳐서 보냅니다`;
 }
 
 function collapsedPreview(items: QueuedMessage[]): string {
