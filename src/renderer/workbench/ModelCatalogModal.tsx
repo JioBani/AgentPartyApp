@@ -381,34 +381,38 @@ export function ModelCatalogModal({
                   {group.open && group.entries.map((entry) => {
                     const key = routeKey(entry.route);
                     const starred = favorites.includes(entry.route.model);
+                    const unavailable = entry.route.enabled === false;
                     // The row is a container, not a button: it also holds the
                     // star, and a button cannot nest inside a button. It still
                     // selects on click so the whole row stays the target — for a
                     // pointer, and for anything driving `.wb-model-row`.
                     return (
                       <div
-                        className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
+                        className={"wb-model-row" + (key === selectedKey ? " is-selected" : "") + (unavailable ? " is-unavailable" : "")}
                         key={key}
                         data-model={entry.route.model}
-                        onClick={() => { if (entry.route.enabled !== false) { setSelectedKey(key); } }}
+                        onClick={() => { if (!unavailable) { setSelectedKey(key); } }}
                       >
                         <button
                           type="button"
                           className="wb-model-pick"
-                          disabled={entry.route.enabled === false}
-                          title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
+                          disabled={unavailable}
+                          // The full reason stays reachable on hover. It is a
+                          // sentence or two of provider detail — useful when you
+                          // go looking for it, noise on every row of the list.
+                          title={unavailable ? entry.route.unavailableReason : entry.route.description}
                           onClick={() => setSelectedKey(key)}
                         >
                           <span className="wb-model-name">
                             <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
-                            {/* A starred model sits outside its provider group, so
-                                the row itself has to say where it came from. */}
+                            {/* A starred model is also pinned at the top, so the
+                                row says which provider it belongs to. */}
                             <small className="wb-model-origin">
                               <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[entry.meta.provider] }} />
                               {PROVIDER_LABELS[entry.meta.provider]}
                             </small>
-                            {entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}
                           </span>
+                          {unavailable && <span className="wb-model-off">미지원</span>}
                           <PerfMeter value={entry.meta.perf} />
                           <CostMeter value={entry.meta.cost} />
                         </button>

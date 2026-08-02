@@ -4140,6 +4140,36 @@ body.wb-resizing {
   border-color: var(--accent-bd);
 }
 
+/* A model this harness cannot run. It used to spell out the provider's full
+   explanation on the row, which buried the one thing you need while scanning —
+   that you cannot pick it. Now the row simply reads as switched off, with a
+   short badge, and the explanation waits in the tooltip. */
+.wb-model-row.is-unavailable {
+  opacity: .45;
+}
+
+.wb-model-row.is-unavailable:hover {
+  background: transparent;
+}
+
+.wb-model-row.is-unavailable .wb-model-pick {
+  cursor: not-allowed;
+}
+
+.wb-model-off {
+  flex: none;
+  height: 15px;
+  padding: 0 var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-badge);
+  background: var(--bg-4);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .wb-model-name {
   display: flex;
   flex-direction: column;
@@ -6106,6 +6136,14 @@ body.wb-resizing {
    (a clean floating popup); `.is-dim` opts into the standard scrim. */
 .wb-catalog-scrim { z-index: 1200; background: transparent; }
 .wb-catalog-scrim.is-dim { background: var(--scrim); }
+
+/* The catalog holds its FULL height whatever is expanded.
+   Sized by content, every collapse and expand resized the dialog under the
+   pointer — the row you were about to click moved, and the whole window
+   flinched on each toggle. Pinned to the same height the fully-expanded list
+   reaches, so toggling only ever scrolls INSIDE the list. It is a viewport
+   fraction, so a small window still gets a small dialog. */
+.wb-catalog-scrim .wb-modal { height: 88vh; }
 .wb-model-picker-pop {
   width: min(480px, 92vw);
   max-height: 72vh;
