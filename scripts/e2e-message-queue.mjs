@@ -23,7 +23,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { firstBaseUrl } from "./lib/discovery.mjs";
+import { waitForLiveBaseUrl } from "./lib/discovery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-queue-e2e-workspace");
@@ -45,6 +45,8 @@ async function main() {
   // and is discovered from the workspace's own instance file.
   fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: ws }, null, 2));
 
+  // Taken before the launch: discovery accepts only an app advertised after it.
+  const launchedAt = Date.now();
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", ws, "--remote-debugging-port=0"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
@@ -61,7 +63,7 @@ async function main() {
 
   let cdp;
   try {
-    base = await discover();
+    base = await discover(launchedAt);
     assert((await get("/api/health")).ok, `app is up at ${base}`);
     // Step 0: the build actually running must be THIS worktree, not the user's
     // installed app or the main checkout.
@@ -682,19 +684,15 @@ function partyFile() {
   return path.join(dir, partyId, "party.json");
 }
 
-async function discover() {
-  const started = Date.now();
-  while (Date.now() - started < 60_000) {
-    const url = firstBaseUrl(ws);
-    if (url) {
-      try {
-        const response = await fetch(`${url}/api/health`);
-        if (response.ok && (await response.json()).ok) return url;
-      } catch { /* still starting */ }
-    }
-    await delay(500);
-  }
-  throw new Error("App did not advertise an automation endpoint for the e2e workspace.");
+/**
+ * @param since taken before the launch — only an app that advertised itself
+ *   after this counts as ours. A leftover app on this workspace answers too,
+ *   and attaching to it would assert against a build nobody asked about.
+ */
+async function discover(since) {
+  const url = await waitForLiveBaseUrl(ws, { since });
+  if (!url) throw new Error("App did not advertise an automation endpoint for the e2e workspace.");
+  return url;
 }
 
 async function attachRenderer() {
