@@ -18,8 +18,17 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
   if (!input.partyId) {
     throw new Error("Party id is required.");
   }
-  if (!name || !role) {
-    throw new Error("Member name and role are required.");
+  // Only the NAME is required. A role describes what a member is for, and there
+  // are members that need none — the person opening it already knows. The
+  // session primer states `(none specified)` rather than an empty line, so an
+  // unset role reaches the member as a fact about itself instead of arriving as
+  // blank text it has to interpret.
+  //
+  // The agent-facing `member-create` tool still demands one: when an agent
+  // creates a member for another agent, nobody else is there to say what it is
+  // for.
+  if (!name) {
+    throw new Error("Member name is required.");
   }
   if (input.permissionMode !== undefined && !isPermissionModeSetting(input.permissionMode)) {
     throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);

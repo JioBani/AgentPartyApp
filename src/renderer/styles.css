@@ -4505,41 +4505,83 @@ body.wb-resizing {
   padding: var(--space-6);
 }
 
-.wb-wizard-steps {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-6) 0;
+/* The step rail is gone with the steps themselves — creating a member is one
+   form now (see MemberWizard). */
+.wb-wizard-body { min-height: 232px; overflow-y: auto; }
+.wb-wizard-pane { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* Each field group. Spaced apart rather than boxed: the form is short enough
+   that lines would add weight without adding clarity. */
+.wb-wizard-section { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.wb-wizard-optional {
+  margin-left: var(--space-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-3);
 }
 
-.wb-wizard-step {
-  display: inline-flex;
+/* The runtime summary — what opens the catalog. Reads as one line of fact
+   (harness · model · reasoning) with the way to change it on the right. */
+.wb-wizard-runtime {
+  display: flex;
   align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+  text-align: left;
+}
+
+.wb-wizard-runtime:hover { border-color: var(--border-strong); background: var(--bg-3); }
+
+.wb-wizard-runtime-main {
+  display: flex;
+  align-items: baseline;
   gap: var(--space-2);
-  font-size: 11.5px;
-  color: var(--text-3);
+  min-width: 0;
   flex: 1;
 }
 
-.wb-wizard-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  background: var(--bg-3);
-  border: var(--border-width) solid var(--border);
+.wb-wizard-runtime-harness {
+  flex: none;
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
-.wb-wizard-step.is-active { color: var(--text-0); font-weight: 600; }
-.wb-wizard-step.is-active .wb-wizard-step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
-.wb-wizard-step.is-done .wb-wizard-step-num { background: var(--live); border-color: var(--live); color: #fff; }
+.wb-wizard-runtime-model {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-.wb-wizard-body { min-height: 232px; }
-.wb-wizard-pane { display: flex; flex-direction: column; gap: var(--space-3); }
+/* Gives way first when the dialog narrows: the model name matters more. */
+.wb-wizard-runtime-sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-wizard-runtime-change {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
 
 .wb-wizard-input {
   width: 100%;
