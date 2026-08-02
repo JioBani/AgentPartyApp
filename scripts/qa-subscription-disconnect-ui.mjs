@@ -1,10 +1,17 @@
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { qaTempFile } from "./lib/qaTemp.mjs";
 
+/**
+ * Subscription disconnect confirmation (Codex row) through the real AuthView.
+ *
+ * AuthView's key drafts became per-provider (`drafts` + `onClear`) when clearing
+ * a stored OpenRouter key landed (R-25). This script still exercised the
+ * disconnect arming path but passed the old `draft` prop — so mounting crashed
+ * before any assertion ran, and because it was not in `test:ui` nobody noticed.
+ */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const out = qaTempFile("subscription-disconnect-ui.mjs");
 await build({
@@ -38,10 +45,11 @@ const rootNode = createRoot(document.getElementById("root"));
 await act(async () => {
   rootNode.render(React.createElement(AuthView, {
     auth,
-    draft: "",
+    drafts: {},
     onDraft() {},
     onSave() {},
     onTest() {},
+    onClear() {},
     onConnectSubscription() {},
     async onDisconnectSubscription(provider) {
       if (provider === "codex") disconnected += 1;
