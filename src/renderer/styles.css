@@ -2915,8 +2915,149 @@ body.wb-resizing {
 .wb-attachments {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin-bottom: 7px;
+}
+
+/* A non-image attachment, sharing the strip with the image thumbnails. It reads
+   as "resource" rather than "picture": a name, no preview — there is nothing to
+   preview, since a file's bytes are never sent. Only its path is, and that lives
+   in the tooltip because on screen it would crowd out everything else. */
+.wb-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 240px;
+  height: 24px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border);
+  color: var(--text-0);
+}
+
+.wb-file-chip-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wb-file-chip-name {
+  min-width: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-file-chip-x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+}
+
+.wb-file-chip-x:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+
+/* `@` member popover — anchored above the composer, like the `/` palette. */
+.wb-mention-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  width: 272px;
+  max-height: 236px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, .45);
+}
+
+.wb-mention-pop.is-compact {
+  width: auto;
+  right: 0;
+  max-height: 180px;
+  padding: 4px;
+}
+
+.wb-mention-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 5px var(--space-3) 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.wb-mention-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 9px;
+  border: var(--border-width) solid transparent;
+  /* Fully round, per the confirmed design. The `--radius-pill` token is 6px in
+     this app, so it is the wrong one here; 999px is the codebase's existing
+     idiom for a fully-rounded shape and there is no token for it. */
+  border-radius: 999px;
+  background: transparent;
+  text-align: left;
+}
+
+.wb-mention-pop.is-compact .wb-mention-row {
+  height: 27px;
+}
+
+.wb-mention-row.is-active {
+  background: color-mix(in srgb, var(--member) 12%, transparent);
+  border-color: color-mix(in srgb, var(--member) 36%, transparent);
+}
+
+.wb-mention-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--member);
+}
+
+.wb-mention-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--member);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-mention-pop.is-compact .wb-mention-name {
+  font-size: 11.5px;
+}
+
+.wb-mention-status {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-3);
 }
 
 .wb-attachment {
