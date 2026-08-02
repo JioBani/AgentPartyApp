@@ -14,6 +14,9 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | Script | Covers |
 |---|---|
 | `qa-temp-isolation` | the jsdom suite's own bundles stay **inside this worktree**, never in the shared install — see below |
+| `qa-codex-authentication-store` | managed Codex `auth.json`: apply/idempotent repair/account switch/disconnect, plus disconnect leaving an externally changed credential untouched |
+| `qa-resume-target` | ClaudeAdapter restart resume target ([#17]): before the first turn a setting change must not resume an uncommitted harness session; after a turn a soft restart continues the live conversation |
+| `qa-router-diagnostics` | GPT-on-Claude-Code startup errors name the CLIProxyAPI chain (router down vs proxy unconfigured); a direct Anthropic model stays free of those diagnostics |
 | `qa-workspace-location` | workspace = cwd / storage location rules |
 | `qa-layout` | panel/tab layout engine, incl. `openMemberInNewPanel` (create → new region) |
 | `qa-render` | renderer smoke render |
@@ -371,7 +374,24 @@ real traffic by `qa-subagent-tracker` (in `test:ui`).
 proves Claude Code owns Anthropic Messages and Codex owns Responses regardless
 of model/provider. A fake GPT subscription receives the complete interrupt,
 user, tool, thinking, and image-capable Anthropic request at `/v1/messages`;
-only the concrete model id changes and fallback fields are removed.
+only the concrete model id changes and fallback fields are removed. **Not in
+`test:ui`:** the assertions pass, but on Windows the process then aborts
+(`UV_HANDLE_CLOSING`) so a suite run would go red after a green summary — keep
+it manual until that exit is fixed.
+
+### Registered scripts kept outside `test:ui` on purpose
+
+A script in `package.json` is not automatically in the unit suite. If it is
+outside `test:ui`, one of these reasons should be true and written here — so the
+next person does not re-investigate a silent orphan.
+
+| Script | Why it stays outside |
+|---|---|
+| `test:temp-collision` | Property proof + negative control: spins a nested throwaway checkout and runs concurrent bundles. `qa-temp-isolation` (in `test:ui`) is the cheap guard; this one is the deliberate collision experiment, not a unit slot. |
+| `test:harness-protocol` | Protocol contract is suite-worthy in principle, but Windows exit aborts after PASS (see above). |
+| `test:subscription-install` | Network integration: downloads the official CLIProxyAPI release from GitHub and verifies SHA-256. Also short-circuits when a live bridge is already reachable on the machine, so it is not a deterministic offline unit. |
+| `test:engine-rpc` | **Currently red for a product reason, not a stale assertion.** The headless `engineServerEntry` pulls `AppController`, which imports `electron` (`clipboard`/`nativeImage`). The QA correctly refuses an Electron reference in the WSL-bound server bundle. Do not wire into `test:ui` until the headless entry is Electron-free again; that is a product fix, not a test tweak. |
+| `test:wsl-*` | Need a WSL distro (and often a built `dist/engine-server.mjs`). Wiring them would fail every Windows-only `test:ui` run. Judged separately from this batch. |
 
 ### Where the jsdom bundles go, and why it matters
 
@@ -390,14 +410,15 @@ the summary said green. `qa-temp-isolation` (in `test:ui`) is the guard: the
 bundle directory must be inside this checkout and must not resolve into the
 shared install.
 
-`node scripts/qa-temp-collision.mjs` proves the property by running it rather
-than by reading the code. It provisions its own throwaway second checkout,
-plants a different value in each copy of one source, bundles and imports on both
-sides simultaneously, and requires each side to see only its own. It then
-repeats the run with both sides pointed at a single directory as a **negative
-control** — the fault has to reappear, or the proof is only demonstrating that
-the probe is blind. Neither script needs a unit-test slot: both write only
-inside this worktree.
+`node scripts/qa-temp-collision.mjs` (`npm run test:temp-collision`) proves the
+property by running it rather than by reading the code. It provisions its own
+throwaway second checkout, plants a different value in each copy of one source,
+bundles and imports on both sides simultaneously, and requires each side to see
+only its own. It then repeats the run with both sides pointed at a single
+directory as a **negative control** — the fault has to reappear, or the proof is
+only demonstrating that the probe is blind. It stays **outside** `test:ui` on
+purpose (see the table above): the suite already has the cheap location guard;
+this script is the expensive collision experiment.
 
 ---
 
