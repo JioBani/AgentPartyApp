@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -233,7 +233,7 @@ const API_KEY_PLACEHOLDERS: Record<string, string> = {
   deepseek: "새 DeepSeek API 키 입력 (sk-…)",
 };
 
-export function AuthView({ auth, drafts, onDraft, onSave, onTest, onConnectSubscription, onDisconnectSubscription }: {
+export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onConnectSubscription, onDisconnectSubscription }: {
   auth: InitialAppState["auth"];
   /** Per-provider key drafts. One shared draft would let a second API-key card
    *  overwrite the first provider's credential. */
@@ -241,6 +241,8 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onConnectSubsc
   onDraft: (providerId: string, value: string) => void;
   onSave: (providerId: string) => void;
   onTest: (providerId: string) => void;
+  /** Clears a stored API key. Required for OpenRouter (R-25); DeepSeek uses the same path. */
+  onClear: (providerId: string) => void | Promise<void>;
   onConnectSubscription: (provider: "codex" | "claude") => void;
   onDisconnectSubscription: (provider: DisconnectableProvider) => Promise<void>;
 }) {
@@ -248,6 +250,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onConnectSubsc
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
   const [disconnectArmed, setDisconnectArmed] = useState<DisconnectableProvider | undefined>();
   const [disconnecting, setDisconnecting] = useState<DisconnectableProvider | undefined>();
+  const [clearing, setClearing] = useState<string | undefined>();
 
   async function confirmDisconnect(provider: DisconnectableProvider): Promise<void> {
     setDisconnectArmed(undefined);
@@ -353,6 +356,23 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onConnectSubsc
                 onClick={() => onSave(provider.id)}
               ><Check size={14} /> 저장</button>
               <button type="button" className="set-btn-soft" onClick={() => onTest(provider.id)}><FlaskConical size={14} /> 테스트</button>
+              {provider.maskedValue && (
+                <button
+                  type="button"
+                  className="set-btn-soft set-btn-disconnect"
+                  disabled={clearing === provider.id}
+                  data-auth-clear={provider.id}
+                  onClick={() => {
+                    setClearing(provider.id);
+                    void Promise.resolve(onClear(provider.id)).finally(() => setClearing(undefined));
+                  }}
+                >
+                  {clearing === provider.id
+                    ? <RefreshCw size={14} className="wb-spin" />
+                    : <Trash2 size={14} />}
+                  {clearing === provider.id ? "지우는 중…" : "키 지우기"}
+                </button>
+              )}
             </div>
           </div>
         ))}

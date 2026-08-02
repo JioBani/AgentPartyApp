@@ -507,9 +507,21 @@ export function App() {
    * by provider id — an unknown id is surfaced instead of being written to
    * whichever provider happens to be first.
    */
-  const API_KEY_ACTIONS: Record<string, { save: (value: string) => Promise<InitialAppState["auth"]>; test: () => Promise<InitialAppState["auth"]> }> = {
-    openrouter: { save: (value) => window.agentParty.setOpenRouterKey(value), test: () => window.agentParty.testOpenRouterKey() },
-    deepseek: { save: (value) => window.agentParty.setDeepseekKey(value), test: () => window.agentParty.testDeepseekKey() },
+  const API_KEY_ACTIONS: Record<string, {
+    save: (value: string) => Promise<InitialAppState["auth"]>;
+    test: () => Promise<InitialAppState["auth"]>;
+    clear: () => Promise<InitialAppState["auth"]>;
+  }> = {
+    openrouter: {
+      save: (value) => window.agentParty.setOpenRouterKey(value),
+      test: () => window.agentParty.testOpenRouterKey(),
+      clear: () => window.agentParty.clearOpenRouterKey(),
+    },
+    deepseek: {
+      save: (value) => window.agentParty.setDeepseekKey(value),
+      test: () => window.agentParty.testDeepseekKey(),
+      clear: () => window.agentParty.clearDeepseekKey(),
+    },
   };
 
   async function saveApiKey(providerId: string) {
@@ -529,6 +541,16 @@ export function App() {
       return;
     }
     const auth = await actions.test();
+    setState((current) => ({ ...current, auth }));
+  }
+
+  async function clearApiKey(providerId: string) {
+    const actions = API_KEY_ACTIONS[providerId];
+    if (!actions) {
+      return;
+    }
+    const auth = await actions.clear();
+    setApiKeyDrafts((current) => ({ ...current, [providerId]: "" }));
     setState((current) => ({ ...current, auth }));
   }
 
@@ -1175,6 +1197,7 @@ export function App() {
                   onDraft={(providerId, value) => setApiKeyDrafts((current) => ({ ...current, [providerId]: value }))}
                   onSave={saveApiKey}
                   onTest={testApiKey}
+                  onClear={clearApiKey}
                   onConnectSubscription={connectSubscription}
                   onDisconnectSubscription={disconnectSubscription}
                 />

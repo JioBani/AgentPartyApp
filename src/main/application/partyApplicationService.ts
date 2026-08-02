@@ -1348,20 +1348,46 @@ export class PartyApplicationService {
 
   sendMessage(to: string, content: string, from = "user", attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
     const workspace = this.workspacePath();
-    const state = this.ensureMigrated(this.repository.read(workspace));
-    const target = this.requireMember(state, to, partyId);
+    let state = this.ensureMigrated(this.repository.read(workspace));
+    let target = this.requireMember(state, to, partyId);
     const message = createPartyMessage(target, content, from);
-    if (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId)) {
+    // R-63: an open tab without a live session used to record
+    // `target_member_has_no_active_session` and never deliver. User turns already
+    // auto-start; party messages must do the same for any non-closed member.
+    // Closed tabs stay refused — closing is an explicit "do not wake me".
+    // If auto-start itself cannot run (stubbed harness, missing runtime), fall
+    // through to the no-session diagnostic instead of crashing the send path.
+    let sessionId = target.sessionId && this.deps.sessionManager.hasSession(target.sessionId) ? target.sessionId : undefined;
+    if (!sessionId && target.status !== "closed") {
+      try {
+        const started = this.startMember(target.name, {}, {}, this.partyIdOf(target));
+        state = this.ensureMigrated(this.repository.read(workspace));
+        target = this.requireMember(state, to, this.partyIdOf(target));
+        sessionId = started.session?.id
+          || (target.sessionId && this.deps.sessionManager.hasSession(target.sessionId) ? target.sessionId : undefined);
+        if (sessionId) {
+          message.targetSessionId = sessionId;
+        }
+      } catch (error) {
+        log("warn", "party", "auto-start for party message failed", {
+          workspace,
+          partyId: target.partyId,
+          member: target.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (sessionId) {
       // interrupt-and-inject: stop the in-flight turn first so the message is
       // handled immediately; the adapters' queued-turn drain delivers it once
       // the interrupt settles. Without the flag it queues behind the turn.
       // EXCEPTION: never interrupt a compaction — tearing it down half-way would
       // waste the work and leave context in a partial state; the message queues
       // behind it instead (compaction is short).
-      if (options?.interrupt && this.isSessionBusy(target.sessionId) && !this.deps.sessionManager.isCompacting(target.sessionId)) {
-        this.deps.sessionManager.interrupt(target.sessionId);
+      if (options?.interrupt && this.isSessionBusy(sessionId) && !this.deps.sessionManager.isCompacting(sessionId)) {
+        this.deps.sessionManager.interrupt(sessionId);
       }
-      if (!options?.interrupt && this.isSessionBusy(target.sessionId)) {
+      if (!options?.interrupt && this.isSessionBusy(sessionId)) {
         // Busy: the message joins the SAME visible queue a user's message would,
         // tagged with its sender so it keeps its own chip and never merges into
         // someone else's text. Recorded as queued — not delivered — because it
@@ -1379,12 +1405,16 @@ export class PartyApplicationService {
       }
       // A member-to-member message drove this turn — tag it so the usage ledger
       // attributes the recipient's spend to `party-message` (an overhead trigger).
-      this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments, "party-message");
+      this.deps.sessionManager.sendUserTurn(sessionId, buildChannelPayload(message, target), attachments, "party-message");
       message.delivered = true;
       target.status = "running";
     } else {
-      message.error = "target_member_has_no_active_session";
-      target.status = target.sessionId ? "missing_session" : "opened";
+      message.error = target.status === "closed"
+        ? "target_member_is_closed"
+        : "target_member_has_no_active_session";
+      if (target.status !== "closed") {
+        target.status = target.sessionId ? "missing_session" : "opened";
+      }
     }
     target.updatedAt = message.createdAt;
     state.messages.push(message);
