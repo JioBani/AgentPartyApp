@@ -3113,7 +3113,11 @@ body.wb-resizing {
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: -.1px;
-  vertical-align: -3px;
+  /* Centred against the text rather than nudged by a fixed pixel count. A
+     hardcoded offset only lands right at one font size and one line-height;
+     `middle` ties the chip's midpoint to the text's, so it stays centred when
+     either changes. Same rule for the file chips. */
+  vertical-align: middle;
   white-space: nowrap;
   user-select: none;
 }
@@ -3126,7 +3130,6 @@ body.wb-resizing {
 /* In the transcript the chips are read-only. */
 .wb-ref-chip.is-static {
   cursor: default;
-  vertical-align: -3px;
 }
 
 .wb-mention-head {
@@ -3380,7 +3383,7 @@ body.wb-resizing {
   box-shadow: inset 0 0 0 var(--border-width) var(--border);
   color: var(--text-0);
   font-size: 11px;
-  vertical-align: -3px;
+  vertical-align: middle;
   white-space: nowrap;
   user-select: none;
   cursor: default;
