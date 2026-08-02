@@ -4,14 +4,13 @@
  * Escape on a focused busy panel interrupts that member. The same key with an
  * Escape-owning popup open must close the popup and leave the turn alone.
  *
- * Writes its bundle under node_modules/.qa — only run when main has granted
- * this lane the unit-test slot (shared .qa collision).
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -25,7 +24,9 @@ def("getComputedStyle", window.getComputedStyle.bind(window));
 def("requestAnimationFrame", (cb) => setTimeout(() => cb(Date.now()), 0)); def("cancelAnimationFrame", clearTimeout);
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }; globalThis.ResizeObserver = window.ResizeObserver;
 
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 async function bundle(entry, name, external = []) {
   const r = await build({
     entryPoints: [path.join(projectRoot, entry)],

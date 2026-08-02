@@ -15,12 +15,13 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
-const outDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(outDir, { recursive: true });
+
+const outDir = qaTempDir();
 
 // Short relay hold so the PENDING loop is testable in milliseconds.
 process.env.AGENTPARTY_ACP_RELAY_HOLD_MS = "500";

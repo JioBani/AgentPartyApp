@@ -14,10 +14,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const qaDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(qaDir, { recursive: true });
+
+const qaDir = qaTempDir();
 
 async function bundle(entry, outName) {
   const out = path.join(qaDir, outName);

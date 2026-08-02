@@ -21,6 +21,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -112,7 +113,8 @@ const result = await build({
   bundle: true, format: "esm", platform: "browser", jsx: "automatic",
   loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, write: false,
 });
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+const outDir = qaTempDir();
 const bundlePath = path.join(outDir, "composer-interrupt-app.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
 const { mount } = await import(pathToFileURL(bundlePath).href);

@@ -8,10 +8,11 @@ import http from "node:http";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(root, "node_modules/.qa");
-mkdirSync(outDir, { recursive: true });
+
+const outDir = qaTempDir();
 
 async function load(entry, name) {
   const out = path.join(outDir, name);

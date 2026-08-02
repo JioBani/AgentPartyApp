@@ -15,11 +15,13 @@ import { createRequire } from "node:module";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+const outDir = qaTempDir();
 
 const workspace = path.join(os.tmpdir(), `qa-gate-failopen-${Date.now()}`);
 mkdirSync(workspace, { recursive: true });

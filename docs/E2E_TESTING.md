@@ -13,6 +13,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 
 | Script | Covers |
 |---|---|
+| `qa-temp-isolation` | the jsdom suite's own bundles stay **inside this worktree**, never in the shared install — see below |
 | `qa-workspace-location` | workspace = cwd / storage location rules |
 | `qa-layout` | panel/tab layout engine, incl. `openMemberInNewPanel` (create → new region) |
 | `qa-render` | renderer smoke render |
@@ -351,6 +352,32 @@ proves Claude Code owns Anthropic Messages and Codex owns Responses regardless
 of model/provider. A fake GPT subscription receives the complete interrupt,
 user, tool, thinking, and image-capable Anthropic request at `/v1/messages`;
 only the concrete model id changes and fallback fields are removed.
+
+### Where the jsdom bundles go, and why it matters
+
+The jsdom tests can't import TypeScript, so each one bundles the module under
+test on the fly and imports the result. That bundle now goes in **this
+worktree** (`.qa/`, gitignored) via `scripts/lib/qaTemp.mjs`.
+
+It used to go under `node_modules/`, and on this machine `node_modules/` is one
+install **shared by every worktree**. Two lanes running their unit tests at once
+therefore wrote the same path under the same fixed name: whoever finished last
+decided what the other one imported, so a lane could assert against code it had
+never written and see green. Read mid-write, it got half a file.
+
+**Nothing inside the suffering test could see this** — the assertions passed and
+the summary said green. `qa-temp-isolation` (in `test:ui`) is the guard: the
+bundle directory must be inside this checkout and must not resolve into the
+shared install.
+
+`node scripts/qa-temp-collision.mjs` proves the property by running it rather
+than by reading the code. It provisions its own throwaway second checkout,
+plants a different value in each copy of one source, bundles and imports on both
+sides simultaneously, and requires each side to see only its own. It then
+repeats the run with both sides pointed at a single directory as a **negative
+control** — the fault has to reappear, or the proof is only demonstrating that
+the probe is blind. Neither script needs a unit-test slot: both write only
+inside this worktree.
 
 ---
 

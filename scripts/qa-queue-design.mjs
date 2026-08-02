@@ -116,7 +116,14 @@ async function main() {
     for (const s of shots) console.log(`  ${s.name.padEnd(24)} ${s.caption}\n    ${s.file}`);
     console.log(`\n${shots.length} shots → ${shotDir}`);
   } catch (error) {
-    killProcessTree(child.pid);
+    // With --keep the app is a person's to look at, and a failed run is exactly
+    // when they need to look at it. Killing it here would leave only the error.
+    if (keep) {
+      child.unref();
+      console.error(`\nFailed with the app still running at ${base} (pid ${child.pid}).`);
+    } else {
+      killProcessTree(child.pid);
+    }
     throw error;
   }
 
