@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView } from "./modelCatalog";
@@ -53,22 +53,32 @@ const CURSOR_HARNESS: HarnessChoice = {
 const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS];
 
 /**
- * Creating a party member: one form, not a sequence of steps.
+ * Creating a party member, in three steps: identity → runtime → permission.
  *
- * It used to be six steps (name → harness → model → reasoning → permission →
- * role). Steps are worth their cost when a later choice depends on an earlier
- * one, and here almost nothing does: every field is seeded from the saved
- * defaults, so the wizard's own job was mostly to be clicked through. The three
- * that ARE entangled — harness, model and reasoning — are now made together in
- * the model catalog, the same screen used to retune a member afterwards, so
- * there is no second arrangement of the same controls to keep in agreement.
+ * It used to be six (name → harness → model → reasoning → permission → role).
+ * The reduction is not "fewer clicks" but "one question per step": name and
+ * description are the same question asked twice, and harness, model and
+ * reasoning are a single decision that was being split across three screens —
+ * they are now made together in the model catalog, the same screen used to
+ * retune a member later, so there is no second arrangement of the same controls
+ * to keep in agreement.
  *
- * What remains fits one screen: what to call it, optionally what it is for, the
- * runtime, and the permission it starts with. All of it visible at once, which
- * is also what makes the defaults reviewable instead of merely accepted.
+ * Every field lives in this component, and the steps only choose what is shown.
+ * That is deliberate: going back and forward must not cost the user anything
+ * they already typed, and a step that unmounted its own fields would lose them
+ * while still looking correct — an empty box is exactly what a fresh step is
+ * supposed to look like.
  */
+type StepId = "identity" | "runtime" | "permission";
+
+const STEPS: Array<{ id: StepId; label: string }> = [
+  { id: "identity", label: "이름 · 설명" },
+  { id: "runtime", label: "실행 구성" },
+  { id: "permission", label: "권한" },
+];
 export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
+  const [stepIndex, setStepIndex] = useState(0);
   /** The catalog, opened to choose harness + model + reasoning together. */
   const [pickerOpen, setPickerOpen] = useState(false);
   const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
@@ -158,6 +168,23 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   // saved defaults or genuinely optional, so a member can be created the moment
   // it has something to be called.
   const canCreate = NAME_PATTERN.test(name.trim());
+  const step = STEPS[stepIndex].id;
+  const isLastStep = stepIndex === STEPS.length - 1;
+  // Only the name gates progress, and only on the step that asks for it. The
+  // later steps are pre-seeded from the saved defaults, so there is nothing on
+  // them that can be left in an unusable state.
+  const canAdvance = step === "identity" ? canCreate : true;
+
+  function goNext() {
+    if (!canAdvance) {
+      return;
+    }
+    if (isLastStep) {
+      create();
+      return;
+    }
+    setStepIndex((current) => Math.min(current + 1, STEPS.length - 1));
+  }
 
   function create() {
     if (!canCreate) {
@@ -212,8 +239,30 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
           <button type="button" className="wb-icon-btn" title="취소" onClick={onCancel}><X size={16} /></button>
         </header>
 
+        {/* Named, numbered, and showing which are done: a step rail that only
+            marks the current one leaves "how much is left" unanswered, which is
+            the single thing a multi-step form owes the user. */}
+        <ol className="wb-wizard-steps">
+          {STEPS.map((entry, index) => (
+            <li
+              key={entry.id}
+              className={
+                "wb-wizard-step" +
+                (index === stepIndex ? " is-current" : "") +
+                (index < stepIndex ? " is-done" : "")
+              }
+              aria-current={index === stepIndex ? "step" : undefined}
+            >
+              <span className="wb-wizard-step-n">{index + 1}</span>
+              <span className="wb-wizard-step-label">{entry.label}</span>
+            </li>
+          ))}
+        </ol>
+
         <div className="wb-modal-body wb-wizard-body">
           <div className="wb-wizard-pane">
+            {step === "identity" && (
+            <>
             <section className="wb-wizard-section">
               <div className="wb-modal-label">멤버 이름</div>
               <input
@@ -221,7 +270,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 autoFocus
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Enter" && canCreate) create(); }}
+                onKeyDown={(event) => { if (event.key === "Enter") goNext(); }}
                 placeholder="예: reviewer"
               />
               <p className="wb-wizard-hint">영문으로 시작, 영문·숫자·_·- 만 사용. 파티 안에서 이 이름으로 메시지를 받습니다.</p>
@@ -239,9 +288,12 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               />
               <p className="wb-wizard-hint">멤버가 자기 역할로 전달받습니다. 비워 두면 역할이 지정되지 않았다고 알려줍니다.</p>
             </section>
+            </>
+            )}
 
+            {step === "runtime" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">실행 구성</div>
+              <div className="wb-modal-label">하네스 · 모델 · 추론</div>
               {/* Harness, model and reasoning are one decision, so they are made
                   in the catalog — the same screen used to retune a member later,
                   rather than a second arrangement of the same controls. */}
@@ -273,7 +325,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 </p>
               )}
             </section>
+            )}
 
+            {step === "permission" && (
             <section className="wb-wizard-section">
               <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
               {executionHarness === "codex" ? (
@@ -299,15 +353,27 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 </>
               )}
             </section>
+            )}
           </div>
         </div>
 
         <footer className="wb-modal-foot wb-wizard-foot">
           <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}>취소</button>
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
-              <UserPlus size={14} /> 멤버 생성
-            </button>
+            {stepIndex > 0 && (
+              <button type="button" className="wb-btn wb-btn-ghost wb-wizard-back" onClick={() => setStepIndex((current) => current - 1)}>
+                <ChevronLeft size={14} /> 이전
+              </button>
+            )}
+            {isLastStep ? (
+              <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
+                <UserPlus size={14} /> 멤버 생성
+              </button>
+            ) : (
+              <button type="button" className="wb-btn wb-btn-accent" disabled={!canAdvance} onClick={goNext}>
+                다음 <ChevronRight size={14} />
+              </button>
+            )}
           </div>
         </footer>
 
