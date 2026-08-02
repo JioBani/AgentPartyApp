@@ -13,13 +13,13 @@
  * the item is dequeued.
  *
  * There is exactly ONE queue, and it is this one. The app never hands a turn to
- * a busy session — not even for "지금 보내기", which pulls the item to the front
- * and stops the turn instead. Nothing distinguishes the two queues from where
- * the user sits: they typed one message, into one box, and a second holding pen
- * they cannot see, edit or cancel is not a feature but a leak. The adapter
- * buffer remains only as the net for the genuine race (a member can go idle
- * between our check and the send) and for `interrupt: true`, which is the user
- * explicitly choosing to bypass the queue.
+ * a busy session — not even for "지금 보내기" or `interrupt: true`. Both pull
+ * the item to the front and stop the turn instead; the idle drain is the only
+ * path into the harness. Nothing distinguishes a second holding pen from where
+ * the user sits: they typed one message, into one box, and a buffer they cannot
+ * see, edit or cancel is not a feature but a leak. The adapter buffer remains
+ * only as the net for the genuine race (a member can go idle between our check
+ * and the send).
  *
  * Pure logic — no I/O — so main (ownership + persistence) and renderer (the
  * queue UI) agree by construction and the rules are unit-testable in isolation.
@@ -42,6 +42,12 @@ export interface QueuedMessage {
   /** Enqueue time, ISO. */
   at: string;
   attachments?: ImageAttachment[];
+  /**
+   * True when this row cut in via interrupt / "지금 바로 처리". Cut-in rows sit
+   * ahead of ordinary waiting rows; among themselves they keep arrival order
+   * so a later interrupt cannot leapfrog an earlier one.
+   */
+  cutIn?: boolean;
 }
 
 /** Per-member queue state as persisted on the member record. */
@@ -132,20 +138,22 @@ export function mergeOn(state: MemberQueueState): boolean {
 }
 
 /**
- * The leading run: from the front, every consecutive item with the SAME sender.
- * This — not the whole queue — is the merge unit, because merging a member's
- * message into the user's would forge attribution and lose the sender chip that
- * tells the agent who is asking. `[me, me, reviewer]` sends the two `me` items
- * as one message and leaves reviewer's for the next turn.
+ * The leading run: from the front, every consecutive item with the SAME sender
+ * and the SAME cut-in flag. This — not the whole queue — is the merge unit,
+ * because merging a member's message into the user's would forge attribution,
+ * and merging a cut-in row into ordinary waiting rows would make "지금 바로
+ * 처리" deliver the waiting pile in the same turn. `[urgent, waiting]` with
+ * the same sender still leaves `waiting` for the next turn.
  */
 export function leadRun(items: QueuedMessage[]): QueuedMessage[] {
   if (!items.length) {
     return [];
   }
   const sender = items[0].from ?? null;
+  const cutIn = Boolean(items[0].cutIn);
   const run: QueuedMessage[] = [];
   for (const item of items) {
-    if ((item.from ?? null) !== sender) {
+    if ((item.from ?? null) !== sender || Boolean(item.cutIn) !== cutIn) {
       break;
     }
     run.push(item);
@@ -186,6 +194,34 @@ export function enqueue(state: MemberQueueState, item: QueuedMessage): QueueResu
   }
   // Always appended. Arrival order IS the order the sender intended.
   return ok({ ...state, items: [...state.items, item] });
+}
+
+/**
+ * Parks a message ahead of ordinary waiting rows — what interrupt / "지금 바로
+ * 처리" means. Inserts AFTER any cut-in rows already at the front so multiple
+ * interrupts keep arrival order among themselves; only the non-cut-in tail is
+ * jumped. Marks the item `cutIn` so the UI can say why it is ahead.
+ */
+export function enqueueCutIn(state: MemberQueueState, item: QueuedMessage): QueueResult<MemberQueueState> {
+  if (!item.text.trim() && !(item.attachments || []).length) {
+    return fail("empty_text");
+  }
+  if (state.items.length >= QUEUE_LIMIT) {
+    return fail("queue_full");
+  }
+  const cutInItem: QueuedMessage = { ...item, cutIn: true };
+  let insertAt = 0;
+  while (insertAt < state.items.length && state.items[insertAt].cutIn) {
+    insertAt += 1;
+  }
+  const items = state.items.slice();
+  items.splice(insertAt, 0, cutInItem);
+  return ok({ ...state, items });
+}
+
+/** @deprecated Use {@link enqueueCutIn} — kept as an alias so call sites read clearly. */
+export function enqueueFront(state: MemberQueueState, item: QueuedMessage): QueueResult<MemberQueueState> {
+  return enqueueCutIn(state, item);
 }
 
 export function removeItem(state: MemberQueueState, id: string): QueueResult<{ state: MemberQueueState; removed: QueuedMessage }> {

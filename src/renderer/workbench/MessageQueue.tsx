@@ -341,6 +341,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
               <div className={rowClass(row, null)} key={row.id} role="listitem">
                 <span className="wb-queue-n">{row.n}</span>
                 <span className={"wb-queue-dot" + (row.fromMember ? " is-member" : "")} style={row.from ? memberColorVars(row.from) : undefined} title={row.fromLabel} />
+                {row.cutIn && <span className="wb-queue-cutin" title="턴을 끊고 이 메시지를 먼저 보냅니다">지금</span>}
                 <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
                 <button type="button" className="wb-queue-expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
                   {row.open ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -449,9 +450,16 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 {row.fromLabel}
               </span>
               <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
-              {/* Reads with the controls, not against the message: the badge is
-                  a fact about this row's turn, so it sits with the row's other
-                  affordances rather than trailing the text. */}
+              {/* Reads with the controls, not against the message: these are
+                  facts about this row's turn, so they sit with the row's other
+                  affordances rather than trailing the text.
+                  The expand button that used to sit here is the one below — it
+                  moved right of the badges and grew, so it is not duplicated. */}
+              {row.cutIn && (
+                <span className="wb-queue-cutin" title="턴을 끊고 이 메시지를 먼저 보냅니다 — 기다리면 뒤에 있던 메시지보다 앞서 나갑니다">
+                  지금 처리
+                </span>
+              )}
               {row.showNextBadge && <span className="wb-queue-next">다음 차례</span>}
               <button type="button" className="wb-queue-btn" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
                 {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}

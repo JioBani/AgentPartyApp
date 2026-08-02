@@ -819,11 +819,14 @@ member's message queue and the response carries `"queued": true` plus the
 resulting `queue`. It is handed over when the member next goes idle. Callers must
 honour the flag: a queued message has NOT been seen by the agent yet.
 
-Optional `interrupt: true` stops the member's in-flight turn first, so the message
-is handled immediately and **skips the queue entirely**. A **compaction is never
-interrupted** — tearing it down half-way would waste the work and leave context
-partial, so the message queues behind it. The Discord bridge always sends with
-`interrupt`, because a person typed it and is waiting.
+Optional `interrupt: true` stops the member's in-flight turn and parks the
+message at the **front** of the app queue so the idle drain handles it next
+(still visible and cancellable until then). It does **not** hand the turn to a
+busy harness — that would land in the adapter buffer where it cannot be listed
+or cancelled. A **compaction is never interrupted** — tearing it down half-way
+would waste the work and leave context partial, so the message still parks at
+the front and waits. The Discord bridge always sends with `interrupt`, because a
+person typed it and is waiting.
 
 ### `GET /api/party/members/{name}/queue`
 
@@ -871,18 +874,19 @@ this same controller method.
 Responses carry the resulting `queue`; `edit` additionally returns `text`.
 
 **There is exactly one queue, and it is this one.** The app never hands a turn to
-a busy member — not even for `send`. A turn handed to a busy harness lands in the
-adapter's own buffer and waits for the very same moment (turn end), except there
-it can no longer be listed, edited or cancelled. Nothing about that second
-holding pen is visible from where the user sits: they typed one message into one
-box.
+a busy member — not even for `send`, and not for `interrupt: true` on a send
+either. A turn handed to a busy harness lands in the adapter's own buffer and
+waits for the very same moment (turn end), except there it can no longer be
+listed, edited or cancelled. Nothing about that second holding pen is visible
+from where the user sits: they typed one message into one box.
 
 **Sending now.** On an idle member, `send`/`sendItem` deliver. On a BUSY one they
 **stop the turn** and leave the delivery to the idle drain — `sendItem` first
 pulls its row to the front, so the row that was asked for is the row that goes.
 Stopping is the only thing that actually makes a queued message sooner, so it is
 what these actions do, and the button says 중단하고 보내기 while a turn is running.
-`interrupt: true` on a send remains the separate, explicit bypass.
+`interrupt: true` on a send is the same shape: front of the app queue + stop,
+then the idle drain — never a bypass into the harness buffer.
 
 `move` takes an absolute `toIndex` rather than a direction because the gesture
 behind it is a drag: expressing "put this there" as a run of ±1 swaps would march
@@ -1201,12 +1205,13 @@ through the embedded router to the local Codex/ChatGPT subscription proxy.
 }
 ```
 
-Optional `interrupt: true` stops the member's in-flight turn first, so the message
-is handled immediately instead of queueing behind it (the adapters' queued-turn
-drain delivers it once the interrupt settles). A **compaction is never
-interrupted** — tearing it down half-way would waste the work and leave context
-partial, so the message queues behind it. The Discord bridge always sends with
-`interrupt`, because a person typed it and is waiting.
+Optional `interrupt: true` stops the member's in-flight turn and parks the
+message at the front of the app queue so the idle drain handles it next (still
+visible and cancellable until then). It does not hand a busy harness a turn
+directly. A **compaction is never interrupted** — tearing it down half-way would
+waste the work and leave context partial, so the message still parks at the
+front and waits. The Discord bridge always sends with `interrupt`, because a
+person typed it and is waiting.
 
 **Every caller states `interrupt` for itself; omitting it means `false`.** The
 app's own Send button fills its value in from the `composer.interruptOnSend`

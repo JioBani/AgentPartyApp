@@ -166,8 +166,17 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
   }
 
   interrupt(): void {
-    this.setStatus("idle");
+    // Real adapters spend a beat in "interrupting" before idle. That window is
+    // when the app queue still owns interrupt-parked messages (#23). Going idle
+    // in the same tick made the idle drain steal them before a cancel could run.
+    this.setStatus("interrupting");
     this.inject({ type: "status", status: "interrupted", at: now() });
+    this.schedule(() => {
+      if (this.disposed) {
+        return;
+      }
+      this.setStatus("idle");
+    }, 250);
   }
 
   /** The mock has no harness to outlive a turn, so this is just an idle reset. */
