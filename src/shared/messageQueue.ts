@@ -10,9 +10,16 @@
  *
  * So the queue is owned HERE, one level above the harness: a message aimed at a
  * busy member is held by the app, and `sendUserTurn` is not called at all until
- * the item is dequeued. The adapter buffer stays as the race-window safety net
- * (a member can go idle between our check and the send) but is no longer the
- * place a message waits.
+ * the item is dequeued.
+ *
+ * There is exactly ONE queue, and it is this one. The app never hands a turn to
+ * a busy session — not even for "지금 보내기", which pulls the item to the front
+ * and stops the turn instead. Nothing distinguishes the two queues from where
+ * the user sits: they typed one message, into one box, and a second holding pen
+ * they cannot see, edit or cancel is not a feature but a leak. The adapter
+ * buffer remains only as the net for the genuine race (a member can go idle
+ * between our check and the send) and for `interrupt: true`, which is the user
+ * explicitly choosing to bypass the queue.
  *
  * Pure logic — no I/O — so main (ownership + persistence) and renderer (the
  * queue UI) agree by construction and the rules are unit-testable in isolation.
@@ -70,7 +77,8 @@ export type QueueFailure =
   | "queue_full"
   | "empty_text"
   | "already_first"
-  | "already_last"
+  | "out_of_range"
+  | "already_there"
   | "different_sender"
   | "empty_queue";
 
@@ -90,8 +98,10 @@ export function describeQueueFailure(reason: QueueFailure): string {
       return "빈 메시지는 대기열에 넣을 수 없습니다.";
     case "already_first":
       return "이미 맨 위 항목입니다.";
-    case "already_last":
-      return "이미 맨 아래 항목입니다.";
+    case "out_of_range":
+      return "대기열에 없는 위치로는 옮길 수 없습니다.";
+    case "already_there":
+      return "이미 그 자리에 있습니다.";
     case "different_sender":
       return "보낸 사람이 다른 메시지끼리는 합칠 수 없습니다.";
     case "empty_queue":
@@ -188,21 +198,39 @@ export function removeItem(state: MemberQueueState, id: string): QueueResult<{ s
   return ok({ state: { ...state, items }, removed });
 }
 
-export function moveItem(state: MemberQueueState, id: string, direction: -1 | 1): QueueResult<MemberQueueState> {
+/**
+ * Moves an item to an absolute position.
+ *
+ * An absolute target rather than a step, because the gesture that drives this is
+ * a drag: the user picks a row up and puts it down somewhere, and expressing
+ * that as a run of ±1 swaps would make the queue pass through orders nobody
+ * asked for — each one persisted, broadcast, and briefly rendered.
+ */
+export function moveItemTo(state: MemberQueueState, id: string, toIndex: number): QueueResult<MemberQueueState> {
   const index = state.items.findIndex((item) => item.id === id);
   if (index < 0) {
     return fail("not_found");
   }
-  const target = index + direction;
-  if (target < 0) {
-    return fail("already_first");
+  if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= state.items.length) {
+    return fail("out_of_range");
   }
-  if (target >= state.items.length) {
-    return fail("already_last");
+  if (toIndex === index) {
+    return fail("already_there");
   }
   const items = state.items.slice();
-  [items[index], items[target]] = [items[target], items[index]];
+  const [moved] = items.splice(index, 1);
+  items.splice(toIndex, 0, moved);
   return ok({ ...state, items });
+}
+
+/**
+ * Pulls an item to the front without reordering anything else — what "지금
+ * 보내기" means on a busy member, whose message cannot jump the harness but can
+ * jump the rest of the queue.
+ */
+export function moveItemToFront(state: MemberQueueState, id: string): QueueResult<MemberQueueState> {
+  const moved = moveItemTo(state, id, 0);
+  return moved.ok || moved.reason !== "already_there" ? moved : ok(state);
 }
 
 /**
@@ -294,8 +322,8 @@ export type QueueCommand =
   | { action: "cancel"; itemId: string }
   /** Remove one row and hand its text back for the composer ("편집"). */
   | { action: "edit"; itemId: string }
-  /** Reorder one row ("위로" = -1). */
-  | { action: "move"; itemId: string; direction: -1 | 1 }
+  /** Put one row at an absolute position — the drop half of a drag. */
+  | { action: "move"; itemId: string; toIndex: number }
   /** Fold one row into the row above it ("위와 합치기"). */
   | { action: "mergeUp"; itemId: string };
 
@@ -338,11 +366,11 @@ export function parseQueueCommand(body: unknown): QueueCommand {
     case "mergeUp":
       return { action: "mergeUp", itemId: needsItem() };
     case "move": {
-      const direction = Number(input.direction);
-      if (direction !== -1 && direction !== 1) {
-        throw new Error("Queue action 'move' requires 'direction' of -1 or 1.");
+      const toIndex = Number(input.toIndex);
+      if (!Number.isInteger(toIndex) || toIndex < 0) {
+        throw new Error("Queue action 'move' requires 'toIndex', a 0-based position in the queue.");
       }
-      return { action: "move", itemId: needsItem(), direction };
+      return { action: "move", itemId: needsItem(), toIndex };
     }
     default:
       throw new Error(`Unknown queue action '${action}'.`);

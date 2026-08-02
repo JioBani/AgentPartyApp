@@ -21,7 +21,8 @@ import {
   describeQueueFailure,
   enqueue,
   mergeUp,
-  moveItem,
+  moveItemTo,
+  moveItemToFront,
   readQueue,
   removeItem,
   takeItem,
@@ -678,7 +679,7 @@ export class PartyApplicationService {
       case "edit":
         return this.editQueuedMessage(name, command.itemId, partyId);
       case "move":
-        return this.moveQueuedMessage(name, command.itemId, command.direction, partyId);
+        return this.moveQueuedMessage(name, command.itemId, command.toIndex, partyId);
       case "mergeUp":
         return this.mergeQueuedMessageUp(name, command.itemId, partyId);
     }
@@ -702,6 +703,13 @@ export class PartyApplicationService {
     const sessionId = member.sessionId;
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
       throw new Error(`'${member.name}' has no live session — its queue was left untouched.`);
+    }
+    // The one-queue invariant, enforced where the handover happens rather than
+    // trusted to every caller: a turn handed to a busy harness lands in the
+    // adapter's own buffer, and that buffer is a queue the user can neither see
+    // nor take back.
+    if (this.isSessionBusy(sessionId)) {
+      throw new Error(`'${member.name}' is still working — its queue is delivered when the turn ends.`);
     }
     this.deps.sessionManager.emitAppEvent(sessionId, {
       type: "queue_dequeued",
@@ -753,24 +761,66 @@ export class PartyApplicationService {
     }
   }
 
-  /** "합쳐서 지금 보내기" — sends the leading run immediately, without waiting for idle. */
+  /**
+   * "지금 보내기" for the leading run.
+   *
+   * On an idle member this delivers. On a BUSY one it stops the turn instead of
+   * pushing the message through: handing a turn to a busy harness would move the
+   * message out of this queue and into the adapter's own buffer, where it waits
+   * for exactly the same moment — turn end — but can no longer be seen, edited
+   * or cancelled. The user would trade away every control they have and gain not
+   * one second. Stopping is the only thing that actually makes it sooner, so it
+   * is what the button does, and the label says so.
+   */
   sendQueuedNow(name: string, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
-    const take = takeNext(this.queueOf(member));
+    const queue = this.queueOf(member);
+    const take = takeNext(queue);
     if (!take.ok) {
       throw new Error(describeQueueFailure(take.reason));
+    }
+    if (this.isSessionBusy(member.sessionId)) {
+      return this.stopForQueue(member, queue, "queue send-now stopped the turn");
     }
     return this.deliverFromQueue(member, take.value, "queue sent on demand");
   }
 
-  /** "지금 보내기" on one row — delivers exactly that item, leaving the rest queued. */
+  /** "지금 보내기" on one row — same rule, and the row jumps the queue on its way. */
   sendQueuedItem(name: string, itemId: string, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
-    const take = takeItem(this.queueOf(member), itemId);
+    const queue = this.queueOf(member);
+    if (this.isSessionBusy(member.sessionId)) {
+      const front = moveItemToFront(queue, itemId);
+      if (!front.ok) {
+        throw new Error(describeQueueFailure(front.reason));
+      }
+      return this.stopForQueue(member, front.value, "queue send-now stopped the turn");
+    }
+    const take = takeItem(queue, itemId);
     if (!take.ok) {
       throw new Error(describeQueueFailure(take.reason));
     }
     return this.deliverFromQueue(member, take.value, "queued item sent on demand");
+  }
+
+  /**
+   * Stops the in-flight turn and leaves the queue to the idle drain.
+   *
+   * Deliberately does NOT send: the drain fires on the busy→idle edge and is the
+   * one place a turn is handed over, so there is still exactly one path into the
+   * harness and no window where both could fire.
+   */
+  private stopForQueue(member: PartyMember, queue: MemberQueueState, logMessage: string): PartyCommandResult {
+    const sessionId = member.sessionId;
+    if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
+      throw new Error(`'${member.name}' has no live session — its queue was left untouched.`);
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), queue, logMessage);
+    this.deps.sessionManager.interrupt(sessionId);
+    return {
+      ...this.result(`Stopped '${member.name}' — its queue is delivered as soon as the turn ends.`, written.state, written.member),
+      queue,
+    };
   }
 
   /**
@@ -807,10 +857,10 @@ export class PartyApplicationService {
     };
   }
 
-  /** Reorders one queued message ("위로"). */
-  moveQueuedMessage(name: string, itemId: string, direction: -1 | 1, partyId?: string): PartyCommandResult {
+  /** Puts one queued message at an absolute position — the drop half of a drag. */
+  moveQueuedMessage(name: string, itemId: string, toIndex: number, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
-    const moved = moveItem(this.queueOf(member), itemId, direction);
+    const moved = moveItemTo(this.queueOf(member), itemId, toIndex);
     if (!moved.ok) {
       throw new Error(describeQueueFailure(moved.reason));
     }

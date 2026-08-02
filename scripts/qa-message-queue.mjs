@@ -82,14 +82,30 @@ console.log("\nmutations report failure:");
   const gone = Q.removeItem(one, "nope");
   assert(!gone.ok && gone.reason === "not_found", "cancelling an item that already left FAILS (it is in the harness now)");
 
-  const moved = Q.moveItem(one, "a", -1);
-  assert(!moved.ok && moved.reason === "already_first", "moving the first item up fails explicitly");
-  const movedDown = Q.moveItem(one, "b", 1);
-  assert(!movedDown.ok && movedDown.reason === "already_last", "moving the last item down fails explicitly");
+  const nowhere = Q.moveItemTo(one, "a", 0);
+  assert(!nowhere.ok && nowhere.reason === "already_there", "dropping a row where it already is fails explicitly rather than rewriting the queue");
+  const offEnd = Q.moveItemTo(one, "a", 2);
+  assert(!offEnd.ok && offEnd.reason === "out_of_range", "a drop past the end is refused, not clamped into a move nobody asked for");
+  const ghost = Q.moveItemTo(one, "nope", 1);
+  assert(!ghost.ok && ghost.reason === "not_found", "moving an item that already left FAILS");
 
-  const okMove = Q.moveItem(one, "b", -1);
-  assert(okMove.ok && okMove.value.items.map((i) => i.id).join(",") === "b,a", "a legal move swaps neighbours");
+  const okMove = Q.moveItemTo(one, "b", 0);
+  assert(okMove.ok && okMove.value.items.map((i) => i.id).join(",") === "b,a", "a legal drop lands the row at the target position");
   assert(one.items.map((i) => i.id).join(",") === "a,b", "the original queue is never mutated in place");
+
+  // The reason the command carries a position and not a direction: a drag
+  // crosses several slots at once, and the queue must never be seen in the
+  // in-between orders a run of swaps would produce.
+  const four = queueOf(item("a", "1"), item("b", "2"), item("c", "3"), item("d", "4"));
+  const far = Q.moveItemTo(four, "a", 3);
+  assert(far.ok && far.value.items.map((i) => i.id).join(",") === "b,c,d,a", "a row dropped three slots down lands there in one move");
+  const back = Q.moveItemTo(four, "d", 1);
+  assert(back.ok && back.value.items.map((i) => i.id).join(",") === "a,d,b,c", "and the same holds dragging upward");
+
+  const front = Q.moveItemToFront(four, "c");
+  assert(front.ok && front.value.items.map((i) => i.id).join(",") === "c,a,b,d", "지금 보내기 pulls its row to the front, leaving the rest in order");
+  const alreadyFront = Q.moveItemToFront(four, "a");
+  assert(alreadyFront.ok && alreadyFront.value.items.map((i) => i.id).join(",") === "a,b,c,d", "asking for the front when already there is a no-op, not a failure");
 
   const okRemove = Q.removeItem(one, "a");
   assert(okRemove.ok && okRemove.value.removed.id === "a" && okRemove.value.state.items.length === 1, "remove returns both the survivor state and the removed item");
@@ -168,13 +184,15 @@ console.log("\nparseQueueCommand (HTTP/IPC edge):");
 
   assert(Q.parseQueueCommand({ action: "send" }).action === "send", "a bare action parses");
   assert(Q.parseQueueCommand({ action: "cancel", itemId: "q1" }).itemId === "q1", "an item action keeps its id");
-  assert(Q.parseQueueCommand({ action: "move", itemId: "q1", direction: -1 }).direction === -1, "move keeps its direction");
+  assert(Q.parseQueueCommand({ action: "move", itemId: "q1", toIndex: 2 }).toIndex === 2, "move keeps its target position");
+  assert(Q.parseQueueCommand({ action: "move", itemId: "q1", toIndex: 0 }).toIndex === 0, "position 0 is a real target, not a missing value");
 
   bad({ action: "nope" }, "an unknown action is REFUSED, not defaulted into some other mutation");
   bad({}, "a missing action is refused");
   bad({ action: "cancel" }, "an item action without an itemId is refused");
-  bad({ action: "move", itemId: "q1", direction: 3 }, "an out-of-range direction is refused");
-  bad({ action: "move", itemId: "q1" }, "move without a direction is refused");
+  bad({ action: "move", itemId: "q1", toIndex: -1 }, "a negative position is refused");
+  bad({ action: "move", itemId: "q1", toIndex: 1.5 }, "a fractional position is refused rather than rounded");
+  bad({ action: "move", itemId: "q1" }, "move without a position is refused");
   bad({ action: "preference" }, "a preference command that sets nothing is refused");
 
   const pref = Q.parseQueueCommand({ action: "preference", merge: false });
