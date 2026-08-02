@@ -3203,6 +3203,73 @@ body.wb-resizing {
   outline: none;
 }
 
+/* The editing surface is contenteditable, so chips can sit inside the sentence.
+   Text wraps and whitespace is kept exactly as typed. */
+.wb-composer-editor {
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
+/* contenteditable has no placeholder of its own. */
+.wb-composer-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.wb-composer-input.wb-composer-editor {
+  height: auto;
+  min-height: 28px;
+  max-height: 96px;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* A dropped file or folder, inline where it was dropped. It is an ATOM: not
+   editable from the inside, and one backspace removes the whole thing — a chip
+   edited character by character would keep its label while its path drifted out
+   of meaning. */
+.wb-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 260px;
+  height: 20px;
+  padding: 0 var(--space-2) 0 6px;
+  margin: 0 1px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border);
+  color: var(--text-0);
+  font-size: 11px;
+  vertical-align: -3px;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+
+.wb-ref-chip svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--text-2);
+}
+
+/* A folder is the one you are most likely to mis-read as a file, so its icon
+   carries the accent while a file's stays neutral. */
+.wb-ref-chip[data-ref-kind="folder"] svg {
+  color: var(--accent);
+}
+
+.wb-ref-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wb-composer-row {
   display: flex;
   align-items: center;
