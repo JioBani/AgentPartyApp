@@ -1248,6 +1248,7 @@ export class AppController {
     kind: "value" | "editable" | "none";
     value: string | null;
     references: string[];
+    draft: string | null;
     key: string;
   }> {
     this.requireQa();
@@ -1328,13 +1329,13 @@ export class AppController {
       .executeJavaScript(
         `(() => {
           const el = ${read};
-          if (!el) return { kind: "none", value: null, references: [] };
+          if (!el) return { kind: "none", value: null, references: [], draft: null };
           const tag = el.tagName.toLowerCase();
           const NOT_TEXT = ["checkbox", "radio", "button", "submit", "reset", "file", "image", "range", "color"];
           if (tag === "textarea" || (tag === "input" && !NOT_TEXT.includes(el.type))) {
-            return { kind: "value", value: el.value, references: [] };
+            return { kind: "value", value: el.value, references: [], draft: el.value };
           }
-          if (!el.isContentEditable) return { kind: "none", value: null, references: [] };
+          if (!el.isContentEditable) return { kind: "none", value: null, references: [], draft: null };
           const references = Array.from(el.querySelectorAll("[data-path]")).map((chip) => chip.getAttribute("data-path"));
           // Read the text by walking, not via innerText: a chip is laid out as a
           // flex box, so innerText puts a line break on either side of it and
@@ -1358,11 +1359,20 @@ export class AppController {
           // no text and no chip" is reported as empty — the same thing the app
           // itself treats as an empty draft.
           const empty = el.textContent === "" && references.length === 0;
-          return { kind: "editable", value: empty ? "" : text.replace(/\\u00a0/g, " "), references };
+          return {
+            kind: "editable",
+            value: empty ? "" : text.replace(/\\u00a0/g, " "),
+            references,
+            // The app's own answer to "what does this say", read off the editor
+            // rather than reassembled here — a second implementation of that
+            // rule could disagree with the real one and nobody would see it.
+            // This is the draft as it stands; the composer trims it on send.
+            draft: el.getAttribute("data-draft"),
+          };
         })()`,
       )
-      .catch(() => ({ kind: "none" as const, value: null, references: [] as string[] }));
-    return { ok: true, selector, kind: state.kind, value: state.value, references: state.references, key };
+      .catch(() => ({ kind: "none" as const, value: null, references: [] as string[], draft: null }));
+    return { ok: true, selector, kind: state.kind, value: state.value, references: state.references, draft: state.draft, key };
   }
 
   /**

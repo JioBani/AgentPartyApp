@@ -1710,13 +1710,18 @@ actually in the target afterwards — not merely that the call ran:
 - `kind` — `"value"` for a field, `"editable"` for an editable area, `"none"`
   when the target holds no text at all.
 - `value` — the field's value, or the editable area's text as the sentence
-  actually reads (a chip contributes the short name it displays, inline).
-- `references` — the full paths of any file chips in an editable area, in
-  document order. A chip **displays** a short name but **stands for** a full
-  path, so the visible text alone would misreport the message. The paths are
-  reported separately rather than spliced into `value` because assembling the
-  final sentence is the composer's own rule; restating it here would let the two
-  drift apart silently.
+  actually **reads on screen** (a chip contributes the short name it displays).
+- `draft` — the message text the composer would **send**: the same sentence with
+  every chip expanded to the full path it stands for. This is read off the app's
+  own draft, not reassembled here — a second implementation of that rule could
+  disagree with the real one and nobody would notice. (The composer trims it at
+  send time; `draft` is the untrimmed state of the box.)
+- `references` — the full paths of any file chips, in document order, for
+  asserting on one path without parsing the sentence.
+
+`value` and `draft` differ **on purpose**: the screen shows `trace.har`, the
+member receives the whole path. Assert on `draft` or `references` when a path
+matters — asserting on `value` would pass while the path silently went missing.
 
 ### `POST /api/qa/window/bounds`
 

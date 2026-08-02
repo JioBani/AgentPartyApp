@@ -575,6 +575,13 @@ export function Composer({ view, density, actions }: ComposerProps) {
         aria-multiline={multiline}
         aria-label={`${view.name}에게 보낼 메시지`}
         data-placeholder={placeholder}
+        // What this editor would actually SEND, with every chip expanded to the
+        // full path it stands for. The screen deliberately shows a short name
+        // instead, so the two differ — and anything reading the editor from
+        // outside (QA driving the real UI) would otherwise have to reconstruct
+        // the difference and could get it wrong without anyone noticing. This
+        // is the draft the composer already computes, not a second opinion.
+        data-draft={draft}
         onInput={syncDraft}
         onKeyDown={(event) => onKeyDown(event, multiline)}
         onKeyUp={syncCaret}

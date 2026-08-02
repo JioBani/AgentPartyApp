@@ -447,11 +447,11 @@ Two things to know when you read the result back:
 
 - **Text replaces, it does not append.** Existing content is selected first.
   Passing `""` clears the field.
-- **Chips come back in `references`, not in `value`.** A chip displays a short
-  name but stands for a full path, so `value` (the rendered text) is what the
-  user sees, and `references` is what the member will actually receive. Assert on
-  `references` when a path matters — asserting on `value` would pass while the
-  path silently went missing.
+- **`value` is what the box reads; `draft` is what gets sent.** A chip displays a
+  short name but stands for a full path, so the two differ on purpose. `draft` is
+  read off the app's own draft (chips expanded), and `references` lists the paths
+  on their own. Assert on `draft` or `references` when a path matters — asserting
+  on `value` would pass while the path silently went missing.
 
 ### Where the jsdom bundles go, and why it matters
 
