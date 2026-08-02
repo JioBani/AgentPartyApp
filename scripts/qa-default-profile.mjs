@@ -136,6 +136,13 @@ assert(activeEffort() === "medium", `modal opens on the member's CURRENT effort 
 const applyBtn = () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Apply");
 assert(applyBtn()?.disabled === true, "an untouched modal is NOT dirty (Apply disabled)");
 // Selecting another model stages ITS default; selecting back restores the member's value.
+// Provider groups are collapsed by default (R-5) and only the current model's
+// group opens, so a model in a different group must be revealed before it can be
+// clicked — the same step a user takes.
+[...document.body.querySelectorAll(".wb-model-provider-btn")]
+  .filter((header) => header.getAttribute("aria-expanded") === "false")
+  .forEach((header) => click(header));
+await new Promise((r) => setTimeout(r, 80));
 const rowOf = (label) => [...document.body.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes(label));
 click(rowOf("GPT-5.4"));
 await new Promise((r) => setTimeout(r, 80));

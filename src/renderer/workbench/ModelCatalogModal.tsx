@@ -119,16 +119,29 @@ export function ModelCatalogModal({
     [displayEntries, query, favorites, provOpen, selectedKey],
   );
 
-  // Favourites arrive over a subscription, so on the very first render they can
-  // still be empty — and the opening expansion depends on them ("expand the
-  // current model's group, unless it is starred"). Re-derive it while the user
-  // has not chosen a shape themselves; their own toggle always wins afterwards.
+  /**
+   * Keeps the opening expansion ("show the current model's group, unless it is
+   * starred and therefore already pinned on top") correct as its inputs land.
+   *
+   * It cannot be computed once at mount: favourites arrive over a subscription
+   * and can still be empty on the first render, and the current model changes
+   * identity when the harness switches. Re-derived while the user has not
+   * collapsed or expanded anything themselves — after that their choice wins.
+   *
+   * A harness switch is the exception: the list becomes an entirely different
+   * set of models, so previous toggles no longer refer to anything.
+   */
+  const lastHarness = useRef(harness);
   useEffect(() => {
+    if (lastHarness.current !== harness) {
+      lastHarness.current = harness;
+      provTouched.current = false;
+    }
     if (!provTouched.current) {
       setProvOpen(initialProvOpen(displayEntries, currentKey, favorites));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favorites]);
+  }, [favorites, currentKey, harness]);
 
   function setProviderOpen(provider: string, open: boolean) {
     provTouched.current = true;
@@ -207,14 +220,12 @@ export function ModelCatalogModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey]);
 
-  // Switching harness moves the selection into that harness's list, and the
-  // collapse state follows it — the previous harness's expanded group is
-  // meaningless once its models are gone.
+  // Switching harness moves the selection into that harness's list. The group
+  // that opens with it is handled by the expansion effect above, which keys off
+  // the resulting current model rather than off this comparison.
   useEffect(() => {
     if (config.harness && selected && (selected.route.harnessId || "claude-code") !== harness && displayEntries[0]) {
-      const nextKey = routeKey(displayEntries[0].route);
-      setSelectedKey(nextKey);
-      setProvOpen(initialProvOpen(displayEntries, nextKey, favorites));
+      setSelectedKey(routeKey(displayEntries[0].route));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness]);
@@ -370,8 +381,17 @@ export function ModelCatalogModal({
                   {group.open && group.entries.map((entry) => {
                     const key = routeKey(entry.route);
                     const starred = favorites.includes(entry.route.model);
+                    // The row is a container, not a button: it also holds the
+                    // star, and a button cannot nest inside a button. It still
+                    // selects on click so the whole row stays the target — for a
+                    // pointer, and for anything driving `.wb-model-row`.
                     return (
-                      <div className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")} key={key}>
+                      <div
+                        className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
+                        key={key}
+                        data-model={entry.route.model}
+                        onClick={() => { if (entry.route.enabled !== false) { setSelectedKey(key); } }}
+                      >
                         <button
                           type="button"
                           className="wb-model-pick"
@@ -398,7 +418,7 @@ export function ModelCatalogModal({
                           title={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
                           aria-label={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
                           aria-pressed={starred}
-                          onClick={() => { void toggleFavorite(entry); }}
+                          onClick={(event) => { event.stopPropagation(); void toggleFavorite(entry); }}
                         >
                           <Star size={14} />
                         </button>

@@ -108,6 +108,25 @@ reports MERGE, and a re-report replaces only its own window), served by
 `GET /api/usage`, and pushed to the titlebar pill (a `usage-limits.png` capture
 shows the live Claude/Codex rings). Starts empty (no fabricated 0%).
 
+`node scripts/e2e-model-catalog-list.mjs` (or `npm run test:e2e:catalog-list`)
+boots the real app on an isolated userData + temp workspace (offline — a mock
+member, no model turn) and locks the model catalog list (R-5/6/7) against the
+confirmed design. Like the sidebar-overflow run it MEASURES the live renderer
+over CDP rather than eyeballing a capture: the column's three tiers (fixed head
+/ fixed search row / scrolling list, with the search row asserted OUTSIDE the
+scroll container), and the search box's height, corner radius, gap and font size
+compared against the confirmed mockup, which was rendered and probed the same
+way. It then proves favourites take ONE path in both directions — starring in
+the UI is read back over `GET /api/state`, and a list written over
+`POST /api/settings` shows up in the UI after the reload that endpoint's
+contract implies — including that a stored id the catalog cannot resolve draws
+**no** row while remaining in storage (never silently pruned), and that the
+header counts what is shown rather than what is stored. Also covers the traps: a
+star click must not change the selection, Escape with a query clears the query
+instead of closing the modal, and with every group expanded the list scrolls
+with its last row still hit-testable at the app's minimum window width.
+Captures (light + dark, since the colours are tokens) go to a temp dir.
+
 `node scripts/e2e-sidebar-overflow.mjs` (or `npm run test:e2e:sidebar-overflow`)
 boots the real app on an isolated userData + temp workspace (offline — mock
 members, no model) and locks the OVERFLOW-SAFETY invariant behind [#11]: with 16
