@@ -789,6 +789,27 @@
   color: #fff;
 }
 
+/* Queue depth for a member whose panel is hidden behind another tab — without
+   it, that member's waiting messages have nowhere at all to appear. Dashed and
+   unfilled on purpose: a solid badge reads as "arrived" (승인/unread both are),
+   and these have not. */
+.wb-tab-queue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  border: var(--border-width) dashed var(--member-wait-bd, var(--border));
+  color: var(--member, var(--text-2));
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .wb-member-unread,
 .wb-tab-unread {
   background: var(--bg-4);
@@ -1084,6 +1105,18 @@ body.wb-resizing {
 .wb-pill:hover {
   border-color: var(--border-strong);
   color: var(--text-0);
+}
+
+/* Stop lives in the toolbar rather than the composer's Send slot: while a
+   member works, that slot is how you add to its queue. Present only mid-turn. */
+.wb-stop-pill {
+  color: var(--danger);
+  cursor: pointer;
+}
+.wb-stop-pill:hover {
+  border-color: var(--danger-bd);
+  background: var(--danger-dim);
+  color: var(--danger);
 }
 
 .wb-pill .wb-mono {
@@ -1407,14 +1440,46 @@ body.wb-resizing {
 
 .wb-user-head {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   font-size: 10px;
   color: var(--text-3);
 }
 
 .wb-user-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 600;
   color: var(--text-2);
+}
+
+/* A member's message keeps its author's colour after delivery, exactly as the
+   queue row showed it — otherwise the conversation reads as if the user typed it. */
+.wb-user[style*="--member"] .wb-user-who { color: var(--member); }
+.wb-user-who-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--member, var(--text-3));
+}
+
+/* "This arrived later than it was typed." PERMANENT: in scrollback it is the
+   only thing that explains why a reply above it does not answer it. Solid, not
+   dashed — dashed means still waiting, and this one has landed. */
+.wb-user-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 15px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .wb-user-bubble {
@@ -1427,6 +1492,11 @@ body.wb-resizing {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* A member-sent message carries its author's colour on the bubble's own edge,
+   so origin survives even when the meta row scrolls out of reach. The user's
+   own messages keep the plain border. */
+.wb-user[style*="--member"] .wb-user-bubble { border-right: 3px solid var(--member); }
 
 .wb-assistant {
   display: flex;
@@ -2278,6 +2348,450 @@ body.wb-resizing {
 @keyframes wb-bounce {
   0%, 100% { transform: translateY(0); opacity: .5; }
   50% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ---------- Message queue ----------
+   Messages a busy member has been sent but has not been handed yet. Sits
+   between the transcript and the composer inside the composer's border-top
+   block, and never scrolls — the transcript yields the space, because a queue
+   you have to scroll to find defeats its own purpose.
+
+   Dashed borders are the queue's whole visual language: solid = already in the
+   conversation, dashed = still waiting. Member colour arrives as --member* vars
+   scoped by memberColorVars(), so a row tinted for `reviewer` can sit inside a
+   panel tinted for `backend` without either leaking into the other.
+   Geometry follows docs/디자인 핸드오프/design_handoff_message_queue §2–§5. */
+.wb-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wb-queue-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.wb-queue-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+.wb-queue-glyph { color: var(--member); flex: none; }
+
+.wb-queue-title-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-0);
+  white-space: nowrap;
+}
+
+.wb-queue-caret {
+  flex: none;
+  color: var(--text-3);
+  transition: transform .15s;
+}
+.wb-queue-caret.is-open { transform: rotate(180deg); }
+
+/* The status line and the collapsed preview share the flexible slot: exactly
+   one is present, and either must clip rather than push the buttons off. */
+.wb-queue-note,
+.wb-queue-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-queue-preview {
+  text-align: left;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.wb-queue-flat {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb-queue-flat:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-queue-flat.is-danger:hover { background: var(--danger-dim); color: var(--danger); }
+
+/* ---- merge row ---- */
+.wb-queue-merge {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+
+.wb-queue-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.wb-queue-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 15px;
+  border-radius: 8px;
+  background: var(--bg-4);
+  transition: background .15s;
+}
+.wb-queue-switch.is-on { background: color-mix(in srgb, var(--member) 90%, transparent); }
+
+.wb-queue-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  transition: left .15s;
+}
+.wb-queue-switch.is-on .wb-queue-knob { left: 13px; }
+
+.wb-queue-switch-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.wb-queue-switch-label.is-on { color: var(--text-0); }
+
+.wb-queue-merge-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-queue-send-all {
+  flex: none;
+  height: 22px;
+  padding: 0 9px;
+  background: var(--member-wait-fill);
+  border: var(--border-width) solid var(--member-wait-bd);
+  border-radius: 6px;
+  color: var(--member);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb-queue-send-all:hover { filter: brightness(1.05); }
+.wb-queue-send-all.is-block {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- item rows ---- */
+.wb-queue-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 7px 6px 8px;
+  border: var(--border-width) dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+/* Only with merging OFF is there a distinct "this one goes next" — with it on
+   the whole leading run leaves together, so singling out row 1 would mislead. */
+.wb-queue-row.is-next {
+  border-color: var(--member-wait-bd);
+  background: color-mix(in srgb, var(--member) 7%, transparent);
+}
+
+/* Spans the run that leaves as ONE message: starts at the first row's midpoint
+   and ends at the last row's, so it reads as a bracket rather than a border. */
+.wb-queue-rail {
+  position: absolute;
+  left: -5px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--member-wait-bd);
+}
+
+.wb-queue-n {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+.wb-queue-row.is-next .wb-queue-n {
+  background: var(--member-wait-strong);
+  color: var(--member);
+}
+
+.wb-queue-from {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.wb-queue-from-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+/* A member's own colour, so "who is asking" is legible before the text is read.
+   Its --member* vars are re-scoped on this element, not inherited from the panel. */
+.wb-queue-from.is-member {
+  background: var(--member-ring);
+  border-color: var(--member-wait-bd);
+  color: var(--member);
+}
+.wb-queue-from.is-member .wb-queue-from-dot { background: var(--member); }
+
+.wb-queue-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-1);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Clicking the body expands it — the only way to check what a merged, multi-
+   paragraph message actually says before it goes out. */
+.wb-queue-text.is-open {
+  white-space: pre-wrap;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.wb-queue-next {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--member-wait-fill);
+  color: var(--member);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wb-queue-send-now {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb-queue-send-now:hover { border-color: var(--member-wait-bd); color: var(--member); }
+
+.wb-queue-btn {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.wb-queue-btn:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-queue-btn.is-accent:hover { background: var(--bg-3); color: var(--member); }
+.wb-queue-btn.is-danger:hover { background: var(--danger-dim); color: var(--danger); }
+
+/* ---- narrow (<408px): one summary chip, then featherweight rows ----
+   Reordering, editing and merge-up are dropped here rather than shrunk into
+   unhittable targets; the escape hatch is to widen the panel. Delete stays at
+   every width — cancelling a message must never require a resize. */
+.wb-queue.is-narrow { gap: 4px; margin-bottom: 6px; }
+
+.wb-queue-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px 4px 7px;
+  border: var(--border-width) dashed var(--member-wait-bd);
+  border-radius: 8px;
+  background: var(--member-wait-fill);
+}
+
+.wb-queue-chip-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.wb-queue-chip-label {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-0);
+  white-space: nowrap;
+}
+
+.wb-queue-dots { flex: none; display: flex; align-items: center; gap: 2px; }
+.wb-queue-spacer { flex: 1; }
+
+.wb-queue-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.wb-queue-dot.is-member { background: var(--member); }
+
+.wb-queue-pill {
+  flex: none;
+  height: 18px;
+  padding: 0 6px;
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: 5px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb-queue-pill.is-on {
+  background: var(--member-ring);
+  border-color: var(--member-wait-bd);
+  color: var(--member);
+}
+
+.wb-queue-x,
+.wb-queue-send-icon,
+.wb-queue-del {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.wb-queue-x { width: 18px; height: 18px; }
+.wb-queue-send-icon,
+.wb-queue-del { width: 20px; height: 20px; border-radius: 5px; }
+.wb-queue-send-icon { border: var(--border-width) solid var(--border); color: var(--text-1); }
+.wb-queue-send-icon:hover { border-color: var(--member-wait-bd); color: var(--member); }
+.wb-queue-x:hover,
+.wb-queue-del:hover { background: var(--danger-dim); color: var(--danger); }
+
+.wb-queue.is-narrow .wb-queue-row {
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 6px;
+  border-radius: 7px;
+}
+.wb-queue.is-narrow .wb-queue-n {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.wb-queue.is-narrow .wb-queue-text { font-size: 11px; line-height: 1.4; }
+
+/* Messages the HARNESS already holds. Solid, not dashed, and with no controls:
+   the dashed language means "still waiting, still yours"; these have crossed
+   over and cannot be cancelled. Muted so they read as a footnote to the queue
+   rather than another row of it — but present, because hiding them would put an
+   invisible queue one layer below the one this panel exists to expose. */
+.wb-queue-handed {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* A failed cancel/edit/move is shown, never swallowed — the likeliest cause is
+   that the message was delivered a moment ago, which the user must know. */
+.wb-queue-error {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--danger-dim);
+  color: var(--danger);
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
 /* ---------- Composer ---------- */

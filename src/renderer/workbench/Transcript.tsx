@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -7,6 +7,7 @@ import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl } from "../../shared/attachments";
+import { memberColorVars } from "../theme/memberColors";
 
 interface TranscriptProps {
   view: MemberView;
@@ -110,8 +111,25 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
   switch (block.kind) {
     case "user":
       return (
-        <div className="wb-block wb-user">
-          <div className="wb-user-head"><span className="wb-user-who">You</span>{block.at && <span className="wb-mono wb-time">{block.at}</span>}</div>
+        <div className={"wb-block wb-user" + (block.fromQueue ? " is-from-queue" : "")} style={block.from ? memberColorVars(block.from) : undefined}>
+          <div className="wb-user-head">
+            {/* Permanent, not transient. Scrolling back, this badge is the only
+                way to tell that the message reached the agent LATER than it was
+                typed — which is what makes the surrounding order read correctly. */}
+            {block.fromQueue && (
+              <span className="wb-user-origin" title="대기열에서 순서가 되어 전송된 메시지">
+                <AlignLeft size={9} /> 대기열에서 전송됨
+              </span>
+            )}
+            {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}건 합쳐서 보냄</span>}
+            {/* A member's message keeps its author here too: the queue row named
+                who was asking, and dropping that on delivery would make the
+                conversation read as though the user had typed it. */}
+            <span className="wb-user-who">
+              {block.from ? <><span className="wb-user-who-dot" />{block.from}</> : "You"}
+            </span>
+            {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+          </div>
           {block.attachments && block.attachments.length > 0 && (
             <div className="wb-msg-images">
               {block.attachments.map((image, index) =>
@@ -243,6 +261,15 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
           <span className="wb-channel-peer">{to || "?"}</span>
         </span>
         <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
+        {/* This one waited in the queue before it was handed over — permanent,
+            because in scrollback it is what explains why replies above it do
+            not answer it. */}
+        {block.fromQueue && (
+          <span className="wb-user-origin" title="대기열에서 순서가 되어 전송된 메시지">
+            <AlignLeft size={9} /> 대기열에서 전송됨
+          </span>
+        )}
+        {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}건 합쳐서 보냄</span>}
         {block.at && <span className="wb-mono wb-time">{block.at}</span>}
       </div>
       {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}

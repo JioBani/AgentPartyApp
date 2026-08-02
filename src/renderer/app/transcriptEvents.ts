@@ -10,6 +10,15 @@ const PARTY_REMOVE_TOOL = "mcp__agentparty-app__member-remove";
 
 export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionId: string, events: any[]): Record<string, TranscriptBlock[]> {
   let next = current;
+  // Provenance for a queued MEMBER message, waiting to be attached to the
+  // channel card that follows it in this same batch. The app publishes
+  // `queue_dequeued` immediately before handing the turn over, so the harness's
+  // echo of that turn — which is what becomes the card — arrives right after.
+  // Without this the message would render TWICE: once as a user bubble from the
+  // dequeue event and again as the inbound card. The card wins because it is the
+  // app's established, richer rendering for member-to-member traffic; the
+  // dequeue event only lends it the "came through the queue" mark.
+  let pendingQueued: { count: number; text: string; from: string } | null = null;
   for (const event of events) {
     if (event.type === "assistant_text_delta") {
       next = appendText(next, sessionId, "assistant", event.text || "");
@@ -20,12 +29,32 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       // <channel> envelope; render it as a clean message card, not raw XML.
       const channel = event.status === "sent" ? parseChannel(event.detail) : null;
       if (channel) {
-        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime() });
+        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime(), fromQueue: pendingQueued ? true : undefined, queuedN: pendingQueued?.count });
+        pendingQueued = null;
       } else {
         // A plain "sent" status is the harness echoing back the turn the app just
         // submitted — the user's own message, tagged so it does not cut a reply
         // that is still streaming ([#14]).
         next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), sent: event.status === "sent", at: nowTime() });
+      }
+    } else if (event.type === "queue_dequeued") {
+      // A message that had been waiting in the queue was just handed over. THIS
+      // is when it enters the conversation — not when it was typed — so the
+      // transcript order matches what the agent actually read.
+      if (event.from) {
+        // A member's message: the inbound channel card that follows is its
+        // rendering. Only lend it the provenance.
+        pendingQueued = { count: event.count || 1, text: event.text || "", from: event.from };
+      } else {
+        next = appendBlock(next, sessionId, {
+          id: crypto.randomUUID(),
+          kind: "user",
+          text: event.text || "",
+          fromQueue: true,
+          queuedN: event.count || 1,
+          from: null,
+          at: nowTime(),
+        });
       }
     } else if (event.type === "tool_call") {
       // Party write-tools render as purpose-built cards instead of raw tool boxes.
@@ -59,11 +88,41 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
     }
   }
+  // The card never came (a harness that does not echo the turn, or a batch that
+  // split between the two events). Fall back to a plain block rather than let a
+  // delivered message leave no trace at all — a message the user can see nowhere
+  // is the exact failure this feature exists to remove.
+  if (pendingQueued) {
+    next = appendBlock(next, sessionId, {
+      id: crypto.randomUUID(),
+      kind: "user",
+      text: pendingQueued.text,
+      fromQueue: true,
+      queuedN: pendingQueued.count,
+      from: pendingQueued.from,
+      at: nowTime(),
+    });
+  }
   return next;
 }
 
 export function appendBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, item: TranscriptBlock): Record<string, TranscriptBlock[]> {
   return { ...current, [sessionId]: [...(current[sessionId] || []), item] };
+}
+
+/**
+ * Retracts a block the app optimistically added and then learned was wrong —
+ * specifically the echo of a message the backend parked in the member's queue
+ * rather than delivering. The message is not lost: it is in the queue list, and
+ * a `queue_dequeued` event re-adds it to the transcript when it is really sent.
+ * A no-op when the id is already gone, so a double retraction is harmless.
+ */
+export function removeBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, id: string): Record<string, TranscriptBlock[]> {
+  const items = current[sessionId];
+  if (!items?.some((item) => item.id === id)) {
+    return current;
+  }
+  return { ...current, [sessionId]: items.filter((item) => item.id !== id) };
 }
 
 /**

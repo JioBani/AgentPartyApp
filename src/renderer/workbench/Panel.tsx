@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useState } from "react";
-import { ChevronDown, Gauge, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
+import { ChevronDown, CircleStop, Gauge, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -117,6 +117,15 @@ export function Panel(props: PanelProps) {
             })()}
           </div>
           <div className="wb-toolbar-controls">
+            {/* Stop lives HERE, not in the composer's Send slot. While a member
+                works, that slot is how you add to its queue — if Stop took it
+                over (as it used to) there would be no way to queue a message
+                from the UI at all, which is the entire feature. */}
+            {view.busy && (
+              <button type="button" className="wb-pill wb-stop-pill" title="Stop" onClick={() => actions.interrupt(view.name)}>
+                <CircleStop size={12} /> Stop
+              </button>
+            )}
             <button
               type="button"
               className="wb-pill wb-model-pill"

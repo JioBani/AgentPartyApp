@@ -62,5 +62,13 @@ export function memberColorVars(name: string): React.CSSProperties {
     ["--member-bd" as string]: hexA(color, 0.42),
     ["--member-focus" as string]: hexA(color, 0.5),
     ["--member-ring" as string]: hexA(color, 0.12),
+    // The message queue's "not handed over yet" language: a dashed edge at 34%
+    // (row borders, the merge rail, the tab badge) over a 10% fill, with an 18%
+    // tint for the next-up row's ordinal. Deliberately distinct from the tints
+    // above — those mark what a member OWNS, these mark what is still WAITING —
+    // which is why they belong here and not as literals in the queue component.
+    ["--member-wait-bd" as string]: hexA(color, 0.34),
+    ["--member-wait-fill" as string]: hexA(color, 0.1),
+    ["--member-wait-strong" as string]: hexA(color, 0.18),
   } as React.CSSProperties;
 }

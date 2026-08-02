@@ -4,6 +4,7 @@ import { requireCodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { requireCursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
+import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
 import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
@@ -78,6 +79,14 @@ export class LocalEngine implements EngineConnection {
 
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) {
     return this.party.sendUserMessage(name, text, attachments, partyId, options);
+  }
+
+  async getMemberQueue(name: string, partyId?: string) {
+    return this.party.getMemberQueue(name, partyId);
+  }
+
+  async runQueueCommand(name: string, command: QueueCommand, partyId?: string) {
+    return this.party.runQueueCommand(name, command, partyId);
   }
 
   async closeMember(name: string, partyId?: string) {

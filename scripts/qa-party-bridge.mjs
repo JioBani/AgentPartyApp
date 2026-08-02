@@ -227,10 +227,17 @@ sessionManager.compacting.delete(memberSession("worker2"));
 snapshots.get(memberSession("worker2")).status = "idle";
 
 // broadcast: every other member gets the channel-wrapped message; self excluded.
+// A BUSY recipient's copy goes to its QUEUE instead of being injected — worker1
+// is still mid-turn from the interrupt leg above. That is a third outcome,
+// deliberately not folded into `failed`: telling the sender that a message which
+// is merely waiting has failed invites a duplicate resend.
 const beforeBc = sentTurns.length;
 const bc = await bridge.broadcast("전체 공지");
-assert(bc.ok && bc.data.delivered.length >= 3 && !bc.data.delivered.includes("main"), "broadcast delivers to every member except the caller");
-assert(sentTurns.length === beforeBc + bc.data.delivered.length, "broadcast injected one turn per recipient");
+const reached = [...bc.data.delivered, ...(bc.data.queuedMembers || [])];
+assert(bc.ok && reached.length >= 3 && !reached.includes("main"), "broadcast reaches every member except the caller");
+assert(bc.data.queuedMembers?.includes("worker1"), "a BUSY recipient is reported as queued, not as failed");
+assert(!bc.data.failed.some((f) => f.name === "worker1"), "…and does not also appear in failed");
+assert(sentTurns.length === beforeBc + bc.data.delivered.length, "broadcast injected one turn per DELIVERED recipient (the queued one waits)");
 assert(sentTurns.slice(beforeBc).every((t) => /from="main"/.test(t.text) && /전체 공지/.test(t.text)), "broadcast payloads are channel-wrapped with from=main");
 // A member without a live session lands in failed, never silently dropped.
 svc.closeMember("worker1", partyId);

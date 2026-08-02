@@ -58,6 +58,8 @@ export const automationEndpoints = [
   "POST /api/party/messages",
   "POST /api/party/members",
   "POST /api/party/members/:name/message",
+  "GET /api/party/members/:name/queue",
+  "POST /api/party/members/:name/queue",
   "POST /api/party/members/:name/send",
   "POST /api/party/members/:name/open",
   "POST /api/party/members/:name/start",

@@ -158,6 +158,28 @@ Every click asserts `applied.clicked`, so a selector that matches nothing fails
 the run instead of passing on a screenshot of something else. Step 0 asserts
 `runtime.appRoot` is under this script's own root (see §1b).
 
+`node scripts/e2e-message-queue.mjs` (or `npm run test:e2e:message-queue`) boots
+the real app on an isolated userData + temp workspace (offline — mock members,
+no model) and proves the **message queue** ([P-3]4) end to end. The core claim
+first: a message sent to a BUSY member reports `queued: true` and is absent from
+the conversation, while a member-to-member message joins the same queue tagged
+with its own sender (and stored as its raw body — the channel envelope is added
+at delivery). Then the mutations — 위로 · 위와 합치기 · 편집 · 모두 취소 — and
+their failures: cancelling an item that already left, and an unknown action, are
+both REFUSED rather than silently accepted. Delivery is checked where it matters:
+going idle hands the merged run over and the bubble appears in the conversation
+*then*, marked 대기열에서 전송됨, with a member's message rendering exactly ONCE
+(as the inbound channel card, not also as a duplicate user bubble). Also covers
+the tab's dashed `≡N` badge, ArrowUp recalling the last queued message into the
+composer, the narrow (<408px) chip form, and the queue surviving on disk.
+
+Geometry is **measured over CDP**, not read off a picture — the 17×17 ordinal,
+the 26×15 switch with its 11px knob, dashed row borders, and the merge rail
+starting/ending at the run's midpoints and stopping at a sender change. Narrow
+density is reached by splitting into three panels, not by shrinking the window
+(the window has a minimum width, so the panel never gets narrow enough that way).
+Step 0 asserts `runtime.appRoot` is under this script's own root (see §1b).
+
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord
 bridge end-to-end **against Discord's own REST API**, not against our return

@@ -16,6 +16,21 @@ import type {
 import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
+import {
+  clearQueue,
+  describeQueueFailure,
+  enqueue,
+  mergeUp,
+  moveItem,
+  readQueue,
+  removeItem,
+  takeItem,
+  takeNext,
+  type DequeuedTurn,
+  type MemberQueueState,
+  type QueueCommand,
+  type QueuedMessage,
+} from "../../shared/messageQueue";
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
@@ -112,6 +127,13 @@ export class PartyApplicationService {
    */
   private seededHint = false;
 
+  /**
+   * Sessions last seen mid-turn, so the queue drains on the busy → idle EDGE
+   * rather than on every idle snapshot. Membership is the previous observation,
+   * not a lock: {@link drainQueueForSession} re-checks liveness itself.
+   */
+  private readonly busySessions = new Set<string>();
+
   constructor(private readonly deps: PartyApplicationDeps) {
     // Record the harness thread as soon as it becomes real — the turn that
     // commits it — instead of hoping something later asks for it. It used to be
@@ -126,6 +148,28 @@ export class PartyApplicationService {
         return;
       }
       this.persistHarnessThread(payload.sessionId);
+    });
+    // The queue's delivery trigger: a session leaving a busy status. Driven off
+    // the SNAPSHOT rather than `turn_complete` because a turn that is
+    // interrupted, errors out, or is force-stopped never completes — and a queue
+    // that only drains on clean completion would strand every message behind
+    // one stuck turn, which is precisely the state it exists to make visible.
+    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; snapshot?: { status?: unknown } }) => {
+      if (!payload?.sessionId) {
+        return;
+      }
+      const busy = BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
+      const wasBusy = this.busySessions.has(payload.sessionId);
+      if (busy) {
+        this.busySessions.add(payload.sessionId);
+        return;
+      }
+      this.busySessions.delete(payload.sessionId);
+      // Only on the busy → idle EDGE. Every idle snapshot would otherwise
+      // re-enter the drain for a queue that is simply waiting to be sent by hand.
+      if (wasBusy) {
+        this.drainQueueForSession(payload.sessionId);
+      }
     });
   }
 
@@ -537,12 +581,273 @@ export class PartyApplicationService {
     if (options?.interrupt && this.isSessionBusy(sessionId) && !this.deps.sessionManager.isCompacting(sessionId)) {
       this.deps.sessionManager.interrupt(sessionId);
     }
+    // Busy, and the caller did not ask to cut in: the message waits in the APP's
+    // queue — visible, cancellable, editable — instead of vanishing into the
+    // harness's own buffer, which only ever reported a count. `interrupt` is the
+    // explicit "handle this now" path and deliberately skips the queue.
+    if (!options?.interrupt && this.isSessionBusy(sessionId)) {
+      return this.enqueueForMember(member.name, this.partyIdOf(member), { text, attachments, from: null });
+    }
     this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
     // Re-read: startMember wrote the new sessionId/status; reflect it back.
     const fresh = this.ensureMigrated(this.repository.read(workspace));
     const target = this.requireMember(fresh, member.name, this.partyIdOf(member));
     log("info", "party", "user turn sent", { workspace, partyId: target.partyId, member: target.name, sessionId, images: attachments?.length || 0 });
     return { ...this.result(`Message sent to '${target.name}'.`, fresh, target), session };
+  }
+
+  // ===========================================================================
+  // Message queue — messages a busy member has been sent but not yet handed.
+  //
+  // Ownership sits here rather than in the harness adapters because everything
+  // the user wants to do with a waiting message (see it, cancel it, edit it,
+  // reorder it, merge it) is impossible once the turn has crossed into the
+  // adapter. The adapter's own buffer remains as the race-window net: a member
+  // can go idle between our busy check and the send, and that turn is simply
+  // delivered normally. See src/shared/messageQueue.ts for the rules.
+  // ===========================================================================
+
+  /** The member's queue as stored, normalized (a member predating this feature reads as empty). */
+  private queueOf(member: PartyMember): MemberQueueState {
+    return readQueue(member.queue);
+  }
+
+  /**
+   * Persists a member's queue and tells the windows. Every queue mutation lands
+   * here, so a change can never be applied without also becoming visible — the
+   * queue is only useful if what is on screen is what is actually waiting.
+   */
+  private writeQueue(name: string, partyId: string | undefined, next: MemberQueueState, logMessage: string): { state: StoredPartyState; member: PartyMember } {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    member.queue = next;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", logMessage, { workspace, partyId: member.partyId, member: member.name, queued: next.items.length });
+    this.deps.sessionManager.notifyPartyChanged(workspace);
+    return { state, member };
+  }
+
+  /**
+   * Parks a message on a member's queue. Refusals (queue full, empty body) are
+   * thrown, never absorbed: a caller that believes it queued a message the app
+   * actually dropped is exactly the failure mode the queue exists to remove.
+   */
+  private enqueueForMember(name: string, partyId: string | undefined, input: { text: string; attachments?: ImageAttachment[]; from: string | null }): PartyCommandResult {
+    const current = this.readState();
+    const member = this.requireMember(current, name, partyId);
+    const item: QueuedMessage = {
+      id: `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      text: input.text,
+      from: input.from,
+      at: new Date().toISOString(),
+      attachments: input.attachments,
+    };
+    const result = enqueue(this.queueOf(member), item);
+    if (!result.ok) {
+      throw new Error(describeQueueFailure(result.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), result.value, "message queued");
+    const sender = input.from ? `'${input.from}'` : "the user";
+    return {
+      ...this.result(`Queued for '${member.name}' (${result.value.items.length} waiting) — from ${sender}.`, written.state, written.member),
+      queued: true,
+      queue: result.value,
+    };
+  }
+
+  /**
+   * The single entry point for every queue mutation, so the UI button and the
+   * HTTP endpoint provably run the same code. Failures propagate as thrown
+   * errors — the caller turns them into a visible notice rather than a silent
+   * no-op (see {@link describeQueueFailure}).
+   */
+  runQueueCommand(name: string, command: QueueCommand, partyId?: string): PartyCommandResult & { text?: string } {
+    switch (command.action) {
+      case "send":
+        return this.sendQueuedNow(name, partyId);
+      case "clear":
+        return this.clearMemberQueue(name, partyId);
+      case "preference":
+        return this.setMemberQueuePreference(name, { merge: command.merge, collapsed: command.collapsed }, partyId);
+      case "sendItem":
+        return this.sendQueuedItem(name, command.itemId, partyId);
+      case "cancel":
+        return this.cancelQueuedMessage(name, command.itemId, partyId);
+      case "edit":
+        return this.editQueuedMessage(name, command.itemId, partyId);
+      case "move":
+        return this.moveQueuedMessage(name, command.itemId, command.direction, partyId);
+      case "mergeUp":
+        return this.mergeQueuedMessageUp(name, command.itemId, partyId);
+    }
+  }
+
+  /** Reads a member's queue without mutating anything (the HTTP GET and the UI's initial paint). */
+  getMemberQueue(name: string, partyId?: string): MemberQueueState {
+    return this.queueOf(this.requireMember(this.readState(), name, partyId));
+  }
+
+  /**
+   * Hands one turn from the queue to the harness and announces the delivery.
+   *
+   * Order matters: the `queue_dequeued` event is published BEFORE the turn is
+   * sent, so the user's bubble is already in the transcript when the reply
+   * starts streaming into it. The queue is persisted after a confirmed send, so
+   * the only possible failure is a re-send — never a message that is gone from
+   * the queue and was never delivered.
+   */
+  private deliverFromQueue(member: PartyMember, take: { state: MemberQueueState; turn: DequeuedTurn }, logMessage: string): PartyCommandResult {
+    const sessionId = member.sessionId;
+    if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
+      throw new Error(`'${member.name}' has no live session — its queue was left untouched.`);
+    }
+    this.deps.sessionManager.emitAppEvent(sessionId, {
+      type: "queue_dequeued",
+      text: take.turn.text,
+      from: take.turn.from,
+      count: take.turn.count,
+      at: new Date().toISOString(),
+    });
+    // A member's message is queued as its RAW body (so the queue row shows prose,
+    // not XML) and only wrapped in the channel envelope here, at delivery — which
+    // is also the first moment the envelope's contents are actually true.
+    // Attribution survives the wait too: it still bills as a party message.
+    const payload = take.turn.from
+      ? buildChannelPayload(createPartyMessage(member, take.turn.text, take.turn.from), member)
+      : take.turn.text;
+    this.deps.sessionManager.sendUserTurn(sessionId, payload, take.turn.attachments, take.turn.from ? "party-message" : "user");
+    const written = this.writeQueue(member.name, this.partyIdOf(member), take.state, logMessage);
+    return {
+      ...this.result(`Delivered ${take.turn.count} queued message(s) to '${member.name}'.`, written.state, written.member),
+      queue: take.state,
+    };
+  }
+
+  /**
+   * Drains the front of a member's queue now that its turn finished. Re-checks
+   * busy first: a member that has already picked up new work must not be handed
+   * another turn on top of it.
+   */
+  private drainQueueForSession(sessionId: string): void {
+    const state = this.readState();
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (!member || this.isSessionBusy(sessionId)) {
+      return;
+    }
+    const queue = this.queueOf(member);
+    if (!queue.items.length) {
+      return;
+    }
+    const take = takeNext(queue);
+    if (!take.ok) {
+      return;
+    }
+    try {
+      this.deliverFromQueue(member, take.value, "queue auto-drained");
+    } catch (error) {
+      // Never silent: a queue that stopped draining looks identical to a member
+      // that is merely slow, and the user would wait forever for a reply.
+      log("error", "party", "queue auto-drain failed", { member: member.name, error: String(error) });
+    }
+  }
+
+  /** "합쳐서 지금 보내기" — sends the leading run immediately, without waiting for idle. */
+  sendQueuedNow(name: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const take = takeNext(this.queueOf(member));
+    if (!take.ok) {
+      throw new Error(describeQueueFailure(take.reason));
+    }
+    return this.deliverFromQueue(member, take.value, "queue sent on demand");
+  }
+
+  /** "지금 보내기" on one row — delivers exactly that item, leaving the rest queued. */
+  sendQueuedItem(name: string, itemId: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const take = takeItem(this.queueOf(member), itemId);
+    if (!take.ok) {
+      throw new Error(describeQueueFailure(take.reason));
+    }
+    return this.deliverFromQueue(member, take.value, "queued item sent on demand");
+  }
+
+  /**
+   * Cancels one queued message. A miss is an error, not a no-op: the item was
+   * almost certainly delivered a moment ago, and reporting success would leave
+   * the user believing they stopped a message the agent is already answering.
+   */
+  cancelQueuedMessage(name: string, itemId: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const removal = removeItem(this.queueOf(member), itemId);
+    if (!removal.ok) {
+      throw new Error(describeQueueFailure(removal.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), removal.value.state, "queued message cancelled");
+    return { ...this.result(`Cancelled a queued message for '${member.name}'.`, written.state, written.member), queue: removal.value.state };
+  }
+
+  /**
+   * Pulls a queued message back out for editing. The text goes to the caller
+   * (the composer puts it back in the input box); the queue only loses the row
+   * once it has been handed over, so an edit can never lose the message.
+   */
+  editQueuedMessage(name: string, itemId: string, partyId?: string): PartyCommandResult & { text?: string } {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const removal = removeItem(this.queueOf(member), itemId);
+    if (!removal.ok) {
+      throw new Error(describeQueueFailure(removal.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), removal.value.state, "queued message taken back for editing");
+    return {
+      ...this.result(`Returned a queued message to the composer for '${member.name}'.`, written.state, written.member),
+      queue: removal.value.state,
+      text: removal.value.removed.text,
+    };
+  }
+
+  /** Reorders one queued message ("위로"). */
+  moveQueuedMessage(name: string, itemId: string, direction: -1 | 1, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const moved = moveItem(this.queueOf(member), itemId, direction);
+    if (!moved.ok) {
+      throw new Error(describeQueueFailure(moved.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), moved.value, "queued message moved");
+    return { ...this.result(`Reordered the queue for '${member.name}'.`, written.state, written.member), queue: moved.value };
+  }
+
+  /** Folds a queued message into the one above it ("위와 합치기"); same sender only. */
+  mergeQueuedMessageUp(name: string, itemId: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const merged = mergeUp(this.queueOf(member), itemId);
+    if (!merged.ok) {
+      throw new Error(describeQueueFailure(merged.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), merged.value, "queued messages merged");
+    return { ...this.result(`Merged two queued messages for '${member.name}'.`, written.state, written.member), queue: merged.value };
+  }
+
+  /** Empties a member's queue ("모두 취소"). */
+  clearMemberQueue(name: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const cleared = clearQueue(this.queueOf(member));
+    const written = this.writeQueue(member.name, this.partyIdOf(member), cleared, "queue cleared");
+    return { ...this.result(`Cleared the queue for '${member.name}'.`, written.state, written.member), queue: cleared };
+  }
+
+  /** Per-member queue preferences: merge-on-send and the collapsed/expanded panel state. */
+  setMemberQueuePreference(name: string, preference: { merge?: boolean; collapsed?: boolean }, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const current = this.queueOf(member);
+    const next: MemberQueueState = {
+      ...current,
+      merge: preference.merge === undefined ? current.merge : preference.merge,
+      collapsed: preference.collapsed === undefined ? current.collapsed : preference.collapsed,
+    };
+    const written = this.writeQueue(member.name, this.partyIdOf(member), next, "queue preference updated");
+    return { ...this.result(`Updated the queue preference for '${member.name}'.`, written.state, written.member), queue: next };
   }
 
   /**
@@ -1006,6 +1311,22 @@ export class PartyApplicationService {
       if (options?.interrupt && this.isSessionBusy(target.sessionId) && !this.deps.sessionManager.isCompacting(target.sessionId)) {
         this.deps.sessionManager.interrupt(target.sessionId);
       }
+      if (!options?.interrupt && this.isSessionBusy(target.sessionId)) {
+        // Busy: the message joins the SAME visible queue a user's message would,
+        // tagged with its sender so it keeps its own chip and never merges into
+        // someone else's text. Recorded as queued — not delivered — because it
+        // has not reached the member yet.
+        // Record the routing first, THEN enqueue. The other order writes this
+        // (pre-enqueue) state snapshot over the queue the enqueue just saved,
+        // silently losing the message — the exact failure the queue exists to
+        // prevent. `enqueueForMember` re-reads, so it sees this write.
+        message.error = "queued_for_busy_member";
+        target.updatedAt = message.createdAt;
+        state.messages.push(message);
+        this.persistParty(workspace, state, this.partyIdOf(target));
+        log("info", "party", "message queued for busy member", { workspace, partyId: target.partyId, from: message.from, to: message.to });
+        return { ...this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from }), partyMessage: message };
+      }
       // A member-to-member message drove this turn — tag it so the usage ledger
       // attributes the recipient's spend to `party-message` (an overhead trigger).
       this.deps.sessionManager.sendUserTurn(target.sessionId, buildChannelPayload(message, target), attachments, "party-message");
@@ -1113,7 +1434,7 @@ export class PartyApplicationService {
    * routing/persistence/optional interrupt); per-member failures — including a
    * gate rejection — are collected, never silently dropped.
    */
-  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyCommandResult & { delivered: string[]; failed: Array<{ name: string; error: string }> }> {
+  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyCommandResult & { delivered: string[]; queuedMembers: string[]; failed: Array<{ name: string; error: string }> }> {
     if (!content.trim()) {
       throw new Error("broadcast requires a non-empty content.");
     }
@@ -1124,11 +1445,17 @@ export class PartyApplicationService {
       throw new Error("No other members in the party to broadcast to.");
     }
     const delivered: string[] = [];
+    // A member that was busy has the message WAITING, not lost. Reporting that
+    // as `failed` would tell the sender its message never arrived and invite a
+    // duplicate resend, so queued members get their own bucket.
+    const queuedMembers: string[] = [];
     const failed: Array<{ name: string; error: string }> = [];
     for (const target of targets) {
       try {
         const result = await this.sendGatedMessage(target.name, content, from, undefined, party.id, options);
-        if (result.partyMessage?.delivered) {
+        if (result.queued) {
+          queuedMembers.push(target.name);
+        } else if (result.partyMessage?.delivered) {
           delivered.push(target.name);
         } else {
           failed.push({ name: target.name, error: result.partyMessage?.error || "not_delivered" });
@@ -1137,9 +1464,10 @@ export class PartyApplicationService {
         failed.push({ name: target.name, error: errorMessage(error) });
       }
     }
-    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
+    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
-    return { ...this.result(`Broadcast delivered to ${delivered.length}/${targets.length} member(s).`, state, undefined, party.id), delivered, failed };
+    const reach = queuedMembers.length ? `${delivered.length} delivered, ${queuedMembers.length} queued` : `${delivered.length}`;
+    return { ...this.result(`Broadcast reached ${reach}/${targets.length} member(s).`, state, undefined, party.id), delivered, queuedMembers, failed };
   }
 
   private turnStatusOf(member: PartyMember): Record<string, unknown> {
@@ -1645,7 +1973,10 @@ export class PartyApplicationService {
         try {
           const result = await this.broadcastMessage(content, selfMember, party, { interrupt });
           notify();
-          return { ok: true, data: { delivered: result.delivered, failed: result.failed } };
+          // `queuedMembers` is reported apart from BOTH: those members will get
+          // the message when their current turn ends. Folding them into `failed`
+          // would prompt the sending agent to send a duplicate.
+          return { ok: true, data: { delivered: result.delivered, queuedMembers: result.queuedMembers, failed: result.failed } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }

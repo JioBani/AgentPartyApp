@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import type { QueueCommand } from "../shared/messageQueue";
 
 const api = {
   /**
@@ -65,6 +66,10 @@ const api = {
   createPartyMember: (input: unknown) => ipcRenderer.invoke("party:create", input),
   sendPartyMessage: (to: string, content: string, from?: string, attachments?: unknown) => ipcRenderer.invoke("party:send", to, content, from, attachments),
   sendMemberMessage: (name: string, text: string, attachments?: unknown, options?: { interrupt?: boolean }) => ipcRenderer.invoke("party:message", name, text, attachments, options),
+  /** Messages a busy member has been sent but has not been handed yet (shared/messageQueue.ts). */
+  getMemberQueue: (name: string) => ipcRenderer.invoke("party:queue:get", name),
+  /** Every queue mutation, as one discriminated action — the same path the HTTP API drives. */
+  runQueueCommand: (name: string, command: QueueCommand) => ipcRenderer.invoke("party:queue:command", name, command),
   bindPartyMember: (name: string, sessionId: string) => ipcRenderer.invoke("party:bind", name, sessionId),
   openPartyMember: (name: string) => ipcRenderer.invoke("party:open", name),
   closePartyMember: (name: string) => ipcRenderer.invoke("party:close", name),

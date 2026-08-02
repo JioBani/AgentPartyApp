@@ -1,0 +1,236 @@
+/**
+ * View model for the message queue panel — every label, every per-row
+ * affordance, and the merge rail geometry, derived in one pure function.
+ *
+ * The rules are dense and density-dependent (a row shows five buttons at wide
+ * and two at narrow; the "next up" badge only exists at wide and only with
+ * merging off; the rail only spans the leading run). Deriving them here rather
+ * than inside JSX keeps the component a straight rendering of a described
+ * state, and lets the rules be asserted without a DOM.
+ *
+ * Mirrors `docs/디자인 핸드오프/design_handoff_message_queue` §2–§6.
+ */
+
+import type { MemberQueueState, QueuedMessage } from "../../shared/messageQueue";
+import { hasMixedSenders, leadRun, mergeOn } from "../../shared/messageQueue";
+import type { PanelDensity } from "./types";
+
+export interface QueueRowView {
+  id: string;
+  text: string;
+  /** 1-based position, as shown in the ordinal chip. */
+  n: number;
+  /** Sending member's name, or null for the user. */
+  from: string | null;
+  /** Chip label — the member's name, or "나" for the user. */
+  fromLabel: string;
+  /** True when a member sent it, which colours the chip with that member's channel colour. */
+  fromMember: boolean;
+  /** This row is the next one that will be delivered. */
+  isNext: boolean;
+  /** Highlight the row in the member's colour — only meaningful with merging OFF. */
+  highlighted: boolean;
+  /** Body is expanded (pre-wrap) rather than clipped to one line. */
+  open: boolean;
+  showNextBadge: boolean;
+  showSendNowText: boolean;
+  showSendNowIcon: boolean;
+  showEdit: boolean;
+  showMoveUp: boolean;
+  showMergeUp: boolean;
+  /** This row is part of the run that will leave as one message. */
+  onRail: boolean;
+  /** The rail is drawn from the row's midpoint when it starts the run, and to the midpoint when it ends it. */
+  railTop: string;
+  railBottom: string;
+}
+
+export interface QueueView {
+  count: number;
+  /** Nothing waiting anywhere — the panel renders nothing at all. */
+  empty: boolean;
+  /**
+   * Messages the HARNESS is holding, which this app can no longer reach.
+   *
+   * The app queue is not the only queue: each adapter buffers turns on its own
+   * `isTurnActive()`, and that is a different source of truth from the session
+   * snapshot this app reads. Two paths put a turn there:
+   *   1. `interrupt: true` — the app deliberately sends mid-turn (the Discord
+   *      bridge always does), and the adapter buffers it until the interrupt
+   *      settles. Not a race: guaranteed.
+   *   2. the genuine window where the snapshot still reads idle but the
+   *      adapter's turn has already begun.
+   * Those items cannot be cancelled or edited — they are past the point of no
+   * return. Counting them into the main total would offer a 취소 button that
+   * cannot work; hiding them would recreate, one layer down, exactly the
+   * invisible queue this feature exists to abolish. So they are shown, apart,
+   * and labelled as unreachable.
+   */
+  handedOver: number;
+  collapsed: boolean;
+  merge: boolean;
+  narrow: boolean;
+  /** "대기열 3" */
+  title: string;
+  /** "대기열 3건" — the narrow chip's shorter form. */
+  chipLabel: string;
+  /** Header status line: what will happen and when. */
+  note: string;
+  /** Merge-row explanation, which changes with mixed senders. */
+  mergeNote: string;
+  /** Primary send button label; names the count only when several items actually merge. */
+  sendAllLabel: string;
+  toggleLabel: string;
+  /** One-line preview shown while collapsed. */
+  collapsedPreview: string;
+  mergePillLabel: string;
+  /** Up to three sender dots, deduplicated in first-appearance order. */
+  senderDots: Array<{ key: string; from: string | null }>;
+  rows: QueueRowView[];
+}
+
+export interface QueueViewInput {
+  queue: MemberQueueState;
+  density: PanelDensity;
+  /** The member is mid-turn, which decides whether the header promises a later send or an idle one. */
+  working: boolean;
+  /** The member has no live session; nothing will be delivered until it starts. */
+  detached: boolean;
+  memberName: string;
+  /** Row ids whose body the user expanded. */
+  openRows: ReadonlySet<string>;
+  /** `snapshot.queuedTurnCount` — turns the harness itself is holding. See {@link QueueView.handedOver}. */
+  handedOver?: number;
+}
+
+export function buildQueueView(input: QueueViewInput): QueueView {
+  const { queue, density, working, detached, memberName, openRows } = input;
+  const handedOver = Math.max(0, input.handedOver || 0);
+  const items = queue.items;
+  const merge = mergeOn(queue);
+  const narrow = density === "narrow";
+  // Narrow panels start collapsed: at that width the queue would eat the
+  // transcript it exists to protect. Wider ones start open, because the whole
+  // point is that waiting messages are visible without being hunted for.
+  const collapsed = queue.collapsed === undefined ? narrow : queue.collapsed;
+  const run = leadRun(items);
+  const mixed = hasMixedSenders(items);
+  const mergedCount = merge ? run.length : 1;
+
+  return {
+    count: items.length,
+    // Harness-held messages keep the panel open on their own. Otherwise an app
+    // queue that just drained would hide the very items that are still in
+    // flight, which is the invisible queue all over again.
+    empty: items.length === 0 && handedOver === 0,
+    handedOver,
+    collapsed,
+    merge,
+    narrow,
+    title: `대기열 ${items.length}`,
+    chipLabel: `대기열 ${items.length}건`,
+    note: headerNote({ memberName, working, detached, merge, count: items.length }),
+    mergeNote: mergeNote({ merge, mixed, count: items.length }),
+    // Naming a count that is not actually a merge would overstate what the
+    // button does, so a single-item send is just "지금 보내기".
+    sendAllLabel: merge && run.length > 1 ? `합쳐서 지금 보내기 · ${run.length}건` : "지금 보내기",
+    toggleLabel: collapsed ? "펼치기" : "접기",
+    collapsedPreview: collapsedPreview(items),
+    mergePillLabel: merge ? "합침" : "개별",
+    senderDots: senderDots(items),
+    rows: items.map((item, index) => buildRow({ item, index, items, run, merge, density, openRows, mergedCount })),
+  };
+}
+
+function buildRow(args: {
+  item: QueuedMessage;
+  index: number;
+  items: QueuedMessage[];
+  run: QueuedMessage[];
+  merge: boolean;
+  density: PanelDensity;
+  openRows: ReadonlySet<string>;
+  mergedCount: number;
+}): QueueRowView {
+  const { item, index, items, run, merge, density, openRows } = args;
+  const narrow = density === "narrow";
+  const previous = index > 0 ? items[index - 1] : undefined;
+  const sameSenderAsPrevious = Boolean(previous && (previous.from ?? null) === (item.from ?? null));
+  // With merging on, the whole leading run leaves as one message, so singling
+  // out the first row would be a lie about what happens next. Only with merging
+  // off is there a distinct "this one goes next".
+  const highlighted = index === 0 && !merge;
+  const onRail = merge && run.length > 1 && index < run.length;
+
+  return {
+    id: item.id,
+    text: item.text,
+    n: index + 1,
+    from: item.from ?? null,
+    fromLabel: item.from || "나",
+    fromMember: Boolean(item.from),
+    isNext: index === 0,
+    highlighted,
+    open: openRows.has(item.id),
+    showNextBadge: index === 0 && density === "wide" && !merge,
+    showSendNowText: index === 0 && !narrow && !merge,
+    showSendNowIcon: index === 0 && narrow,
+    // Narrow drops reordering and editing entirely rather than shrinking five
+    // controls into an unhittable row; the handoff's escape hatch is to widen
+    // the panel. Delete stays at every width — cancelling must never need one.
+    showEdit: !narrow,
+    showMoveUp: index > 0 && !narrow,
+    showMergeUp: index > 0 && sameSenderAsPrevious && !narrow,
+    onRail,
+    railTop: index === 0 ? "50%" : "0",
+    railBottom: index === run.length - 1 ? "50%" : "0",
+  };
+}
+
+function headerNote(args: { memberName: string; working: boolean; detached: boolean; merge: boolean; count: number }): string {
+  if (args.detached) {
+    // Never imply an imminent send when there is nothing to send to. The queue
+    // is kept, not dropped — but the user has to know it is parked.
+    return "세션 재시작 대기 중 — 시작하면 전송됩니다";
+  }
+  if (!args.working) {
+    return "지금 보내기를 누르면 전송됩니다";
+  }
+  const how = args.merge && args.count > 1 ? "합쳐서 한 번에" : "순서대로";
+  return `${args.memberName} 응답이 끝나면 ${how} 전송됩니다`;
+}
+
+function mergeNote(args: { merge: boolean; mixed: boolean; count: number }): string {
+  if (!args.merge) {
+    return "한 건씩 순서대로 보냅니다";
+  }
+  // With several senders queued, promising "N건을 한 메시지로" would be wrong —
+  // only the leading same-sender run merges.
+  return args.mixed ? "보낸 사람이 같은 것끼리만 합쳐집니다" : `전송 시 ${args.count}건을 한 메시지로 합쳐서 보냅니다`;
+}
+
+function collapsedPreview(items: QueuedMessage[]): string {
+  if (!items.length) {
+    return "";
+  }
+  const first = items[0].text;
+  return items.length > 1 ? `${first}  ··· 외 ${items.length - 1}건` : first;
+}
+
+/** Distinct senders in first-appearance order, capped at three — a density cue, not a roster. */
+function senderDots(items: QueuedMessage[]): Array<{ key: string; from: string | null }> {
+  const seen: string[] = [];
+  const dots: Array<{ key: string; from: string | null }> = [];
+  for (const item of items) {
+    const key = item.from || " me";
+    if (seen.includes(key)) {
+      continue;
+    }
+    seen.push(key);
+    dots.push({ key, from: item.from ?? null });
+    if (dots.length === 3) {
+      break;
+    }
+  }
+  return dots;
+}

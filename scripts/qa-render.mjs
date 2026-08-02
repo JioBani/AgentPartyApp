@@ -318,9 +318,14 @@ const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || 
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
 assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
 assert(mcpMenuItem != null && menuItems.length === 3, "⋯ menu has three items (세션 재시작 · Message Gate · MCP 서버)");
-// A busy member's composer shows Stop (not Send) — the interrupt affordance.
-const busyStop = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop, [data-panel-id="pa"] .wb-send.is-stop');
-assert(busyStop !== null, "a busy member's composer shows Stop");
+// A busy member's composer offers 대기열에 추가 — NOT Stop. While a member works,
+// that slot is the only way to put a message in its queue, so Stop cannot own it.
+// Stop moved to the panel toolbar, where it appears only mid-turn.
+const busySend = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-queueing, [data-panel-id="pa"] .wb-send.is-queueing');
+assert(busySend !== null, "a busy member's composer offers 대기열에 추가 (the send slot stays a send)");
+assert(document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop') === null, "Stop no longer takes over the composer's send slot");
+assert(document.querySelector('[data-panel-id="pa"] .wb-stop-pill') !== null, "a busy member's toolbar shows Stop");
+assert(document.querySelector('[data-panel-id="pb"] .wb-stop-pill') === null, "an idle member's toolbar has no Stop");
 if (restartMenuItem) {
   restartMenuItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 100));
