@@ -73,7 +73,9 @@ async function main() {
       ...process.env,
       AGENTPARTY_QA: "1",
       AGENTPARTY_USER_DATA: userData,
-      AGENTPARTY_WINDOW_DISPLAY: "left",
+      // Automated runs park the window on the left monitor so it stays out of
+      // the way. --keep is for a person to LOOK at, so it opens where they are.
+      AGENTPARTY_WINDOW_DISPLAY: keep ? "" : "left",
       AGENTPARTY_AUTOMATION_PORT: "",
     },
   });
