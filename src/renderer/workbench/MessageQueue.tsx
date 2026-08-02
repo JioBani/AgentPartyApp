@@ -126,16 +126,34 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
    *
    * Deliberately forgiving. Merging is aimed at a THING, not at a boundary, so
    * the target is the whole row minus a thin strip at each edge that stays
-   * reserved for "between these two" — and once a row is engaged it keeps the
-   * pointer through a wider area than it took to acquire it. Without that
-   * hysteresis the target flickers on and off along a one-pixel line, which is
-   * what made this feel like threading a needle.
+   * reserved for "between these two". Without that the target flickers on and
+   * off along a one-pixel line, which is what made this feel like threading a
+   * needle.
    *
    * Horizontal position is ignored on purpose: the pointer leaves the list
    * sideways all the time while dragging, and losing the target for that would
    * punish the hand for moving in a direction that means nothing here.
+   *
+   * A row is acquired from where it is DRAWN — that is what the hand aimed at.
+   * But engaging the merge closes the gap the reorder had opened, and that moves
+   * the rows below it by a whole slot. Asking again afterwards answers about the
+   * NEW layout, so the target slides to the next message down. An engaged row is
+   * therefore held by the box it was CAUGHT in, which does not move; the pointer
+   * has to leave that box to release it.
+   *
+   * That is not a nicety. Without it you aim at one message and your words are
+   * folded into a different one, and nothing on screen admits the swap.
    */
-  function mergeTargetUnder(clientY: number, engaged: string | null | undefined): QueueRowView | null {
+  function mergeTargetUnder(
+    clientY: number,
+    held: DragState["mergeBox"],
+  ): { row: QueueRowView; top: number; bottom: number } | null {
+    if (held && clientY >= held.top && clientY <= held.bottom) {
+      const row = model.rows.find((candidate) => candidate.id === held.id);
+      if (row) {
+        return { row, top: held.top, bottom: held.bottom };
+      }
+    }
     const rows = Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []);
     for (let index = 0; index < rows.length; index += 1) {
       const box = rows[index].getBoundingClientRect();
@@ -143,10 +161,9 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
       if (!row) {
         continue;
       }
-      // A held target keeps the pointer well past the edge it was caught in.
-      const edge = row.id === engaged ? 0 : Math.min(box.height * 0.22, 9);
+      const edge = Math.min(box.height * 0.22, 9);
       if (clientY >= box.top + edge && clientY <= box.bottom - edge) {
-        return row;
+        return { row, top: box.top, bottom: box.bottom };
       }
     }
     return null;
@@ -162,11 +179,12 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     if (!drag || drag.released) {
       return;
     }
-    const over = mergeTargetUnder(event.clientY, drag.mergeInto);
+    const over = mergeTargetUnder(event.clientY, drag.mergeBox);
     // Only a row that can actually receive the merge counts as a target, so the
     // "합치기" affordance never appears where the drop would be refused.
     const source = model.rows.find((row) => row.id === drag.id);
-    const mergeInto = over && over.id !== drag.id && source && over.from === source.from ? over.id : null;
+    const receives = over && over.row.id !== drag.id && source && over.row.from === source.from;
+    const mergeInto = receives ? over.row.id : null;
     // Dragged clear of the queue and over the conversation: dropping there hands
     // the message over immediately.
     const throwZone = mergeInto ? null : transcriptUnder(event.clientX, event.clientY);
@@ -176,6 +194,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
       offset: event.clientY - drag.pointerY,
       to: slotUnder(event.clientY, drag.slots),
       mergeInto,
+      mergeBox: receives ? { id: over.row.id, top: over.top, bottom: over.bottom } : null,
       overTranscript: Boolean(throwZone),
       throwZone,
     });
@@ -462,6 +481,11 @@ interface DragState {
   to: number;
   /** Row this would be folded INTO, when the pointer is over a row's body. */
   mergeInto?: string | null;
+  /**
+   * Where that row was when the pointer caught it. Held rather than re-measured,
+   * because engaging the merge moves the rows — see `mergeTargetUnder`.
+   */
+  mergeBox?: { id: string; top: number; bottom: number } | null;
   /** Pointer position when the row was picked up. */
   pointerX: number;
   pointerY: number;
@@ -488,12 +512,12 @@ function rowClass(row: QueueRowView, drag: DragState | null): string {
     return `${className} is-dragging${drag.released ? " is-landing" : ""}`;
   }
   // Merging outranks the reorder motion: rows must NOT step aside, because
-  // nothing is going to be inserted between them.
+  // nothing is going to be inserted between them. They keep `is-shifting`
+  // anyway — that class only carries the transition, so the gap CLOSES at the
+  // same speed it opened. Dropping the class here made it slam shut on the way
+  // in and glide open on the way out, and one gesture cannot have two speeds.
   if (drag.mergeInto === row.id) {
-    return `${className} is-merge-target`;
-  }
-  if (drag.mergeInto || drag.overTranscript) {
-    return className;
+    return `${className} is-merge-target is-shifting`;
   }
   return `${className} is-shifting`;
 }
