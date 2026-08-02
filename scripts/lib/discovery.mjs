@@ -35,3 +35,26 @@ export function discoverBaseUrls(workspace) {
 export function firstBaseUrl(workspace) {
   return discoverBaseUrls(workspace)[0] || "";
 }
+
+/**
+ * The first advertised endpoint that ANSWERS, waiting for one to appear.
+ *
+ * Prefer this over `firstBaseUrl` when starting an app. An app that was killed
+ * leaves its instance file behind, and `firstBaseUrl` keeps handing back that
+ * dead entry — so a caller that polls it alone waits out its whole timeout and
+ * reports "the app never advertised an endpoint" while the app is up and
+ * listening on the entry right behind it.
+ */
+export async function waitForLiveBaseUrl(workspace, timeoutMs = 60_000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    for (const url of discoverBaseUrls(workspace)) {
+      try {
+        const response = await fetch(`${url}/api/health`);
+        if (response.ok && (await response.json()).ok) return url;
+      } catch { /* dead or still starting — try the next one */ }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return "";
+}

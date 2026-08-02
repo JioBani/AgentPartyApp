@@ -24,7 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { firstBaseUrl } from "./lib/discovery.mjs";
+import { waitForLiveBaseUrl } from "./lib/discovery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-queue-design-workspace");
@@ -250,18 +250,9 @@ const pref = async (body) => {
 };
 
 async function discover() {
-  const started = Date.now();
-  while (Date.now() - started < 60_000) {
-    const url = firstBaseUrl(ws);
-    if (url) {
-      try {
-        const response = await fetch(`${url}/api/health`);
-        if (response.ok && (await response.json()).ok) return url;
-      } catch { /* still starting */ }
-    }
-    await delay(500);
-  }
-  throw new Error("App did not advertise an automation endpoint for the design-QA workspace.");
+  const url = await waitForLiveBaseUrl(ws);
+  if (!url) throw new Error("App did not advertise an automation endpoint for the design-QA workspace.");
+  return url;
 }
 
 async function get(route) {
