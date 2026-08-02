@@ -63,10 +63,11 @@ async function main() {
   // same state over CDP instead of arguing about pixels.
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", ws, "--remote-debugging-port=0"], {
     cwd: root,
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
     // --keep hands the app to a human, so it must outlive this script (and the
-    // shell that started it) instead of dying with its parent.
+    // shell that started it). Detached AND unpiped: an inherited pipe dies with
+    // the parent, and the app then crashes on its next write to it.
+    stdio: keep ? "ignore" : ["ignore", "pipe", "pipe"],
+    windowsHide: true,
     detached: keep,
     env: {
       ...process.env,
@@ -76,7 +77,7 @@ async function main() {
       AGENTPARTY_AUTOMATION_PORT: "",
     },
   });
-  child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  if (child.stderr) child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
   try {
     base = await discover();
