@@ -1,5 +1,5 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownToLine, AtSign, Check, CircleStop, Copy, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { ArrowDownToLine, AtSign, CircleStop, ImageOff, Maximize2, Send, X } from "lucide-react";
 import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -64,8 +64,6 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
-  // Which thumbnail just went to the clipboard (a brief ✓ on its copy button).
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const prefs = useComposerPrefs();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
@@ -220,26 +218,6 @@ export function Composer({ view, density, actions }: ComposerProps) {
   }
 
   /**
-   * Puts an attached image on the OS clipboard so it can be pasted elsewhere —
-   * an image dropped in here is often the one you also want in a ticket or a
-   * chat, and until now the only thing you could do with it was remove it.
-   * Writing goes through the main process (`clipboard.writeImage`), the same
-   * route `POST /api/clipboard/image` takes.
-   */
-  async function copyAttachment(image: ImageAttachment, index: number) {
-    try {
-      await window.agentParty.copyImageToClipboard({ dataBase64: image.dataBase64, mediaType: image.mediaType });
-      setAttachError("");
-      setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1400);
-    } catch (error) {
-      // Never a silent no-op: a copy that did not happen has to say so, or the
-      // user pastes stale clipboard content and blames the other app.
-      setAttachError(`이미지를 클립보드로 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
    * `bypassQueue` is Ctrl/Cmd+Enter — already this app's universal "send now".
    * With a busy member that now also means "do not wait your turn": the message
    * is parked like any other (so it is never lost if the delivery fails) and
@@ -316,19 +294,14 @@ export function Composer({ view, density, actions }: ComposerProps) {
     <CommandPalette commands={palette.matches} activeIndex={palette.activeIndex} onHover={palette.setActiveIndex} onSelect={palette.apply} />
   ) : null;
 
+  // R-18 moved image copy to the transcript (where the image stays after send).
+  // The composer strip only removes — copying a not-yet-sent paste is rarely
+  // useful, and the control made the mis-wired feature look "done".
   const attachmentStrip = attachments.length > 0 ? (
     <div className="wb-attachments">
       {attachments.map((image, index) => (
         <div className="wb-attachment" key={`${image.name || "img"}-${index}`} title={image.name}>
           <img src={imageDataUrl(image)} alt={image.name || "attached image"} />
-          <button
-            type="button"
-            className="wb-attachment-copy"
-            title={copiedIndex === index ? "복사됨" : "클립보드로 복사"}
-            onClick={() => copyAttachment(image, index)}
-          >
-            {copiedIndex === index ? <Check size={11} /> : <Copy size={11} />}
-          </button>
           <button type="button" className="wb-attachment-x" title="제거" onClick={() => removeAttachment(index)}><X size={11} /></button>
         </div>
       ))}
