@@ -2541,6 +2541,59 @@ body.wb-resizing {
   background: color-mix(in srgb, var(--member) 7%, transparent);
 }
 
+/* Same 6px the panel used when the rows were its direct children — the wrapper
+   exists to measure drop targets, not to change the spacing. */
+.wb-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Reordering is a drag, so the row needs somewhere to be picked up that is not
+   also somewhere to click. The grip keeps its width when there is nowhere to
+   drag to, so rows do not shift sideways as the queue drops to one item. */
+.wb-queue-grip {
+  flex: none;
+  width: 14px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -3px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.wb-queue-grip:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-queue-grip:focus-visible { outline: var(--border-width) solid var(--member); outline-offset: 1px; }
+.wb-queue-grip.is-idle { cursor: default; }
+
+.wb-queue-row.is-dragging {
+  opacity: 0.45;
+  border-style: solid;
+  border-color: var(--member-wait-bd);
+}
+.wb-queue-row.is-dragging .wb-queue-grip { cursor: grabbing; }
+
+/* Drawn in the gap between rows rather than inside one: inside would read as a
+   border belonging to the row it sits on. */
+.wb-queue-row.is-drop-above::before,
+.wb-queue-row.is-drop-below::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--member);
+}
+.wb-queue-row.is-drop-above::before { top: -4px; }
+.wb-queue-row.is-drop-below::after { bottom: -4px; }
+
 /* Spans the run that leaves as ONE message: starts at the first row's midpoint
    and ends at the last row's, so it reads as a bracket rather than a border. */
 .wb-queue-rail {
@@ -2610,13 +2663,33 @@ body.wb-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Clicking the body expands it — the only way to check what a merged, multi-
-   paragraph message actually says before it goes out. */
+/* Expanded, the body is shown in full — the only way to check what a merged,
+   multi-paragraph message actually says before it goes out. One line is the
+   default because six full messages would push the conversation off the panel,
+   and the queue exists to protect that space, not to take it. */
 .wb-queue-text.is-open {
   white-space: pre-wrap;
   overflow: visible;
   word-break: break-word;
 }
+
+/* The stated way in and out of the full body. The whole line stays clickable
+   too, but a clipped line is not itself an invitation — the button is. */
+.wb-queue-expand {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.wb-queue-expand:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-queue-expand[aria-expanded="true"] { color: var(--member); }
 
 .wb-queue-next {
   flex: none;
@@ -2747,6 +2820,9 @@ body.wb-resizing {
 .wb-queue-x { width: 18px; height: 18px; }
 .wb-queue-send-icon,
 .wb-queue-del { width: 20px; height: 20px; border-radius: 5px; }
+/* Narrow drops reordering and editing, but never reading: the expand control
+   survives at every width, like 삭제. */
+.wb-queue.is-narrow .wb-queue-expand { width: 18px; height: 18px; }
 .wb-queue-send-icon { border: var(--border-width) solid var(--border); color: var(--text-1); }
 .wb-queue-send-icon:hover { border-color: var(--member-wait-bd); color: var(--member); }
 .wb-queue-x:hover,

@@ -153,6 +153,8 @@ async function sameSenderRun() {
   await send("에러 문구는 한국어로 통일해줘.");
   await send("다 되면 스크린샷 한 장만.");
   await shot("03-run", "같은 발신자 4건 — 병합 레일이 선두 런 전체를 감싼다");
+  await shot("03b-run-expanded", "한 줄로 접힌 행을 확대 버튼으로 펼친 상태", { click: ".wb-queue-row .wb-queue-expand" });
+  await post("/api/capture", { path: path.join(shotDir, "_recollapse.png"), click: ".wb-queue-row .wb-queue-expand" });
 }
 
 /** A run that ENDS at a sender change — the rail must stop there. */
