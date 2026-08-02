@@ -109,6 +109,8 @@ export function ModelCatalogModal({
   /** Never persisted: a stale query on reopen would hide most of the catalog. */
   const [query, setQuery] = useState("");
   const [provOpen, setProvOpen] = useState<Record<string, boolean>>(() => initialProvOpen(displayEntries, currentKey, favorites));
+  /** Set once the user collapses/expands anything themselves. */
+  const provTouched = useRef(false);
   const [favoriteError, setFavoriteError] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -116,6 +118,22 @@ export function ModelCatalogModal({
     () => buildCatalogView({ entries: displayEntries, query, favorites, provOpen, selectedKey }),
     [displayEntries, query, favorites, provOpen, selectedKey],
   );
+
+  // Favourites arrive over a subscription, so on the very first render they can
+  // still be empty — and the opening expansion depends on them ("expand the
+  // current model's group, unless it is starred"). Re-derive it while the user
+  // has not chosen a shape themselves; their own toggle always wins afterwards.
+  useEffect(() => {
+    if (!provTouched.current) {
+      setProvOpen(initialProvOpen(displayEntries, currentKey, favorites));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favorites]);
+
+  function setProviderOpen(provider: string, open: boolean) {
+    provTouched.current = true;
+    setProvOpen((current) => ({ ...current, [provider]: open }));
+  }
 
   function clearQuery() {
     setQuery("");
@@ -132,8 +150,7 @@ export function ModelCatalogModal({
     const id = entry.route.model;
     const unstarring = favorites.includes(id);
     if (unstarring && routeKey(entry.route) === selectedKey) {
-      const provider = routeProvider(entry.route);
-      setProvOpen((current) => ({ ...current, [provider]: true }));
+      setProviderOpen(routeProvider(entry.route), true);
     }
     try {
       setFavoriteError("");
@@ -339,7 +356,7 @@ export function ModelCatalogModal({
                       type="button"
                       className="wb-model-provider-btn"
                       aria-expanded={group.open}
-                      onClick={() => setProvOpen((current) => ({ ...current, [group.id]: !group.open }))}
+                      onClick={() => setProviderOpen(group.id, !group.open)}
                     >
                       <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
                       <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider!] }} />

@@ -50,10 +50,23 @@ const { normalizeFavoriteModels, toggleFavoriteModel, resolveFavoriteModels } = 
   "src/shared/favoriteModels.ts", "fav-models.mjs",
   ["normalizeFavoriteModels", "toggleFavoriteModel", "resolveFavoriteModels"],
 );
-const { ModelCatalogModal } = await load("src/renderer/workbench/ModelCatalogModal.tsx", "cat-modal.mjs", ["ModelCatalogModal"]);
-const { usePublishFavoriteModels, __resetFavoriteModelPrefs } = await load(
-  "src/renderer/app/favoriteModelPrefs.ts", "fav-prefs.mjs",
-  ["usePublishFavoriteModels", "__resetFavoriteModelPrefs"],
+/*
+ * The modal and the favourites channel MUST come out of one bundle. Building
+ * them as separate entry points gives each its own copy of the channel's module
+ * state, so the publisher here would write to an instance the modal never reads
+ * — the component would render with no favourites while the test looked correct.
+ */
+async function loadBundle(contents, name, names) {
+  const r = await build({ stdin: { contents, resolveDir: projectRoot, sourcefile: name, loader: "ts" }, bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false });
+  const file = path.join(outDir, name); writeFileSync(file, r.outputFiles[0].text);
+  const mod = await import(pathToFileURL(file).href);
+  return names.reduce((acc, k) => (acc[k] = mod[k], acc), {});
+}
+const { ModelCatalogModal, usePublishFavoriteModels, __resetFavoriteModelPrefs } = await loadBundle(
+  `export { ModelCatalogModal } from "./src/renderer/workbench/ModelCatalogModal";
+   export { usePublishFavoriteModels, __resetFavoriteModelPrefs } from "./src/renderer/app/favoriteModelPrefs";`,
+  "cat-modal.mjs",
+  ["ModelCatalogModal", "usePublishFavoriteModels", "__resetFavoriteModelPrefs"],
 );
 const React = await import("react");
 const reactDom = await import("react-dom/client");
@@ -164,14 +177,32 @@ console.log("\nFavourite storage (never auto-pruned):");
 
 // --- 6. rendered modal ----------------------------------------------------
 console.log("\nRendered catalog:");
+/* One modal at a time: the previous case's copy is portaled into the same body,
+   so leaving it mounted would make the queries below hit the WRONG modal (and
+   leave a second Escape listener attached). */
+let mounted = null;
 function render(node) {
+  if (mounted) {
+    mounted.root.unmount();
+    mounted.host.remove();
+  }
   const host = window.document.createElement("div");
   window.document.body.appendChild(host);
-  reactDom.createRoot(host).render(node);
+  const root = reactDom.createRoot(host);
+  root.render(node);
+  mounted = { root, host };
   return host;
 }
-const flush = () => new Promise((r) => setTimeout(r, 0));
+// Favourites arrive through a publish/subscribe effect, so the first paint is
+// pre-publish; settle a few macrotasks before asserting on the list.
+const flush = async () => { for (let i = 0; i < 4; i += 1) { await new Promise((r) => setTimeout(r, 0)); } };
 const click = (el) => el.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+/** React tracks an input's value, so assigning `.value` is ignored — go through
+ *  the native setter the way a real keystroke does. */
+const type = (input, value) => {
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(input, value);
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+};
 const q = (sel) => window.document.querySelector(sel);
 const qa = (sel) => [...window.document.querySelectorAll(sel)];
 const rowNames = () => qa(".wb-model-row .wb-model-name .wb-mono").map((n) => n.textContent);
@@ -218,8 +249,7 @@ function Harness({ favorites, onToggle, onClose = () => {} }) {
   await flush();
   const input = q(".wb-model-search-input");
 
-  input.value = "Llama";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  type(input, "Llama");
   await flush();
   assert(q(".wb-model-empty") !== null, "no match draws the empty state");
   assert(q(".wb-model-empty p").textContent.includes('"Llama"'), "the empty state echoes the query in the user's ORIGINAL casing");
@@ -242,8 +272,7 @@ function Harness({ favorites, onToggle, onClose = () => {} }) {
   render(React.createElement(Harness, { favorites: [], onToggle: () => {} }));
   await flush();
   const input = q(".wb-model-search-input");
-  input.value = "o4-mini";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  type(input, "o4-mini");
   await flush();
   assert(rowNames().join() === "o4-mini", "the list filtered down to the single match");
   assert(q(".wb-model-detail .wb-detail-head .wb-mono").textContent === "claude-sonnet-4.5", "the filtered-out model stays SELECTED and its detail panel is unchanged");
