@@ -184,10 +184,19 @@ function buildRow(args: {
   const narrow = density === "narrow";
   const previous = index > 0 ? items[index - 1] : undefined;
   const sameSenderAsPrevious = Boolean(previous && (previous.from ?? null) === (item.from ?? null));
-  // With merging on, the whole leading run leaves as one message, so singling
-  // out the first row would be a lie about what happens next. Only with merging
-  // off is there a distinct "this one goes next".
-  const highlighted = index === 0 && !merge;
+  /*
+   * Who goes next.
+   *
+   * With merging OFF exactly one row leaves, so only the first is next. With it
+   * ON the whole LEADING RUN leaves together as one message — so every row in
+   * that run is next, and marking only the first understated it.
+   *
+   * Deliberately the run and not the whole queue: a row behind a different
+   * sender does NOT go with this turn, and badging it would promise a delivery
+   * that is not about to happen.
+   */
+  const inLeadingRun = index < run.length;
+  const highlighted = merge ? inLeadingRun : index === 0;
   const onRail = merge && run.length > 1 && index < run.length;
 
   return {
@@ -204,7 +213,7 @@ function buildRow(args: {
     // resize, the same rule that keeps 삭제 on the narrow row.
     showExpand: true,
     expandLabel: openRows.has(item.id) ? "접기" : "펼쳐서 전체 보기",
-    showNextBadge: index === 0 && density === "wide" && !merge,
+    showNextBadge: density === "wide" && (merge ? inLeadingRun : index === 0),
     showSendNowText: index === 0 && !narrow && !merge,
     showSendNowIcon: index === 0 && narrow,
     // Narrow drops reordering and editing entirely rather than shrinking five

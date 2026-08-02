@@ -30,6 +30,27 @@ export interface MentionTrigger {
 /** Most candidates shown at once; beyond this the list becomes a scan, not a pick. */
 export const MENTION_LIMIT = 6;
 
+/** Addresses the whole party at once. */
+export const EVERYONE = "everyone";
+
+/**
+ * The `@everyone` row.
+ *
+ * Like every other mention this writes text — it says "all of you" inside the
+ * message rather than triggering a broadcast, which is a different action with
+ * its own control. The subtitle says so, so the row cannot be mistaken for one.
+ */
+export const EVERYONE_CANDIDATE: MentionCandidate = {
+  name: EVERYONE,
+  color: "var(--text-1)",
+  status: "파티 전원",
+};
+
+/** Tooltip for a mention chip — `everyone` is a group, not a member. */
+export function mentionTitle(name: string): string {
+  return name === EVERYONE ? "파티 전원을 멘션" : `${name} 멤버를 멘션`;
+}
+
 /**
  * Finds an active mention immediately before the caret.
  *
@@ -56,10 +77,14 @@ export function detectMention(draft: string, caret: number): MentionTrigger | nu
  */
 export function mentionCandidates(members: readonly MentionCandidate[], exclude: string, query: string): MentionCandidate[] {
   const needle = query.trim().toLowerCase();
-  return members
-    .filter((member) => member.name !== exclude)
-    .filter((member) => (needle ? member.name.toLowerCase().includes(needle) : true))
-    .slice(0, MENTION_LIMIT);
+  const matches = (candidate: MentionCandidate) => (needle ? candidate.name.toLowerCase().includes(needle) : true);
+  const people = members.filter((member) => member.name !== exclude).filter(matches);
+  // `@everyone` leads: with several members it is usually what you mean when
+  // addressing the group, and it needs no scanning to find. It is only offered
+  // when there IS a group — with one other member it would just be their name
+  // spelled differently.
+  const everyone = members.length > 1 && matches(EVERYONE_CANDIDATE) ? [EVERYONE_CANDIDATE] : [];
+  return [...everyone, ...people].slice(0, MENTION_LIMIT);
 }
 
 /**

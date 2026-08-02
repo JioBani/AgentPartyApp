@@ -1109,14 +1109,32 @@ body.wb-resizing {
 
 /* Stop lives in the toolbar rather than the composer's Send slot: while a
    member works, that slot is how you add to its queue. Present only mid-turn. */
-.wb-stop-pill {
+/* Stop, beside the send control in the composer. Danger-toned because it ends
+   work in progress, but not a filled button: it sits next to the primary action
+   and must not compete with it for the eye. */
+.wb-composer-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 30px;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--bg-2);
   color: var(--danger);
-  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.wb-stop-pill:hover {
+
+.wb-composer-stop:hover {
   border-color: var(--danger-bd);
   background: var(--danger-dim);
-  color: var(--danger);
+}
+
+.wb-composer-stop.is-icon {
+  height: 26px;
+  padding: 0 var(--space-2);
 }
 
 .wb-pill .wb-mono {
@@ -2447,7 +2465,30 @@ body.wb-resizing {
   cursor: pointer;
 }
 .wb-queue-flat:hover { background: var(--bg-3); color: var(--text-0); }
+
+/* 모두 취소 is destructive, so it reads that way BEFORE it is pressed rather
+   than only on hover — the colour is the warning, not the hover state. */
+.wb-queue-flat.is-danger { color: var(--danger); }
 .wb-queue-flat.is-danger:hover { background: var(--danger-dim); color: var(--danger); }
+
+/* Armed: the next click really does discard everything, so it stops looking
+   like a link and starts looking like the action it is about to take. */
+.wb-queue-flat.is-danger.is-armed {
+  background: var(--danger);
+  color: var(--accent-fg);
+  font-weight: 700;
+}
+.wb-queue-flat.is-danger.is-armed:hover { background: var(--danger); color: var(--accent-fg); }
+
+.wb-queue-x.is-armed {
+  width: auto;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  background: var(--danger);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 700;
+}
 
 /* ---- merge row ---- */
 .wb-queue-merge {
@@ -2538,7 +2579,11 @@ body.wb-resizing {
 .wb-queue-row {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  /* Centred: a collapsed row is ONE line, and its number, sender chip, badge and
+     buttons all belong on that line's axis. Only an expanded row pins them to
+     the top, since there the body is what grows and the controls should stay
+     level with the first line rather than drift to the middle of a paragraph. */
+  align-items: center;
   gap: 9px;
   padding: 6px 7px 6px 8px;
   border: var(--border-width) dashed var(--border);
@@ -2550,6 +2595,46 @@ body.wb-resizing {
 .wb-queue-row.is-next {
   border-color: var(--member-wait-bd);
   background: color-mix(in srgb, var(--member) 7%, transparent);
+}
+
+/* Dropping ONTO a row folds the dragged message into it. Marked as a solid
+   accent target rather than a drop LINE: a line means "lands between these two",
+   which is the other half of the same gesture and must not look the same. */
+/* The carried row rides above everything while it is in hand, so it is never
+   slid under a neighbour that is stepping aside. */
+.wb-queue-row.is-dragging { z-index: 4; }
+
+.wb-queue-row.is-expanded { align-items: flex-start; }
+
+.wb-queue-row.is-merge-target {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.wb-queue-merge-hint {
+  position: absolute;
+  top: -9px;
+  /* LEFT, over the grip. The gesture starts there, so the answer to "what
+     happens if I let go" belongs where the hand already is — not at the far end
+     of the row where the eye has no reason to be. */
+  left: 6px;
+  /* Above the carried row and every row stepping aside, or the badge is covered
+     by the very motion it is explaining. */
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, .45);
 }
 
 /* Same 6px the panel used when the rows were its direct children — the wrapper
@@ -2565,8 +2650,8 @@ body.wb-resizing {
    drag to, so rows do not shift sideways as the queue drops to one item. */
 .wb-queue-grip {
   flex: none;
-  width: 14px;
-  height: 22px;
+  width: 18px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2575,7 +2660,7 @@ body.wb-resizing {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: grab;
   touch-action: none;
 }
@@ -2583,27 +2668,36 @@ body.wb-resizing {
 .wb-queue-grip:focus-visible { outline: var(--border-width) solid var(--member); outline-offset: 1px; }
 .wb-queue-grip.is-idle { cursor: default; }
 
+/* The carried row travels with the pointer. Deliberately no transition while it
+   is held: it has to track the hand exactly, not trail behind it. */
 .wb-queue-row.is-dragging {
-  opacity: 0.45;
+  z-index: 3;
   border-style: solid;
   border-color: var(--member-wait-bd);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  cursor: grabbing;
 }
 .wb-queue-row.is-dragging .wb-queue-grip { cursor: grabbing; }
 
-/* Drawn in the gap between rows rather than inside one: inside would read as a
-   border belonging to the row it sits on. */
-.wb-queue-row.is-drop-above::before,
-.wb-queue-row.is-drop-below::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--member);
+/* Released: it settles into the slot it was dropped on, and the reordered list
+   only takes over once that has landed — so it never snaps back on the way. */
+.wb-queue-row.is-landing {
+  transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 140ms ease;
+  box-shadow: none;
 }
-.wb-queue-row.is-drop-above::before { top: -4px; }
-.wb-queue-row.is-drop-below::after { bottom: -4px; }
+
+/* The other rows step aside to open the slot. This replaced a drop line: a gap
+   says the same thing in the language of the thing being moved — the list makes
+   room, instead of annotating itself with a marker. */
+.wb-queue-row.is-shifting {
+  transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-queue-row.is-shifting,
+  .wb-queue-row.is-landing { transition: none; }
+}
 
 /* Spans the run that leaves as ONE message: starts at the first row's midpoint
    and ends at the last row's, so it reads as a bracket rather than a border. */
@@ -2617,8 +2711,8 @@ body.wb-resizing {
 
 .wb-queue-n {
   flex: none;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2639,7 +2733,7 @@ body.wb-resizing {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 17px;
+  height: 18px;
   padding: 0 6px;
   border-radius: 4px;
   background: var(--bg-3);
@@ -2688,15 +2782,15 @@ body.wb-resizing {
    too, but a clipped line is not itself an invitation — the button is. */
 .wb-queue-expand {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: 5px;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 .wb-queue-expand:hover { background: var(--bg-3); color: var(--text-0); }
@@ -2706,7 +2800,8 @@ body.wb-resizing {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 17px;
+  margin-right: var(--space-1);
+  height: 18px;
   padding: 0 6px;
   border-radius: 4px;
   background: var(--member-wait-fill);
@@ -2733,15 +2828,16 @@ body.wb-resizing {
 
 .wb-queue-btn {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: 5px;
-  color: var(--text-3);
+  /* Was --text-3, which on these small glyphs read as disabled. */
+  color: var(--text-2);
   cursor: pointer;
 }
 .wb-queue-btn:hover { background: var(--bg-3); color: var(--text-0); }
@@ -2970,10 +3066,9 @@ body.wb-resizing {
 
 /* `@` member popover — anchored above the composer, like the `/` palette. */
 .wb-mention-pop {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 40;
+  /* Positioned against the CARET (in a portal on the body), not the composer. */
+  position: fixed;
+  z-index: 1400;
   width: 272px;
   max-height: 236px;
   overflow-y: auto;
@@ -2988,10 +3083,50 @@ body.wb-resizing {
 }
 
 .wb-mention-pop.is-compact {
-  width: auto;
-  right: 0;
+  width: 232px;
   max-height: 180px;
   padding: 4px;
+}
+
+.wb-mention-everyone-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wb-mention-row.is-everyone .wb-mention-name {
+  color: var(--text-0);
+}
+
+/* A mention, in the composer and in a sent message. Same shape in both, so the
+   message reads as what was typed. */
+.wb-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 var(--space-2) 0 6px;
+  margin: 0 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--member, var(--text-2)) 13%, transparent);
+  box-shadow: inset 0 0 0 var(--border-width) color-mix(in srgb, var(--member, var(--text-2)) 34%, transparent);
+  color: var(--member, var(--text-1));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  vertical-align: -3px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.wb-mention-chip-at {
+  opacity: .6;
+  font-weight: 700;
+}
+
+/* In the transcript the chips are read-only. */
+.wb-ref-chip.is-static {
+  cursor: default;
+  vertical-align: -3px;
 }
 
 .wb-mention-head {
@@ -4505,41 +4640,83 @@ body.wb-resizing {
   padding: var(--space-6);
 }
 
-.wb-wizard-steps {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-6) 0;
+/* The step rail is gone with the steps themselves — creating a member is one
+   form now (see MemberWizard). */
+.wb-wizard-body { min-height: 232px; overflow-y: auto; }
+.wb-wizard-pane { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* Each field group. Spaced apart rather than boxed: the form is short enough
+   that lines would add weight without adding clarity. */
+.wb-wizard-section { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.wb-wizard-optional {
+  margin-left: var(--space-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-3);
 }
 
-.wb-wizard-step {
-  display: inline-flex;
+/* The runtime summary — what opens the catalog. Reads as one line of fact
+   (harness · model · reasoning) with the way to change it on the right. */
+.wb-wizard-runtime {
+  display: flex;
   align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+  text-align: left;
+}
+
+.wb-wizard-runtime:hover { border-color: var(--border-strong); background: var(--bg-3); }
+
+.wb-wizard-runtime-main {
+  display: flex;
+  align-items: baseline;
   gap: var(--space-2);
-  font-size: 11.5px;
-  color: var(--text-3);
+  min-width: 0;
   flex: 1;
 }
 
-.wb-wizard-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  background: var(--bg-3);
-  border: var(--border-width) solid var(--border);
+.wb-wizard-runtime-harness {
+  flex: none;
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
-.wb-wizard-step.is-active { color: var(--text-0); font-weight: 600; }
-.wb-wizard-step.is-active .wb-wizard-step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
-.wb-wizard-step.is-done .wb-wizard-step-num { background: var(--live); border-color: var(--live); color: #fff; }
+.wb-wizard-runtime-model {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-.wb-wizard-body { min-height: 232px; }
-.wb-wizard-pane { display: flex; flex-direction: column; gap: var(--space-3); }
+/* Gives way first when the dialog narrows: the model name matters more. */
+.wb-wizard-runtime-sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-wizard-runtime-change {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
 
 .wb-wizard-input {
   width: 100%;
@@ -6381,4 +6558,34 @@ body.wb-resizing {
 
 .wb-attachment-copy:hover {
   background: rgba(0, 0, 0, 0.8);
+}
+
+
+/* Dragged out of the queue and over the conversation: dropping there hands the
+   message to the member at once. Drawn in the conversation, where it would go —
+   an affordance shown back in the list would be pointing at the wrong place. */
+.wb-queue-throw {
+  position: fixed;
+  z-index: 60;
+  border-radius: var(--radius-panel);
+  background: var(--accent-dim);
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wb-queue-throw-card {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, .5);
 }

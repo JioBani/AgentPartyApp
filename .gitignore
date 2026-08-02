@@ -28,4 +28,7 @@ release-out/
 collision-probe.run.mjs
 # Runtime logs an app run leaves in the repo root
 logs/
+
+# Throwaway checkouts the QA scripts provision for themselves.
 .qa-showcase/
+.qa-collision-checkout/

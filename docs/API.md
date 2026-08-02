@@ -860,6 +860,7 @@ this same controller method.
 | `edit` | `itemId` | Removes that row and returns its `text` for the composer |
 | `move` | `itemId`, `toIndex` (0-based) | Puts that row at an absolute position |
 | `mergeUp` | `itemId` | Folds that row into the one above it |
+| `mergeInto` | `itemId`, `targetId` | Folds `itemId` into `targetId` wherever the two sit — the drop half of dragging one queued message onto another. The dragged text lands AFTER the target's, and the target keeps its place, because merging changes what a message says rather than when it is sent. Deliberately one operation: as a move followed by a merge, a failure in between would leave the queue reordered but unmerged |
 | `clear` | — | Empties the queue |
 | `preference` | `merge` and/or `collapsed` | Persists a per-member preference |
 

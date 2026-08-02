@@ -20,6 +20,7 @@ import {
   clearQueue,
   describeQueueFailure,
   enqueue,
+  mergeInto,
   mergeUp,
   moveItemTo,
   moveItemToFront,
@@ -682,6 +683,8 @@ export class PartyApplicationService {
         return this.moveQueuedMessage(name, command.itemId, command.toIndex, partyId);
       case "mergeUp":
         return this.mergeQueuedMessageUp(name, command.itemId, partyId);
+      case "mergeInto":
+        return this.mergeQueuedMessageInto(name, command.itemId, command.targetId, partyId);
     }
   }
 
@@ -872,6 +875,20 @@ export class PartyApplicationService {
   mergeQueuedMessageUp(name: string, itemId: string, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
     const merged = mergeUp(this.queueOf(member), itemId);
+    if (!merged.ok) {
+      throw new Error(describeQueueFailure(merged.reason));
+    }
+    const written = this.writeQueue(member.name, this.partyIdOf(member), merged.value, "queued messages merged");
+    return { ...this.result(`Merged two queued messages for '${member.name}'.`, written.state, written.member), queue: merged.value };
+  }
+
+  /**
+   * Folds one queued message into another — dropping a message onto a message.
+   * The dragged one lands after the target's text; same sender only.
+   */
+  mergeQueuedMessageInto(name: string, itemId: string, targetId: string, partyId?: string): PartyCommandResult {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const merged = mergeInto(this.queueOf(member), itemId, targetId);
     if (!merged.ok) {
       throw new Error(describeQueueFailure(merged.reason));
     }

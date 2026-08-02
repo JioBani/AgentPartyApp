@@ -22,6 +22,7 @@ import {
 import { fileReference, type FileReference, type ReferenceKind } from "../../shared/fileReferences";
 import {
   clampOutOfChip,
+  createMentionChip,
   draftReferences,
   endOfDraft,
   insertChipAt,
@@ -133,6 +134,8 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [mentionIndex, setMentionIndex] = useState(0);
   /** The caret's own text node and offset — a mention never spans nodes. */
   const [caretText, setCaretText] = useState("");
+  /** Viewport position of the caret, so the popover can sit against it. */
+  const [caretAnchor, setCaretAnchor] = useState<{ left: number; top: number } | null>(null);
   const mention = useMemo(() => detectMention(caretText, caretText.length), [caretText]);
   const mentionMatches = useMemo(
     () => (mention ? mentionCandidates(partyMembers, view.name, mention.query) : []),
@@ -161,6 +164,35 @@ export function Composer({ view, density, actions }: ComposerProps) {
   function syncCaret() {
     const point = caretPoint();
     setCaretText(point ? (point.node.nodeValue || "").slice(0, point.offset) : "");
+    setCaretAnchor(caretRect());
+  }
+
+  /**
+   * Where the caret is on screen, so the popover can sit against it the way an
+   * editor's completion does. Anchored to the corner of the box instead, it
+   * points at nothing once the sentence is more than a few words long.
+   */
+  function caretRect(): { left: number; top: number } | null {
+    const root = editorRef.current;
+    const selection = root?.ownerDocument.defaultView?.getSelection();
+    if (!root || !selection || selection.rangeCount === 0 || !root.contains(selection.getRangeAt(0).startContainer)) {
+      return null;
+    }
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    // A collapsed range has no rect of its own in some positions; a zero-width
+    // probe character gives one, and is removed immediately.
+    let rect = range.getClientRects()[0];
+    if (!rect) {
+      const probe = root.ownerDocument.createElement("span");
+      probe.textContent = "​";
+      range.insertNode(probe);
+      rect = probe.getBoundingClientRect();
+      const parent = probe.parentNode;
+      probe.remove();
+      parent?.normalize();
+    }
+    return rect ? { left: rect.left, top: rect.top } : null;
   }
 
   /** The editor changed: its serialization becomes the draft. */
@@ -181,16 +213,27 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (!mention || !point || !root) {
       return;
     }
-    // Replace only the `@query` under the caret, inside its own text node, so
-    // the rest of the sentence (and every chip in it) is left alone.
-    const before = (point.node.nodeValue || "").slice(0, point.offset);
-    const start = before.length - mention.query.length - 1;
-    const inserted = `@${member.name} `;
-    point.node.nodeValue = before.slice(0, start) + inserted + (point.node.nodeValue || "").slice(point.offset);
-    const range = root.ownerDocument.createRange();
-    range.setStart(point.node, start + inserted.length);
-    range.collapse(true);
-    setCaret(root, range);
+    // Replace only the `@query` under the caret — the rest of the sentence, and
+    // every chip in it, is left alone. The `@name` becomes a chip so a mention
+    // reads the same here as it will in the sent message.
+    const doc = root.ownerDocument;
+    const start = point.offset - mention.query.length - 1;
+    const range = doc.createRange();
+    range.setStart(point.node, Math.max(0, start));
+    range.setEnd(point.node, point.offset);
+    range.deleteContents();
+
+    const chip = createMentionChip(doc, member.name, member.color);
+    const trailing = doc.createTextNode(" ");
+    const fragment = doc.createDocumentFragment();
+    fragment.appendChild(chip);
+    fragment.appendChild(trailing);
+    range.insertNode(fragment);
+
+    const after = doc.createRange();
+    after.setStart(trailing, trailing.length);
+    after.collapse(true);
+    setCaret(root, after);
     setMentionDismissed(true);
     syncDraft();
   }
@@ -266,7 +309,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
       return;
     }
     renderedRef.current = draft;
-    rehydrateDraft(root, draft, knownRefs.current);
+    rehydrateDraft(root, draft, knownRefs.current, partyMembers);
     if (document.activeElement === root) {
       setCaret(root, endOfDraft(root));
     }
@@ -552,6 +595,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
       onHover={setMentionIndex}
       onSelect={applyMentionChoice}
       compact={density === "narrow"}
+      anchor={caretAnchor}
     />
   ) : null;
 
@@ -580,14 +624,21 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   const stopLabel = forceStop ? "강제 종료" : "Stop";
   const onStop = () => (forceStop ? actions.forceStop(view.name) : actions.interrupt(view.name));
-  // While the member works this button ADDS TO ITS QUEUE — it no longer turns
-  // into Stop. Stop moved to the panel toolbar, because the one control that
-  // puts a message in the queue has to stay available exactly when the queue is
-  // in use; taking the slot over left no way to queue from the UI at all.
-  // A turn that will never complete is the exception: once Stop has gone
-  // unanswered that long, the force stop surfaces here rather than staying
-  // buried, since at that point queueing behind it is pointless.
   const queueing = view.busy;
+  /**
+   * Stop sits BESIDE the send control, not in it.
+   *
+   * It used to take the slot over while a member worked, which removed the only
+   * way to queue a message from the UI — exactly when the queue is what you
+   * want. So it moved to the panel toolbar, far from the hand. It belongs here,
+   * where the typing happens; it just must not be the same button. Two
+   * controls, side by side: one adds to the queue, one stops the turn.
+   */
+  const stopBeside = (view.busy || interrupting) && !forceStop ? (
+    <button type="button" className="wb-composer-stop" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+      <CircleStop size={14} /> {interrupting ? "중단 중" : "Stop"}
+    </button>
+  ) : null;
   const sendTitle = queueing ? "대기열에 추가" : "Send";
   const iconOnly = forceStop ? (
     <button type="button" className="wb-send is-stop" title={stopLabel} onClick={onStop}><CircleStop size={15} /></button>
@@ -659,6 +710,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
         <div className="wb-composer-bar">
           {editor("wb-composer-input", false, queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`)}
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
+          {stopBeside && (
+            <button type="button" className="wb-composer-stop is-icon" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+              <CircleStop size={14} />
+            </button>
+          )}
           {iconOnly}
           {permission}
         </div>
@@ -693,6 +749,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
             <button type="button" className="wb-icon-btn" title="멤버 멘션" aria-label="멤버 멘션" onClick={insertMentionTrigger}><AtSign size={14} /></button>
           </div>
           <div className="wb-composer-actions">
+            {stopBeside}
             {labeled}
             {permission}
           </div>

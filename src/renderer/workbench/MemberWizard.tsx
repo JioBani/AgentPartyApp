@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Lightbulb, RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
+import { RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
-import { VisionTag } from "./VisionTag";
-import { modelView, PROVIDER_DOTS, PROVIDER_LABELS } from "./modelCatalog";
-import { CostMeter, groupByProvider, PerfMeter, RouteEntry } from "./modelMeters";
+import { modelView } from "./modelCatalog";
+import type { RouteEntry } from "./modelMeters";
 import type { CreateMemberInput } from "./PartySidebar";
+import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { PermissionModeSetting } from "../../shared/types";
@@ -42,7 +42,6 @@ const HARNESSES: HarnessChoice[] = [
   { id: "codex", label: "Codex", status: "available", icon: <TerminalSquare size={16} />, hint: "Codex CLI exec 기반 로컬 하네스" },
 ];
 
-const STEPS = ["이름", "하네스", "모델", "추론", "권한", "역할"] as const;
 const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const CURSOR_HARNESS: HarnessChoice = {
   id: "cursor",
@@ -54,14 +53,24 @@ const CURSOR_HARNESS: HarnessChoice = {
 const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS];
 
 /**
- * Step wizard for creating a party member (name → harness → model → reasoning →
- * role/confirm), modelled after VS Code / Claude Code desktop. Reuses the
- * RuntimeModal model + reasoning controls so a member is configured exactly the
- * way its runtime is later tuned.
+ * Creating a party member: one form, not a sequence of steps.
+ *
+ * It used to be six steps (name → harness → model → reasoning → permission →
+ * role). Steps are worth their cost when a later choice depends on an earlier
+ * one, and here almost nothing does: every field is seeded from the saved
+ * defaults, so the wizard's own job was mostly to be clicked through. The three
+ * that ARE entangled — harness, model and reasoning — are now made together in
+ * the model catalog, the same screen used to retune a member afterwards, so
+ * there is no second arrangement of the same controls to keep in agreement.
+ *
+ * What remains fits one screen: what to call it, optionally what it is for, the
+ * runtime, and the permission it starts with. All of it visible at once, which
+ * is also what makes the defaults reviewable instead of merely accepted.
  */
 export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onCancel, onCreate }: MemberWizardProps) {
-  const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  /** The catalog, opened to choose harness + model + reasoning together. */
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
   const [role, setRole] = useState("");
 
@@ -70,7 +79,6 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     () => entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness),
     [entries, harness],
   );
-  const grouped = useMemo(() => groupByProvider(harnessEntries), [harnessEntries]);
 
   // Seed the model from the default profile so "next, next, next" works.
   const [selectedKey, setSelectedKey] = useState(() => {
@@ -146,42 +154,52 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     }
   }, [executionHarness, harnessDefaults]);
 
-  const stepValid = [
-    NAME_PATTERN.test(name.trim()),
-    selectedHarness?.status === "available",
-    Boolean(selected),
-    true,
-    true,
-    role.trim().length > 0,
-  ];
-  const canNext = stepValid[step];
-  const isLast = step === STEPS.length - 1;
+  // The NAME is the only requirement. Everything else is either seeded from the
+  // saved defaults or genuinely optional, so a member can be created the moment
+  // it has something to be called.
+  const canCreate = NAME_PATTERN.test(name.trim());
 
-  function next() {
-    if (!canNext) return;
-    if (isLast) {
-      onCreate({
-        name: name.trim(),
-        requirement: role.trim(),
-        runtime: harness,
-        model: selected?.route.model,
-        effort: effortCap?.supported ? effort : undefined,
-        serviceTier: serviceTierCap?.supported ? serviceTier : undefined,
-        reasoning: thinkingCap?.supported ? thinkingMode : undefined,
-        reasoningBudget: showBudget ? budget : undefined,
-        permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,
-        codexPolicy: executionHarness === "codex" ? codexPolicy : undefined,
-        cursorPolicy: executionHarness === "cursor" ? cursorPolicy : undefined,
-      });
+  function create() {
+    if (!canCreate) {
       return;
     }
-    setStep((value) => Math.min(STEPS.length - 1, value + 1));
+    onCreate({
+      name: name.trim(),
+      requirement: role.trim(),
+      runtime: harness,
+      model: selected?.route.model,
+      effort: effortCap?.supported ? effort : undefined,
+      serviceTier: serviceTierCap?.supported ? serviceTier : undefined,
+      reasoning: thinkingCap?.supported ? thinkingMode : undefined,
+      reasoningBudget: showBudget ? budget : undefined,
+      permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,
+      codexPolicy: executionHarness === "codex" ? codexPolicy : undefined,
+      cursorPolicy: executionHarness === "cursor" ? cursorPolicy : undefined,
+    });
+  }
+
+  /** Takes the whole runtime choice back from the catalog in one go. */
+  function applyRuntime(next: ModelCatalogValue) {
+    if (next.harness) {
+      setHarness(next.harness);
+    }
+    if (next.route) {
+      setSelectedKey(routeKey(next.route));
+    }
+    // `undefined` means the model does not support that axis — store the empty
+    // string so the summary line says so rather than showing a stale value from
+    // the previous model.
+    setEffort(next.effort || "");
+    setServiceTier(next.serviceTier || "");
+    setThinkingMode(next.thinkingMode || "");
+    setBudget(next.thinkingBudget ?? 0);
+    setPickerOpen(false);
   }
 
   const selectedMeta = selected?.meta;
 
   // The scrim does not dismiss: a stray click outside would throw away a
-  // half-filled wizard. Closing is explicit (취소 / ✕) — the same contract as
+  // half-filled form. Closing is explicit (취소 / ✕) — the same contract as
   // every other modal in the app.
   return (
     <div className="wb-modal-scrim">
@@ -194,59 +212,53 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
           <button type="button" className="wb-icon-btn" title="취소" onClick={onCancel}><X size={16} /></button>
         </header>
 
-        <div className="wb-wizard-steps">
-          {STEPS.map((label, index) => (
-            <div key={label} className={"wb-wizard-step" + (index === step ? " is-active" : "") + (index < step ? " is-done" : "")}>
-              <span className="wb-wizard-step-num">{index < step ? <Check size={12} /> : index + 1}</span>
-              <span className="wb-wizard-step-label">{label}</span>
-            </div>
-          ))}
-        </div>
-
         <div className="wb-modal-body wb-wizard-body">
-          {step === 0 && (
-            <div className="wb-wizard-pane">
+          <div className="wb-wizard-pane">
+            <section className="wb-wizard-section">
               <div className="wb-modal-label">멤버 이름</div>
               <input
                 className="wb-wizard-input"
                 autoFocus
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Enter" && canNext) next(); }}
+                onKeyDown={(event) => { if (event.key === "Enter" && canCreate) create(); }}
                 placeholder="예: reviewer"
               />
               <p className="wb-wizard-hint">영문으로 시작, 영문·숫자·_·- 만 사용. 파티 안에서 이 이름으로 메시지를 받습니다.</p>
               {name.trim() && !NAME_PATTERN.test(name.trim()) && <p className="wb-wizard-error">이름 형식이 올바르지 않습니다.</p>}
-            </div>
-          )}
+            </section>
 
-          {step === 1 && (
-            <div className="wb-wizard-pane">
-              <div className="wb-modal-label">하네스</div>
-              <div className="wb-wizard-cards">
-                {ALL_HARNESSES.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={"wb-wizard-card" + (harness === item.id ? " is-selected" : "") + (item.status === "planned" ? " is-disabled" : "")}
-                    onClick={() => item.status === "available" && setHarness(item.id)}
-                    disabled={item.status === "planned"}
-                  >
-                    <span className="wb-wizard-card-icon">{item.icon}</span>
-                    <span className="wb-wizard-card-body">
-                      <span className="wb-wizard-card-title">{item.label}{item.status === "planned" && <span className="wb-chip wb-chip-muted">준비 중</span>}</span>
-                      <span className="wb-wizard-card-hint">{item.hint}</span>
-                    </span>
-                    {harness === item.id && item.status === "available" && <Check size={15} className="wb-wizard-card-check" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+            <section className="wb-wizard-section">
+              <div className="wb-modal-label">설명 <span className="wb-wizard-optional">선택</span></div>
+              <textarea
+                className="wb-wizard-input wb-wizard-textarea"
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+                placeholder="예: 백엔드 API를 리뷰하고 이슈를 보고하는 담당자"
+                rows={2}
+              />
+              <p className="wb-wizard-hint">멤버가 자기 역할로 전달받습니다. 비워 두면 역할이 지정되지 않았다고 알려줍니다.</p>
+            </section>
 
-          {step === 2 && (
-            <div className="wb-wizard-pane wb-wizard-models">
-              <div className="wb-modal-label">모델 <span className="wb-mono">{harnessEntries.length} catalogued</span></div>
+            <section className="wb-wizard-section">
+              <div className="wb-modal-label">실행 구성</div>
+              {/* Harness, model and reasoning are one decision, so they are made
+                  in the catalog — the same screen used to retune a member later,
+                  rather than a second arrangement of the same controls. */}
+              <button type="button" className="wb-wizard-runtime" onClick={() => setPickerOpen(true)}>
+                <span className="wb-wizard-runtime-main">
+                  <span className="wb-wizard-runtime-harness">{selectedHarness?.label || harness}</span>
+                  <span className="wb-mono wb-wizard-runtime-model">{selected?.route.label || selectedMeta?.name || "모델 선택"}</span>
+                </span>
+                <span className="wb-mono wb-wizard-runtime-sub">
+                  {reasoningSummary(effortCap?.supported ? effort : "", thinkingCap?.supported ? thinkingMode : "", showBudget ? budget : undefined)}
+                </span>
+                <span className="wb-wizard-runtime-change">변경</span>
+              </button>
+              {/* Kept out of the catalog: discovery state belongs to the list the
+                  wizard is seeding from, and staying silent about a half-loaded
+                  Codex list would let someone pick from a fallback believing it
+                  to be their account's models. */}
               {harness === "codex" && codexModels?.status === "pending" && (
                 <p className="wb-wizard-hint">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 목록이 갱신됩니다.</p>
               )}
@@ -260,122 +272,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   )}
                 </p>
               )}
-              <div className="wb-wizard-model-list">
-                {grouped.map((group) => (
-                  <div className="wb-model-group" key={group.provider}>
-                    <div className="wb-model-provider">
-                      <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider] }} />
-                      {PROVIDER_LABELS[group.provider]}
-                      <span className="wb-mono">{group.entries.length}</span>
-                    </div>
-                    {group.entries.map((entry) => {
-                      const key = routeKey(entry.route);
-                      return (
-                        <button
-                          type="button"
-                          key={key}
-                          className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
-                          disabled={entry.route.enabled === false}
-                          title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
-                          onClick={() => setSelectedKey(key)}
-                        >
-                          <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span>{entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}</span>
-                          <PerfMeter value={entry.meta.perf} />
-                          <CostMeter value={entry.meta.cost} />
-                          {key === selectedKey && <Check size={14} className="wb-model-check" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-              {selectedMeta && (
-                <div className="wb-wizard-model-detail">
-                  <div className="wb-detail-head">
-                    <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[selectedMeta.provider] }} />
-                    <strong className="wb-mono">{selectedMeta.name}</strong>
-                    <span className="wb-chip">{PROVIDER_LABELS[selectedMeta.provider]}</span>
-                  </div>
-                  <div className="wb-stat-cards">
-                    <div className="wb-stat-card">
-                      <div className="wb-modal-label">Performance</div>
-                      <div className="wb-stat-row"><PerfMeter value={selectedMeta.perf} /><strong>{selectedMeta.perf != null ? `${selectedMeta.perf} / 5` : "—"}</strong></div>
-                    </div>
-                    <div className="wb-stat-card">
-                      <div className="wb-modal-label">Cost · per 1M</div>
-                      <div className="wb-stat-row wb-mono wb-cost-prices">
-                        {selectedMeta.inPerM ? <span><b>{selectedMeta.inPerM}</b> in</span> : null}
-                        {selectedMeta.outPerM ? <span><b>{selectedMeta.outPerM}</b> out</span> : null}
-                        {selectedMeta.ioPerM ? <span><b>{selectedMeta.ioPerM}</b> io</span> : null}
-                      </div>
-                      <CostMeter value={selectedMeta.cost} />
-                    </div>
-                    <div className="wb-stat-card">
-                      <div className="wb-modal-label">Context</div>
-                      <div className="wb-stat-row wb-mono"><strong>{selectedMeta.context || "—"}</strong></div>
-                    </div>
-                    <div className="wb-stat-card">
-                      <div className="wb-modal-label">이미지 입력</div>
-                      <div className="wb-stat-row wb-mono"><VisionTag image={capabilities.vision?.image} /></div>
-                    </div>
-                  </div>
-                  {selected?.route.modelProvider === "openrouter" && (
-                    <p className="wb-wizard-hint wb-codex-or-note">
-                      이 모델은 Codex 하네스에서 OpenRouter로 라우팅됩니다. Codex 구독이 아니라 <strong>OpenRouter API 키</strong>로 과금되며, 키가 설정돼 있어야 시작됩니다.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            </section>
 
-          {step === 3 && (
-            <div className="wb-wizard-pane">
-              <div className="wb-modal-label">추론 설정 <span className="wb-mono">{selectedMeta?.name}</span></div>
-              {effortCap?.supported && effortCap.options.length > 0 && (
-                <div className="wb-detail-section">
-                  <div className="wb-detail-section-head"><strong>Effort</strong> <span>추론 강도</span></div>
-                  <div className="wb-segmented">
-                    {effortCap.options.map((option) => (
-                      <button type="button" key={option.id} className={"wb-segment" + (option.id === effort ? " is-active" : "")} onClick={() => setEffort(option.id)}>{option.label}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {thinkingCap?.supported && thinkingCap.modes && thinkingCap.modes.length > 0 && (
-                <div className="wb-detail-section">
-                  <div className="wb-detail-section-head"><strong><Lightbulb size={13} /> Thinking</strong> <span>추론 모드</span></div>
-                  <div className="wb-segmented">
-                    {thinkingCap.modes.map((mode) => (
-                      <button type="button" key={mode.id} className={"wb-segment" + (mode.id === thinkingMode ? " is-active" : "")} onClick={() => setThinkingMode(mode.id)}>{mode.label}</button>
-                    ))}
-                  </div>
-                  {showBudget && thinkingCap.budget && (
-                    <label className="wb-budget">
-                      <span className="wb-budget-head">Thinking budget <span className="wb-mono">{budget.toLocaleString()} tok</span></span>
-                      <input type="range" min={thinkingCap.budget.min ?? 1024} max={thinkingCap.budget.max ?? 81920} step={1024} value={budget} onChange={(event) => setBudget(Number(event.target.value))} />
-                    </label>
-                  )}
-                </div>
-              )}
-              {serviceTierCap?.supported && serviceTierCap.options.length > 0 && (
-                <div className="wb-detail-section">
-                  <div className="wb-detail-section-head"><strong>Service mode</strong> <span>Cursor Grok serving speed</span></div>
-                  <div className="wb-segmented">
-                    {serviceTierCap.options.map((option) => (
-                      <button type="button" key={option.id} className={"wb-segment" + (option.id === serviceTier ? " is-active" : "")} onClick={() => setServiceTier(option.id)}>{option.label}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {!effortCap?.supported && !thinkingCap?.supported && (
-                <p className="wb-wizard-hint">이 모델은 노출된 추론 제어가 없습니다. 다음 단계로 진행하세요.</p>
-              )}
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="wb-wizard-pane">
+            <section className="wb-wizard-section">
               <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
               {executionHarness === "codex" ? (
                 <>
@@ -399,44 +298,39 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   <p className="wb-wizard-hint">새 멤버가 첫 작업부터 사용할 Claude Code 권한 모드입니다.</p>
                 </>
               )}
-            </div>
-          )}
-
-          {step === 5 && (
-            <div className="wb-wizard-pane">
-              <div className="wb-modal-label">역할</div>
-              <textarea
-                className="wb-wizard-input wb-wizard-textarea"
-                autoFocus
-                value={role}
-                onChange={(event) => setRole(event.target.value)}
-                placeholder="예: 백엔드 API를 리뷰하고 이슈를 보고하는 담당자"
-                rows={3}
-              />
-              <div className="wb-wizard-summary">
-                <div className="wb-modal-label">확인</div>
-                <dl className="wb-wizard-review">
-                  <div><dt>이름</dt><dd className="wb-mono">{name.trim() || "—"}</dd></div>
-                  <div><dt>하네스</dt><dd>{selectedHarness?.label}</dd></div>
-                  <div><dt>모델</dt><dd className="wb-mono">{selected?.route.label || selectedMeta?.name || "—"}</dd></div>
-                  <div><dt>추론</dt><dd className="wb-mono">{reasoningSummary(effortCap?.supported ? effort : "", thinkingCap?.supported ? thinkingMode : "", showBudget ? budget : undefined)}</dd></div>
-                  <div><dt>권한</dt><dd className="wb-mono">{executionHarness === "codex" ? `${codexPolicy.sandbox} / ${codexPolicy.approval}${codexPolicy.guardian ? " / guardian" : ""}` : executionHarness === "cursor" ? `${cursorPolicy.mode} / ${cursorPolicy.approval}` : permissionMode}</dd></div>
-                </dl>
-              </div>
-            </div>
-          )}
+            </section>
+          </div>
         </div>
 
         <footer className="wb-modal-foot wb-wizard-foot">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => (step === 0 ? onCancel() : setStep((value) => value - 1))}>
-            {step === 0 ? "취소" : <><ArrowLeft size={14} /> 이전</>}
-          </button>
+          <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}>취소</button>
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!canNext} onClick={next}>
-              {isLast ? <><UserPlus size={14} /> 멤버 생성</> : <>다음 <ArrowRight size={14} /></>}
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
+              <UserPlus size={14} /> 멤버 생성
             </button>
           </div>
         </footer>
+
+        {pickerOpen && (
+          <ModelCatalogModal
+            title="실행 구성"
+            routes={routes}
+            value={{
+              model: selected?.route.model || "",
+              harness,
+              effort,
+              serviceTier,
+              thinkingMode,
+              thinkingBudget: budget,
+            }}
+            config={{ harness: true, effort: true, serviceTier: true, thinking: true }}
+            currentHarness={harness}
+            applyLabel="선택"
+            dim
+            onApply={applyRuntime}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
       </div>
     </div>
   );
