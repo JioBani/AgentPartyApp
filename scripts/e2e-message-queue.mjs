@@ -90,8 +90,11 @@ async function main() {
     await listRendersFaithfully(cdp);
     await mergeRailSpansOnlyTheLeadingRun(cdp);
     await mergeOffChangesWhatLeaves(cdp);
+    await rowsStayOneLineUntilExpanded(cdp);
+    await dragReordersTheQueue(cdp);
     await mutationsWork();
     await failuresAreVisible(cdp);
+    await sendNowStopsInsteadOfStacking(cdp);
     await keyboardShortcuts(cdp);
     await narrowPanelCollapses(cdp);
     await originSurvivesDelivery(cdp);
@@ -188,7 +191,9 @@ async function listRendersFaithfully(cdp) {
   assert(m.title === "대기열 3", `header reads "대기열 3" (got "${m.title}")`);
   assert(/합쳐서 한 번에 전송됩니다$/.test(m.note), `header states when it goes out (got "${m.note}")`);
   assert(m.mergeNote === "보낸 사람이 같은 것끼리만 합쳐집니다", `mixed senders change the merge note (got "${m.mergeNote}")`);
-  assert(m.sendAll === "합쳐서 지금 보내기 · 2건", `the send button names the RUN length, not the queue length (got "${m.sendAll}")`);
+  // The member is working here, so sending sooner means stopping it — the label
+  // has to say that rather than promise a delivery it cannot make.
+  assert(m.sendAll === "중단하고 합쳐서 보내기 · 2건", `the send button names the RUN length and the stop (got "${m.sendAll}")`);
   assert(m.ordinal.w === 17 && m.ordinal.h === 17, `ordinal chip is 17×17 (got ${m.ordinal.w}×${m.ordinal.h})`);
   assert(m.switch.w === 26 && m.switch.h === 15, `merge switch is 26×15 (got ${m.switch.w}×${m.switch.h})`);
   assert(m.knob.w === 11 && m.knob.h === 11, `switch knob is 11×11 (got ${m.knob.w}×${m.knob.h})`);
@@ -242,7 +247,7 @@ async function mergeOffChangesWhatLeaves(cdp) {
   })()`);
   assert(m.switchOn === false, "the switch reads off");
   assert(m.mergeNote === "한 건씩 순서대로 보냅니다", `merge note switches to one-at-a-time (got "${m.mergeNote}")`);
-  assert(m.sendAll === "지금 보내기", `the button drops the count when nothing merges (got "${m.sendAll}")`);
+  assert(m.sendAll === "중단하고 보내기", `the button drops the count when nothing merges (got "${m.sendAll}")`);
   assert(m.nextBadges === 1 && m.highlighted[0] === true && m.highlighted[1] === false, "only row 1 is marked 다음 차례");
   assert(m.rails === 0, "no rail — nothing is being merged");
 
@@ -252,14 +257,173 @@ async function mergeOffChangesWhatLeaves(cdp) {
   await delay(250);
 }
 
+/**
+ * A row is one line until asked otherwise. Six full messages would push the
+ * conversation off the panel, so the full body is a deliberate ask — and the
+ * ask has to be a visible control, not a clipped line the user is expected to
+ * guess is clickable.
+ */
+async function rowsStayOneLineUntilExpanded(cdp) {
+  console.log("\n한 줄로 접혀 있다가 확대 버튼으로 펼쳐진다:");
+  const before = await cdp.eval(`(() => {
+    const row = document.querySelector(".wb-queue-row");
+    const text = row.querySelector(".wb-queue-text");
+    const button = row.querySelector(".wb-queue-expand");
+    const cs = getComputedStyle(text);
+    return {
+      hasButton: Boolean(button),
+      expanded: button?.getAttribute("aria-expanded"),
+      whiteSpace: cs.whiteSpace,
+      clipped: cs.textOverflow,
+      lines: Math.round(text.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
+      buttons: document.querySelectorAll(".wb-queue-row .wb-queue-expand").length,
+      rows: document.querySelectorAll(".wb-queue-row").length,
+    };
+  })()`);
+  assert(before.hasButton, "the row carries an explicit expand control");
+  assert(before.buttons === before.rows, "every row has one — not just the long ones");
+  assert(before.whiteSpace === "nowrap" && before.clipped === "ellipsis", `collapsed rows clip to one line (got ${before.whiteSpace}/${before.clipped})`);
+  assert(before.lines === 1, `and really are one line tall (got ${before.lines})`);
+  assert(before.expanded === "false", "the control reports its state to a screen reader");
+
+  const clicked = await post("/api/capture", { path: path.join(shotDir, "08-row-expanded.png"), click: ".wb-queue-row .wb-queue-expand" });
+  // The capture route THROWS when a click selector matches nothing, so an
+  // applied flag here means the control was found and pressed — not that the
+  // request merely returned.
+  assert(clicked.applied?.clicked === true, "the expand control was really clicked");
+
+  const after = await cdp.eval(`(() => {
+    const row = document.querySelector(".wb-queue-row");
+    const text = row.querySelector(".wb-queue-text");
+    const cs = getComputedStyle(text);
+    return {
+      whiteSpace: cs.whiteSpace,
+      expanded: row.querySelector(".wb-queue-expand")?.getAttribute("aria-expanded"),
+      // Only the row that was asked about opens; the rest stay out of the way.
+      openRows: document.querySelectorAll(".wb-queue-text.is-open").length,
+      queueOverflows: (() => { const q = document.querySelector(".wb-queue"); return q.scrollHeight > q.clientHeight + 1; })(),
+    };
+  })()`);
+  assert(after.whiteSpace === "pre-wrap", `expanded, the body wraps in full (got ${after.whiteSpace})`);
+  assert(after.expanded === "true", "and the control flips its state");
+  assert(after.openRows === 1, `only the asked-for row opened (got ${after.openRows})`);
+  assert(!after.queueOverflows, "an expanded row still does not overflow the panel");
+
+  await post("/api/capture", { path: path.join(shotDir, "09-row-collapsed.png"), click: ".wb-queue-row .wb-queue-expand" });
+  const closed = await cdp.eval(`getComputedStyle(document.querySelector(".wb-queue-text")).whiteSpace`);
+  assert(closed === "nowrap", `and it folds back to one line (got ${closed})`);
+}
+
+/**
+ * Reordering is a DRAG now, so it is driven as one: real mouse events on the
+ * grip, not the HTTP action the grip happens to call. Asserting the action
+ * would prove the queue can be reordered while leaving open whether anything
+ * on screen can reorder it.
+ */
+async function dragReordersTheQueue(cdp) {
+  console.log("\n순서 변경은 드래그로 (§9):");
+  const before = (await get("/api/party/members/backend/queue")).queue.items.map((i) => i.id);
+
+  const grips = await cdp.eval(`(() => {
+    const rows = [...document.querySelectorAll(".wb-queue-row")];
+    return rows.map((row) => {
+      const grip = row.querySelector(".wb-queue-grip");
+      const box = (grip || row).getBoundingClientRect();
+      const rowBox = row.getBoundingClientRect();
+      return {
+        hasGrip: Boolean(grip && grip.tagName === "BUTTON"),
+        x: box.left + box.width / 2,
+        y: box.top + box.height / 2,
+        rowMid: rowBox.top + rowBox.height / 2,
+        rowBottom: rowBox.bottom,
+      };
+    });
+  })()`);
+  assert(grips.length >= 3 && grips.every((g) => g.hasGrip), "every row has a grip to pick it up by");
+  assert((await cdp.eval(`document.querySelectorAll(".wb-queue-row .wb-queue-btn[title='위로']").length`)) === 0, "the 위로 button is gone — the gesture replaced it, it does not sit alongside it");
+
+  // Drag row 1 down past row 3's midpoint, in steps, the way a hand moves.
+  await cdp.mouse("mousePressed", grips[0].x, grips[0].y);
+  await cdp.mouse("mouseMoved", grips[0].x, grips[1].rowMid);
+  const dropPreview = await cdp.eval(`(() => {
+    const rows = [...document.querySelectorAll(".wb-queue-row")];
+    return {
+      dragging: rows.filter((r) => r.classList.contains("is-dragging")).length,
+      markers: rows.filter((r) => r.classList.contains("is-drop-above") || r.classList.contains("is-drop-below")).length,
+      railsHidden: document.querySelectorAll(".wb-queue-rail").length === 0,
+    };
+  })()`);
+  assert(dropPreview.dragging === 1, "the row being carried is marked while it is in the air");
+  assert(dropPreview.markers === 1, "and exactly one drop line shows where it would land");
+  assert(dropPreview.railsHidden, "the merge rail hides mid-drag — it would be drawing a run that is being rewritten");
+
+  await cdp.mouse("mouseMoved", grips[0].x, grips[2].rowMid + 2);
+  await cdp.mouse("mouseReleased", grips[0].x, grips[2].rowMid + 2);
+  await delay(500);
+
+  const after = (await get("/api/party/members/backend/queue")).queue.items.map((i) => i.id);
+  assert(after[2] === before[0], `the dragged row landed at the drop point (${before.join(",")} → ${after.join(",")})`);
+  assert(after.length === before.length, "and nothing was lost on the way");
+
+  const rendered = await cdp.eval(`[...document.querySelectorAll(".wb-queue-row .wb-queue-n")].map((n) => n.textContent).join(",")`);
+  assert(rendered === "1,2,3", `the ordinals renumber to the new order (got ${rendered})`);
+  const stuck = await cdp.eval(`document.querySelectorAll(".wb-queue-row.is-dragging, .wb-queue-row.is-drop-above, .wb-queue-row.is-drop-below").length`);
+  assert(stuck === 0, "the drag state is cleared on drop — no row is left looking picked up");
+
+  // The keyboard half: the order must be reachable without a mouse.
+  await cdp.eval(`document.querySelector(".wb-queue-row:last-child .wb-queue-grip").focus()`);
+  await cdp.eval(`document.querySelector(".wb-queue-row:last-child .wb-queue-grip").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }))`);
+  await delay(400);
+  const byKey = (await get("/api/party/members/backend/queue")).queue.items.map((i) => i.id);
+  assert(byKey[1] === after[2], `ArrowUp on a focused grip moves the row (${after.join(",")} → ${byKey.join(",")})`);
+
+  // Put it back so the later legs see the order they were written against.
+  await post("/api/party/members/backend/queue", { action: "move", itemId: before[0], toIndex: 0 });
+  await delay(300);
+}
+
+/**
+ * The one-queue rule: "지금 보내기" on a BUSY member must NOT push the message
+ * into the harness. Handing it over there would move it out of this queue and
+ * into the adapter's own buffer, invisible and uncancellable, to wait for the
+ * very same moment.
+ */
+async function sendNowStopsInsteadOfStacking(cdp) {
+  console.log("\n지금 보내기 stops the turn instead of building a second queue:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(300);
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+  await post("/api/party/members/backend/message", { text: "중단하고 보내기로 나갈 메시지." });
+  await delay(300);
+
+  const label = await cdp.eval(`document.querySelector(".wb-queue-send-all")?.textContent || ""`);
+  assert(label === "중단하고 보내기", `while working the button names the stop (got "${label}")`);
+
+  const before = (await get("/api/party/status")).members.find((m) => m.name === "backend");
+  assert(before?.turnActive === true, "the member really is mid-turn before we ask");
+
+  const sent = await post("/api/party/members/backend/queue", { action: "send" });
+  assert(sent.queue.items.length === 1, "the message stays in the app queue — it was NOT handed to the harness");
+
+  await delay(1200);
+  const after = (await get("/api/party/status")).members.find((m) => m.name === "backend");
+  assert(after?.turnActive === false, "the turn was stopped");
+  assert(!after?.queuedTurnCount, `and the harness is holding nothing (got ${after?.queuedTurnCount})`);
+
+  await delay(600);
+  const drained = (await get("/api/party/members/backend/queue")).queue;
+  assert(drained.items.length === 0, "the idle drain then delivered it — one path in, no second queue");
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+}
+
 async function mutationsWork() {
   console.log("\n취소 · 편집 · 순서 · 합치기 (§9):");
   const before = (await get("/api/party/members/backend/queue")).queue;
   const second = before.items[1].id;
 
-  const moved = await post("/api/party/members/backend/queue", { action: "move", itemId: second, direction: -1 });
-  assert(moved.queue.items[0].id === second, "위로 reorders the row");
-  await post("/api/party/members/backend/queue", { action: "move", itemId: second, direction: 1 });
+  const moved = await post("/api/party/members/backend/queue", { action: "move", itemId: second, toIndex: 0 });
+  assert(moved.queue.items[0].id === second, "a row dropped at position 0 lands there");
+  await post("/api/party/members/backend/queue", { action: "move", itemId: second, toIndex: 1 });
 
   const merged = await post("/api/party/members/backend/queue", { action: "mergeUp", itemId: before.items[1].id });
   assert(merged.queue.items.length === 2, "위와 합치기 folds two rows into one");
@@ -427,7 +591,8 @@ async function narrowPanelCollapses(cdp) {
     };
   })()`);
   assert(open.rows === 2, `both rows render when expanded (got ${open.rows})`);
-  assert(open.edits === 0, "위로 · 편집 · 위와 합치기 are dropped at this width, not shrunk");
+  assert(open.edits === 0, "편집 · 위와 합치기 are dropped at this width, not shrunk");
+  assert((await cdp.eval(`document.querySelectorAll(".wb-queue.is-narrow .wb-queue-grip").length`)) === 0, "and there is no drag grip either — a 4px target is not a handle");
   assert(open.deletes === 2, "but 삭제 survives on every row — cancelling must never need a resize");
   assert(open.sendAllBlock, "the send button spans the full width");
   assert(!open.overflows, "the expanded narrow queue still does not overflow");
@@ -578,6 +743,22 @@ async function attachRenderer() {
         throw new Error(`Renderer evaluation threw: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
       }
       return result.result.value;
+    },
+    /**
+     * Real mouse events, because a drag cannot be faked from JavaScript: the
+     * pointer capture the component relies on only exists for trusted events,
+     * so a synthetic `dispatchEvent` would exercise a path no user can reach.
+     */
+    async mouse(type, x, y) {
+      await send("Input.dispatchMouseEvent", {
+        type,
+        x: Math.round(x),
+        y: Math.round(y),
+        button: "left",
+        buttons: type === "mouseReleased" ? 0 : 1,
+        clickCount: 1,
+        pointerType: "mouse",
+      });
     },
   };
 }

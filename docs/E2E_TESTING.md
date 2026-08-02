@@ -181,6 +181,19 @@ density is reached by splitting into three panels, not by shrinking the window
 (the window has a minimum width, so the panel never gets narrow enough that way).
 Step 0 asserts `runtime.appRoot` is under this script's own root (see §1b).
 
+`node scripts/qa-queue-design.mjs` (or `npm run qa:queue-design`) is the **design
+QA** counterpart: it reproduces every queue state the handoff specifies — empty,
+one item, a same-sender run, mixed senders, 합치기 꺼짐, 접힘, the 20-item limit,
+narrow/mid widths, dark, and the 대기열에서 전송됨 provenance left in the
+conversation after delivery — and captures one PNG per state for comparison
+against the handoff screenshots. Every member is a QA mock, so no model is called
+and nothing is billed. **Reach these states this way, never by driving real
+turns**: a live agent finishes when it finishes, so the state you wanted to
+photograph is gone before the shutter opens, and a 20-item queue is unreachable
+in practice. Pass `--keep` to leave the app running for hands-on inspection, and
+`--out <dir>` to choose where the gallery lands. It asserts nothing — correctness
+is `e2e-message-queue.mjs`'s job; this script only produces pictures.
+
 `node scripts/e2e-discord-bridge.mjs` (or `npm run test:e2e:discord-bridge`) boots
 the real app on an isolated userData + temp workspace and proves the Discord
 bridge end-to-end **against Discord's own REST API**, not against our return

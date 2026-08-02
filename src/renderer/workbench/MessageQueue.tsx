@@ -12,8 +12,8 @@
  * Layout follows `docs/디자인 핸드오프/design_handoff_message_queue` §2–§5.
  */
 
-import { useState } from "react";
-import { AlignLeft, ArrowRight, ArrowUp, ArrowUpFromLine, ChevronDown, Lock, Pencil, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { AlignLeft, ArrowRight, ArrowUpFromLine, ChevronDown, GripVertical, Lock, Maximize2, Minimize2, Pencil, X } from "lucide-react";
 import type { QueueCommand } from "../../shared/messageQueue";
 import { memberColorVars } from "../theme/memberColors";
 import { buildQueueView, type QueueRowView } from "./queueView";
@@ -31,6 +31,8 @@ interface MessageQueueProps {
 export function MessageQueue({ view, density, actions, onEditBack }: MessageQueueProps) {
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState("");
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const queue = view.member.queue;
   const model = buildQueueView({
@@ -76,6 +78,66 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   const notice = error ? <div className="wb-queue-error" role="alert">{error}</div> : null;
 
   /**
+   * Which slot the pointer is currently over.
+   *
+   * Read off the rendered rows rather than assumed from a fixed row height: a
+   * row grows when its body is expanded, and guessing would drop the message
+   * somewhere the user did not aim.
+   */
+  function slotUnder(clientY: number): number {
+    const rows = Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []);
+    for (let index = 0; index < rows.length; index += 1) {
+      const box = rows[index].getBoundingClientRect();
+      if (clientY < box.top + box.height / 2) {
+        return index;
+      }
+    }
+    return Math.max(0, rows.length - 1);
+  }
+
+  function startDrag(event: React.PointerEvent<HTMLElement>, row: QueueRowView) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ id: row.id, from: row.index, to: row.index });
+  }
+
+  function moveDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!drag) {
+      return;
+    }
+    const to = slotUnder(event.clientY);
+    if (to !== drag.to) {
+      setDrag({ ...drag, to });
+    }
+  }
+
+  function endDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!drag) {
+      return;
+    }
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    const { id, from, to } = drag;
+    setDrag(null);
+    if (to !== from) {
+      void run({ action: "move", itemId: id, toIndex: to });
+    }
+  }
+
+  /** The keyboard half of the same gesture — the order must not need a mouse. */
+  function stepRow(event: React.KeyboardEvent<HTMLElement>, row: QueueRowView) {
+    const step = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+    if (!step) {
+      return;
+    }
+    event.preventDefault();
+    const toIndex = row.index + step;
+    if (toIndex < 0 || toIndex >= model.rows.length) {
+      return;
+    }
+    void run({ action: "move", itemId: row.id, toIndex });
+  }
+
+  /**
    * Messages already inside the harness. Shown apart from the list and WITHOUT
    * controls, because there is nothing left to control — they cannot be
    * cancelled or edited. Silence here would just move the invisible queue one
@@ -118,12 +180,15 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
         {!model.collapsed && (
           <>
             {model.rows.map((row) => (
-              <div className={rowClass(row)} key={row.id} role="listitem">
+              <div className={rowClass(row, null)} key={row.id} role="listitem">
                 <span className="wb-queue-n">{row.n}</span>
                 <span className={"wb-queue-dot" + (row.fromMember ? " is-member" : "")} style={row.from ? memberColorVars(row.from) : undefined} title={row.fromLabel} />
                 <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
+                <button type="button" className="wb-queue-expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
+                  {row.open ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+                </button>
                 {row.showSendNowIcon && (
-                  <button type="button" className="wb-queue-send-icon" title="지금 보내기" onClick={() => void run({ action: "sendItem", itemId: row.id })}><ArrowRight size={10} /></button>
+                  <button type="button" className="wb-queue-send-icon" title={model.sendNowHint} onClick={() => void run({ action: "sendItem", itemId: row.id })}><ArrowRight size={10} /></button>
                 )}
                 <button type="button" className="wb-queue-del" title="삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={10} /></button>
               </div>
@@ -167,9 +232,27 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
             <button type="button" className="wb-queue-send-all" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
           </div>
 
+          <div className="wb-queue-list" ref={listRef}>
           {model.rows.map((row) => (
-            <div className={rowClass(row)} key={row.id} role="listitem">
-              {row.onRail && <span className="wb-queue-rail" style={{ top: row.railTop, bottom: row.railBottom }} />}
+            <div className={rowClass(row, drag)} key={row.id} role="listitem" data-queue-index={row.index}>
+              {row.onRail && !drag && <span className="wb-queue-rail" style={{ top: row.railTop, bottom: row.railBottom }} />}
+              {row.showGrip ? (
+                <button
+                  type="button"
+                  className="wb-queue-grip"
+                  title="끌어서 순서 바꾸기 (↑ ↓ 로도 이동)"
+                  aria-label={`${row.n}번째 — 끌어서 순서 바꾸기`}
+                  onPointerDown={(event) => startDrag(event, row)}
+                  onPointerMove={moveDrag}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                  onKeyDown={(event) => stepRow(event, row)}
+                >
+                  <GripVertical size={12} />
+                </button>
+              ) : (
+                <span className="wb-queue-grip is-idle" aria-hidden="true" />
+              )}
               <span className="wb-queue-n">{row.n}</span>
               <span
                 className={"wb-queue-from" + (row.fromMember ? " is-member" : "")}
@@ -180,15 +263,15 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 {row.fromLabel}
               </span>
               <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
+              <button type="button" className="wb-queue-expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
+                {row.open ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              </button>
               {row.showNextBadge && <span className="wb-queue-next">다음 차례</span>}
               {row.showSendNowText && (
-                <button type="button" className="wb-queue-send-now" title="대기하지 않고 지금 전송" onClick={() => void run({ action: "sendItem", itemId: row.id })}>지금 보내기</button>
+                <button type="button" className="wb-queue-send-now" title={model.sendNowHint} onClick={() => void run({ action: "sendItem", itemId: row.id })}>{model.sendNowLabel}</button>
               )}
               {row.showMergeUp && (
                 <button type="button" className="wb-queue-btn is-accent" title="위 메시지와 합치기" onClick={() => void run({ action: "mergeUp", itemId: row.id })}><ArrowUpFromLine size={12} /></button>
-              )}
-              {row.showMoveUp && (
-                <button type="button" className="wb-queue-btn" title="위로" onClick={() => void run({ action: "move", itemId: row.id, direction: -1 })}><ArrowUp size={12} /></button>
               )}
               {row.showEdit && (
                 <button type="button" className="wb-queue-btn" title="편집 — 입력창으로 되돌리기" onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={12} /></button>
@@ -196,6 +279,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
               <button type="button" className="wb-queue-btn is-danger" title="대기열에서 삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={12} /></button>
             </div>
           ))}
+          </div>
         </>
       )}
       {handedOver}
@@ -204,6 +288,25 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   );
 }
 
-function rowClass(row: QueueRowView): string {
-  return "wb-queue-row" + (row.highlighted ? " is-next" : "");
+/** A drag in progress, before it is committed. */
+interface DragState {
+  id: string;
+  from: number;
+  to: number;
+}
+
+function rowClass(row: QueueRowView, drag: DragState | null): string {
+  let className = "wb-queue-row" + (row.highlighted ? " is-next" : "");
+  if (!drag) {
+    return className;
+  }
+  if (drag.id === row.id) {
+    return `${className} is-dragging`;
+  }
+  // The drop line sits on the side the row would arrive from, so the preview
+  // matches where it lands rather than merely marking the row under the cursor.
+  if (row.index === drag.to) {
+    className += drag.to < drag.from ? " is-drop-above" : " is-drop-below";
+  }
+  return className;
 }

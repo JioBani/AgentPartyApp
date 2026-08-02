@@ -32,11 +32,29 @@ export interface QueueRowView {
   highlighted: boolean;
   /** Body is expanded (pre-wrap) rather than clipped to one line. */
   open: boolean;
+  /**
+   * The row carries an explicit expand control.
+   *
+   * A queued message is often several lines, and a queue that renders them in
+   * full stops being a queue — six of them push the conversation off the panel.
+   * So the row is one line by default and the full body is a deliberate ask.
+   */
+  showExpand: boolean;
+  expandLabel: string;
   showNextBadge: boolean;
   showSendNowText: boolean;
   showSendNowIcon: boolean;
   showEdit: boolean;
-  showMoveUp: boolean;
+  /**
+   * The row can be picked up and dropped elsewhere. A grip rather than a 위로
+   * button: reordering is "put this there", and saying that as a run of
+   * single-step swaps makes the user do the arithmetic the gesture exists to
+   * avoid. The grip is focusable and answers ArrowUp/ArrowDown, so the order is
+   * reachable without a mouse.
+   */
+  showGrip: boolean;
+  /** 0-based position — the drop target math and the keyboard step both need it. */
+  index: number;
   showMergeUp: boolean;
   /** This row is part of the run that will leave as one message. */
   onRail: boolean;
@@ -80,6 +98,9 @@ export interface QueueView {
   mergeNote: string;
   /** Primary send button label; names the count only when several items actually merge. */
   sendAllLabel: string;
+  /** Per-row send button label — naming the stop when there is a turn to stop. */
+  sendNowLabel: string;
+  sendNowHint: string;
   toggleLabel: string;
   /** One-line preview shown while collapsed. */
   collapsedPreview: string;
@@ -132,8 +153,15 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     note: headerNote({ memberName, working, detached, merge, count: items.length }),
     mergeNote: mergeNote({ merge, mixed, count: items.length }),
     // Naming a count that is not actually a merge would overstate what the
-    // button does, so a single-item send is just "지금 보내기".
-    sendAllLabel: merge && run.length > 1 ? `합쳐서 지금 보내기 · ${run.length}건` : "지금 보내기",
+    // button does, so a single-item send is just "지금 보내기". While the member
+    // is working, sending sooner means stopping the turn — see
+    // `sendQueuedNow` — and a button that hides that would be asking for a
+    // stop the user never agreed to.
+    sendAllLabel: sendLabel({ working, merge, runLength: run.length }),
+    sendNowLabel: working ? "중단하고 보내기" : "지금 보내기",
+    sendNowHint: working
+      ? "이 멤버의 작업을 중단하고 대기열을 바로 전달합니다"
+      : "대기하지 않고 지금 전송합니다",
     toggleLabel: collapsed ? "펼치기" : "접기",
     collapsedPreview: collapsedPreview(items),
     mergePillLabel: merge ? "합침" : "개별",
@@ -172,6 +200,10 @@ function buildRow(args: {
     isNext: index === 0,
     highlighted,
     open: openRows.has(item.id),
+    // Present at every width: reading what you queued must not require a
+    // resize, the same rule that keeps 삭제 on the narrow row.
+    showExpand: true,
+    expandLabel: openRows.has(item.id) ? "접기" : "펼쳐서 전체 보기",
     showNextBadge: index === 0 && density === "wide" && !merge,
     showSendNowText: index === 0 && !narrow && !merge,
     showSendNowIcon: index === 0 && narrow,
@@ -179,12 +211,23 @@ function buildRow(args: {
     // controls into an unhittable row; the handoff's escape hatch is to widen
     // the panel. Delete stays at every width — cancelling must never need one.
     showEdit: !narrow,
-    showMoveUp: index > 0 && !narrow,
+    // A single queued message has nowhere to go, so the grip would be a control
+    // over an impossible action.
+    showGrip: !narrow && items.length > 1,
+    index,
     showMergeUp: index > 0 && sameSenderAsPrevious && !narrow,
     onRail,
     railTop: index === 0 ? "50%" : "0",
     railBottom: index === run.length - 1 ? "50%" : "0",
   };
+}
+
+function sendLabel(args: { working: boolean; merge: boolean; runLength: number }): string {
+  const merged = args.merge && args.runLength > 1;
+  if (args.working) {
+    return merged ? `중단하고 합쳐서 보내기 · ${args.runLength}건` : "중단하고 보내기";
+  }
+  return merged ? `합쳐서 지금 보내기 · ${args.runLength}건` : "지금 보내기";
 }
 
 function headerNote(args: { memberName: string; working: boolean; detached: boolean; merge: boolean; count: number }): string {

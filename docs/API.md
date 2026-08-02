@@ -781,11 +781,11 @@ this same controller method.
 
 | `action` | Extra fields | Effect |
 |---|---|---|
-| `send` | — | Delivers the leading run now (합쳐서 지금 보내기) |
-| `sendItem` | `itemId` | Delivers exactly that row now |
+| `send` | — | Sends the leading run now — see **Sending now** |
+| `sendItem` | `itemId` | Same, for exactly that row |
 | `cancel` | `itemId` | Removes that row |
 | `edit` | `itemId` | Removes that row and returns its `text` for the composer |
-| `move` | `itemId`, `direction` (`-1` \| `1`) | Reorders that row |
+| `move` | `itemId`, `toIndex` (0-based) | Puts that row at an absolute position |
 | `mergeUp` | `itemId` | Folds that row into the one above it |
 | `clear` | — | Empties the queue |
 | `preference` | `merge` and/or `collapsed` | Persists a per-member preference |
@@ -795,6 +795,24 @@ this same controller method.
 ```
 
 Responses carry the resulting `queue`; `edit` additionally returns `text`.
+
+**There is exactly one queue, and it is this one.** The app never hands a turn to
+a busy member — not even for `send`. A turn handed to a busy harness lands in the
+adapter's own buffer and waits for the very same moment (turn end), except there
+it can no longer be listed, edited or cancelled. Nothing about that second
+holding pen is visible from where the user sits: they typed one message into one
+box.
+
+**Sending now.** On an idle member, `send`/`sendItem` deliver. On a BUSY one they
+**stop the turn** and leave the delivery to the idle drain — `sendItem` first
+pulls its row to the front, so the row that was asked for is the row that goes.
+Stopping is the only thing that actually makes a queued message sooner, so it is
+what these actions do, and the button says 중단하고 보내기 while a turn is running.
+`interrupt: true` on a send remains the separate, explicit bypass.
+
+`move` takes an absolute `toIndex` rather than a direction because the gesture
+behind it is a drag: expressing "put this there" as a run of ±1 swaps would march
+the queue through orders nobody asked for, persisting and broadcasting each one.
 
 **Failures are errors, never silent no-ops.** Cancelling, editing, moving or
 merging a row that is no longer queued returns an error — the item was almost
