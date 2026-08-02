@@ -1,10 +1,9 @@
 import { PointerEvent, useEffect, useState } from "react";
-import { ChevronDown, CircleStop, Gauge, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
+import { ChevronDown, CircleStop, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
 import { latestDiagnostic, statusLabel } from "./memberStatus";
-import { Dropdown } from "./Dropdown";
 import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
@@ -130,20 +129,12 @@ export function Panel(props: PanelProps) {
               type="button"
               className="wb-pill wb-model-pill"
               style={{ maxWidth: narrow ? 116 : 240 }}
-              title="모델 설정"
+              title="모델 · 추론 설정"
               onClick={() => onOpenRuntime(view.name)}
             >
               <span className="wb-mono">{modelLabel(view.model)}</span>
               <ChevronDown size={11} className="wb-pill-caret" />
             </button>
-            {!narrow && (view.effortOptions?.length ?? 0) > 0 && (
-              <Dropdown
-                value={view.effort}
-                options={view.effortOptions.map((option) => ({ id: option.id, label: option.label, icon: <Gauge size={13} /> }))}
-                onChange={(id) => actions.setEffort(view.name, id)}
-                title="Effort"
-              />
-            )}
             {view.context && (
               <ContextDonut
                 context={view.context}

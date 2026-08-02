@@ -1531,9 +1531,9 @@ export class PartyApplicationService {
     } else {
       member.permissionMode = input.permissionMode || member.permissionMode || defaults.permissionMode;
     }
-    member.reasoning = input.thinking || member.reasoning;
-    member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget;
-    member.serviceTier = input.serviceTier ?? member.serviceTier;
+    member.reasoning = input.thinking || member.reasoning || defaults.reasoning;
+    member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget ?? defaults.reasoningBudget;
+    member.serviceTier = input.serviceTier ?? member.serviceTier ?? defaults.serviceTier;
     if (harnessId === "codex") {
       const executionDefaults = harnessDefaultsOf(getSettings(), "codex");
       member.codexPolicy = {
