@@ -8,6 +8,7 @@ import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate"
 import type { MemberQueueState } from "./messageQueue";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { ComposerSettings } from "./composerSettings";
+import type { FavoriteModels } from "./favoriteModels";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -89,6 +90,13 @@ export interface AppSettings {
    * Settings → Runtime. See `shared/composerSettings.ts`.
    */
   composer: ComposerSettings;
+  /**
+   * Catalog model ids the user has starred, pinned above the provider groups in
+   * the model catalog. A user choice, so it lives here rather than in the
+   * regenerated catalog file. Never auto-pruned — `shared/favoriteModels.ts`
+   * explains why an unresolvable id is kept instead of dropped.
+   */
+  favoriteModels: FavoriteModels;
   /**
    * Discord bridge credentials and inbound whitelist. Edited in Settings →
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.

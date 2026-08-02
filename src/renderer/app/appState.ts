@@ -40,6 +40,7 @@ export const initialState: InitialAppState = {
     compactDefault: { on: false, at: 80 },
     gateDefaults: { model: "haiku", effort: "low" },
     composer: { ...DEFAULT_COMPOSER_SETTINGS },
+    favoriteModels: [],
   },
   auth: [],
   sessions: [],

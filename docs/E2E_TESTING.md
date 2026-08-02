@@ -20,6 +20,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-askq` | AskUserQuestion choice-card rendering |
 | `qa-interaction-api` | QA interaction API (inject AskUserQuestion) |
 | `qa-model-catalog` | model catalog / routing, incl. DeepSeek direct-API routes and the codex Responses-API gate |
+| `qa-model-catalog-list` | the catalog's model LIST (R-5/6/7): the `filter → favourites → provider groups` assembly order (grouping first would hide a starred match inside a collapsed group), favourites pinned on top in CATALOG order and removed from their provider group, provider groups collapsed by default with a name preview + `사용 중` badge, search over model name + provider (the catalog carries no tier field — that confirmed-design axis has no data behind it and was dropped rather than faked), search force-expanding groups while READING but never writing the user's collapse flags, and the traps: a star click must not change the selection, Escape with a query clears the query instead of closing the modal, a filtered-out model stays selected, and a stored favourite the catalog cannot resolve draws no ghost row while staying in storage |
 | `qa-party-bridge` | in-process party bridge (send/create/remove/permission/list), explicit initial permissions, concrete execution-harness discovery, idempotent start + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail + explicit initial permission step |
@@ -106,6 +107,25 @@ over `POST /api/qa/usage` is aggregated per provider (separate 5-hour + weekly
 reports MERGE, and a re-report replaces only its own window), served by
 `GET /api/usage`, and pushed to the titlebar pill (a `usage-limits.png` capture
 shows the live Claude/Codex rings). Starts empty (no fabricated 0%).
+
+`node scripts/e2e-model-catalog-list.mjs` (or `npm run test:e2e:catalog-list`)
+boots the real app on an isolated userData + temp workspace (offline — a mock
+member, no model turn) and locks the model catalog list (R-5/6/7) against the
+confirmed design. Like the sidebar-overflow run it MEASURES the live renderer
+over CDP rather than eyeballing a capture: the column's three tiers (fixed head
+/ fixed search row / scrolling list, with the search row asserted OUTSIDE the
+scroll container), and the search box's height, corner radius, gap and font size
+compared against the confirmed mockup, which was rendered and probed the same
+way. It then proves favourites take ONE path in both directions — starring in
+the UI is read back over `GET /api/state`, and a list written over
+`POST /api/settings` shows up in the UI after the reload that endpoint's
+contract implies — including that a stored id the catalog cannot resolve draws
+**no** row while remaining in storage (never silently pruned), and that the
+header counts what is shown rather than what is stored. Also covers the traps: a
+star click must not change the selection, Escape with a query clears the query
+instead of closing the modal, and with every group expanded the list scrolls
+with its last row still hit-testable at the app's minimum window width.
+Captures (light + dark, since the colours are tokens) go to a temp dir.
 
 `node scripts/e2e-sidebar-overflow.mjs` (or `npm run test:e2e:sidebar-overflow`)
 boots the real app on an isolated userData + temp workspace (offline — mock

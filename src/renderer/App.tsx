@@ -6,6 +6,8 @@ import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompac
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
+import { usePublishFavoriteModels } from "./app/favoriteModelPrefs";
+import { toggleFavoriteModel as nextFavoriteModels } from "../shared/favoriteModels";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
@@ -92,6 +94,11 @@ export function App() {
   // (Workbench → Panel → Composer) and is the only consumer. App stays the sole
   // owner of settings state; see app/composerPrefs.ts.
   usePublishComposerPrefs(state.settings.composer);
+
+  // Same arrangement for starred models: the catalog is opened from five
+  // screens, so publishing beats threading a prop (and its callback) through
+  // each of them. App still owns the state and performs the write.
+  usePublishFavoriteModels(state.settings.favoriteModels, toggleFavoriteModel);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
   const fontScale = state.settings.transcriptFontScale ?? 1;
@@ -625,6 +632,17 @@ export function App() {
 
   async function saveGateDefault(reviewer: GateReviewer) {
     const settings = await window.agentParty.updateSettings({ gateDefaults: reviewer });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  /**
+   * Stars/unstars a model. Persisted immediately and independently of the
+   * catalog's Apply button: tidying a list is not a runtime change, so it must
+   * neither wait on Apply nor be discarded by Cancel.
+   */
+  async function toggleFavoriteModel(id: string) {
+    const favoriteModels = nextFavoriteModels(state.settings.favoriteModels || [], id);
+    const settings = await window.agentParty.updateSettings({ favoriteModels });
     setState((current) => ({ ...current, settings }));
   }
 
