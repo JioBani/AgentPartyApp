@@ -667,6 +667,8 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [model, setModel] = useState(defaults.model);
   const [effort, setEffort] = useState(defaults.effort);
   const [reasoning, setReasoning] = useState(defaults.reasoning || "");
+  const [reasoningBudget, setReasoningBudget] = useState<number | undefined>(defaults.reasoningBudget);
+  const [serviceTier, setServiceTier] = useState(defaults.serviceTier || "");
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
   const [cursorPolicy, setCursorPolicy] = useState<CursorPolicy>(() => cursorPolicyOf(defaults.cursorPolicy, defaults.permissionMode));
   const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
@@ -675,9 +677,21 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const isCodex = harnessId === "codex";
   const isCursor = harnessId === "cursor";
   const selectedRoute = routes.find((route) => route.model === model);
+  const runtimeSummary = [
+    effort ? `effort ${effort}` : "",
+    reasoning ? `thinking ${reasoning}` : "",
+    typeof reasoningBudget === "number" ? `budget ${reasoningBudget.toLocaleString()}` : "",
+    serviceTier ? `speed ${serviceTier}` : "",
+  ].filter(Boolean).join(" · ");
 
   function save() {
-    const patch: Partial<HarnessDefaults> = { model, effort: effort as HarnessDefaults["effort"], reasoning: reasoning || undefined };
+    const patch: Partial<HarnessDefaults> = {
+      model,
+      effort: effort as HarnessDefaults["effort"],
+      reasoning: reasoning || undefined,
+      reasoningBudget,
+      serviceTier: serviceTier || undefined,
+    };
     if (isCodex) {
       const axes = preset === "custom" ? (defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }) : CODEX_PRESETS[preset];
       patch.codexPolicy = { ...axes, guardian: defaults.codexPolicy?.guardian ?? false } as CodexPolicy;
@@ -700,21 +714,34 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       </div>
 
       <div className="set-field">
-        <span className="set-field-label">모델</span>
+        <span className="set-field-label">모델 · 추론</span>
         <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
           <span className="wb-mono">{selectedRoute?.label || model}</span>
           <ChevronDown size={14} />
         </button>
+        {runtimeSummary && <span className="set-row-desc wb-mono">{runtimeSummary}</span>}
       </div>
       {catalogOpen && (
         <ModelCatalogModal
-          title={`${label} 기본 모델`}
+          title={`${label} 기본 실행 구성`}
           icon={<SquareTerminal size={16} />}
           routes={routes}
-          value={{ model }}
-          config={{}}
+          value={{
+            model,
+            effort,
+            thinkingMode: reasoning || undefined,
+            thinkingBudget: reasoningBudget,
+            serviceTier: serviceTier || undefined,
+          }}
+          config={{ effort: true, thinking: true, serviceTier: true }}
           applyLabel="선택"
-          onApply={(next) => setModel(next.model)}
+          onApply={(next) => {
+            setModel(next.model);
+            if (next.effort) setEffort(next.effort as HarnessDefaults["effort"]);
+            setReasoning(next.thinkingMode || "");
+            setReasoningBudget(next.thinkingBudget);
+            setServiceTier(next.serviceTier || "");
+          }}
           onClose={() => setCatalogOpen(false)}
         />
       )}
@@ -728,22 +755,6 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
         </div>
       )}
 
-      <div className="set-field">
-        <span className="set-field-label">추론 강도</span>
-        <SetSegmented
-          value={effort as string}
-          options={["low", "medium", "high", "xhigh", "max"].map((e) => ({ id: e, label: e }))}
-          onChange={(id) => setEffort(id as HarnessDefaults["effort"])}
-        />
-      </div>
-      <div className="set-field">
-        <span className="set-field-label">추론 모드</span>
-        <SetSegmented
-          value={reasoning}
-          options={[{ id: "", label: "모델 기본" }, { id: "adaptive", label: "adaptive" }, { id: "enabled", label: "enabled" }, { id: "disabled", label: "disabled" }]}
-          onChange={(id) => setReasoning(id)}
-        />
-      </div>
       {isCodex ? (
         <label className="set-field">
           <span className="set-field-label">권한 (샌드박스 × 승인)</span>
