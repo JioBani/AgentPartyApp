@@ -2583,27 +2583,36 @@ body.wb-resizing {
 .wb-queue-grip:focus-visible { outline: var(--border-width) solid var(--member); outline-offset: 1px; }
 .wb-queue-grip.is-idle { cursor: default; }
 
+/* The carried row travels with the pointer. Deliberately no transition while it
+   is held: it has to track the hand exactly, not trail behind it. */
 .wb-queue-row.is-dragging {
-  opacity: 0.45;
+  z-index: 3;
   border-style: solid;
   border-color: var(--member-wait-bd);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  cursor: grabbing;
 }
 .wb-queue-row.is-dragging .wb-queue-grip { cursor: grabbing; }
 
-/* Drawn in the gap between rows rather than inside one: inside would read as a
-   border belonging to the row it sits on. */
-.wb-queue-row.is-drop-above::before,
-.wb-queue-row.is-drop-below::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--member);
+/* Released: it settles into the slot it was dropped on, and the reordered list
+   only takes over once that has landed — so it never snaps back on the way. */
+.wb-queue-row.is-landing {
+  transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 140ms ease;
+  box-shadow: none;
 }
-.wb-queue-row.is-drop-above::before { top: -4px; }
-.wb-queue-row.is-drop-below::after { bottom: -4px; }
+
+/* The other rows step aside to open the slot. This replaced a drop line: a gap
+   says the same thing in the language of the thing being moved — the list makes
+   room, instead of annotating itself with a marker. */
+.wb-queue-row.is-shifting {
+  transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-queue-row.is-shifting,
+  .wb-queue-row.is-landing { transition: none; }
+}
 
 /* Spans the run that leaves as ONE message: starts at the first row's midpoint
    and ends at the last row's, so it reads as a bracket rather than a border. */

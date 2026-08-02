@@ -347,16 +347,27 @@ async function dragReordersTheQueue(cdp) {
   // Drag row 1 down past row 3's midpoint, in steps, the way a hand moves.
   await cdp.mouse("mousePressed", grips[0].x, grips[0].y);
   await cdp.mouse("mouseMoved", grips[0].x, grips[1].rowMid);
+  // The rows move on a transition; read after it has had a frame to apply,
+  // otherwise this measures the layout the drag is in the middle of leaving.
+  await delay(250);
   const dropPreview = await cdp.eval(`(() => {
     const rows = [...document.querySelectorAll(".wb-queue-row")];
+    const shiftOf = (row) => {
+      const m = new DOMMatrixReadOnly(getComputedStyle(row).transform);
+      return Math.round(m.m42);
+    };
     return {
       dragging: rows.filter((r) => r.classList.contains("is-dragging")).length,
-      markers: rows.filter((r) => r.classList.contains("is-drop-above") || r.classList.contains("is-drop-below")).length,
+      carried: shiftOf(rows[0]),
+      steppedAside: rows.slice(1).map(shiftOf),
       railsHidden: document.querySelectorAll(".wb-queue-rail").length === 0,
     };
   })()`);
   assert(dropPreview.dragging === 1, "the row being carried is marked while it is in the air");
-  assert(dropPreview.markers === 1, "and exactly one drop line shows where it would land");
+  assert(dropPreview.carried > 0, `the carried row travels with the pointer (moved ${dropPreview.carried}px)`);
+  // The others make room instead of a line being drawn: whoever the carried row
+  // has passed steps up by exactly the slot it vacated.
+  assert(dropPreview.steppedAside.some((shift) => shift < 0), `the rows it passed step aside to open the slot (${dropPreview.steppedAside.join(",")})`);
   assert(dropPreview.railsHidden, "the merge rail hides mid-drag — it would be drawing a run that is being rewritten");
 
   await cdp.mouse("mouseMoved", grips[0].x, grips[2].rowMid + 2);
@@ -369,8 +380,8 @@ async function dragReordersTheQueue(cdp) {
 
   const rendered = await cdp.eval(`[...document.querySelectorAll(".wb-queue-row .wb-queue-n")].map((n) => n.textContent).join(",")`);
   assert(rendered === "1,2,3", `the ordinals renumber to the new order (got ${rendered})`);
-  const stuck = await cdp.eval(`document.querySelectorAll(".wb-queue-row.is-dragging, .wb-queue-row.is-drop-above, .wb-queue-row.is-drop-below").length`);
-  assert(stuck === 0, "the drag state is cleared on drop — no row is left looking picked up");
+  const stuck = await cdp.eval(`document.querySelectorAll(".wb-queue-row.is-dragging, .wb-queue-row.is-shifting, .wb-queue-row.is-landing").length`);
+  assert(stuck === 0, "the drag state is cleared once the new order lands — no row is left looking picked up");
 
   // The keyboard half: the order must be reachable without a mouse.
   await cdp.eval(`document.querySelector(".wb-queue-row:last-child .wb-queue-grip").focus()`);

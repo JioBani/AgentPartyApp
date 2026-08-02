@@ -78,49 +78,80 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   const notice = error ? <div className="wb-queue-error" role="alert">{error}</div> : null;
 
   /**
-   * Which slot the pointer is currently over.
+   * Where each row sat when the drag began.
    *
-   * Read off the rendered rows rather than assumed from a fixed row height: a
-   * row grows when its body is expanded, and guessing would drop the message
-   * somewhere the user did not aim.
+   * Frozen on purpose. Once rows start stepping aside they are no longer where
+   * the layout put them, so reading live boxes to decide the target would make
+   * the answer depend on the animation it is driving — the row would chase its
+   * own gap. The slots do not move; only the pictures of them do.
    */
-  function slotUnder(clientY: number): number {
-    const rows = Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []);
-    for (let index = 0; index < rows.length; index += 1) {
-      const box = rows[index].getBoundingClientRect();
-      if (clientY < box.top + box.height / 2) {
+  function snapshotRows(): Array<{ top: number; height: number }> {
+    return Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []).map((row) => {
+      const box = row.getBoundingClientRect();
+      return { top: box.top, height: box.height };
+    });
+  }
+
+  /** The slot the pointer is over, against the frozen layout. */
+  function slotUnder(clientY: number, slots: Array<{ top: number; height: number }>): number {
+    for (let index = 0; index < slots.length; index += 1) {
+      if (clientY < slots[index].top + slots[index].height / 2) {
         return index;
       }
     }
-    return Math.max(0, rows.length - 1);
+    return Math.max(0, slots.length - 1);
   }
 
   function startDrag(event: React.PointerEvent<HTMLElement>, row: QueueRowView) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ id: row.id, from: row.index, to: row.index });
+    setDrag({ id: row.id, from: row.index, to: row.index, pointerY: event.clientY, offset: 0, slots: snapshotRows(), released: false });
   }
 
   function moveDrag(event: React.PointerEvent<HTMLElement>) {
-    if (!drag) {
+    if (!drag || drag.released) {
       return;
     }
-    const to = slotUnder(event.clientY);
-    if (to !== drag.to) {
-      setDrag({ ...drag, to });
-    }
+    setDrag({ ...drag, offset: event.clientY - drag.pointerY, to: slotUnder(event.clientY, drag.slots) });
   }
 
-  function endDrag(event: React.PointerEvent<HTMLElement>) {
-    if (!drag) {
+  /**
+   * Lands the row where it was dropped.
+   *
+   * The carried row is parked at the target slot rather than released on the
+   * spot, and the drag is only cleared once the new order has actually arrived.
+   * Dropping the transform first would snap the row back to its old position for
+   * the frame before the reorder lands — the one moment the eye is watching it.
+   */
+  async function endDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!drag || drag.released) {
       return;
     }
     event.currentTarget.releasePointerCapture(event.pointerId);
     const { id, from, to } = drag;
-    setDrag(null);
-    if (to !== from) {
-      void run({ action: "move", itemId: id, toIndex: to });
+    if (to === from) {
+      setDrag(null);
+      return;
     }
+    setDrag({ ...drag, released: true, offset: slotOffset(drag, to) });
+    try {
+      await run({ action: "move", itemId: id, toIndex: to });
+    } finally {
+      setDrag(null);
+    }
+  }
+
+  /** Distance from the dragged row's own slot to the slot it is going into. */
+  function slotOffset(state: DragState, to: number): number {
+    const slots = state.slots;
+    if (!slots[state.from] || !slots[to]) {
+      return state.offset;
+    }
+    // Below its own slot, the row lands after the rows that moved up to fill in;
+    // above, it lands at the target's top edge.
+    return to > state.from
+      ? slots[to].top + slots[to].height - (slots[state.from].top + slots[state.from].height)
+      : slots[to].top - slots[state.from].top;
   }
 
   /** The keyboard half of the same gesture — the order must not need a mouse. */
@@ -234,7 +265,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
 
           <div className="wb-queue-list" ref={listRef}>
           {model.rows.map((row) => (
-            <div className={rowClass(row, drag)} key={row.id} role="listitem" data-queue-index={row.index}>
+            <div className={rowClass(row, drag)} style={rowStyle(row, drag)} key={row.id} role="listitem" data-queue-index={row.index}>
               {row.onRail && !drag && <span className="wb-queue-rail" style={{ top: row.railTop, bottom: row.railBottom }} />}
               {row.showGrip ? (
                 <button
@@ -288,25 +319,61 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   );
 }
 
-/** A drag in progress, before it is committed. */
+/** A drag in progress, before the new order has arrived. */
 interface DragState {
   id: string;
   from: number;
   to: number;
+  /** Pointer position when the row was picked up. */
+  pointerY: number;
+  /** How far the carried row has travelled from its own slot. */
+  offset: number;
+  /** The layout as it was at pick-up — see `snapshotRows`. */
+  slots: Array<{ top: number; height: number }>;
+  /** Dropped, and waiting for the reorder to come back. */
+  released: boolean;
 }
 
 function rowClass(row: QueueRowView, drag: DragState | null): string {
-  let className = "wb-queue-row" + (row.highlighted ? " is-next" : "");
+  const className = "wb-queue-row" + (row.highlighted ? " is-next" : "");
   if (!drag) {
     return className;
   }
   if (drag.id === row.id) {
-    return `${className} is-dragging`;
+    return `${className} is-dragging${drag.released ? " is-landing" : ""}`;
   }
-  // The drop line sits on the side the row would arrive from, so the preview
-  // matches where it lands rather than merely marking the row under the cursor.
-  if (row.index === drag.to) {
-    className += drag.to < drag.from ? " is-drop-above" : " is-drop-below";
+  return `${className} is-shifting`;
+}
+
+/**
+ * How far a row steps aside so the carried one has somewhere to go.
+ *
+ * A gap that opens where the row will land says the same thing a drop line said,
+ * but in the language of the thing being moved: the list makes room rather than
+ * annotating itself. Every row moves by the carried row's own height, since that
+ * is exactly the space its slot frees up — right even when rows differ in height
+ * because one of them is expanded.
+ */
+function rowStyle(row: QueueRowView, drag: DragState | null): React.CSSProperties | undefined {
+  if (!drag) {
+    return undefined;
   }
-  return className;
+  if (drag.id === row.id) {
+    return { transform: `translateY(${drag.offset}px)` };
+  }
+  const carried = drag.slots[drag.from];
+  if (!carried) {
+    return undefined;
+  }
+  // Gap between rows, taken from the layout rather than assumed.
+  const next = drag.slots[drag.from + 1];
+  const gap = next ? Math.max(0, next.top - (carried.top + carried.height)) : 0;
+  const step = carried.height + gap;
+  if (drag.to > drag.from && row.index > drag.from && row.index <= drag.to) {
+    return { transform: `translateY(${-step}px)` };
+  }
+  if (drag.to < drag.from && row.index >= drag.to && row.index < drag.from) {
+    return { transform: `translateY(${step}px)` };
+  }
+  return undefined;
 }
