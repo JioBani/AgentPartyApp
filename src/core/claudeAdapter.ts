@@ -164,6 +164,13 @@ export class ClaudeAdapter extends EventEmitter {
   private resumeSessionId: string | undefined;
   /** Guards the one-shot fresh-restart recovery when a resume id is unresolvable. */
   private resumeRecoveryTried = false;
+  /**
+   * True after Stop / interrupt-on-send asked the harness to halt the live turn.
+   * The SDK often closes that turn with is_error: true ("Request interrupted
+   * by user" / error_during_execution). That is an intentional outcome (R-90),
+   * not a session failure (R-91) — see {@link emitInterruptedNotice}.
+   */
+  private interruptRequested = false;
   private turnCount = 0;
   /** Last reported context-window occupancy (tokens); see getSnapshot. */
   private contextTokens: number | undefined;
@@ -287,11 +294,16 @@ export class ClaudeAdapter extends EventEmitter {
       this.emitEvent({ type: "status", status: "interrupt", detail: "no active query", at: now() });
       return;
     }
+    this.interruptRequested = true;
     this.currentStatus = "interrupting";
     this.turnState = "interrupting";
     void this.query.interrupt().then(
       () => this.emitEvent({ type: "status", status: "interrupt", detail: "requested", at: now() }),
-      (error) => this.emitError(error),
+      (error) => {
+        // The interrupt REQUEST itself failed — that is a real failure (R-91).
+        this.interruptRequested = false;
+        this.emitError(error);
+      },
     );
     this.emit("snapshot", this.getSnapshot());
   }
@@ -310,6 +322,7 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
     this.log("force_stop", { status: this.currentStatus, turnState: this.turnState });
+    this.interruptRequested = false;
     this.currentStatus = "idle";
     this.turnState = undefined;
     this.drainQueuedTurn();
@@ -1027,8 +1040,20 @@ export class ClaudeAdapter extends EventEmitter {
         const errorMessage = Array.isArray((message as any).errors) && (message as any).errors.length > 0
           ? (message as any).errors.join("; ")
           : (message as any).result || (message as any).subtype || "Claude returned an error result.";
+        // Intended stop: the SDK marks interrupted turns as is_error. Paint guidance
+        // (R-90), not a red failure — real failures still take the error path (R-91).
+        if (this.interruptRequested || isUserInterruptMessage(errorMessage)) {
+          this.emitInterruptedNotice(errorMessage);
+          this.drainQueuedTurn();
+          return;
+        }
         this.lastError = errorMessage;
         this.emitEvent({ type: "error", message: errorMessage, at: now() });
+        this.drainQueuedTurn();
+        return;
+      }
+      if (this.interruptRequested) {
+        this.emitInterruptedNotice(String((message as any).subtype || "interrupted"));
         this.drainQueuedTurn();
         return;
       }
@@ -1326,6 +1351,29 @@ export class ClaudeAdapter extends EventEmitter {
       block: { kind: "tool", name, arg, status },
       at: now(),
     });
+  }
+
+  /**
+   * R-90: an intentional interrupt is a normal path. Tell the member what happened
+   * and what to do next — never a red error block (that is R-91's job for real
+   * failures: interrupt request rejected, or a turn that failed without a stop).
+   */
+  private emitInterruptedNotice(rawDetail?: string): void {
+    this.interruptRequested = false;
+    this.lastError = undefined;
+    this.currentStatus = "idle";
+    this.turnState = "complete";
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "info",
+      category: "interrupt",
+      title: "턴이 중단되었습니다",
+      detail: "사용자 또는 다른 멤버의 요청으로 진행 중이던 작업이 멈췄습니다. 실패가 아닙니다."
+        + (rawDetail ? (" (하네스: " + rawDetail + ")") : ""),
+      recovery: "이어서 도착하는 메시지가 있으면 그것을 먼저 처리하세요.",
+      at: now(),
+    });
+    this.log("interrupted_notice", rawDetail || "interrupted");
   }
 
   private emitError(error: unknown): void {
@@ -1870,6 +1918,11 @@ function claudeUsageWindow(kind: UsageWindowKind, value: any): UsageWindow | und
  * signal to recover with a fresh session. Matches the Claude Agent SDK's
  * "No conversation found with session ID ..." and close variants.
  */
+/** True when the harness wording means a user/party stop, not a session crash. */
+function isUserInterruptMessage(message: string): boolean {
+  return /interrupted by user|interrupted by client|request interrupted|harness request interrupted/i.test(message);
+}
+
 function isResumeNotFound(message: string): boolean {
   return /no conversation found|conversation not found|session .*not found|resume.*not found|unknown session/i.test(message);
 }
