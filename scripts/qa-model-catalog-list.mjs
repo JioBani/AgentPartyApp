@@ -18,11 +18,10 @@
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
-
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { projectRoot, qaTempFile } from "./lib/qaTemp.mjs";
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 
@@ -34,10 +33,9 @@ def("getComputedStyle", window.getComputedStyle.bind(window));
 def("requestAnimationFrame", (cb) => setTimeout(() => cb(Date.now()), 0)); def("cancelAnimationFrame", clearTimeout);
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }; globalThis.ResizeObserver = window.ResizeObserver;
 
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
 async function load(entry, name, names) {
   const r = await build({ entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false });
-  const file = path.join(outDir, name); writeFileSync(file, r.outputFiles[0].text);
+  const file = qaTempFile(name); writeFileSync(file, r.outputFiles[0].text);
   const mod = await import(pathToFileURL(file).href);
   return names.reduce((acc, k) => (acc[k] = mod[k], acc), {});
 }
@@ -58,7 +56,7 @@ const { normalizeFavoriteModels, toggleFavoriteModel, resolveFavoriteModels } = 
  */
 async function loadBundle(contents, name, names) {
   const r = await build({ stdin: { contents, resolveDir: projectRoot, sourcefile: name, loader: "ts" }, bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false });
-  const file = path.join(outDir, name); writeFileSync(file, r.outputFiles[0].text);
+  const file = qaTempFile(name); writeFileSync(file, r.outputFiles[0].text);
   const mod = await import(pathToFileURL(file).href);
   return names.reduce((acc, k) => (acc[k] = mod[k], acc), {});
 }
