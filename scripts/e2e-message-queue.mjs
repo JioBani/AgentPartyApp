@@ -97,6 +97,8 @@ async function main() {
     await mutationsWork();
     await failuresAreVisible(cdp);
     await sendNowStopsInsteadOfStacking(cdp);
+    await interruptParksAtFrontAndStaysCancellable(cdp);
+    await interruptStillDeliversPromptlyAfterStop();
     await keyboardShortcuts(cdp);
     await narrowPanelCollapses(cdp);
     await originSurvivesDelivery(cdp);
@@ -429,6 +431,102 @@ async function sendNowStopsInsteadOfStacking(cdp) {
   await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
 }
 
+/**
+ * #23: interrupt-on-send must NOT skip the app queue. Discord and
+ * interruptOnSend used to hand the harness a turn while still busy, which made
+ * the message uncancellable. Now it parks ahead of ordinary waiting rows
+ * (cut-in), stays cancellable, and is labelled so the jumped order is visible.
+ */
+async function interruptParksAtFrontAndStaysCancellable(cdp) {
+  console.log("\n#23 interrupt-on-send parks at the front and stays cancellable:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(300);
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+  await post("/api/party/members/backend/message", { text: "먼저 기다리던 메시지 1" });
+  await post("/api/party/members/backend/message", { text: "먼저 기다리던 메시지 2" });
+  await post("/api/party/members/backend/message", { text: "먼저 기다리던 메시지 3" });
+  await delay(200);
+  const first = await post("/api/party/members/backend/message", {
+    text: "첫 번째 긴급",
+    interrupt: true,
+  });
+  const second = await post("/api/party/members/backend/message", {
+    text: "두 번째 긴급",
+    interrupt: true,
+  });
+  assert(first.queued === true && second.queued === true, "interrupt sends report queued (not silently handed to the harness)");
+  const order = (second.queue?.items || []).map((item) => item.text);
+  assert(
+    order.join("|") === "첫 번째 긴급|두 번째 긴급|먼저 기다리던 메시지 1|먼저 기다리던 메시지 2|먼저 기다리던 메시지 3",
+    `cut-in rows lead, and multiple interrupts keep arrival order (got ${order.join("|")})`,
+  );
+  assert(second.queue.items[0].cutIn === true && second.queue.items[1].cutIn === true, "cut-in rows are marked for the UI");
+  assert(second.queue.items[2].cutIn !== true, "ordinary waiting rows stay unmarked");
+
+  const status = (await get("/api/party/status")).members.find((m) => m.name === "backend");
+  assert(!status?.queuedTurnCount, `harness buffer stays empty (got ${status?.queuedTurnCount})`);
+
+  await delay(200);
+  const label = await cdp.eval(`document.querySelector(".wb-queue-cutin")?.textContent?.trim() || ""`);
+  assert(/지금/.test(label), `cut-in rows show why they are ahead (got "${label}")`);
+  const note = await cdp.eval(`document.querySelector(".wb-queue-note")?.textContent?.trim() || ""`);
+  assert(/지금 처리/.test(note), `header note names the cut-in (got "${note}")`);
+
+  const urgentId = second.queue.items[0].id;
+  const cancelled = await post("/api/party/members/backend/queue", { action: "cancel", itemId: urgentId });
+  assert(cancelled.queue.items[0].text === "두 번째 긴급", "cancel removes the earlier interrupt message");
+  assert(cancelled.queue.items.length === 4, "…and leaves the later interrupt plus the three waiting rows");
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await delay(400);
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+}
+
+/**
+ * #23 completion: cutting the bypass must not make interrupt-on-send SLOWER.
+ * After the stop settles, the front-of-queue message must actually be delivered
+ * by the idle drain — "지금 바로 처리" stays true.
+ */
+async function interruptStillDeliversPromptlyAfterStop() {
+  console.log("\n#23 interrupt-on-send still delivers right after the stop:");
+  await post("/api/qa/members/backend/emit", { status: "working" });
+  await delay(300);
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+  await post("/api/party/members/backend/message", { text: "뒤에 남을 메시지 A" });
+  await post("/api/party/members/backend/message", { text: "뒤에 남을 메시지 B" });
+  await delay(200);
+  const marker = `interrupt-prompt-${Date.now()}`;
+  const parked = await post("/api/party/members/backend/message", { text: marker, interrupt: true });
+  assert(parked.queued === true, "interrupt send parks in the app queue");
+  assert(parked.queue?.items?.[0]?.text === marker, "…at the front of ordinary waiting rows");
+  assert(parked.queue?.items?.[1]?.text === "뒤에 남을 메시지 A", "…so the earlier waiting pile is still visible behind it");
+
+  const started = Date.now();
+  let delivered = false;
+  for (let i = 0; i < 30; i += 1) {
+    await delay(50);
+    const queue = (await get("/api/party/members/backend/queue")).queue;
+    if (!queue.items.some((item) => item.text === marker)) {
+      delivered = true;
+      break;
+    }
+  }
+  const elapsed = Date.now() - started;
+  assert(delivered, "the interrupt message left the queue after the turn stopped (idle drain)");
+  assert(elapsed < 1500, `…and promptly (took ${elapsed}ms, want under 1.5s)`);
+
+  const after = (await get("/api/party/members/backend/queue")).queue;
+  assert(
+    after.items[0]?.text === "뒤에 남을 메시지 A" || after.items.length === 0,
+    "the ordinary waiting rows were not delivered ahead of the interrupt message",
+  );
+
+  await delay(900);
+  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await delay(200);
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+}
+
 async function mutationsWork() {
   console.log("\n취소 · 편집 · 순서 · 합치기 (§9):");
   const before = (await get("/api/party/members/backend/queue")).queue;
@@ -517,9 +615,17 @@ async function goingIdleDelivers(cdp) {
 /** §11 keyboard — ArrowUp takes the last queued message back into the composer. */
 async function keyboardShortcuts(cdp) {
   console.log("\n§11 keyboard — ↑ in an empty composer takes the last message back:");
+  // Prior legs may have left mock auto-reply timers that flip idle/responding.
+  // Settle hard before seeding, or the ↑ recall finds an empty queue.
+  await post("/api/party/members/backend/queue", { action: "clear" }).catch(() => {});
+  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await delay(1200);
   await post("/api/qa/members/backend/emit", { status: "working" });
-  await delay(250);
-  await post("/api/party/members/backend/message", { text: "되돌리기로 회수될 메시지." });
+  await delay(300);
+  const mid = (await get("/api/party/status")).members.find((m) => m.name === "backend");
+  assert(mid?.turnActive === true, "member is mid-turn before the recall seed");
+  const seeded = await post("/api/party/members/backend/message", { text: "되돌리기로 회수될 메시지." });
+  assert(seeded.queued === true && seeded.queue?.items?.length >= 1, "recall seed is waiting in the app queue");
   await delay(400);
 
   const back = await cdp.eval(`(async () => {

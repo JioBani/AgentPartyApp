@@ -206,25 +206,34 @@ assert(stopAll.ok && stopAll.data.interrupted.sort().join() === "worker1,worker2
 assert(interrupted.length === beforeAll + 2 && !interrupted.slice(beforeAll).includes(memberSession("main")), "the caller's own session is never interrupted by 'all'");
 snapshots.get(memberSession("main")).status = "idle";
 
-// send with interrupt: a busy recipient's turn is stopped, then the turn queues.
+// send with interrupt: a busy recipient's turn is stopped; the message parks at
+// the FRONT of the app queue and is NOT handed to the harness yet (#23).
 snapshots.get(memberSession("worker2")).status = "responding";
 const beforeInj = { interrupts: interrupted.length, turns: sentTurns.length };
 const inject = await bridge.send("main", "worker2", "urgent: stop and read this", true);
-assert(inject.ok && interrupted.length === beforeInj.interrupts + 1 && sentTurns.length === beforeInj.turns + 1, "send(interrupt=true) stops the busy recipient then delivers");
+const urgentQueue = svc.getMemberQueue("worker2", partyId);
+assert(inject.ok && interrupted.length === beforeInj.interrupts + 1 && sentTurns.length === beforeInj.turns, "send(interrupt=true) stops the busy recipient without handing the harness a turn");
+assert(urgentQueue.items[0]?.text === "urgent: stop and read this", "…and parks the urgent message at the front of the app queue");
+assert(inject.data?.queued === true, "…reported as queued (not failed) so the sender will not duplicate-resend");
 const beforeQueue = interrupted.length;
 snapshots.get(memberSession("worker2")).status = "idle";
 await bridge.send("main", "worker2", "normal follow-up", true);
 assert(interrupted.length === beforeQueue, "send(interrupt=true) to an idle recipient skips the interrupt");
 
 // send with interrupt to a COMPACTING recipient: even though it is busy, the
-// compaction is NOT torn down — the interrupt is suppressed and the turn queues.
+// compaction is NOT torn down — the interrupt is suppressed; the message still
+// parks as a cut-in on the app queue (not the harness buffer).
+svc.clearMemberQueue("worker2", partyId);
 snapshots.get(memberSession("worker2")).status = "responding";
 sessionManager.compacting.add(memberSession("worker2"));
 const beforeCompact = { interrupts: interrupted.length, turns: sentTurns.length };
 const compactSend = await bridge.send("main", "worker2", "don't cut the compaction", true);
-assert(compactSend.ok && interrupted.length === beforeCompact.interrupts && sentTurns.length === beforeCompact.turns + 1, "send(interrupt=true) to a COMPACTING recipient skips the interrupt but still delivers (message queues behind the compaction)");
+const compactQueue = svc.getMemberQueue("worker2", partyId);
+assert(compactSend.ok && interrupted.length === beforeCompact.interrupts && sentTurns.length === beforeCompact.turns, "send(interrupt=true) to a COMPACTING recipient skips the interrupt and does not hand the harness a turn");
+assert(compactQueue.items[0]?.text === "don't cut the compaction" && compactQueue.items[0]?.cutIn === true, "…and parks as a cut-in on the app queue while the compaction finishes");
 sessionManager.compacting.delete(memberSession("worker2"));
 snapshots.get(memberSession("worker2")).status = "idle";
+svc.clearMemberQueue("worker2", partyId);
 
 // broadcast: every other member gets the channel-wrapped message; self excluded.
 // A BUSY recipient's copy goes to its QUEUE instead of being injected — worker1

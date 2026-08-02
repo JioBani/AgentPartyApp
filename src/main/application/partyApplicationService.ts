@@ -20,6 +20,7 @@ import {
   clearQueue,
   describeQueueFailure,
   enqueue,
+  enqueueCutIn,
   mergeInto,
   mergeUp,
   moveItemTo,
@@ -559,12 +560,14 @@ export class PartyApplicationService {
    * channel messages.
    */
   /**
-   * A user turn addressed to one member. `interrupt` stops an in-flight turn so
-   * the message is handled now instead of queueing behind it — the Discord bridge
-   * always sets it, because a person who typed on their phone is waiting, and a
-   * long autonomous turn would otherwise swallow the instruction for minutes.
-   * The compaction exception mirrors {@link sendMessage}: never tear down a
-   * compaction half-way.
+   * A user turn addressed to one member. `interrupt` stops an in-flight turn and
+   * parks the message at the FRONT of the app queue so the idle drain handles it
+   * next — the Discord bridge always sets it, because a person who typed on their
+   * phone is waiting, and a long autonomous turn would otherwise swallow the
+   * instruction for minutes. Never hands a busy harness a turn directly: that
+   * would land in the adapter buffer where the user can neither see nor cancel
+   * it (#23). The compaction exception mirrors {@link sendMessage}: never tear
+   * down a compaction half-way; the message still parks at the front and waits.
    */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
     const workspace = this.workspacePath();
@@ -580,15 +583,16 @@ export class PartyApplicationService {
     if (!sessionId) {
       throw new Error(`Could not start a session for member '${member.name}'.`);
     }
-    if (options?.interrupt && this.isSessionBusy(sessionId) && !this.deps.sessionManager.isCompacting(sessionId)) {
-      this.deps.sessionManager.interrupt(sessionId);
-    }
-    // Busy, and the caller did not ask to cut in: the message waits in the APP's
-    // queue — visible, cancellable, editable — instead of vanishing into the
-    // harness's own buffer, which only ever reported a count. `interrupt` is the
-    // explicit "handle this now" path and deliberately skips the queue.
-    if (!options?.interrupt && this.isSessionBusy(sessionId)) {
-      return this.enqueueForMember(member.name, this.partyIdOf(member), { text, attachments, from: null });
+    // Busy: always the app queue. `interrupt` only changes WHERE in the queue
+    // and WHETHER the turn is stopped — never whether the harness is handed the
+    // turn while still working.
+    if (this.isSessionBusy(sessionId)) {
+      const cutIn = options?.interrupt === true;
+      const compacting = this.deps.sessionManager.isCompacting(sessionId);
+      return this.enqueueForMember(member.name, this.partyIdOf(member), { text, attachments, from: null }, {
+        front: cutIn,
+        stop: cutIn && !compacting,
+      });
     }
     this.deps.sessionManager.sendUserTurn(sessionId, text, attachments);
     // Re-read: startMember wrote the new sessionId/status; reflect it back.
@@ -606,7 +610,8 @@ export class PartyApplicationService {
   // reorder it, merge it) is impossible once the turn has crossed into the
   // adapter. The adapter's own buffer remains as the race-window net: a member
   // can go idle between our busy check and the send, and that turn is simply
-  // delivered normally. See src/shared/messageQueue.ts for the rules.
+  // delivered normally. Interrupt-on-send parks at the front and stops the
+  // turn; it does NOT bypass this queue (#23). See src/shared/messageQueue.ts.
   // ===========================================================================
 
   /** The member's queue as stored, normalized (a member predating this feature reads as empty). */
@@ -635,8 +640,17 @@ export class PartyApplicationService {
    * Parks a message on a member's queue. Refusals (queue full, empty body) are
    * thrown, never absorbed: a caller that believes it queued a message the app
    * actually dropped is exactly the failure mode the queue exists to remove.
+   *
+   * `front` + `stop` is the interrupt / "지금 바로 처리" shape: record the row
+   * first, then stop the turn, so the idle drain is the only path into the
+   * harness and the user can still cancel until that edge fires.
    */
-  private enqueueForMember(name: string, partyId: string | undefined, input: { text: string; attachments?: ImageAttachment[]; from: string | null }): PartyCommandResult {
+  private enqueueForMember(
+    name: string,
+    partyId: string | undefined,
+    input: { text: string; attachments?: ImageAttachment[]; from: string | null },
+    options?: { front?: boolean; stop?: boolean },
+  ): PartyCommandResult {
     const current = this.readState();
     const member = this.requireMember(current, name, partyId);
     const item: QueuedMessage = {
@@ -646,11 +660,25 @@ export class PartyApplicationService {
       at: new Date().toISOString(),
       attachments: input.attachments,
     };
-    const result = enqueue(this.queueOf(member), item);
+    const result = options?.front ? enqueueCutIn(this.queueOf(member), item) : enqueue(this.queueOf(member), item);
     if (!result.ok) {
       throw new Error(describeQueueFailure(result.reason));
     }
-    const written = this.writeQueue(member.name, this.partyIdOf(member), result.value, "message queued");
+    // Persist BEFORE any interrupt: a stop that raced ahead of the write would
+    // let the idle drain run against a queue that does not yet hold this item,
+    // and the next turn would miss it (#23 order invariant).
+    const written = this.writeQueue(
+      member.name,
+      this.partyIdOf(member),
+      result.value,
+      options?.front ? "message queued at front (interrupt)" : "message queued",
+    );
+    if (options?.stop) {
+      const sessionId = written.member.sessionId;
+      if (sessionId && this.deps.sessionManager.hasSession(sessionId)) {
+        this.deps.sessionManager.interrupt(sessionId);
+      }
+    }
     const sender = input.from ? `'${input.from}'` : "the user";
     return {
       ...this.result(`Queued for '${member.name}' (${result.value.items.length} waiting) — from ${sender}.`, written.state, written.member),
@@ -1395,30 +1423,27 @@ export class PartyApplicationService {
       }
     }
     if (sessionId) {
-      // interrupt-and-inject: stop the in-flight turn first so the message is
-      // handled immediately; the adapters' queued-turn drain delivers it once
-      // the interrupt settles. Without the flag it queues behind the turn.
-      // EXCEPTION: never interrupt a compaction — tearing it down half-way would
-      // waste the work and leave context in a partial state; the message queues
-      // behind it instead (compaction is short).
-      if (options?.interrupt && this.isSessionBusy(sessionId) && !this.deps.sessionManager.isCompacting(sessionId)) {
-        this.deps.sessionManager.interrupt(sessionId);
-      }
-      if (!options?.interrupt && this.isSessionBusy(sessionId)) {
-        // Busy: the message joins the SAME visible queue a user's message would,
-        // tagged with its sender so it keeps its own chip and never merges into
-        // someone else's text. Recorded as queued — not delivered — because it
-        // has not reached the member yet.
-        // Record the routing first, THEN enqueue. The other order writes this
-        // (pre-enqueue) state snapshot over the queue the enqueue just saved,
-        // silently losing the message — the exact failure the queue exists to
-        // prevent. `enqueueForMember` re-reads, so it sees this write.
+      if (this.isSessionBusy(sessionId)) {
+        // Busy: same visible queue a user's message uses. `interrupt` parks at
+        // the front and stops the turn (unless compacting); it never hands the
+        // harness a turn while still working — that was the uncancellable path
+        // (#23). Record the routing first, THEN enqueue: the other order writes
+        // this (pre-enqueue) state snapshot over the queue the enqueue just
+        // saved, silently losing the message.
+        const cutIn = options?.interrupt === true;
+        const compacting = this.deps.sessionManager.isCompacting(sessionId);
         message.error = "queued_for_busy_member";
         target.updatedAt = message.createdAt;
         state.messages.push(message);
         this.persistParty(workspace, state, this.partyIdOf(target));
-        log("info", "party", "message queued for busy member", { workspace, partyId: target.partyId, from: message.from, to: message.to });
-        return { ...this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from }), partyMessage: message };
+        log("info", "party", "message queued for busy member", { workspace, partyId: target.partyId, from: message.from, to: message.to, interrupt: cutIn });
+        return {
+          ...this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from }, {
+            front: cutIn,
+            stop: cutIn && !compacting,
+          }),
+          partyMessage: message,
+        };
       }
       // A member-to-member message drove this turn — tag it so the usage ledger
       // attributes the recipient's spend to `party-message` (an overhead trigger).
@@ -1910,6 +1935,13 @@ export class PartyApplicationService {
         try {
           const result = await this.sendGatedMessage(to, content, from || selfMember, undefined, party, { interrupt, force, forceReason });
           notify();
+          // Queued is success: the message is waiting in the app queue and will
+          // be handed over on the idle drain. Reporting failure here made agents
+          // (and anything that retries on !ok) duplicate a message that was
+          // already safely parked — the same class of bug #22 fixed for broadcast.
+          if (result.queued || result.partyMessage?.error === "queued_for_busy_member") {
+            return { ok: true, data: { queued: true } };
+          }
           if (!result.partyMessage?.delivered) {
             // A gate rejection carries its reason in `error` — surface it verbatim
             // so the sender can rewrite; else the generic "not running" hint.

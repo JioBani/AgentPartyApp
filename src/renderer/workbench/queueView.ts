@@ -26,6 +26,11 @@ export interface QueueRowView {
   fromLabel: string;
   /** True when a member sent it, which colours the chip with that member's channel colour. */
   fromMember: boolean;
+  /**
+   * True when this row cut in via interrupt / "지금 바로 처리". Shown so a
+   * jumped order is never silent — the user can see WHY it is ahead.
+   */
+  cutIn: boolean;
   /** This row is the next one that will be delivered. */
   isNext: boolean;
   /** Highlight the row in the member's colour — only meaningful with merging OFF. */
@@ -72,14 +77,11 @@ export interface QueueView {
    *
    * The app queue is not the only queue: each adapter buffers turns on its own
    * `isTurnActive()`, and that is a different source of truth from the session
-   * snapshot this app reads. Two paths put a turn there:
-   *   1. `interrupt: true` — the app deliberately sends mid-turn (the Discord
-   *      bridge always does), and the adapter buffers it until the interrupt
-   *      settles. Not a race: guaranteed.
-   *   2. the genuine window where the snapshot still reads idle but the
-   *      adapter's turn has already begun.
-   * Those items cannot be cancelled or edited — they are past the point of no
-   * return. Counting them into the main total would offer a 취소 button that
+   * snapshot this app reads. The residual path is the genuine race where the
+   * snapshot still reads idle but the adapter's turn has already begun.
+   * Interrupt-on-send no longer feeds that buffer (#23) — it parks at the front
+   * of THIS queue instead. Those harness-held items cannot be cancelled or
+   * edited. Counting them into the main total would offer a 취소 button that
    * cannot work; hiding them would recreate, one layer down, exactly the
    * invisible queue this feature exists to abolish. So they are shown, apart,
    * and labelled as unreachable.
@@ -137,6 +139,7 @@ export function buildQueueView(input: QueueViewInput): QueueView {
   const run = leadRun(items);
   const mixed = hasMixedSenders(items);
   const mergedCount = merge ? run.length : 1;
+  const cutInCount = items.filter((item) => item.cutIn).length;
 
   return {
     count: items.length,
@@ -150,7 +153,7 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     narrow,
     title: `대기열 ${items.length}`,
     chipLabel: `대기열 ${items.length}건`,
-    note: headerNote({ memberName, working, detached, merge, count: items.length }),
+    note: headerNote({ memberName, working, detached, merge, count: items.length, cutInCount }),
     mergeNote: mergeNote({ merge, mixed, count: items.length }),
     // Naming a count that is not actually a merge would overstate what the
     // button does, so a single-item send is just "지금 보내기". While the member
@@ -206,6 +209,7 @@ function buildRow(args: {
     from: item.from ?? null,
     fromLabel: item.from || "나",
     fromMember: Boolean(item.from),
+    cutIn: Boolean(item.cutIn),
     isNext: index === 0,
     highlighted,
     open: openRows.has(item.id),
@@ -213,7 +217,13 @@ function buildRow(args: {
     // resize, the same rule that keeps 삭제 on the narrow row.
     showExpand: true,
     expandLabel: openRows.has(item.id) ? "접기" : "펼쳐서 전체 보기",
-    showNextBadge: density === "wide" && (merge ? inLeadingRun : index === 0),
+    // Two rules, both kept. With merge on, every row that will go out in this
+    // turn says so — not just the first. And a cut-in row says 지금 처리
+    // instead, which already explains why it is ahead; two chips on one row
+    // would compete to answer the same question.
+    // `run` respects the cut-in boundary (see leadRun), so a cut-in row at the
+    // front forms its own run and the ordinary rows behind it stay unbadged.
+    showNextBadge: density === "wide" && !item.cutIn && (merge ? inLeadingRun : index === 0),
     showSendNowText: index === 0 && !narrow && !merge,
     showSendNowIcon: index === 0 && narrow,
     // Narrow drops reordering and editing entirely rather than shrinking five
@@ -224,7 +234,7 @@ function buildRow(args: {
     // over an impossible action.
     showGrip: !narrow && items.length > 1,
     index,
-    showMergeUp: index > 0 && sameSenderAsPrevious && !narrow,
+    showMergeUp: index > 0 && sameSenderAsPrevious && Boolean(previous?.cutIn) === Boolean(item.cutIn) && !narrow,
     onRail,
     railTop: index === 0 ? "50%" : "0",
     railBottom: index === run.length - 1 ? "50%" : "0",
@@ -239,11 +249,27 @@ function sendLabel(args: { working: boolean; merge: boolean; runLength: number }
   return merged ? `합쳐서 지금 보내기 · ${args.runLength}건` : "지금 보내기";
 }
 
-function headerNote(args: { memberName: string; working: boolean; detached: boolean; merge: boolean; count: number }): string {
+function headerNote(args: {
+  memberName: string;
+  working: boolean;
+  detached: boolean;
+  merge: boolean;
+  count: number;
+  cutInCount: number;
+}): string {
   if (args.detached) {
     // Never imply an imminent send when there is nothing to send to. The queue
     // is kept, not dropped — but the user has to know it is parked.
     return "세션 재시작 대기 중 — 시작하면 전송됩니다";
+  }
+  if (args.cutInCount > 0) {
+    // Interrupt / send-now cut ahead of ordinary waiting rows. Name that so the
+    // jumped order is never a silent reshuffle of the list the user is watching.
+    const head = args.cutInCount === 1 ? "지금 처리할 1건이 맨 앞에 있습니다" : `지금 처리할 ${args.cutInCount}건이 맨 앞에 있습니다`;
+    if (args.working) {
+      return `${head} — 턴이 끝나면 그것부터 전송됩니다`;
+    }
+    return `${head} — 지금 보내기를 누르면 그것부터 전송됩니다`;
   }
   if (!args.working) {
     return "지금 보내기를 누르면 전송됩니다";
@@ -271,15 +297,19 @@ function collapsedPreview(items: QueuedMessage[]): string {
 
 /** Distinct senders in first-appearance order, capped at three — a density cue, not a roster. */
 function senderDots(items: QueuedMessage[]): Array<{ key: string; from: string | null }> {
-  const seen: string[] = [];
+  // Deduplicated on the sender itself (null = the user), and the React key is
+  // namespaced, so a member named "user" cannot collide with the user's own
+  // dot. The key used to carry a raw NUL byte as that sentinel, which made git
+  // treat this whole file as binary and refuse to merge it.
+  const seen: Array<string | null> = [];
   const dots: Array<{ key: string; from: string | null }> = [];
   for (const item of items) {
-    const key = item.from || " me";
-    if (seen.includes(key)) {
+    const from = item.from ?? null;
+    if (seen.includes(from)) {
       continue;
     }
-    seen.push(key);
-    dots.push({ key, from: item.from ?? null });
+    seen.push(from);
+    dots.push({ key: from === null ? "user" : `member:${from}`, from });
     if (dots.length === 3) {
       break;
     }

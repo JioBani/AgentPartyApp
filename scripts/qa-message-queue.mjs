@@ -40,6 +40,10 @@ console.log("\nleadRun (merge boundary):");
   assert(Q.leadRun([]).length === 0, "an empty queue has an empty run");
   assert(Q.leadRun(queueOf(item("a", "1", "reviewer"), item("b", "2", "reviewer")).items).length === 2, "a member's own consecutive items form one run");
 
+  const cutInThenWaiting = queueOf({ ...item("u", "urgent"), cutIn: true }, item("a", "1"), item("b", "2"));
+  assert(Q.leadRun(cutInThenWaiting.items).length === 1, "a cut-in row does not merge with ordinary waiting rows behind it");
+  assert(Q.leadRun([{ ...item("u1", "a"), cutIn: true }, { ...item("u2", "b"), cutIn: true }]).length === 2, "consecutive cut-in rows from the same sender still form one run");
+
   const alternating = queueOf(item("a", "1"), item("b", "2", "reviewer"), item("c", "3"));
   assert(Q.leadRun(alternating.items).length === 1, "a single leading item is a run of one");
   assert(Q.hasMixedSenders(alternating.items) === true, "mixed senders are detected");
@@ -63,8 +67,19 @@ console.log("\nenqueue:");
   const appended = Q.enqueue(queueOf(item("a", "1")), item("b", "2"));
   assert(appended.ok && appended.value.items.map((i) => i.id).join(",") === "a,b", "enqueue always appends to the end");
 
+  const front = Q.enqueueCutIn(queueOf(item("a", "1"), item("b", "2")), item("u", "urgent"));
+  assert(front.ok && front.value.items.map((i) => i.id).join(",") === "u,a,b", "enqueueCutIn parks interrupt/send-now ahead of waiting rows");
+  assert(front.value.items[0].cutIn === true, "…and marks the row so the UI can say why it is ahead");
+  assert(queueOf(item("a", "1")).items.map((i) => i.id).join(",") === "a", "enqueueCutIn leaves the original queue untouched");
+
+  const second = Q.enqueueCutIn(front.value, item("u2", "second urgent"));
+  assert(second.ok && second.value.items.map((i) => i.id).join(",") === "u,u2,a,b", "a later interrupt keeps arrival order among cut-in rows (does not leapfrog the earlier one)");
+
   const blank = Q.enqueue(queueOf(), item("x", "   "));
   assert(!blank.ok && blank.reason === "empty_text", "whitespace-only text is refused, not silently queued");
+
+  const blankFront = Q.enqueueCutIn(queueOf(), item("x", "   "));
+  assert(!blankFront.ok && blankFront.reason === "empty_text", "enqueueCutIn refuses empty text the same way");
 
   const withImage = Q.enqueue(queueOf(), { ...item("x", ""), attachments: [{ id: "i" }] });
   assert(withImage.ok, "an image-only message is legitimate and accepted");
@@ -73,6 +88,8 @@ console.log("\nenqueue:");
   const overflow = Q.enqueue(full, item("over", "y"));
   assert(!overflow.ok && overflow.reason === "queue_full", "past the limit enqueue REFUSES rather than dropping silently");
   assert(full.items.length === Q.QUEUE_LIMIT, "the refused enqueue left the queue untouched");
+  const overflowFront = Q.enqueueCutIn(full, item("over", "y"));
+  assert(!overflowFront.ok && overflowFront.reason === "queue_full", "enqueueCutIn refuses at the same limit");
 }
 
 // ============ 4) failure is reported, not swallowed ============
@@ -202,12 +219,12 @@ console.log("\nparseQueueCommand (HTTP/IPC edge):");
 
 // ============ 9) the OTHER queue is never hidden ============
 // There are two queues: this app's, and the one each harness adapter keeps on
-// its own `isTurnActive()`. A turn reaches the adapter's while invisible here in
-// two ways — `interrupt: true` sends mid-turn on purpose (the Discord bridge
-// always does), and the window where the session snapshot still reads idle but
-// the adapter's turn has begun. Those items cannot be cancelled. The view model
-// must therefore SHOW them; hiding them would rebuild the invisible queue this
-// whole feature exists to abolish, one layer down.
+// its own `isTurnActive()`. A turn can still reach the adapter's buffer through
+// the genuine race where the session snapshot still reads idle but the
+// adapter's turn has begun. Interrupt-on-send no longer feeds that buffer
+// (#23) — it parks as a cut-in row on THIS queue instead. Harness-held items
+// cannot be cancelled. The view model must therefore SHOW them; hiding them
+// would rebuild the invisible queue this whole feature exists to abolish.
 console.log("\nharness-held messages are disclosed, not hidden:");
 {
   const V = await load("src/renderer/workbench/queueView.ts", "queue-view.mjs");
@@ -221,6 +238,13 @@ console.log("\nharness-held messages are disclosed, not hidden:");
   assert(view(2).handedOver === 2, "…and reports how many, so the count is never understated");
   assert(view(2).count === 0, "they are NOT folded into the cancellable count — 취소 must not be offered for them");
   assert(view(undefined).handedOver === 0, "a member with no live session reports none rather than NaN");
+
+  const cutInView = V.buildQueueView({
+    queue: { items: [{ id: "u", text: "urgent", from: null, at: "2026-08-02T00:00:00.000Z", cutIn: true }, { id: "a", text: "waiting", from: null, at: "2026-08-02T00:00:00.000Z" }] },
+    density: "wide", working: true, detached: false, memberName: "backend", openRows: new Set(),
+  });
+  assert(cutInView.rows[0].cutIn === true && cutInView.rows[1].cutIn === false, "cut-in rows are flagged in the view model");
+  assert(/지금 처리/.test(cutInView.note), "the header note explains why cut-in rows are ahead");
 }
 
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "All message queue assertions passed"}`);
