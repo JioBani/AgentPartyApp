@@ -13,7 +13,7 @@
  */
 
 import { useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ArrowUpFromLine, ChevronDown, GripVertical, Lock, Maximize2, Minimize2, Pencil, X } from "lucide-react";
+import { AlignLeft, ArrowRight, ArrowUpFromLine, ChevronDown, GripVertical, Lock, Maximize2, Minimize2, Pencil, SendHorizontal, X } from "lucide-react";
 import type { QueueCommand } from "../../shared/messageQueue";
 import { memberColorVars } from "../theme/memberColors";
 import { buildQueueView, type QueueRowView } from "./queueView";
@@ -33,6 +33,8 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   const [error, setError] = useState("");
   const [drag, setDrag] = useState<DragState | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  /** The queue block itself — used to find this panel's conversation area. */
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const queue = view.member.queue;
   const model = buildQueueView({
@@ -103,20 +105,31 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   }
 
   /**
-   * Whether the pointer is over the BODY of a row rather than near its edge.
+   * The row the pointer is over, for merging.
    *
-   * The middle band means "onto this message" (merge); the edges keep meaning
-   * "between these messages" (reorder). Splitting the row this way lets one
-   * gesture express both without a modifier key — and leaves a way to reorder
-   * past a row you do not want to merge with.
+   * Deliberately forgiving. Merging is aimed at a THING, not at a boundary, so
+   * the target is the whole row minus a thin strip at each edge that stays
+   * reserved for "between these two" — and once a row is engaged it keeps the
+   * pointer through a wider area than it took to acquire it. Without that
+   * hysteresis the target flickers on and off along a one-pixel line, which is
+   * what made this feel like threading a needle.
+   *
+   * Horizontal position is ignored on purpose: the pointer leaves the list
+   * sideways all the time while dragging, and losing the target for that would
+   * punish the hand for moving in a direction that means nothing here.
    */
-  function mergeTargetUnder(clientY: number): QueueRowView | null {
+  function mergeTargetUnder(clientY: number, engaged: string | null | undefined): QueueRowView | null {
     const rows = Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []);
     for (let index = 0; index < rows.length; index += 1) {
       const box = rows[index].getBoundingClientRect();
-      const band = Math.min(box.height * 0.3, 14);
-      if (clientY >= box.top + band && clientY <= box.bottom - band) {
-        return model.rows[index] || null;
+      const row = model.rows[index];
+      if (!row) {
+        continue;
+      }
+      // A held target keeps the pointer well past the edge it was caught in.
+      const edge = row.id === engaged ? 0 : Math.min(box.height * 0.22, 9);
+      if (clientY >= box.top + edge && clientY <= box.bottom - edge) {
+        return row;
       }
     }
     return null;
@@ -125,24 +138,46 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   function startDrag(event: React.PointerEvent<HTMLElement>, row: QueueRowView) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ id: row.id, from: row.index, to: row.index, pointerY: event.clientY, offset: 0, slots: snapshotRows(), released: false });
+    setDrag({ id: row.id, from: row.index, to: row.index, pointerX: event.clientX, pointerY: event.clientY, offsetX: 0, offset: 0, slots: snapshotRows(), released: false });
   }
 
   function moveDrag(event: React.PointerEvent<HTMLElement>) {
     if (!drag || drag.released) {
       return;
     }
-    const over = mergeTargetUnder(event.clientY);
+    const over = mergeTargetUnder(event.clientY, drag.mergeInto);
     // Only a row that can actually receive the merge counts as a target, so the
     // "합치기" affordance never appears where the drop would be refused.
     const source = model.rows.find((row) => row.id === drag.id);
     const mergeInto = over && over.id !== drag.id && source && over.from === source.from ? over.id : null;
+    // Dragged clear of the queue and over the conversation: dropping there hands
+    // the message over immediately.
+    const throwZone = mergeInto ? null : transcriptUnder(event.clientX, event.clientY);
     setDrag({
       ...drag,
+      offsetX: event.clientX - drag.pointerX,
       offset: event.clientY - drag.pointerY,
       to: slotUnder(event.clientY, drag.slots),
       mergeInto,
+      overTranscript: Boolean(throwZone),
+      throwZone,
     });
+  }
+
+  /**
+   * This panel's conversation area, when the pointer is inside it.
+   *
+   * Returns the box as well, so the affordance can be drawn over the
+   * conversation itself rather than floating in the middle of the window.
+   */
+  function transcriptUnder(clientX: number, clientY: number): { top: number; left: number; width: number; height: number } | null {
+    const transcript = rootRef.current?.closest(".wb-panel")?.querySelector(".wb-transcript");
+    if (!transcript) {
+      return null;
+    }
+    const box = transcript.getBoundingClientRect();
+    const inside = clientX >= box.left && clientX <= box.right && clientY >= box.top && clientY <= box.bottom;
+    return inside ? { top: box.top, left: box.left, width: box.width, height: box.height } : null;
   }
 
   /**
@@ -158,7 +193,14 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
       return;
     }
     event.currentTarget.releasePointerCapture(event.pointerId);
-    const { id, from, to, mergeInto } = drag;
+    const { id, from, to, mergeInto, overTranscript } = drag;
+    // Thrown into the conversation: that is the same "send this one now" the row
+    // offers as a button, reached by putting the message where it would go.
+    if (overTranscript) {
+      setDrag(null);
+      void run({ action: "sendItem", itemId: id });
+      return;
+    }
     // Merging removes the carried row entirely, so there is no slot for it to
     // land in — the parking animation below would be animating towards a place
     // that is about to stop existing.
@@ -272,7 +314,20 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   }
 
   return (
-    <div className="wb-queue" style={memberColorVars(view.name)} aria-live="polite">
+    <div className={"wb-queue" + (drag ? " is-dragging-row" : "")} ref={rootRef} style={memberColorVars(view.name)} aria-live="polite">
+      {/* Dragged out of the queue and over the conversation. Shown THERE, where
+          the message would land, rather than back in the list it is leaving. */}
+      {drag?.throwZone && (
+        <div className="wb-queue-throw" role="status" style={drag.throwZone}>
+          {/* Says what dropping REALLY does. On a working member this is the
+              same path as 지금 보내기: the turn is stopped, and with merging on
+              the whole leading run leaves together — so the card names the
+              stop and the count instead of promising that one row goes alone. */}
+          <span className="wb-queue-throw-card">
+            <SendHorizontal size={13} /> 놓으면 {model.sendNowLabel} — {model.sendNowHint}
+          </span>
+        </div>
+      )}
       <div className="wb-queue-head">
         <button type="button" className="wb-queue-title" onClick={() => void run({ action: "preference", collapsed: !model.collapsed })}>
           <AlignLeft size={12} className="wb-queue-glyph" />
@@ -306,7 +361,9 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
             <div className={rowClass(row, drag)} style={rowStyle(row, drag)} key={row.id} role="listitem" data-queue-index={row.index}>
               {row.onRail && !drag && <span className="wb-queue-rail" style={{ top: row.railTop, bottom: row.railBottom }} />}
               {/* Says what the drop will DO, on the row it will do it to —
-                  otherwise "merge" and "reorder" look identical mid-gesture. */}
+                  otherwise "merge" and "reorder" look identical mid-gesture.
+                  Anchored LEFT, over the grip: the hand is there, so that is
+                  where the answer to "what happens if I let go" belongs. */}
               {drag?.mergeInto === row.id && (
                 <span className="wb-queue-merge-hint"><ArrowUpFromLine size={11} /> 이 메시지와 합치기</span>
               )}
@@ -370,13 +427,20 @@ interface DragState {
   /** Row this would be folded INTO, when the pointer is over a row's body. */
   mergeInto?: string | null;
   /** Pointer position when the row was picked up. */
+  pointerX: number;
   pointerY: number;
+  /** Sideways travel — the row follows the hand rather than riding a rail. */
+  offsetX: number;
   /** How far the carried row has travelled from its own slot. */
   offset: number;
   /** The layout as it was at pick-up — see `snapshotRows`. */
   slots: Array<{ top: number; height: number }>;
   /** Dropped, and waiting for the reorder to come back. */
   released: boolean;
+  /** Over the conversation, where dropping sends the message immediately. */
+  overTranscript?: boolean;
+  /** That conversation's box, so the affordance is drawn where it applies. */
+  throwZone?: { top: number; left: number; width: number; height: number } | null;
 }
 
 function rowClass(row: QueueRowView, drag: DragState | null): string {
@@ -392,7 +456,7 @@ function rowClass(row: QueueRowView, drag: DragState | null): string {
   if (drag.mergeInto === row.id) {
     return `${className} is-merge-target`;
   }
-  if (drag.mergeInto) {
+  if (drag.mergeInto || drag.overTranscript) {
     return className;
   }
   return `${className} is-shifting`;
@@ -412,11 +476,11 @@ function rowStyle(row: QueueRowView, drag: DragState | null): React.CSSPropertie
     return undefined;
   }
   if (drag.id === row.id) {
-    return { transform: `translateY(${drag.offset}px)` };
+    return { transform: `translate(${drag.offsetX}px, ${drag.offset}px)` };
   }
-  // While a merge is on offer the list stays put: opening a gap would promise an
-  // insertion that is not what the drop does.
-  if (drag.mergeInto) {
+  // While a merge or a send is on offer the list stays put: opening a gap would
+  // promise an insertion that is not what the drop does.
+  if (drag.mergeInto || drag.overTranscript) {
     return undefined;
   }
   const carried = drag.slots[drag.from];

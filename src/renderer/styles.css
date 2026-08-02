@@ -2555,6 +2555,10 @@ body.wb-resizing {
 /* Dropping ONTO a row folds the dragged message into it. Marked as a solid
    accent target rather than a drop LINE: a line means "lands between these two",
    which is the other half of the same gesture and must not look the same. */
+/* The carried row rides above everything while it is in hand, so it is never
+   slid under a neighbour that is stepping aside. */
+.wb-queue-row.is-dragging { z-index: 4; }
+
 .wb-queue-row.is-merge-target {
   border-style: solid;
   border-color: var(--accent);
@@ -2564,8 +2568,13 @@ body.wb-resizing {
 .wb-queue-merge-hint {
   position: absolute;
   top: -9px;
-  right: 8px;
-  z-index: 2;
+  /* LEFT, over the grip. The gesture starts there, so the answer to "what
+     happens if I let go" belongs where the hand already is — not at the far end
+     of the row where the eye has no reason to be. */
+  left: 6px;
+  /* Above the carried row and every row stepping aside, or the badge is covered
+     by the very motion it is explaining. */
+  z-index: 5;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -2578,6 +2587,7 @@ body.wb-resizing {
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, .45);
 }
 
 /* Same 6px the panel used when the rows were its direct children — the wrapper
@@ -6499,4 +6509,34 @@ body.wb-resizing {
 
 .wb-attachment-copy:hover {
   background: rgba(0, 0, 0, 0.8);
+}
+
+
+/* Dragged out of the queue and over the conversation: dropping there hands the
+   message to the member at once. Drawn in the conversation, where it would go —
+   an affordance shown back in the list would be pointing at the wrong place. */
+.wb-queue-throw {
+  position: fixed;
+  z-index: 60;
+  border-radius: var(--radius-panel);
+  background: var(--accent-dim);
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wb-queue-throw-card {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, .5);
 }
