@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
-import { imageDataUrl } from "../../shared/attachments";
+import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { memberColorVars } from "../theme/memberColors";
 
 interface TranscriptProps {
@@ -133,10 +133,7 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
           {block.attachments && block.attachments.length > 0 && (
             <div className="wb-msg-images">
               {block.attachments.map((image, index) =>
-                image.dataBase64
-                  ? <img key={index} className="wb-msg-image" src={imageDataUrl(image)} alt={image.name || "attached image"} title={image.name} />
-                  // Restored (persisted) block: bytes were dropped to bound the file.
-                  : <span key={index} className="wb-msg-image-stub" title={image.name}><ImageOff size={12} /> {image.name || "이미지"}</span>,
+                <MsgImage key={index} image={image} />,
               )}
             </div>
           )}
@@ -497,23 +494,161 @@ export function ExpandableText({ text, title, markdown }: { text: string; title:
  * regularly ends with the pointer outside the popup, which closed it and lost
  * the selection. Closing is explicit (✕) or Escape — a key the user presses on
  * purpose, unlike a stray click.
+ *
+ * `actions` sits in the header before ✕ so image fit/copy controls reuse this
+ * shell instead of inventing a second overlay (R-19).
  */
-function DetailModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+function DetailModal({ title, onClose, actions, wide, children }: {
+  title: string;
+  onClose: () => void;
+  actions?: ReactNode;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      // Claim Escape so a focused panel's R-12 interrupt does not also fire
+      // while this overlay is open (R-13: popup first).
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
     <div className="wb-tool-modal-backdrop">
-      <div className="wb-tool-modal">
+      <div className={"wb-tool-modal" + (wide ? " is-wide" : "")}>
         <div className="wb-tool-modal-head">
           <span className="wb-mono wb-tool-name">{title}</span>
-          <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>
+          <div className="wb-tool-modal-actions">
+            {actions}
+            <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>
+          </div>
         </div>
         <div className="wb-tool-modal-body">{children}</div>
       </div>
     </div>
+  );
+}
+
+/**
+ * An image that stayed in the transcript (R-18 / R-19). Copy and full-size view
+ * live HERE — not on the composer attachment strip (that was the mis-wired
+ * earlier attempt). Bytes already gone (persisted stub) get a label only; there
+ * is nothing left to copy or enlarge.
+ */
+function MsgImage({ image }: { image: ImageAttachment }) {
+  const [viewer, setViewer] = useState(false);
+  // Fit shrinks to the viewport; actual shows native pixels and scrolls when
+  // the image is larger than the modal. Default to fit so a huge screenshot
+  // does not blow past the screen on open.
+  const [fit, setFit] = useState(true);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyError, setCopyError] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  if (!image.dataBase64) {
+    return (
+      <span className="wb-msg-image-stub" title={image.name}>
+        <ImageOff size={12} /> {image.name || "이미지"}
+      </span>
+    );
+  }
+
+  const src = imageDataUrl(image);
+  const label = image.name || "이미지";
+
+  async function copyImage(event?: { preventDefault(): void; stopPropagation(): void }) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    try {
+      await window.agentParty.copyImageToClipboard({ dataBase64: image.dataBase64!, mediaType: image.mediaType });
+      setCopyError("");
+      setCopyState("copied");
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopyState("idle"), 1400);
+    } catch (error) {
+      // Never a silent no-op: a failed copy must say so, or the user pastes
+      // stale clipboard content and blames the other app.
+      setCopyState("failed");
+      setCopyError(`이미지를 클립보드로 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopyState("idle"), 1800);
+    }
+  }
+
+  const copyTitle = copyState === "copied" ? "복사됨" : copyState === "failed" ? "복사 실패" : "클립보드로 복사";
+  const copyBtn = (
+    <button
+      type="button"
+      className={"wb-icon-btn wb-msg-image-copy is-" + copyState}
+      title={copyTitle}
+      aria-label={copyTitle}
+      data-copy-state={copyState}
+      onClick={(event) => void copyImage(event)}
+    >
+      {copyState === "copied" ? <Check size={13} /> : copyState === "failed" ? <X size={13} /> : <Copy size={13} />}
+    </button>
+  );
+
+  return (
+    <>
+      <div className="wb-msg-image-wrap">
+        <button
+          type="button"
+          className="wb-msg-image-hit"
+          title={`${label} — 클릭하면 크게 보기`}
+          aria-label={`${label} 크게 보기`}
+          onClick={() => setViewer(true)}
+        >
+          <img className="wb-msg-image" src={src} alt={label} />
+        </button>
+        <div className="wb-msg-image-toolbar">
+          {copyBtn}
+          <button
+            type="button"
+            className="wb-icon-btn"
+            title="크게 보기"
+            aria-label="크게 보기"
+            onClick={() => setViewer(true)}
+          >
+            <Maximize2 size={13} />
+          </button>
+        </div>
+        {copyError && <div className="wb-msg-image-error" role="alert">{copyError}</div>}
+      </div>
+      {viewer && (
+        <DetailModal
+          title={label}
+          wide
+          onClose={() => setViewer(false)}
+          actions={
+            <>
+              <button
+                type="button"
+                className="wb-icon-btn"
+                title={fit ? "실제 크기로 보기" : "화면에 맞추기"}
+                aria-label={fit ? "실제 크기로 보기" : "화면에 맞추기"}
+                data-image-zoom={fit ? "fit" : "actual"}
+                onClick={() => setFit((current) => !current)}
+              >
+                {fit ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+              </button>
+              {copyBtn}
+            </>
+          }
+        >
+          <div className={"wb-image-viewer" + (fit ? " is-fit" : " is-actual")}>
+            <img src={src} alt={label} />
+          </div>
+        </DetailModal>
+      )}
+    </>
   );
 }
 
