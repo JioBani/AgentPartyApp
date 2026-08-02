@@ -393,6 +393,44 @@ next person does not re-investigate a silent orphan.
 | `test:engine-rpc` | **Currently red for a product reason, not a stale assertion.** The headless `engineServerEntry` pulls `AppController`, which imports `electron` (`clipboard`/`nativeImage`). The QA correctly refuses an Electron reference in the WSL-bound server bundle. Do not wire into `test:ui` until the headless entry is Electron-free again; that is a product fix, not a test tweak. |
 | `test:wsl-*` | Need a WSL distro (and often a built `dist/engine-server.mjs`). Wiring them would fail every Windows-only `test:ui` run. Judged separately from this batch. |
 
+### Measuring the screen instead of squinting at it
+
+Verification is a person driving the real app now, which leaves one gap: the
+things that decide a faithful reproduction are the things eyes are worst at. A
+1px gap looks right. A search box wrongly placed **inside** the scroll region
+looks right until the user scrolls. A row covered by an invisible overlay looks
+clickable. This project has passed a capture by eye before and been wrong.
+
+`POST /api/measure` closes that gap — see `docs/API.md` for the full shape.
+Typical use while comparing against a handoff:
+
+```bash
+# sizes, spacing and the styles a mockup pins down
+curl -s -X POST $BASE/api/measure -H 'Content-Type: application/json' -d '{
+  "selector": ".wb-queue-row", "styles": ["gap","borderRadius","overflowY","flex","minHeight"] }'
+
+# is the header really outside the scrolling list? (identical in a screenshot)
+curl -s -X POST $BASE/api/measure -H 'Content-Type: application/json' -d '{
+  "selector": ".catalog-search", "within": ".catalog-scroll" }'
+
+# after scrolling to the bottom, is the last row reachable or covered?
+curl -s -X POST $BASE/api/measure -H 'Content-Type: application/json' -d '{
+  "selector": ".catalog-row:last-child", "scroll": {"selector": ".catalog-scroll", "to": "bottom"},
+  "at": {"x": 640, "y": 700} }'
+```
+
+Two habits make it worth having:
+
+- **Report the numbers you read, not "it matched".** The value is that the next
+  person can disagree with your judgement without re-running anything.
+- **Check the instrument on something you already know.** Measuring an element
+  whose size the handoff pins down (the queue's 17×17 ordinal chip) is how you
+  find out the ruler is wrong before you trust it on something you don't know.
+
+A selector that matches nothing **fails**. That is deliberate: "measured zero"
+and "measured nothing" would otherwise be the same answer, and a typo would read
+as a passing measurement.
+
 ### Where the jsdom bundles go, and why it matters
 
 The jsdom tests can't import TypeScript, so each one bundles the module under

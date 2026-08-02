@@ -116,6 +116,58 @@ step that silently did nothing turns every downstream assertion — and every
 { "path": "C:\\tmp\\lower.png", "scrollY": 900, "theme": "dark", "click": "[data-tu=compare-toggle]" }
 ```
 
+### `POST /api/measure`
+
+Reads measurements off the **live screen**. `/api/capture` answers "what does it
+look like"; this answers "what is it".
+
+The questions that decide a faithful reproduction are not visible in a picture: a
+1px gap, whether a search box sits INSIDE the scroll region (identical before the
+first scroll, wrong only after the user scrolls), whether the last row is
+actually clickable or merely drawn under something else. This returns those as
+numbers so a person judges on evidence rather than on "looks about right".
+
+**It asserts nothing** — it is an instrument, not a test. And it is **not a way
+to run code in the renderer**: the script is fixed, and the request supplies
+selectors, style names and attribute names. What can be asked is enumerable on
+purpose, so the next reader can tell what was verified from the request alone.
+
+```json
+{
+  "selector": ".wb-queue-row",
+  "styles": ["gap", "borderRadius", "overflowY", "flex", "minHeight", "transform", "fill"],
+  "attributes": ["placeholder", "aria-expanded", "data-queue-index"],
+  "within": ".wb-queue-list",
+  "containedBy": ".wb-panel",
+  "at": { "x": 886, "y": 693 },
+  "scroll": { "selector": ".wb-transcript", "to": "bottom" },
+  "limit": 100
+}
+```
+
+Everything but `selector` is optional.
+
+| Field | Answers |
+|---|---|
+| `styles` | computed values, by CSS property name |
+| `attributes` | attribute values; **`null` = absent**, `""` = present and empty |
+| `within` | is each match a **descendant** of that element — the "is the search box inside the scroll region" question |
+| `containedBy` | is each match's box inside that element's box, plus how far it spills on each edge (clipping) |
+| `at` | what is **actually at a point**: the top-most element, the stack under it, and whether the top-most belongs to `selector`. Tells "drawn there" from "reachable there" |
+| `scroll` | scrolls that element (pixels or `"bottom"`) **before** measuring, and reports the position reached |
+
+Each element carries `box` (viewport coordinates), `content`/`scroll` sizes,
+`scrollable` (content taller/wider than the visible area — the "only the list
+scrolls" question), `text`, and whatever `styles`/`attributes` were asked for.
+The response also has `count`, `texts` in document order (list ordering), `gaps`
+between consecutive matches, the active `theme`, and the `viewport`.
+
+**Not measuring and measuring zero are different facts.** A selector that matches
+nothing is a **500 naming the selector** — never an empty list, never a zero.
+The same for a `within`/`containedBy`/`scroll` target that does not exist, an
+unknown style property, and an `at` point outside the window. A typo must not be
+able to come back as "gap: 0, looks fine".
+
 ### `POST /api/clipboard/image`
 
 Puts an image on the OS clipboard, so it can be pasted into any other app. The

@@ -991,6 +991,68 @@ export class AppController {
   }
 
   /**
+   * Reads measurements off the LIVE screen — the numbers behind a design review.
+   *
+   * A capture answers "what does it look like"; this answers "what is it". The
+   * questions that decide a faithful reproduction are not visible in a picture:
+   * a 1px gap, whether a search box sits INSIDE the scroll region (identical
+   * before the first scroll, wrong only after the user scrolls), whether the
+   * last row is actually clickable or merely drawn under something else.
+   *
+   * Deliberately NOT a way to run arbitrary code in the renderer. The script is
+   * fixed here; the request supplies selectors, style names and attribute names
+   * — data. That boundary is the point: what a caller can ask is enumerable, so
+   * the next person can tell what was verified from the request alone.
+   *
+   * It ASSERTS NOTHING. It returns values and a human decides. What it does
+   * refuse to do is answer when it could not measure: a selector that matches
+   * nothing is an error, never an empty list or a zero. "Gap: 0, looks fine" out
+   * of a typo is exactly the silent pass this project keeps being bitten by.
+   */
+  async measureWindow(windowId: string | undefined, body: any): Promise<Record<string, unknown>> {
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    const selector = typeof body?.selector === "string" ? body.selector.trim() : "";
+    if (!selector) {
+      throw new Error("Measure requires a 'selector'.");
+    }
+    const asNames = (value: unknown, field: string): string[] => {
+      if (value === undefined) return [];
+      if (!Array.isArray(value) || value.some((name) => typeof name !== "string" || !name.trim())) {
+        throw new Error(`Measure '${field}' must be an array of names.`);
+      }
+      return value.map((name) => String(name).trim());
+    };
+    const request = {
+      selector,
+      styles: asNames(body?.styles, "styles"),
+      attributes: asNames(body?.attributes, "attributes"),
+      limit: Number.isFinite(Number(body?.limit)) && Number(body.limit) > 0 ? Math.floor(Number(body.limit)) : 100,
+      within: typeof body?.within === "string" ? body.within.trim() : "",
+      containedBy: typeof body?.containedBy === "string" ? body.containedBy.trim() : "",
+      at: body?.at && Number.isFinite(Number(body.at.x)) && Number.isFinite(Number(body.at.y))
+        ? { x: Number(body.at.x), y: Number(body.at.y) }
+        : null,
+      scroll: body?.scroll && typeof body.scroll.selector === "string" && body.scroll.selector.trim()
+        ? { selector: String(body.scroll.selector).trim(), to: body.scroll.to === "bottom" ? "bottom" : Number(body.scroll.to) || 0 }
+        : null,
+    };
+    const result = await win.webContents
+      .executeJavaScript(`(${MEASURE_SCRIPT})(${JSON.stringify(request)})`)
+      .catch((error: unknown) => {
+        throw new Error(`Measure failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    if (result?.error) {
+      // The renderer refusing to answer is a failure of the request, not a
+      // result to be reported as data.
+      throw new Error(String(result.error));
+    }
+    return { ok: true, ...result };
+  }
+
+  /**
    * Puts an image on the OS clipboard, so an image attached in the composer can
    * be pasted into any other app. The one route behind both the thumbnail's copy
    * button and `POST /api/clipboard/image`.
@@ -1291,3 +1353,142 @@ export class AppController {
   }
 
 }
+
+/**
+ * The body of `POST /api/measure`, as source, evaluated in the renderer with the
+ * request as its only argument.
+ *
+ * Written as one self-contained function so the page never receives caller
+ * text: everything variable arrives as data through `request`. Every branch that
+ * cannot answer returns `{ error }` rather than a plausible-looking zero —
+ * measuring nothing and measuring zero are different facts, and reporting the
+ * first as the second is how a typo becomes "spacing 0, looks correct".
+ */
+const MEASURE_SCRIPT = `function measure(request) {
+  const round = (value) => Math.round(value * 100) / 100;
+  const rectOf = (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height), top: round(r.top), right: round(r.right), bottom: round(r.bottom), left: round(r.left) };
+  };
+  const describe = (el) => {
+    if (!el) return null;
+    const id = el.id ? "#" + el.id : "";
+    const cls = typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).join(".") : "";
+    return el.tagName.toLowerCase() + id + cls;
+  };
+
+  const applied = {};
+  // Scroll first when asked: several questions ("is the last row reachable",
+  // "does the header survive") only have an answer at a scroll position.
+  if (request.scroll) {
+    const target = document.querySelector(request.scroll.selector);
+    if (!target) return { error: "Measure scroll found no element for selector '" + request.scroll.selector + "' — nothing was scrolled." };
+    target.scrollTop = request.scroll.to === "bottom" ? target.scrollHeight : request.scroll.to;
+    applied.scrollTop = round(target.scrollTop);
+    applied.scrolledTo = request.scroll.to;
+  }
+
+  const nodes = Array.from(document.querySelectorAll(request.selector));
+  if (!nodes.length) return { error: "Measure found no element for selector '" + request.selector + "'." };
+
+  let within = null;
+  if (request.within) {
+    within = document.querySelector(request.within);
+    if (!within) return { error: "Measure 'within' found no element for selector '" + request.within + "'." };
+  }
+  let container = null;
+  if (request.containedBy) {
+    container = document.querySelector(request.containedBy);
+    if (!container) return { error: "Measure 'containedBy' found no element for selector '" + request.containedBy + "'." };
+  }
+
+  const shown = nodes.slice(0, request.limit);
+  const elements = shown.map((el, index) => {
+    const cs = getComputedStyle(el);
+    const styles = {};
+    for (const name of request.styles) {
+      const value = cs.getPropertyValue(name) || cs[name];
+      // An unknown property computes to "" — that is "could not measure",
+      // not "measured empty", and the caller must not read it as a value.
+      if (value === undefined || value === "") return { failed: "Measure could not read style '" + name + "' (unknown property?)." };
+      styles[name] = String(value);
+    }
+    const attributes = {};
+    for (const name of request.attributes) {
+      // null = the attribute is absent; "" = present and empty. Different facts.
+      attributes[name] = el.hasAttribute(name) ? el.getAttribute(name) : null;
+    }
+    const box = rectOf(el);
+    const entry = {
+      index,
+      tag: describe(el),
+      text: (el.textContent || "").trim().slice(0, 200),
+      box,
+      content: { width: round(el.clientWidth), height: round(el.clientHeight) },
+      scroll: { width: round(el.scrollWidth), height: round(el.scrollHeight), top: round(el.scrollTop), left: round(el.scrollLeft) },
+      // Scrollable is content-vs-visible, not a style — the question behind
+      // "does only the list scroll".
+      scrollable: { vertical: el.scrollHeight > el.clientHeight + 1, horizontal: el.scrollWidth > el.clientWidth + 1 },
+      styles,
+      attributes,
+    };
+    if (within) {
+      entry.withinAncestor = within.contains(el) && within !== el;
+    }
+    if (container) {
+      const c = rectOf(container);
+      entry.containedBy = {
+        fully: box.top >= c.top - 1 && box.bottom <= c.bottom + 1 && box.left >= c.left - 1 && box.right <= c.right + 1,
+        overflowTop: round(Math.max(0, c.top - box.top)),
+        overflowBottom: round(Math.max(0, box.bottom - c.bottom)),
+        overflowLeft: round(Math.max(0, c.left - box.left)),
+        overflowRight: round(Math.max(0, box.right - c.right)),
+      };
+    }
+    return entry;
+  });
+  const failed = elements.find((entry) => entry && entry.failed);
+  if (failed) return { error: failed.failed };
+
+  // Gaps between consecutive matches — the "1px apart" question, answered
+  // between the boxes rather than eyeballed across a screenshot.
+  const gaps = [];
+  for (let i = 1; i < elements.length; i += 1) {
+    gaps.push({
+      from: i - 1,
+      to: i,
+      vertical: round(elements[i].box.top - elements[i - 1].box.bottom),
+      horizontal: round(elements[i].box.left - elements[i - 1].box.right),
+    });
+  }
+
+  const result = {
+    selector: request.selector,
+    count: nodes.length,
+    measured: elements.length,
+    texts: shown.map((el) => (el.textContent || "").trim()),
+    elements,
+    gaps,
+    theme: document.documentElement.getAttribute("data-theme") || "",
+    viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio },
+  };
+  if (Object.keys(applied).length) result.applied = applied;
+
+  // What is actually at a point — the only way to tell "drawn there" from
+  // "reachable there" when something else is painted on top.
+  if (request.at) {
+    const { x, y } = request.at;
+    if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+      return { error: "Measure 'at' point (" + x + "," + y + ") is outside the window (" + window.innerWidth + "x" + window.innerHeight + ")." };
+    }
+    const stack = document.elementsFromPoint(x, y);
+    if (!stack.length) return { error: "Measure 'at' point (" + x + "," + y + ") hit no element." };
+    result.at = {
+      point: { x, y },
+      topMost: describe(stack[0]),
+      stack: stack.slice(0, 8).map(describe),
+      matchesSelector: shown.some((el) => el === stack[0] || el.contains(stack[0])),
+    };
+  }
+  return result;
+}`;
