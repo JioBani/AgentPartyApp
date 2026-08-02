@@ -3,10 +3,10 @@ import { JSDOM } from "jsdom";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaTempFile } from "./lib/qaTemp.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const out = path.join(root, "node_modules", ".qa", "subscription-disconnect-ui.mjs");
-fs.mkdirSync(path.dirname(out), { recursive: true });
+const out = qaTempFile("subscription-disconnect-ui.mjs");
 await build({
   entryPoints: [path.join(root, "src", "renderer", "app", "secondaryViews.tsx")],
   bundle: true,

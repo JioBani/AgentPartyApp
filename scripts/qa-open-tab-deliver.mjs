@@ -2,19 +2,18 @@
  * R-63 — party messages to an open tab without a live session auto-start and
  * deliver (same as user turns). Closed tabs still refuse.
  *
- * Drives PartyApplicationService with a fake SessionManager. Bundle output goes
- * to a private temp dir (not node_modules/.qa) so this does not collide with
- * other lanes' unit-test intermediates.
+ * Drives PartyApplicationService with a fake SessionManager. Takes a FRESH
+ * directory per run, because a workspace lives beside the bundle and a previous
+ * run's leftovers would read as this run's state.
  */
 import { build } from "esbuild";
 import { mkdirSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaRunDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(os.tmpdir(), `ap-r63-qa-${process.pid}`);
-mkdirSync(outDir, { recursive: true });
+const outDir = qaRunDir("open-tab-deliver");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };

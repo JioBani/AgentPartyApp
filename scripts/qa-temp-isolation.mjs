@@ -48,6 +48,39 @@ console.log("\nthe shared install really is shared — and the bundles are not i
 }
 
 /*
+ * Every script, not just this one.
+ *
+ * The first pass at this fix rewrote 69 scripts by matching how they spelled
+ * the path — and missed two that spelled it differently. They kept writing to
+ * the shared install while the check above reported isolation, because the
+ * check only ever looked at its own answer. That is the same fault one level
+ * up: a guard that inspects part of the surface and reports on all of it.
+ *
+ * So the rule is stated about the whole surface. Any script that bundles a
+ * module and imports the result has to get its directory from this one helper —
+ * whatever spelling it would otherwise have invented.
+ */
+console.log("\nevery bundling script asks the same place where to write:");
+{
+  const dir = path.join(here, "scripts");
+  const offenders = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".mjs") && !name.endsWith(".js")) continue;
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    // "Bundles something and imports what it built" — the shape that needs a
+    // private place to put it.
+    const bundles = /from "esbuild"/.test(text) && /pathToFileURL/.test(text);
+    if (!bundles) continue;
+    if (!/qaTempDir\(|qaTempFile\(|qaRunDir\(/.test(text)) {
+      offenders.push(name);
+    }
+  }
+  assert(offenders.length === 0, offenders.length
+    ? `these decide for themselves where to write: ${offenders.join(", ")}`
+    : "no script rolls its own scratch location");
+}
+
+/*
  * The property that actually matters, exercised rather than reasoned about: two
  * checkouts must not choose the same file for the same bundle name. Asking the
  * OTHER worktree's own copy of this module keeps the test honest — it reads the

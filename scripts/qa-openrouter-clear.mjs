@@ -4,9 +4,9 @@
  */
 import { build } from "esbuild";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaRunDir } from "./lib/qaTemp.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -24,7 +24,9 @@ assert(appSrc.includes("clearOpenRouterKey"), "App clears OpenRouter through the
 assert(preload.includes("clearOpenRouterKey:"), "preload already exposes clearOpenRouterKey");
 
 console.log("\nauthService clears the stored key:");
-const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ap-or-clear-qa-"));
+// Fresh per run: a userData tree lives beside the bundle, and a stored key left
+// over from a previous run would make "the key was cleared" untestable.
+const outDir = qaRunDir("openrouter-clear");
 const out = path.join(outDir, "auth-clear.mjs");
 const userData = path.join(outDir, "user-data");
 fs.mkdirSync(userData, { recursive: true });
