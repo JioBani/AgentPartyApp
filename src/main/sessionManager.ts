@@ -24,7 +24,7 @@ import type { TokenTrigger, TurnUsageRecord } from "../shared/tokenUsage";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
 import { log } from "./logger";
-import { saveAttachments } from "./attachmentStore";
+import { retentionPolicyOf, saveAttachments, sweepWorkspaceOnce } from "./attachmentStore";
 import { executionModelFor } from "../shared/modelIdentity";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../shared/codexAuthentication";
 import { CodexAuthenticationStore } from "./codexAuthenticationStore";
@@ -816,11 +816,39 @@ export class SessionManager extends EventEmitter {
     // by trigger (person vs member-to-member message vs …). Consumed on
     // turn_complete; see {@link recordTurnUsage}.
     session.pendingTrigger = trigger;
+    if (attachments?.length) {
+      this.sweepAttachments(session);
+    }
     // Persist attachments as real files BEFORE the adapter translates them, so
     // every harness can hand the model a path it can actually open. This runs
     // inside the engine that owns the session, so the path is already native to
     // the side that will read it — see src/main/attachmentStore.ts.
     session.adapter.sendUserTurn(text, saveAttachments(session.workspace, attachments));
+  }
+
+  /**
+   * Enforces attachment retention for this session's workspace, once per run,
+   * and announces anything it removed IN THE CONVERSATION.
+   *
+   * The announcement is the requirement, not a courtesy: earlier turns can still
+   * name a saved file by path, and once retention deletes it those paths stop
+   * working. Told here, the user can connect "그 파일을 못 찾겠다" to the
+   * clean-up. Told only to a log file, they cannot.
+   */
+  private sweepAttachments(session: ManagedSession): void {
+    const removed = sweepWorkspaceOnce(session.workspace, retentionPolicyOf(getSettings()));
+    if (!removed) {
+      return;
+    }
+    this.queueEvent(session, {
+      type: "diagnostic",
+      severity: "info",
+      category: "attachment",
+      title: "오래된 첨부 파일을 정리했습니다",
+      detail: removed,
+      recovery: "보존 기간이나 용량 상한은 설정에서 바꿀 수 있습니다.",
+      at: new Date().toISOString(),
+    });
   }
 
   hasSession(id: string): boolean {

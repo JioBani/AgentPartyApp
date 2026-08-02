@@ -53,6 +53,57 @@ export function attachmentsDir(workspacePath: string): string {
   return path.join(workspacePath, ROOT_DIR, ATTACHMENTS_DIR);
 }
 
+/** Workspaces already swept in this process — retention runs once per run. */
+const swept = new Set<string>();
+
+/**
+ * Runs the retention sweep the first time a workspace is used in this process,
+ * and returns a line to show the user when it removed anything.
+ *
+ * Lazy rather than scheduled, matching how `discovery` and the Discord claims
+ * stay tidy. It RETURNS the line instead of logging it, so the caller can put it
+ * where the user is actually looking: a removal announced only to a log file is
+ * still a removal nobody was told about, and a transcript can go on naming a
+ * path that no longer opens.
+ */
+export function sweepWorkspaceOnce(workspacePath: string, policy?: AttachmentRetentionPolicy): string | null {
+  if (!workspacePath || swept.has(workspacePath)) {
+    return null;
+  }
+  swept.add(workspacePath);
+  let report: AttachmentPruneReport | null = null;
+  try {
+    report = pruneAttachments(workspacePath, policy);
+  } catch (error) {
+    log("warn", "attachment", "attachment retention sweep failed", {
+      workspace: workspacePath,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  const line = describePruneReport(report);
+  if (line && report) {
+    log("info", "attachment", "attachment retention removed files", { workspace: workspacePath, ...report });
+  }
+  return line;
+}
+
+/** The effective policy from user settings, falling back to the defaults. */
+export function retentionPolicyOf(settings?: {
+  attachmentRetention?: { maxAgeDays: number; maxMegabytes: number };
+}): AttachmentRetentionPolicy {
+  const configured = settings?.attachmentRetention;
+  if (!configured) {
+    return DEFAULT_ATTACHMENT_RETENTION;
+  }
+  // 0 means "no limit on this axis", expressed as an unreachable bound rather
+  // than a special case each call site would have to remember.
+  return {
+    maxAgeDays: configured.maxAgeDays > 0 ? configured.maxAgeDays : Number.POSITIVE_INFINITY,
+    maxBytes: configured.maxMegabytes > 0 ? configured.maxMegabytes * 1024 * 1024 : Number.POSITIVE_INFINITY,
+  };
+}
+
 /**
  * Writes one attachment into the workspace and returns its absolute path.
  *
