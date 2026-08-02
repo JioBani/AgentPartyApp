@@ -19,12 +19,16 @@ import {
   imageDataUrl,
   type ImageAttachment,
 } from "../../shared/attachments";
+import { fileReference, type FileReference, type ReferenceKind } from "../../shared/fileReferences";
 import {
-  addFileReference,
-  composeMessageWithReferences,
-  fileReference,
-  type FileReference,
-} from "../../shared/fileReferences";
+  clampOutOfChip,
+  draftReferences,
+  endOfDraft,
+  insertChipAt,
+  rehydrateDraft,
+  serializeDraft,
+  setCaret,
+} from "./composerDraft";
 import { sendsOnEnter } from "../../shared/composerSettings";
 import { useComposerPrefs } from "../app/composerPrefs";
 import { usePartyMembers } from "../app/partyMemberPrefs";
@@ -71,12 +75,19 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
-  /** Dropped NON-image files. Shown as name chips; sent as full paths. */
-  const [references, setReferences] = useState<FileReference[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const prefs = useComposerPrefs();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** The rich editing surface. Its serialization IS `draft`. */
+  const editorRef = useRef<HTMLDivElement>(null);
+  /**
+   * Every reference the editor has held this draft. Kept so a draft restored
+   * from outside (queue edit) can turn its paths back into chips; the editor's
+   * own chips remain the source of truth for what gets sent.
+   */
+  const knownRefs = useRef<FileReference[]>([]);
+  /** Last text pushed INTO the editor, so we only rebuild on external changes. */
+  const renderedRef = useRef("");
   const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
@@ -118,10 +129,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
   // draft is the command, while a mention happens mid-sentence and replaces just
   // the token under the caret. Keeping them apart leaves `/` untouched.
   const partyMembers = usePartyMembers();
-  const [caret, setCaret] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const mention = useMemo(() => detectMention(draft, caret), [draft, caret]);
+  /** The caret's own text node and offset — a mention never spans nodes. */
+  const [caretText, setCaretText] = useState("");
+  const mention = useMemo(() => detectMention(caretText, caretText.length), [caretText]);
   const mentionMatches = useMemo(
     () => (mention ? mentionCandidates(partyMembers, view.name, mention.query) : []),
     [mention, partyMembers, view.name],
@@ -131,52 +143,86 @@ export function Composer({ view, density, actions }: ComposerProps) {
   useEffect(() => { setMentionIndex(0); }, [mention?.query]);
   useEffect(() => { if (!mention) { setMentionDismissed(false); } }, [mention]);
 
-  /** Tracks the caret so a mention is detected where the user is actually typing. */
-  function syncCaret(target: HTMLTextAreaElement | HTMLInputElement) {
-    setCaret(target.selectionStart ?? target.value.length);
+  /** The caret's text node and offset, when the caret is inside the editor. */
+  function caretPoint(): { node: Text; offset: number } | null {
+    const root = editorRef.current;
+    const selection = root?.ownerDocument.defaultView?.getSelection();
+    if (!root || !selection || selection.rangeCount === 0) {
+      return null;
+    }
+    const range = selection.getRangeAt(0);
+    if (!root.contains(range.startContainer) || range.startContainer.nodeType !== Node.TEXT_NODE) {
+      return null;
+    }
+    return { node: range.startContainer as Text, offset: range.startOffset };
+  }
+
+  /** Re-reads the text before the caret, which is what arms `@`. */
+  function syncCaret() {
+    const point = caretPoint();
+    setCaretText(point ? (point.node.nodeValue || "").slice(0, point.offset) : "");
+  }
+
+  /** The editor changed: its serialization becomes the draft. */
+  function syncDraft() {
+    const root = editorRef.current;
+    if (!root) {
+      return;
+    }
+    const text = serializeDraft(root);
+    renderedRef.current = text;
+    setDraft(text);
+    syncCaret();
   }
 
   function applyMentionChoice(member: MentionCandidate) {
-    if (!mention) {
+    const point = caretPoint();
+    const root = editorRef.current;
+    if (!mention || !point || !root) {
       return;
     }
-    const next = applyMention(draft, mention, member.name);
-    setDraft(next.draft);
+    // Replace only the `@query` under the caret, inside its own text node, so
+    // the rest of the sentence (and every chip in it) is left alone.
+    const before = (point.node.nodeValue || "").slice(0, point.offset);
+    const start = before.length - mention.query.length - 1;
+    const inserted = `@${member.name} `;
+    point.node.nodeValue = before.slice(0, start) + inserted + (point.node.nodeValue || "").slice(point.offset);
+    const range = root.ownerDocument.createRange();
+    range.setStart(point.node, start + inserted.length);
+    range.collapse(true);
+    setCaret(root, range);
     setMentionDismissed(true);
-    // Put the caret back after the inserted name; without this it jumps to the
-    // end and the rest of a half-written sentence is stranded behind it.
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (el) {
-        el.focus();
-        el.setSelectionRange(next.caret, next.caret);
-        setCaret(next.caret);
-      }
-    });
+    syncDraft();
   }
 
   /**
-   * Types `@` at the caret for the toolbar button, inserting a leading space
-   * when needed so the trigger starts a word (mid-word it is an email, not a
-   * mention, and the popover would correctly refuse to open).
+   * Types `@` at the caret for the toolbar button, adding a leading space when
+   * needed so the trigger starts a word (mid-word it is an email address, and
+   * the popover correctly refuses to open).
    */
   function insertMentionTrigger() {
-    const el = textareaRef.current;
-    const at = el ? el.selectionStart ?? draft.length : draft.length;
-    const needsSpace = at > 0 && !/[\s(\[{"']$/.test(draft.slice(0, at));
-    const inserted = (needsSpace ? " @" : "@");
-    const next = draft.slice(0, at) + inserted + draft.slice(at);
-    const caretAfter = at + inserted.length;
-    setDraft(next);
+    const root = editorRef.current;
+    if (!root) {
+      return;
+    }
+    root.focus();
+    const point = caretPoint();
+    const doc = root.ownerDocument;
+    const range = doc.createRange();
+    if (point) {
+      const before = (point.node.nodeValue || "").slice(0, point.offset);
+      const inserted = before.length > 0 && !/[\s(\[{"']$/.test(before) ? " @" : "@";
+      point.node.nodeValue = before + inserted + (point.node.nodeValue || "").slice(point.offset);
+      range.setStart(point.node, before.length + inserted.length);
+    } else {
+      const node = doc.createTextNode(root.textContent ? " @" : "@");
+      root.appendChild(node);
+      range.setStart(node, node.nodeValue!.length);
+    }
+    range.collapse(true);
+    setCaret(root, range);
     setMentionDismissed(false);
-    requestAnimationFrame(() => {
-      const input = textareaRef.current;
-      if (input) {
-        input.focus();
-        input.setSelectionRange(caretAfter, caretAfter);
-      }
-      setCaret(caretAfter);
-    });
+    syncDraft();
   }
 
   /** Returns true when the mention popover consumed the key. */
@@ -207,15 +253,23 @@ export function Composer({ view, density, actions }: ComposerProps) {
     }
   }
 
-  // Grow the textarea with its content (up to a cap, then it scrolls), and
-  // shrink back when the draft is cleared/shortened.
+  /*
+   * A contenteditable must not be re-rendered by the framework on every
+   * keystroke — that destroys the caret. The draft is held as a value and the
+   * DOM is written directly, so this only rebuilds when the draft changed from
+   * OUTSIDE the editor (cleared after send, restored from the queue), detected
+   * by comparing against what was last put in.
+   */
   useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) {
+    const root = editorRef.current;
+    if (!root || renderedRef.current === draft) {
       return;
     }
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px";
+    renderedRef.current = draft;
+    rehydrateDraft(root, draft, knownRefs.current);
+    if (document.activeElement === root) {
+      setCaret(root, endOfDraft(root));
+    }
   }, [draft]);
 
   async function addFiles(files: File[]) {
@@ -257,11 +311,20 @@ export function Composer({ view, density, actions }: ComposerProps) {
       .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
       .map((item) => item.getAsFile())
       .filter((file): file is File => Boolean(file));
-    if (files.length === 0) {
-      return; // let text paste through normally
+    if (files.length) {
+      event.preventDefault();
+      void addFiles(files);
+      return;
     }
-    event.preventDefault();
-    void addFiles(files);
+    // Paste as PLAIN text. A contenteditable would otherwise take the clipboard's
+    // HTML — fonts, colours, even elements that look like chips but carry no
+    // path — and the editor would stop being a faithful view of what is sent.
+    const text = event.clipboardData?.getData("text/plain");
+    if (text) {
+      event.preventDefault();
+      event.currentTarget.ownerDocument.execCommand("insertText", false, text);
+      syncDraft();
+    }
   }
 
   /**
@@ -273,54 +336,86 @@ export function Composer({ view, density, actions }: ComposerProps) {
    */
   function onDrop(event: DragEvent) {
     setDragging(false);
-    const files = Array.from(event.dataTransfer?.files || []);
+    const transfer = event.dataTransfer;
+    const files = Array.from(transfer?.files || []);
     if (files.length === 0) {
       return;
     }
     event.preventDefault();
+
+    // `webkitGetAsEntry` is the only thing that tells a folder from a file here,
+    // and the items are neutered once this handler returns — so read the kinds
+    // NOW, before any await.
+    const kinds = Array.from(transfer?.items || []).map((item) => {
+      const entry = item.webkitGetAsEntry?.();
+      return entry?.isDirectory ? "folder" : "file";
+    }) as ReferenceKind[];
+
     const images = files.filter((file) => file.type.startsWith("image/"));
-    const others = files.filter((file) => !file.type.startsWith("image/"));
+    // A folder has no MIME type, so it can never be mistaken for an image.
+    const others = files
+      .map((file, index) => ({ file, kind: kinds[index] || "file" }))
+      .filter(({ file, kind }) => kind === "folder" || !file.type.startsWith("image/"));
+
     if (images.length) {
       void addFiles(images);
     }
     if (others.length) {
-      insertPaths(others);
+      // Where the pointer let go — that is where the chip belongs, because the
+      // words around it are what say which file is meant.
+      insertReferences(others, dropRange(event));
     }
   }
 
+  /** The caret position under the drop point, falling back to the draft's end. */
+  function dropRange(event: DragEvent): Range | null {
+    const root = editorRef.current;
+    if (!root) {
+      return null;
+    }
+    const doc = root.ownerDocument as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null };
+    const at = doc.caretRangeFromPoint?.(event.clientX, event.clientY) || null;
+    if (at && root.contains(at.startContainer)) {
+      return clampOutOfChip(at);
+    }
+    return endOfDraft(root);
+  }
+
   /**
-   * Turns dropped non-image files into reference chips, reporting any whose path
-   * cannot be resolved.
+   * Inserts a chip per dropped item at the drop point, reporting any whose path
+   * could not be resolved.
    *
-   * The chip shows the file NAME; the full path is kept on the reference and is
-   * what goes out on send (see {@link composeMessageWithReferences}). Losing the
-   * path here would leave the user believing they attached a file that the
-   * member cannot open — so an unresolved one is surfaced, never dropped.
+   * The chip displays the name; the element carries the full path, and that is
+   * what serialization sends. An item whose path cannot be read is surfaced
+   * rather than skipped — silently dropping it would leave the user believing
+   * they attached something the member cannot open.
    */
-  function insertPaths(files: File[]) {
+  function insertReferences(items: { file: File; kind: ReferenceKind }[], range: Range | null) {
+    const root = editorRef.current;
+    if (!root) {
+      return;
+    }
+    root.focus();
+    let at = range || endOfDraft(root);
     const unresolved: string[] = [];
-    const resolved: FileReference[] = [];
-    for (const file of files) {
+    for (const { file, kind } of items) {
       let filePath = "";
       try {
         filePath = window.agentParty.pathForFile?.(file) || "";
       } catch {
         filePath = ""; // reported below — never a silent drop
       }
-      if (filePath) {
-        resolved.push(fileReference(filePath));
-      } else {
+      if (!filePath) {
         unresolved.push(file.name || "이름 없는 항목");
+        continue;
       }
+      const reference = fileReference(filePath, kind);
+      knownRefs.current = [...knownRefs.current.filter((r) => r.path !== reference.path), reference];
+      at = insertChipAt(root, at, reference);
     }
-    if (resolved.length) {
-      setReferences((current) => resolved.reduce(addFileReference, current));
-    }
+    setCaret(root, at);
+    syncDraft();
     setAttachError(unresolved.length ? `${unresolved.join(", ")}의 경로를 확인하지 못했습니다.` : "");
-  }
-
-  function removeReference(path: string) {
-    setReferences((current) => current.filter((reference) => reference.path !== path));
   }
 
   function onDragOver(event: DragEvent) {
@@ -343,17 +438,17 @@ export function Composer({ view, density, actions }: ComposerProps) {
    */
   function submit(event?: FormEvent, bypassQueue = false) {
     event?.preventDefault();
-    // What the model receives: the message plus every referenced path in full.
-    // The chips are presentation only — a member reads files itself, so the path
-    // is the whole point of the attachment and must survive to here.
-    const text = composeMessageWithReferences(draft, references);
+    // What the model receives is the editor read back as plain text: every chip
+    // writes out its FULL path. The chip only ever shortened the display.
+    const root = editorRef.current;
+    const text = (root ? serializeDraft(root) : draft).trim();
     if (!text && attachments.length === 0) {
       return;
     }
     const images = attachments.length ? attachments : undefined;
     setDraft("");
+    knownRefs.current = [];
     setAttachments([]);
-    setReferences([]);
     setAttachError("");
     void (async () => {
       const result = await actions.sendMessage(view.name, text, images);
@@ -415,9 +510,38 @@ export function Composer({ view, density, actions }: ComposerProps) {
     }
   }
 
-  // A dropped file is a complete request on its own — send must be available
-  // with references and no typed message.
-  const canSend = Boolean(draft.trim()) || attachments.length > 0 || references.length > 0;
+  // A dropped file is a complete request on its own: the draft is non-empty the
+  // moment a chip is in it, because a chip serializes to its path.
+  const canSend = Boolean(draft.trim()) || attachments.length > 0;
+  /**
+   * The editing surface, shared by both densities.
+   *
+   * `contenteditable` rather than a textarea because a chip has to sit INSIDE
+   * the sentence. React must never re-render it from `draft` (that would kill
+   * the caret), so it is uncontrolled here and rebuilt only by the effect above.
+   * The placeholder is CSS on an empty editor, since there is no native one.
+   */
+  function editor(className: string, multiline: boolean, placeholder: string) {
+    return (
+      <div
+        ref={editorRef}
+        className={className + " wb-composer-editor"}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline={multiline}
+        aria-label={`${view.name}에게 보낼 메시지`}
+        data-placeholder={placeholder}
+        onInput={syncDraft}
+        onKeyDown={(event) => onKeyDown(event, multiline)}
+        onKeyUp={syncCaret}
+        onClick={syncCaret}
+        onFocus={syncCaret}
+        onPaste={onPaste}
+      />
+    );
+  }
+
   const palettePopover = palette.open ? (
     <CommandPalette commands={palette.matches} activeIndex={palette.activeIndex} onHover={palette.setActiveIndex} onSelect={palette.apply} />
   ) : null;
@@ -434,27 +558,15 @@ export function Composer({ view, density, actions }: ComposerProps) {
   // R-18 moved image copy to the transcript (where the image stays after send).
   // The composer strip only removes — copying a not-yet-sent paste is rarely
   // useful, and the control made the mis-wired feature look "done".
-  // Images and files share one strip: an image keeps its thumbnail (you
-  // recognise a picture by looking at it), a file becomes a name chip (a path
-  // is unreadable at a glance and its bytes are never sent). Side by side, the
-  // difference between the two is legible on screen.
-  const attachmentStrip = attachments.length > 0 || references.length > 0 ? (
+  //
+  // Only IMAGES live here. A file or folder goes inline in the sentence, where
+  // the words next to it say which one is meant.
+  const attachmentStrip = attachments.length > 0 ? (
     <div className="wb-attachments">
       {attachments.map((image, index) => (
         <div className="wb-attachment" key={`${image.name || "img"}-${index}`} title={image.name}>
           <img src={imageDataUrl(image)} alt={image.name || "attached image"} />
           <button type="button" className="wb-attachment-x" title="제거" onClick={() => removeAttachment(index)}><X size={11} /></button>
-        </div>
-      ))}
-      {references.map((reference) => (
-        // The full path lives in the tooltip: on screen it would crowd out
-        // everything else, but it is what the member actually receives.
-        <div className="wb-file-chip" key={reference.path} title={reference.path} data-path={reference.path}>
-          <FileText size={11} className="wb-file-chip-icon" />
-          <span className="wb-file-chip-name">{reference.name}</span>
-          <button type="button" className="wb-file-chip-x" title="제거" aria-label={`${reference.name} 제거`} onClick={() => removeReference(reference.path)}>
-            <X size={10} />
-          </button>
         </div>
       ))}
     </div>
@@ -526,8 +638,10 @@ export function Composer({ view, density, actions }: ComposerProps) {
    * substituted, so recalling a message never destroys something already typed.
    */
   function takeBackForEdit(text: string) {
+    // Goes through `draft`, so the rehydrate effect rebuilds the editor and any
+    // path in the recalled text becomes a chip again where it is still known.
     setDraft((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n${text}` : text));
-    textareaRef.current?.focus();
+    editorRef.current?.focus();
   }
 
   // Sits between the transcript and the composer, inside the same border-top
@@ -543,16 +657,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
         {attachmentStrip}
         {attachHint}
         <div className="wb-composer-bar">
-          <input
-            className="wb-composer-input"
-            value={draft}
-            onChange={(event) => { setDraft(event.target.value); syncCaret(event.target); }}
-            onKeyDown={(event) => onKeyDown(event, false)}
-            onKeyUp={(event) => syncCaret(event.currentTarget)}
-            onClick={(event) => syncCaret(event.currentTarget)}
-            onPaste={onPaste}
-            placeholder={queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`}
-          />
+          {editor("wb-composer-input", false, queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`)}
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
           {iconOnly}
           {permission}
@@ -569,27 +674,17 @@ export function Composer({ view, density, actions }: ComposerProps) {
       <div className="wb-composer-box">
         {attachmentStrip}
         {attachHint}
-        <textarea
-          ref={textareaRef}
-          className="wb-composer-textarea"
-          value={draft}
-          onChange={(event) => { setDraft(event.target.value); syncCaret(event.target); }}
-          onKeyDown={(event) => onKeyDown(event, true)}
-          onKeyUp={(event) => syncCaret(event.currentTarget)}
-          onClick={(event) => syncCaret(event.currentTarget)}
-          onPaste={onPaste}
-          rows={2}
-          // While the member works, say where the text will actually GO. Without
-          // this the box still reads "send a message" at the exact moment it no
-          // longer sends one.
-          placeholder={
-            queueing
-              ? `${view.name}가 작업 중 — 보내면 대기열에 쌓입니다`
-              : imageBlocked
-                ? `${view.name}에게 메시지 보내기…`
-                : `${view.name}에게 메시지 보내기… (이미지 붙여넣기/끌어놓기 가능)`
-          }
-        />
+        {/* While the member works, say where the text will actually GO — the box
+            must not read "send a message" at the moment it no longer sends one. */}
+        {editor(
+          "wb-composer-textarea",
+          true,
+          queueing
+            ? `${view.name}가 작업 중 — 보내면 대기열에 쌓입니다`
+            : imageBlocked
+              ? `${view.name}에게 메시지 보내기… (파일·폴더 끌어놓기 가능)`
+              : `${view.name}에게 메시지 보내기… (이미지·파일·폴더 끌어놓기 가능)`,
+        )}
         <div className="wb-composer-row">
           <div className="wb-composer-tools">
             {/* This button existed but did nothing. It is the entry point for
@@ -606,7 +701,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
       {/* Shown for ANY drag: a text-only model still accepts a dropped path. */}
       {dragging && (
         <div className="wb-composer-dropzone">
-          {imageBlocked ? "여기에 파일을 놓으면 경로가 입력됩니다" : "이미지는 첨부되고, 그 외 파일은 경로가 입력됩니다"}
+          {imageBlocked ? "놓은 자리에 파일·폴더가 붙습니다" : "이미지는 첨부되고, 파일·폴더는 놓은 자리에 붙습니다"}
         </div>
       )}
     </form>

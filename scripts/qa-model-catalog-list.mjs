@@ -97,16 +97,18 @@ console.log("\nAssembly order (filter → favourites → provider groups):");
   const base = buildCatalogView({ entries: ENTRIES, query: "", favorites: FAVS, provOpen: {}, selectedKey: keyOf("claude-sonnet-4.5") });
   assert(groupIds(base)[0] === "favorites", "favourites section is first");
   assert(modelsIn(groupNamed(base, "favorites")).join() === "claude-sonnet-4.5,gpt-5", "favourites keep CATALOG order, not the order they were starred");
-  assert(!modelsIn(groupNamed(base, "anthropic")).includes("claude-sonnet-4.5"), "a starred model is REMOVED from its provider group (never listed twice)");
-  assert(groupNamed(base, "anthropic").entries.length === 2, "provider count is the REMAINING models (opus + haiku)");
-  assert(groupNamed(base, "openai").entries.length === 1, "openai keeps only o4-mini once gpt-5 is starred");
+  // Shown in BOTH places on purpose: pinning is a shortcut, not a new home, so
+  // a provider group stays a complete inventory of what that provider offers.
+  assert(modelsIn(groupNamed(base, "anthropic")).includes("claude-sonnet-4.5"), "a starred model ALSO stays in its provider group");
+  assert(groupNamed(base, "anthropic").entries.length === 3, "the provider count is the provider's whole list, starred or not");
+  assert(groupNamed(base, "openai").entries.length === 2, "openai still lists gpt-5 alongside o4-mini");
   assert(base.favoriteCount === 2 && base.total === 6, "header counts: 6 total, 2 favourites");
   assert(catalogCountLabel(base) === "6 available · ★ 2", "browsing label matches the confirmed design");
 
   // The decisive one: grouping BEFORE filtering would leave a starred match
   // inside a collapsed provider group, hiding it.
   const searched = buildCatalogView({ entries: ENTRIES, query: "gpt", favorites: FAVS, provOpen: {}, selectedKey: keyOf("claude-sonnet-4.5") });
-  assert(groupIds(searched).join() === "favorites", "a starred match surfaces in the favourites section and no provider group survives");
+  assert(groupIds(searched).join() === "favorites,openai", "a starred match is pinned AND left in its provider group; groups with no match are dropped");
   assert(modelsIn(groupNamed(searched, "favorites")).join() === "gpt-5", "the favourites section shows only the models that MATCH");
   assert(catalogCountLabel(searched) === "1 / 6 일치", "searching label switches to n / m 일치");
 

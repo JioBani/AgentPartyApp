@@ -3203,6 +3203,73 @@ body.wb-resizing {
   outline: none;
 }
 
+/* The editing surface is contenteditable, so chips can sit inside the sentence.
+   Text wraps and whitespace is kept exactly as typed. */
+.wb-composer-editor {
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
+/* contenteditable has no placeholder of its own. */
+.wb-composer-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.wb-composer-input.wb-composer-editor {
+  height: auto;
+  min-height: 28px;
+  max-height: 96px;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* A dropped file or folder, inline where it was dropped. It is an ATOM: not
+   editable from the inside, and one backspace removes the whole thing — a chip
+   edited character by character would keep its label while its path drifted out
+   of meaning. */
+.wb-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 260px;
+  height: 20px;
+  padding: 0 var(--space-2) 0 6px;
+  margin: 0 1px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border);
+  color: var(--text-0);
+  font-size: 11px;
+  vertical-align: -3px;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+
+.wb-ref-chip svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--text-2);
+}
+
+/* A folder is the one you are most likely to mis-read as a file, so its icon
+   carries the accent while a file's stays neutral. */
+.wb-ref-chip[data-ref-kind="folder"] svg {
+  color: var(--accent);
+}
+
+.wb-ref-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wb-composer-row {
   display: flex;
   align-items: center;
@@ -4138,6 +4205,36 @@ body.wb-resizing {
 .wb-model-row.is-selected {
   background: var(--accent-dim);
   border-color: var(--accent-bd);
+}
+
+/* A model this harness cannot run. It used to spell out the provider's full
+   explanation on the row, which buried the one thing you need while scanning —
+   that you cannot pick it. Now the row simply reads as switched off, with a
+   short badge, and the explanation waits in the tooltip. */
+.wb-model-row.is-unavailable {
+  opacity: .45;
+}
+
+.wb-model-row.is-unavailable:hover {
+  background: transparent;
+}
+
+.wb-model-row.is-unavailable .wb-model-pick {
+  cursor: not-allowed;
+}
+
+.wb-model-off {
+  flex: none;
+  height: 15px;
+  padding: 0 var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-badge);
+  background: var(--bg-4);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .wb-model-name {
@@ -6106,6 +6203,14 @@ body.wb-resizing {
    (a clean floating popup); `.is-dim` opts into the standard scrim. */
 .wb-catalog-scrim { z-index: 1200; background: transparent; }
 .wb-catalog-scrim.is-dim { background: var(--scrim); }
+
+/* The catalog holds its FULL height whatever is expanded.
+   Sized by content, every collapse and expand resized the dialog under the
+   pointer — the row you were about to click moved, and the whole window
+   flinched on each toggle. Pinned to the same height the fully-expanded list
+   reaches, so toggling only ever scrolls INSIDE the list. It is a viewport
+   fraction, so a small window still gets a small dialog. */
+.wb-catalog-scrim .wb-modal { height: 88vh; }
 .wb-model-picker-pop {
   width: min(480px, 92vw);
   max-height: 72vh;

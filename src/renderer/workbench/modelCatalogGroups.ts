@@ -105,11 +105,15 @@ export function buildCatalogView({ entries, query, favorites, provOpen, selected
   // 1. filter
   const visible = searching ? entries.filter((entry) => matches(entry, needle)) : entries;
 
-  // 2. split favourites out of the provider groups (no model appears twice)
+  // 2. lift favourites to the top — WITHOUT removing them from their provider
+  // group. A starred model is shown twice on purpose: the pinned section is a
+  // shortcut, not a new home, so the provider list stays a complete inventory
+  // of what that provider offers and a model does not appear to vanish from it
+  // the moment it is starred.
   const starred = new Set(favorites);
   const isFavorite = (entry: RouteEntry) => starred.has(entry.route.model);
   const favoriteEntries = visible.filter(isFavorite);
-  const rest = visible.filter((entry) => !isFavorite(entry));
+  const rest = visible;
 
   const groups: CatalogGroup[] = [];
   const holdsSelection = (list: RouteEntry[]) => list.some((entry) => routeKey(entry.route) === selectedKey);
