@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 import * as readline from "node:readline";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
-import type { ImageAttachment } from "../shared/attachments";
+import { attachmentPathNote, type ImageAttachment } from "../shared/attachments";
 import { parseContextTokens } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import { resolveCursorAgentCommand } from "./cursorAgentCli";
@@ -186,17 +186,34 @@ export class CursorAdapter extends EventEmitter {
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
+    // Cursor CLI takes no image input. It does read files, though — so once the
+    // attachment store has saved the bytes, the paths go through as text and the
+    // turn stands instead of being refused outright. The image itself is still
+    // unseen, and that is reported rather than glossed over.
     if (attachments?.length) {
+      const saved = attachments.filter((a) => a.path).length;
+      if (!saved) {
+        this.emitEvent({
+          type: "diagnostic",
+          severity: "error",
+          category: "vision",
+          title: "Cursor CLI image input is not wired yet",
+          detail: `The turn included ${attachments.length} image(s); none were sent.`,
+          recovery: "Send the turn without images, or use Claude Code/Codex for image input.",
+          at: now(),
+        });
+        return;
+      }
       this.emitEvent({
         type: "diagnostic",
-        severity: "error",
+        severity: "warning",
         category: "vision",
-        title: "Cursor CLI image input is not wired yet",
-        detail: `The turn included ${attachments.length} image(s); none were sent.`,
-        recovery: "Send the turn without images, or use Claude Code/Codex for image input.",
+        title: "Cursor 는 이미지를 볼 수 없어 경로만 전달했습니다",
+        detail: `이미지 ${attachments.length}개 중 ${saved}개의 파일 경로를 함께 보냈습니다. 내용은 못 보지만 파일로 다루는 작업은 요청할 수 있습니다.`,
+        recovery: "이미지 내용을 봐야 한다면 Claude Code 나 Codex 멤버를 쓰세요.",
         at: now(),
       });
-      return;
+      text += attachmentPathNote(attachments);
     }
     if (!this.started) this.start();
     if (this.process) {

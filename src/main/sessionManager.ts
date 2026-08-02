@@ -24,6 +24,7 @@ import type { TokenTrigger, TurnUsageRecord } from "../shared/tokenUsage";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
 import { log } from "./logger";
+import { saveAttachments } from "./attachmentStore";
 import { executionModelFor } from "../shared/modelIdentity";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../shared/codexAuthentication";
 import { CodexAuthenticationStore } from "./codexAuthenticationStore";
@@ -815,7 +816,11 @@ export class SessionManager extends EventEmitter {
     // by trigger (person vs member-to-member message vs …). Consumed on
     // turn_complete; see {@link recordTurnUsage}.
     session.pendingTrigger = trigger;
-    session.adapter.sendUserTurn(text, attachments);
+    // Persist attachments as real files BEFORE the adapter translates them, so
+    // every harness can hand the model a path it can actually open. This runs
+    // inside the engine that owns the session, so the path is already native to
+    // the side that will read it — see src/main/attachmentStore.ts.
+    session.adapter.sendUserTurn(text, saveAttachments(session.workspace, attachments));
   }
 
   hasSession(id: string): boolean {

@@ -102,6 +102,20 @@ export interface AppSettings {
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
    */
   discord?: DiscordBridgeSettings;
+  /**
+   * How long saved attachments are kept, and how much disk they may take per
+   * workspace. Absent = the defaults in `main/attachmentStore.ts`. Removal is
+   * always reported, because a transcript can still name a file that is gone.
+   */
+  attachmentRetention?: AttachmentRetentionSettings;
+}
+
+/** Retention knobs for files saved under `.agent_party_app/attachments/`. */
+export interface AttachmentRetentionSettings {
+  /** Days a saved attachment is kept. 0 disables age-based removal. */
+  maxAgeDays: number;
+  /** Per-workspace cap in megabytes. 0 disables the size cap. */
+  maxMegabytes: number;
 }
 
 /** All harnesses that have defaults, in a stable order. */

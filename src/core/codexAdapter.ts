@@ -26,7 +26,7 @@ import {
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 import { pricingForModel, visionForModel } from "./modelRegistry";
 import { resolveCatalogModel } from "../shared/modelCatalog";
-import type { ImageAttachment } from "../shared/attachments";
+import { attachmentPathNote, type ImageAttachment } from "../shared/attachments";
 import type { CodexApprovalKind } from "../shared/codexApproval";
 import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
@@ -862,13 +862,19 @@ export class CodexAdapter extends EventEmitter {
       if (!this.sessionId) {
         throw new Error("Codex app-server did not provide a thread id.");
       }
-      const prompt = this.options.partyIdentity ? `${buildPartyPrimer(this.options.partyIdentity)}\n\n${text}` : text;
+      const withPaths = text + attachmentPathNote(attachments);
+      const prompt = this.options.partyIdentity ? `${buildPartyPrimer(this.options.partyIdentity)}\n\n${withPaths}` : withPaths;
       // The app-server `turn/start` input is an internally-tagged item list.
-      // Images are `localImage` items pointing at a temp file (verified variant
-      // in the codex binary), which codex reads and forwards to the model.
+      // Images are `localImage` items pointing at a file (verified variant in the
+      // codex binary), which codex reads and forwards to the model.
+      //
+      // That file is now the one the attachment store saved inside the workspace,
+      // so the model sees the SAME path the turn text names. Only an unsaved
+      // attachment falls back to a private temp copy — which codex can read but
+      // the model cannot meaningfully act on.
       const input: Array<Record<string, unknown>> = [{ type: "text", text: prompt, text_elements: [] }];
       for (const image of attachments || []) {
-        input.push({ type: "localImage", path: this.writeTempImage(image) });
+        input.push({ type: "localImage", path: image.path || this.writeTempImage(image) });
       }
       const result = await this.request("turn/start", {
         threadId: this.sessionId,

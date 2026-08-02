@@ -17,7 +17,7 @@ import { DefaultTurnCostResolver, TurnUsage } from "./costing";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
-import type { ImageAttachment } from "../shared/attachments";
+import { attachmentPathNote, type ImageAttachment } from "../shared/attachments";
 import { catalogModelById, catalogModelByRuntime, resolveCatalogModel, routerTargetForModel } from "../shared/modelCatalog";
 import { backendFor } from "../shared/modelIdentity";
 import { deriveSubagentAction } from "../shared/subagentActivity";
@@ -238,9 +238,16 @@ export class ClaudeAdapter extends EventEmitter {
     // Text-only safety net (no-silent-drop policy): if this model is known not to
     // accept images, refuse the turn with a visible error instead of dropping the
     // image. The composer already gates this; this guards the HTTP/agent paths.
+    // A text-only model still cannot SEE an image — but it can act on one as a
+    // file. So the turn is only refused when there is nothing but pixels to
+    // offer; once the bytes are saved, the paths go through and the turn stands.
     if (attachments?.length && this.imageInputUnsupported()) {
-      this.emitVisionUnsupported(attachments.length);
-      return;
+      const saved = attachments.filter((a) => a.path).length;
+      if (!saved) {
+        this.emitVisionUnsupported(attachments.length);
+        return;
+      }
+      this.emitVisionPathOnly(attachments.length, saved);
     }
     if (!this.started) {
       this.start();
@@ -270,6 +277,22 @@ export class ClaudeAdapter extends EventEmitter {
       title: "이 모델은 이미지 입력을 지원하지 않습니다",
       detail: `${this.model}은(는) 텍스트 전용 모델입니다. 이미지 ${count}개를 보내지 못했습니다.`,
       recovery: "이미지 없이 다시 보내거나, 이미지(비전)를 지원하는 모델로 전환하세요.",
+      at: now(),
+    });
+  }
+
+  /**
+   * The model cannot see the image, but it was handed the file's path. Reported
+   * as a warning, not an error: the turn went through, just not as a picture.
+   */
+  private emitVisionPathOnly(count: number, saved: number): void {
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "vision",
+      title: "이 모델은 이미지를 볼 수 없어 경로만 전달했습니다",
+      detail: `${this.model}은(는) 텍스트 전용 모델입니다. 이미지 ${count}개 중 ${saved}개의 파일 경로를 함께 보냈으므로, 내용은 못 보지만 파일로 다루는 작업(복사·이동·다른 도구에 전달)은 요청할 수 있습니다.`,
+      recovery: "이미지 내용을 봐야 한다면 비전을 지원하는 모델로 전환하세요.",
       at: now(),
     });
   }
@@ -333,9 +356,13 @@ export class ClaudeAdapter extends EventEmitter {
     // Anthropic content blocks: text first, then one image block per attachment.
     // The router shim (OpenRouter backend) translates these image blocks into
     // OpenAI `image_url` parts, so the same block shape covers both backends.
-    const content: any[] = [{ type: "text", text }];
-    for (const image of attachments || []) {
-      content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.dataBase64 } });
+    // The saved-file paths ride along as text, so the model can treat the images
+    // as FILES (copy/move/feed to a tool) instead of only looking at them.
+    const content: any[] = [{ type: "text", text: text + attachmentPathNote(attachments) }];
+    if (!this.imageInputUnsupported()) {
+      for (const image of attachments || []) {
+        content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.dataBase64 } });
+      }
     }
     this.input.push({
       type: "user",
