@@ -5,6 +5,8 @@ import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { RouteLike } from "./routes";
 import { memberColor, memberColorVars } from "../theme/memberColors";
+import { statusLabel } from "./memberStatus";
+import { usePublishPartyMembers } from "../app/partyMemberPrefs";
 import {
   LayoutState,
   closeTab,
@@ -114,6 +116,14 @@ export function Workbench(props: WorkbenchProps) {
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
   const partyKey = activePartyId || "default";
+
+  // `@` completion offers these and only these. Published from the same `views`
+  // the workbench already renders, so the popover cannot name a member the party
+  // does not have — a mention of nobody would simply go nowhere.
+  usePublishPartyMembers(useMemo(
+    () => views.map((view) => ({ name: view.name, color: view.color, status: statusLabel(view.status) })),
+    [views],
+  ));
 
   const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
   /**
