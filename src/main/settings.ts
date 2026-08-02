@@ -10,6 +10,7 @@ import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog"
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
 import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/composerSettings";
+import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -57,6 +58,7 @@ const defaults: AppSettings = {
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
   composer: { ...DEFAULT_COMPOSER_SETTINGS },
+  favoriteModels: [...DEFAULT_FAVORITE_MODELS],
   discord: { ...DEFAULT_DISCORD_SETTINGS },
 };
 
@@ -158,7 +160,15 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const gateDefaults = normalizeGateDefaults(withRuntimeOverrides.gateDefaults);
   const discord = normalizeDiscordSettings(withRuntimeOverrides.discord || DEFAULT_DISCORD_SETTINGS);
   const composer = normalizeComposerSettings(withRuntimeOverrides.composer);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, composer, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  // Shape-only: unlike `harnessDefaults` above, an id the catalog cannot resolve
+  // is NOT dropped here. A harness default must name a usable model to boot a
+  // member, but a favourite is only a display preference — and "gone for good"
+  // and "absent right now" (credential removed, remote provider list failed to
+  // load) look identical at this point. Pruning would silently and permanently
+  // delete the user's choice in the second case. The catalog resolves the list
+  // when it renders, so an unknown id draws nothing and returns on its own.
+  const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, composer, favoriteModels, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

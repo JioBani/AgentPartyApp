@@ -155,6 +155,27 @@ Codex/ChatGPT subscription proxy.
 A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
 
+`favoriteModels` is the list of catalog model **ids** the user has starred. The
+model catalog pins them above the provider groups, in catalog order. It drives
+the same path as the star button in the catalog UI, e.g.
+`{ "favoriteModels": ["claude-opus-5[1m]", "gpt-5.6"] }`.
+
+Two properties are deliberate and worth knowing when driving this over HTTP:
+
+- **Ids are never auto-pruned.** An id that matches no catalog model is stored
+  and served back unchanged. "Retired for good" and "absent right now" (a
+  credential was removed, a remote provider list failed to load) are
+  indistinguishable here, and pruning would permanently delete a user's choice in
+  the second case — silently, since they never saw it happen.
+- **The catalog resolves the list when it renders**, so an unresolvable id draws
+  no row (never a ghost) and reappears by itself once the model is selectable
+  again. To audit the gap, compare `settings.favoriteModels` from
+  `GET /api/state` against the ids in `GET /api/models` — stored-but-unshown is
+  therefore observable rather than invisible.
+
+Tidying the list is an explicit write to this endpoint, never a side effect of
+opening a screen.
+
 `gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort" }`
 only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.

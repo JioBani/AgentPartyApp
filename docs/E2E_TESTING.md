@@ -20,6 +20,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-askq` | AskUserQuestion choice-card rendering |
 | `qa-interaction-api` | QA interaction API (inject AskUserQuestion) |
 | `qa-model-catalog` | model catalog / routing, incl. DeepSeek direct-API routes and the codex Responses-API gate |
+| `qa-model-catalog-list` | the catalog's model LIST (R-5/6/7): the `filter → favourites → provider groups` assembly order (grouping first would hide a starred match inside a collapsed group), favourites pinned on top in CATALOG order and removed from their provider group, provider groups collapsed by default with a name preview + `사용 중` badge, search over model name + provider (the catalog carries no tier field — that confirmed-design axis has no data behind it and was dropped rather than faked), search force-expanding groups while READING but never writing the user's collapse flags, and the traps: a star click must not change the selection, Escape with a query clears the query instead of closing the modal, a filtered-out model stays selected, and a stored favourite the catalog cannot resolve draws no ghost row while staying in storage |
 | `qa-party-bridge` | in-process party bridge (send/create/remove/permission/list), explicit initial permissions, concrete execution-harness discovery, idempotent start + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail + explicit initial permission step |

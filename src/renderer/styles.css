@@ -3649,13 +3649,138 @@ body.wb-resizing {
 }
 .wb-modal-foot-end { justify-content: flex-end; }
 
+/* Three tiers: a fixed head (+ optional harness switch), a fixed search row,
+   and the scrolling list. Only the last one scrolls, so the search box and the
+   match count stay visible however long the catalog grows. */
 .wb-model-list {
   border-right: var(--border-width) solid var(--border-subtle);
-  padding: var(--space-5);
+  padding: var(--space-5) 0 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.wb-model-list-harness,
+.wb-model-list-head,
+.wb-model-search-row {
+  flex: none;
+  padding-inline: var(--space-5);
+}
+
+.wb-model-list-harness {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wb-model-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* Search field ---------------------------------------------------------- */
+.wb-model-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-input);
+}
+
+.wb-model-search:focus-within {
+  border-color: var(--accent);
+}
+
+.wb-model-search-icon {
+  flex: none;
+  color: var(--text-3);
+}
+
+.wb-model-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-0);
+}
+
+.wb-model-search-input::placeholder {
+  color: var(--text-3);
+}
+
+.wb-model-search-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-4);
+  color: var(--text-2);
+}
+
+.wb-model-search-clear:hover {
+  color: var(--text-0);
+}
+
+.wb-model-fav-error {
+  flex: none;
+  margin: 0;
+  padding-inline: var(--space-5);
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* Empty state ----------------------------------------------------------- */
+.wb-model-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+}
+
+.wb-model-empty-icon {
+  color: var(--text-3);
+}
+
+.wb-model-empty p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.wb-model-empty-btn {
+  height: 25px;
+  padding: 0 var(--space-4);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  font-size: 11.5px;
+  color: var(--text-1);
+}
+
+.wb-model-empty-btn:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
 }
 
 .wb-modal-label {
@@ -3700,6 +3825,107 @@ body.wb-resizing {
   border-radius: 50%;
 }
 
+/* Favourites section — always first, always expanded. */
+.wb-model-fav-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+}
+
+.wb-model-fav-icon {
+  flex: none;
+  color: var(--live);
+  fill: var(--live);
+}
+
+.wb-model-fav-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.wb-model-fav-head .wb-mono {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.wb-model-fav-rule {
+  flex: 1;
+  height: var(--border-width);
+  background: var(--live-bd);
+}
+
+/* Provider group header — a button, collapsed by default. */
+.wb-model-provider-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-button);
+  background: transparent;
+  text-align: left;
+}
+
+.wb-model-provider-btn:hover {
+  background: var(--bg-3);
+}
+
+.wb-model-caret {
+  flex: none;
+  color: var(--text-3);
+  transition: transform .15s;
+}
+
+.wb-model-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.wb-model-provider-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.wb-model-provider-btn .wb-mono {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* Marks a collapsed group that hides the model currently in use. */
+.wb-model-inuse {
+  flex: none;
+  height: 15px;
+  padding: 0 var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-badge);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* Names hidden inside the collapsed group. Shrinks before anything else. */
+.wb-model-preview {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-3);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wb-model-row {
   display: flex;
   align-items: center;
@@ -3709,6 +3935,59 @@ body.wb-resizing {
   border-radius: var(--radius-card);
   background: transparent;
   text-align: left;
+}
+
+/* The selectable area of a row. The row is a container (it also holds the star,
+   and a button cannot nest inside a button). */
+.wb-model-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.wb-model-star {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-3);
+}
+
+.wb-model-star:hover {
+  background: var(--bg-4);
+}
+
+.wb-model-star.is-on {
+  color: var(--live);
+}
+
+.wb-model-star.is-on svg {
+  fill: var(--live);
+}
+
+/* Provider of a row, needed because a favourite sits outside its group. */
+.wb-model-origin {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wb-model-origin .wb-provider-dot {
+  width: 5px;
+  height: 5px;
 }
 
 .wb-model-row:hover {

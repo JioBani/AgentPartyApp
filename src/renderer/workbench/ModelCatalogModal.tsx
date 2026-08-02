@@ -1,12 +1,14 @@
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Lightbulb, SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronRight, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { findRoute, type RouteCapabilities, type RouteLike, routeKey } from "./routes";
 import { AutoCompactEditor } from "./AutoCompactEditor";
 import { DEFAULT_AUTO_COMPACT, type AutoCompactSetting } from "../../shared/autoCompact";
 import { VisionTag } from "./VisionTag";
-import { PROVIDER_DOTS, PROVIDER_LABELS, modelView } from "./modelCatalog";
-import { CostMeter, PerfMeter, groupByProvider, perfLabel, type RouteEntry } from "./modelMeters";
+import { PROVIDER_DOTS, PROVIDER_LABELS, modelView, routeProvider } from "./modelCatalog";
+import { CostMeter, PerfMeter, perfLabel, type RouteEntry } from "./modelMeters";
+import { buildCatalogView, catalogCountLabel, initialProvOpen } from "./modelCatalogGroups";
+import { toggleFavoriteModelId, useFavoriteModels } from "../app/favoriteModelPrefs";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -94,8 +96,6 @@ export function ModelCatalogModal({
     () => (config.harness ? entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness) : entries),
     [entries, config.harness, harness],
   );
-  const grouped = useMemo(() => groupByProvider(displayEntries), [displayEntries]);
-
   const currentKey = useMemo(() => {
     const match = findRoute(value.model, displayEntries.map((entry) => entry.route));
     return match ? routeKey(match) : displayEntries[0] ? routeKey(displayEntries[0].route) : "";
@@ -103,6 +103,47 @@ export function ModelCatalogModal({
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
   const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || displayEntries[0];
+
+  // --- Catalog list: search + provider collapse + favourites ---------------
+  const favorites = useFavoriteModels();
+  /** Never persisted: a stale query on reopen would hide most of the catalog. */
+  const [query, setQuery] = useState("");
+  const [provOpen, setProvOpen] = useState<Record<string, boolean>>(() => initialProvOpen(displayEntries, currentKey, favorites));
+  const [favoriteError, setFavoriteError] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const catalog = useMemo(
+    () => buildCatalogView({ entries: displayEntries, query, favorites, provOpen, selectedKey }),
+    [displayEntries, query, favorites, provOpen, selectedKey],
+  );
+
+  function clearQuery() {
+    setQuery("");
+    searchRef.current?.focus();
+  }
+
+  /**
+   * Stars/unstars without disturbing the selection (the click must not fall
+   * through to the row). Unstarring the CURRENT model sends it back to its
+   * provider group, so that group is expanded — otherwise a collapsed header
+   * would make the model the user is using look like it vanished.
+   */
+  async function toggleFavorite(entry: RouteEntry) {
+    const id = entry.route.model;
+    const unstarring = favorites.includes(id);
+    if (unstarring && routeKey(entry.route) === selectedKey) {
+      const provider = routeProvider(entry.route);
+      setProvOpen((current) => ({ ...current, [provider]: true }));
+    }
+    try {
+      setFavoriteError("");
+      await toggleFavoriteModelId(id);
+    } catch {
+      // A star that quietly fails to save is worse than one that refuses: the
+      // user believes the list is tidied and finds it reverted next launch.
+      setFavoriteError("즐겨찾기를 저장하지 못했습니다.");
+    }
+  }
   const capabilities: RouteCapabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
   const thinkingCap = capabilities.thinking;
@@ -149,19 +190,38 @@ export function ModelCatalogModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey]);
 
-  // Switching harness moves the selection into that harness's list.
+  // Switching harness moves the selection into that harness's list, and the
+  // collapse state follows it — the previous harness's expanded group is
+  // meaningless once its models are gone.
   useEffect(() => {
     if (config.harness && selected && (selected.route.harnessId || "claude-code") !== harness && displayEntries[0]) {
-      setSelectedKey(routeKey(displayEntries[0].route));
+      const nextKey = routeKey(displayEntries[0].route);
+      setSelectedKey(nextKey);
+      setProvOpen(initialProvOpen(displayEntries, nextKey, favorites));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness]);
 
+  // Escape closes the modal — unless a search is active, in which case it only
+  // clears the query. Losing a half-built search AND the whole modal to one
+  // keystroke costs the user far more than it saves. Handled here rather than on
+  // the input alone so it works wherever focus sits in the modal; with the query
+  // already empty it falls through and closes, as before.
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (query) {
+        event.stopPropagation();
+        clearQuery();
+        return;
+      }
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, query]);
 
   const selectedMeta = selected?.meta;
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
@@ -206,7 +266,7 @@ export function ModelCatalogModal({
         <div className="wb-modal-body">
           <section className="wb-model-list">
             {config.harness && (
-              <>
+              <div className="wb-model-list-harness">
                 <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note"> · 잠금 (턴 시작됨)</span>}</div>
                 <div className="wb-segmented">
                   {HARNESS_CHOICES.map((choice) => {
@@ -225,36 +285,113 @@ export function ModelCatalogModal({
                     );
                   })}
                 </div>
-              </>
+              </div>
             )}
-            <div className="wb-modal-label">Model <span className="wb-mono">{displayEntries.length} catalogued</span></div>
-            {grouped.map((group) => (
-              <div className="wb-model-group" key={group.provider}>
-                <div className="wb-model-provider">
-                  <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider] }} />
-                  {PROVIDER_LABELS[group.provider]}
-                  <span className="wb-mono">{group.entries.length}</span>
+
+            <div className="wb-modal-label wb-model-list-head">
+              Model <span className="wb-mono">{catalogCountLabel(catalog)}</span>
+            </div>
+
+            {/* Outside the scroll area on purpose: the search box stays put
+                while a long catalog scrolls under it. */}
+            <div className="wb-model-search-row">
+              <div className="wb-model-search">
+                <Search size={13} className="wb-model-search-icon" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  className="wb-model-search-input"
+                  value={query}
+                  aria-label="모델 검색"
+                  placeholder="모델·제공자 검색"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                {query && (
+                  <button type="button" className="wb-model-search-clear" title="검색 지우기" aria-label="검색 지우기" onClick={clearQuery}>
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {favoriteError && <p className="wb-model-fav-error" role="alert">{favoriteError}</p>}
+
+            <div className="wb-model-scroll" aria-live="polite">
+              {catalog.groups.length === 0 && (
+                <div className="wb-model-empty">
+                  <Search size={20} className="wb-model-empty-icon" aria-hidden="true" />
+                  <p>&quot;{query.trim()}&quot;와 일치하는 모델이 없습니다</p>
+                  <button type="button" className="wb-model-empty-btn" onClick={clearQuery}>검색 지우기</button>
                 </div>
-                {group.entries.map((entry) => {
-                  const key = routeKey(entry.route);
-                  return (
+              )}
+
+              {catalog.groups.map((group) => (
+                <div className={"wb-model-group" + (group.kind === "favorites" ? " is-favorites" : "")} key={group.id}>
+                  {group.kind === "favorites" ? (
+                    <div className="wb-model-fav-head">
+                      <Star size={12} className="wb-model-fav-icon" aria-hidden="true" />
+                      <span className="wb-model-fav-label">즐겨찾기</span>
+                      <span className="wb-mono">{group.entries.length}</span>
+                      <span className="wb-model-fav-rule" />
+                    </div>
+                  ) : (
                     <button
                       type="button"
-                      key={key}
-                      className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")}
-                      disabled={entry.route.enabled === false}
-                      title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
-                      onClick={() => setSelectedKey(key)}
+                      className="wb-model-provider-btn"
+                      aria-expanded={group.open}
+                      onClick={() => setProvOpen((current) => ({ ...current, [group.id]: !group.open }))}
                     >
-                      <span className="wb-model-name"><span className="wb-mono">{entry.route.label || entry.meta.name}</span>{entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}</span>
-                      <PerfMeter value={entry.meta.perf} />
-                      <CostMeter value={entry.meta.cost} />
-                      {key === selectedKey && <Check size={14} className="wb-model-check" />}
+                      <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
+                      <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider!] }} />
+                      <span className="wb-model-provider-name">{group.label}</span>
+                      <span className="wb-mono">{group.entries.length}</span>
+                      {!group.open && group.hasSelected && <span className="wb-model-inuse">사용 중</span>}
+                      {!group.open && <span className="wb-model-preview wb-mono">{group.preview}</span>}
                     </button>
-                  );
-                })}
-              </div>
-            ))}
+                  )}
+
+                  {group.open && group.entries.map((entry) => {
+                    const key = routeKey(entry.route);
+                    const starred = favorites.includes(entry.route.model);
+                    return (
+                      <div className={"wb-model-row" + (key === selectedKey ? " is-selected" : "")} key={key}>
+                        <button
+                          type="button"
+                          className="wb-model-pick"
+                          disabled={entry.route.enabled === false}
+                          title={entry.route.enabled === false ? entry.route.unavailableReason : entry.route.description}
+                          onClick={() => setSelectedKey(key)}
+                        >
+                          <span className="wb-model-name">
+                            <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
+                            {/* A starred model sits outside its provider group, so
+                                the row itself has to say where it came from. */}
+                            <small className="wb-model-origin">
+                              <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[entry.meta.provider] }} />
+                              {PROVIDER_LABELS[entry.meta.provider]}
+                            </small>
+                            {entry.route.enabled === false && <small>Unavailable · {entry.route.unavailableReason}</small>}
+                          </span>
+                          <PerfMeter value={entry.meta.perf} />
+                          <CostMeter value={entry.meta.cost} />
+                        </button>
+                        <button
+                          type="button"
+                          className={"wb-model-star" + (starred ? " is-on" : "")}
+                          title={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+                          aria-label={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+                          aria-pressed={starred}
+                          onClick={() => { void toggleFavorite(entry); }}
+                        >
+                          <Star size={14} />
+                        </button>
+                        {key === selectedKey && <Check size={14} className="wb-model-check" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </section>
 
           <section className="wb-model-detail">
