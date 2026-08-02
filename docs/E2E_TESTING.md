@@ -431,6 +431,28 @@ A selector that matches nothing **fails**. That is deliberate: "measured zero"
 and "measured nothing" would otherwise be the same answer, and a typo would read
 as a passing measurement.
 
+### Typing into the composer, which is no longer a text box
+
+The composer's editing surface is a **contenteditable area** (`.wb-composer-editor`),
+not a textarea — a dropped file renders as a chip *inside* the sentence, and only
+rich text can hold that. Other screens still use ordinary fields, so both exist.
+
+`POST /api/qa/input` drives both, because it inserts text as a **real editing
+command** rather than assigning a value. There is no value on an editable area to
+assign, so the older approach could not reach the composer at all; and this one is
+the more faithful of the two anyway, since the app sees the same input events a
+person's keystrokes produce.
+
+Two things to know when you read the result back:
+
+- **Text replaces, it does not append.** Existing content is selected first.
+  Passing `""` clears the field.
+- **Chips come back in `references`, not in `value`.** A chip displays a short
+  name but stands for a full path, so `value` (the rendered text) is what the
+  user sees, and `references` is what the member will actually receive. Assert on
+  `references` when a path matters — asserting on `value` would pass while the
+  path silently went missing.
+
 ### Where the jsdom bundles go, and why it matters
 
 The jsdom tests can't import TypeScript, so each one bundles the module under
@@ -481,7 +503,7 @@ endpoints return 403 otherwise. (`npm run qa:seed` runs a canned scenario via
 | `POST /api/qa/members/:name/subagents` `{scenario}` | inject a named **subagent** scenario (`claude-test-shards` / `codex-call-tracer` / `codex-web-research` in `src/shared/subagentScenarios.ts`) as `subagent` normalized events — drives the dock + detail through the real fold with no real subagent spawned |
 | `POST /api/qa/members/:name/subagents/open` `{subId}` | open a subagent's drill-in detail (`subId` = the subagent id, or `"first"`) |
 | `POST /api/qa/gate/open` `{kind:"member"\|"party", member}` | open a **Message Gate** modal over HTTP (member editor for `member`, or party manager for `member`=partyId) so an agent can drive the real UI route + `/api/capture` it |
-| `POST /api/qa/input` `{selector, text, key, modifiers}` | focus a field, set its text, and press a key as a **real input event** — so the browser's own default action for that key runs (a script-dispatched DOM event never fires one). The input counterpart of `/api/capture`'s `click`; this is what makes keyboard-driven UI behaviour testable end-to-end |
+| `POST /api/qa/input` `{selector, text, key, modifiers}` | focus a field, type into it, and press a key as a **real input event** — so the browser's own default action for that key runs (a script-dispatched DOM event never fires one). The input counterpart of `/api/capture`'s `click`; this is what makes keyboard-driven UI behaviour testable end-to-end. Text goes in as a real editing command, so it drives **both** an ordinary field and the composer's **editable area** — see below. Returns `{kind, value, references}`: what is actually in the target afterwards, not merely that the call ran |
 | `POST /api/qa/window/bounds` `{x, y, width, height}` | resize/move the window, so **responsive** behaviour can be checked at a real width (the app switches layout on measured element width — no state injection stands in for it) |
 | `POST /api/qa/reset` | remove mock members |
 

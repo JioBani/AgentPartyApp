@@ -1681,17 +1681,21 @@ driven through the real UI instead of calling the mutation behind it.
 Window-scoped (`?window=<id>`; focused window when omitted).
 
 ```json
-{ "selector": "textarea.wb-composer-textarea", "text": "상태 알려줘", "key": "Enter", "modifiers": ["control"] }
+{ "selector": ".wb-composer-editor", "text": "상태 알려줘", "key": "Enter", "modifiers": ["control"] }
 ```
 
 Every field is optional and applied in order:
 
 - `selector` — focuses the matching element first. If nothing matches, the call
   **fails** rather than typing into whatever held focus.
-- `text` — set through the field's native value setter plus an `input` event,
-  which is how a React-controlled field takes a value. If the focused element has
-  no editable value the call **fails**, naming that element's tag: being unable
-  to type is a failure, not a quiet no-op.
+- `text` — inserted as a **real editing command**, the same one a keystroke
+  produces, so the app receives the beforeinput/input it would from a person.
+  This works on both editing surfaces the app has: an ordinary field with a
+  value, and the composer's **editable area** (which has no value to assign,
+  because a file chip has to be able to sit inside the sentence). Existing
+  content is selected first, so the text **replaces** it; `""` clears the field.
+  If the focused element is neither, the call **fails**, naming that element's
+  tag: being unable to type is a failure, not a quiet no-op.
 - `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
   browser's own default action for that key still runs. This is the reason the
   endpoint exists: a synthetic DOM event dispatched from a script never fires a
@@ -1699,8 +1703,19 @@ Every field is optional and applied in order:
   a single-line input sits in — cannot be verified any other way.
 - `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
 
-Returns `{ ok, selector, key, value }`, where `value` is the field's value after
-the input (or `null` if the target has none).
+Returns `{ ok, selector, key, kind, value, references }` describing what is
+actually in the target afterwards — not merely that the call ran:
+
+- `kind` — `"value"` for a field, `"editable"` for an editable area, `"none"`
+  when the target holds no text at all.
+- `value` — the field's value, or the editable area's text as the sentence
+  actually reads (a chip contributes the short name it displays, inline).
+- `references` — the full paths of any file chips in an editable area, in
+  document order. A chip **displays** a short name but **stands for** a full
+  path, so the visible text alone would misreport the message. The paths are
+  reported separately rather than spliced into `value` because assembling the
+  final sentence is the composer's own rule; restating it here would let the two
+  drift apart silently.
 
 ### `POST /api/qa/window/bounds`
 

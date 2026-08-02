@@ -1229,14 +1229,27 @@ export class AppController {
    * behaviour that hinges on one (or on suppressing one) cannot be verified
    * end-to-end without this.
    *
-   * `text` is applied through the field's native value setter plus an `input`
-   * event, which is how a React-controlled field takes a value; typing it
-   * character by character would be slower and would not survive IME text.
+   * `text` goes in as a REAL editing command (`insertText`), not by assigning a
+   * value. The composer is no longer a textarea — a chip has to be able to sit
+   * inside the sentence, so the editing surface is a contenteditable area, and a
+   * contenteditable has no value to assign. Driving it the way a keyboard does
+   * is the one approach that works on BOTH surfaces, and it is also the more
+   * faithful one: the app sees the same beforeinput/input it sees from a person.
+   *
+   * Existing content is selected first, so `text` replaces rather than appends —
+   * the semantics callers already relied on when this assigned a value.
    */
   async qaInput(
     windowId: string | undefined,
     body: { selector?: string; text?: string; key?: string; modifiers?: string[] },
-  ): Promise<{ ok: true; selector: string; value: string | null; key: string }> {
+  ): Promise<{
+    ok: true;
+    selector: string;
+    kind: "value" | "editable" | "none";
+    value: string | null;
+    references: string[];
+    key: string;
+  }> {
     this.requireQa();
     const win = this.windowFor(windowId);
     if (!win) {
@@ -1254,22 +1267,44 @@ export class AppController {
     }
     if (typeof body?.text === "string") {
       // "Could not do it" is a failure, not a quiet success: asked to type into
-      // something with no editable value, this used to return ok with a null
-      // value and let the caller read a no-op as a pass. The focused element's
-      // tag comes back in the error, because knowing WHAT it tried to type into
-      // is what lets the caller fix the selector.
-      const typed = await win.webContents.executeJavaScript(
+      // something it cannot type into, this must not return ok and let the
+      // caller read a no-op as a pass. The focused element's tag comes back in
+      // the error, because knowing WHAT it tried to type into is what lets the
+      // caller fix the selector.
+      const target = await win.webContents.executeJavaScript(
         `(() => {
           const el = document.activeElement;
-          if (!el || !("value" in el)) return { ok: false, tag: el ? el.tagName.toLowerCase() : "none" };
-          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(body.text)});
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          return { ok: true, value: el.value };
+          if (!el) return { kind: "none", tag: "none" };
+          const tag = el.tagName.toLowerCase();
+          // A button element has a value too, so "has a value" is not the
+          // question — "does it hold text a person can edit" is. Answering the
+          // loose version let a mistargeted selector look like a real edit.
+          const NOT_TEXT = ["checkbox", "radio", "button", "submit", "reset", "file", "image", "range", "color"];
+          const editableField = tag === "textarea" || (tag === "input" && !NOT_TEXT.includes(el.type));
+          if (editableField) { el.select?.(); return { kind: "value", tag }; }
+          if (!el.isContentEditable) return { kind: "none", tag };
+          // Select what is there so the insert REPLACES it, matching the
+          // replace-the-field semantics callers already depend on.
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return { kind: "editable", tag };
         })()`,
       );
-      if (!typed?.ok) {
-        throw new Error(`Cannot type into the focused element <${typed?.tag || "none"}> — it has no editable value.`);
+      if (target?.kind === "none") {
+        throw new Error(
+          `Cannot type into the focused element <${target?.tag || "none"}> — it has no editable value and is not an editable area.`,
+        );
+      }
+      // A real editing command, so the app receives the same beforeinput/input
+      // a person's keystroke produces. `delete` for the empty string, because
+      // inserting nothing is not an edit and would leave the selection standing.
+      if (body.text) {
+        win.webContents.insertText(body.text);
+      } else {
+        win.webContents.delete();
       }
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
@@ -1281,11 +1316,53 @@ export class AppController {
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    // Report what IS there, not that the call ran. An editable area is read as
+    // its rendered text plus the paths of any chips in it: a chip DISPLAYS a
+    // short name but stands for a full path, so the visible text alone would
+    // misreport the message. The paths come back in `references` rather than
+    // spliced into `value`, because assembling the final sentence is the
+    // composer's rule to own — copying it here would let the two drift apart
+    // silently, which is exactly the failure this endpoint exists to prevent.
     const read = selector ? `document.querySelector(${JSON.stringify(selector)})` : "document.activeElement";
-    const value = await win.webContents
-      .executeJavaScript(`(() => { const el = ${read}; return el && "value" in el ? el.value : null; })()`)
-      .catch(() => null);
-    return { ok: true, selector, value, key };
+    const state = await win.webContents
+      .executeJavaScript(
+        `(() => {
+          const el = ${read};
+          if (!el) return { kind: "none", value: null, references: [] };
+          const tag = el.tagName.toLowerCase();
+          const NOT_TEXT = ["checkbox", "radio", "button", "submit", "reset", "file", "image", "range", "color"];
+          if (tag === "textarea" || (tag === "input" && !NOT_TEXT.includes(el.type))) {
+            return { kind: "value", value: el.value, references: [] };
+          }
+          if (!el.isContentEditable) return { kind: "none", value: null, references: [] };
+          const references = Array.from(el.querySelectorAll("[data-path]")).map((chip) => chip.getAttribute("data-path"));
+          // Read the text by walking, not via innerText: a chip is laid out as a
+          // flex box, so innerText puts a line break on either side of it and
+          // reports newlines the user never typed. Only a real line break (BR, or
+          // a new block) counts as one. A chip contributes the short name it
+          // DISPLAYS — the path it stands for is reported in references instead.
+          let text = "";
+          const walk = (node) => {
+            for (const child of Array.from(node.childNodes)) {
+              if (child.nodeType === Node.TEXT_NODE) { text += (child.nodeValue || ""); continue; }
+              if (child.nodeType !== Node.ELEMENT_NODE) continue;
+              if (child.hasAttribute("data-path")) { text += child.textContent || ""; continue; }
+              if (child.tagName === "BR") { text += "\\n"; continue; }
+              if (child.tagName === "DIV" && text && !text.endsWith("\\n")) text += "\\n";
+              walk(child);
+            }
+          };
+          walk(el);
+          // An emptied editable area keeps a placeholder line break the browser
+          // put there, which would read back as a newline nobody typed. "Holds
+          // no text and no chip" is reported as empty — the same thing the app
+          // itself treats as an empty draft.
+          const empty = el.textContent === "" && references.length === 0;
+          return { kind: "editable", value: empty ? "" : text.replace(/\\u00a0/g, " "), references };
+        })()`,
+      )
+      .catch(() => ({ kind: "none" as const, value: null, references: [] as string[] }));
+    return { ok: true, selector, kind: state.kind, value: state.value, references: state.references, key };
   }
 
   /**
