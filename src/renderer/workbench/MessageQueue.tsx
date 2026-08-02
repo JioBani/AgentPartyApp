@@ -12,8 +12,8 @@
  * Layout follows `docs/디자인 핸드오프/design_handoff_message_queue` §2–§5.
  */
 
-import { useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ArrowUpFromLine, ChevronDown, GripVertical, Lock, Maximize2, Minimize2, Pencil, SendHorizontal, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlignLeft, ArrowUpFromLine, ChevronDown, GripVertical, Lock, Maximize2, Minimize2, Pencil, SendHorizontal, X } from "lucide-react";
 import type { QueueCommand } from "../../shared/messageQueue";
 import { memberColorVars } from "../theme/memberColors";
 import { buildQueueView, type QueueRowView } from "./queueView";
@@ -35,6 +35,23 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
   const listRef = useRef<HTMLDivElement | null>(null);
   /** The queue block itself — used to find this panel's conversation area. */
   const rootRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * 모두 취소 asks twice.
+   *
+   * It throws away every message waiting — text the user typed and cannot get
+   * back, since cancelling is not undoable. One misplaced click beside 접기
+   * should not be able to do that. Armed state expires on its own so the button
+   * cannot sit primed indefinitely, waiting to be triggered by a click meant for
+   * something else.
+   */
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) {
+      return;
+    }
+    const timer = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(timer);
+  }, [confirmClear]);
 
   const queue = view.member.queue;
   const model = buildQueueView({
@@ -286,7 +303,18 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           <button type="button" className={"wb-queue-pill" + (model.merge ? " is-on" : "")} title="합쳐서 한 번에 전송" onClick={() => void run({ action: "preference", merge: !model.merge })}>
             {model.mergePillLabel}
           </button>
-          <button type="button" className="wb-queue-x" title="모두 취소" onClick={() => void run({ action: "clear" })}><X size={10} /></button>
+          {confirmClear ? (
+            <button
+              type="button"
+              className="wb-queue-x is-armed"
+              title={`${model.count}건을 모두 버립니다 — 한 번 더 누르면 실행됩니다`}
+              onClick={() => { setConfirmClear(false); void run({ action: "clear" }); }}
+            >
+              <X size={12} /> 한 번 더
+            </button>
+          ) : (
+            <button type="button" className="wb-queue-x" title="모두 취소" onClick={() => setConfirmClear(true)}><X size={12} /></button>
+          )}
         </div>
         {!model.collapsed && (
           <>
@@ -296,12 +324,9 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 <span className={"wb-queue-dot" + (row.fromMember ? " is-member" : "")} style={row.from ? memberColorVars(row.from) : undefined} title={row.fromLabel} />
                 <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
                 <button type="button" className="wb-queue-expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
-                  {row.open ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+                  {row.open ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                 </button>
-                {row.showSendNowIcon && (
-                  <button type="button" className="wb-queue-send-icon" title={model.sendNowHint} onClick={() => void run({ action: "sendItem", itemId: row.id })}><ArrowRight size={10} /></button>
-                )}
-                <button type="button" className="wb-queue-del" title="삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={10} /></button>
+                <button type="button" className="wb-queue-del" title="삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={12} /></button>
               </div>
             ))}
             <button type="button" className="wb-queue-send-all is-block" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
@@ -342,7 +367,18 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           <span className="wb-queue-note">{model.note}</span>
         )}
         <button type="button" className="wb-queue-flat" onClick={() => void run({ action: "preference", collapsed: !model.collapsed })}>{model.toggleLabel}</button>
-        <button type="button" className="wb-queue-flat is-danger" onClick={() => void run({ action: "clear" })}>모두 취소</button>
+        {confirmClear ? (
+          <button
+            type="button"
+            className="wb-queue-flat is-danger is-armed"
+            title="대기 중인 메시지를 모두 버립니다 — 되돌릴 수 없습니다"
+            onClick={() => { setConfirmClear(false); void run({ action: "clear" }); }}
+          >
+            {model.count}건 버리기 · 한 번 더 클릭
+          </button>
+        ) : (
+          <button type="button" className="wb-queue-flat is-danger" onClick={() => setConfirmClear(true)}>모두 취소</button>
+        )}
       </div>
 
       {!model.collapsed && (
@@ -365,7 +401,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                   Anchored LEFT, over the grip: the hand is there, so that is
                   where the answer to "what happens if I let go" belongs. */}
               {drag?.mergeInto === row.id && (
-                <span className="wb-queue-merge-hint"><ArrowUpFromLine size={11} /> 이 메시지와 합치기</span>
+                <span className="wb-queue-merge-hint"><ArrowUpFromLine size={12} /> 이 메시지와 합치기</span>
               )}
               {row.showGrip ? (
                 <button
@@ -379,7 +415,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                   onPointerCancel={endDrag}
                   onKeyDown={(event) => stepRow(event, row)}
                 >
-                  <GripVertical size={12} />
+                  <GripVertical size={14} />
                 </button>
               ) : (
                 <span className="wb-queue-grip is-idle" aria-hidden="true" />
@@ -394,20 +430,20 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 {row.fromLabel}
               </span>
               <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
-              <button type="button" className="wb-queue-expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
-                {row.open ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
-              </button>
+              {/* Reads with the controls, not against the message: the badge is
+                  a fact about this row's turn, so it sits with the row's other
+                  affordances rather than trailing the text. */}
               {row.showNextBadge && <span className="wb-queue-next">다음 차례</span>}
-              {row.showSendNowText && (
-                <button type="button" className="wb-queue-send-now" title={model.sendNowHint} onClick={() => void run({ action: "sendItem", itemId: row.id })}>{model.sendNowLabel}</button>
-              )}
-              {row.showMergeUp && (
-                <button type="button" className="wb-queue-btn is-accent" title="위 메시지와 합치기" onClick={() => void run({ action: "mergeUp", itemId: row.id })}><ArrowUpFromLine size={12} /></button>
-              )}
+              <button type="button" className="wb-queue-btn" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
+                {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
+              {/* Merging is done by dragging a row onto another, and sending one
+                  row early is the toolbar's 중단하고 보내기 — neither needs a
+                  per-row button competing with 편집 and 삭제 for the same corner. */}
               {row.showEdit && (
-                <button type="button" className="wb-queue-btn" title="편집 — 입력창으로 되돌리기" onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={12} /></button>
+                <button type="button" className="wb-queue-btn" title="편집 — 입력창으로 되돌리기" onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={13} /></button>
               )}
-              <button type="button" className="wb-queue-btn is-danger" title="대기열에서 삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={12} /></button>
+              <button type="button" className="wb-queue-btn is-danger" title="대기열에서 삭제" onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
             </div>
           ))}
           </div>
@@ -444,7 +480,7 @@ interface DragState {
 }
 
 function rowClass(row: QueueRowView, drag: DragState | null): string {
-  const className = "wb-queue-row" + (row.highlighted ? " is-next" : "");
+  const className = "wb-queue-row" + (row.highlighted ? " is-next" : "") + (row.open ? " is-expanded" : "");
   if (!drag) {
     return className;
   }

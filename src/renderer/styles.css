@@ -1109,14 +1109,32 @@ body.wb-resizing {
 
 /* Stop lives in the toolbar rather than the composer's Send slot: while a
    member works, that slot is how you add to its queue. Present only mid-turn. */
-.wb-stop-pill {
+/* Stop, beside the send control in the composer. Danger-toned because it ends
+   work in progress, but not a filled button: it sits next to the primary action
+   and must not compete with it for the eye. */
+.wb-composer-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 30px;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--bg-2);
   color: var(--danger);
-  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.wb-stop-pill:hover {
+
+.wb-composer-stop:hover {
   border-color: var(--danger-bd);
   background: var(--danger-dim);
-  color: var(--danger);
+}
+
+.wb-composer-stop.is-icon {
+  height: 26px;
+  padding: 0 var(--space-2);
 }
 
 .wb-pill .wb-mono {
@@ -2447,7 +2465,30 @@ body.wb-resizing {
   cursor: pointer;
 }
 .wb-queue-flat:hover { background: var(--bg-3); color: var(--text-0); }
+
+/* 모두 취소 is destructive, so it reads that way BEFORE it is pressed rather
+   than only on hover — the colour is the warning, not the hover state. */
+.wb-queue-flat.is-danger { color: var(--danger); }
 .wb-queue-flat.is-danger:hover { background: var(--danger-dim); color: var(--danger); }
+
+/* Armed: the next click really does discard everything, so it stops looking
+   like a link and starts looking like the action it is about to take. */
+.wb-queue-flat.is-danger.is-armed {
+  background: var(--danger);
+  color: var(--accent-fg);
+  font-weight: 700;
+}
+.wb-queue-flat.is-danger.is-armed:hover { background: var(--danger); color: var(--accent-fg); }
+
+.wb-queue-x.is-armed {
+  width: auto;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  background: var(--danger);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 700;
+}
 
 /* ---- merge row ---- */
 .wb-queue-merge {
@@ -2538,7 +2579,11 @@ body.wb-resizing {
 .wb-queue-row {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  /* Centred: a collapsed row is ONE line, and its number, sender chip, badge and
+     buttons all belong on that line's axis. Only an expanded row pins them to
+     the top, since there the body is what grows and the controls should stay
+     level with the first line rather than drift to the middle of a paragraph. */
+  align-items: center;
   gap: 9px;
   padding: 6px 7px 6px 8px;
   border: var(--border-width) dashed var(--border);
@@ -2558,6 +2603,8 @@ body.wb-resizing {
 /* The carried row rides above everything while it is in hand, so it is never
    slid under a neighbour that is stepping aside. */
 .wb-queue-row.is-dragging { z-index: 4; }
+
+.wb-queue-row.is-expanded { align-items: flex-start; }
 
 .wb-queue-row.is-merge-target {
   border-style: solid;
@@ -2603,8 +2650,8 @@ body.wb-resizing {
    drag to, so rows do not shift sideways as the queue drops to one item. */
 .wb-queue-grip {
   flex: none;
-  width: 14px;
-  height: 22px;
+  width: 18px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2613,7 +2660,7 @@ body.wb-resizing {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: grab;
   touch-action: none;
 }
@@ -2664,8 +2711,8 @@ body.wb-resizing {
 
 .wb-queue-n {
   flex: none;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2686,7 +2733,7 @@ body.wb-resizing {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 17px;
+  height: 18px;
   padding: 0 6px;
   border-radius: 4px;
   background: var(--bg-3);
@@ -2735,15 +2782,15 @@ body.wb-resizing {
    too, but a clipped line is not itself an invitation — the button is. */
 .wb-queue-expand {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: 5px;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 .wb-queue-expand:hover { background: var(--bg-3); color: var(--text-0); }
@@ -2753,7 +2800,8 @@ body.wb-resizing {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 17px;
+  margin-right: var(--space-1);
+  height: 18px;
   padding: 0 6px;
   border-radius: 4px;
   background: var(--member-wait-fill);
@@ -2780,15 +2828,16 @@ body.wb-resizing {
 
 .wb-queue-btn {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: 5px;
-  color: var(--text-3);
+  /* Was --text-3, which on these small glyphs read as disabled. */
+  color: var(--text-2);
   cursor: pointer;
 }
 .wb-queue-btn:hover { background: var(--bg-3); color: var(--text-0); }

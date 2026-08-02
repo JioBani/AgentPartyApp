@@ -624,14 +624,21 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   const stopLabel = forceStop ? "강제 종료" : "Stop";
   const onStop = () => (forceStop ? actions.forceStop(view.name) : actions.interrupt(view.name));
-  // While the member works this button ADDS TO ITS QUEUE — it no longer turns
-  // into Stop. Stop moved to the panel toolbar, because the one control that
-  // puts a message in the queue has to stay available exactly when the queue is
-  // in use; taking the slot over left no way to queue from the UI at all.
-  // A turn that will never complete is the exception: once Stop has gone
-  // unanswered that long, the force stop surfaces here rather than staying
-  // buried, since at that point queueing behind it is pointless.
   const queueing = view.busy;
+  /**
+   * Stop sits BESIDE the send control, not in it.
+   *
+   * It used to take the slot over while a member worked, which removed the only
+   * way to queue a message from the UI — exactly when the queue is what you
+   * want. So it moved to the panel toolbar, far from the hand. It belongs here,
+   * where the typing happens; it just must not be the same button. Two
+   * controls, side by side: one adds to the queue, one stops the turn.
+   */
+  const stopBeside = (view.busy || interrupting) && !forceStop ? (
+    <button type="button" className="wb-composer-stop" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+      <CircleStop size={14} /> {interrupting ? "중단 중" : "Stop"}
+    </button>
+  ) : null;
   const sendTitle = queueing ? "대기열에 추가" : "Send";
   const iconOnly = forceStop ? (
     <button type="button" className="wb-send is-stop" title={stopLabel} onClick={onStop}><CircleStop size={15} /></button>
@@ -703,6 +710,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
         <div className="wb-composer-bar">
           {editor("wb-composer-input", false, queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`)}
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
+          {stopBeside && (
+            <button type="button" className="wb-composer-stop is-icon" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+              <CircleStop size={14} />
+            </button>
+          )}
           {iconOnly}
           {permission}
         </div>
@@ -737,6 +749,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
             <button type="button" className="wb-icon-btn" title="멤버 멘션" aria-label="멤버 멘션" onClick={insertMentionTrigger}><AtSign size={14} /></button>
           </div>
           <div className="wb-composer-actions">
+            {stopBeside}
             {labeled}
             {permission}
           </div>
