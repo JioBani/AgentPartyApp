@@ -15,6 +15,7 @@ import { SubagentDetail } from "./SubagentDetail";
 import { ContextDonut } from "./ContextDonut";
 import { WorkingDots } from "./StatusIndicator";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
+import { workbenchPopupOpen } from "./workbenchPopups";
 
 interface PanelProps {
   panel: PanelState;
@@ -69,6 +70,32 @@ export function Panel(props: PanelProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeName, hasSession]);
+
+  // R-12 / R-13: Escape stops the focused panel's in-flight turn, but only when
+  // no Escape-owning popup is open — those close first on the same key.
+  // Deliberately exclude the actions object (same reason as prewarm above).
+  const turnStoppable = Boolean(view && (view.busy || view.status === "stalled"));
+  useEffect(() => {
+    if (!focused || !activeName || !turnStoppable) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (workbenchPopupOpen(document)) {
+        return;
+      }
+      event.preventDefault();
+      actions.interrupt(activeName);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused, activeName, turnStoppable]);
 
   const wide = density === "wide";
   const narrow = density === "narrow";

@@ -506,7 +506,16 @@ function DetailModal({ title, onClose, actions, wide, children }: {
   children: ReactNode;
 }) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      // Claim Escape so a focused panel's R-12 interrupt does not also fire
+      // while this overlay is open (R-13: popup first).
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
