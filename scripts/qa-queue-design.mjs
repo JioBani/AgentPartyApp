@@ -24,7 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { waitForLiveBaseUrl } from "./lib/discovery.mjs";
+import { liveInstances, waitForLiveBaseUrl } from "./lib/discovery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-queue-design-workspace");
@@ -50,6 +50,7 @@ async function shot(name, caption, options = {}) {
 const MEMBER = "backend";
 
 async function main() {
+  await stopPreviousRuns();
   await removePath(ws);
   await removePath(userData);
   fs.mkdirSync(ws, { recursive: true });
@@ -59,6 +60,9 @@ async function main() {
   // an env var for it.
   fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: ws }, null, 2));
 
+  // Taken BEFORE the launch: discovery accepts only an app that advertised
+  // itself after this moment, which is what makes it ours.
+  const launchedAt = Date.now();
   // The debug port stays open so a reviewer who doubts a picture can measure the
   // same state over CDP instead of arguing about pixels.
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", ws, "--remote-debugging-port=0"], {
@@ -82,7 +86,7 @@ async function main() {
   if (child.stderr) child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
   try {
-    base = await discover();
+    base = await discover(launchedAt);
     // The build being photographed must be THIS worktree, or the gallery
     // documents someone else's app.
     const appRoot = (await get("/api/state")).runtime?.appRoot || "";
@@ -260,10 +264,27 @@ const pref = async (body) => {
   await delay(400);
 };
 
-async function discover() {
-  const url = await waitForLiveBaseUrl(ws);
+async function discover(since) {
+  // `since` is what keeps this attached to the app we just launched. An app left
+  // running by an earlier `--keep` answers on this same workspace, and taking
+  // whoever replies first had this script photographing a build from hours
+  // earlier — every shot confidently wrong, with nothing failing.
+  const url = await waitForLiveBaseUrl(ws, { since });
   if (!url) throw new Error("App did not advertise an automation endpoint for the design-QA workspace.");
   return url;
+}
+
+/**
+ * Shuts down anything already serving this workspace. It is a throwaway QA
+ * workspace this script owns, and a leftover app on it is not a second opinion
+ * — it is an older build waiting to be mistaken for this one.
+ */
+async function stopPreviousRuns() {
+  for (const instance of await liveInstances(ws)) {
+    console.log(`stopping a previous design-QA app (pid ${instance.pid})`);
+    await fetch(`${instance.baseUrl}/api/window/close`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+    killProcessTree(instance.pid);
+  }
 }
 
 async function get(route) {
