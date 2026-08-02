@@ -696,7 +696,7 @@ export class CursorAdapter extends EventEmitter {
       : { type: "error", message: result, at: now() });
   }
 
-  /** Completes a Stop/force-stop without treating it as a harness failure. */
+  /** Completes a Stop/force-stop without treating it as a harness failure (R-90). */
   private finishInterrupted(detail = "stopped"): void {
     this.resultSeen = true;
     this.interruptRequested = false;
@@ -706,12 +706,18 @@ export class CursorAdapter extends EventEmitter {
     this.turnState = undefined;
     const carried = Boolean(this.activeTurn);
     this.rememberUncommittedTurn("the user stopped this turn before it finished");
+    // Guidance, not a red error: intentional stops must read as normal (R-90).
+    // Real interrupt/request failures still go through finishWithError (R-91).
     this.emitEvent({
-      type: "status",
-      status: "interrupted",
-      // Say where the stopped message went: Cursor drops it, so the next turn
-      // carries it. Otherwise the user reasonably assumes the model heard it.
-      detail: carried ? `${detail}; Cursor did not save it, so it is replayed with your next message` : detail,
+      type: "diagnostic",
+      severity: "info",
+      category: "interrupt",
+      title: "턴이 중단되었습니다",
+      detail: carried
+        ? "사용자 또는 다른 멤버의 요청으로 진행 중이던 작업이 멈췄습니다. 실패가 아닙니다. Cursor는 이 턴을 저장하지 않아 다음 메시지와 함께 다시 보냅니다."
+        : "사용자 또는 다른 멤버의 요청으로 진행 중이던 작업이 멈췄습니다. 실패가 아닙니다.",
+      recovery: "이어서 도착하는 메시지가 있으면 그것을 먼저 처리하세요."
+        + (detail && detail !== "stopped" ? ` (${detail})` : ""),
       at: now(),
     });
     if (!this.process) {

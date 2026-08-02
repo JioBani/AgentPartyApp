@@ -742,6 +742,13 @@ export class SessionManager extends EventEmitter {
         if (String((event as { category?: unknown }).category || "") === "compact") {
           session.compacting = false;
         }
+        // An intentional stop (R-90) ends the turn the same way Cursor's old
+        // `status: interrupted` did — without this the member stays mid-turn.
+        if (String((event as { category?: unknown }).category || "") === "interrupt") {
+          session.turnActive = false;
+          session.awaitingUser = false;
+          session.compacting = false;
+        }
         break;
       default:
         break;
