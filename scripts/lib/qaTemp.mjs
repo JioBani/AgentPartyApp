@@ -22,6 +22,7 @@
  * Node still resolves bare imports from here: it walks up and finds the
  * worktree's own `node_modules` link.
  */
+import fs from "node:fs";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,4 +48,19 @@ export function qaTempDir() {
 /** Full path for one named bundle in this worktree. */
 export function qaTempFile(name) {
   return path.join(qaTempDir(), name);
+}
+
+/**
+ * A directory nothing else will write to, for a script that wants a clean slate
+ * every run — one that also puts a workspace or a userData tree beside its
+ * bundle, where yesterday's leftovers would be read as today's state.
+ *
+ * Still inside the worktree. Some scripts reached for the OS temp directory to
+ * get this, which does avoid the collision, but it puts the evidence somewhere
+ * nobody looks after a failure and leaves it there forever. Uniqueness and
+ * being findable are not a trade — you can have both.
+ */
+export function qaRunDir(prefix = "run") {
+  const dir = fs.mkdtempSync(path.join(qaTempDir(), `${prefix}-`));
+  return dir;
 }
