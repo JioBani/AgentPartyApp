@@ -2552,6 +2552,34 @@ body.wb-resizing {
   background: color-mix(in srgb, var(--member) 7%, transparent);
 }
 
+/* Dropping ONTO a row folds the dragged message into it. Marked as a solid
+   accent target rather than a drop LINE: a line means "lands between these two",
+   which is the other half of the same gesture and must not look the same. */
+.wb-queue-row.is-merge-target {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.wb-queue-merge-hint {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-badge);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Same 6px the panel used when the rows were its direct children — the wrapper
    exists to measure drop targets, not to change the spacing. */
 .wb-queue-list {

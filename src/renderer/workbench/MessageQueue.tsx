@@ -95,6 +95,26 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     return Math.max(0, rows.length - 1);
   }
 
+  /**
+   * Whether the pointer is over the BODY of a row rather than near its edge.
+   *
+   * The middle band means "onto this message" (merge); the edges keep meaning
+   * "between these messages" (reorder). Splitting the row this way lets one
+   * gesture express both without a modifier key — and leaves a way to reorder
+   * past a row you do not want to merge with.
+   */
+  function mergeTargetUnder(clientY: number): QueueRowView | null {
+    const rows = Array.from(listRef.current?.querySelectorAll(".wb-queue-row") || []);
+    for (let index = 0; index < rows.length; index += 1) {
+      const box = rows[index].getBoundingClientRect();
+      const band = Math.min(box.height * 0.3, 14);
+      if (clientY >= box.top + band && clientY <= box.bottom - band) {
+        return model.rows[index] || null;
+      }
+    }
+    return null;
+  }
+
   function startDrag(event: React.PointerEvent<HTMLElement>, row: QueueRowView) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -105,9 +125,14 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     if (!drag) {
       return;
     }
+    const over = mergeTargetUnder(event.clientY);
+    // Only a row that can actually receive the merge counts as a target, so the
+    // "합치기" affordance never appears where the drop would be refused.
+    const source = model.rows.find((row) => row.id === drag.id);
+    const mergeInto = over && over.id !== drag.id && source && over.from === source.from ? over.id : null;
     const to = slotUnder(event.clientY);
-    if (to !== drag.to) {
-      setDrag({ ...drag, to });
+    if (to !== drag.to || mergeInto !== drag.mergeInto) {
+      setDrag({ ...drag, to, mergeInto });
     }
   }
 
@@ -116,8 +141,12 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
       return;
     }
     event.currentTarget.releasePointerCapture(event.pointerId);
-    const { id, from, to } = drag;
+    const { id, from, to, mergeInto } = drag;
     setDrag(null);
+    if (mergeInto) {
+      void run({ action: "mergeInto", itemId: id, targetId: mergeInto });
+      return;
+    }
     if (to !== from) {
       void run({ action: "move", itemId: id, toIndex: to });
     }
@@ -236,6 +265,11 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           {model.rows.map((row) => (
             <div className={rowClass(row, drag)} key={row.id} role="listitem" data-queue-index={row.index}>
               {row.onRail && !drag && <span className="wb-queue-rail" style={{ top: row.railTop, bottom: row.railBottom }} />}
+              {/* Says what the drop will DO, on the row it will do it to —
+                  otherwise "merge" and "reorder" look identical mid-gesture. */}
+              {drag?.mergeInto === row.id && (
+                <span className="wb-queue-merge-hint"><ArrowUpFromLine size={11} /> 이 메시지와 합치기</span>
+              )}
               {row.showGrip ? (
                 <button
                   type="button"
@@ -293,6 +327,8 @@ interface DragState {
   id: string;
   from: number;
   to: number;
+  /** Row this would be folded INTO, when the pointer is over a row's body. */
+  mergeInto?: string | null;
 }
 
 function rowClass(row: QueueRowView, drag: DragState | null): string {
@@ -302,6 +338,13 @@ function rowClass(row: QueueRowView, drag: DragState | null): string {
   }
   if (drag.id === row.id) {
     return `${className} is-dragging`;
+  }
+  // A merge target outranks the drop line: the drop will fold, not reorder.
+  if (drag.mergeInto === row.id) {
+    return `${className} is-merge-target`;
+  }
+  if (drag.mergeInto) {
+    return className;
   }
   // The drop line sits on the side the row would arrive from, so the preview
   // matches where it lands rather than merely marking the row under the cursor.

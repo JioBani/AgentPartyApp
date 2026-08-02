@@ -245,18 +245,45 @@ export function mergeUp(state: MemberQueueState, id: string): QueueResult<Member
   if (index === 0) {
     return fail("already_first");
   }
-  const previous = state.items[index - 1];
-  const current = state.items[index];
-  if ((previous.from ?? null) !== (current.from ?? null)) {
+  return mergeInto(state, id, state.items[index - 1].id);
+}
+
+/**
+ * Folds `sourceId` into `targetId` wherever the two sit — what dropping one
+ * queued message onto another means.
+ *
+ * The source lands AFTER the target's text: the target is the message being
+ * added to, the dragged one is the addition. The target keeps its place in the
+ * queue, because merging changes what a message says, not when it is sent.
+ *
+ * One operation rather than a move followed by a merge. As two steps, a failure
+ * in between would leave the queue reordered but unmerged — the user asked to
+ * combine two messages and would silently have got their order changed instead.
+ *
+ * Still refused across senders, for the reason {@link leadRun} gives: folding
+ * one member's words into another's does not merge them, it misattributes them.
+ */
+export function mergeInto(state: MemberQueueState, sourceId: string, targetId: string): QueueResult<MemberQueueState> {
+  if (sourceId === targetId) {
+    return fail("already_there");
+  }
+  const sourceIndex = state.items.findIndex((item) => item.id === sourceId);
+  const targetIndex = state.items.findIndex((item) => item.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return fail("not_found");
+  }
+  const source = state.items[sourceIndex];
+  const target = state.items[targetIndex];
+  if ((source.from ?? null) !== (target.from ?? null)) {
     return fail("different_sender");
   }
   const items = state.items.slice();
-  items[index - 1] = {
-    ...previous,
-    text: mergeTexts([previous, current]),
-    attachments: mergeAttachments([previous, current]),
+  items[targetIndex] = {
+    ...target,
+    text: mergeTexts([target, source]),
+    attachments: mergeAttachments([target, source]),
   };
-  items.splice(index, 1);
+  items.splice(sourceIndex, 1);
   return ok({ ...state, items });
 }
 
@@ -325,7 +352,9 @@ export type QueueCommand =
   /** Put one row at an absolute position — the drop half of a drag. */
   | { action: "move"; itemId: string; toIndex: number }
   /** Fold one row into the row above it ("위와 합치기"). */
-  | { action: "mergeUp"; itemId: string };
+  | { action: "mergeUp"; itemId: string }
+  /** Fold one row into another — dropping a queued message onto a message. */
+  | { action: "mergeInto"; itemId: string; targetId: string };
 
 /**
  * Validates an untrusted command (HTTP body). Rejects rather than guessing: a
@@ -365,6 +394,13 @@ export function parseQueueCommand(body: unknown): QueueCommand {
       return { action: "edit", itemId: needsItem() };
     case "mergeUp":
       return { action: "mergeUp", itemId: needsItem() };
+    case "mergeInto": {
+      const targetId = typeof input.targetId === "string" ? input.targetId : "";
+      if (!targetId) {
+        throw new Error("Queue action 'mergeInto' requires a 'targetId' — the row being merged into.");
+      }
+      return { action: "mergeInto", itemId: needsItem(), targetId };
+    }
     case "move": {
       const toIndex = Number(input.toIndex);
       if (!Number.isInteger(toIndex) || toIndex < 0) {
