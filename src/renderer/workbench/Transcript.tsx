@@ -8,6 +8,8 @@ import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } fro
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { memberColorVars } from "../theme/memberColors";
+import { MessageText } from "./messageTokens";
+import { usePartyMembers } from "../app/partyMemberPrefs";
 
 interface TranscriptProps {
   view: MemberView;
@@ -137,7 +139,10 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
               )}
             </div>
           )}
-          {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" /></div>}
+          {/* Mentions and dropped paths were chips while being typed, so they are
+              drawn the same way here — a sent message should look like what was
+              composed, not like raw `@name` and an absolute path. */}
+          {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" chips /></div>}
         </div>
       );
     case "reasoning":
@@ -466,13 +471,18 @@ function previewOf(text: string): string {
  * transcript stays scannable (the full content is one click away), and by the
  * subagent detail view for the delegated task prompt.
  */
-export function ExpandableText({ text, title, markdown }: { text: string; title: string; markdown?: boolean }) {
+export function ExpandableText({ text, title, markdown, chips }: { text: string; title: string; markdown?: boolean; chips?: boolean }) {
   const [full, setFull] = useState(false);
+  const members = usePartyMembers();
   const clip = needsClip(text);
   const shown = clip ? previewOf(text) : text;
+  const body = (value: string) =>
+    markdown ? <Markdown text={value} /> : chips
+      ? <span className="wb-expandable-text"><MessageText text={value} members={members} /></span>
+      : <span className="wb-expandable-text">{value}</span>;
   return (
     <>
-      {markdown ? <Markdown text={shown} /> : <span className="wb-expandable-text">{shown}</span>}
+      {body(shown)}
       {clip && (
         <button type="button" className="wb-expand-inline" title="전체 보기" onClick={() => setFull(true)}>
           <Maximize2 size={11} /> 전체 보기
@@ -480,6 +490,8 @@ export function ExpandableText({ text, title, markdown }: { text: string; title:
       )}
       {full && (
         <DetailModal title={title} onClose={() => setFull(false)}>
+          {/* The full view stays literal: this is where someone goes to read the
+              exact string that was sent, paths and all. */}
           {markdown ? <Markdown text={text} /> : <pre className="wb-pre wb-expandable-full">{text}</pre>}
         </DetailModal>
       )}
