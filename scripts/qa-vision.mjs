@@ -8,6 +8,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -16,8 +17,9 @@ const assert = (condition, message) => {
   if (!condition) failures.push(message);
 };
 
-const outDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 async function load(entry, name) {
   const result = await build({
     entryPoints: [path.join(projectRoot, entry)],

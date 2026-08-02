@@ -9,10 +9,11 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const qaDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(qaDir, { recursive: true });
+
+const qaDir = qaTempDir();
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };

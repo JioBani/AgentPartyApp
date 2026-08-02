@@ -11,13 +11,15 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 
-const outDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 async function load(entry, name) {
   const bundled = await build({ entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "neutral", write: false });
   const file = path.join(outDir, name);

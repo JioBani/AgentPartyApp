@@ -18,6 +18,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -31,7 +32,9 @@ def("getComputedStyle", window.getComputedStyle.bind(window));
 def("requestAnimationFrame", (cb) => setTimeout(() => cb(Date.now()), 0)); def("cancelAnimationFrame", clearTimeout);
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }; globalThis.ResizeObserver = window.ResizeObserver;
 
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 async function bundle(entry, name, external = []) {
   const r = await build({ entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external, write: false });
   const p = path.join(outDir, name); writeFileSync(p, r.outputFiles[0].text); return import(pathToFileURL(p).href);

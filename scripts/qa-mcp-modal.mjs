@@ -9,6 +9,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -23,7 +24,9 @@ def("requestAnimationFrame", (cb) => setTimeout(() => cb(Date.now()), 0)); def("
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }; globalThis.ResizeObserver = window.ResizeObserver;
 window.agentParty = { openExternal: () => {} };
 
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 const r = await build({ entryPoints: [path.join(projectRoot, "src/renderer/workbench/McpModal.tsx")], bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false });
 const bundlePath = path.join(outDir, "mcp-modal.mjs"); writeFileSync(bundlePath, r.outputFiles[0].text);
 const { McpModal } = await import(pathToFileURL(bundlePath).href);

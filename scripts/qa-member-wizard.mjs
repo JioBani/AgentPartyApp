@@ -9,6 +9,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -23,7 +24,9 @@ define("cancelAnimationFrame", clearTimeout);
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
 globalThis.ResizeObserver = window.ResizeObserver;
 
-const outDir = path.join(projectRoot, "node_modules/.qa"); mkdirSync(outDir, { recursive: true });
+
+
+const outDir = qaTempDir();
 const result = await build({ entryPoints: [path.join(projectRoot, "src/renderer/workbench/MemberWizard.tsx")], bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' }, external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false });
 const bundlePath = path.join(outDir, "member-wizard.mjs"); writeFileSync(bundlePath, result.outputFiles[0].text);
 const reactDom = await import("react-dom/client");

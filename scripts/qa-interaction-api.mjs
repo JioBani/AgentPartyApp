@@ -9,11 +9,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(root, "..");
-const qaDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(qaDir, { recursive: true });
+
+const qaDir = qaTempDir();
 
 const out = path.join(qaDir, "engine-host.mjs");
 const result = await build({ entryPoints: [path.join(projectRoot, "src/main/engine/engineHost.ts")], bundle: true, format: "esm", platform: "node", write: false, external: ["electron"] });

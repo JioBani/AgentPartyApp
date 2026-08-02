@@ -8,6 +8,7 @@ import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(root, "..");
@@ -19,8 +20,8 @@ const result = await build({
   platform: "node",
   write: false,
 });
-const outDir = path.join(projectRoot, "node_modules/.qa");
-mkdirSync(outDir, { recursive: true });
+
+const outDir = qaTempDir();
 const bundlePath = path.join(outDir, "workspaceLocation.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
 const W = await import(pathToFileURL(bundlePath).href);
