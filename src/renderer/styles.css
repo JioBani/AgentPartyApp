@@ -4745,6 +4745,9 @@ body.wb-resizing {
 
 .wb-wizard-runtime-harness {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .3px;
@@ -6572,19 +6575,22 @@ body.wb-resizing {
 
 /* ── W2: harness badge ([P-8]) ──────────────────────────────────────────── */
 
-/* Which harness a member runs on, shown wherever the member is identified
-   (sidebar row, tab). Short form only — these surfaces are dense — with the
-   full name on hover (title). Muted so it reads as provenance, not status. */
+/* Official harness marks share one monochrome AgentParty presentation. The
+   vendor silhouette remains intact; only color, slot size and spacing are
+   normalized so three unrelated brand systems sit calmly in the same row. */
 .wb-harness-chip {
   flex: none;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  line-height: 1.2;
-  padding: 1px 4px;
-  border-radius: var(--radius-badge);
-  background: var(--bg-3);
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
   color: var(--text-3);
+}
+.wb-harness-icon { display: block; flex: none; }
+.wb-harness-icon-tone { fill: color-mix(in srgb, currentColor 55%, var(--bg-0)); }
+.wb-harness-icon-fallback {
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: .02em;
 }
 .wb-member-row.is-open .wb-harness-chip,
 .wb-tab.is-active .wb-harness-chip { color: var(--text-2); }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, Sparkles, TerminalSquare, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView } from "./modelCatalog";
@@ -14,6 +14,7 @@ import { CodexPermissionControl } from "./CodexPermissionControl";
 import { CursorPermissionControl } from "./CursorPermissionControl";
 import { PERMISSION_OPTIONS } from "./controls";
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
+import { HarnessIcon } from "./HarnessIcon";
 
 interface MemberWizardProps {
   routes: RouteLike[];
@@ -38,8 +39,8 @@ interface HarnessChoice {
 }
 
 const HARNESSES: HarnessChoice[] = [
-  { id: "claude-code", label: "Claude Code", status: "available", icon: <Sparkles size={16} />, hint: "Claude Code SDK 기반 로컬 하네스" },
-  { id: "codex", label: "Codex", status: "available", icon: <TerminalSquare size={16} />, hint: "Codex CLI exec 기반 로컬 하네스" },
+  { id: "claude-code", label: "Claude Code", status: "available", icon: <HarnessIcon harness="claude-code" size={16} />, hint: "Claude Code SDK 기반 로컬 하네스" },
+  { id: "codex", label: "Codex", status: "available", icon: <HarnessIcon harness="codex" size={16} />, hint: "Codex CLI exec 기반 로컬 하네스" },
 ];
 
 const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
@@ -47,7 +48,7 @@ const CURSOR_HARNESS: HarnessChoice = {
   id: "cursor",
   label: "Cursor CLI",
   status: "available",
-  icon: <TerminalSquare size={16} />,
+  icon: <HarnessIcon harness="cursor" size={16} />,
   hint: "Cursor Agent CLI · Auto / Grok 4.5",
 };
 const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS];
@@ -299,7 +300,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                   rather than a second arrangement of the same controls. */}
               <button type="button" className="wb-wizard-runtime" onClick={() => setPickerOpen(true)}>
                 <span className="wb-wizard-runtime-main">
-                  <span className="wb-wizard-runtime-harness">{selectedHarness?.label || harness}</span>
+                  <span className="wb-wizard-runtime-harness">{selectedHarness?.icon}{selectedHarness?.label || harness}</span>
                   <span className="wb-mono wb-wizard-runtime-model">{selected?.route.label || selectedMeta?.name || "모델 선택"}</span>
                 </span>
                 <span className="wb-mono wb-wizard-runtime-sub">

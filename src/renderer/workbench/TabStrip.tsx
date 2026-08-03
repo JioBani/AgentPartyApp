@@ -2,7 +2,8 @@ import { PointerEvent } from "react";
 import { AlignLeft, MoreHorizontal, Plus, SquareSplitHorizontal, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
-import { harnessLabel, harnessShort } from "./harnessLabel";
+import { harnessLabel } from "./harnessLabel";
+import { HarnessIcon } from "./HarnessIcon";
 
 interface TabStripProps {
   panel: PanelState;
@@ -48,7 +49,11 @@ export function TabStrip({ panel, views, density, draggingMember, canAdd, onSele
               {/* Which harness this tab's member runs on — the model alone does
                   not identify a member, since the same model behaves differently
                   per harness. Full name is in the tab tooltip above. */}
-              {density !== "narrow" && <span className="wb-mono wb-harness-chip">{harnessShort(view.member.runtime)}</span>}
+              {density !== "narrow" && (
+                <span className="wb-harness-chip" aria-label={harnessLabel(view.member.runtime)}>
+                  <HarnessIcon harness={view.member.runtime} />
+                </span>
+              )}
               {view.pendingApproval && <span className="wb-tab-badge">승인</span>}
               {!view.pendingApproval && view.unread > 0 && <span className="wb-tab-unread">{view.unread}</span>}
               {/* A hidden member's queue is otherwise completely invisible: the

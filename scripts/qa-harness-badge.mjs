@@ -8,8 +8,8 @@
  * Two layers:
  *   1. harnessLabel (pure): full + short names per harness, and an UNKNOWN id
  *      surfaced as-is rather than mapped to a guess.
- *   2. TabStrip (DOM): each tab carries its own harness badge with the full name
- *      in the tab tooltip, and the badge yields to the member name when narrow.
+ *   2. TabStrip (DOM): each tab carries its harness's official monochrome mark
+ *      with the full name in the tab tooltip, and yields when narrow.
  *
  * The sidebar row's badge is covered by qa-render (which mounts the real app).
  */
@@ -79,8 +79,9 @@ const settle = () => new Promise((r) => setTimeout(r, 60));
 console.log("\nTabStrip DOM:");
 const wide = mount("wide");
 await settle();
-const badges = [...wide.querySelectorAll(".wb-tab .wb-harness-chip")].map((el) => el.textContent);
-assert(badges.join(",") === "CC,CDX,CUR", "each tab carries ITS OWN harness badge (not the panel's or the first tab's)");
+const badges = [...wide.querySelectorAll(".wb-tab .wb-harness-icon")].map((el) => el.getAttribute("data-harness"));
+assert(badges.join(",") === "claude-code,codex,cursor", "each tab carries ITS OWN harness mark (not the panel's or the first tab's)");
+assert(wide.querySelectorAll(".wb-tab .wb-harness-chip svg").length === 3, "known harnesses render vector brand marks, not text abbreviations");
 const tips = [...wide.querySelectorAll(".wb-tab")].map((el) => el.getAttribute("title"));
 assert(tips[1] === "codexy · Codex", "the tab tooltip names the member and its harness in full");
 

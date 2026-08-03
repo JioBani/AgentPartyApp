@@ -285,9 +285,9 @@ assert(/not started|idle/.test(idleRow?.textContent || "") && !idleRow?.querySel
 // [P-8] The model alone does not identify a member — the same model behaves
 // differently per harness — so the harness is shown where the member is named.
 const rowChip = workingRow?.querySelector(".wb-harness-chip");
-assert(rowChip?.textContent === "CC" && rowChip?.getAttribute("title") === "Claude Code", "sidebar row shows the harness (short badge + full name on hover)");
+assert(rowChip?.querySelector('svg[data-harness="claude-code"]') && rowChip?.getAttribute("title") === "Claude Code", "sidebar row shows the official harness mark + full name on hover");
 const tabChip = document.querySelector(".wb-tab .wb-harness-chip");
-assert(tabChip?.textContent === "CC", "tab strip shows the harness badge");
+assert(tabChip?.querySelector('svg[data-harness="claude-code"]'), "tab strip shows the harness mark");
 const activeTab = document.querySelector(".wb-tab.is-active");
 assert(/Claude Code/.test(activeTab?.getAttribute("title") || ""), "the tab's tooltip names the harness in full");
 // The context indicator is now a DONUT (ring), not a bar. Clicking it opens the

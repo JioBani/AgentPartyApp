@@ -12,7 +12,8 @@ import { memberColorVars } from "../theme/memberColors";
 import { statusLabel } from "./memberStatus";
 import { MemberWizard } from "./MemberWizard";
 import { WorkingDots } from "./StatusIndicator";
-import { harnessLabel, harnessShort } from "./harnessLabel";
+import { harnessLabel } from "./harnessLabel";
+import { HarnessIcon } from "./HarnessIcon";
 import { MessageGateIcon } from "./MessageGateIcon";
 
 export interface CreateMemberInput {
@@ -198,7 +199,9 @@ export function PartySidebar(props: PartySidebarProps) {
                 {/* Which harness this member runs on. The same model behaves
                     differently per harness, so the model alone does not say what
                     a member is. Short here (the row is dense), full name on hover. */}
-                <span className="wb-mono wb-harness-chip" title={harnessLabel(view.member.runtime)}>{harnessShort(view.member.runtime)}</span>
+                <span className="wb-harness-chip" title={harnessLabel(view.member.runtime)} aria-label={harnessLabel(view.member.runtime)}>
+                  <HarnessIcon harness={view.member.runtime} />
+                </span>
                 {view.pendingApproval && <span className="wb-member-badge">승인</span>}
                 {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
                 {/* A running turn is motion, not the grey word "working" that
