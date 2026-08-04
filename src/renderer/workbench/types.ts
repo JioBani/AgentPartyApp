@@ -55,7 +55,7 @@ export type TranscriptBlock =
   // `fromQueue` marks an inbound card whose message WAITED in this member's
   // queue before delivery. Member-to-member traffic renders as this card rather
   // than a user bubble, so the queue provenance rides here too — see applyEvents.
-  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord"; fromQueue?: boolean; queuedN?: number }
+  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; error?: string; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord"; fromQueue?: boolean; queuedN?: number }
   // A party write-action this member drove (member-create / member-remove).
   | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
   // A Message Gate outcome for an OUTGOING send by this member (inline badge).

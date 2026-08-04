@@ -275,7 +275,7 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
         {block.at && <span className="wb-mono wb-time">{block.at}</span>}
       </div>
       {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
-      {failed && <div className="wb-channel-failed">전달 실패 — 상대가 실행 중이 아닙니다.</div>}
+      {failed && <div className="wb-channel-failed">전달 실패{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
     </div>
   );
 }

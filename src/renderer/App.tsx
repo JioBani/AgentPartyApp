@@ -21,7 +21,7 @@ import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSu
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
-import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -340,7 +340,7 @@ export function App() {
       }
       restoreRequestedRef.current.add(key);
       void window.agentParty.getMemberTranscript?.(member.name)?.then((raw) => {
-        const blocks = Array.isArray(raw) ? (raw as TranscriptBlock[]) : [];
+        const blocks = Array.isArray(raw) ? normalizeTranscriptBlocks(raw as TranscriptBlock[]) : [];
         // Always record the result (even empty): it marks the restore as done.
         setRestoredByMember((current) => ({ ...current, [key]: blocks }));
         if (!blocks.length) {

@@ -35,7 +35,7 @@ async function bundle(entry, name, external = []) {
 }
 
 // ---- Layer 1: applyEvents folding -----------------------------------------
-const { applyEvents } = await bundle("src/renderer/app/transcriptEvents.ts", "te-channel.mjs", []);
+const { applyEvents, normalizeTranscriptBlocks } = await bundle("src/renderer/app/transcriptEvents.ts", "te-channel.mjs", []);
 
 console.log("\napplyEvents channel folding:");
 const sid = "s1";
@@ -48,23 +48,42 @@ assert(list.length === 1 && list[0].kind === "channel", "inbound channel envelop
 assert(list[0].direction === "in" && list[0].from === "alice" && list[0].to === "bob", "inbound block carries direction=in + from/to");
 assert(list[0].text === "Please review PR 42", "inbound block extracts the body (role suffix stripped)");
 
-// Outbound: the party `send` tool_call (fires several times, same id -> one block).
+// Outbound: reproduce Claude's real lifecycle. The start has no arguments, the
+// completed invocation has them, and a generic tool_result with the same id
+// arrives last.
 blocks = applyEvents(blocks, sid, [
   { type: "tool_call", id: "t1", name: "mcp__agentparty-app__send", status: "started", input: {} },
-  { type: "tool_call", id: "t1", name: "mcp__agentparty-app__send", status: "completed", input: { to: "carol", content: "ping" }, result: { content: [{ type: "text", text: '{"ok":true}' }] } },
+]);
+assert(!(blocks[sid] || []).some((b) => b.kind === "channel" && b.direction === "out"), "empty send start does not render a member -> ? card");
+blocks = applyEvents(blocks, sid, [
+  { type: "tool_call", id: "t1", name: "mcp__agentparty-app__send", status: "completed", input: { to: "carol", content: "ping" } },
+  { type: "tool_call", id: "t1", name: "tool_result", status: "completed", result: '{"ok":true}' },
 ]);
 list = blocks[sid] || [];
 const outBlocks = list.filter((b) => b.kind === "channel" && b.direction === "out");
 assert(outBlocks.length === 1, "outbound send tool_calls fold into exactly one channel block");
 assert(outBlocks[0].to === "carol" && outBlocks[0].text === "ping", "outbound block captures to + content from tool input");
 assert(outBlocks[0].state === "ok", "successful send marked ok");
+assert(!list.some((b) => b.kind === "tool" && b.name === "tool_result"), "terminal tool_result merges into the send card");
 
 // A failed send (recipient offline -> bridge returns ok:false / isError).
 blocks = applyEvents(blocks, sid, [
-  { type: "tool_call", id: "t2", name: "mcp__agentparty-app__send", status: "completed", input: { to: "ghost", content: "hi" }, result: { isError: true, content: [{ type: "text", text: '{"ok":false,"error":"not running"}' }] } },
+  { type: "tool_call", id: "t2", name: "mcp__agentparty-app__send", status: "completed", input: { to: "ghost", content: "hi" } },
+  { type: "tool_call", id: "t2", name: "tool_result", status: "failed", result: '{"ok":false,"error":"not running"}' },
 ]);
 const failedBlock = (blocks[sid] || []).find((b) => b.kind === "channel" && b.to === "ghost");
-assert(failedBlock?.state === "failed", "failed send marked failed");
+assert(failedBlock?.state === "failed" && failedBlock.error === "not running", "failed send marked failed with the bridge error");
+
+console.log("\nrestored transcript repair:");
+const repaired = normalizeTranscriptBlocks([
+  { id: "old1", kind: "channel", direction: "out", from: "", to: "", text: "", at: "10:00" },
+  { id: "old1", kind: "channel", direction: "out", from: "", to: "impl", text: "review this", at: "10:00" },
+  { id: "old1", kind: "tool", name: "tool_result", status: "completed", result: '{"ok":true}', at: "10:00" },
+  { id: "aborted", kind: "channel", direction: "out", from: "", to: "", text: "", at: "10:01" },
+  { id: "orphan", kind: "tool", name: "tool_result", status: "completed", result: '{"ok":true}', at: "10:02" },
+]);
+assert(repaired.length === 1 && repaired[0].kind === "channel", "legacy duplicate/result/empty artifacts collapse to one channel card");
+assert(repaired[0].to === "impl" && repaired[0].text === "review this" && repaired[0].state === "ok", "legacy channel keeps its route/body and receives terminal state");
 
 // An ordinary (non-channel) status stays a status block.
 blocks = applyEvents(blocks, sid, [{ type: "status", status: "sent", detail: "just a normal message" }]);
@@ -75,7 +94,8 @@ console.log("\napplyEvents party-action folding:");
 // member-create folds into a create card with role/model/harness from the input.
 blocks = applyEvents(blocks, sid, [
   { type: "tool_call", id: "mc1", name: "mcp__agentparty-app__member-create", status: "started", input: {} },
-  { type: "tool_call", id: "mc1", name: "mcp__agentparty-app__member-create", status: "completed", input: { name: "qa-bot", role: "테스터", harness: "claude-code", model: "sonnet" }, result: { content: [{ type: "text", text: '{"ok":true}' }] } },
+  { type: "tool_call", id: "mc1", name: "mcp__agentparty-app__member-create", status: "completed", input: { name: "qa-bot", role: "테스터", harness: "claude-code", model: "sonnet" } },
+  { type: "tool_call", id: "mc1", name: "tool_result", status: "completed", result: '{"ok":true}' },
 ]);
 const createBlocks = (blocks[sid] || []).filter((b) => b.kind === "partyAction" && b.action === "create");
 assert(createBlocks.length === 1, "member-create tool_calls fold into one create card");

@@ -58,10 +58,20 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       }
     } else if (event.type === "tool_call") {
       // Party write-tools render as purpose-built cards instead of raw tool boxes.
-      if (event.name === PARTY_SEND_TOOL) {
+      // Claude reports the eventual tool_result with the SAME id but the generic
+      // name `tool_result`. Route that terminal event back to the purpose-built
+      // card instead of appending a second raw tool box.
+      const existing = (next[sessionId] || []).find((item) => item.id === event.id);
+      if (event.name === PARTY_SEND_TOOL || (existing?.kind === "channel" && existing.direction === "out")) {
         next = upsertChannelSendBlock(next, sessionId, event);
-      } else if (event.name === PARTY_CREATE_TOOL || event.name === PARTY_REMOVE_TOOL) {
-        next = upsertPartyActionBlock(next, sessionId, event, event.name === PARTY_CREATE_TOOL ? "create" : "remove");
+      } else if (event.name === PARTY_CREATE_TOOL || event.name === PARTY_REMOVE_TOOL || existing?.kind === "partyAction") {
+        const action = existing?.kind === "partyAction" ? existing.action : event.name === PARTY_CREATE_TOOL ? "create" : "remove";
+        next = upsertPartyActionBlock(next, sessionId, event, action);
+      } else if (PLACEHOLDER_TOOL_NAMES.has(event.name || "") && !existing && partyToolResult(event).state !== "failed") {
+        // A successful orphan result has no user-facing meaning. This can occur
+        // after reconnect when the corresponding start event predates the live
+        // stream; rendering `{\"ok\":true}` only exposes transport internals.
+        continue;
       } else {
         next = upsertToolBlock(next, sessionId, event);
       }
@@ -322,20 +332,21 @@ function upsertChannelSendBlock(current: Record<string, TranscriptBlock[]>, sess
   const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
   const to = typeof input.to === "string" ? input.to : "";
   const text = typeof input.content === "string" ? input.content : "";
-  const state = channelSendState(event);
+  const { state, error } = partyToolResult(event);
   if (index < 0) {
-    return appendBlock(current, sessionId, { id, kind: "channel", direction: "out", from: "", to, text, state, at: nowTime() });
+    // content_block_start normally carries `{}` while Claude is still streaming
+    // the arguments. Wait for the populated update so interrupted tool starts do
+    // not leave a blank `member -> ?` card behind.
+    if (!to && !text) {
+      return current;
+    }
+    return appendBlock(current, sessionId, { id, kind: "channel", direction: "out", from: "", to, text, state, error, at: nowTime() });
   }
   const prev = items[index] as Extract<TranscriptBlock, { kind: "channel" }>;
-  const merged: TranscriptBlock = { ...prev, to: to || prev.to, text: text || prev.text, state: state ?? prev.state };
+  const merged: TranscriptBlock = { ...prev, to: to || prev.to, text: text || prev.text, state: state ?? prev.state, error: error ?? prev.error };
   const nextItems = items.slice();
   nextItems[index] = merged;
   return { ...current, [sessionId]: nextItems };
-}
-
-/** Resolves a send's delivery state from the tool event (failed if the bridge returned !ok). */
-function channelSendState(event: any): "ok" | "failed" | undefined {
-  return partyToolResult(event).state;
 }
 
 /**
@@ -359,6 +370,10 @@ function upsertPartyActionBlock(current: Record<string, TranscriptBlock[]>, sess
     state, error, at: nowTime(),
   };
   if (index < 0) {
+    // Claude announces the tool before its streamed input contains the member.
+    if (!incoming.member) {
+      return current;
+    }
     return appendBlock(current, sessionId, incoming);
   }
   const prev = items[index] as Extract<TranscriptBlock, { kind: "partyAction" }>;
@@ -379,28 +394,130 @@ function upsertPartyActionBlock(current: Record<string, TranscriptBlock[]>, sess
 /** Reads a party tool's result envelope into a {state, error} pair (failed if the bridge returned !ok). */
 function partyToolResult(event: any): { state: "ok" | "failed" | undefined; error?: string } {
   if (event.status === "failed") {
-    return { state: "failed" };
+    return { state: "failed", error: resultEnvelope(event.result).error };
   }
   const result = event.result;
-  if (result && typeof result === "object") {
-    const text = Array.isArray((result as any).content) ? (result as any).content.map((part: any) => part?.text).filter(Boolean).join("") : "";
-    let parsedError: string | undefined;
-    if (text) {
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed?.ok === false) {
-          return { state: "failed", error: typeof parsed.error === "string" ? parsed.error : undefined };
-        }
-        parsedError = typeof parsed?.error === "string" ? parsed.error : undefined;
-      } catch {
-        // Non-JSON result text — treat as informational, not a failure signal.
-      }
-    }
-    if ((result as any).isError) {
-      return { state: "failed", error: parsedError };
+  const envelope = resultEnvelope(result);
+  if (envelope.ok === false || (result && typeof result === "object" && (result as any).isError)) {
+    return { state: "failed", error: envelope.error };
+  }
+  // content_block_stop only means invocation arguments finished streaming. The
+  // bridge result that follows is what proves delivery succeeded.
+  return { state: result !== undefined && event.status === "completed" ? "ok" : undefined };
+}
+
+/** Normalizes the string/array/MCP-envelope result shapes emitted by adapters. */
+function resultEnvelope(result: unknown): { ok?: boolean; error?: string } {
+  let value: unknown = result;
+  if (Array.isArray(value)) {
+    value = value.map((part: any) => part?.text).filter(Boolean).join("");
+  } else if (value && typeof value === "object" && Array.isArray((value as any).content)) {
+    value = (value as any).content.map((part: any) => part?.text).filter(Boolean).join("");
+  }
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
     }
   }
-  return { state: event.status === "completed" ? "ok" : undefined };
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return {
+    ok: typeof (value as any).ok === "boolean" ? (value as any).ok : undefined,
+    error: typeof (value as any).error === "string" ? (value as any).error : undefined,
+  };
+}
+
+/**
+ * Repairs transcripts produced by the old Claude lifecycle folding.
+ *
+ * A restore can contain duplicate purpose-built cards followed by a raw
+ * `tool_result` block with the same id. Coalesce those into one card, propagate
+ * its terminal state, and discard incomplete empty starts. The original array
+ * and block identities are retained when no repair is needed.
+ */
+export function normalizeTranscriptBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+  const next: TranscriptBlock[] = [];
+  const indexById = new Map<string, number>();
+  let changed = false;
+
+  for (const block of blocks) {
+    const priorIndex = indexById.get(block.id);
+    const prior = priorIndex === undefined ? undefined : next[priorIndex];
+
+    if (prior?.kind === "channel" && block.kind === "channel" && prior.direction === "out" && block.direction === "out") {
+      next[priorIndex!] = {
+        ...prior,
+        to: block.to || prior.to,
+        text: block.text || prior.text,
+        state: block.state ?? prior.state,
+        error: block.error ?? prior.error,
+      };
+      changed = true;
+      continue;
+    }
+    if (prior?.kind === "partyAction" && block.kind === "partyAction" && prior.action === block.action) {
+      next[priorIndex!] = {
+        ...prior,
+        member: block.member || prior.member,
+        role: block.role ?? prior.role,
+        model: block.model ?? prior.model,
+        harness: block.harness ?? prior.harness,
+        state: block.state ?? prior.state,
+        error: block.error ?? prior.error,
+      };
+      changed = true;
+      continue;
+    }
+    if (block.kind === "tool" && PLACEHOLDER_TOOL_NAMES.has(block.name || "") && prior) {
+      if (prior.kind === "channel" && prior.direction === "out") {
+        const outcome = partyToolResult(block);
+        next[priorIndex!] = { ...prior, state: outcome.state ?? prior.state, error: outcome.error ?? prior.error };
+        changed = true;
+        continue;
+      }
+      if (prior.kind === "partyAction") {
+        const outcome = partyToolResult(block);
+        next[priorIndex!] = { ...prior, state: outcome.state ?? prior.state, error: outcome.error ?? prior.error };
+        changed = true;
+        continue;
+      }
+      if (prior.kind === "tool") {
+        next[priorIndex!] = {
+          ...prior,
+          name: preferToolName(prior.name, block.name),
+          status: preferToolStatus(prior.status, block.status),
+          result: block.result ?? prior.result,
+        };
+        changed = true;
+        continue;
+      }
+    }
+
+    next.push(block);
+    if (block.id) {
+      indexById.set(block.id, next.length - 1);
+    }
+  }
+
+  const filtered = next.filter((block) => {
+    if (block.kind === "channel" && block.direction === "out" && !block.to && !block.text) {
+      changed = true;
+      return false;
+    }
+    if (block.kind === "partyAction" && !block.member) {
+      changed = true;
+      return false;
+    }
+    if (block.kind === "tool" && PLACEHOLDER_TOOL_NAMES.has(block.name || "") && partyToolResult(block).state !== "failed") {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+  return changed ? filtered : blocks;
 }
 
 export function nowTime(): string {
