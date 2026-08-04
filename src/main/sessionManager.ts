@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter } from "../core/codexAdapter";
+import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
@@ -149,7 +150,12 @@ export class SessionManager extends EventEmitter {
    *   Injected rather than read from `electron.app` so the engine core runs
    *   under plain node. See docs/WSL_REMOTE.md.
    */
-  constructor(private readonly router: EmbeddedHarnessRouter, private readonly userDataDir: string) {
+  constructor(
+    private readonly router: EmbeddedHarnessRouter,
+    private readonly userDataDir: string,
+    /** Stable host/workspace identity; separates helpers owned by parallel WSL engines. */
+    private readonly runtimeScope = "host",
+  ) {
     super();
     this.codexAuthenticationStore = new CodexAuthenticationStore(
       userDataDir,
@@ -603,7 +609,10 @@ export class SessionManager extends EventEmitter {
 
   private async runCodexDiscovery(): Promise<CodexModelDiscoveryState> {
     try {
-      const models = await discoverCodexModels({ cwd: this.userDataDir });
+      const models = await discoverCodexModels({
+        cwd: this.userDataDir,
+        sqliteHome: agentPartyCodexSqliteHome(this.userDataDir, `${this.runtimeScope}:model-discovery`),
+      });
       this.codexModels = { status: "ready", models, at: new Date().toISOString() };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1087,6 +1096,14 @@ export class SessionManager extends EventEmitter {
       });
     }
     if (selectedHarness === "codex") {
+      const adapterScope = binding
+        ? `party:${binding.identity.party}:member:${binding.identity.member}`
+        : usageSourceId
+          ? `usage:${usageSourceId}`
+          : resumeSessionId
+            ? `thread:${resumeSessionId}`
+            : `session:${id}`;
+      const sqliteScope = `${this.runtimeScope}:${adapterScope}`;
       return new CodexAdapter({
         id,
         cwd,
@@ -1096,6 +1113,7 @@ export class SessionManager extends EventEmitter {
         policy: request.codexPolicy || harnessDefaults.codexPolicy,
         debugEnabled: settings.debugEnabled,
         storageDir: path.join(this.userDataDir, "logs"),
+        sqliteHome: agentPartyCodexSqliteHome(this.userDataDir, sqliteScope),
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,

@@ -47,6 +47,8 @@ export interface CodexAdapterOptions {
   debugEnabled: boolean;
   /** Base dir for the raw JSON-RPC debug trace (a `logs/` subdir is created). */
   storageDir: string;
+  /** Dedicated SQLite runtime directory; CODEX_HOME remains shared for auth/config/rollouts. */
+  sqliteHome?: string;
   executablePath?: string;
   executableArgs?: string[];
   resumeSessionId?: string;
@@ -587,6 +589,11 @@ export class CodexAdapter extends EventEmitter {
     const partyArgs = this.partyMcpConfigArgs();
     const credentialArgs = this.currentProvider() ? [] : ["-c", 'cli_auth_credentials_store="file"'];
     const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...credentialArgs, ...providerArgs, ...partyArgs, "app-server"];
+    if (this.options.sqliteHome) {
+      // Fail here with the concrete filesystem path instead of letting Codex
+      // collapse it into the generic "failed to initialize state runtime".
+      fs.mkdirSync(this.options.sqliteHome, { recursive: true });
+    }
     const env = {
       ...process.env,
       ...(provider?.id === CODEX_OPENROUTER_PROVIDER.id && this.options.openRouterApiKey
@@ -600,6 +607,9 @@ export class CodexAdapter extends EventEmitter {
         : {}),
       ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
         ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
+        : {}),
+      ...(this.options.sqliteHome
+        ? { CODEX_SQLITE_HOME: this.options.sqliteHome }
         : {}),
       ...this.partyMcpEnv(),
     };

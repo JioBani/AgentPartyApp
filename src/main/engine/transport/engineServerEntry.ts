@@ -39,6 +39,10 @@ async function main(): Promise<void> {
   const hostChannel = new HostChannel(process.stdout);
   const host = createEngineHost({
     storageDir: storage,
+    // Every WSL workspace has its own engine process but shares the distro-level
+    // storage root. Include the workspace so discovery/usage helpers in two
+    // simultaneously open workspaces cannot fall back onto one SQLite DB.
+    runtimeScope: `workspace:${workspace}`,
     router: {
       preferredPort: 0,
       authToken: "engine",

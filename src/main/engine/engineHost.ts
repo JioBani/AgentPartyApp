@@ -11,6 +11,8 @@ export interface EngineHostConfig {
   /** Base dir for harness debug logs (Electron userData on desktop; an
    *  engine-chosen dir when headless, e.g. `~/.agent_party_app` in a distro). */
   storageDir: string;
+  /** Stable identity for processes sharing storage (notably one per WSL workspace). */
+  runtimeScope?: string;
   router: {
     preferredPort: number;
     authToken: string;
@@ -68,7 +70,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
         }
       : undefined,
   });
-  const sessionManager = new SessionManager(router, config.storageDir);
+  const sessionManager = new SessionManager(router, config.storageDir, config.runtimeScope);
   const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord);
   const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 

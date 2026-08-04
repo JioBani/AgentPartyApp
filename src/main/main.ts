@@ -294,6 +294,7 @@ ${body}
   }));
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
+    runtimeScope: "desktop",
     router: {
       preferredPort: parsePort(settings.routerBaseUrl),
       authToken: settings.routerAuthToken,

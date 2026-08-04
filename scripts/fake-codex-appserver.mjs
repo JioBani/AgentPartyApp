@@ -22,6 +22,19 @@ const TOOL_ID = "srv-tool-1";
 const outFile = process.env.AGENTPARTY_FAKE_CODEX_OUT || "";
 const toolOutFile = process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT || "";
 const authLifecycleOut = process.env.AGENTPARTY_FAKE_CODEX_AUTH_OUT || "";
+const envOutFile = process.env.AGENTPARTY_FAKE_CODEX_ENV_OUT || "";
+
+if (envOutFile) {
+  try {
+    fs.appendFileSync(envOutFile, `${JSON.stringify({
+      pid: process.pid,
+      sqliteHome: process.env.CODEX_SQLITE_HOME || "",
+      codexHome: process.env.CODEX_HOME || "",
+    })}\n`);
+  } catch {
+    // Best effort: individual tests still surface a missing record explicitly.
+  }
+}
 
 recordAuthLifecycle({ event: "spawn", argv: process.argv.slice(2), accountId: currentAccountId() });
 

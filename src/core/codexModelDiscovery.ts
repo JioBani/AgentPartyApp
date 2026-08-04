@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import * as fs from "node:fs";
 import readline from "node:readline";
 import { normalizeCodexModels, type CodexModelInfo } from "../shared/codexModels";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
@@ -16,6 +17,8 @@ export interface CodexModelDiscoveryOptions {
   cwd: string;
   executablePath?: string;
   executableArgs?: string[];
+  /** Dedicated SQLite runtime directory; avoids contending with live members/IDEs. */
+  sqliteHome?: string;
   timeoutMs?: number;
 }
 
@@ -25,6 +28,9 @@ export async function discoverCodexModels(options: CodexModelDiscoveryOptions): 
   const requested = codexExecutable(options.executablePath);
   const resolved = resolveCodexExecutable(requested);
   const args = [...codexExtraArgs(options.executableArgs), "-c", 'cli_auth_credentials_store="file"', "app-server"];
+  if (options.sqliteHome) {
+    fs.mkdirSync(options.sqliteHome, { recursive: true });
+  }
 
   const child = spawn(resolved.command, args, {
     cwd: options.cwd,
@@ -32,6 +38,9 @@ export async function discoverCodexModels(options: CodexModelDiscoveryOptions): 
       ...process.env,
       ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
         ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
+        : {}),
+      ...(options.sqliteHome
+        ? { CODEX_SQLITE_HOME: options.sqliteHome }
         : {}),
     },
     windowsHide: true,
