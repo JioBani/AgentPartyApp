@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
@@ -89,22 +89,28 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
 
   return (
     <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
-      {view.status === "not-started" && view.transcript.length === 0 && (
+      {view.transcriptLoading ? (
+        <div className="wb-transcript-empty wb-transcript-loading" role="status" aria-live="polite">
+          <LoaderCircle size={17} className="wb-spin" />
+          <p>이전 대화를 불러오는 중입니다…</p>
+          <span>새 이벤트는 기존 대화와 합친 뒤 표시됩니다.</span>
+        </div>
+      ) : view.status === "not-started" && view.transcript.length === 0 && (
         <div className="wb-transcript-empty">
           <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
         </div>
       )}
-      {hiddenCount > 0 && (
+      {!view.transcriptLoading && hiddenCount > 0 && (
         <button type="button" className="wb-transcript-older" onClick={showOlder}>
           이전 대화 {Math.min(hiddenCount, TAIL_BLOCKS)}개 더 보기 · {hiddenCount}개 숨김
         </button>
       )}
-      {shown.map((block) => (
+      {!view.transcriptLoading && shown.map((block) => (
         // Key by kind+id: an AskUserQuestion approval and its merged tool block
         // share the same tool-use id, so id alone would collide.
         <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} />
       ))}
-      {view.busy && <TypingIndicator />}
+      {!view.transcriptLoading && view.busy && <TypingIndicator />}
     </div>
   );
 }

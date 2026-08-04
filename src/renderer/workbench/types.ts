@@ -100,6 +100,8 @@ export interface MemberView {
   session?: SessionView;
   status: MemberStatus;
   transcript: TranscriptBlock[];
+  /** Persisted conversation is still being read; live events stay buffered. */
+  transcriptLoading: boolean;
   /** In-session subagents (dock + detail); empty when the member has none. */
   subagents: Subagent[];
   unread: number;

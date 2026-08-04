@@ -149,6 +149,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     session,
     status,
     transcript,
+    transcriptLoading: restored === undefined,
     subagents,
     unread: Math.max(0, transcript.length - seenCount),
     pendingApproval: status === "approval",

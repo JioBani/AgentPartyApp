@@ -520,6 +520,25 @@ export function normalizeTranscriptBlocks(blocks: TranscriptBlock[]): Transcript
   return changed ? filtered : blocks;
 }
 
+/**
+ * Prepends the persisted transcript to events already observed for a new live
+ * session. Identity is preserved when no merge is needed so append persistence
+ * can still detect its unchanged prefix without serializing the whole history.
+ */
+export function mergeRestoredTranscript(restored: TranscriptBlock[], live: TranscriptBlock[]): TranscriptBlock[] {
+  if (!restored.length) {
+    return live;
+  }
+  if (!live.length) {
+    return restored;
+  }
+  const restoredIds = new Set(restored.map((block) => block.id));
+  if (live.some((block) => restoredIds.has(block.id))) {
+    return live;
+  }
+  return [...restored, ...live];
+}
+
 export function nowTime(): string {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

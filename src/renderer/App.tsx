@@ -21,7 +21,7 @@ import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSu
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
-import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -89,6 +89,12 @@ export function App() {
   membersRef.current = members;
   const restoredRef = useRef(restoredByMember);
   restoredRef.current = restoredByMember;
+  // A session may emit before the party broadcast binds its id to a member, or
+  // before that member's WSL transcript read completes. Keep those events in
+  // memory until the persisted history has been merged. Only sessions recorded
+  // in `transcriptOwnerBySessionRef` are allowed onto the persistence path.
+  const pendingEventsBySessionRef = useRef<Record<string, any[]>>({});
+  const transcriptOwnerBySessionRef = useRef<Map<string, string>>(new Map());
 
   // Publish the composer preferences to the input, which sits two layers down
   // (Workbench → Panel → Composer) and is the only consumer. App stays the sole
@@ -195,21 +201,27 @@ export function App() {
     });
 
     const offEvents = window.agentParty.onSessionEvents((payload: any) => {
+      const sessionId = String(payload?.sessionId || "");
+      const events = Array.isArray(payload?.events) ? payload.events : [];
+      if (!sessionId || !events.length) {
+        return;
+      }
+      // Subagent state is independent of transcript restoration, so fold it
+      // immediately even while the parent member's conversation is gated.
+      setSubagentsBySession((current) => applySubagentEvents(current, sessionId, events));
+      // Do not assemble an unowned live transcript. If it were saved after the
+      // party update attached this session to a member, it could replace that
+      // member's not-yet-restored history with only these new events.
+      if (!transcriptOwnerBySessionRef.current.has(sessionId)) {
+        pendingEventsBySessionRef.current[sessionId] = [
+          ...(pendingEventsBySessionRef.current[sessionId] || []),
+          ...events,
+        ];
+        return;
+      }
       setLogsBySession((current) => {
-        let base = current;
-        // First events for a freshly (re)started session: seed with the member's
-        // restored history so a resumed conversation continues instead of blank.
-        if (current[payload.sessionId] === undefined) {
-          const member = membersRef.current.find((item) => item.sessionId === payload.sessionId);
-          const restored = member ? restoredRef.current[memberKey(member)] : undefined;
-          if (restored && restored.length) {
-            base = { ...current, [payload.sessionId]: restored };
-          }
-        }
-        return applyEvents(base, payload.sessionId, payload.events || []);
+        return applyEvents(current, sessionId, events);
       });
-      // Subagent events fold into their own slice (out of the transcript).
-      setSubagentsBySession((current) => applySubagentEvents(current, payload.sessionId, payload.events || []));
     });
     const offSnapshot = window.agentParty.onSnapshot((payload: any) => {
       setState((current) => ({
@@ -343,23 +355,6 @@ export function App() {
         const blocks = Array.isArray(raw) ? normalizeTranscriptBlocks(raw as TranscriptBlock[]) : [];
         // Always record the result (even empty): it marks the restore as done.
         setRestoredByMember((current) => ({ ...current, [key]: blocks }));
-        if (!blocks.length) {
-          return;
-        }
-        // Retro-seed: if this member's live session already produced transcript
-        // blocks while the fetch was in flight (so the first-event seeding was
-        // skipped), prepend the restored history now instead of dropping it.
-        const live = membersRef.current.find((item) => memberKey(item) === key);
-        const sid = live?.sessionId;
-        if (sid) {
-          setLogsBySession((current) => {
-            const existing = current[sid];
-            if (existing === undefined || existing.some((block) => block.id === blocks[0]?.id)) {
-              return current;
-            }
-            return { ...current, [sid]: [...blocks, ...existing] };
-          });
-        }
       }).catch(() => {
         // Surface and retry — silently treating a failed read as "no history"
         // is what let the save path clobber the on-disk transcript.
@@ -369,6 +364,18 @@ export function App() {
       });
     }
   }, [members, visibleMembers, restoreRetryNonce]);
+
+  // This is the single transition that makes a session transcript writable:
+  // member identity is known AND its persisted transcript read has settled.
+  // It also flushes events that arrived before either condition became true.
+  useEffect(() => {
+    for (const member of members) {
+      if (!member.sessionId) {
+        continue;
+      }
+      activateSessionTranscript(member.sessionId, member, restoredByMember[memberKey(member)]);
+    }
+  }, [members, restoredByMember]);
 
   // Serializes saves per member. Two overlapping saves for one member could land
   // out of order and persist the OLDER transcript last, so each member's saves
@@ -419,9 +426,16 @@ export function App() {
         const key = memberKey(member);
         // NEVER save before this member's restore has settled: the live blocks
         // are not yet seeded with the on-disk history, and a wholesale save here
-        // would overwrite (lose) it. Once restored resolves, the retro-seed above
-        // folds the history in and saving becomes safe.
+        // would overwrite (lose) it. Once restored resolves, the activation
+        // transition above folds history and early events together atomically.
         if (restoredRef.current[key] === undefined) {
+          continue;
+        }
+        // Restore completion alone is insufficient: a newly assigned sessionId
+        // may already hold events received before the party broadcast. Persist
+        // only after activateSessionTranscript merged those with this member's
+        // restored history under the same concrete member identity.
+        if (!member.sessionId || transcriptOwnerBySessionRef.current.get(member.sessionId) !== key) {
           continue;
         }
         // Unchanged since the last persist. This effect fires on ANY session's
@@ -706,22 +720,33 @@ export function App() {
     return member ? restoredRef.current[memberKey(member)] : undefined;
   }
 
-  /** Prepends restored history to a new session even if startup events arrived first. */
-  function seedRestoredTranscript(sessionId: string, restored?: TranscriptBlock[]): void {
-    if (!restored?.length) {
+  /**
+   * Makes a session's transcript live only after its member history is restored.
+   * Pending startup events are folded after the restored prefix, atomically from
+   * the renderer's point of view, and the persistence gate opens last.
+   */
+  function activateSessionTranscript(sessionId: string, member: PartyMember, restored?: TranscriptBlock[]): void {
+    if (restored === undefined) {
       return;
     }
+    const ownerKey = memberKey(member);
+    if (transcriptOwnerBySessionRef.current.get(sessionId) === ownerKey) {
+      return;
+    }
+    // Snapshot and remove the pending batch outside React's functional updater.
+    // Updaters may run more than once in Strict Mode and therefore must stay pure.
+    const pending = pendingEventsBySessionRef.current[sessionId] || [];
+    delete pendingEventsBySessionRef.current[sessionId];
     setLogsBySession((current) => {
-      const existing = current[sessionId];
-      if (!existing?.length) {
-        return { ...current, [sessionId]: restored };
-      }
-      const restoredIds = new Set(restored.map((block) => block.id));
-      if (existing.some((block) => restoredIds.has(block.id))) {
-        return current;
-      }
-      return { ...current, [sessionId]: [...restored, ...existing] };
+      const merged = mergeRestoredTranscript(restored, current[sessionId] || []);
+      const seeded = current[sessionId] === merged ? current : { ...current, [sessionId]: merged };
+      return pending.length ? applyEvents(seeded, sessionId, pending) : seeded;
     });
+    // JavaScript cannot interleave another event handler before this line, and
+    // React applies subsequent setLogsBySession calls after the queued merge.
+    // Persistence runs only after that state commits, so opening the gate here
+    // cannot expose an unmerged transcript.
+    transcriptOwnerBySessionRef.current.set(sessionId, ownerKey);
   }
 
   /**
@@ -797,9 +822,10 @@ export function App() {
       // Seed the (resumed) session's transcript with the member's restored history
       // so the conversation continues visibly, matching the harness thread resume.
       const sid = result.session?.id;
-      const restored = restoredTranscriptFor(result.member || member);
-      if (sid) {
-        seedRestoredTranscript(sid, restored);
+      const owner = result.member || member;
+      const restored = restoredTranscriptFor(owner);
+      if (sid && owner) {
+        activateSessionTranscript(sid, owner, restored);
       }
       return sid;
     } finally {
@@ -844,8 +870,11 @@ export function App() {
       }
       if (!known) {
         // Freshly started: seed the restored history, then echo the just-sent turn.
-        const restored = restoredTranscriptFor(result.member || members.find((item) => item.name === name));
-        seedRestoredTranscript(sessionId, restored);
+        const owner = result.member || members.find((item) => item.name === name);
+        const restored = restoredTranscriptFor(owner);
+        if (owner) {
+          activateSessionTranscript(sessionId, owner, restored);
+        }
         setLogsBySession((current) => appendBlock(current, sessionId, { id: crypto.randomUUID(), kind: "user", text, attachments, at: nowTime() }));
       }
       return result;

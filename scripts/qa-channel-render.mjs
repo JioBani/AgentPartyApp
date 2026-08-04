@@ -35,7 +35,7 @@ async function bundle(entry, name, external = []) {
 }
 
 // ---- Layer 1: applyEvents folding -----------------------------------------
-const { applyEvents, normalizeTranscriptBlocks } = await bundle("src/renderer/app/transcriptEvents.ts", "te-channel.mjs", []);
+const { applyEvents, mergeRestoredTranscript, normalizeTranscriptBlocks } = await bundle("src/renderer/app/transcriptEvents.ts", "te-channel.mjs", []);
 
 console.log("\napplyEvents channel folding:");
 const sid = "s1";
@@ -85,6 +85,12 @@ const repaired = normalizeTranscriptBlocks([
 assert(repaired.length === 1 && repaired[0].kind === "channel", "legacy duplicate/result/empty artifacts collapse to one channel card");
 assert(repaired[0].to === "impl" && repaired[0].text === "review this" && repaired[0].state === "ok", "legacy channel keeps its route/body and receives terminal state");
 
+const restoredPrefix = [{ id: "history", kind: "assistant", text: "old conversation" }];
+const earlyLive = [{ id: "live", kind: "assistant", text: "new event" }];
+const restoredAndLive = mergeRestoredTranscript(restoredPrefix, earlyLive);
+assert(restoredAndLive[0] === restoredPrefix[0] && restoredAndLive[1] === earlyLive[0], "restored history is prepended to events that arrived before session ownership");
+assert(mergeRestoredTranscript(restoredPrefix, restoredPrefix) === restoredPrefix, "already-seeded history preserves identity for append persistence");
+
 // An ordinary (non-channel) status stays a status block.
 blocks = applyEvents(blocks, sid, [{ type: "status", status: "sent", detail: "just a normal message" }]);
 const lastBlock = (blocks[sid] || []).at(-1);
@@ -120,6 +126,7 @@ const reactDom = await import("react-dom/client");
 const view = {
   name: "bob", color: "#888", member: { name: "bob", partyId: "p1", status: "idle", runtime: "claude-code", role: "QA" },
   status: "idle", unread: 0, pendingApproval: false, busy: false, model: "sonnet", effort: "medium", permissionMode: "default",
+  transcriptLoading: false,
   transcript: [
     { id: "c1", kind: "channel", direction: "in", from: "alice", to: "bob", text: "Please review PR 42", at: "10:00" },
     { id: "c2", kind: "channel", direction: "out", from: "", to: "carol", text: "ping", state: "ok", at: "10:01" },
@@ -155,6 +162,17 @@ assert(/멤버 생성/.test(createCard?.textContent || "") && /qa-bot/.test(crea
 assert(/테스터/.test(createCard?.textContent || "") && /sonnet/.test(createCard?.textContent || ""), "create card shows role + model");
 assert(Boolean(document.querySelector(".wb-party-action.is-remove")) && /멤버 삭제/.test(document.querySelector(".wb-party-action.is-remove")?.textContent || ""), "remove card labels '멤버 삭제'");
 assert(/name taken/.test(document.querySelector(".wb-party-action.is-failed")?.textContent || ""), "failed create shows the bridge error");
+
+console.log("\nTranscript restore loading state:");
+const loadingHost = document.createElement("div");
+document.body.appendChild(loadingHost);
+reactDom.createRoot(loadingHost).render(React.createElement(Transcript, {
+  view: { ...view, transcript: [], transcriptLoading: true, status: "not-started" }, density: "wide", actions: {},
+}));
+await new Promise((r) => setTimeout(r, 40));
+assert(/이전 대화를 불러오는 중입니다/.test(loadingHost.textContent || ""), "conversation pane explicitly says history is loading");
+assert(/기존 대화와 합친 뒤 표시/.test(loadingHost.textContent || ""), "loading notice explains how early events are merged");
+assert(loadingHost.querySelectorAll(".wb-block").length === 0, "conversation blocks stay hidden until restore completes");
 
 console.log(failures.length ? `\nCHANNEL RENDER FAILED (${failures.length})` : "\nCHANNEL RENDER PASSED");
 process.exit(failures.length ? 1 : 0);

@@ -1426,6 +1426,24 @@ body.wb-resizing {
   font-size: 12.5px;
 }
 
+.wb-transcript-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.wb-transcript-loading p {
+  margin: 0;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.wb-transcript-loading span {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
 /* "Load older history" control shown above the tail when a transcript is longer
    than the initial window. Self-aligns center, stays compact and unobtrusive. */
 .wb-transcript-older {
@@ -6586,6 +6604,7 @@ body.wb-resizing {
   height: 18px;
   color: var(--text-3);
 }
+
 .wb-harness-icon { display: block; flex: none; }
 .wb-harness-icon-tone { fill: color-mix(in srgb, currentColor 55%, var(--bg-0)); }
 .wb-harness-icon-fallback {
