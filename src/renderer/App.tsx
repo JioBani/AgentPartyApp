@@ -18,6 +18,7 @@ import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
+import { isRuntimeTabId, type RuntimeTabId } from "../shared/runtimeTabs";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
@@ -57,6 +58,8 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
+  /** A tab the automation API asked the runtime screen to land on. */
+  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; seq: number }>({ tab: "general", seq: 0 });
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
@@ -285,8 +288,12 @@ export function App() {
     // fetched once at load so Settings shows the stored credentials immediately.
     const offDiscordUpdate = window.agentParty.onDiscordUpdate?.((payload) => setDiscord(payload as DiscordBridgeStatus));
     void window.agentParty.getDiscordStatus?.().then((status) => setDiscord(status as DiscordBridgeStatus));
-    const offNavigate = window.agentParty.onNavigate((view) => {
-      if (isViewId(view)) setCurrentView(view);
+    const offNavigate = window.agentParty.onNavigate(({ view, tab }) => {
+      if (!isViewId(view)) return;
+      setCurrentView(view);
+      // A counter, not the id alone: asking for the tab you are already on must
+      // still move the screen there after the user clicked elsewhere.
+      if (tab && isRuntimeTabId(tab)) setRuntimeTabRequest((current) => ({ tab, seq: current.seq + 1 }));
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });
@@ -1265,6 +1272,7 @@ export function App() {
                   onSaveComposer={saveComposerSettings}
                   discord={discord}
                   onSaveDiscord={saveDiscordSettings}
+                  tabRequest={runtimeTabRequest}
                 />
               )}
               {currentView === "usage" && (

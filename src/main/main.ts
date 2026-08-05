@@ -535,7 +535,7 @@ function focusedWindow(): BrowserWindow | undefined {
 }
 
 function registerApplicationMenu(): void {
-  const navigate = (view: string) => focusedWindow()?.webContents.send("nav:set", view);
+  const navigate = (view: string) => focusedWindow()?.webContents.send("nav:set", { view });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
       label: "File",

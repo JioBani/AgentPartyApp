@@ -1476,6 +1476,24 @@ Valid views:
 workbench, sessions, party, auth, runtime, automation
 ```
 
+The **런타임** screen is tabbed, and an optional `tab` lands on one of its tabs
+directly instead of leaving the caller to click the strip:
+
+```json
+{ "view": "runtime", "tab": "harness" }
+```
+
+```text
+general (기본 하네스 · Auto-compact · 입력창)
+harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
+gate    (Message Gate 리뷰어 기본값)
+discord (Discord 브리지 자격증명 + 연결된 멤버)
+```
+
+A `tab` on a screen that has none, or an unknown tab id, is an **error** — never
+a navigation that reports success and leaves the screen where it was. The
+response echoes what was applied (`{ok, view, tab}`).
+
 ## Windows & workspaces
 
 The app is one main process with **many windows**. Each window views one

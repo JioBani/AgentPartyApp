@@ -4,14 +4,10 @@ import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
-import { PERMISSION_OPTIONS } from "./controls";
+import { HarnessPermissionControl } from "./HarnessPermissionControl";
+import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
-import { CodexPermissionControl } from "./CodexPermissionControl";
-import { CursorPermissionControl } from "./CursorPermissionControl";
-import { harnessCapabilities } from "../../shared/harnessCapabilities";
-import { DEFAULT_CODEX_POLICY } from "../../shared/codexPolicy";
-import { cursorPolicyOf } from "../../shared/cursorPolicy";
 import {
   DEFAULT_MAX_IMAGES_PER_TURN,
   DEFAULT_MAX_IMAGE_BYTES,
@@ -663,25 +659,21 @@ export function Composer({ view, density, actions }: ComposerProps) {
   );
   // Permission control next to Send: Codex members get the two-axis
   // (sandbox × approval + guardian) control; Claude members get the single mode.
-  const permission = harnessCapabilities(harness).twoAxisPermission ? (
-    <CodexPermissionControl
-      policy={view.session?.snapshot.codexPolicy || view.member.codexPolicy || DEFAULT_CODEX_POLICY}
-      onChange={(policy) => actions.setCodexPolicy(view.name, policy)}
-    />
-  ) : harness === "cursor" ? (
-    <CursorPermissionControl
-      policy={cursorPolicyOf(view.session?.snapshot.cursorPolicy || view.member.cursorPolicy, view.permissionMode)}
-      onChange={(policy) => actions.setCursorPolicy(view.name, policy)}
-    />
-  ) : (
-    <Dropdown
-      value={view.permissionMode || "default"}
-      options={PERMISSION_OPTIONS}
-      onChange={(mode) => actions.setPermissionMode(view.name, mode)}
-      title="권한"
-      compact
-      drop="up"
-      align="right"
+  const permission = (
+    <HarnessPermissionControl
+      harnessId={harness as HarnessId}
+      value={{
+        permissionMode: view.permissionMode as PermissionModeSetting | undefined,
+        // The LIVE session's policy outranks the stored member: the harness knows
+        // what it is currently running under.
+        codexPolicy: view.session?.snapshot.codexPolicy || view.member.codexPolicy,
+        cursorPolicy: view.session?.snapshot.cursorPolicy || view.member.cursorPolicy,
+      }}
+      onChange={(patch) => {
+        if (patch.permissionMode) actions.setPermissionMode(view.name, patch.permissionMode);
+        if (patch.codexPolicy) actions.setCodexPolicy(view.name, patch.codexPolicy);
+        if (patch.cursorPolicy) actions.setCursorPolicy(view.name, patch.cursorPolicy);
+      }}
     />
   );
 

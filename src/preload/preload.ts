@@ -143,8 +143,9 @@ const api = {
     ipcRenderer.on("qa:open-gate", listener);
     return () => ipcRenderer.off("qa:open-gate", listener);
   },
-  onNavigate: (callback: (view: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, view: string) => callback(view);
+  /** `{view, tab?}` — `tab` lands the runtime screen on one of its tabs. */
+  onNavigate: (callback: (payload: { view: string; tab?: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { view: string; tab?: string }) => callback(payload);
     ipcRenderer.on("nav:set", listener);
     return () => ipcRenderer.off("nav:set", listener);
   },

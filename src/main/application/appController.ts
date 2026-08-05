@@ -34,6 +34,7 @@ import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
+import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -878,9 +879,26 @@ export class AppController {
     return { ok: true };
   }
 
-  navigate(windowId: string | undefined, view: string): { ok: true; view: string } {
-    this.windowFor(windowId)?.webContents.send("nav:set", view);
-    return { ok: true, view };
+  /**
+   * Switches the visible screen, optionally landing on a specific tab within it.
+   * A tab that the target view does not have is an ERROR: forwarding it would
+   * report a navigation that never happened.
+   */
+  navigate(windowId: string | undefined, view: string, tab?: string): { ok: true; view: string; tab?: string } {
+    if (tab) {
+      if (view !== "runtime") {
+        throw new Error(`The '${view}' screen has no tabs.`);
+      }
+      if (!isRuntimeTabId(tab)) {
+        throw new Error(`Unknown runtime tab '${tab}'. Known: ${RUNTIME_TAB_IDS.join(", ")}.`);
+      }
+    }
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    win.webContents.send("nav:set", { view, tab });
+    return { ok: true, view, ...(tab ? { tab } : {}) };
   }
 
   async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true; applied?: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } }> {

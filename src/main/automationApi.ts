@@ -332,7 +332,7 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/navigation") {
         const body = await readJson(req);
-        sendJson(res, 200, c.navigate(windowId, String(body.view || "workbench")));
+        sendJson(res, 200, c.navigate(windowId, String(body.view || "workbench"), body.tab ? String(body.tab) : undefined));
         return;
       }
       if (url.pathname.startsWith("/api/qa/")) {

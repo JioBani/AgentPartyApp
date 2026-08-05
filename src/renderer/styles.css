@@ -5811,6 +5811,91 @@ body.wb-resizing {
  * edge with 4px to spare. */
 .set-page { max-width: 760px; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
 .set-page-wide { max-width: 1180px; }
+.set-page-tabbed { max-width: 880px; padding-top: 20px; }
+.set-page-tabbed.set-page-wide { max-width: 1180px; }
+
+/* ---- Runtime settings tab strip ----------------------------------------
+ * Folder tabs docked directly under .screen-header: the active tab paints its
+ * own bottom edge in the page background so it reads as continuous with the
+ * content below, and the strip is sticky so switching tabs stays reachable
+ * after scrolling a long section. */
+.set-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 12px var(--space-7) 0;
+  background: var(--bg-1);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+.set-tabs-gap { flex: 1; }
+/* All four panels are mounted at once (staged edits must survive a tab switch),
+   so the inactive ones are hidden rather than absent. */
+.set-tab-panel { display: flex; flex-direction: column; gap: 22px; }
+.set-tab-panel[hidden] { display: none; }
+.set-tab {
+  position: relative;
+  bottom: calc(-1 * var(--border-width));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 37px;
+  padding: 0 15px;
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: 9px 9px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-tab:hover { color: var(--text-0); }
+.set-tab.is-active {
+  background: var(--bg-2);
+  border-color: var(--border);
+  border-bottom-color: var(--bg-2);
+  color: var(--text-0);
+  font-weight: 600;
+}
+.set-tab-icon { display: inline-flex; color: var(--text-3); }
+.set-tab.is-active .set-tab-icon { color: var(--accent); }
+.set-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border-subtle);
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.set-tab.is-active .set-tab-badge { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
+.set-dirty-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-bottom: 7px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: var(--live-dim);
+  border: var(--border-width) solid var(--live-bd);
+  color: var(--live);
+  font-size: 11px;
+  font-weight: 600;
+}
+.set-dirty-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
+/* Lead-in line above a tab's cards — same voice as .set-inline-note but unboxed,
+   because it introduces the whole tab rather than one card's field. */
+.set-tab-note { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--text-2); }
+.set-tab-note svg { color: var(--text-3); flex: none; }
+.set-card-sub { margin-left: 9px; font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-3); }
 
 /* section header with rule */
 .set-section { display: flex; flex-direction: column; gap: 10px; }
@@ -5868,6 +5953,20 @@ body.wb-resizing {
 .set-inline-note svg { color: var(--accent); flex: none; margin-top: 1px; }
 .set-inline-note.is-soft { color: var(--text-2); }
 .set-inline-note.is-error { color: var(--danger); border-color: var(--danger-bd); background: var(--danger-dim); flex-wrap: wrap; align-items: center; }
+/* A consequence the user must weigh before saving (e.g. an empty allowlist
+   silently blocking every inbound instruction) — not an error that happened. */
+.set-inline-note.is-warn { border-color: var(--danger-bd); background: var(--danger-dim); }
+.set-inline-note.is-warn svg { color: var(--danger); }
+.set-save-hint { font-size: 11.5px; color: var(--text-3); }
+.set-btn-accent.is-saved { background: var(--success-dim); color: var(--success); }
+
+/* member → channel bindings on the Discord tab */
+.set-link-list { display: flex; flex-direction: column; gap: 7px; margin: 13px 20px 18px; }
+.set-link-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; }
+.set-link-row svg { color: var(--text-3); flex: none; }
+.set-link-member { min-width: 96px; font-size: 12.5px; font-weight: 600; color: var(--text-0); }
+.set-link-channel { font-size: 12px; color: var(--accent); }
+.set-link-meta { flex: 1; text-align: right; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-router-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 15px 20px 0; padding: 11px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; }
 .set-router-id { display: inline-flex; align-items: center; gap: 9px; font-size: 12.5px; font-weight: 600; color: var(--text-1); }
 .set-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -5878,7 +5977,10 @@ body.wb-resizing {
 /* Stacked form fields directly inside a settings card. `.set-field` alone has no
    gutter (it is designed to sit inside `.set-harness-pick`), so without this the
    inputs run edge to edge while every sibling block is inset by 20px. */
-.set-card-fields { display: flex; flex-direction: column; gap: 12px; margin: 15px 20px 0; }
+/* Two credentials per row: these are short single-line values, and stretching
+   each across a 1180px card puts the label and its own field a screen apart. */
+.set-card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin: 15px 20px 0; }
+@media (max-width: 820px) { .set-card-fields { grid-template-columns: minmax(0, 1fr); } }
 /* `.set-input` is `flex: 1`, which inside a COLUMN flex field sets flex-basis on
    the height and collapses its 38px down to the text height. Pin it back to the
    same 38px the selects and buttons use so stacked fields match every other
@@ -5953,14 +6055,22 @@ body.wb-resizing {
 .set-toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text-1); }
 
 /* per-harness defaults grid */
-.set-harness-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.set-harness-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+/* One column per harness. Below ~1000px three cards would squeeze the segmented
+   controls into unreadable slivers, so it steps down rather than overflowing. */
+.set-harness-grid.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .set-harness-grid.is-three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .set-harness-grid, .set-harness-grid.is-three { grid-template-columns: minmax(0, 1fr); } }
 .set-harness-card { background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 13px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .set-harness-head { display: flex; align-items: center; gap: 10px; }
 .set-harness-icon { width: 28px; height: 28px; flex: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 .set-harness-icon.is-claude-code { background: var(--accent-dim); border: var(--border-width) solid var(--accent-bd); color: var(--accent); }
 .set-harness-icon.is-codex { background: var(--success-dim); border: var(--border-width) solid var(--success-bd); color: var(--success); }
+.set-harness-icon.is-cursor { background: var(--live-dim); border: var(--border-width) solid var(--live-bd); color: var(--live); }
 .set-harness-title { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-2); }
-.set-harness-save { align-self: flex-start; margin-top: 4px; height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 16px; background: var(--accent); border: none; border-radius: 8px; color: var(--accent-fg); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+/* Full-width inside its card: at three columns a left-hugging button reads as
+   floating loose rather than as the card's own commit action. */
+.set-harness-save { align-self: stretch; justify-content: center; margin-top: 4px; height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 16px; background: var(--accent); border: none; border-radius: 8px; color: var(--accent-fg); font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .set-harness-save:hover { filter: brightness(1.08); }
 .set-harness-save.is-saved { background: var(--success-dim); color: var(--success); }
 .set-link-btn { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; color: var(--accent); font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 0; }

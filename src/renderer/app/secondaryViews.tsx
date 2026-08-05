@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowRight, Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -9,23 +9,17 @@ import {
 } from "../../shared/cursorPolicy";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
+import type { RuntimeTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
-import { CODEX_PRESETS, CODEX_PRESET_LABELS, codexPresetOf, type CodexPolicy } from "../../shared/codexPolicy";
+import { HarnessIcon } from "../workbench/HarnessIcon";
+import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
+import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
-
-const permissionModes = [
-  { id: "default", label: "기본" },
-  { id: "acceptEdits", label: "수정 허용" },
-  { id: "plan", label: "계획" },
-  { id: "auto", label: "자동" },
-  { id: "dontAsk", label: "묻지 않음" },
-  { id: "bypassPermissions", label: "권한 확인 생략" },
-];
 
 export function SessionsView({ sessions, resumable, resumableError, onOpen, onClose, onRefresh, onResume }: {
   sessions: SessionView[];
@@ -386,12 +380,19 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
  * bridge (docs/기획 노트.md §11). The token is write-only here: the app returns a
  * mask, so an empty field means "keep the stored one", never "clear it".
  */
-function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; onSave: (patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void }) {
+function DiscordBridgeCard({ status, onSave, onDirtyChange }: { status?: DiscordBridgeStatus; onSave: (patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [desktopName, setDesktopName] = useState(status?.desktopName || "");
   const [token, setToken] = useState("");
   const [guildId, setGuildId] = useState(status?.guildId || "");
   const [allowed, setAllowed] = useState((status?.allowedUserIds || []).join(", "));
   const [saved, setSaved] = useState(false);
+
+  const dirty = desktopName !== (status?.desktopName || "")
+    || token.trim() !== ""
+    || guildId !== (status?.guildId || "")
+    || allowed !== (status?.allowedUserIds || []).join(", ");
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const connection = status?.connection || "off";
   const dotClass = connection === "connected" ? "is-success" : connection === "error" ? "is-error" : "is-idle";
@@ -468,26 +469,39 @@ function DiscordBridgeCard({ status, onSave }: { status?: DiscordBridgeStatus; o
         </div>
       </label>
       </div>
-      <div className="set-inline-note">
-        <InfoIcon size={14} />
+      <div className="set-inline-note is-warn">
+        <ShieldCheck size={14} />
         <span>여기 적힌 사용자만 멤버에게 지시할 수 있습니다. 멤버는 이 PC에서 파일을 고치고 명령을 실행하므로, 비워두면 인바운드는 전부 차단됩니다.</span>
       </div>
       <div className="set-harness-pick">
-        <button type="button" className="set-btn-accent" onClick={save}><Check size={14} /> {saved ? "저장됨" : "저장"}</button>
+        <button type="button" className={"set-btn-accent" + (saved ? " is-saved" : "")} onClick={save}><Check size={14} /> {saved ? "저장됨" : "저장"}</button>
+        <span className="set-save-hint">저장하면 봇이 재연결됩니다.</span>
       </div>
-      {Boolean(status?.bindings?.length) && (
-        <div className="set-inline-note">
-          <InfoIcon size={14} />
-          <span>연결된 멤버: {status!.bindings.map((binding) => `${binding.member} → #${binding.channelName} ▸ ${binding.threadName}`).join(", ")}</span>
-        </div>
-      )}
     </>
   );
 }
 
 const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI" };
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveComposer, onSaveDiscord }: {
+/** Discord's wordmark glyph — lucide has no Discord icon and a generic speech
+ *  bubble would read as "chat", not "the Discord bridge". */
+function DiscordGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6.5c3-1 5-1 8 0M8 17.5c3 1 5 1 8 0" />
+      <path d="M8 6.5C5.5 9 4.8 13.5 5.5 17.5c1 .8 2 1.4 2.5 1.5l1-2M16 6.5c2.5 2.5 3.2 7 2.5 11-1 .8-2 1.4-2.5 1.5l-1-2" />
+    </svg>
+  );
+}
+
+const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> = [
+  { id: "general", label: "일반", icon: <Settings2 size={14} /> },
+  { id: "harness", label: "하네스 기본값", icon: <SquareTerminal size={14} /> },
+  { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
+  { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
+];
+
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveComposer, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -502,84 +516,162 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveGateDefault: (reviewer: GateReviewer) => void;
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
+  /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
+  tabRequest?: { tab: RuntimeTabId; seq: number };
 }) {
+  const [tab, setTab] = useState<RuntimeTabId>("general");
+  useEffect(() => {
+    if (tabRequest && tabRequest.seq > 0) setTab(tabRequest.tab);
+  }, [tabRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
   const [copied, setCopied] = useState(false);
+  // Which staged-save cards currently hold edits the user has not committed. Only
+  // the staged cards (per-harness, Discord) can be dirty — every other control on
+  // this screen applies on change, so it is never "unsaved".
+  const [dirtyCards, setDirtyCards] = useState<Record<string, boolean>>({});
+  const markDirty = useCallback((id: string, value: boolean) => {
+    setDirtyCards((current) => (Boolean(current[id]) === value ? current : { ...current, [id]: value }));
+  }, []);
+  const dirty = Object.values(dirtyCards).some(Boolean);
+  const bindingCount = discord?.bindings?.length || 0;
+
   function copyRouter() {
     void navigator.clipboard?.writeText(router);
     setCopied(true);
     setTimeout(() => setCopied(false), 1300);
   }
 
+  const badges: Partial<Record<RuntimeTabId, number>> = { harness: HARNESS_IDS.length, discord: bindingCount };
+
   return (
-    <div className="set-page set-page-wide">
-      {/* base harness */}
-      <section className="set-card">
-        <div className="set-card-label">기본 하네스</div>
-        <div className="set-inline-note">
-          <InfoIcon size={14} />
-          <span>새 멤버는 각 하네스의 기본값으로 생성됩니다. 아래에서 하네스별 기본값을 지정하세요.</span>
-        </div>
-        <div className="set-router-row">
-          <span className="set-router-id"><span className="set-dot is-success" /> Router</span>
-          <span className="set-router-end">
-            <span className="wb-mono">{router || "시작 중…"}</span>
-            <button type="button" className="set-icon-btn" title="복사" onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
-          </span>
-        </div>
-        <div className="set-harness-pick">
-          <label className="set-field">
-            <span className="set-field-label">새 멤버 기본 하네스</span>
-            <select className="set-select" value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
-              {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
-            </select>
-          </label>
-          <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}>
-            <span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-            <span className="set-toggle-label">디버그 로그</span>
-          </button>
-        </div>
-      </section>
-
-      {/* message input preferences (send key) */}
-      <section className="set-card">
-        <div className="set-card-label">입력창</div>
-        <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
-      </section>
-
-      {/* Message Gate reviewer default (model + effort, no harness — headless) */}
-      <section className="set-card">
-        <div className="set-card-label">Message Gate</div>
-        <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
-      </section>
-
-      {/* Discord bridge — credentials + inbound whitelist */}
-      <section className="set-card">
-        <div className="set-card-label">Discord</div>
-        <DiscordBridgeCard status={discord} onSave={onSaveDiscord} />
-      </section>
-
-      {/* global auto-compact default (inherited by members without their own) */}
-      <section className="set-card">
-        <div className="set-card-label">Auto-compact</div>
-        <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
-      </section>
-
-      {/* per-harness defaults */}
-      <div className="set-harness-grid">
-        {HARNESS_IDS.map((id) => (
-          <HarnessDefaultsCard
-            key={id}
-            harnessId={id}
-            label={HARNESS_LABELS[id]}
-            defaults={settings.harnessDefaults[id]}
-            routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
-            codexModels={id === "codex" ? codexModels : undefined}
-            onRefreshCodexModels={onRefreshCodexModels}
-            onSave={(patch) => onSaveHarnessDefaults(id, patch)}
-          />
-        ))}
+    <>
+      <div className="set-tabs" role="tablist" aria-label="런타임 설정">
+        {RUNTIME_TABS.map((entry) => {
+          const active = entry.id === tab;
+          const badge = badges[entry.id];
+          return (
+            <button
+              type="button"
+              key={entry.id}
+              role="tab"
+              aria-selected={active}
+              className={"set-tab" + (active ? " is-active" : "")}
+              onClick={() => setTab(entry.id)}
+            >
+              <span className="set-tab-icon">{entry.icon}</span>
+              {entry.label}
+              {Boolean(badge) && <span className="set-tab-badge wb-mono">{badge}</span>}
+            </button>
+          );
+        })}
+        <span className="set-tabs-gap" />
+        {dirty && (
+          <span className="set-dirty-pill" role="status"><span className="set-dirty-dot" />저장되지 않은 변경</span>
+        )}
       </div>
-    </div>
+
+      {/* Only the harness tab needs the wide measure — it lays three cards side by
+          side. The single-column tabs read better at the standard settings width
+          than as one 1180px-wide band of controls. */}
+      <div className={"set-page set-page-tabbed" + (tab === "harness" ? " set-page-wide" : "")}>
+        {/* Every panel stays MOUNTED and is hidden instead: unmounting would throw
+            away a staged (unsaved) edit the moment the user checked another tab —
+            silently, right after the strip told them there were unsaved changes. */}
+        <div className="set-tab-panel" hidden={tab !== "general"}>
+            {/* base harness */}
+            <section className="set-card">
+              <div className="set-card-label">기본 하네스</div>
+              <div className="set-inline-note">
+                <InfoIcon size={14} />
+                <span>새 멤버는 각 하네스의 기본값으로 생성됩니다. <b>하네스 기본값</b> 탭에서 하네스별 기본값을 지정하세요.</span>
+              </div>
+              <div className="set-router-row">
+                <span className="set-router-id"><span className="set-dot is-success" /> Router</span>
+                <span className="set-router-end">
+                  <span className="wb-mono">{router || "시작 중…"}</span>
+                  <button type="button" className="set-icon-btn" title="복사" onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
+                </span>
+              </div>
+              <div className="set-harness-pick">
+                <label className="set-field">
+                  <span className="set-field-label">새 멤버 기본 하네스</span>
+                  <select className="set-select" value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
+                    {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}>
+                  <span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
+                  <span className="set-toggle-label">디버그 로그</span>
+                </button>
+              </div>
+            </section>
+
+            {/* global auto-compact default (inherited by members without their own) */}
+            <section className="set-card">
+              <div className="set-card-label">Auto-compact</div>
+              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+            </section>
+
+            {/* message input preferences (send key) */}
+            <section className="set-card">
+              <div className="set-card-label">입력창</div>
+              <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
+            </section>
+        </div>
+
+        <div className="set-tab-panel" hidden={tab !== "harness"}>
+            <div className="set-tab-note">
+              <InfoIcon size={14} />
+              <span>여기서 정한 값은 해당 하네스로 만드는 새 멤버의 시작값입니다. 멤버별로 언제든 덮어쓸 수 있습니다.</span>
+            </div>
+            <div className="set-harness-grid is-three">
+              {HARNESS_IDS.map((id) => (
+                <HarnessDefaultsCard
+                  key={id}
+                  harnessId={id}
+                  label={HARNESS_LABELS[id]}
+                  defaults={settings.harnessDefaults[id]}
+                  routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
+                  codexModels={id === "codex" ? codexModels : undefined}
+                  onRefreshCodexModels={onRefreshCodexModels}
+                  onSave={(patch) => onSaveHarnessDefaults(id, patch)}
+                  onDirtyChange={(value) => markDirty(id, value)}
+                />
+              ))}
+            </div>
+        </div>
+
+        {/* Message Gate reviewer default (model + effort, no harness — headless) */}
+        <div className="set-tab-panel" hidden={tab !== "gate"}>
+          <section className="set-card">
+            <div className="set-card-label">Message Gate<span className="set-card-sub wb-mono">메시지 검문 · 리뷰어 기본값</span></div>
+            <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
+          </section>
+        </div>
+
+        {/* Discord bridge — credentials + inbound whitelist */}
+        <div className="set-tab-panel" hidden={tab !== "discord"}>
+            <section className="set-card">
+              <div className="set-card-label">Discord</div>
+              <DiscordBridgeCard status={discord} onSave={onSaveDiscord} onDirtyChange={(value) => markDirty("discord", value)} />
+            </section>
+            {bindingCount > 0 && (
+              <section className="set-card">
+                <div className="set-card-label">연결된 멤버</div>
+                <div className="set-link-list">
+                  {discord!.bindings.map((binding) => (
+                    <div className="set-link-row" key={`${binding.member}:${binding.channelName}`}>
+                      <span className="set-link-member">{binding.member}</span>
+                      <ArrowRight size={14} />
+                      <span className="set-link-channel wb-mono">#{binding.channelName}</span>
+                      <span className="set-link-meta wb-mono">{binding.threadName}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -673,7 +765,7 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
 }
 
 /** One harness's editable creation defaults (model/effort/reasoning + permission). */
-function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, onRefreshCodexModels, onSave }: {
+function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, onRefreshCodexModels, onSave, onDirtyChange }: {
   harnessId: HarnessId;
   label: string;
   defaults: HarnessDefaults;
@@ -683,6 +775,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   codexModels?: CodexModelDiscoveryState;
   onRefreshCodexModels?: () => void;
   onSave: (patch: Partial<HarnessDefaults>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [model, setModel] = useState(defaults.model);
   const [effort, setEffort] = useState(defaults.effort);
@@ -691,18 +784,36 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [serviceTier, setServiceTier] = useState(defaults.serviceTier || "");
   const [permissionMode, setPermissionMode] = useState<PermissionModeSetting>(defaults.permissionMode || "default");
   const [cursorPolicy, setCursorPolicy] = useState<CursorPolicy>(() => cursorPolicyOf(defaults.cursorPolicy, defaults.permissionMode));
-  const [preset, setPreset] = useState(() => codexPresetOf(defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }));
+  const [codexPolicy, setCodexPolicy] = useState<CodexPolicy>(() => defaults.codexPolicy || DEFAULT_CODEX_POLICY);
   const [saved, setSaved] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const isCodex = harnessId === "codex";
   const isCursor = harnessId === "cursor";
   const selectedRoute = routes.find((route) => route.model === model);
+  // The catalog modal stays the place to *browse* models (search, cost, context);
+  // effort and thinking are also surfaced inline because they are the two knobs
+  // users retune without wanting to change model at all.
+  const effortOptions = selectedRoute?.capabilities?.effort?.supported ? (selectedRoute.capabilities.effort.options || []) : [];
+  const thinkingOptions = selectedRoute?.capabilities?.thinking?.supported ? (selectedRoute.capabilities.thinking.modes || []) : [];
   const runtimeSummary = [
-    effort ? `effort ${effort}` : "",
-    reasoning ? `thinking ${reasoning}` : "",
     typeof reasoningBudget === "number" ? `budget ${reasoningBudget.toLocaleString()}` : "",
     serviceTier ? `speed ${serviceTier}` : "",
   ].filter(Boolean).join(" · ");
+
+  const baseCursor = cursorPolicyOf(defaults.cursorPolicy, defaults.permissionMode);
+  const baseCodex = defaults.codexPolicy || DEFAULT_CODEX_POLICY;
+  const dirty = model !== defaults.model
+    || effort !== defaults.effort
+    || reasoning !== (defaults.reasoning || "")
+    || reasoningBudget !== defaults.reasoningBudget
+    || serviceTier !== (defaults.serviceTier || "")
+    || (isCodex
+      ? codexPolicy.sandbox !== baseCodex.sandbox || codexPolicy.approval !== baseCodex.approval || Boolean(codexPolicy.guardian) !== Boolean(baseCodex.guardian)
+      : isCursor
+        ? cursorPolicy.mode !== baseCursor.mode || cursorPolicy.approval !== baseCursor.approval
+        : permissionMode !== (defaults.permissionMode || "default"));
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function save() {
     const patch: Partial<HarnessDefaults> = {
@@ -713,8 +824,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       serviceTier: serviceTier || undefined,
     };
     if (isCodex) {
-      const axes = preset === "custom" ? (defaults.codexPolicy || { sandbox: "workspace-write", approval: "on-request" }) : CODEX_PRESETS[preset];
-      patch.codexPolicy = { ...axes, guardian: defaults.codexPolicy?.guardian ?? false } as CodexPolicy;
+      patch.codexPolicy = codexPolicy;
     } else if (isCursor) {
       patch.cursorPolicy = cursorPolicy;
       patch.permissionMode = undefined;
@@ -729,18 +839,37 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   return (
     <section className="set-harness-card">
       <div className="set-harness-head">
-        <span className={"set-harness-icon is-" + harnessId}><SquareTerminal size={15} /></span>
+        <span className={"set-harness-icon is-" + harnessId}><HarnessIcon harness={harnessId} size={15} /></span>
         <span className="set-harness-title">{label} 기본값</span>
       </div>
 
       <div className="set-field">
-        <span className="set-field-label">모델 · 추론</span>
+        <span className="set-field-label">모델</span>
         <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
           <span className="wb-mono">{selectedRoute?.label || model}</span>
           <ChevronDown size={14} />
         </button>
         {runtimeSummary && <span className="set-row-desc wb-mono">{runtimeSummary}</span>}
       </div>
+      {effortOptions.length > 0 && (
+        <div className="set-field">
+          <span className="set-field-label">추론 강도</span>
+          <SetSegmented value={effort || ""} options={effortOptions.map((option) => ({ id: option.id, label: option.label }))} onChange={(id) => setEffort(id as HarnessDefaults["effort"])} />
+        </div>
+      )}
+      {thinkingOptions.length > 0 && (
+        <div className="set-field">
+          <span className="set-field-label">추론 모드</span>
+          {/* An unset value still has to point at the mode the model will actually
+              use — the same resolution the catalog modal shows — or the control
+              renders with nothing selected and reads as broken. */}
+          <SetSegmented
+            value={reasoning || selectedRoute?.capabilities?.thinking?.defaultValue || ""}
+            options={thinkingOptions.map((mode) => ({ id: mode.id, label: mode.label }))}
+            onChange={setReasoning}
+          />
+        </div>
+      )}
       {catalogOpen && (
         <ModelCatalogModal
           title={`${label} 기본 실행 구성`}
@@ -775,41 +904,24 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
         </div>
       )}
 
-      {isCodex ? (
-        <label className="set-field">
-          <span className="set-field-label">권한 (샌드박스 × 승인)</span>
-          <select className="set-select" value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)}>
-            {(Object.keys(CODEX_PRESET_LABELS) as Array<keyof typeof CODEX_PRESET_LABELS>).map((p) => <option key={p} value={p}>{CODEX_PRESET_LABELS[p]}</option>)}
-            {preset === "custom" && <option value="custom">Custom</option>}
-          </select>
-        </label>
-      ) : isCursor ? (
-        <>
-          <label className="set-field">
-            <span className="set-field-label">Cursor mode</span>
-            <select className="set-select" value={cursorPolicy.mode} onChange={(event) => setCursorPolicy((current) => ({ ...current, mode: event.target.value as CursorAgentMode }))}>
-              <option value="agent">Agent</option>
-              <option value="ask">Ask</option>
-              <option value="plan">Plan</option>
-            </select>
-          </label>
-          <label className="set-field">
-            <span className="set-field-label">Approval mode</span>
-            <select className="set-select" value={cursorPolicy.approval} onChange={(event) => setCursorPolicy((current) => ({ ...current, approval: event.target.value as CursorApprovalMode }))}>
-              <option value="allowlist">Allowlist</option>
-              <option value="auto-review">Auto-review</option>
-              <option value="unrestricted">Run Everything</option>
-            </select>
-          </label>
-        </>
-      ) : (
-        <label className="set-field">
-          <span className="set-field-label">권한 모드</span>
-          <select className="set-select" value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}>
-            {permissionModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
-          </select>
-        </label>
-      )}
+      {/* The SAME control the member-create wizard uses, so what you set as a
+          default and what you pick per member are one interface — including the
+          axes a settings-only preset dropdown used to hide (Codex sandbox ×
+          approval + Guardian, Cursor mode × approval). */}
+      <div className="set-field">
+        <span className="set-field-label">초기 권한</span>
+        <HarnessPermissionControl
+          harnessId={harnessId}
+          variant="inline"
+          selectClassName="set-select"
+          value={{ permissionMode, codexPolicy, cursorPolicy }}
+          onChange={(patch) => {
+            if (patch.permissionMode) setPermissionMode(patch.permissionMode);
+            if (patch.codexPolicy) setCodexPolicy(patch.codexPolicy);
+            if (patch.cursorPolicy) setCursorPolicy(patch.cursorPolicy);
+          }}
+        />
+      </div>
       <button type="button" className={"set-harness-save" + (saved ? " is-saved" : "")} onClick={save}>
         {saved ? <Check size={14} /> : <SlidersHorizontal size={13} />}
         {saved ? "저장됨" : `${label} 기본값 저장`}

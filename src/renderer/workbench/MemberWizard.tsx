@@ -8,11 +8,16 @@ import type { CreateMemberInput } from "./PartySidebar";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
-import type { PermissionModeSetting } from "../../shared/types";
+import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
-import { CodexPermissionControl } from "./CodexPermissionControl";
-import { CursorPermissionControl } from "./CursorPermissionControl";
-import { PERMISSION_OPTIONS } from "./controls";
+import { HarnessPermissionControl } from "./HarnessPermissionControl";
+
+/** Why this harness's permission axes matter, in the wizard's own voice. */
+const PERMISSION_HINTS: Record<HarnessId, string> = {
+  "claude-code": "새 멤버가 첫 작업부터 사용할 Claude Code 권한 모드입니다.",
+  codex: "Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.",
+  cursor: "Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.",
+};
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
 
@@ -331,28 +336,17 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             {step === "permission" && (
             <section className="wb-wizard-section">
               <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
-              {executionHarness === "codex" ? (
-                <>
-                  <CodexPermissionControl policy={codexPolicy} onChange={setCodexPolicy} variant="inline" />
-                  <p className="wb-wizard-hint">Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.</p>
-                </>
-              ) : executionHarness === "cursor" ? (
-                <>
-                  <CursorPermissionControl policy={cursorPolicy} onChange={setCursorPolicy} variant="inline" />
-                  <p className="wb-wizard-hint">Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.</p>
-                </>
-              ) : (
-                <>
-                  <select
-                    className="wb-wizard-input"
-                    value={permissionMode}
-                    onChange={(event) => setPermissionMode(event.target.value as PermissionModeSetting)}
-                  >
-                    {PERMISSION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                  </select>
-                  <p className="wb-wizard-hint">새 멤버가 첫 작업부터 사용할 Claude Code 권한 모드입니다.</p>
-                </>
-              )}
+              <HarnessPermissionControl
+                harnessId={executionHarness}
+                variant="inline"
+                value={{ permissionMode, codexPolicy, cursorPolicy }}
+                onChange={(patch) => {
+                  if (patch.permissionMode) setPermissionMode(patch.permissionMode);
+                  if (patch.codexPolicy) setCodexPolicy(patch.codexPolicy);
+                  if (patch.cursorPolicy) setCursorPolicy(patch.cursorPolicy);
+                }}
+              />
+              <p className="wb-wizard-hint">{PERMISSION_HINTS[executionHarness]}</p>
             </section>
             )}
           </div>
