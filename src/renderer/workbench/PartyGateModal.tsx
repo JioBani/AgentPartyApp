@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Undo2, X } from "lucide-react";
+import { Undo2, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { PartyDefinition } from "../../shared/types";
 import { MessageGateIcon } from "./MessageGateIcon";
-import { ModelCatalogModal } from "./ModelCatalogModal";
+import { GateReviewerControl } from "./GateReviewerControl";
 import type { RouteLike } from "./routes";
 import { effectiveGate, type GateMode, type GateReviewer, type PartyGate } from "../../shared/messageGate";
 
@@ -37,7 +37,6 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
   const [enabled, setEnabled] = useState(partyGate.enabled);
   const [rule, setRule] = useState(partyGate.rule);
   const [reviewer, setReviewer] = useState<GateReviewer | undefined>(partyGate.reviewer);
-  const [catalogOpen, setCatalogOpen] = useState(false);
 
   // Reflect external updates (another window/agent edited the party gate).
   useEffect(() => {
@@ -48,16 +47,6 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
 
   // One route per catalog model — the reviewer is headless, so harness is
   // irrelevant; dedupe and prefer claude-code (mirrors the member modal).
-  const uniqueRoutes = useMemo<RouteLike[]>(() => {
-    const byModel = new Map<string, RouteLike>();
-    for (const route of routes) {
-      const existing = byModel.get(route.model);
-      if (!existing || (route.harnessId || "claude-code") === "claude-code") {
-        byModel.set(route.model, route);
-      }
-    }
-    return Array.from(byModel.values());
-  }, [routes]);
 
   const effectiveParty: PartyGate = reviewer ? { enabled, rule, reviewer } : { enabled, rule };
   const onCount = members.filter((view) => effectiveGate(view.member.gate, effectiveParty, gateDefaults).enabled).length;
@@ -140,10 +129,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
               {!reviewer ? (
                 <div className="wb-gate-default-chip wb-mono">설정 기본값 사용 · {gateDefaults.model} · {gateDefaults.effort}</div>
               ) : (
-                <button type="button" className="wb-model-picker-trigger" onClick={() => setCatalogOpen(true)}>
-                  <span className="wb-mono">{reviewer.model} · {reviewer.effort}</span>
-                  <ChevronDown size={14} />
-                </button>
+                <GateReviewerControl routes={routes} reviewer={reviewer} onChange={applyReviewer} modelLabel="모델" effortLabel="effort" />
               )}
             </div>
           )}
@@ -213,20 +199,6 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
           </div>
         </footer>
       </div>
-
-      {catalogOpen && (
-        <ModelCatalogModal
-          title="리뷰어 모델 · 파티 전역"
-          icon={<MessageGateIcon size={16} className="wb-gate-accent" />}
-          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 · {party.name}</span>}
-          routes={uniqueRoutes}
-          value={{ model: (reviewer ?? gateDefaults).model, effort: (reviewer ?? gateDefaults).effort }}
-          config={{ effort: true }}
-          applyLabel="선택"
-          onApply={(next) => applyReviewer({ model: next.model, effort: next.effort || (reviewer ?? gateDefaults).effort })}
-          onClose={() => setCatalogOpen(false)}
-        />
-      )}
     </div>
   );
 }

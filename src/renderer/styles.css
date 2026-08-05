@@ -6491,7 +6491,10 @@ body.wb-resizing {
 }
 .wb-gate-name-input:focus { outline: none; border-color: var(--accent-bd); }
 
-.set-gate-defaults { display: flex; flex-direction: column; gap: 12px; }
+.set-gate-defaults { display: flex; flex-direction: column; gap: 12px; padding-bottom: 18px; }
+/* `.set-inline-note` carries its own 20px inset; the reviewer fields have to be
+   given the same one or they sit flush against the card edge. */
+.set-gate-defaults > .set-field { margin: 0 20px; }
 .set-reco-badge {
   margin-left: 6px;
   padding: 1px 6px;

@@ -14,6 +14,8 @@ import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { HarnessIcon } from "../workbench/HarnessIcon";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
+import { GateReviewerControl } from "../workbench/GateReviewerControl";
+import { Segmented } from "../workbench/Segmented";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
@@ -128,32 +130,6 @@ function SetSectionHead({ label }: { label: string }) {
     <div className="set-section-head">
       <span className="set-section-label">{label}</span>
       <span className="set-section-rule" />
-    </div>
-  );
-}
-
-/**
- * A segmented single-choice control — the same design language as the Runtime
- * modal's Effort/Thinking pickers, so settings and the modal read as one system
- * instead of the modal being polished and settings falling back to raw selects.
- */
-function SetSegmented<T extends string>({ value, options, onChange }: {
-  value: T;
-  options: Array<{ id: T; label: string }>;
-  onChange: (id: T) => void;
-}) {
-  return (
-    <div className="wb-segmented set-segmented">
-      {options.map((option) => (
-        <button
-          type="button"
-          key={option.id || "_default"}
-          className={"wb-segment" + (option.id === value ? " is-active" : "")}
-          onClick={() => onChange(option.id)}
-        >
-          {option.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -720,18 +696,6 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
  * uses this. Recommends a cheap/fast model (Haiku).
  */
 function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; reviewer: GateReviewer; onSave: (reviewer: GateReviewer) => void }) {
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  // One entry per catalog model (headless → harness irrelevant; prefer claude-code).
-  const models = useMemo(() => {
-    const byModel = new Map<string, RouteLike>();
-    for (const route of routes) {
-      const existing = byModel.get(route.model);
-      if (!existing || (route.harnessId || "claude-code") === "claude-code") {
-        byModel.set(route.model, route);
-      }
-    }
-    return Array.from(byModel.values());
-  }, [routes]);
   const recommended = reviewer.model === "haiku";
 
   return (
@@ -740,26 +704,12 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
         <MessageGateIcon size={14} />
         <span>게이트가 켜진 멤버가 자체 리뷰어를 지정하지 않으면 이 기본 리뷰어로 메시지를 심사합니다. <b>저렴하고 빠른 모델(Haiku)</b>을 권장합니다. 하네스 없이 헤드리스로 실행됩니다.</span>
       </div>
-      <div className="set-field">
-        <span className="set-field-label">리뷰어 모델 · effort {recommended && <span className="set-reco-badge">권장</span>}</span>
-        <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
-          <span className="wb-mono">{reviewer.model} · {reviewer.effort}</span>
-          <ChevronDown size={14} />
-        </button>
-      </div>
-      {catalogOpen && (
-        <ModelCatalogModal
-          title="게이트 리뷰어 모델"
-          icon={<MessageGateIcon size={16} />}
-          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 기본값</span>}
-          routes={models}
-          value={{ model: reviewer.model, effort: reviewer.effort }}
-          config={{ effort: true }}
-          applyLabel="선택"
-          onApply={(next) => onSave({ model: next.model, effort: next.effort || reviewer.effort })}
-          onClose={() => setCatalogOpen(false)}
-        />
-      )}
+      <GateReviewerControl
+        routes={routes}
+        reviewer={reviewer}
+        onChange={onSave}
+        badge={recommended ? <span className="set-reco-badge">권장</span> : undefined}
+      />
     </div>
   );
 }
@@ -854,7 +804,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       {effortOptions.length > 0 && (
         <div className="set-field">
           <span className="set-field-label">추론 강도</span>
-          <SetSegmented value={effort || ""} options={effortOptions.map((option) => ({ id: option.id, label: option.label }))} onChange={(id) => setEffort(id as HarnessDefaults["effort"])} />
+          <Segmented value={effort || ""} options={effortOptions.map((option) => ({ id: option.id, label: option.label }))} onChange={(id) => setEffort(id as HarnessDefaults["effort"])} />
         </div>
       )}
       {thinkingOptions.length > 0 && (
@@ -863,7 +813,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
           {/* An unset value still has to point at the mode the model will actually
               use — the same resolution the catalog modal shows — or the control
               renders with nothing selected and reads as broken. */}
-          <SetSegmented
+          <Segmented
             value={reasoning || selectedRoute?.capabilities?.thinking?.defaultValue || ""}
             options={thinkingOptions.map((mode) => ({ id: mode.id, label: mode.label }))}
             onChange={setReasoning}

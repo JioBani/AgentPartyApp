@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { ChevronDown, Clock, Pencil, Undo2, X } from "lucide-react";
+import { useState } from "react";
+import { Clock, Pencil, Undo2, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
-import { ModelCatalogModal } from "./ModelCatalogModal";
+import { GateReviewerControl } from "./GateReviewerControl";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { effectiveGate, type GateMode, type GateReviewer, type MemberGateOverride, type PartyGate } from "../../shared/messageGate";
 
@@ -40,20 +40,9 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
   const [text, setText] = useState(initialText);
   const [reviewerSet, setReviewerSet] = useState(Boolean(gate?.reviewer));
   const [reviewer, setReviewer] = useState<GateReviewer>(gate?.reviewer ?? gateDefaults);
-  const [catalogOpen, setCatalogOpen] = useState(false);
 
   // One route per catalog model (a model is reachable from both harnesses; the
   // reviewer is headless so harness is irrelevant — dedupe, prefer claude-code).
-  const uniqueRoutes = useMemo<RouteLike[]>(() => {
-    const byModel = new Map<string, RouteLike>();
-    for (const route of routes) {
-      const existing = byModel.get(route.model);
-      if (!existing || (route.harnessId || "claude-code") === "claude-code") {
-        byModel.set(route.model, route);
-      }
-    }
-    return Array.from(byModel.values());
-  }, [routes]);
 
   const overridden = text !== partyRule;
   const effectivelyOn = mode === "on" || (mode === "inherit" && partyOn);
@@ -152,10 +141,7 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
             {!reviewerSet ? (
               <div className="wb-gate-default-chip wb-mono">설정 기본값 사용 · {gateDefaults.model} · {gateDefaults.effort}</div>
             ) : (
-              <button type="button" className="wb-model-picker-trigger" onClick={() => setCatalogOpen(true)}>
-                <span className="wb-mono">{reviewer.model} · {reviewer.effort}</span>
-                <ChevronDown size={14} />
-              </button>
+              <GateReviewerControl routes={routes} reviewer={reviewer} onChange={setReviewer} modelLabel="모델" effortLabel="effort" />
             )}
           </div>
         </div>
@@ -171,19 +157,6 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
         </footer>
       </div>
 
-      {catalogOpen && (
-        <ModelCatalogModal
-          title="리뷰어 모델"
-          icon={<MessageGateIcon size={16} className="wb-gate-accent" />}
-          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 · {view.name}</span>}
-          routes={uniqueRoutes}
-          value={{ model: reviewer.model, effort: reviewer.effort }}
-          config={{ effort: true }}
-          applyLabel="선택"
-          onApply={(next) => setReviewer({ model: next.model, effort: next.effort || reviewer.effort })}
-          onClose={() => setCatalogOpen(false)}
-        />
-      )}
     </div>
   );
 }
