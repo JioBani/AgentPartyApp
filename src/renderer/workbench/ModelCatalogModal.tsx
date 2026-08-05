@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { useSubtreeVisible } from "./SubtreeVisibility";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { findRoute, type RouteCapabilities, type RouteLike, routeKey } from "./routes";
@@ -174,6 +175,7 @@ export function ModelCatalogModal({
       setFavoriteError("즐겨찾기를 저장하지 못했습니다.");
     }
   }
+  const visible = useSubtreeVisible();
   const capabilities: RouteCapabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
   const thinkingCap = capabilities.thinking;
@@ -277,6 +279,13 @@ export function ModelCatalogModal({
       autoCompact: config.autoCompact ? compact : undefined,
     });
     onClose();
+  }
+
+  // A portal escapes an ancestor's `display:none`, so a modal opened inside a
+  // hidden region (e.g. an inactive settings tab that stays mounted) would keep
+  // drawing over whatever is on screen now.
+  if (!visible) {
+    return null;
   }
 
   return createPortal(

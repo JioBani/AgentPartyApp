@@ -16,6 +16,7 @@ import { HarnessIcon } from "../workbench/HarnessIcon";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
 import { GateReviewerControl } from "../workbench/GateReviewerControl";
 import { Segmented } from "../workbench/Segmented";
+import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
@@ -553,6 +554,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             away a staged (unsaved) edit the moment the user checked another tab —
             silently, right after the strip told them there were unsaved changes. */}
         <div className="set-tab-panel" hidden={tab !== "general"}>
+        <SubtreeVisibility visible={tab === "general"}>
             {/* base harness */}
             <section className="set-card">
               <div className="set-card-label">기본 하네스</div>
@@ -592,9 +594,11 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
               <div className="set-card-label">입력창</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
             </section>
+        </SubtreeVisibility>
         </div>
 
         <div className="set-tab-panel" hidden={tab !== "harness"}>
+        <SubtreeVisibility visible={tab === "harness"}>
             <div className="set-tab-note">
               <InfoIcon size={14} />
               <span>여기서 정한 값은 해당 하네스로 만드는 새 멤버의 시작값입니다. 멤버별로 언제든 덮어쓸 수 있습니다.</span>
@@ -614,18 +618,22 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 />
               ))}
             </div>
+        </SubtreeVisibility>
         </div>
 
         {/* Message Gate reviewer default (model + effort, no harness — headless) */}
         <div className="set-tab-panel" hidden={tab !== "gate"}>
+        <SubtreeVisibility visible={tab === "gate"}>
           <section className="set-card">
             <div className="set-card-label">Message Gate<span className="set-card-sub wb-mono">메시지 검문 · 리뷰어 기본값</span></div>
             <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
           </section>
+        </SubtreeVisibility>
         </div>
 
         {/* Discord bridge — credentials + inbound whitelist */}
         <div className="set-tab-panel" hidden={tab !== "discord"}>
+        <SubtreeVisibility visible={tab === "discord"}>
             <section className="set-card">
               <div className="set-card-label">Discord</div>
               <DiscordBridgeCard status={discord} onSave={onSaveDiscord} onDirtyChange={(value) => markDirty("discord", value)} />
@@ -645,6 +653,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 </div>
               </section>
             )}
+        </SubtreeVisibility>
         </div>
       </div>
     </>
