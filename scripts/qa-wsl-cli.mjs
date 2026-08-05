@@ -1,5 +1,5 @@
 /*
- * agent-party CLI E2E (Stage 5d, docs/WSL_REMOTE.md §13). Requires the desktop
+ * agent-party CLI E2E (Stage 5d, the WSL remote-engine design §13). Requires the desktop
  * app to be running. Runs the WSL shim from a directory inside the distro — as a
  * user would type `agent-party` — and verifies the app opened a window on that
  * cwd. Skips (not fails) where wsl.exe is absent.

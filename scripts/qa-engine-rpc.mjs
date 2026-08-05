@@ -1,5 +1,5 @@
 /*
- * Engine RPC transport E2E (Stage 4, docs/WSL_REMOTE.md §7).
+ * Engine RPC transport E2E (Stage 4, the WSL remote-engine design §7).
  *
  * Bundles the engine server entry and the remote client, spawns the server as a
  * child node process, and drives it through RemoteEngineClient over stdio —

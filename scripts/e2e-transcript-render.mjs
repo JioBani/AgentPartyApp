@@ -1,5 +1,5 @@
 /*
- * Full-process e2e for the W2 transcript-rendering lane (docs/작업분할.md §3 W2).
+ * Full-process e2e for transcript rendering.
  *
  * Launches the REAL Electron app on an isolated userData + temp workspace,
  * discovers it through the per-workspace instance file (NEVER a fixed port — a

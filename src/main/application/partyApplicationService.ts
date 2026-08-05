@@ -1756,7 +1756,7 @@ export class PartyApplicationService {
    * "running"` forever and read as `missing_session` ghosts. A binding is kept
    * only while its recorded boot is this process (and the session is live) or
    * another still-running process on this host (same-host pid probe — the store
-   * and its engines always share a host; see docs/WSL_REMOTE.md). Runs on every
+   * and its engines always share a host; see the WSL remote-engine design). Runs on every
    * state read (deterministic, in-memory); the next mutation persists it.
    */
   private reconcileStaleSessionBindings(state: StoredPartyState): void {
@@ -1921,7 +1921,7 @@ export class PartyApplicationService {
     fs.writeFileSync(path.join(dir, "MEMBER.md"), content);
   }
 
-  // --- Party bridge (Boundary 2 of docs/PARTY_COMMUNICATION.md) -------------
+  // --- Party bridge (Boundary 2 of the party-communication design) -------------
   // The in-process capability surface handed to a member's session. Every method
   // routes through the same service methods the UI/HTTP use, never throws (tool
   // handlers stay trivial), and re-broadcasts party state so the UI updates.

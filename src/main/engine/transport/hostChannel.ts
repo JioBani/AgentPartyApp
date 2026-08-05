@@ -8,7 +8,7 @@ import { writeLine, type RpcHostResult } from "./rpc";
  * A headless engine inside a WSL distro is fully native for everything rooted in
  * the workspace (fs, git, the harness binary), but it is NOT on the host's
  * loopback. Work that must originate from the desktop is delegated here instead
- * of being reimplemented or reached over the network. See docs/WSL_REMOTE.md §7.
+ * of being reimplemented or reached over the network. See the WSL remote-engine design §7.
  *
  * Calls REJECT on timeout rather than hanging, because every caller so far sits
  * on a user-visible path: a wedged promise would stall message delivery with no

@@ -233,7 +233,7 @@ only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
 `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }` — the
 built-in default, picked on measured accuracy rather than price. See the Message
-Gate endpoints below and `docs/MESSAGE_GATE.md`.
+Gate endpoints below.
 
 Example:
 
@@ -595,7 +595,7 @@ Cross-routing keeps the chosen harness process intact:
   the host that owns the workspace's harness (distro CLI for WSL). Requires a
   signed-in cursor-agent there; an unauthenticated host fails with an explicit
   error — no fallback. Image attachments are forwarded as ACP image blocks
-  (verified live). See `docs/CURSOR_PROXY_TODO.md`.
+  (verified live).
 
 ### `GET /api/harnesses/cursor/status`
 
@@ -1156,7 +1156,7 @@ for Anthropic (which rejects `effort` outright), `effort` for router-backed
 models — and reasoning is never disabled, because a classifier that cannot
 reason rejects compliant messages. This behaves identically for local and WSL
 workspaces; for WSL the reviewer call runs on the desktop while the gate
-decision stays in the distro's engine. See `docs/MESSAGE_GATE.md`.
+decision stays in the distro's engine.
 
 ### `POST /api/party/members`
 
@@ -1357,7 +1357,7 @@ Sets a member's **Message Gate** override — the delivery-time reviewer of that
 member's OUTGOING messages to other members. This is a PATCH: any omitted axis is
 left unchanged; a `null` axis clears it back to inherit. Cross-editable (any
 member/agent may edit any member's gate). Backs the member gate modal and the
-agent-facing `gate-set` tool. See `docs/MESSAGE_GATE.md`.
+agent-facing `gate-set` tool.
 
 ```json
 { "gate": { "mode": "on", "rule": "Be concise. Talk to the owner directly, don't route through main.", "reviewer": { "model": "haiku", "effort": "low" } } }

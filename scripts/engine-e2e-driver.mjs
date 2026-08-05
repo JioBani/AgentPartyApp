@@ -1,5 +1,5 @@
 /*
- * Headless engine E2E driver (Stage 3, docs/WSL_REMOTE.md). Runs the SAME engine
+ * Headless engine E2E driver (Stage 3, the WSL remote-engine design). Runs the SAME engine
  * bootstrap under whatever node executes it — Windows node or a WSL distro's node
  * — against a given workspace cwd, with no Electron. Proves the engine is host-
  * agnostic and writes .agent_party_app/ to the workspace's own filesystem.

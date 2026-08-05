@@ -1,6 +1,6 @@
 /*
  * WorkspaceLocation codec unit test (Stage 1 of the WSL remote effort, see
- * docs/WSL_REMOTE.md). Pure functions, so verify directly. The key guarantee:
+ * the WSL remote-engine design). Pure functions, so verify directly. The key guarantee:
  * local locations are byte-identical to the previous `path.resolve(path)` logic,
  * so adopting the codec changes nothing for local workspaces.
  */

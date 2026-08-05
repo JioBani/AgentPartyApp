@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 
-// Boundary 2 of the party-communication design (docs/PARTY_COMMUNICATION.md):
+// Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
 // features. The handler implementations live in the main process
 // (`PartyApplicationService`); this interface lets `core` build the in-process

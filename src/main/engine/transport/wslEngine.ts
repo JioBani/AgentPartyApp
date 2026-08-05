@@ -30,7 +30,7 @@ export interface WslEngineHandle {
  * cwd, fs, git, claude binary) is fully native. stdio is the RPC channel.
  *
  * Failures (no node, copy error, spawn/handshake failure) reject the transport
- * — never a silent Windows fallback (convention #3). See docs/WSL_REMOTE.md §8.
+ * — never a silent Windows fallback (convention #3). See the WSL remote-engine design §8.
  */
 export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
   let child: ChildProcess | undefined;

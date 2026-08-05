@@ -1,6 +1,6 @@
 /*
  * Integration test for the party in-process MCP bridge
- * (docs/PARTY_COMMUNICATION.md). Drives the REAL PartyApplicationService with a
+ * (the party-communication design). Drives the REAL PartyApplicationService with a
  * fake SessionManager so no Claude session is spawned, then exercises the bridge
  * that the service hands to a member's session — verifying the whole chain:
  *

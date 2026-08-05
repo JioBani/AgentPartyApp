@@ -41,7 +41,7 @@ export interface EngineHostConfig {
 /**
  * The engine — assembled without any Electron dependency, so the exact same
  * bootstrap runs in the desktop main process and as a standalone headless
- * process inside a WSL distro (under the distro's node). See docs/WSL_REMOTE.md
+ * process inside a WSL distro (under the distro's node). See the WSL remote-engine design
  * §4/§8. The desktop wires its windows/IPC/automation API around this; a
  * headless host drives it directly or over a transport.
  */

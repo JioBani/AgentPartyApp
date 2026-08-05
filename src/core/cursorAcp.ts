@@ -8,7 +8,7 @@ import { resolveCursorAgentCommand } from "./cursorAgentCli";
  * Speaks JSON-RPC over stdio to a `cursor-agent acp` child. This is the
  * transport half of the Cursor cross-harness bridge: one live child holds one
  * ACP session, and the bridge layer above maps Anthropic Messages turns onto
- * `session/prompt` calls (docs/CURSOR_PROXY_TODO.md).
+ * `session/prompt` calls (see the Cursor integration documentation).
  *
  * Everything here was measured against the real CLI before being written:
  *   - session/new returns the LIVE model catalog (modelId encodes variants,

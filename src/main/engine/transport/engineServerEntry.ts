@@ -14,7 +14,7 @@ import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
  * workspace's engine over stdin/stdout. Spawned as a child by the desktop
  * client — locally as `node engineServerEntry`, and (Stage 5) inside a distro as
  * `wsl.exe -d <distro> -e node engineServerEntry`. stdout is the RPC channel, so
- * console logging is disabled (file logging continues). See docs/WSL_REMOTE.md.
+ * console logging is disabled (file logging continues). See the WSL remote-engine design.
  *
  * Args: --workspace <path> --storage <dir>
  */

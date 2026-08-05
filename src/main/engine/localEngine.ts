@@ -29,7 +29,7 @@ export interface LocalEngineDeps {
  * workspace's {@link PartyApplicationService} and the shared
  * {@link SessionManager}. The work is synchronous; methods are async only to
  * satisfy the {@link EngineConnection} contract (a remote engine must be async).
- * See docs/WSL_REMOTE.md §6.
+ * See the WSL remote-engine design §6.
  */
 export class LocalEngine implements EngineConnection {
   constructor(private readonly deps: LocalEngineDeps) {}

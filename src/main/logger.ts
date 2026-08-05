@@ -19,7 +19,7 @@ let consoleLogging = true;
 /**
  * Toggles console output (file logging is unaffected). The engine server turns
  * this off because it uses stdout as its RPC channel — stray console.log would
- * corrupt the protocol. See docs/WSL_REMOTE.md §7.
+ * corrupt the protocol. See the WSL remote-engine design §7.
  */
 export function setConsoleLogging(enabled: boolean): void {
   consoleLogging = enabled;

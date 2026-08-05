@@ -42,6 +42,7 @@ Invoke-RestMethod http://127.0.0.1:47831/api/spec
 ```
 
 The maintained API document is [docs/API.md](docs/API.md).
+For the complete documentation map, see [docs/README.md](docs/README.md).
 
 ## Logs
 

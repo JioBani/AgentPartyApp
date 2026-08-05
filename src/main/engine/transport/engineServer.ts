@@ -6,7 +6,7 @@ import { readLines, writeLine, type RpcRequest } from "./rpc";
  * Serves one {@link EngineConnection} over a stream pair: reads RPC requests,
  * dispatches to the named engine method, and writes back the result (or error).
  * The engine may be synchronous (LocalEngine) — results are awaited uniformly,
- * so sync and async both work. See docs/WSL_REMOTE.md §7.
+ * so sync and async both work. See the WSL remote-engine design §7.
  */
 export function serveEngine(
   engine: EngineConnection,

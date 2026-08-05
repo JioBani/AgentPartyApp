@@ -9,7 +9,7 @@
  *
  * This module is Electron/React-free so the main service, the core reviewer, and
  * the renderer all share one source of truth for how the three layers resolve.
- * See docs/MESSAGE_GATE.md.
+ * See the Message Gate design.
  */
 
 /** Per-member enablement relative to the party switch. */

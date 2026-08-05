@@ -794,7 +794,7 @@ export class ClaudeAdapter extends EventEmitter {
 
   /**
    * Builds the `agentparty-app` in-process MCP server (Boundary 2 of
-   * docs/PARTY_COMMUNICATION.md) when this session is a party member. The tool
+   * the party-communication design) when this session is a party member. The tool
    * handlers run in *this* process and call the injected bridge directly; the
    * caller's identity is closure-bound so `from` is never agent-supplied.
    * Returns `{}` (no servers) for non-member sessions.

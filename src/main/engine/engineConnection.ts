@@ -24,7 +24,7 @@ import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUs
  * The engine surface — everything addressed by **workspace**. For a local
  * workspace this is served in-process (`LocalEngine`); for a WSL workspace it
  * will be served by an engine running inside the distro, reached over RPC
- * (`RemoteEngineClient`, later stages). See docs/WSL_REMOTE.md §6.
+ * (`RemoteEngineClient`, later stages). See the WSL remote-engine design §6.
  *
  * Deliberately scoped to the workspace dimension — the exact place local and
  * WSL diverge. Session control addressed by a global session id
@@ -82,7 +82,7 @@ export interface QaInteractionInput {
  * reached over a transport, and a remote boundary cannot be synchronous. The
  * in-process {@link LocalEngine} satisfies it by wrapping its synchronous work
  * in promises; `RemoteEngineClient` satisfies it over the wire. See
- * docs/WSL_REMOTE.md §6/§7.
+ * the WSL remote-engine design §6/§7.
  */
 export interface EngineConnection {
   readonly workspacePath: string;

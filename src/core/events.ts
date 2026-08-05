@@ -156,7 +156,7 @@ export type ClaudeNormalizedEvent =
       at: string }
   // Message Gate outcome for an OUTGOING member-to-member send, rendered as an
   // inline badge in the SENDER's transcript (reject/forced/failed). UI-only — it
-  // is never injected into any model's context. See docs/MESSAGE_GATE.md §8.
+  // is never injected into any model's context. See the Message Gate design §8.
   | { type: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at: string }
   | { type: "error"; message: string; at: string };
 

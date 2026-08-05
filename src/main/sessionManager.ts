@@ -148,7 +148,7 @@ export class SessionManager extends EventEmitter {
    * @param userDataDir base dir for harness debug logs (Electron's userData on
    *   the desktop; an engine-chosen dir when running headless, e.g. in WSL).
    *   Injected rather than read from `electron.app` so the engine core runs
-   *   under plain node. See docs/WSL_REMOTE.md.
+   *   under plain node. See the WSL remote-engine design.
    */
   constructor(
     private readonly router: EmbeddedHarnessRouter,
@@ -227,7 +227,7 @@ export class SessionManager extends EventEmitter {
   /**
    * Signals that a workspace's party state changed out-of-band (e.g. a member
    * drove a party tool). Re-broadcast by the main process; see
-   * docs/PARTY_COMMUNICATION.md §8.
+   * the party-communication design §8.
    */
   notifyPartyChanged(workspace: string): void {
     this.emit("party", { workspace });

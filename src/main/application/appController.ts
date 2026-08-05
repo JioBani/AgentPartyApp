@@ -199,7 +199,7 @@ export class AppController {
   /**
    * Re-broadcasts a workspace's party state after an out-of-band change (e.g. a
    * member drove a party tool in-process). Wired from the SessionManager `party`
-   * event in main.ts; see docs/PARTY_COMMUNICATION.md §8.
+   * event in main.ts; see the party-communication design §8.
    */
   notifyPartyChanged(workspacePath: string): Promise<void> {
     return this.broadcastParty(workspacePath);
@@ -521,7 +521,7 @@ export class AppController {
 
   // Session control is routed to the engine that owns the workspace the caller
   // (window / ?window=) is viewing — the session lives in that engine, local or
-  // a WSL distro. See docs/WSL_REMOTE.md §7.
+  // a WSL distro. See the WSL remote-engine design §7.
   async closeSession(workspacePath: string, sessionId: string): Promise<{ ok: boolean }> {
     return { ok: await this.engineFor(workspacePath).closeSession(sessionId) };
   }

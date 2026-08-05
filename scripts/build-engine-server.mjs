@@ -2,7 +2,7 @@
  * Bundles the headless engine server into dist/engine-server.mjs — a single,
  * Electron-free, dependency-inlined file the desktop copies into a WSL distro
  * and runs with the distro's node. Part of `npm run build`.
- * See docs/WSL_REMOTE.md §8.
+ * See the WSL remote-engine design §8.
  */
 import { build } from "esbuild";
 import path from "node:path";

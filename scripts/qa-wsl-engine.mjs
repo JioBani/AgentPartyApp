@@ -1,5 +1,5 @@
 /*
- * WSL-native engine E2E (Stage 3, docs/WSL_REMOTE.md).
+ * WSL-native engine E2E (Stage 3, the WSL remote-engine design).
  *
  * 1. Bundles the engine host and asserts it is Electron-free (bundles for plain
  *    node). 2. Runs it headless under Windows node (sanity). 3. Runs the SAME

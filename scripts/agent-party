@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 #
 # agent-party — open the current (or given) directory in the AgentParty desktop
-# app, the way `code .` opens a Remote-WSL window. See docs/WSL_REMOTE.md §13.
+# app, the way `code .` opens a Remote-WSL window. See the WSL remote-engine design §13.
 #
 # Runs inside WSL (reachable on PATH via the Windows PATH that interop appends).
 # It builds a WorkspaceLocation URI from $WSL_DISTRO_NAME + the target dir, then

@@ -1,5 +1,5 @@
 /*
- * WSL remote engine E2E (Stage 5b, docs/WSL_REMOTE.md §7/§8).
+ * WSL remote engine E2E (Stage 5b, the WSL remote-engine design §7/§8).
  *
  * The headline flow: a Windows process spawns the engine inside a WSL distro via
  * wsl.exe (the production spawnWslEngine) and drives it over stdio through the

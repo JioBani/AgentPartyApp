@@ -21,7 +21,7 @@ export interface EngineRegistryDeps {
  * workspaces get an in-process {@link LocalEngine}; WSL workspaces get a remote
  * engine (running inside the distro). One connection per workspace identity, so
  * same-(host,workspace) windows share it — the locked single-source rule.
- * See docs/WSL_REMOTE.md §6.
+ * See the WSL remote-engine design §6.
  */
 export class EngineRegistry {
   private readonly engines = new Map<string, EngineConnection>();

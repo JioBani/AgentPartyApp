@@ -8,7 +8,7 @@ import { assertSubscriptionModelAvailable, type SubscriptionProxyConfig } from "
  * member-to-member message obeys the communication rules. Stateless by design:
  * each review starts clean (no accumulated context) so the reviewer never drifts
  * the way an accumulating session would — the exact failure the gate exists to
- * prevent. See docs/MESSAGE_GATE.md §6.
+ * prevent. See the Message Gate design §6.
  *
  * Routing reuses the app's existing auth/transport, matching how real sessions
  * reach each model:

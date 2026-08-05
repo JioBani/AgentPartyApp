@@ -25,7 +25,7 @@ export interface RemoteTransport {
  * responses by id. The transport is supplied as a promise so the client can be
  * constructed synchronously (keeping EngineRegistry.forWorkspace sync) while the
  * distro spawn/handshake completes in the background — calls queue until it
- * resolves. See docs/WSL_REMOTE.md §7.
+ * resolves. See the WSL remote-engine design §7.
  */
 export class RemoteEngineClient implements EngineConnection {
   private nextId = 1;

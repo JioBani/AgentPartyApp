@@ -82,7 +82,7 @@ export interface AppSettings {
   /**
    * Default headless reviewer (model + effort, NO harness) for the Message Gate.
    * Used by any gate-on member that has not set its own reviewer. Edited in
-   * Settings → Runtime. See `shared/messageGate.ts` / docs/MESSAGE_GATE.md.
+   * Settings → Runtime. See `shared/messageGate.ts` / the Message Gate design.
    */
   gateDefaults: GateReviewer;
   /**

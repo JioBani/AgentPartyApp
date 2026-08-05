@@ -1,5 +1,5 @@
 /*
- * Windows-side launcher for the `agent-party` CLI (docs/WSL_REMOTE.md §13).
+ * Windows-side launcher for the `agent-party` CLI (the WSL remote-engine design §13).
  *
  * Invoked by the WSL shim over interop (node.exe) with a WorkspaceLocation URI
  * (e.g. wsl+Ubuntu-22.04:/home/dev/proj). If AgentParty is running, asks it to

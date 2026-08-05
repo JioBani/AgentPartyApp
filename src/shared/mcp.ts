@@ -3,7 +3,7 @@ import type { HarnessId } from "./types";
 /**
  * Provider-neutral MCP (Model Context Protocol) **client** status + actions —
  * the external servers a member connects to, NOT the app's own in-process
- * `agentparty-app` server (that's Boundary 2 in docs/PARTY_COMMUNICATION.md).
+ * `agentparty-app` server (that's Boundary 2 in the party-communication design).
  *
  * Both harnesses expose a live MCP control surface, but with different shapes
  * and different capabilities, so this module is the single neutral vocabulary

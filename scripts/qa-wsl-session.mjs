@@ -1,5 +1,5 @@
 /*
- * WSL live session plane E2E (Stage 7, docs/WSL_REMOTE.md §7). Proves the part
+ * WSL live session plane E2E (Stage 7, the WSL remote-engine design §7). Proves the part
  * that was missing: send a turn to a member whose session lives in the WSL
  * engine, and receive its streamed reply back over wsl.exe — control routed to
  * the owning engine, events pushed from the distro. Uses a mock member, so no

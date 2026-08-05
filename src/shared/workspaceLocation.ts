@@ -3,7 +3,7 @@ import * as path from "node:path";
 /**
  * Where a workspace physically lives. A workspace is still a cwd directory, but
  * that directory may belong to a different host than the Electron UI (e.g. a WSL
- * distro). See docs/WSL_REMOTE.md. Until the remote engine lands, every location
+ * distro). See the WSL remote-engine design. Until the remote engine lands, every location
  * is `{ kind: "local" }` and behavior is identical to a bare path string.
  */
 export type WorkspaceHost =

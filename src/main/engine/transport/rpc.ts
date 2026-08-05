@@ -4,7 +4,7 @@ import type { Readable, Writable } from "node:stream";
  * Minimal request/response RPC framed as newline-delimited JSON over a pair of
  * streams. Used so the desktop client can drive an engine running in another
  * host (a WSL distro) over the child process's stdio — deterministic, no ports,
- * and it crosses the `wsl.exe` boundary unchanged. See docs/WSL_REMOTE.md §7.
+ * and it crosses the `wsl.exe` boundary unchanged. See the WSL remote-engine design §7.
  *
  * JSON.stringify escapes newlines, so a single `\n` is a safe frame delimiter.
  */
@@ -34,7 +34,7 @@ export interface RpcEvent {
  * provider transports: the subscription bridge and the embedded router both bind
  * `127.0.0.1` on the desktop host, and from inside a distro that address is the
  * distro's own loopback. Asking the desktop to make the call keeps credentials
- * on the host instead of widening those listeners. See docs/WSL_REMOTE.md §7.
+ * on the host instead of widening those listeners. See the WSL remote-engine design §7.
  */
 export interface RpcHostCall {
   kind: "call";

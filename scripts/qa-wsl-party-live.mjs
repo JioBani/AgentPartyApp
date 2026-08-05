@@ -1,5 +1,5 @@
 /*
- * LIVE e2e for the in-process party MCP bridge (docs/PARTY_COMMUNICATION.md).
+ * LIVE e2e for the in-process party MCP bridge (the party-communication design).
  * NOT in the test suite — it makes a billed Sonnet call on the distro's
  * logged-in Claude subscription.
  *
