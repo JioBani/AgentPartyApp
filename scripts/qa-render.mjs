@@ -107,7 +107,11 @@ const members = [
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
+    // Settings the real app always fills in (main/settings.ts normalizes them on
+    // read). They were absent here while nothing rendered the settings screen;
+    // the 유휴 슬립 assertions below do, and the cards read these directly.
+    compactDefault: { on: false, at: 80 }, idleSleep: { enabled: true, timeoutMinutes: 5 }, gateDefaults: { model: "haiku", effort: "low" } },
   auth: [],
   sessions,
   modelRoutes,
@@ -126,6 +130,9 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+const keepAwakeCalls = [];
+const sleepCalls = [];
+const wakeCalls = [];
 // Reopen regression: an inactive member has persisted history but no live
 // session. Activating it prewarms a resumed session; navigating away, losing
 // that session, and returning must prewarm again without dropping the history.
@@ -187,6 +194,11 @@ window.agentParty = {
     return { ok: true, message: "", ...initialState.party, member, session };
   },
   removePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  // Idle-sleep controls reached from the member context menu. Record the calls so
+  // the menu is proven to drive the party actions and not just to render.
+  setMemberKeepAwake: async (name, keepAwake) => { keepAwakeCalls.push({ name, keepAwake }); return { ok: true, message: "", ...initialState.party }; },
+  sleepPartyMember: async (name) => { sleepCalls.push(name); return { ok: true, message: "", ...initialState.party }; },
+  wakePartyMember: async (name) => { wakeCalls.push(name); return { ok: true, message: "", ...initialState.party }; },
   listModels: async () => ({ ok: true, modelRoutes: initialState.modelRoutes, codexModels: initialState.codexModels }),
   refreshCodexModels: noop,
   onSessionEvents: on("events"),
@@ -387,6 +399,46 @@ if (restartItem) {
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 assert(restartedSessions.includes("s-reviewer"), "하드 리스타트 restarted the member's live session (restart called with its session id)");
+
+// Idle sleep is otherwise reachable only over HTTP, so the menu is the whole UI
+// for it: 계속 켜두기 must pin the member and 지금 재우기 must release it.
+if (reviewerRow) {
+  reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const sleepMenuItems = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])];
+const keepAwakeItem = sleepMenuItems.find((b) => /계속 켜두기/.test(b.textContent || ""));
+const sleepItem = sleepMenuItems.find((b) => /지금 재우기/.test(b.textContent || ""));
+assert(keepAwakeItem != null, "context menu offers 계속 켜두기");
+assert(sleepItem != null, "context menu offers 지금 재우기 for an awake member");
+if (sleepItem) {
+  sleepItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(sleepCalls.includes("reviewer"), "지금 재우기 released the member's process (sleepPartyMember called)");
+if (reviewerRow) {
+  reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const pinItem = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])]
+  .find((b) => /계속 켜두기/.test(b.textContent || ""));
+if (pinItem) {
+  pinItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(
+  keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
+  "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
+);
+
+// Settings → Runtime carries the only UI for the global idle-sleep policy, so a
+// card that fails to render leaves the feature on with no way to turn it off.
+emit("nav", "runtime");
+await new Promise((resolve) => setTimeout(resolve, 120));
+const runtimeText = document.getElementById("root").textContent || "";
+assert(runtimeText.includes("유휴 슬립"), "settings show the 유휴 슬립 card");
+assert(runtimeText.includes("유휴 멤버의 프로세스 내리기"), "the card explains what sleeping does");
+assert(runtimeText.includes("5분"), "the card shows the current quiet period");
 
 // React surfaces render errors via console.error; treat those as failures.
 const realErrors = consoleErrors.filter((line) => !line.includes("not wrapped in act"));

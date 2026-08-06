@@ -738,6 +738,25 @@ export class AppController {
   }
 
   /**
+   * Pins a member awake, or lets it follow the global idle-sleep policy again.
+   * Un-pinning does not sleep the member — the sweep decides that on its own
+   * once the member has been quiet long enough.
+   */
+  setMemberKeepAwake(workspacePath: string, name: string, keepAwake: boolean, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberKeepAwake"]>> {
+    return this.handlePartyAction(workspacePath, name, "keep-awake", { keepAwake }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberKeepAwake"]>>;
+  }
+
+  /** Releases a member's harness process now, keeping its conversation. */
+  sleepPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["sleepMember"]>> {
+    return this.handlePartyAction(workspacePath, name, "sleep", {}, windowId) as Promise<ReturnType<PartyApplicationService["sleepMember"]>>;
+  }
+
+  /** Brings a sleeping member's process back and resumes its conversation. */
+  wakePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["wakeMember"]>> {
+    return this.handlePartyAction(workspacePath, name, "wake", {}, windowId) as Promise<ReturnType<PartyApplicationService["wakeMember"]>>;
+  }
+
+  /**
    * Persists a member's permission (Claude mode / Codex policy / Cursor policy)
    * and applies it to the live adapter when one is running. This is the member
    * -scoped route the composer's permission control drives, so a change made

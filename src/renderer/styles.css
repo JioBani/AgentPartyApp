@@ -727,8 +727,27 @@
   background: transparent;
 }
 
-.wb-ctx-item:hover {
+.wb-ctx-item:hover:not(:disabled) {
   background: var(--bg-3);
+}
+
+/* Disabled items had no styling at all, so an unavailable action (하드 리스타트
+   without a session, 재우기 on a pinned member) still lit up on hover and read
+   as clickable. */
+.wb-ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* A menu item that is a state, not a one-shot action (계속 켜두기). Tinted so the
+   member's pinned state reads from the menu itself, with the check pushed to the
+   trailing edge where a toggle's state belongs. */
+.wb-ctx-item.is-on {
+  color: var(--live, var(--text-1));
+}
+
+.wb-ctx-check {
+  margin-left: auto;
 }
 
 .wb-ctx-item.is-danger {

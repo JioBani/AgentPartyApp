@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, ExternalLink, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ExternalLink, Moon, Pin, Plus, RotateCcw, Sun, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -52,12 +52,93 @@ interface PartySidebarProps {
   /** Hard restart (in-place harness restart); enabled only with a live session. */
   onRestartMember: (member: string) => void;
   onRemoveMember: (member: string) => void;
+  /** Pins a member awake (true) or lets it follow the global idle-sleep policy. */
+  onSetMemberKeepAwake: (member: string, keepAwake: boolean) => void;
+  /** Releases a member's harness process now, keeping its conversation. */
+  onSleepMember: (member: string) => void;
+  /** Brings a sleeping member back and resumes its conversation. */
+  onWakeMember: (member: string) => void;
   onRemoveParty: (partyId: string) => void;
   /** Opens the party-wide Message Gate manager for a party. */
   onOpenPartyGate: (partyId: string) => void;
   /** Opens the party in another window of this process (shared engine + sessions). */
   onOpenPartyInNewWindow: (partyId: string) => void;
   onCollapse: () => void;
+}
+
+/** The row the context menu was opened on, re-read live so its items reflect the
+ *  member's current state rather than what it was at right-click time. */
+function memberOf(views: MemberView[], name: string): MemberView | undefined {
+  return views.find((view) => view.name === name);
+}
+
+/**
+ * The member half of the sidebar's right-click menu.
+ *
+ * `view` is undefined only if the member vanished while the menu was open; the
+ * items then read as unavailable rather than acting on a name that is gone.
+ */
+function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep, onWake, onRemove, onDone }: {
+  name: string;
+  view: MemberView | undefined;
+  onRestart: (member: string) => void;
+  onSetKeepAwake: (member: string, keepAwake: boolean) => void;
+  onSleep: (member: string) => void;
+  onWake: (member: string) => void;
+  onRemove: (member: string) => void;
+  onDone: () => void;
+}) {
+  const keepAwake = view?.member.keepAwake === true;
+  const run = (action: () => void) => () => { action(); onDone(); };
+  return (
+    <>
+      <button
+        type="button"
+        className="wb-ctx-item"
+        disabled={!view?.session}
+        title="하네스를 그 자리에서 재시작합니다(대화 맥락 초기화, 세션 유지)"
+        onClick={run(() => onRestart(name))}
+      >
+        <RotateCcw size={13} /> 하드 리스타트
+      </button>
+      {/* Idle sleep. The pin applies to any member, session or not; 재우기/깨우기
+          is offered in whichever direction this member can actually go. */}
+      <button
+        type="button"
+        className={"wb-ctx-item" + (keepAwake ? " is-on" : "")}
+        title="켜면 이 멤버는 유휴 슬립에서 제외되어 프로세스가 계속 떠 있습니다"
+        onClick={run(() => onSetKeepAwake(name, !keepAwake))}
+      >
+        <Pin size={13} /> 계속 켜두기
+        {keepAwake && <Check size={13} className="wb-ctx-check" />}
+      </button>
+      {view?.status === "sleeping" ? (
+        <button
+          type="button"
+          className="wb-ctx-item"
+          title="프로세스를 다시 띄우고 대화를 이어받습니다"
+          onClick={run(() => onWake(name))}
+        >
+          <Sun size={13} /> 지금 깨우기
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="wb-ctx-item"
+          disabled={!view?.session || keepAwake}
+          title="대화는 두고 하네스 프로세스만 반납합니다. 다음 메시지에 다시 깨어납니다"
+          onClick={run(() => onSleep(name))}
+        >
+          <Moon size={13} /> 지금 재우기
+        </button>
+      )}
+      {name !== "main" && (
+        <button type="button" className="wb-ctx-item is-danger" onClick={run(() => onRemove(name))}>
+          <Trash2 size={13} /> 삭제하기
+        </button>
+      )}
+    </>
+  );
 }
 
 // Right-click context menu target: a member row, or a party row (which needs a
@@ -67,7 +148,7 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
@@ -185,12 +266,9 @@ export function PartySidebar(props: PartySidebarProps) {
                 onClick={() => onOpenMember(view.name)}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
                 onContextMenu={(event) => {
-                  // Menu is worth showing if anything is actionable: hard restart
-                  // (needs a live session) or delete (removable). 'main' with no
-                  // session has neither → no menu.
-                  if (!removable && !view.session) {
-                    return;
-                  }
+                  // Always worth showing now: 계속 켜두기 applies to any member,
+                  // session or not, so there is no longer a case with nothing
+                  // actionable in it.
                   event.preventDefault();
                   event.stopPropagation();
                   setMenu({ kind: "member", name: view.name, x: event.clientX, y: event.clientY });
@@ -221,26 +299,16 @@ export function PartySidebar(props: PartySidebarProps) {
         // Fixed to the viewport at the cursor; click handlers above close it.
         <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
           {menu.kind === "member" ? (
-            <>
-              <button
-                type="button"
-                className="wb-ctx-item"
-                disabled={!views.find((v) => v.name === menu.name)?.session}
-                title="하네스를 그 자리에서 재시작합니다(대화 맥락 초기화, 세션 유지)"
-                onClick={() => { onRestartMember(menu.name); setMenu(null); }}
-              >
-                <RotateCcw size={13} /> 하드 리스타트
-              </button>
-              {menu.name !== "main" && (
-                <button
-                  type="button"
-                  className="wb-ctx-item is-danger"
-                  onClick={() => { onRemoveMember(menu.name); setMenu(null); }}
-                >
-                  <Trash2 size={13} /> 삭제하기
-                </button>
-              )}
-            </>
+            <MemberContextMenuItems
+              name={menu.name}
+              view={memberOf(views, menu.name)}
+              onRestart={onRestartMember}
+              onSetKeepAwake={onSetMemberKeepAwake}
+              onSleep={onSleepMember}
+              onWake={onWakeMember}
+              onRemove={onRemoveMember}
+              onDone={() => setMenu(null)}
+            />
           ) : (
             <>
               {/* Opens the party in ANOTHER window of this same process, which is

@@ -99,6 +99,17 @@ dependency reaching its module graph (`import … from "electron"`, `__dirname`)
 kills it at LOAD time and the workspace silently renders as "작업공간 없음".
 Requires the distro; the workspace is created under `/tmp` inside it.
 
+`node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
+real app and drives idle sleep's two escape hatches through the AppController
+methods the UI calls: the global policy the Settings → 유휴 슬립 card writes
+(on/off, quiet period, and the 1–1440분 clamp an HTTP caller could otherwise step
+outside), and the per-member 계속 켜두기 pin from the sidebar's right-click menu.
+The pin is asserted to beat a *direct* sleep request, not only the timeout sweep
+— were it advisory there, the menu item would be lying. Then sleeps and wakes an
+un-pinned member and checks the session binding is released and re-bound. Offline
+and unbilled: the member is created but never messaged, since sleeping is a
+process-lifecycle concern and a model call would add cost without coverage.
+
 `node scripts/e2e-discovery.mjs` launches TWO real app processes that SHARE one
 userData but open DIFFERENT cwds (the exact condition that used to clobber the
 global `<userData>/automation.json`) and asserts they are independently

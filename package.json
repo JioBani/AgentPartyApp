@@ -21,6 +21,7 @@
     "test:e2e:live-codex-party-tools": "npm run build && node scripts/e2e-live-codex-party-tools.mjs",
     "test:e2e:live-wsl-codex-party-tools": "npm run build && node scripts/e2e-live-wsl-codex-party-tools.mjs",
     "test:e2e:wsl-workspace-open": "npm run build && node scripts/e2e-wsl-workspace-open.mjs",
+    "test:e2e:idle-sleep": "node scripts/e2e-idle-sleep.mjs",
     "test:e2e:wsl-codex-sqlite-isolation": "npm run build && node scripts/e2e-wsl-codex-sqlite-isolation.mjs",
     "test:e2e:codex-party-port-fallback": "npm run build && node scripts/e2e-codex-party-port-fallback.mjs",
     "test:e2e:codex-approval": "npm run build && node scripts/e2e-codex-approval.mjs",

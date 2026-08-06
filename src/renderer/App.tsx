@@ -3,6 +3,7 @@ import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Setti
 import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
+import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
@@ -642,6 +643,24 @@ export function App() {
     await applyPartyResult(result);
   }
 
+  /**
+   * Idle sleep, per member. All three notify: sleeping is routinely *refused*
+   * (a turn in flight, background work, a queued message) and the refusal is
+   * the whole answer — swallowing it would leave a member the user just told to
+   * sleep sitting there with no stated reason.
+   */
+  async function setMemberKeepAwake(name: string, keepAwake: boolean) {
+    await applyPartyResult(await window.agentParty.setMemberKeepAwake(name, keepAwake));
+  }
+
+  async function sleepMember(name: string) {
+    await applyPartyResult(await window.agentParty.sleepPartyMember(name));
+  }
+
+  async function wakeMember(name: string) {
+    await applyPartyResult(await window.agentParty.wakePartyMember(name));
+  }
+
   // Deletes a whole party (cascades to its members); the sidebar arms a confirm
   // click before calling this.
   async function removePartyDirect(partyId: string) {
@@ -656,6 +675,15 @@ export function App() {
 
   async function saveCompactDefault(setting: AutoCompactSetting) {
     const settings = await window.agentParty.updateSettings({ compactDefault: setting });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  /**
+   * Persisting this also pushes the new policy to every engine (local and WSL),
+   * so turning sleep off stops the sweep on members this window is not showing.
+   */
+  async function saveIdleSleep(setting: IdleSleepSettings) {
+    const settings = await window.agentParty.updateSettings({ idleSleep: setting });
     setState((current) => ({ ...current, settings }));
   }
 
@@ -1250,6 +1278,9 @@ export function App() {
                 onCreateParty={(name, gate) => void createParty(name, gate)}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
+                onSetMemberKeepAwake={(name, keepAwake) => void setMemberKeepAwake(name, keepAwake)}
+                onSleepMember={(name) => void sleepMember(name)}
+                onWakeMember={(name) => void wakeMember(name)}
                 onRemoveParty={(partyId) => void removePartyDirect(partyId)}
                 onOpenPartyInNewWindow={(partyId) => void openPartyInNewWindow(partyId)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
@@ -1318,6 +1349,7 @@ export function App() {
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
+                  onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
                   onSaveComposer={saveComposerSettings}
                   discord={discord}

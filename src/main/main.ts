@@ -732,6 +732,11 @@ function registerIpc(): void {
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:autoCompact", async (event, name: string, autoCompact: unknown) => controller().setMemberAutoCompact(senderWorkspace(event), name, autoCompact, senderWindowId(event)));
+  // Idle sleep, driven by hand from the sidebar menu. These reach the same three
+  // party actions the idle sweep and the HTTP API use — one implementation.
+  handle("party:keepAwake", async (event, name: string, keepAwake: boolean) => controller().setMemberKeepAwake(senderWorkspace(event), name, keepAwake === true, senderWindowId(event)));
+  handle("party:sleep", async (event, name: string) => controller().sleepPartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:wake", async (event, name: string) => controller().wakePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   // Member-scoped permission: persists AND applies to the live adapter, so a
   // change made while the member's session is down is not dropped.
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));

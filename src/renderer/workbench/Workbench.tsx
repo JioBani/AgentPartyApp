@@ -60,6 +60,10 @@ interface WorkbenchProps {
   onCreateParty: (name: string, gate?: PartyGate) => void;
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
+  /** Idle-sleep controls for one member (pin awake, sleep now, wake now). */
+  onSetMemberKeepAwake: (member: string, keepAwake: boolean) => void;
+  onSleepMember: (member: string) => void;
+  onWakeMember: (member: string) => void;
   onRemoveParty: (partyId: string) => void;
   /** Opens a party in another window of this process (shared engine + sessions). */
   onOpenPartyInNewWindow: (partyId: string) => void;
@@ -119,7 +123,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -555,6 +559,9 @@ export function Workbench(props: WorkbenchProps) {
             onOpenMember={handleOpenMember}
             onRestartMember={(member) => actions.restart(member)}
             onRemoveMember={onRemoveMember}
+            onSetMemberKeepAwake={onSetMemberKeepAwake}
+            onSleepMember={onSleepMember}
+            onWakeMember={onWakeMember}
             onRemoveParty={onRemoveParty}
             onOpenPartyGate={setPartyGateTarget}
             onOpenPartyInNewWindow={onOpenPartyInNewWindow}
