@@ -195,6 +195,16 @@ Updates app settings.
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
 
+`idleSleep` controls when a quiet member's harness process is released to reclaim
+its memory — `{"idleSleep": {"enabled": true, "timeoutMinutes": 5}}`, the default.
+`timeoutMinutes` is clamped 1–1440: below a minute a member would be torn down and
+rebuilt between two halves of one thought, and past a day `enabled: false` says it
+better. The timeout is only a floor; the sweep still refuses a member that is
+mid-turn, waiting on an approval, compacting, holding detached background work or
+queued messages, running on Cursor, or marked `keepAwake` (see
+`/api/party/members/:name/sleep`). A sleeping member keeps its conversation and
+wakes on the next message.
+
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
 permission config (`permissionMode` for Claude Code, `codexPolicy` for Codex,
@@ -1282,6 +1292,39 @@ Binds an existing active session to a member.
 
 Closes the member's active session while keeping its registry/scaffold.
 
+### `POST /api/party/members/:name/sleep`
+
+Releases the member's harness process while KEEPING its conversation: status
+becomes `sleeping` and `harnessSessionId` carries the thread, so the next message
+resumes rather than restarts it. This is what the idle sweep does on its own once
+a member has been quiet past `idleSleep.timeoutMinutes`; the endpoint exists so a
+person or a QA run can exercise the same path without waiting it out.
+
+A member with no live session returns `ok` and says so — it is already released.
+The sweep additionally refuses (and logs) a member that is mid-turn, waiting on
+an approval, compacting, holding detached background work, holding queued turns,
+running on Cursor (which keeps no process between turns), or marked
+`keepAwake`. Calling this endpoint bypasses only the *timeout*, not those.
+
+```json
+{ "ok": true, "message": "Member 'impl' is sleeping; a message wakes it.", "member": { "name": "impl", "status": "sleeping", "sleptAt": "2026-08-06T02:10:00.000Z" } }
+```
+
+### `POST /api/party/members/:name/wake`
+
+Starts a sleeping member again, resuming its harness thread, and delivers
+anything waiting on its queue. Equivalent to `resume`; it exists as its own verb
+so the intent reads correctly against `sleep`. Sending a message to a sleeping
+member does this automatically — the message is queued, the sender gets an
+immediate `ok`, and the wake runs behind it.
+
+### `POST /api/party/members/:name/keep-awake`
+
+`{ "keepAwake": true }` pins the member awake regardless of how long it is quiet;
+`false` lets it follow the global setting again. Use it for a member doing work
+the app cannot observe, where a wake-up would not restore what was lost. Turning
+it on wakes the member if it is currently asleep.
+
 ### `POST /api/party/members/:name/remove`
 
 Fully removes a member. This is destructive.
@@ -1503,6 +1546,14 @@ Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
 
 Opens a new window. Body `{ "workspacePath": "C:/path" }` (optional; defaults to
 the last-used workspace). Returns `{ id, workspacePath, focused }`.
+
+`{ "partyId": "party-…" }` opens the window ON that party instead of whatever the
+workspace last selected. The party is pinned before the window can ask, so it
+cannot land on the party another window happens to be showing. This backs the
+sidebar's party right-click → **새 창에서 열기**, and it is how several parties are
+run side by side: every window belongs to ONE app process, so they share the
+workspace's engine and its sessions — a member already running is reused, not
+started again.
 
 ### `POST /api/windows/:id/workspace`
 

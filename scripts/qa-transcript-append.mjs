@@ -30,7 +30,7 @@ async function load(entry, name) {
   return import(pathToFileURL(file).href);
 }
 
-const { buildTranscriptSave, applyEvents, appendBlock } = await load("src/renderer/app/transcriptEvents.ts", "transcript-events.mjs");
+const { buildTranscriptSave, applyEvents, appendBlock } = await load("src/shared/transcriptEvents.ts", "transcript-events.mjs");
 const { PartyRepository } = await load("src/main/partyRepository.ts", "party-repo-append.mjs");
 
 const block = (id, text) => ({ id, kind: "assistant", text });

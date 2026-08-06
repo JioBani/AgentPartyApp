@@ -94,7 +94,11 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/windows") {
         const body = await readJson(req);
-        sendJson(res, 200, await c.openWindow(body.workspacePath));
+        // Defaults to the CALLING window's workspace, not the global setting: a
+        // `partyId` only means anything inside one workspace, so falling back to
+        // the setting opened the window on a DIFFERENT workspace where that id
+        // does not exist — and it then silently showed that workspace's own party.
+        sendJson(res, 200, await c.openWindow(body.workspacePath || workspace, body.partyId));
         return;
       }
       const windowWorkspaceMatch = url.pathname.match(/^\/api\/windows\/([^/]+)\/workspace$/);
@@ -112,7 +116,7 @@ export class AutomationApiServer {
         return;
       }
       if (method === "POST" && url.pathname === "/api/clipboard/image") {
-        sendJson(res, 200, c.writeImageToClipboard(await readJson(req)));
+        sendJson(res, 200, await c.writeImageToClipboard(await readJson(req)));
         return;
       }
       if (method === "POST" && url.pathname === "/api/settings") {

@@ -37,6 +37,9 @@ import {
 import { log } from "../logger";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
+import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
+import type { TranscriptBlock } from "../../shared/transcript";
+import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import type { PartyBridge } from "../../core/partyBridge";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -137,6 +140,31 @@ export class PartyApplicationService {
    */
   private readonly busySessions = new Set<string>();
 
+  // --- Transcript recording -------------------------------------------------
+  //
+  // The MAIN process folds the event stream into blocks and writes them. It used
+  // to be a window's debounced save, which made the writer a property of the UI:
+  // two windows on one member wrote the same file twice and fought over the
+  // append anchor (falling back to whole-file saves that queue on the same
+  // engine pipe as user turns — a measured 33s delay), and a member driven with
+  // NO window open never had its transcript written at all, which is the normal
+  // shape for an agent-run party. One session, one writer, windows optional.
+  private readonly recordedBlocks = new Map<string, TranscriptBlock[]>();
+  /**
+   * Exactly what is on disk per session, kept as the ARRAY that was written.
+   *
+   * Not "the id of the last block": a streaming reply keeps ONE block and grows
+   * its text, so anchoring on an id wrote that block at its first delta and then
+   * never updated it — a whole answer stored as its first letter. Blocks are
+   * rebuilt rather than edited, so `buildTranscriptSave` finds the unchanged
+   * prefix by object IDENTITY, which puts a still-growing reply inside the
+   * append instead of behind it.
+   */
+  private readonly recordedPersisted = new Map<string, TranscriptBlock[]>();
+  private readonly recordFlushTimers = new Map<string, NodeJS.Timeout>();
+  /** Debounce: long enough to batch a streaming reply, short enough to survive a kill. */
+  private static readonly RECORD_FLUSH_MS = 1_500;
+
   constructor(private readonly deps: PartyApplicationDeps) {
     // Record the harness thread as soon as it becomes real — the turn that
     // commits it — instead of hoping something later asks for it. It used to be
@@ -147,7 +175,11 @@ export class PartyApplicationService {
     // lost it for the same reason. Owning the fact here makes all three cases the
     // same case. See #19.
     this.deps.sessionManager.on("events", (payload: { sessionId?: string; events?: { type?: string }[] }) => {
-      if (!payload?.sessionId || !payload.events?.some((event) => event?.type === "turn_complete")) {
+      if (!payload?.sessionId || !payload.events?.length) {
+        return;
+      }
+      this.recordTranscriptEvents(payload.sessionId, payload.events);
+      if (!payload.events.some((event) => event?.type === "turn_complete")) {
         return;
       }
       this.persistHarnessThread(payload.sessionId);
@@ -174,6 +206,7 @@ export class PartyApplicationService {
         this.drainQueueForSession(payload.sessionId);
       }
     });
+    this.startIdleSweep();
   }
 
   /**
@@ -194,6 +227,107 @@ export class PartyApplicationService {
       member.harnessSessionId = harnessId;
       return { harnessSessionId: harnessId };
     });
+  }
+
+  /**
+   * Folds a session's events into transcript blocks and schedules a write.
+   *
+   * Seeds from what is already on disk the first time it sees a session, so a
+   * RESUMED session appends to its history instead of replacing it — the same
+   * reason the renderer seeded from the restored copy before it appended.
+   */
+  private recordTranscriptEvents(sessionId: string, events: unknown[]): void {
+    const owner = this.memberOwningSession(sessionId);
+    if (!owner) {
+      // Not a party member's session (the background usage poller), or the
+      // binding has not landed yet. Nothing to attribute the blocks to.
+      return;
+    }
+    if (!this.recordedBlocks.has(sessionId)) {
+      const stored = this.repository.readTranscript(this.workspacePath(), this.partyIdOf(owner), owner.name) as TranscriptBlock[];
+      this.recordedBlocks.set(sessionId, stored);
+      this.recordedPersisted.set(sessionId, stored);
+    }
+    const before = this.recordedBlocks.get(sessionId) || [];
+    const folded = applyEvents({ [sessionId]: before }, sessionId, events as any[])[sessionId] || before;
+    if (folded === before) {
+      return;
+    }
+    this.recordedBlocks.set(sessionId, folded);
+    this.scheduleTranscriptFlush(sessionId, owner.name, this.partyIdOf(owner));
+  }
+
+  private scheduleTranscriptFlush(sessionId: string, member: string, partyId: string | undefined): void {
+    if (this.recordFlushTimers.has(sessionId)) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.recordFlushTimers.delete(sessionId);
+      try {
+        this.flushTranscript(sessionId, member, partyId);
+      } catch (error) {
+        // Never silently: a transcript that stops being written looks exactly
+        // like a member that stopped talking.
+        log("error", "party", "transcript write failed", { member, partyId, error: errorMessage(error) });
+      }
+    }, PartyApplicationService.RECORD_FLUSH_MS);
+    timer.unref?.();
+    this.recordFlushTimers.set(sessionId, timer);
+  }
+
+  private flushTranscript(sessionId: string, member: string, partyId: string | undefined): void {
+    const blocks = this.recordedBlocks.get(sessionId);
+    if (!blocks) {
+      return;
+    }
+    const persisted = this.recordedPersisted.get(sessionId);
+    if (persisted === blocks) {
+      return;
+    }
+    // Identity diff, not an id anchor: see `recordedPersisted`. A reply still
+    // streaming is a REBUILT block, so it lands in the append and keeps growing
+    // on disk instead of freezing at its first delta.
+    const save: TranscriptSave = buildTranscriptSave(persisted, blocks);
+    if (save.afterId && !save.blocks.length) {
+      return;
+    }
+    const result = this.saveMemberTranscript(member, save, partyId);
+    if (!result.applied && save.afterId) {
+      const full = this.saveMemberTranscript(member, { blocks }, partyId);
+      if (!full.applied) {
+        log("error", "party", "transcript full save rejected", { member, partyId, reason: full.reason });
+        return;
+      }
+    } else if (!result.applied) {
+      log("error", "party", "transcript save rejected", { member, partyId, reason: result.reason });
+      return;
+    }
+    this.recordedPersisted.set(sessionId, blocks);
+  }
+
+  /** Drops a closed session's recording state (and writes anything still pending). */
+  private stopRecording(sessionId: string): void {
+    const timer = this.recordFlushTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.recordFlushTimers.delete(sessionId);
+      const owner = this.memberOwningSession(sessionId);
+      if (owner) {
+        try {
+          this.flushTranscript(sessionId, owner.name, this.partyIdOf(owner));
+        } catch (error) {
+          log("error", "party", "final transcript write failed", { member: owner.name, error: errorMessage(error) });
+        }
+      }
+    }
+    this.recordedBlocks.delete(sessionId);
+    this.recordedPersisted.delete(sessionId);
+  }
+
+  /** The member this session is bound to, or undefined for a non-member session. */
+  private memberOwningSession(sessionId: string): PartyMember | undefined {
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    return state.members.find((member) => member.sessionId === sessionId);
   }
 
   /**
@@ -370,6 +504,27 @@ export class PartyApplicationService {
   }
 
   /**
+   * Pins a member awake (or lets it follow the global idle-sleep setting again).
+   * Turning it on wakes the member if it is already asleep — the setting means
+   * "this member must have a process", and leaving it asleep would agree with
+   * the words while contradicting the intent.
+   */
+  setMemberKeepAwake(name: string, keepAwake: boolean, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    const wasSleeping = member.status === "sleeping";
+    member.keepAwake = keepAwake || undefined;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member keep-awake persisted", { workspace, partyId: this.partyIdOf(member), member: member.name, keepAwake });
+    if (keepAwake && wasSleeping) {
+      return this.wakeMember(member.name, this.partyIdOf(member));
+    }
+    return this.result(`Member '${member.name}' keep-awake ${keepAwake ? "enabled" : "cleared"}.`, state, member);
+  }
+
+  /**
    * Updates the target member's persisted permission through the same service
    * used by HTTP and member tools. If the member is live, the adapter is changed
    * first; persistence happens only after that succeeds, so disk and runtime do
@@ -469,6 +624,47 @@ export class PartyApplicationService {
     if (input.auto && member.status === "closed") {
       log("info", "party", "auto-start skipped: member is closed", { workspace, partyId: member.partyId, member: member.name });
       return this.result(`Member '${member.name}' is closed; auto-start skipped.`, state, member);
+    }
+    // Same rule for a member the app just put to sleep, and the guard has to live
+    // HERE rather than only in the renderer's prewarm. The panel effect that
+    // prewarms deliberately excludes the actions object from its deps, so it can
+    // fire with a members list captured before the sleep landed — which restarted
+    // the process within a tick of releasing it, and no member could ever stay
+    // asleep. Waking is an explicit act (a message, or resume/wake); an
+    // opportunistic start is not one.
+    if (input.auto && member.status === "sleeping") {
+      log("info", "party", "auto-start skipped: member is sleeping", { workspace, partyId: member.partyId, member: member.name });
+      return this.result(`Member '${member.name}' is sleeping; auto-start skipped.`, state, member);
+    }
+    // Idempotence has to reach ACROSS processes, not just this one.
+    //
+    // `sessionViewOf` below can only see sessions this process owns, so a member
+    // already running under a sibling app process on the same workspace looked
+    // exactly like a member with no session at all — and we started a second
+    // harness for it, overwriting `sessionId` and abandoning the first. The
+    // party store is shared on disk, so two instances on one workspace did this
+    // to each other on every launch, party switch, tab restore and delivery.
+    // Measured on a live install: one member with EIGHT live `claude` processes
+    // on the same conversation, 2.5 GB, still climbing.
+    //
+    // The binding already records its owner (`sessionBootId`), and
+    // `sessionOwnerMayBeAlive` already answers whether that owner is still
+    // running — `reconcileStaleSessionBindings` uses it to decide whether to
+    // KEEP the binding. Starting simply never consulted it. One owner per member
+    // at a time; the other side must reach it through its owner, not clone it.
+    if (member.sessionId && !this.deps.sessionManager.hasSession(member.sessionId) && sessionOwnerMayBeAlive(member.sessionBootId)) {
+      log("info", "party", "start skipped: member is running in another app process", {
+        workspace,
+        partyId: member.partyId,
+        member: member.name,
+        sessionId: member.sessionId,
+        owner: member.sessionBootId,
+      });
+      return this.result(
+        `Member '${member.name}' is already running in another AgentParty process (${member.sessionBootId}). Use that window, or close it there first.`,
+        state,
+        member,
+      );
     }
     // Start is an idempotent ensure operation. UI prewarm, HTTP automation, and
     // a send can arrive in adjacent event-loop turns; creating again used to
@@ -1214,6 +1410,235 @@ export class PartyApplicationService {
     return true;
   }
 
+  // ===========================================================================
+  // Idle sleep — releasing a quiet member's process while keeping its conversation.
+  //
+  // A party holds one harness process per member for as long as the member
+  // exists, each costing real memory whether or not anyone is talking to it.
+  // Sleep gives that back: the process ends, `harnessSessionId` keeps the
+  // conversation, and the next message resumes it. `startMember` already resumes
+  // that thread and its auto-start guard already refuses only `closed`, so
+  // WAKING needs no new machinery — a sleeping member is simply started again.
+  //
+  // The whole design rests on one asymmetry: being too cautious costs memory,
+  // and being too eager destroys work. Every judgement below leans the first way.
+  // ===========================================================================
+
+  /** Matches the stall watchdog's cadence; the timeout, not this, sets the delay. */
+  private static readonly IDLE_SWEEP_MS = 20_000;
+  private idleSweepTimer: NodeJS.Timeout | undefined;
+  /** Members whose refusal has been logged, so the sweep says each reason once. */
+  private readonly reportedSleepRefusals = new Map<string, string>();
+
+  private startIdleSweep(): void {
+    if (this.idleSweepTimer) {
+      return;
+    }
+    this.idleSweepTimer = setInterval(() => {
+      try {
+        this.sweepIdleMembers();
+      } catch (error) {
+        // Never let a sweep failure kill the timer: the next tick should try
+        // again, and a silent stop would look exactly like "sleep is disabled".
+        log("warn", "party", "idle sweep failed", { error: errorMessage(error) });
+      }
+    }, PartyApplicationService.IDLE_SWEEP_MS);
+    this.idleSweepTimer.unref?.();
+  }
+
+  /**
+   * Why this member must keep its process despite being quiet. Undefined means
+   * there is no reason to keep it.
+   *
+   * These are the MEMBER-level refusals; the session-level ones (a turn in
+   * flight, an unanswered prompt, a compaction, detached background work) are
+   * applied by {@link SessionManager.idleCandidates} before we get here.
+   */
+  private sleepRefusal(member: PartyMember): string | undefined {
+    if (member.keepAwake) {
+      return "keep-awake is set";
+    }
+    // Cursor spawns a process per TURN and holds none between them, so there is
+    // nothing to reclaim — only its session id and queue to lose.
+    if (member.runtime === "cursor") {
+      return "cursor holds no process between turns";
+    }
+    if (readQueue(member.queue).items.length > 0) {
+      return "messages are waiting in its queue";
+    }
+    return undefined;
+  }
+
+  /**
+   * Releases every member that has been quiet past the configured timeout.
+   *
+   * Sleeps by NAME rather than against the state read here: each sleep does its
+   * own read-modify-write, so reusing this snapshot would write one member's
+   * change over the previous member's.
+   */
+  /**
+   * The desktop's idle-sleep policy, pushed in rather than read from disk.
+   *
+   * This service may be running INSIDE a WSL distro, where `getSettings()` reads
+   * that host's settings.json — a different file from the one the user edited on
+   * the desktop. Reading locally meant a remote workspace silently ignored the
+   * configured timeout and ran on the built-in default forever. Undefined until
+   * the first push (a local engine, or startup), where the local file is right.
+   */
+  setIdleSleep(settings: IdleSleepSettings): void {
+    this.idleSleepPolicy = sanitizeIdleSleep(settings);
+    log("info", "party", "idle sleep policy applied", { workspace: this.workspacePath(), ...this.idleSleepPolicy });
+  }
+
+  private idleSleepPolicy: IdleSleepSettings | undefined;
+
+  private sweepIdleMembers(): void {
+    const idleSleep = this.idleSleepPolicy || getSettings().idleSleep;
+    if (!idleSleep.enabled) {
+      return;
+    }
+    const candidates = this.deps.sessionManager.idleCandidates(idleSleepTimeoutMs(idleSleep));
+    if (!candidates.length) {
+      // Why nothing was eligible, at debug level only. A member that never
+      // sleeps is otherwise silent and indistinguishable from a disabled
+      // feature — the exact shape of the bugs this feature already shipped.
+      if (getSettings().debugEnabled) {
+        log("info", "party", "idle sweep found nothing", { thresholdMs: idleSleepTimeoutMs(idleSleep), sessions: this.deps.sessionManager.describeIdleState() });
+      }
+      return;
+    }
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const sleepable: { name: string; partyId?: string; quietMs: number }[] = [];
+    for (const candidate of candidates) {
+      const member = state.members.find((entry) => entry.sessionId === candidate.id);
+      if (!member) {
+        continue; // Not a party member's session (the background usage poller).
+      }
+      const key = `${member.partyId}/${member.name}`;
+      // sleepMember re-checks this; asking here only keeps the log honest about
+      // WHY a member the sweep looked at is still awake.
+      const refusal = this.sleepRefusal(member);
+      if (refusal) {
+        // Said once per distinct reason: a member that never sleeps is otherwise
+        // indistinguishable from a feature that is quietly not working.
+        if (this.reportedSleepRefusals.get(key) !== refusal) {
+          this.reportedSleepRefusals.set(key, refusal);
+          log("info", "party", "member stays awake", { partyId: member.partyId, member: member.name, reason: refusal });
+        }
+        continue;
+      }
+      this.reportedSleepRefusals.delete(key);
+      sleepable.push({ name: member.name, partyId: this.partyIdOf(member), quietMs: candidate.quietMs });
+    }
+    for (const entry of sleepable) {
+      try {
+        this.sleepMember(entry.name, entry.partyId, entry.quietMs);
+      } catch (error) {
+        log("warn", "party", "could not sleep member", { member: entry.name, error: errorMessage(error) });
+      }
+    }
+  }
+
+  /**
+   * Ends a member's harness process but keeps the member reachable: its status
+   * becomes `sleeping` and `harnessSessionId` carries the conversation, so the
+   * next message resumes rather than restarts it.
+   *
+   * Runs without an `await` from the capture through the persist. The engine is
+   * single-threaded, so an uninterrupted stretch is what makes this atomic with
+   * respect to an arriving message — yield in the middle and a send could be
+   * handed an adapter that is being torn down, where the turn is accepted into a
+   * buffer that dispose then discards.
+   */
+  sleepMember(name: string, partyId?: string, quietMs?: number): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    const sessionId = member.sessionId;
+    if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
+      return this.result(`Member '${member.name}' holds no live session to release.`, state, member);
+    }
+    // Every refusal is checked HERE rather than only in the sweep, so a
+    // hand-driven sleep cannot do what the sweep would refuse. Calling this by
+    // hand skips the waiting, not the safety — otherwise the one path a person
+    // reaches for is the one that can destroy running background work.
+    const blocker = this.sleepRefusal(member) || this.deps.sessionManager.sleepBlocker(sessionId);
+    if (blocker) {
+      log("info", "party", "sleep refused", { workspace, partyId: member.partyId, member: member.name, reason: blocker });
+      return this.result(`Member '${member.name}' stays awake: ${blocker}.`, state, member);
+    }
+    // First, and before anything can fail: after closeSession the adapter is gone
+    // and with it the only way to learn the thread id that makes waking a
+    // continuation instead of a brand-new conversation.
+    this.captureHarnessThread(member);
+    this.stopRecording(sessionId);
+
+    this.deps.sessionManager.closeSession(sessionId);
+    const at = new Date().toISOString();
+    member.sessionId = undefined;
+    member.sessionBootId = undefined;
+    member.status = "sleeping";
+    member.sleptAt = at;
+    member.updatedAt = at;
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member slept", {
+      workspace,
+      partyId: member.partyId,
+      member: member.name,
+      sessionId,
+      quietMs,
+      harnessSessionId: member.harnessSessionId,
+    });
+    return { ...this.result(`Member '${member.name}' is sleeping; a message wakes it.`, state, member) };
+  }
+
+  /**
+   * Wakes a member for a message already parked on its queue, off the sender's
+   * turn. Failure is surfaced on the member (and in the log) rather than left as
+   * a message that silently never arrives — the queue keeps it, so a later wake
+   * still delivers it.
+   *
+   * Serialised through {@link wakingMembers}: a broadcast to a sleeping party
+   * would otherwise start every process at once, briefly costing more memory
+   * than never sleeping at all.
+   */
+  private wakeForQueuedMessage(name: string, partyId?: string): void {
+    const key = `${partyId || "default"}/${name}`;
+    if (this.wakingMembers.has(key)) {
+      return;
+    }
+    this.wakingMembers.add(key);
+    setImmediate(() => {
+      try {
+        this.wakeMember(name, partyId);
+      } catch (error) {
+        log("error", "party", "could not wake a member with a queued message", { member: name, partyId, error: errorMessage(error) });
+      } finally {
+        this.wakingMembers.delete(key);
+      }
+    });
+  }
+
+  /** Members with a wake in flight, so one member is never started twice at once. */
+  private readonly wakingMembers = new Set<string>();
+
+  /**
+   * Brings a sleeping member back. Plain {@link startMember}: it already resumes
+   * `harnessSessionId`, so there is nothing sleep-specific to undo beyond the
+   * status, which starting rewrites anyway.
+   */
+  wakeMember(name: string, partyId?: string): PartyCommandResult {
+    const result = this.startMember(name, {}, {}, partyId);
+    // A member woken while messages were waiting must not sit on them until
+    // something else happens to nudge the queue: the normal drain trigger is the
+    // busy → idle EDGE, and a fresh session never crosses it.
+    const sessionId = result.member?.sessionId;
+    if (sessionId && this.deps.sessionManager.hasSession(sessionId)) {
+      this.drainQueueForSession(sessionId);
+    }
+    return result;
+  }
+
   closeMember(name: string, partyId?: string): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
@@ -1225,6 +1650,8 @@ export class PartyApplicationService {
       // — or closing a member driven with no window open at all — dropped it,
       // and the member's next message silently began an empty conversation.
       this.captureHarnessThread(member);
+      this.stopRecording(member.sessionId);
+
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     member.sessionId = undefined;
@@ -1244,6 +1671,8 @@ export class PartyApplicationService {
       throw new Error("Main member cannot be removed. Remove or recreate the party instead.");
     }
     if (member.sessionId) {
+      this.stopRecording(member.sessionId);
+
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     state.members = state.members.filter((item) => !(item.partyId === member.partyId && item.name === member.name));
@@ -1268,6 +1697,8 @@ export class PartyApplicationService {
     }
     for (const member of state.members) {
       if (member.partyId === party.id && member.sessionId) {
+        this.stopRecording(member.sessionId);
+
         this.deps.sessionManager.closeSession(member.sessionId);
       }
     }
@@ -1403,6 +1834,23 @@ export class PartyApplicationService {
     // If auto-start itself cannot run (stubbed harness, missing runtime), fall
     // through to the no-session diagnostic instead of crashing the send path.
     let sessionId = target.sessionId && this.deps.sessionManager.hasSession(target.sessionId) ? target.sessionId : undefined;
+    // A sleeping member is woken OUT OF BAND: park the message on the member's
+    // own durable queue, answer the sender immediately, and bring the process
+    // back behind them. Waking a remote (WSL) member is a round trip, and making
+    // the sender wait for it would stall a whole turn of theirs on someone
+    // else's process start. The queue is the same one a busy member uses, so the
+    // message stays visible and cancellable while the wake runs, and a wake that
+    // fails is reported rather than losing it.
+    if (!sessionId && target.status === "sleeping") {
+      message.error = "queued_for_sleeping_member";
+      target.updatedAt = message.createdAt;
+      state.messages.push(message);
+      this.persistParty(workspace, state, this.partyIdOf(target));
+      const queued = this.enqueueForMember(target.name, this.partyIdOf(target), { text: message.content, attachments, from: message.from }, { front: false, stop: false });
+      log("info", "party", "message queued for sleeping member", { workspace, partyId: target.partyId, from: message.from, to: message.to });
+      this.wakeForQueuedMessage(target.name, this.partyIdOf(target));
+      return { ...queued, partyMessage: message };
+    }
     if (!sessionId && target.status !== "closed") {
       try {
         const started = this.startMember(target.name, {}, {}, this.partyIdOf(target));
@@ -1594,7 +2042,13 @@ export class PartyApplicationService {
 
   private turnStatusOf(member: PartyMember): Record<string, unknown> {
     const view = this.sessionViewOf(member.sessionId);
-    const status = view ? String(view.snapshot.status) : member.sessionId ? "missing_session" : "not_started";
+    // `sleeping` is reported as itself rather than collapsing into "not_started".
+    // Agents read this to decide whether a teammate can be given work, and
+    // "not started" invites the wrong repair — a duplicate member-create — for a
+    // member that is one message away from carrying on its existing conversation.
+    const status = view
+      ? String(view.snapshot.status)
+      : member.status === "sleeping" ? "sleeping" : member.sessionId ? "missing_session" : "not_started";
     return {
       name: member.name,
       // A session entry outlives its harness, so "we hold a session object" is

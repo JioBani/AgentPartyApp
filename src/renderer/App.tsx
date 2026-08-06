@@ -21,7 +21,7 @@ import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSu
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
-import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -35,6 +35,17 @@ import { applySubagentEvents } from "./app/subagentEvents";
  */
 function memberKey(member: { partyId?: string; name: string; createdAt?: string }): string {
   return `${member.partyId || "default"}::${member.name}::${member.createdAt || ""}`;
+}
+
+/**
+ * Outcome of a session-start attempt. `skipped` is a deliberate no-op — the
+ * member is closed, or a start for it is already in flight — and must not be
+ * treated as (or retried like) a failure.
+ */
+interface EnsureSessionResult {
+  sessionId?: string;
+  error?: string;
+  skipped?: boolean;
 }
 
 export function App() {
@@ -74,6 +85,9 @@ export function App() {
   const partyBroadcastSeen = useRef(false);
   // Members with an in-flight session start, and members already prewarmed once.
   const startingRef = useRef<Set<string>>(new Set());
+  // Last reported prewarm failure per member, so the retry cadence reports each
+  // distinct reason once instead of repeating the same notice every attempt.
+  const prewarmFailureRef = useRef<Map<string, string>>(new Map());
   // Auto-compact hysteresis: a member is "armed" while below its threshold; a
   // crossing fires ONE compaction and disarms it, re-arming only once occupancy
   // drops back below the threshold. This stops a member whose context can't be
@@ -383,37 +397,21 @@ export function App() {
   const saveChainRef = useRef<Record<string, Promise<void>>>({});
 
   /**
-   * Persists one member's transcript as an APPEND when possible.
+   * Keeps this window's "what is on disk" mirror in step with what it renders.
    *
-   * `restoredByMember[key]` mirrors what is on disk, and transcript blocks are
-   * immutable (events rebuild the blocks they touch), so the unchanged prefix is
-   * found by IDENTITY — everything after it is what needs saving. Sending only
-   * that matters because the engine RPC is a single stdio pipe shared with
-   * `sendUserTurn`: a full save of a 25 MB transcript queued ahead of a user turn
-   * delayed it by 33 seconds, with no reasoning shown because the turn had not
-   * reached the harness yet.
+   * A window no longer WRITES the transcript — the main process folds the same
+   * event stream and persists it once (see `recordTranscriptEvents`). This exists
+   * because the writer used to be a property of the UI, which meant two windows
+   * on one member wrote the same file twice and fought over the append anchor,
+   * and a member driven with no window open was never written at all. Both are
+   * gone once the writer follows the session rather than the view.
+   *
+   * The mirror still matters here: `restoredByMember` is what a member shows
+   * before (or without) a live session, so leaving it stale would make a
+   * reopened tab flash old history.
    */
   const persistTranscript = useCallback(async (name: string, key: string, blocks: TranscriptBlock[]) => {
-    const persisted = restoredRef.current[key];
-    if (persisted === blocks) {
-      return;
-    }
-    const save = buildTranscriptSave(persisted, blocks);
-    try {
-      let result = await window.agentParty.saveMemberTranscript?.(name, save);
-      if (result && !result.applied && save.afterId) {
-        // The engine could not anchor the append against its stored transcript.
-        // Resend in full rather than let the two sides silently diverge.
-        result = await window.agentParty.saveMemberTranscript?.(name, { blocks });
-      }
-      if (result && !result.applied) {
-        setPartyNotice(`'${name}' 대화 기록 저장 실패 (${result.reason || "unknown"})`);
-        return;
-      }
-      setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
-    } catch (error) {
-      setPartyNotice(`'${name}' 대화 기록 저장 실패 — ${error instanceof Error ? error.message : String(error)}`);
-    }
+    setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
   }, []);
 
   // Persist each active member's transcript to disk (debounced), and keep the
@@ -492,6 +490,23 @@ export function App() {
   async function selectParty(partyId: string) {
     const result = await window.agentParty.selectParty(partyId);
     await applyPartyResult(result);
+  }
+
+  /**
+   * Opens a party in ANOTHER window of this same process.
+   *
+   * Deliberately does not select the party here — this window stays where it is,
+   * which is the whole point of running several parties side by side. The new
+   * window shares this process's engine and sessions, so a member already
+   * running is reused rather than started a second time (the duplication that
+   * separate app processes used to cause).
+   */
+  async function openPartyInNewWindow(partyId: string) {
+    try {
+      await window.agentParty.newWindow?.(state.settings.workspacePath, partyId);
+    } catch (error) {
+      setPartyNotice(`새 창을 열지 못했습니다 — ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function closeSession(sessionId: string) {
@@ -781,15 +796,22 @@ export function App() {
   // straight to the global model here overwrote a member's model (e.g. a Kimi
   // member flipped to the global Sonnet on first chat). `startingRef` guards
   // against concurrent starts for the same member.
-  async function ensureSession(name: string, opts: { auto?: boolean } = {}): Promise<string | undefined> {
+  //
+  // Reports its outcome instead of throwing. A rejected start used to escape as
+  // an unhandled promise rejection — no notice, no log, no retry — which is how
+  // a restored tab could sit open with no session while every message to that
+  // member was undeliverable. `skipped` distinguishes a deliberate no-op (the
+  // member is closed, or another start is already in flight) from a failure, so
+  // callers only retry the latter.
+  async function ensureSession(name: string, opts: { auto?: boolean } = {}): Promise<EnsureSessionResult> {
     const existing = sessionIdFor(name);
     if (existing) {
-      return existing;
+      return { sessionId: existing };
     }
     const member = members.find((item) => item.name === name);
     const identity = member ? memberKey(member) : name;
     if (startingRef.current.has(identity)) {
-      return undefined;
+      return { skipped: true };
     }
     startingRef.current.add(identity);
     try {
@@ -817,7 +839,7 @@ export function App() {
       // The engine deliberately skipped an auto-start on a closed member — an
       // intentional no-op, not a failure worth a notice.
       if (opts.auto && result.member?.status === "closed") {
-        return undefined;
+        return { skipped: true };
       }
       // Seed the (resumed) session's transcript with the member's restored history
       // so the conversation continues visibly, matching the harness thread resume.
@@ -827,7 +849,12 @@ export function App() {
       if (sid && owner) {
         activateSessionTranscript(sid, owner, restored);
       }
-      return sid;
+      if (!sid) {
+        return { error: result.message || "엔진이 세션을 반환하지 않았습니다." };
+      }
+      return { sessionId: sid };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
     } finally {
       startingRef.current.delete(identity);
     }
@@ -889,18 +916,47 @@ export function App() {
     },
     prewarm(name) {
       // Init the visible member ahead of the first turn. Panel owns WHEN to try
-      // (on activation/remount); ensureSession only deduplicates an in-flight
-      // start. A lifetime "already prewarmed" set made a member impossible to
-      // reopen after its session disappeared or after switching between parties
-      // that both contain `main`: only sending a chat could revive it.
-      const member = members.find((item) => item.name === name);
-      if (sessionIdFor(name) || member?.status === "closed") {
+      // (on activation/remount, and the retry cadence); ensureSession only
+      // deduplicates an in-flight start. A lifetime "already prewarmed" set made
+      // a member impossible to reopen after its session disappeared or after
+      // switching between parties that both contain `main`: only sending a chat
+      // could revive it.
+      // Read through the ref, not the captured list: the panel effect that calls
+      // this excludes `actions` from its deps, so a closure from before the
+      // party update would still see the member as running and prewarm it. The
+      // engine refuses an auto-start on a sleeping member regardless — this only
+      // saves the pointless round trip.
+      const member = membersRef.current.find((item) => item.name === name);
+      // `sleeping` is skipped for the same reason as `closed`, from the other
+      // direction: the app JUST released that process to reclaim memory, and an
+      // open tab counts as neither a reason to keep it nor a request to wake it.
+      // Prewarming it would restart the process within a tick of it sleeping and
+      // idle sleep would never hold. Waking is driven by a message or an
+      // explicit wake, both of which mean someone actually wants the member.
+      // A member still bound to a session this process cannot see is running
+      // under a sibling app process; the engine refuses to clone it, so asking
+      // is pointless. `missing_session` is the exception and the reason this is
+      // not just "has a sessionId": that status is the app's own statement that
+      // the binding is DEAD, so the member does need starting again.
+      const boundElsewhere = Boolean(member?.sessionId) && member?.status !== "missing_session";
+      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping") {
         return;
       }
-      void ensureSession(name, { auto: true }).then((id) => {
-        if (!id) {
-          setPartyNotice(`'${name}' 세션을 미리 준비하지 못했습니다. 메시지를 보내면 다시 시도합니다.`);
+      void ensureSession(name, { auto: true }).then((result) => {
+        if (result.sessionId || result.skipped) {
+          prewarmFailureRef.current.delete(name);
+          return;
         }
+        // Say WHY, and say it once per distinct reason. The panel keeps retrying
+        // on a widening delay, so a repeated notice would be noise — but a
+        // silent failure was worse: the tab looked ready while every message to
+        // the member was undeliverable.
+        const reason = result.error || "엔진이 세션을 반환하지 않았습니다.";
+        if (prewarmFailureRef.current.get(name) === reason) {
+          return;
+        }
+        prewarmFailureRef.current.set(name, reason);
+        setPartyNotice(`'${name}' 세션을 준비하지 못했습니다: ${reason} 자동으로 다시 시도합니다.`);
       });
     },
     approve(name, requestId, behavior, updatedInput) {
@@ -1195,6 +1251,7 @@ export function App() {
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
                 onRemoveParty={(partyId) => void removePartyDirect(partyId)}
+                onOpenPartyInNewWindow={(partyId) => void openPartyInNewWindow(partyId)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}

@@ -7,7 +7,9 @@ import type { QueueCommand } from "../../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../../shared/mcp";
 import type { EngineConnection, QaEmitInput, QaInteractionInput, QaMemberSpec } from "../engineConnection";
 import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc";
+import { log } from "../../logger";
 import type { CodexAuthenticationUpdate } from "../../../shared/codexAuthentication";
+import type { IdleSleepSettings } from "../../../shared/idleSleep";
 import type { TokenUsageQuery, TokenUsageTurnsQuery } from "../../../shared/tokenUsage";
 
 /** Awaited return type of an EngineConnection method. */
@@ -28,12 +30,28 @@ export interface RemoteTransport {
  * resolves. See docs/WSL_REMOTE.md §7.
  */
 export class RemoteEngineClient implements EngineConnection {
+  /**
+   * How long one engine RPC may stay unanswered before it is failed.
+   *
+   * This is only a backstop for an engine that is alive but wedged — an engine
+   * that DIED is detected immediately by the transport-close handler below.
+   * Deliberately generous: its job is to guarantee that every call terminates,
+   * not to police latency.
+   */
+  private static readonly CALL_TIMEOUT_MS = 120_000;
+
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   private readonly eventListeners = new Set<(channel: string, payload: unknown) => void>();
   private readonly transport: Promise<RemoteTransport>;
   private detach: (() => void) | undefined;
   private disposed = false;
+  /**
+   * Set once this client can never work again (transport gone, or disposed).
+   * Later calls fail fast instead of queueing behind a peer that will never
+   * answer — the difference between a reported error and an app that hangs.
+   */
+  private deadError: Error | undefined;
 
   constructor(
     transport: RemoteTransport | Promise<RemoteTransport>,
@@ -45,6 +63,13 @@ export class RemoteEngineClient implements EngineConnection {
      * which bind desktop loopback and are unreachable from inside a distro.
      */
     private readonly hostHandlers: Record<string, (...args: any[]) => Promise<unknown>> = {},
+    /**
+     * Called when the transport dies on its own (not via {@link dispose}). The
+     * owner uses it to drop this client so the next request builds a fresh
+     * engine; without that, one dead engine poisons the workspace for the rest
+     * of the app's life.
+     */
+    private readonly onTransportLost?: (error: Error) => void,
   ) {
     this.transport = Promise.resolve(transport);
     this.transport.then(
@@ -76,10 +101,30 @@ export class RemoteEngineClient implements EngineConnection {
           } else {
             waiter.reject(new Error(message.error || "engine error"));
           }
-        });
+        }, (error) => this.handleTransportLost(error));
       },
       (error) => this.failAll(error instanceof Error ? error : new Error(String(error))),
     );
+  }
+
+  /**
+   * The engine process is gone. Every request waiting on it is unanswerable, so
+   * fail them now and refuse new ones: a pending RPC that nothing could ever
+   * settle is how a dead WSL engine turned each request into an indefinite hang
+   * (`/api/health` among them) instead of a visible, recoverable error.
+   */
+  private handleTransportLost(error?: Error): void {
+    if (this.disposed || this.deadError) {
+      return;
+    }
+    const lost = error || new Error(`Engine for '${this.workspacePath}' exited.`);
+    log("error", "engine", "remote engine transport closed", {
+      workspace: this.workspacePath,
+      pending: this.pending.size,
+      error: lost.message,
+    });
+    this.failAll(lost);
+    this.onTransportLost?.(lost);
   }
 
   /** Subscribe to pushed session events (session:events/snapshot/sessions). */
@@ -116,6 +161,7 @@ export class RemoteEngineClient implements EngineConnection {
   }
 
   private failAll(error: Error): void {
+    this.deadError = error;
     for (const waiter of this.pending.values()) {
       waiter.reject(error);
     }
@@ -123,17 +169,40 @@ export class RemoteEngineClient implements EngineConnection {
   }
 
   private call<T>(method: keyof EngineConnection, ...args: unknown[]): Promise<T> {
+    if (this.deadError) {
+      return Promise.reject(this.deadError);
+    }
     return this.transport.then(
       (t) =>
         new Promise<T>((resolve, reject) => {
+          if (this.deadError) {
+            reject(this.deadError);
+            return;
+          }
           const id = this.nextId++;
-          this.pending.set(id, { resolve, reject });
+          // Bounded so an engine that is alive but wedged still terminates the
+          // call. Cleared by whichever settles first; `unref` keeps a waiting
+          // timer from holding the process open at quit.
+          const timer = setTimeout(() => {
+            if (!this.pending.delete(id)) {
+              return;
+            }
+            const message = `Engine call '${String(method)}' for '${this.workspacePath}' got no response within ${RemoteEngineClient.CALL_TIMEOUT_MS}ms.`;
+            log("error", "engine", "remote engine call timed out", { workspace: this.workspacePath, method: String(method) });
+            reject(new Error(message));
+          }, RemoteEngineClient.CALL_TIMEOUT_MS);
+          timer.unref?.();
+          this.pending.set(id, {
+            resolve: (value) => { clearTimeout(timer); resolve(value); },
+            reject: (error) => { clearTimeout(timer); reject(error); },
+          });
           writeLine(t.output, { id, method: String(method), args });
         }),
     );
   }
 
   listParty(viewPartyId?: string) { return this.call<Result<"listParty">>("listParty", viewPartyId); }
+  setIdleSleep(settings: IdleSleepSettings) { return this.call<Result<"setIdleSleep">>("setIdleSleep", settings); }
   setCodexAuthentication(update: CodexAuthenticationUpdate) { return this.call<Result<"setCodexAuthentication">>("setCodexAuthentication", update); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }

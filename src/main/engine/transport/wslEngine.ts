@@ -184,20 +184,47 @@ function execWsl(args: string[]): Promise<string> {
   });
 }
 
+/**
+ * Resolves on the engine's readiness handshake, rejects with WHY it failed.
+ *
+ * The child's stderr is carried into both failure messages on purpose. Reporting
+ * only `exited before ready (code 1)` hid a real, load-time crash
+ * (`Cannot find package 'electron'`) behind a code number, and the UI showed the
+ * workspace as "작업공간 없음" with nothing to go on — exactly the silent failure
+ * AGENTS.md forbids.
+ */
 function waitForReady(child: ChildProcess): Promise<void> {
   return new Promise((resolve, reject) => {
     let buffer = "";
-    const timer = setTimeout(() => reject(new Error("WSL engine did not signal ready within 20s")), 20000);
+    /** Last few stderr lines — enough for a stack's message without a log dump. */
+    const diagnostics = (): string => {
+      const tail = buffer.trim().split(/\r?\n/).filter(Boolean).slice(-8).join(" | ");
+      return tail ? ` — ${tail}` : " — the engine printed nothing to stderr";
+    };
+    // A ready engine exits later for ordinary reasons (window closed → dispose),
+    // and that exit must NOT be reported as a startup failure — logging one would
+    // be a false alarm in exactly the place a real failure needs to stand out.
+    let settled = false;
+    const fail = (message: string) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      log("error", "wsl-engine", message, { stderr: buffer.trim().slice(-4000) });
+      reject(new Error(`${message}${diagnostics()}`));
+    };
+    const timer = setTimeout(() => fail("WSL engine did not signal ready within 20s"), 20000);
     child.stderr?.on("data", (chunk) => {
       buffer += chunk.toString();
-      if (buffer.includes("ENGINE_SERVER_READY")) {
+      if (!settled && buffer.includes("ENGINE_SERVER_READY")) {
+        settled = true;
         clearTimeout(timer);
         resolve();
       }
     });
     child.on("exit", (code) => {
       clearTimeout(timer);
-      reject(new Error(`WSL engine exited before ready (code ${code})`));
+      fail(`WSL engine exited before ready (code ${code})`);
     });
   });
 }

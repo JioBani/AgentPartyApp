@@ -1,6 +1,5 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { clipboard, nativeImage } from "electron";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -217,8 +216,14 @@ export class AppController {
    * location and prove it is driving the build it just made. Parallel worktrees
    * previously ran each other's builds and reported green for code that was
    * never under test.
+   *
+   * Guarded like the other module-dir reads in this codebase: the same class is
+   * bundled into the ESM engine server that runs under a distro's plain node,
+   * where `__dirname` does not exist and an unguarded read throws at LOAD time —
+   * taking the whole WSL workspace down. There the engine runs from its server
+   * dir, so cwd is the build's location.
    */
-  private static readonly APP_ROOT = __dirname;
+  private static readonly APP_ROOT = typeof __dirname === "string" ? __dirname : process.cwd();
 
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
@@ -301,6 +306,12 @@ export class AppController {
     this.deps.onSettingsChanged();
     if (typeof patch?.debugEnabled === "boolean" && patch.debugEnabled !== previous.debugEnabled) {
       this.deps.sessionManager.setDebugMode(patch.debugEnabled);
+    }
+    // Idle sleep is acted on by whichever host owns the sessions, which for a WSL
+    // workspace is inside the distro — and that host reads a different
+    // settings.json. Push the value instead of letting each engine look it up.
+    if (patch?.idleSleep) {
+      void this.deps.engineRegistry.setIdleSleep(getSettings().idleSleep);
     }
     const settings = getPublicSettings();
     // Settings are global — push to EVERY window so a change made over HTTP or in
@@ -470,8 +481,21 @@ export class AppController {
     return this.deps.windowRegistry.list();
   }
 
-  openWindow(workspacePath?: string): Promise<WindowInfo> {
-    return this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+  /**
+   * Opens a window, optionally ON a specific party.
+   *
+   * The party is PINNED before the window can ask, because pinning otherwise
+   * happens at the window's first `getState` and would capture whatever the
+   * shared advisory hint held at that moment — i.e. the party the OTHER window
+   * is on. Setting it up front is what makes "open this party in a new window"
+   * land on that party instead of a copy of the current one.
+   */
+  async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
+    const info = await this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+    if (partyId) {
+      this.activePartyByWindow.set(info.id, partyId);
+    }
+    return info;
   }
 
   /** Points a window at a different workspace and returns its fresh state. */
@@ -1062,8 +1086,16 @@ export class AppController {
    * success — the user would paste nothing and never learn why. So an empty
    * decode is an error, and the size actually written comes back for the caller
    * to assert on.
+   *
+   * Electron is imported HERE, lazily, not at module scope: this controller is
+   * also the one the headless engine server runs inside a WSL distro, where
+   * `electron` does not exist. A top-level `import … from "electron"` made every
+   * WSL workspace fail to open (`WSL engine exited before ready (code 1)`), so
+   * the dependency must stay inside the one method that needs it — a headless
+   * caller then gets an explicit error instead of a dead engine.
    */
-  writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): { ok: true; width: number; height: number; bytes: number } {
+  async writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): Promise<{ ok: true; width: number; height: number; bytes: number }> {
+    const { clipboard, nativeImage } = await import("electron");
     const dataBase64 = String(input?.dataBase64 || "").trim();
     if (!dataBase64) {
       throw new Error("clipboard image requires 'dataBase64' (base64 bytes, no data: prefix).");

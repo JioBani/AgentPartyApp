@@ -3,6 +3,7 @@ import type { CodexModelDiscoveryState } from "./codexModels";
 import type { CodexPolicy } from "./codexPolicy";
 import type { CursorPolicy } from "./cursorPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
+import type { IdleSleepSettings } from "./idleSleep";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { MemberQueueState } from "./messageQueue";
@@ -80,6 +81,11 @@ export interface AppSettings {
    */
   compactDefault: AutoCompactSetting;
   /**
+   * When to release a quiet member's harness process to reclaim its memory. A
+   * member with {@link PartyMember.keepAwake} opts out. See `shared/idleSleep.ts`.
+   */
+  idleSleep: IdleSleepSettings;
+  /**
    * Default headless reviewer (model + effort, NO harness) for the Message Gate.
    * Used by any gate-on member that has not set its own reviewer. Edited in
    * Settings → Runtime. See `shared/messageGate.ts` / docs/MESSAGE_GATE.md.
@@ -146,7 +152,15 @@ export interface AuthProviderState {
 export interface PartyMember {
   partyId?: string;
   name: string;
-  status: "idle" | "opened" | "running" | "closed" | "missing_session";
+  /**
+   * `sleeping` is the app's own doing, and that is what separates it from every
+   * other non-running value: the member was idle long enough that its harness
+   * process was released to reclaim memory, while the conversation itself is
+   * intact behind {@link harnessSessionId}. It is therefore MESSAGEABLE — a send
+   * wakes it — which `closed` (an explicit "do not wake me") is not, and which
+   * `missing_session` (something died unexpectedly) cannot promise.
+   */
+  status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
   runtime?: "codex" | "claude" | "claude-code" | "cursor";
   role?: string;
   sessionId?: string;
@@ -195,6 +209,19 @@ export interface PartyMember {
    * context crosses `at`% of the window. See `shared/autoCompact.ts`.
    */
   autoCompact?: AutoCompactSetting;
+  /**
+   * Never release this member's harness process, however long it stays quiet.
+   * For a member doing work the app cannot see — watching something, waiting on
+   * an external event — where a wake-up would not restore what was lost.
+   * Undefined = follow {@link AppSettings.idleSleep}.
+   */
+  keepAwake?: boolean;
+  /**
+   * When the app released this member's process (ISO). Set with
+   * `status: "sleeping"`, cleared on wake — so the UI can say how long it has
+   * been asleep instead of only that it is.
+   */
+  sleptAt?: string;
   /**
    * Per-member Message Gate override. Undefined = fully inherit the party gate
    * ({@link PartyDefinition.gate}) + settings reviewer default. See

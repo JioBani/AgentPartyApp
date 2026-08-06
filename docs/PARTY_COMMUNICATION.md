@@ -65,6 +65,10 @@ first so the message is handled immediately. `member-status` reports whether a
 member is busy, so an agent can decide between queueing and interrupting. The
 agent-facing primer (`buildPartyPrimer`) teaches all of this so the behavior does
 not depend on model memory; it is locked by `scripts/qa-party-bridge.mjs`.
+Codex installs that primer once through `thread/start.developerInstructions`
+(and reapplies the same thread-scoped override on `thread/resume`); ordinary
+`turn/start.input` contains only the user's message, so the primer never repeats
+as conversation history. Claude appends it to the session system prompt.
 
 ### Boundary 2: agent-driven party tools
 

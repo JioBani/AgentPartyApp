@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ExternalLink, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -55,6 +55,8 @@ interface PartySidebarProps {
   onRemoveParty: (partyId: string) => void;
   /** Opens the party-wide Message Gate manager for a party. */
   onOpenPartyGate: (partyId: string) => void;
+  /** Opens the party in another window of this process (shared engine + sessions). */
+  onOpenPartyInNewWindow: (partyId: string) => void;
   onCollapse: () => void;
 }
 
@@ -65,7 +67,7 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onRemoveParty, onOpenPartyGate, onCollapse } = props;
+  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
@@ -241,6 +243,18 @@ export function PartySidebar(props: PartySidebarProps) {
             </>
           ) : (
             <>
+              {/* Opens the party in ANOTHER window of this same process, which is
+                  what makes running several parties at once cheap: they share one
+                  engine and one harness per member. Deliberately does NOT select
+                  the party here — this window stays where it is. */}
+              <button
+                type="button"
+                className="wb-ctx-item"
+                title="이 파티를 새 창에서 엽니다 (같은 프로세스 · 세션 공유)"
+                onClick={() => { onOpenPartyInNewWindow(menu.partyId); setMenu(null); }}
+              >
+                <ExternalLink size={13} /> 새 창에서 열기
+              </button>
               <button
                 type="button"
                 className="wb-ctx-item"

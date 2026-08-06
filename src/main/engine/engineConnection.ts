@@ -17,6 +17,7 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 
@@ -89,6 +90,18 @@ export interface EngineConnection {
 
   /** Synchronizes the desktop-selected Codex account on this engine host. */
   setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult>;
+
+  /**
+   * Pushes the idle-sleep policy to this engine host.
+   *
+   * The sweep runs where the SESSIONS live, which for a WSL workspace is inside
+   * the distro — and `getSettings()` there reads the engine's own settings.json,
+   * not the desktop's. A timeout changed on the desktop therefore never reached
+   * the engine that acts on it, and idle sleep silently kept using the built-in
+   * default on every remote workspace. Same shape as
+   * {@link setCodexAuthentication}: the desktop owns the value, engines are told.
+   */
+  setIdleSleep(settings: IdleSleepSettings): Promise<void>;
 
   // --- Party (workspace-scoped; `partyId` scopes to the CALLING WINDOW's party) --
   // One engine serves every window of a workspace, so which party is active is a

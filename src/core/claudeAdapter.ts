@@ -23,6 +23,7 @@ import { backendFor } from "../shared/modelIdentity";
 import { deriveSubagentAction } from "../shared/subagentActivity";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
+import { BackgroundTaskTracker } from "./backgroundTasks";
 import { RawLogger } from "./rawLogger";
 import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
@@ -201,6 +202,13 @@ export class ClaudeAdapter extends EventEmitter {
   // known subagent's id as `parent_tool_use_id` is routed to it, keeping subagent
   // output out of the parent transcript.
   private subagentTracker = new ClaudeSubagentTracker();
+  /**
+   * Harness tasks still in flight, INCLUDING the ones the subagent dock drops
+   * (backgrounded shells, workflows, MCP monitors). Reported on the snapshot so
+   * idle-sleep can refuse to tear down a session whose turn ended while work
+   * kept running.
+   */
+  private readonly backgroundTasks = new BackgroundTaskTracker();
   private readonly startedAt = new Date().toISOString();
   private usageRefreshTimer: NodeJS.Timeout | undefined;
   private lastUsageStatus = "";
@@ -573,6 +581,9 @@ export class ClaudeAdapter extends EventEmitter {
     this.pendingApprovals.clear();
     this.activeTools.clear();
     this.subagentTracker = new ClaudeSubagentTracker();
+    // The old query's tasks died with it; carrying their ids forward would pin
+    // the member as "busy in the background" forever and it could never sleep.
+    this.backgroundTasks.reset();
     this.queuedUserTurns.length = 0;
     // A restart tears down the old query and starts a FRESH one with no turn in
     // flight — so any in-flight turn state MUST be cleared. Otherwise a restart
@@ -619,6 +630,7 @@ export class ClaudeAdapter extends EventEmitter {
       turnCount: this.turnCount,
       queuedTurnCount: this.queuedUserTurns.length,
       pendingApprovalCount: this.pendingApprovals.size,
+      backgroundTaskCount: this.backgroundTasks.count,
       slashCommands: this.supportedSlashCommands,
       contextTokens: this.contextTokens,
     };
@@ -1186,7 +1198,14 @@ export class ClaudeAdapter extends EventEmitter {
     // and are attributed to the subagent dock — NOT dumped into the parent chat
     // (the earlier `emitStatus` flooded the transcript with these). Verified
     // against recorded traffic in scripts/fixtures/subagents.
+    //
+    // The same four events also drive `backgroundTasks`, which counts EVERY
+    // in-flight task rather than only dock-worthy subagents. The dock keeps
+    // `local_agent` rows; a backgrounded shell or workflow is discarded there
+    // but is precisely the work that must not be killed when the member looks
+    // idle. See src/core/backgroundTasks.ts.
     if (message.subtype === "task_started") {
+      this.backgroundTasks.started(message);
       this.emitSubagents(this.subagentTracker.taskStarted(message));
       return;
     }
@@ -1195,11 +1214,13 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
     if (message.subtype === "task_updated") {
+      this.backgroundTasks.updated(message);
       this.emitSubagents(this.subagentTracker.taskUpdated(message));
       return;
     }
     if (message.subtype === "task_notification") {
       // Ambient subagent notification — suppressed from the parent transcript.
+      this.backgroundTasks.notified(message);
       return;
     }
 

@@ -4,6 +4,7 @@ import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
 import { LocalEngine } from "./localEngine";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import type { IdleSleepSettings } from "../../shared/idleSleep";
 
 export interface EngineRegistryDeps {
   workspaceManager: WorkspaceManager;
@@ -26,6 +27,8 @@ export interface EngineRegistryDeps {
 export class EngineRegistry {
   private readonly engines = new Map<string, EngineConnection>();
   private codexAuthentication: CodexAuthenticationUpdate | undefined;
+  /** Latest idle-sleep policy, replayed onto engines built later (see setIdleSleep). */
+  private idleSleep: IdleSleepSettings | undefined;
 
   constructor(private readonly deps: EngineRegistryDeps) {}
 
@@ -38,6 +41,12 @@ export class EngineRegistry {
       if (this.codexAuthentication) {
         void engine.setCodexAuthentication(this.codexAuthentication).catch(() => undefined);
       }
+      // Replayed rather than fetched: an engine built later (a workspace opened
+      // after startup) would otherwise run on its own host's settings file,
+      // which for a distro is a different file entirely.
+      if (this.idleSleep) {
+        void engine.setIdleSleep(this.idleSleep).catch(() => undefined);
+      }
     }
     return engine;
   }
@@ -46,6 +55,12 @@ export class EngineRegistry {
   async setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
     this.codexAuthentication = update;
     return Promise.all([...this.engines.values()].map((engine) => engine.setCodexAuthentication(update)));
+  }
+
+  /** Applies the desktop's idle-sleep policy to every currently hosted engine. */
+  async setIdleSleep(settings: IdleSleepSettings): Promise<void> {
+    this.idleSleep = settings;
+    await Promise.all([...this.engines.values()].map((engine) => engine.setIdleSleep(settings).catch(() => undefined)));
   }
 
   /** Tears down the engine for a workspace (e.g. when its last window closes). */

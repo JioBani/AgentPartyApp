@@ -2,6 +2,7 @@ import type { InitialAppState } from "../../shared/types";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { DEFAULT_COMPOSER_SETTINGS } from "../../shared/composerSettings";
+import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 
 export type ViewId = "workbench" | "sessions" | "usage" | "auth" | "runtime" | "automation";
 
@@ -38,6 +39,7 @@ export const initialState: InitialAppState = {
     automationApiPort: 47831,
     transcriptFontScale: 1,
     compactDefault: { on: false, at: 80 },
+    idleSleep: { ...DEFAULT_IDLE_SLEEP },
     gateDefaults: { model: "haiku", effort: "low" },
     composer: { ...DEFAULT_COMPOSER_SETTINGS },
     favoriteModels: [],

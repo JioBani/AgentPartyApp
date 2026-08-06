@@ -61,6 +61,8 @@ interface WorkbenchProps {
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
   onRemoveParty: (partyId: string) => void;
+  /** Opens a party in another window of this process (shared engine + sessions). */
+  onOpenPartyInNewWindow: (partyId: string) => void;
   onSelectParty: (partyId: string) => void;
   onMemberOpened: (member: string) => void;
   onVisibleMembersChange: (members: string[]) => void;
@@ -81,6 +83,12 @@ const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 460;
 const SIDEBAR_WIDTH_KEY = "agentparty.sidebarWidth";
 const SUBUI_KEY = "agentparty.subagentUi";
+/**
+ * Delays between prewarm attempts for an open tab that still has no session.
+ * Widens to stay cheap, then holds at the last value so a workspace engine that
+ * only recovers minutes later still revives the tab instead of leaving it dead.
+ */
+const PREWARM_RETRY_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
 
 /** Per-member subagent UI state (which detail is open + dock collapsed). */
 interface SubagentUiState {
@@ -111,7 +119,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -229,6 +237,11 @@ export function Workbench(props: WorkbenchProps) {
     document.body.classList.remove("wb-resizing");
   }
 
+  // Prewarm retry cadence — see the effect below. Keyed by party + the set of
+  // sessionless tabs so the backoff restarts whenever that set changes.
+  const prewarmRetryRef = useRef<{ key: string; attempt: number }>({ key: "", attempt: 0 });
+  const [prewarmTick, setPrewarmTick] = useState(0);
+
   // Reseed when the active party changes (each party has its own layout), and
   // once more when the member list FIRST arrives for that party — a mount-time
   // seed against an empty list must not stand as the party's layout.
@@ -298,10 +311,31 @@ export function Workbench(props: WorkbenchProps) {
   // empty until a manual 세션 재시작. An open tab is an explicit "keep this
   // member live" — prewarm any that lack a live session. ensureSession dedupes
   // in-flight starts, and prewarm skips members the user explicitly closed.
+  // Only members bound to NOTHING are prewarmed.
+  //
+  // Two exclusions, both for members that are sessionless BY DESIGN and would
+  // otherwise keep the retry cadence below ticking forever:
+  //
+  //  - `sleeping`: the app just released that process to reclaim memory.
+  //  - a member that still carries a `sessionId` we cannot see: it is running
+  //    under a sibling app process on this workspace. The engine refuses to
+  //    start a second harness for it, so retrying only burns round trips. A
+  //    binding whose owner is actually gone is cleared on the next state read
+  //    (reconcileStaleSessionBindings), and the member becomes prewarmable then
+  //    — which is what makes an ordinary relaunch still revive its tabs.
   const sessionlessOpenTabs = useMemo(
     () => layout.panels
       .flatMap((panel) => panel.tabs)
-      .filter((name) => { const view = viewMap.get(name); return Boolean(view && !view.session); })
+      .filter((name) => {
+        const view = viewMap.get(name);
+        if (!view || view.session || view.status === "sleeping") {
+          return false;
+        }
+        // `missing_session` is the app's own statement that the binding is dead,
+        // so that member DOES need starting; any other bound member is running
+        // under a sibling process and the engine will refuse to clone it.
+        return !view.member.sessionId || view.member.status === "missing_session";
+      })
       .sort()
       .join("|"),
     [layout, viewMap],
@@ -313,8 +347,29 @@ export function Workbench(props: WorkbenchProps) {
     for (const name of sessionlessOpenTabs.split("|")) {
       actions.prewarm(name);
     }
+    // One attempt was not enough. A start rejects while the workspace engine is
+    // still connecting — the common case right after a relaunch, and the reason
+    // a restored WSL tab could sit open with no session until a manual 세션
+    // 재시작. Nothing else re-runs this effect: its inputs do not change while a
+    // tab stays sessionless. So schedule a re-check; each pass reads fresh
+    // member/session state instead of a closure captured minutes ago.
+    //
+    // The delay widens and then holds, so recovery stays cheap but never gives
+    // up: an engine that comes back later still heals the tab. The loop ends by
+    // itself once every open tab has a session, because `sessionlessOpenTabs`
+    // goes empty and the guard above returns.
+    const key = `${partyKey}|${sessionlessOpenTabs}`;
+    if (prewarmRetryRef.current.key !== key) {
+      prewarmRetryRef.current = { key, attempt: 0 };
+    }
+    const wait = PREWARM_RETRY_MS[Math.min(prewarmRetryRef.current.attempt, PREWARM_RETRY_MS.length - 1)];
+    const timer = window.setTimeout(() => {
+      prewarmRetryRef.current.attempt += 1;
+      setPrewarmTick((tick) => tick + 1);
+    }, wait);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionlessOpenTabs, membersLoaded, partyKey]);
+  }, [sessionlessOpenTabs, membersLoaded, partyKey, prewarmTick]);
 
   // Apply a QA-driven panel arrangement when requested.
   useEffect(() => {
@@ -502,6 +557,7 @@ export function Workbench(props: WorkbenchProps) {
             onRemoveMember={onRemoveMember}
             onRemoveParty={onRemoveParty}
             onOpenPartyGate={setPartyGateTarget}
+            onOpenPartyInNewWindow={onOpenPartyInNewWindow}
             onCollapse={() => onToggleSidebar(false)}
           />
           <div className="wb-sidebar-resize" title="사이드바 너비 조정" onPointerDown={onSidebarResizeDown} />

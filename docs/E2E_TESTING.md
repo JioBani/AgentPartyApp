@@ -88,6 +88,17 @@ asserts `supported:true`, the correct `harness` tag, and a well-formed `servers`
 array from the real SDK `mcpServerStatus()` (Claude) / app-server
 `mcpServerStatus/list` (Codex) — proving the real MCP path, not just the mock.
 
+`node scripts/e2e-wsl-workspace-open.mjs` (or `npm run test:e2e:wsl-workspace-open`)
+boots the real app and opens a `wsl+<distro>:` workspace through the same
+`POST /api/windows` call the `agent-party` CLI makes, then asserts `GET /api/state`
+comes back with the distro, the distro path, AND a session list — the last one is
+what proves the engine **inside** the distro answered, rather than the URI merely
+being parsed on the Windows side. Guards a whole failure class: the engine server
+is bundled as ESM and run by the distro's plain node, so any Electron-only
+dependency reaching its module graph (`import … from "electron"`, `__dirname`)
+kills it at LOAD time and the workspace silently renders as "작업공간 없음".
+Requires the distro; the workspace is created under `/tmp` inside it.
+
 `node scripts/e2e-discovery.mjs` launches TWO real app processes that SHARE one
 userData but open DIFFERENT cwds (the exact condition that used to clobber the
 global `<userData>/automation.json`) and asserts they are independently

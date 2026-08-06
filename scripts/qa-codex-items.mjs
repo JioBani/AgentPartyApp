@@ -53,7 +53,7 @@ assert(I.toolSourceLabel({ type: "dynamicToolCall", namespace: "connectors" }) =
 assert(I.toolSourceLabel({ type: "commandExecution" }) === "shell", "commandExecution → shell");
 
 // ---- Layer 2: event pipeline ------------------------------------------------
-const T = await bundle("src/renderer/app/transcriptEvents.ts", "codex-items-events.mjs", []);
+const T = await bundle("src/shared/transcriptEvents.ts", "codex-items-events.mjs", []);
 console.log("\ntranscriptEvents pipeline:");
 let blocks = T.applyEvents({}, "s1", [
   { type: "plan", steps: [{ step: "A", status: "completed" }, { step: "B", status: "inProgress" }], explanation: "plan" },

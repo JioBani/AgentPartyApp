@@ -5,6 +5,7 @@ import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
 import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
+import { DEFAULT_IDLE_SLEEP, sanitizeIdleSleep } from "../shared/idleSleep";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
@@ -56,6 +57,7 @@ const defaults: AppSettings = {
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
+  idleSleep: { ...DEFAULT_IDLE_SLEEP },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
   composer: { ...DEFAULT_COMPOSER_SETTINGS },
   favoriteModels: [...DEFAULT_FAVORITE_MODELS],
@@ -168,7 +170,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // delete the user's choice in the second case. The catalog resolves the list
   // when it renders, so an unknown id draws nothing and returns on its own.
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, gateDefaults, composer, favoriteModels, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, favoriteModels, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

@@ -55,7 +55,7 @@ const adapter = new CodexAdapter({
   effort: "low",
   permissionMode: "default",
   policy: { sandbox: "read-only", approval: "on-request", guardian: false },
-  debugEnabled: false,
+  debugEnabled: true,
   storageDir: workspace,
   partyBridge: bridge,
   partyIdentity: { party: "team-qa", member: "main", role: "qa" },
@@ -88,6 +88,22 @@ try {
   const response = JSON.parse(readFileSync(toolOut, "utf8"));
   assert(response.success === true, "dynamic tool response marks success=true");
   assert(/main/.test(response.contentItems?.[0]?.text || ""), "dynamic tool response carries bridge data");
+
+  const logPath = adapter.getSnapshot().logPath;
+  const frames = readFileSync(logPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const outbound = frames.filter((frame) => frame.direction === "out").map((frame) => frame.payload);
+  const threadStart = outbound.find((message) => message.method === "thread/start");
+  const turnStart = outbound.find((message) => message.method === "turn/start");
+  assert(
+    threadStart?.params?.developerInstructions?.includes("# AgentParty — party member session")
+      && threadStart.params.developerInstructions.includes("team-qa")
+      && threadStart.params.developerInstructions.includes("main"),
+    "Codex installs the party primer once as thread-scoped developer instructions",
+  );
+  assert(
+    turnStart?.params?.input?.[0]?.text === "KIND=partyTool call list",
+    "Codex sends only the user's text on turn/start instead of repeating the party primer",
+  );
 } finally {
   adapter.dispose();
 }

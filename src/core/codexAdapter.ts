@@ -692,6 +692,7 @@ export class CodexAdapter extends EventEmitter {
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
       config: this.partyToolConfig(),
+      developerInstructions: this.partyDeveloperInstructions(),
     });
     this.applyThreadResult(result);
   }
@@ -706,8 +707,20 @@ export class CodexAdapter extends EventEmitter {
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
       config: this.partyToolConfig(),
+      developerInstructions: this.partyDeveloperInstructions(),
     });
     this.applyThreadResult(result);
+  }
+
+  /**
+   * Installs the member identity and party protocol once as thread-scoped
+   * developer instructions. Keeping it out of `turn/start.input` prevents a
+   * fresh copy of the multi-page primer from becoming user-visible history on
+   * every turn. Resume supplies the same override once when the app-server
+   * session is rebuilt, without adding another conversation item.
+   */
+  private partyDeveloperInstructions(): string | undefined {
+    return this.options.partyIdentity ? buildPartyPrimer(this.options.partyIdentity) : undefined;
   }
 
   private partyToolConfig(): Record<string, unknown> | undefined {
@@ -872,11 +885,10 @@ export class CodexAdapter extends EventEmitter {
       if (!this.sessionId) {
         throw new Error("Codex app-server did not provide a thread id.");
       }
-      const prompt = this.options.partyIdentity ? `${buildPartyPrimer(this.options.partyIdentity)}\n\n${text}` : text;
       // The app-server `turn/start` input is an internally-tagged item list.
       // Images are `localImage` items pointing at a temp file (verified variant
       // in the codex binary), which codex reads and forwards to the model.
-      const input: Array<Record<string, unknown>> = [{ type: "text", text: prompt, text_elements: [] }];
+      const input: Array<Record<string, unknown>> = [{ type: "text", text, text_elements: [] }];
       for (const image of attachments || []) {
         input.push({ type: "localImage", path: this.writeTempImage(image) });
       }
