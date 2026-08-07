@@ -110,6 +110,22 @@ un-pinned member and checks the session binding is released and re-bound. Offlin
 and unbilled: the member is created but never messaged, since sleeping is a
 process-lifecycle concern and a model call would add cost without coverage.
 
+`node scripts/e2e-cross-workspace-status-flap.mjs` (or
+`npm run test:e2e:cross-workspace-flap`) boots the real app with TWO windows on
+TWO workspaces — one WSL, one local — in ONE process, starts a local member to
+generate session traffic, then asserts from the app's own debug log that this
+process never wrote the WSL window's session list. `session:list` replaces the
+renderer's array rather than merging, so a second producer silently overwrites
+the owner's list; that is what made a member flicker idle ↔ not-started.
+
+Asserts on the PUSH, not the paint, and that distinction is the whole test. An
+earlier version polled the rendered status every 400ms and **passed against the
+broken build**: the empty list is overwritten within milliseconds, so a DOM poll
+almost never catches it even though React paints it and the user sees the
+flicker. Measured against the reverted fix, the log showed 240 trespassing
+pushes to 1 legitimate one — the assertion fails loudly. Requires the distro;
+offline and unbilled.
+
 `node scripts/e2e-discovery.mjs` launches TWO real app processes that SHARE one
 userData but open DIFFERENT cwds (the exact condition that used to clobber the
 global `<userData>/automation.json`) and asserts they are independently

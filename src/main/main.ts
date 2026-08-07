@@ -17,6 +17,7 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArg
 import { WindowRegistry } from "./windowRegistry";
 import type { MemberPermissionInput, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
+import { sessionsForWindow, windowsServedLocally } from "./sessionListRouting";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 import { parseQueueCommand } from "../shared/messageQueue";
@@ -405,11 +406,13 @@ ${body}
   sessionManager.on("snapshot", (payload: any) => {
     broadcastToWorkspace(payload.workspace, "session:snapshot", payload);
   });
+  // Only the workspaces this process serves — a WSL workspace's list comes from
+  // its own engine through forwardRemoteEvent, and `session:list` replaces rather
+  // than merges. See main/sessionListRouting.ts for why that matters.
   sessionManager.on("sessions", () => {
-    for (const entry of registry().all()) {
-      const key = workspaceKey(entry.workspacePath);
-      const subset = sessionManager!.listSessions().filter((session) => workspaceKey(session.workspace) === key);
-      entry.window.webContents.send("session:list", subset);
+    const sessions = sessionManager!.listSessions();
+    for (const entry of windowsServedLocally(registry().all())) {
+      pushSessionList(entry, "local", sessionsForWindow(sessions, entry.workspacePath));
     }
   });
   // A member drove a party tool in-process (member-create / send / remove);
@@ -515,6 +518,26 @@ function removeAllDiscovery(): void {
   }
 }
 
+/**
+ * The one place `session:list` is sent, so its "exactly one producer per window"
+ * rule is auditable at runtime instead of only by reading two call sites.
+ *
+ * `source` is recorded because the failure mode is not a wrong list but a
+ * SECOND one: the channel replaces the renderer's array, so a producer that does
+ * not own the workspace silently overwrites the owner's list. Debug-level — this
+ * fires on every session event, and the answer is only interesting when someone
+ * is asking why a member is flickering.
+ */
+function pushSessionList(entry: { id: string; workspacePath: string; window: BrowserWindow }, source: "local" | "remote", list: unknown): void {
+  log("debug", "window", "session list pushed", {
+    source,
+    window: entry.id,
+    workspace: entry.workspacePath,
+    count: Array.isArray(list) ? list.length : -1,
+  });
+  entry.window.webContents.send("session:list", list);
+}
+
 function broadcastToWorkspace(workspacePath: string, channel: string, payload: unknown): void {
   for (const entry of registry().forWorkspace(workspacePath)) {
     entry.window.webContents.send(channel, payload);
@@ -530,7 +553,7 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
   if (channel === "session:sessions") {
     const list = Array.isArray(payload) ? payload.map((session) => ({ ...session, workspace: workspacePath })) : payload;
     for (const entry of registry().forWorkspace(workspacePath)) {
-      entry.window.webContents.send("session:list", list);
+      pushSessionList(entry, "remote", list);
     }
     return;
   }

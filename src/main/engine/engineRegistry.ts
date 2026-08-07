@@ -1,4 +1,4 @@
-import { parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
+import { isWslLocation, parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
 import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
@@ -79,7 +79,10 @@ export class EngineRegistry {
 
   private create(workspacePath: string): EngineConnection {
     const location = parseWorkspaceLocation(workspacePath);
-    if (location.host.kind === "wsl") {
+    // Shares one predicate with everything that asks "does THIS process serve
+    // that workspace" (main's session-list broadcast). Two spellings of the same
+    // rule drifting apart is how a workspace ends up with two producers.
+    if (isWslLocation(location)) {
       if (!this.deps.createRemoteEngine) {
         // Surfaced explicitly — never silently downgraded to a local Windows run.
         throw new Error(
