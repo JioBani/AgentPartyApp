@@ -1,4 +1,5 @@
 import type { PanelState } from "./types";
+import type { WorkbenchLayout } from "../../shared/workbenchLayout";
 
 /**
  * Pure layout engine for the multi-panel workbench. Every operation returns a
@@ -7,10 +8,12 @@ import type { PanelState } from "./types";
  * (open member from the sidebar).
  */
 
-export interface LayoutState {
-  panels: PanelState[];
-  focusedPanelId: string;
-}
+/**
+ * The same shape the main process persists and broadcasts — an alias, not a
+ * copy, so the two cannot drift into "almost the same layout" and need a
+ * conversion nobody remembers to update.
+ */
+export type LayoutState = WorkbenchLayout;
 
 let panelCounter = 0;
 
@@ -214,30 +217,13 @@ function normalizeWeights(panels: PanelState[]): PanelState[] {
   return panels.map((panel) => ({ ...panel, weight: ((panel.weight > 0 ? panel.weight : 1) / total) * target }));
 }
 
-// --- Persistence (per-party, renderer-only UI state) ---------------------
-
-const STORAGE_PREFIX = "agentparty.layout.";
-
-export function loadLayout(partyId: string): LayoutState | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_PREFIX + partyId);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as LayoutState;
-    if (!Array.isArray(parsed.panels)) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function saveLayout(partyId: string, state: LayoutState): void {
-  try {
-    window.localStorage.setItem(STORAGE_PREFIX + partyId, JSON.stringify(state));
-  } catch {
-    // Best-effort; layout will simply reseed next launch.
-  }
-}
+// --- Persistence ----------------------------------------------------------
+//
+// There is none here any more. The layout used to live in each renderer's
+// localStorage under `agentparty.layout.<partyId>`, which every window on that
+// party wrote and none of them read again: a tab closed in one window stayed
+// open in the other, and that window's next change rewrote the shared key and
+// brought the closed tab back on relaunch.
+//
+// It is party state, so the main process owns it and broadcasts it — see
+// shared/workbenchLayout.ts and PartyApplicationService.setPartyLayout.

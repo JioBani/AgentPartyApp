@@ -4,6 +4,7 @@ import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyComm
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
+import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
@@ -78,6 +79,13 @@ export function App() {
   // Members with a compaction in flight (transient toolbar spinner).
   const [compactingByMember, setCompactingByMember] = useState<Record<string, boolean>>({});
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
+  /**
+   * The active party's tab layout as the MAIN process holds it. Fetched on a
+   * party switch and replaced whenever another window on that party changes it,
+   * so every window of one process shows the same tabs. `layout: undefined`
+   * means nothing is stored for that party yet.
+   */
+  const [partyLayout, setPartyLayout] = useState<{ partyId: string; layout?: WorkbenchLayout } | undefined>();
   // QA-driven "open this subagent's detail" request (mock-driven detail QA).
   const [subagentOpenRequest, setSubagentOpenRequest] = useState<{ member: string; subId: string; nonce: number } | null>(null);
   const [gateOpenRequest, setGateOpenRequest] = useState<{ kind: "member" | "party"; member: string; nonce: number } | null>(null);
@@ -169,6 +177,24 @@ export function App() {
     [state.party.currentPartyId, state.party.parties],
   );
 
+  // Load the active party's stored tab layout. Stamped with the party it is FOR:
+  // a switch can outrun this reply, and applying the previous party's tabs to
+  // the new one would silently reopen members from the party just left.
+  const activePartyId = state.party.currentPartyId;
+  useEffect(() => {
+    if (!activePartyId) {
+      return;
+    }
+    let cancelled = false;
+    void window.agentParty.getPartyLayout().then(
+      (layout) => { if (!cancelled) setPartyLayout({ partyId: activePartyId, layout }); },
+      // No stored layout is normal; a real failure must not leave the workbench
+      // waiting forever for a reply that never comes — seed from the members.
+      () => { if (!cancelled) setPartyLayout({ partyId: activePartyId }); },
+    );
+    return () => { cancelled = true; };
+  }, [activePartyId]);
+
   const views = useMemo<MemberView[]>(
     () => members.map((member) => buildMemberView({
       member,
@@ -256,6 +282,11 @@ export function App() {
       partyBroadcastSeen.current = true;
       setState((current) => ({ ...current, party }));
     });
+    // Another window on this party moved its tabs. Same process, same party, so
+    // this window shows the same thing rather than keeping its own stale copy.
+    const offPartyLayout = window.agentParty.onPartyLayout((payload) => {
+      setPartyLayout({ partyId: payload.partyId, layout: payload.layout });
+    });
     // Codex catalog discovery settled: refresh the selectable model routes and
     // the discovery status (pending/ready/error) that pickers surface.
     const offModelsUpdate = window.agentParty.onModelsUpdate((payload) => {
@@ -311,6 +342,7 @@ export function App() {
       offSnapshot();
       offSessions();
       offPartyUpdate();
+      offPartyLayout();
       offModelsUpdate();
       offSettingsUpdate?.();
       offDiscordUpdate?.();
@@ -641,6 +673,27 @@ export function App() {
   async function removeMemberDirect(name: string) {
     const result = await window.agentParty.removePartyMember(name);
     await applyPartyResult(result);
+  }
+
+  /**
+   * Hands a tab layout this window produced to the main process, which persists
+   * it and pushes it to the other windows on this party.
+   *
+   * The local copy is advanced too. Workbench remounts on every nav away and
+   * back, and re-seeds from this value — left at whatever was fetched on load,
+   * it would restore tabs the user has since closed. Advancing it does not cause
+   * a re-seed loop: Workbench suppresses adopting a layout it just produced.
+   *
+   * Failures are logged rather than raised: losing a tab position must not
+   * interrupt what the user is doing.
+   */
+  function persistPartyLayout(layout: WorkbenchLayout) {
+    if (activePartyId) {
+      setPartyLayout({ partyId: activePartyId, layout });
+    }
+    void window.agentParty.setPartyLayout(layout).catch((error: unknown) => {
+      console.error("[layout] could not persist the tab layout", error);
+    });
   }
 
   /**
@@ -1262,6 +1315,8 @@ export function App() {
               <Workbench
                 parties={state.party.parties || []}
                 activePartyId={state.party.currentPartyId}
+                partyLayout={partyLayout}
+                onPersistLayout={persistPartyLayout}
                 views={views}
                 routes={routes}
                 codexModels={state.codexModels}

@@ -204,6 +204,44 @@ export class AppController {
     return this.broadcastParty(workspacePath);
   }
 
+  /** The party's workbench tab layout, or undefined when none is stored yet. */
+  getPartyLayout(workspacePath: string, windowId?: string): Promise<ReturnType<PartyApplicationService["getPartyLayout"]>> {
+    return this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+  }
+
+  /**
+   * Records the party's tab layout and pushes it to every window showing that
+   * party, so closing a tab in one window closes it everywhere.
+   *
+   * Including the window the change came from. Skipping it looked like a free
+   * optimisation — that renderer already has the layout — but the UI is not the
+   * only caller: an HTTP client addressing a window would then move every window
+   * EXCEPT the one it named. The renderer ignores an echo of its own layout, so
+   * one unconditional rule costs nothing and behaves the same either way.
+   *
+   * A layout identical to the stored one broadcasts nothing at all.
+   */
+  async setPartyLayout(workspacePath: string, layout: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setPartyLayout"]>> {
+    const result = await this.engineFor(workspacePath).setPartyLayout(layout, this.partyForWindow(windowId));
+    if (!result.changed || !result.layout || !result.partyId) {
+      return result;
+    }
+    for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
+      // Only windows actually showing this party — another window of the same
+      // workspace may be on a different one, whose tabs must not be replaced.
+      //
+      // Resolved the way every READ resolves it, not by reading the pin map
+      // directly: a window that loaded before this workspace had any party never
+      // pinned one, and testing the raw map silently dropped it from the
+      // broadcast — the first window of a fresh workspace, i.e. the common case.
+      if (await this.pinnedPartyForWindow(workspacePath, entry.id) !== result.partyId) {
+        continue;
+      }
+      entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
+    }
+    return result;
+  }
+
   private windowFor(windowId?: string): BrowserWindow | undefined {
     return this.deps.windowRegistry.resolve(windowId)?.window;
   }

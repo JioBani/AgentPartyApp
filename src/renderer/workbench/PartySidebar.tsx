@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, ExternalLink, Moon, Pin, Plus, RotateCcw, Sun, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ExternalLink, Moon, Pin, Play, Plus, RotateCcw, Sun, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -112,7 +112,20 @@ function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep
         <Pin size={13} /> 계속 켜두기
         {keepAwake && <Check size={13} className="wb-ctx-check" />}
       </button>
-      {view?.status === "sleeping" ? (
+      {view?.status === "closed" ? (
+        // A closed member is the one state that will NOT start itself: prewarm
+        // skips it and an auto-start refuses it, by design (closing is an
+        // explicit "leave this alone"). So it needs an explicit way back, or a
+        // tab closed in another window leaves this one with no working action.
+        <button
+          type="button"
+          className="wb-ctx-item"
+          title="닫힌 멤버의 세션을 다시 시작하고 대화를 이어받습니다"
+          onClick={run(() => onWake(name))}
+        >
+          <Play size={13} /> 세션 시작
+        </button>
+      ) : view?.status === "sleeping" ? (
         <button
           type="button"
           className="wb-ctx-item"

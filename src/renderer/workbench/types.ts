@@ -4,6 +4,7 @@ import type { ImageAttachment } from "../../shared/attachments";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
+import type { WorkbenchPanel } from "../../shared/workbenchLayout";
 
 /**
  * One in-session subagent, folded from `subagent` normalized events. Its output
@@ -52,7 +53,7 @@ export type { TranscriptBlock };
  * cause — and kept distinct from `not-started`, which would wrongly suggest
  * there is no conversation to come back to.
  */
-export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected" | "sleeping";
+export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected" | "sleeping" | "closed";
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 
@@ -106,10 +107,10 @@ export interface MemberView {
   compacting: boolean;
 }
 
-/** One watch-slot. Tabs time-share the slot; `active` is the visible member. */
-export interface PanelState {
-  id: string;
-  tabs: string[]; // member names, left -> right
-  active: string; // member name
-  weight: number; // flex weight relative to sibling panels
-}
+/**
+ * One watch-slot. Tabs time-share the slot; `active` is the visible member.
+ *
+ * Defined in `shared/workbenchLayout.ts` because the main process persists and
+ * broadcasts the layout; re-exported here so the renderer keeps its own name.
+ */
+export type PanelState = WorkbenchPanel;

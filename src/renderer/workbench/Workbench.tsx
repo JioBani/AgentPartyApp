@@ -13,7 +13,6 @@ import {
   emptyLayout,
   focusPanel,
   layoutFromPanels,
-  loadLayout,
   moveTab,
   moveTabToNewPanel,
   openMember,
@@ -21,10 +20,10 @@ import {
   panelOf,
   pruneLayout,
   resizeAt,
-  saveLayout,
   setActiveTab,
   splitPanel,
 } from "./layout";
+import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
 import { CreateMemberInput, PartySidebar } from "./PartySidebar";
 import { RuntimeModal } from "./RuntimeModal";
@@ -38,6 +37,15 @@ import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 interface WorkbenchProps {
   parties: PartyDefinition[];
   activePartyId?: string;
+  /**
+   * The party's tab layout as the main process holds it — on load, on a party
+   * switch, and whenever ANOTHER window on this party changes it. Carries its
+   * own `partyId` so a late reply for the previous party is ignored rather than
+   * applied to the current one. `layout: undefined` means nothing is stored yet.
+   */
+  partyLayout?: { partyId: string; layout?: WorkbenchLayout };
+  /** Hands a layout this window produced back to the main process (the writer). */
+  onPersistLayout: (layout: WorkbenchLayout) => void;
   views: MemberView[];
   routes: RouteLike[];
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
@@ -123,7 +131,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -137,7 +145,7 @@ export function Workbench(props: WorkbenchProps) {
     [views],
   ));
 
-  const [layout, setLayout] = useState<LayoutState>(() => seedLayout(partyKey, views));
+  const [layout, setLayout] = useState<LayoutState>(emptyLayout);
   /**
    * The party whose MEMBER LIST has actually loaded when we seeded the layout.
    * Workbench can mount before the party state arrives (views=[]); seeding,
@@ -146,7 +154,16 @@ export function Workbench(props: WorkbenchProps) {
    * partyKey, the layout is provisional: never pruned against an empty member
    * list and never persisted.
    */
-  const seededPartyRef = useRef<string | null>(views.length > 0 ? partyKey : null);
+  const seededPartyRef = useRef<string | null>(null);
+  /**
+   * The last layout this window agreed on with the main process, serialized.
+   *
+   * Guards both directions of the sync. A layout that ARRIVED from main must not
+   * be pushed straight back, and a layout this window produced must not be
+   * re-adopted as if it were news — either way the two would trade updates
+   * while the user is still dragging.
+   */
+  const syncedLayoutRef = useRef<string>("");
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
   const [gateTarget, setGateTarget] = useState<string | null>(null);
@@ -246,18 +263,25 @@ export function Workbench(props: WorkbenchProps) {
   const prewarmRetryRef = useRef<{ key: string; attempt: number }>({ key: "", attempt: 0 });
   const [prewarmTick, setPrewarmTick] = useState(0);
 
-  // Reseed when the active party changes (each party has its own layout), and
-  // once more when the member list FIRST arrives for that party — a mount-time
-  // seed against an empty list must not stand as the party's layout.
+  // Adopt the party's authoritative layout: the main process's copy on load or a
+  // party switch, and every later change made in ANOTHER window on this party.
+  //
+  // Waits for the member list too — seeding or pruning against a not-yet-loaded
+  // (empty) list is the "my tabs closed by themselves" bug.
   const membersLoaded = views.length > 0;
   useEffect(() => {
-    if (!membersLoaded || seededPartyRef.current === partyKey) {
+    if (!membersLoaded || !partyLayout || partyLayout.partyId !== partyKey) {
+      return;
+    }
+    const serialized = layoutFingerprint(partyLayout.layout);
+    if (seededPartyRef.current === partyKey && serialized === syncedLayoutRef.current) {
       return;
     }
     seededPartyRef.current = partyKey;
-    setLayout(seedLayout(partyKey, views));
+    syncedLayoutRef.current = serialized;
+    setLayout(seedLayout(partyLayout.layout, views));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partyKey, membersLoaded]);
+  }, [partyKey, membersLoaded, partyLayout]);
 
   // Drop tabs for members that no longer exist; persist after every change.
   // Skipped until the member list has loaded — pruning against a not-yet-loaded
@@ -301,8 +325,14 @@ export function Workbench(props: WorkbenchProps) {
   useEffect(() => {
     // Persist only a layout seeded from a LOADED party; a provisional
     // (pre-load) layout would overwrite the user's stored tabs with nothing.
+    // And only what this window actually changed — pushing back a layout that
+    // just arrived from another window would bounce it around forever.
     if (seededPartyRef.current === partyKey) {
-      saveLayout(partyKey, layout);
+      const serialized = layoutFingerprint(layout);
+      if (serialized !== syncedLayoutRef.current) {
+        syncedLayoutRef.current = serialized;
+        onPersistLayout(layout);
+      }
     }
     onVisibleMembersChange(layout.panels.map((panel) => panel.active).filter(Boolean));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -688,9 +718,29 @@ export function Workbench(props: WorkbenchProps) {
   );
 }
 
-function seedLayout(partyKey: string, views: MemberView[]): LayoutState {
-  const stored = loadLayout(partyKey);
-  if (stored && stored.panels.length > 0) {
+/**
+ * A layout's identity for the sync guards, taken through the SAME sanitiser the
+ * main process applies before storing.
+ *
+ * Comparing raw JSON both ways would be wrong: what comes back from main has
+ * been rebuilt field by field, so an incidental difference in key order or a
+ * dropped empty panel reads as "someone else changed it" and the two sides
+ * exchange one pointless round trip each time.
+ */
+function layoutFingerprint(layout: WorkbenchLayout | undefined): string {
+  return JSON.stringify(sanitizeLayout(layout) ?? null);
+}
+
+/**
+ * The layout to show for a party: the stored one pruned to members that still
+ * exist, or a first tab when nothing is stored.
+ *
+ * A stored layout with NO panels is honoured as-is — the user closed every tab,
+ * and reseeding would reopen one they just closed. Only the absence of a stored
+ * layout means "seed from the member list".
+ */
+function seedLayout(stored: WorkbenchLayout | undefined, views: MemberView[]): LayoutState {
+  if (stored) {
     return pruneLayout(stored, new Set(views.map((view) => view.name)));
   }
   const first = views[0];

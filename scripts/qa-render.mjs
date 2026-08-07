@@ -130,6 +130,9 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+// The main process's copy of the party tab layout, and every push this window made.
+let storedLayout;
+const persistedLayouts = [];
 const keepAwakeCalls = [];
 const sleepCalls = [];
 const wakeCalls = [];
@@ -205,6 +208,10 @@ window.agentParty = {
   onSnapshot: on("snapshot"),
   onSessions: on("sessions"),
   onPartyUpdate: on("partyUpdate"),
+  // Tab layout is party state owned by the main process; these stand in for it.
+  getPartyLayout: async () => storedLayout,
+  setPartyLayout: async (layout) => { persistedLayouts.push(layout); storedLayout = layout; return { changed: true, layout }; },
+  onPartyLayout: on("partyLayout"),
   onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"),
   onQaOpenSubagent: on("qaOpenSub"),
@@ -214,14 +221,16 @@ window.agentParty = {
   onRefreshHistory: on("hist"),
 };
 
-// Seed a two-panel layout so multi-panel rendering is exercised.
-window.localStorage.setItem("agentparty.layout.p1", JSON.stringify({
+// Seed a two-panel layout so multi-panel rendering is exercised. It comes from
+// the MAIN process now (getPartyLayout), not localStorage: the layout is party
+// state shared by every window, not each renderer's private copy.
+storedLayout = {
   panels: [
     { id: "pa", tabs: ["backend", "frontend"], active: "backend", weight: 1 },
     { id: "pb", tabs: ["reviewer", "tester"], active: "reviewer", weight: 1 },
   ],
   focusedPanelId: "pa",
-}));
+};
 
 // --- bundle the app entry and run ----------------------------------------
 const result = await build({
@@ -430,6 +439,35 @@ assert(
   keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
   "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
 );
+
+// Tab layout is party state owned by the main process, so a change here must be
+// PUSHED there — the localStorage version was per-renderer and let two windows
+// on one party disagree about which tabs are open.
+assert(persistedLayouts.length > 0, "closing a tab pushed the layout to the main process", `${persistedLayouts.length} pushes`);
+assert(
+  !(persistedLayouts.at(-1)?.panels || []).some((panel) => panel.tabs.includes("backend")),
+  "and the pushed layout no longer carries the closed tab",
+  JSON.stringify(persistedLayouts.at(-1)?.panels?.map((p) => p.tabs)),
+);
+
+// The other half: a layout produced by ANOTHER window on this party must land
+// here. This is the reported bug — a tab closed in one window stayed open in
+// the other, and that window then wrote its stale layout back over the shared one.
+const pushesBeforeBroadcast = persistedLayouts.length;
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+const tabsAfterBroadcast = [...document.querySelectorAll(".wb-tab")].map((el) => (el.textContent || "").trim());
+assert(
+  tabsAfterBroadcast.some((label) => label.includes("frontend")) && !tabsAfterBroadcast.some((label) => label.includes("reviewer")),
+  "another window's layout is adopted here",
+  tabsAfterBroadcast.join(",") || "no tabs",
+);
+// An adopted layout must not be echoed back: two windows trading the same
+// layout would keep overwriting each other while the user is still dragging.
+assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed back to the main process", `${persistedLayouts.length - pushesBeforeBroadcast} echo(es)`);
 
 // Settings → Runtime carries the only UI for the global idle-sleep policy, so a
 // card that fails to render leaves the feature on with no way to turn it off.

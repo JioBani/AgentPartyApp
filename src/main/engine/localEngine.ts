@@ -134,6 +134,14 @@ export class LocalEngine implements EngineConnection {
     return this.party.saveMemberTranscript(name, save, partyId);
   }
 
+  async getPartyLayout(partyId?: string) {
+    return this.party.getPartyLayout(partyId);
+  }
+
+  async setPartyLayout(layout: unknown, partyId?: string) {
+    return this.party.setPartyLayout(layout, partyId);
+  }
+
   // --- Models ---------------------------------------------------------------
   async listCodexModels(refresh?: boolean) {
     if (refresh) {

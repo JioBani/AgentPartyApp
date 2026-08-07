@@ -40,6 +40,7 @@ import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
 import type { TranscriptBlock } from "../../shared/transcript";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
+import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import type { PartyBridge } from "../../core/partyBridge";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -1151,6 +1152,44 @@ export class PartyApplicationService {
     const state = this.readState();
     const member = this.requireMember(state, name, partyId);
     return this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
+  }
+
+  /**
+   * The workbench tab layout for a party, or undefined when none is stored yet
+   * (the renderer then seeds one from the member list).
+   */
+  getPartyLayout(partyId?: string): WorkbenchLayout | undefined {
+    const state = this.readState();
+    const id = partyId || state.currentPartyId;
+    return id ? this.repository.readLayout(this.workspacePath(), id) : undefined;
+  }
+
+  /**
+   * Records a party's tab layout. This service is the single writer, so every
+   * window on the party converges instead of each keeping its own copy of a
+   * shared localStorage key — the shape that let a tab closed in one window stay
+   * open in another and then come back on relaunch.
+   *
+   * Returns whether anything actually changed, so the caller can skip a
+   * broadcast: layouts arrive on every drag frame and a re-broadcast of an
+   * identical layout would fight the dragging window for its own state.
+   */
+  setPartyLayout(layout: unknown, partyId?: string): { changed: boolean; partyId?: string; layout?: WorkbenchLayout } {
+    const state = this.readState();
+    // The RESOLVED id is returned, not the requested one: a window that has not
+    // pinned a party sends none, and the caller broadcasting to "windows on that
+    // party" must compare against what was actually written.
+    const id = partyId || state.currentPartyId;
+    const next = sanitizeLayout(layout);
+    if (!id || !next) {
+      return { changed: false };
+    }
+    const current = this.repository.readLayout(this.workspacePath(), id);
+    if (layoutsEqual(current, next)) {
+      return { changed: false, partyId: id, layout: next };
+    }
+    this.repository.writeLayout(this.workspacePath(), id, next);
+    return { changed: true, partyId: id, layout: next };
   }
 
   /**

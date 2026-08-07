@@ -1470,6 +1470,48 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+### `GET /api/party/layout`
+
+The workbench tab layout for the calling window's party: which members are open,
+in which panels, in what order, and which tab is frontmost in each.
+
+```json
+{
+  "ok": true,
+  "layout": {
+    "panels": [
+      { "id": "pa", "tabs": ["impl", "review"], "active": "impl", "weight": 1 },
+      { "id": "pb", "tabs": ["test"], "active": "test", "weight": 1 }
+    ],
+    "focusedPanelId": "pa"
+  }
+}
+```
+
+`layout` is absent when the party has none stored yet — the workbench then seeds
+one from the member list. A stored layout with **no panels is a different fact**:
+it means every tab was closed, and is honoured rather than reseeded.
+
+### `POST /api/party/layout`
+
+Sets that layout. Send `{ "layout": { ... } }` in the shape above.
+
+This is **party state, not window state**. Every window of this process showing
+that party moves with it, and the layout is stored with the workspace — so it
+survives a reinstall and follows the workspace to another machine. It used to
+live in each renderer's `localStorage`, where two windows on one party each kept
+a private copy of a shared key: a tab closed in one stayed open in the other, and
+that window's next change wrote the closed tab back.
+
+```json
+{ "ok": true, "changed": true, "partyId": "party-...", "layout": { "panels": [ ... ], "focusedPanelId": "pa" } }
+```
+
+`changed: false` means the layout already matched what was stored, so no window
+was told anything — re-sending is harmless. Panels with no `id` or no `tabs` are
+dropped, and a `focusedPanelId` naming no surviving panel falls back to the
+first, so a malformed body cannot leave the workbench unable to open anything.
+
 ## Harness Party API
 
 Harness skills and tools can call these local endpoints from inside a session. This is a local mechanical identity mechanism, not a public auth system.

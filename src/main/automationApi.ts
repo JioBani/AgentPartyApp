@@ -298,6 +298,18 @@ export class AutomationApiServer {
           return;
         }
       }
+      // The workbench tab layout for the calling window's party. One copy shared
+      // by every window on that party, so a POST here moves the other windows too.
+      if (url.pathname === "/api/party/layout") {
+        if (method === "GET") {
+          sendJson(res, 200, { ok: true, layout: await c.getPartyLayout(workspace, windowId) });
+          return;
+        }
+        if (method === "POST") {
+          sendJson(res, 200, { ok: true, ...(await c.setPartyLayout(workspace, (await readJson(req)).layout, windowId)) });
+          return;
+        }
+      }
       const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
       if (method === "GET" && transcriptMatch) {
         sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1]), windowId) });

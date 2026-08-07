@@ -765,6 +765,10 @@ function registerIpc(): void {
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));
+  // Tab layout is PARTY state, not window state: one writer, broadcast to the
+  // other windows on that party (see AppController.setPartyLayout).
+  handle("party:layout:get", async (event) => controller().getPartyLayout(senderWorkspace(event), senderWindowId(event)));
+  handle("party:layout:set", async (event, layout: unknown) => controller().setPartyLayout(senderWorkspace(event), layout, senderWindowId(event)));
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
 }

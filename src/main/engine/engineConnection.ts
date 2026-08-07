@@ -138,6 +138,10 @@ export interface EngineConnection {
    * whole array would otherwise dominate this connection's traffic.
    */
   saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult>;
+  /** The party's workbench tab layout — one copy, shared by every window on it. */
+  getPartyLayout(partyId?: string): Promise<ReturnType<PartyApplicationService["getPartyLayout"]>>;
+  /** Records the layout; `changed: false` means it already matched what was stored. */
+  setPartyLayout(layout: unknown, partyId?: string): Promise<ReturnType<PartyApplicationService["setPartyLayout"]>>;
 
   // --- Models (engine-scoped) ----------------------------------------------
   /**
