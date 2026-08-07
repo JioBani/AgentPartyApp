@@ -1525,11 +1525,30 @@ export class ClaudeAdapter extends EventEmitter {
     if (!this.debugMode || this.logger) {
       return;
     }
-    this.logger = new RawLogger({
+    this.logger = RawLogger.open({
       baseDir: path.join(this.options.storageDir, "logs"),
       sessionId: this.options.id,
       maxFiles: 10,
       maxBytes: 2 * 1024 * 1024,
+      onDisabled: (detail) => this.reportRawLogDisabled(detail),
+    });
+  }
+
+  /**
+   * Raw logging stopped. Reported rather than swallowed: debug mode still reads
+   * as ON, so someone would otherwise keep looking for a file that quietly
+   * stopped growing. A warning, not an error — the session is unaffected.
+   */
+  private reportRawLogDisabled(detail: string): void {
+    this.logger = undefined;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "debug-log",
+      title: "디버그 원본 로그를 더 기록하지 못합니다",
+      detail,
+      recovery: "저장 공간과 폴더 접근 권한을 확인한 뒤 디버그 로그를 다시 켜세요. 대화 자체는 영향받지 않습니다.",
+      at: now(),
     });
   }
 }
