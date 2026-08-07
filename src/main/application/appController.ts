@@ -5,6 +5,7 @@ import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
@@ -754,8 +755,20 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.respawnMember(name, input, this.partyForWindow(windowId)));
   }
 
-  openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
+  /**
+   * Opens a member — marks it opened AND gives it a tab.
+   *
+   * The tab was the missing half. This answered "Member 'X' opened." while only
+   * setting a status flag, so an agent (or any HTTP caller) asking for a member
+   * got a success message and no tab anywhere. Adding it to the party layout is
+   * exactly what a sidebar click does, through the same shared operation and the
+   * same broadcast, so both callers land in the same place.
+   */
+  async openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
+    const result = await this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
+    const stored = await this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+    await this.setPartyLayout(workspacePath, openMemberTab(stored ?? EMPTY_LAYOUT, name), windowId);
+    return result;
   }
 
   startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>> {

@@ -15,13 +15,6 @@ import type { WorkbenchLayout } from "../../shared/workbenchLayout";
  */
 export type LayoutState = WorkbenchLayout;
 
-let panelCounter = 0;
-
-function nextPanelId(): string {
-  panelCounter += 1;
-  return `panel-${Date.now().toString(36)}-${panelCounter}`;
-}
-
 const MIN_WEIGHT = 0.18;
 
 export function emptyLayout(): LayoutState {
@@ -36,37 +29,20 @@ export function layoutFromPanels(spec: string[][]): LayoutState {
   return { panels, focusedPanelId: panels[0]?.id || "" };
 }
 
-export function panelOf(state: LayoutState, memberName: string): PanelState | undefined {
-  return state.panels.find((panel) => panel.tabs.includes(memberName));
-}
+/**
+ * Re-exported from the shared module: opening a member is driven from BOTH a
+ * sidebar click and `POST /api/party/members/:name/open`, so the two must run
+ * the same code rather than two implementations that drift.
+ */
+export { openMemberTab as openMember } from "../../shared/workbenchLayout";
+export { panelOf } from "../../shared/workbenchLayout";
+import { nextPanelId, panelOf } from "../../shared/workbenchLayout";
 
 function focusFallback(panels: PanelState[], preferred: string): string {
   if (panels.some((panel) => panel.id === preferred)) {
     return preferred;
   }
   return panels[0]?.id || "";
-}
-
-/** Opens a member: focuses its existing tab, or adds it to the focused panel. */
-export function openMember(state: LayoutState, memberName: string): LayoutState {
-  const existing = panelOf(state, memberName);
-  if (existing) {
-    return {
-      panels: state.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
-      focusedPanelId: existing.id,
-    };
-  }
-  const target = state.panels.find((panel) => panel.id === state.focusedPanelId) || state.panels[0];
-  if (!target) {
-    const panel: PanelState = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
-    return { panels: [panel], focusedPanelId: panel.id };
-  }
-  return {
-    panels: state.panels.map((panel) => (
-      panel.id === target.id ? { ...panel, tabs: [...panel.tabs, memberName], active: memberName } : panel
-    )),
-    focusedPanelId: target.id,
-  };
 }
 
 /**

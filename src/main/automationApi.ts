@@ -329,6 +329,16 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.handlePartyAction(workspace, "*", "status", {}, windowId, partyId));
         return;
       }
+      // `open` is routed explicitly rather than through the generic action
+      // dispatch below: opening a member means giving it a TAB, which is window
+      // state the engine-side action table cannot reach. Sent through the same
+      // AppController method the IPC `party:open` uses, so a click in the
+      // sidebar and this call do the same thing.
+      const openMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/open$/);
+      if (method === "POST" && openMatch) {
+        sendJson(res, 200, await c.openPartyMember(workspace, decodeURIComponent(openMatch[1]), windowId));
+        return;
+      }
       const partyMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && partyMatch) {
         sendJson(res, 200, await c.handlePartyAction(workspace, decodeURIComponent(partyMatch[1]), partyMatch[2], await readJson(req), windowId, partyId));

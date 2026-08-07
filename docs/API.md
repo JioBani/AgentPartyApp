@@ -1240,7 +1240,19 @@ Lower-level compatibility endpoint that routes a message as an inter-member **ch
 
 ### `POST /api/party/members/:name/open`
 
-Marks a non-main member as opened in the UI without starting a harness session by itself. The Workbench may immediately call `start` for an active opened panel to prewarm the command/skill palette.
+Gives the member a **tab** in the workbench — the same thing a click on its
+sidebar row does, through the same code — and marks it opened. It does not start
+a harness session by itself; the Workbench prewarms an active opened panel,
+which is what puts a session behind it.
+
+Because the tab layout is party state (see `POST /api/party/layout`), the tab
+appears in **every window showing that party**, not only the one addressed by
+`?window=`.
+
+This used to set the status flag and nothing else, while still answering
+`Member 'X' opened.` — so an agent asking for a member got a success message and
+no tab anywhere. If you are looking for the older behaviour, there is none worth
+keeping: a status nobody can see is not "opened".
 
 ### `POST /api/party/members/:name/start`
 

@@ -87,3 +87,50 @@ function sanitizePanel(value: unknown): WorkbenchPanel | undefined {
 export function layoutsEqual(a: WorkbenchLayout | undefined, b: WorkbenchLayout | undefined): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
+
+/** The panel currently holding a member's tab, if any. */
+export function panelOf(layout: WorkbenchLayout, memberName: string): WorkbenchPanel | undefined {
+  return layout.panels.find((panel) => panel.tabs.includes(memberName));
+}
+
+let panelCounter = 0;
+
+/**
+ * A fresh panel id. Exported so there is ONE counter: while the renderer kept
+ * its own, two panels created in the same millisecond — one by a split, one by
+ * an open — could be minted the same id, and every lookup that resolves a panel
+ * by id (move a tab, drag a divider) then hit both.
+ */
+export function nextPanelId(): string {
+  panelCounter += 1;
+  return `panel-${Date.now().toString(36)}-${panelCounter}`;
+}
+
+/**
+ * Opens a member: focuses its existing tab, or adds one to the focused panel.
+ *
+ * Shared because "open this member" has two callers that must agree — a click in
+ * the sidebar and `POST /api/party/members/:name/open`. The HTTP one used to
+ * only set a status flag and answer "Member 'X' opened." while no tab appeared
+ * anywhere, so an agent asking for a member could not get one.
+ */
+export function openMemberTab(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
+  const existing = panelOf(layout, memberName);
+  if (existing) {
+    return {
+      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
+      focusedPanelId: existing.id,
+    };
+  }
+  const target = layout.panels.find((panel) => panel.id === layout.focusedPanelId) || layout.panels[0];
+  if (!target) {
+    const panel: WorkbenchPanel = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
+    return { panels: [panel], focusedPanelId: panel.id };
+  }
+  return {
+    panels: layout.panels.map((panel) => (
+      panel.id === target.id ? { ...panel, tabs: [...panel.tabs, memberName], active: memberName } : panel
+    )),
+    focusedPanelId: target.id,
+  };
+}
