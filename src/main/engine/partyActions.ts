@@ -3,7 +3,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import { sanitizeAttachments } from "../../shared/attachments";
 import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "permission" | "gate";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "permission" | "gate" | "sleep" | "wake" | "keep-awake";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult | Promise<PartyMutationResult>;
 
@@ -21,6 +21,14 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   permission: (party, name, body, partyId) => party.setMemberPermission(name, body || {}, partyId),
   // Per-member Message Gate override (mode/rule/reviewer patch). Cross-editable.
   gate: (party, name, body, partyId) => party.setMemberGate(name, body?.gate ?? body ?? {}, partyId),
+  // Idle sleep, driven by hand. The sweep does this on its own after the
+  // configured quiet period; these exist so a person or a QA run does not have
+  // to wait it out to exercise the same code path.
+  sleep: (party, name, _body, partyId) => party.sleepMember(name, partyId),
+  wake: (party, name, _body, partyId) => party.wakeMember(name, partyId),
+  // `body.keepAwake = true` pins the member awake; false/null lets it follow the
+  // global setting again.
+  "keep-awake": (party, name, body, partyId) => party.setMemberKeepAwake(name, body?.keepAwake === true, partyId),
   start: (party, name, body, partyId) => party.startMember(name, body, {}, partyId),
   bind: (party, name, body, partyId) => party.bindMember(name, String(body.sessionId || ""), partyId),
   remove: (party, name, _body, partyId) => party.removeMember(name, partyId),

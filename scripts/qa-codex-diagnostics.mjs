@@ -70,7 +70,7 @@ assert(classifyDiagnostic("mcpServer/startupStatus/updated", { server: "brave", 
 assert(classifyDiagnostic("mcpServer/startupStatus/updated", { server: "brave", status: "failed", error: "boom" }).severity === "error", "failed MCP status → error");
 
 // ---- Layer 2: pipeline + header helper --------------------------------------
-const T = await bundle("src/renderer/app/transcriptEvents.ts", "codex-diag-events.mjs", []);
+const T = await bundle("src/shared/transcriptEvents.ts", "codex-diag-events.mjs", []);
 const M = await bundle("src/renderer/workbench/memberStatus.ts", "codex-diag-status.mjs", []);
 console.log("\ntranscriptEvents + latestDiagnostic:");
 let blocks = T.applyEvents({}, "s1", [

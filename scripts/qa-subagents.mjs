@@ -54,7 +54,7 @@ assert(A.subagentActionLabel({ kind: "reading", label: "문서 읽는중", summa
 
 // ---- Layer 2: fold + separation ---------------------------------------------
 const S = await bundle("src/renderer/app/subagentEvents.ts", "sub-events.mjs", []);
-const T = await bundle("src/renderer/app/transcriptEvents.ts", "sub-transcript.mjs", []);
+const T = await bundle("src/shared/transcriptEvents.ts", "sub-transcript.mjs", []);
 console.log("\nsubagentEvents fold + separation:");
 let subs = S.applySubagentEvents({}, "s1", [
   { type: "subagent", agentId: "a1", lifecycle: { phase: "working", label: "shard-runner", hint: "auth/**", assignedTask: "run auth tests" } },

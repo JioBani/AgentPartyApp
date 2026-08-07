@@ -59,11 +59,31 @@ export function writeLine(stream: Writable, value: RpcRequest | RpcResponse | Rp
 
 /**
  * Reads `\n`-delimited JSON lines from a stream, buffering partial chunks.
- * Returns a disposer that detaches the listener.
+ * Returns a disposer that detaches the listeners.
+ *
+ * `onClose` fires exactly once when the stream ends or errors — i.e. when the
+ * peer is gone and nothing further will ever arrive. Without it a caller has no
+ * way to distinguish "quiet" from "dead", which is how requests waiting on a
+ * vanished engine stayed pending forever.
  */
-export function readLines(stream: Readable, onValue: (value: any) => void): () => void {
+export function readLines(stream: Readable, onValue: (value: any) => void, onClose?: (error?: Error) => void): () => void {
   let buffer = "";
-  const onData = (chunk: Buffer | string) => {
+  let finished = false;
+  function detach(): void {
+    stream.off("data", onData);
+    stream.off("end", onEnd);
+    stream.off("close", onEnd);
+    stream.off("error", onError);
+  }
+  function finish(error?: Error): void {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    detach();
+    onClose?.(error);
+  }
+  function onData(chunk: Buffer | string): void {
     buffer += chunk.toString();
     let index = buffer.indexOf("\n");
     while (index >= 0) {
@@ -79,7 +99,19 @@ export function readLines(stream: Readable, onValue: (value: any) => void): () =
       }
       index = buffer.indexOf("\n");
     }
-  };
+  }
+  function onEnd(): void {
+    finish();
+  }
+  function onError(error: Error): void {
+    finish(error);
+  }
   stream.on("data", onData);
-  return () => stream.off("data", onData);
+  stream.on("end", onEnd);
+  stream.on("close", onEnd);
+  stream.on("error", onError);
+  return () => {
+    finished = true;
+    detach();
+  };
 }

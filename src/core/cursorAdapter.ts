@@ -800,7 +800,27 @@ export class CursorAdapter extends EventEmitter {
 
   private ensureLogger(): void {
     if (!this.debugMode || this.logger) return;
-    this.logger = new RawLogger({ baseDir: this.options.storageDir, sessionId: `${this.options.id}-cursor`, maxFiles: 30, maxBytes: 5_000_000 });
+    this.logger = RawLogger.open({
+      baseDir: this.options.storageDir,
+      sessionId: `${this.options.id}-cursor`,
+      maxFiles: 30,
+      maxBytes: 5_000_000,
+      onDisabled: (detail) => this.reportRawLogDisabled(detail),
+    });
+  }
+
+  /** See ClaudeAdapter.reportRawLogDisabled — debug mode still reads as ON, so say so. */
+  private reportRawLogDisabled(detail: string): void {
+    this.logger = undefined;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "debug-log",
+      title: "디버그 원본 로그를 더 기록하지 못합니다",
+      detail,
+      recovery: "저장 공간과 폴더 접근 권한을 확인한 뒤 디버그 로그를 다시 켜세요. 대화 자체는 영향받지 않습니다.",
+      at: now(),
+    });
   }
 }
 

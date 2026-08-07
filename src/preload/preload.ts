@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
+import type { WorkbenchLayout } from "../shared/workbenchLayout";
 
 const api = {
   /**
@@ -57,7 +58,7 @@ const api = {
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
-  newWindow: (workspacePath?: string) => ipcRenderer.invoke("window:new", workspacePath),
+  newWindow: (workspacePath?: string, partyId?: string) => ipcRenderer.invoke("window:new", workspacePath, partyId),
   listWindows: () => ipcRenderer.invoke("window:list"),
   listParty: () => ipcRenderer.invoke("party:list"),
   createParty: (input: unknown) => ipcRenderer.invoke("party:createParty", input),
@@ -78,9 +79,14 @@ const api = {
   startPartyMember: (name: string, input?: unknown) => ipcRenderer.invoke("party:start", name, input),
   removePartyMember: (name: string) => ipcRenderer.invoke("party:remove", name),
   setMemberAutoCompact: (name: string, autoCompact: unknown) => ipcRenderer.invoke("party:autoCompact", name, autoCompact),
+  setMemberKeepAwake: (name: string, keepAwake: boolean) => ipcRenderer.invoke("party:keepAwake", name, keepAwake),
+  sleepPartyMember: (name: string) => ipcRenderer.invoke("party:sleep", name),
+  wakePartyMember: (name: string) => ipcRenderer.invoke("party:wake", name),
   setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
+  getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
+  setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   onSessionEvents: (callback: (payload: unknown) => void) => {
@@ -102,6 +108,12 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("party:update", listener);
     return () => ipcRenderer.off("party:update", listener);
+  },
+  /** Another window on this party changed the tab layout. */
+  onPartyLayout: (callback: (payload: { partyId: string; layout: WorkbenchLayout }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { partyId: string; layout: WorkbenchLayout }) => callback(payload);
+    ipcRenderer.on("party:layout", listener);
+    return () => ipcRenderer.off("party:layout", listener);
   },
   onModelsUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

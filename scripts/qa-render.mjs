@@ -103,11 +103,19 @@ const members = [
   // turn — exercises the "last known" (stale) meter a reopened app shows.
   { partyId: "p1", name: "reviewer", status: "running", runtime: "claude-code", role: "Review", sessionId: "s-reviewer", model: "o4-mini", lastContextTokens: 150000, lastContextWindow: 200000 },
   { partyId: "p1", name: "tester", status: "running", runtime: "claude-code", role: "QA", sessionId: "s-tester", model: "gpt-5" },
+  // No tab in the seeded layout and no live session. Its history is not this
+  // window's to hold, so its transcript must never be fetched — one member's
+  // file reaches ~15MB on disk and several times that once parsed.
+  { partyId: "p1", name: "archivist", status: "sleeping", runtime: "claude-code", role: "Docs", model: "claude-sonnet-4.5" },
 ];
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831 },
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
+    // Settings the real app always fills in (main/settings.ts normalizes them on
+    // read). They were absent here while nothing rendered the settings screen;
+    // the 유휴 슬립 assertions below do, and the cards read these directly.
+    compactDefault: { on: false, at: 80 }, idleSleep: { enabled: true, timeoutMinutes: 5 }, gateDefaults: { model: "haiku", effort: "low" } },
   auth: [],
   sessions,
   modelRoutes,
@@ -126,6 +134,14 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+// Every member whose transcript this window asked the main process for.
+const transcriptFetches = [];
+// The main process's copy of the party tab layout, and every push this window made.
+let storedLayout;
+const persistedLayouts = [];
+const keepAwakeCalls = [];
+const sleepCalls = [];
+const wakeCalls = [];
 // Reopen regression: an inactive member has persisted history but no live
 // session. Activating it prewarms a resumed session; navigating away, losing
 // that session, and returning must prewarm again without dropping the history.
@@ -158,7 +174,7 @@ window.agentParty = {
   maximizeWindow: noop,
   closeWindow: noop,
   listParty: async () => initialState.party,
-  getMemberTranscript: async (name) => name === "frontend" ? frontendHistory : [],
+  getMemberTranscript: async (name) => { transcriptFetches.push(name); return name === "frontend" ? frontendHistory : []; },
   saveMemberTranscript: noop,
   createParty: async () => ({ ok: true, message: "", ...initialState.party }),
   selectParty: async () => ({ ok: true, message: "", ...initialState.party }),
@@ -187,12 +203,21 @@ window.agentParty = {
     return { ok: true, message: "", ...initialState.party, member, session };
   },
   removePartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
+  // Idle-sleep controls reached from the member context menu. Record the calls so
+  // the menu is proven to drive the party actions and not just to render.
+  setMemberKeepAwake: async (name, keepAwake) => { keepAwakeCalls.push({ name, keepAwake }); return { ok: true, message: "", ...initialState.party }; },
+  sleepPartyMember: async (name) => { sleepCalls.push(name); return { ok: true, message: "", ...initialState.party }; },
+  wakePartyMember: async (name) => { wakeCalls.push(name); return { ok: true, message: "", ...initialState.party }; },
   listModels: async () => ({ ok: true, modelRoutes: initialState.modelRoutes, codexModels: initialState.codexModels }),
   refreshCodexModels: noop,
   onSessionEvents: on("events"),
   onSnapshot: on("snapshot"),
   onSessions: on("sessions"),
   onPartyUpdate: on("partyUpdate"),
+  // Tab layout is party state owned by the main process; these stand in for it.
+  getPartyLayout: async () => storedLayout,
+  setPartyLayout: async (layout) => { persistedLayouts.push(layout); storedLayout = layout; return { changed: true, layout }; },
+  onPartyLayout: on("partyLayout"),
   onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"),
   onQaOpenSubagent: on("qaOpenSub"),
@@ -202,14 +227,16 @@ window.agentParty = {
   onRefreshHistory: on("hist"),
 };
 
-// Seed a two-panel layout so multi-panel rendering is exercised.
-window.localStorage.setItem("agentparty.layout.p1", JSON.stringify({
+// Seed a two-panel layout so multi-panel rendering is exercised. It comes from
+// the MAIN process now (getPartyLayout), not localStorage: the layout is party
+// state shared by every window, not each renderer's private copy.
+storedLayout = {
   panels: [
     { id: "pa", tabs: ["backend", "frontend"], active: "backend", weight: 1 },
     { id: "pb", tabs: ["reviewer", "tester"], active: "reviewer", weight: 1 },
   ],
   focusedPanelId: "pa",
-}));
+};
 
 // --- bundle the app entry and run ----------------------------------------
 const result = await build({
@@ -351,7 +378,7 @@ assert((document.getElementById("root").textContent || "").includes("KEEP_FRONTE
 // disappearing while another menu is open, then return. A lifetime name-only
 // prewarm guard used to leave the member permanently 'not started' here until a
 // user sent chat; remount must now retry exactly once and preserve its history.
-emit("nav", "automation");
+emit("nav", { view: "automation" });
 await new Promise((resolve) => setTimeout(resolve, 60));
 const frontend = members.find((item) => item.name === "frontend");
 const firstFrontendSession = frontend?.sessionId;
@@ -360,7 +387,7 @@ if (firstIndex >= 0) sessions.splice(firstIndex, 1);
 if (frontend) frontend.status = "missing_session";
 emit("sessions", [...sessions]);
 emit("partyUpdate", initialState.party);
-emit("nav", "workbench");
+emit("nav", { view: "workbench" });
 await new Promise((resolve) => setTimeout(resolve, 180));
 assert(startedMembers.filter((name) => name === "frontend").length === 2, "returning to Workbench retries prewarm after the member session disappeared");
 assert(frontend?.sessionId !== firstFrontendSession, "reopened member is bound to a fresh resumed app session");
@@ -387,6 +414,95 @@ if (restartItem) {
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 assert(restartedSessions.includes("s-reviewer"), "하드 리스타트 restarted the member's live session (restart called with its session id)");
+
+// Idle sleep is otherwise reachable only over HTTP, so the menu is the whole UI
+// for it: 계속 켜두기 must pin the member and 지금 재우기 must release it.
+if (reviewerRow) {
+  reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const sleepMenuItems = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])];
+const keepAwakeItem = sleepMenuItems.find((b) => /계속 켜두기/.test(b.textContent || ""));
+const sleepItem = sleepMenuItems.find((b) => /지금 재우기/.test(b.textContent || ""));
+assert(keepAwakeItem != null, "context menu offers 계속 켜두기");
+assert(sleepItem != null, "context menu offers 지금 재우기 for an awake member");
+if (sleepItem) {
+  sleepItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(sleepCalls.includes("reviewer"), "지금 재우기 released the member's process (sleepPartyMember called)");
+if (reviewerRow) {
+  reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+const pinItem = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])]
+  .find((b) => /계속 켜두기/.test(b.textContent || ""));
+if (pinItem) {
+  pinItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(
+  keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
+  "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
+);
+
+// A window holds the history of members it has OPEN (or that hold a live
+// session), not the whole party: a transcript reaches ~15MB on disk and several
+// times that once parsed, so loading every member made each window pay for the
+// party's entire history — three windows on one party, three times over.
+assert(transcriptFetches.includes("frontend"), "an open member's transcript is fetched");
+assert(transcriptFetches.includes("tester"), "a background tab's transcript is fetched too (one click from being read)");
+assert(!transcriptFetches.includes("archivist"), "a member with no tab and no session is NOT fetched", transcriptFetches.join(","));
+
+// Opening it must load it — skipping is about what is not needed YET, not a
+// member the window can never show.
+const beforeOpenFetches = transcriptFetches.length;
+const archivistRow = [...document.querySelectorAll(".wb-member-row")]
+  .find((row) => row.querySelector(".wb-member-name")?.textContent === "archivist");
+assert(archivistRow != null, "archivist row present in the sidebar");
+if (archivistRow) {
+  archivistRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+assert(transcriptFetches.includes("archivist"), "opening it fetches its transcript", `${transcriptFetches.length - beforeOpenFetches} new fetch(es)`);
+
+// Tab layout is party state owned by the main process, so a change here must be
+// PUSHED there — the localStorage version was per-renderer and let two windows
+// on one party disagree about which tabs are open.
+assert(persistedLayouts.length > 0, "closing a tab pushed the layout to the main process", `${persistedLayouts.length} pushes`);
+assert(
+  !(persistedLayouts.at(-1)?.panels || []).some((panel) => panel.tabs.includes("backend")),
+  "and the pushed layout no longer carries the closed tab",
+  JSON.stringify(persistedLayouts.at(-1)?.panels?.map((p) => p.tabs)),
+);
+
+// The other half: a layout produced by ANOTHER window on this party must land
+// here. This is the reported bug — a tab closed in one window stayed open in
+// the other, and that window then wrote its stale layout back over the shared one.
+const pushesBeforeBroadcast = persistedLayouts.length;
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+const tabsAfterBroadcast = [...document.querySelectorAll(".wb-tab")].map((el) => (el.textContent || "").trim());
+assert(
+  tabsAfterBroadcast.some((label) => label.includes("frontend")) && !tabsAfterBroadcast.some((label) => label.includes("reviewer")),
+  "another window's layout is adopted here",
+  tabsAfterBroadcast.join(",") || "no tabs",
+);
+// An adopted layout must not be echoed back: two windows trading the same
+// layout would keep overwriting each other while the user is still dragging.
+assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed back to the main process", `${persistedLayouts.length - pushesBeforeBroadcast} echo(es)`);
+
+// Settings → Runtime carries the only UI for the global idle-sleep policy, so a
+// card that fails to render leaves the feature on with no way to turn it off.
+emit("nav", { view: "runtime" });
+await new Promise((resolve) => setTimeout(resolve, 120));
+const runtimeText = document.getElementById("root").textContent || "";
+assert(runtimeText.includes("유휴 슬립"), "settings show the 유휴 슬립 card");
+assert(runtimeText.includes("유휴 멤버의 프로세스 내리기"), "the card explains what sleeping does");
+assert(runtimeText.includes("5분"), "the card shows the current quiet period");
 
 // React surfaces render errors via console.error; treat those as failures.
 const realErrors = consoleErrors.filter((line) => !line.includes("not wrapped in act"));

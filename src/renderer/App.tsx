@@ -3,6 +3,8 @@ import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Setti
 import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
+import type { IdleSleepSettings } from "../shared/idleSleep";
+import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
@@ -22,7 +24,7 @@ import { isRuntimeTabId, type RuntimeTabId } from "../shared/runtimeTabs";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
-import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "./app/transcriptEvents";
+import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
 
 /**
@@ -36,6 +38,17 @@ import { applySubagentEvents } from "./app/subagentEvents";
  */
 function memberKey(member: { partyId?: string; name: string; createdAt?: string }): string {
   return `${member.partyId || "default"}::${member.name}::${member.createdAt || ""}`;
+}
+
+/**
+ * Outcome of a session-start attempt. `skipped` is a deliberate no-op — the
+ * member is closed, or a start for it is already in flight — and must not be
+ * treated as (or retried like) a failure.
+ */
+interface EnsureSessionResult {
+  sessionId?: string;
+  error?: string;
+  skipped?: boolean;
 }
 
 export function App() {
@@ -63,12 +76,24 @@ export function App() {
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
+  // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
+  // Every member with a tab in this window, frontmost or not. A background tab
+  // is one click from being read, so its history must already be here — but a
+  // member with no tab at all is not this window's to hold.
+  const [openMembers, setOpenMembers] = useState<string[]>([]);
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
   // Members with a compaction in flight (transient toolbar spinner).
   const [compactingByMember, setCompactingByMember] = useState<Record<string, boolean>>({});
   const [layoutRequest, setLayoutRequest] = useState<{ panels: string[][]; nonce: number } | null>(null);
+  /**
+   * The active party's tab layout as the MAIN process holds it. Fetched on a
+   * party switch and replaced whenever another window on that party changes it,
+   * so every window of one process shows the same tabs. `layout: undefined`
+   * means nothing is stored for that party yet.
+   */
+  const [partyLayout, setPartyLayout] = useState<{ partyId: string; layout?: WorkbenchLayout } | undefined>();
   // QA-driven "open this subagent's detail" request (mock-driven detail QA).
   const [subagentOpenRequest, setSubagentOpenRequest] = useState<{ member: string; subId: string; nonce: number } | null>(null);
   const [gateOpenRequest, setGateOpenRequest] = useState<{ kind: "member" | "party"; member: string; nonce: number } | null>(null);
@@ -77,6 +102,9 @@ export function App() {
   const partyBroadcastSeen = useRef(false);
   // Members with an in-flight session start, and members already prewarmed once.
   const startingRef = useRef<Set<string>>(new Set());
+  // Last reported prewarm failure per member, so the retry cadence reports each
+  // distinct reason once instead of repeating the same notice every attempt.
+  const prewarmFailureRef = useRef<Map<string, string>>(new Map());
   // Auto-compact hysteresis: a member is "armed" while below its threshold; a
   // crossing fires ONE compaction and disarms it, re-arming only once occupancy
   // drops back below the threshold. This stops a member whose context can't be
@@ -156,6 +184,24 @@ export function App() {
     () => (state.party.parties || []).find((party) => party.id === state.party.currentPartyId) || (state.party.parties || [])[0],
     [state.party.currentPartyId, state.party.parties],
   );
+
+  // Load the active party's stored tab layout. Stamped with the party it is FOR:
+  // a switch can outrun this reply, and applying the previous party's tabs to
+  // the new one would silently reopen members from the party just left.
+  const activePartyId = state.party.currentPartyId;
+  useEffect(() => {
+    if (!activePartyId) {
+      return;
+    }
+    let cancelled = false;
+    void window.agentParty.getPartyLayout().then(
+      (layout) => { if (!cancelled) setPartyLayout({ partyId: activePartyId, layout }); },
+      // No stored layout is normal; a real failure must not leave the workbench
+      // waiting forever for a reply that never comes — seed from the members.
+      () => { if (!cancelled) setPartyLayout({ partyId: activePartyId }); },
+    );
+    return () => { cancelled = true; };
+  }, [activePartyId]);
 
   const views = useMemo<MemberView[]>(
     () => members.map((member) => buildMemberView({
@@ -244,6 +290,11 @@ export function App() {
       partyBroadcastSeen.current = true;
       setState((current) => ({ ...current, party }));
     });
+    // Another window on this party moved its tabs. Same process, same party, so
+    // this window shows the same thing rather than keeping its own stale copy.
+    const offPartyLayout = window.agentParty.onPartyLayout((payload) => {
+      setPartyLayout({ partyId: payload.partyId, layout: payload.layout });
+    });
     // Codex catalog discovery settled: refresh the selectable model routes and
     // the discovery status (pending/ready/error) that pickers surface.
     const offModelsUpdate = window.agentParty.onModelsUpdate((payload) => {
@@ -303,6 +354,7 @@ export function App() {
       offSnapshot();
       offSessions();
       offPartyUpdate();
+      offPartyLayout();
       offModelsUpdate();
       offSettingsUpdate?.();
       offDiscordUpdate?.();
@@ -336,10 +388,36 @@ export function App() {
     });
   }, [visibleMembers, logsBySession, members]);
 
-  // Restore each member's persisted transcript from disk once, so a reopened app
-  // (or a closed member) shows its past conversation. Visible members are fetched
-  // FIRST so the panels on screen fill in immediately on a party switch; the rest
-  // still prefetch right after, keeping a switch to a backgrounded member instant.
+  /**
+   * Members whose history this window needs in memory.
+   *
+   * NOT the whole party. A transcript is capped at 800 blocks but a block can be
+   * a whole tool output, so one member's file reaches ~15MB on disk and several
+   * times that once parsed into JS objects and React elements. Loading every
+   * member of the party made each window pay for the party's entire history —
+   * and three windows on one party paid for it three times over.
+   *
+   * A member qualifies when it has a TAB OPEN (the user can see it, or reach it
+   * by clicking a background tab in the same panel), or when it holds a LIVE
+   * SESSION. The second is not about display: events for a session whose
+   * transcript has no owner queue in `pendingEventsBySessionRef` forever, so
+   * skipping a live member's restore would trade bounded history for an
+   * unbounded buffer.
+   */
+  const transcriptMembers = useMemo(() => {
+    const wanted = new Set(openMembers);
+    for (const member of members) {
+      if (member.sessionId) {
+        wanted.add(member.name);
+      }
+    }
+    return wanted;
+  }, [openMembers, members]);
+
+  // Restore each needed member's persisted transcript from disk once, so a
+  // reopened app (or a closed member) shows its past conversation. Visible
+  // members are fetched FIRST so the panels on screen fill in immediately on a
+  // party switch; the rest follow, keeping a click to a background tab instant.
   // `restoredByMember[key]` stays UNDEFINED until the fetch settles — it is the
   // "restore completed" signal the save effect below gates on. The old version
   // wrote a `[]` sentinel up front, so a session whose first events arrived
@@ -354,6 +432,9 @@ export function App() {
     );
     for (const member of ordered) {
       const key = memberKey(member);
+      if (!transcriptMembers.has(member.name)) {
+        continue;
+      }
       if (restoredRef.current[key] !== undefined || restoreRequestedRef.current.has(key)) {
         continue;
       }
@@ -370,7 +451,7 @@ export function App() {
         setTimeout(() => setRestoreRetryNonce((n) => n + 1), 2000);
       });
     }
-  }, [members, visibleMembers, restoreRetryNonce]);
+  }, [members, visibleMembers, transcriptMembers, restoreRetryNonce]);
 
   // This is the single transition that makes a session transcript writable:
   // member identity is known AND its persisted transcript read has settled.
@@ -390,37 +471,21 @@ export function App() {
   const saveChainRef = useRef<Record<string, Promise<void>>>({});
 
   /**
-   * Persists one member's transcript as an APPEND when possible.
+   * Keeps this window's "what is on disk" mirror in step with what it renders.
    *
-   * `restoredByMember[key]` mirrors what is on disk, and transcript blocks are
-   * immutable (events rebuild the blocks they touch), so the unchanged prefix is
-   * found by IDENTITY — everything after it is what needs saving. Sending only
-   * that matters because the engine RPC is a single stdio pipe shared with
-   * `sendUserTurn`: a full save of a 25 MB transcript queued ahead of a user turn
-   * delayed it by 33 seconds, with no reasoning shown because the turn had not
-   * reached the harness yet.
+   * A window no longer WRITES the transcript — the main process folds the same
+   * event stream and persists it once (see `recordTranscriptEvents`). This exists
+   * because the writer used to be a property of the UI, which meant two windows
+   * on one member wrote the same file twice and fought over the append anchor,
+   * and a member driven with no window open was never written at all. Both are
+   * gone once the writer follows the session rather than the view.
+   *
+   * The mirror still matters here: `restoredByMember` is what a member shows
+   * before (or without) a live session, so leaving it stale would make a
+   * reopened tab flash old history.
    */
   const persistTranscript = useCallback(async (name: string, key: string, blocks: TranscriptBlock[]) => {
-    const persisted = restoredRef.current[key];
-    if (persisted === blocks) {
-      return;
-    }
-    const save = buildTranscriptSave(persisted, blocks);
-    try {
-      let result = await window.agentParty.saveMemberTranscript?.(name, save);
-      if (result && !result.applied && save.afterId) {
-        // The engine could not anchor the append against its stored transcript.
-        // Resend in full rather than let the two sides silently diverge.
-        result = await window.agentParty.saveMemberTranscript?.(name, { blocks });
-      }
-      if (result && !result.applied) {
-        setPartyNotice(`'${name}' 대화 기록 저장 실패 (${result.reason || "unknown"})`);
-        return;
-      }
-      setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
-    } catch (error) {
-      setPartyNotice(`'${name}' 대화 기록 저장 실패 — ${error instanceof Error ? error.message : String(error)}`);
-    }
+    setRestoredByMember((current) => (current[key] === blocks ? current : { ...current, [key]: blocks }));
   }, []);
 
   // Persist each active member's transcript to disk (debounced), and keep the
@@ -499,6 +564,23 @@ export function App() {
   async function selectParty(partyId: string) {
     const result = await window.agentParty.selectParty(partyId);
     await applyPartyResult(result);
+  }
+
+  /**
+   * Opens a party in ANOTHER window of this same process.
+   *
+   * Deliberately does not select the party here — this window stays where it is,
+   * which is the whole point of running several parties side by side. The new
+   * window shares this process's engine and sessions, so a member already
+   * running is reused rather than started a second time (the duplication that
+   * separate app processes used to cause).
+   */
+  async function openPartyInNewWindow(partyId: string) {
+    try {
+      await window.agentParty.newWindow?.(state.settings.workspacePath, partyId);
+    } catch (error) {
+      setPartyNotice(`새 창을 열지 못했습니다 — ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function closeSession(sessionId: string) {
@@ -634,6 +716,45 @@ export function App() {
     await applyPartyResult(result);
   }
 
+  /**
+   * Hands a tab layout this window produced to the main process, which persists
+   * it and pushes it to the other windows on this party.
+   *
+   * The local copy is advanced too. Workbench remounts on every nav away and
+   * back, and re-seeds from this value — left at whatever was fetched on load,
+   * it would restore tabs the user has since closed. Advancing it does not cause
+   * a re-seed loop: Workbench suppresses adopting a layout it just produced.
+   *
+   * Failures are logged rather than raised: losing a tab position must not
+   * interrupt what the user is doing.
+   */
+  function persistPartyLayout(layout: WorkbenchLayout) {
+    if (activePartyId) {
+      setPartyLayout({ partyId: activePartyId, layout });
+    }
+    void window.agentParty.setPartyLayout(layout).catch((error: unknown) => {
+      console.error("[layout] could not persist the tab layout", error);
+    });
+  }
+
+  /**
+   * Idle sleep, per member. All three notify: sleeping is routinely *refused*
+   * (a turn in flight, background work, a queued message) and the refusal is
+   * the whole answer — swallowing it would leave a member the user just told to
+   * sleep sitting there with no stated reason.
+   */
+  async function setMemberKeepAwake(name: string, keepAwake: boolean) {
+    await applyPartyResult(await window.agentParty.setMemberKeepAwake(name, keepAwake));
+  }
+
+  async function sleepMember(name: string) {
+    await applyPartyResult(await window.agentParty.sleepPartyMember(name));
+  }
+
+  async function wakeMember(name: string) {
+    await applyPartyResult(await window.agentParty.wakePartyMember(name));
+  }
+
   // Deletes a whole party (cascades to its members); the sidebar arms a confirm
   // click before calling this.
   async function removePartyDirect(partyId: string) {
@@ -648,6 +769,15 @@ export function App() {
 
   async function saveCompactDefault(setting: AutoCompactSetting) {
     const settings = await window.agentParty.updateSettings({ compactDefault: setting });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  /**
+   * Persisting this also pushes the new policy to every engine (local and WSL),
+   * so turning sleep off stops the sweep on members this window is not showing.
+   */
+  async function saveIdleSleep(setting: IdleSleepSettings) {
+    const settings = await window.agentParty.updateSettings({ idleSleep: setting });
     setState((current) => ({ ...current, settings }));
   }
 
@@ -788,15 +918,22 @@ export function App() {
   // straight to the global model here overwrote a member's model (e.g. a Kimi
   // member flipped to the global Sonnet on first chat). `startingRef` guards
   // against concurrent starts for the same member.
-  async function ensureSession(name: string, opts: { auto?: boolean } = {}): Promise<string | undefined> {
+  //
+  // Reports its outcome instead of throwing. A rejected start used to escape as
+  // an unhandled promise rejection — no notice, no log, no retry — which is how
+  // a restored tab could sit open with no session while every message to that
+  // member was undeliverable. `skipped` distinguishes a deliberate no-op (the
+  // member is closed, or another start is already in flight) from a failure, so
+  // callers only retry the latter.
+  async function ensureSession(name: string, opts: { auto?: boolean } = {}): Promise<EnsureSessionResult> {
     const existing = sessionIdFor(name);
     if (existing) {
-      return existing;
+      return { sessionId: existing };
     }
     const member = members.find((item) => item.name === name);
     const identity = member ? memberKey(member) : name;
     if (startingRef.current.has(identity)) {
-      return undefined;
+      return { skipped: true };
     }
     startingRef.current.add(identity);
     try {
@@ -824,7 +961,7 @@ export function App() {
       // The engine deliberately skipped an auto-start on a closed member — an
       // intentional no-op, not a failure worth a notice.
       if (opts.auto && result.member?.status === "closed") {
-        return undefined;
+        return { skipped: true };
       }
       // Seed the (resumed) session's transcript with the member's restored history
       // so the conversation continues visibly, matching the harness thread resume.
@@ -834,7 +971,12 @@ export function App() {
       if (sid && owner) {
         activateSessionTranscript(sid, owner, restored);
       }
-      return sid;
+      if (!sid) {
+        return { error: result.message || "엔진이 세션을 반환하지 않았습니다." };
+      }
+      return { sessionId: sid };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
     } finally {
       startingRef.current.delete(identity);
     }
@@ -896,18 +1038,47 @@ export function App() {
     },
     prewarm(name) {
       // Init the visible member ahead of the first turn. Panel owns WHEN to try
-      // (on activation/remount); ensureSession only deduplicates an in-flight
-      // start. A lifetime "already prewarmed" set made a member impossible to
-      // reopen after its session disappeared or after switching between parties
-      // that both contain `main`: only sending a chat could revive it.
-      const member = members.find((item) => item.name === name);
-      if (sessionIdFor(name) || member?.status === "closed") {
+      // (on activation/remount, and the retry cadence); ensureSession only
+      // deduplicates an in-flight start. A lifetime "already prewarmed" set made
+      // a member impossible to reopen after its session disappeared or after
+      // switching between parties that both contain `main`: only sending a chat
+      // could revive it.
+      // Read through the ref, not the captured list: the panel effect that calls
+      // this excludes `actions` from its deps, so a closure from before the
+      // party update would still see the member as running and prewarm it. The
+      // engine refuses an auto-start on a sleeping member regardless — this only
+      // saves the pointless round trip.
+      const member = membersRef.current.find((item) => item.name === name);
+      // `sleeping` is skipped for the same reason as `closed`, from the other
+      // direction: the app JUST released that process to reclaim memory, and an
+      // open tab counts as neither a reason to keep it nor a request to wake it.
+      // Prewarming it would restart the process within a tick of it sleeping and
+      // idle sleep would never hold. Waking is driven by a message or an
+      // explicit wake, both of which mean someone actually wants the member.
+      // A member still bound to a session this process cannot see is running
+      // under a sibling app process; the engine refuses to clone it, so asking
+      // is pointless. `missing_session` is the exception and the reason this is
+      // not just "has a sessionId": that status is the app's own statement that
+      // the binding is DEAD, so the member does need starting again.
+      const boundElsewhere = Boolean(member?.sessionId) && member?.status !== "missing_session";
+      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping") {
         return;
       }
-      void ensureSession(name, { auto: true }).then((id) => {
-        if (!id) {
-          setPartyNotice(`'${name}' 세션을 미리 준비하지 못했습니다. 메시지를 보내면 다시 시도합니다.`);
+      void ensureSession(name, { auto: true }).then((result) => {
+        if (result.sessionId || result.skipped) {
+          prewarmFailureRef.current.delete(name);
+          return;
         }
+        // Say WHY, and say it once per distinct reason. The panel keeps retrying
+        // on a widening delay, so a repeated notice would be noise — but a
+        // silent failure was worse: the tab looked ready while every message to
+        // the member was undeliverable.
+        const reason = result.error || "엔진이 세션을 반환하지 않았습니다.";
+        if (prewarmFailureRef.current.get(name) === reason) {
+          return;
+        }
+        prewarmFailureRef.current.set(name, reason);
+        setPartyNotice(`'${name}' 세션을 준비하지 못했습니다: ${reason} 자동으로 다시 시도합니다.`);
       });
     },
     approve(name, requestId, behavior, updatedInput) {
@@ -1185,6 +1356,8 @@ export function App() {
               <Workbench
                 parties={state.party.parties || []}
                 activePartyId={state.party.currentPartyId}
+                partyLayout={partyLayout}
+                onPersistLayout={persistPartyLayout}
                 views={views}
                 routes={routes}
                 codexModels={state.codexModels}
@@ -1201,10 +1374,15 @@ export function App() {
                 onCreateParty={(name, gate) => void createParty(name, gate)}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
+                onSetMemberKeepAwake={(name, keepAwake) => void setMemberKeepAwake(name, keepAwake)}
+                onSleepMember={(name) => void sleepMember(name)}
+                onWakeMember={(name) => void wakeMember(name)}
                 onRemoveParty={(partyId) => void removePartyDirect(partyId)}
+                onOpenPartyInNewWindow={(partyId) => void openPartyInNewWindow(partyId)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}
+                onOpenMembersChange={setOpenMembers}
                 onToggleSidebar={(open) => {
                   setSidebarOpen(open);
                   try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
@@ -1268,6 +1446,7 @@ export function App() {
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
                   onSaveCompactDefault={saveCompactDefault}
+                  onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
                   onSaveComposer={saveComposerSettings}
                   discord={discord}

@@ -78,8 +78,16 @@ Automation client
 3. `SessionManager.sendUserTurn` delegates to the selected harness adapter.
 4. Adapter events are normalized to the shared session event contract.
 5. The renderer reduces those events in
-   `src/renderer/app/transcriptEvents.ts` and renders them in
+   `src/shared/transcriptEvents.ts` and renders them in
    `src/renderer/workbench/Transcript.tsx`.
+
+The agent-facing party primer (`buildPartyPrimer` in `src/core/partyBridge.ts`)
+teaches the tool surface and the queue-versus-interrupt timing so behavior does
+not depend on model memory; `scripts/qa-party-bridge.mjs` locks it. Codex
+installs it once through `thread/start.developerInstructions` and reapplies the
+same thread-scoped override on `thread/resume`, so `turn/start.input` carries
+only the user's message and the primer never repeats as conversation history.
+Claude appends it to the session system prompt.
 
 ### Local versus WSL engine
 

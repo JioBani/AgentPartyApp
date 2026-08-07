@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
 import { log } from "./logger";
 
 /**
@@ -108,6 +109,37 @@ export class PartyRepository {
 
   memberDir(workspacePath: string, partyId: string, memberName: string): string {
     return path.join(this.partyDir(workspacePath, partyId), "members", sanitizeName(memberName));
+  }
+
+  /**
+   * The workbench tab layout for one party, or undefined when none is stored.
+   *
+   * Beside the party rather than in a renderer's localStorage: every window on
+   * this party must see the same tabs, and localStorage gave each window its own
+   * copy of a shared key. Storing it with the workspace also means the layout
+   * survives a reinstall and follows the workspace to another machine.
+   *
+   * Never throws — a missing or corrupt file reads as "nothing stored", which
+   * the caller seeds from the member list.
+   */
+  readLayout(workspacePath: string, partyId: string): WorkbenchLayout | undefined {
+    try {
+      const raw = fs.readFileSync(this.layoutPath(workspacePath, partyId), "utf8");
+      return sanitizeLayout(JSON.parse(raw)?.layout);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        log("warn", "party", "failed to read workbench layout", { partyId, error: errMsg(error) });
+      }
+      return undefined;
+    }
+  }
+
+  writeLayout(workspacePath: string, partyId: string, layout: WorkbenchLayout): void {
+    this.writeJsonAtomic(this.layoutPath(workspacePath, partyId), { version: 1, layout });
+  }
+
+  private layoutPath(workspacePath: string, partyId: string): string {
+    return path.join(this.partyDir(workspacePath, partyId), "layout.json");
   }
 
   /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowRight, Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -19,6 +19,7 @@ import { Segmented } from "../workbench/Segmented";
 import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
+import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
@@ -185,6 +186,70 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
             <span>{AUTO_COMPACT_GAUGE_MAX}%</span>
           </div>
           <div className="set-compact-limit">{AUTO_COMPACT_FLOOR}% 미만 · {AUTO_COMPACT_CEIL}% 초과는 설정할 수 없습니다.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Quiet periods offered as one click each. Presets rather than a slider because
+ * the usable range (1분 – 24시간) is three orders of magnitude, so a linear track
+ * would make every value under an hour indistinguishable.
+ */
+const IDLE_SLEEP_PRESET_MINUTES = [1, 5, 15, 30, 60, 180];
+
+function idleSleepMinutesLabel(minutes: number): string {
+  return minutes < 60 ? `${minutes}분` : `${minutes / 60}시간`;
+}
+
+/**
+ * The global idle-sleep block on the Settings → Runtime screen: whether a quiet
+ * member's harness process is released, and how long "quiet" has to be.
+ *
+ * The timeout is only a floor — a member with a turn in flight, an approval
+ * waiting, a compaction, detached background work, or a queued message is never
+ * released, and one pinned with 계속 켜두기 opts out entirely. The copy says so,
+ * because a bare "5분 뒤 종료" would read as a promise the app deliberately breaks.
+ */
+function SettingsIdleSleep({ setting, onChange }: { setting: IdleSleepSettings; onChange: (setting: IdleSleepSettings) => void }) {
+  const safe = sanitizeIdleSleep(setting);
+  // A timeout set over HTTP need not be one of the presets. Show it as its own
+  // chip instead of silently rounding — the screen must not misreport the value
+  // the sweep actually uses.
+  const choices = IDLE_SLEEP_PRESET_MINUTES.includes(safe.timeoutMinutes)
+    ? IDLE_SLEEP_PRESET_MINUTES
+    : [...IDLE_SLEEP_PRESET_MINUTES, safe.timeoutMinutes].sort((a, b) => a - b);
+  return (
+    <div className="set-compact">
+      <label className="set-compact-toggle">
+        <span className="set-compact-badge"><Moon size={18} /></span>
+        <span className="set-compact-copy">
+          <strong>유휴 멤버의 프로세스 내리기</strong>
+          <small>대화는 그대로 두고 하네스 프로세스만 반납해 메모리를 되찾습니다. 다음 메시지가 오면 대화를 이어서 다시 깨웁니다.</small>
+        </span>
+        <input
+          type="checkbox"
+          className="set-compact-switch"
+          checked={safe.enabled}
+          onChange={(event) => onChange({ ...safe, enabled: event.target.checked })}
+        />
+      </label>
+      {safe.enabled && (
+        <div className="set-compact-slider">
+          <div className="set-compact-readout">
+            <span>이만큼 조용하면 내립니다</span>
+            <strong className="wb-mono">{idleSleepMinutesLabel(safe.timeoutMinutes)}</strong>
+          </div>
+          <Segmented
+            value={String(safe.timeoutMinutes)}
+            options={choices.map((minutes) => ({ id: String(minutes), label: idleSleepMinutesLabel(minutes) }))}
+            onChange={(id) => onChange({ ...safe, timeoutMinutes: Number(id) })}
+          />
+          <div className="set-compact-limit">
+            턴이 진행 중이거나 승인 대기·압축 중이거나 백그라운드 작업·대기 메시지가 남아 있으면 내리지 않습니다.
+            멤버별로 계속 켜두려면 사이드바에서 멤버를 우클릭하세요. ({IDLE_SLEEP_MIN_MINUTES}분 ~ {IDLE_SLEEP_MAX_MINUTES / 60}시간)
+          </div>
         </div>
       )}
     </div>
@@ -478,7 +543,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveGateDefault, onSaveComposer, onSaveDiscord, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -490,6 +555,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
+  onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
@@ -587,6 +653,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             <section className="set-card">
               <div className="set-card-label">Auto-compact</div>
               <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+            </section>
+
+            {/* idle sleep — release a quiet member's process, keep its conversation */}
+            <section className="set-card">
+              <div className="set-card-label">유휴 슬립</div>
+              <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
             </section>
 
             {/* message input preferences (send key) */}

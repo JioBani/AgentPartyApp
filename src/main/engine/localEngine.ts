@@ -13,6 +13,7 @@ import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
 import { runPartyAction } from "./partyActions";
 import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
+import type { IdleSleepSettings } from "../../shared/idleSleep";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
 import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
@@ -40,6 +41,10 @@ export class LocalEngine implements EngineConnection {
 
   private get party(): PartyApplicationService {
     return this.deps.party;
+  }
+
+  async setIdleSleep(settings: IdleSleepSettings) {
+    this.party.setIdleSleep(settings);
   }
 
   async setCodexAuthentication(update: CodexAuthenticationUpdate) {
@@ -127,6 +132,14 @@ export class LocalEngine implements EngineConnection {
 
   async saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult> {
     return this.party.saveMemberTranscript(name, save, partyId);
+  }
+
+  async getPartyLayout(partyId?: string) {
+    return this.party.getPartyLayout(partyId);
+  }
+
+  async setPartyLayout(layout: unknown, partyId?: string) {
+    return this.party.setPartyLayout(layout, partyId);
   }
 
   // --- Models ---------------------------------------------------------------

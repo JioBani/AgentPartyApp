@@ -35,7 +35,7 @@ async function bundle(entry, name, external = []) {
 }
 
 // ---- Layer 1: applyEvents folding -----------------------------------------
-const { applyEvents, mergeRestoredTranscript, normalizeTranscriptBlocks } = await bundle("src/renderer/app/transcriptEvents.ts", "te-channel.mjs", []);
+const { applyEvents, mergeRestoredTranscript, normalizeTranscriptBlocks } = await bundle("src/shared/transcriptEvents.ts", "te-channel.mjs", []);
 
 console.log("\napplyEvents channel folding:");
 const sid = "s1";

@@ -58,9 +58,16 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
 console.log("\nMember-remove (right-click context menu) assertions:");
 assert(rows.length === 2, "both members rendered");
 
-// Right-click 'main' → no menu (main is not removable).
+// Right-click 'main' → a menu without 삭제하기. The menu used to be suppressed
+// entirely here (main is not removable and had no session, so nothing was
+// actionable), but 계속 켜두기 applies to every member including main, so the
+// menu now opens; only the delete item stays absent.
 rightClick(rowFor("main")); await tick();
-assert(!document.querySelector(".wb-ctx-menu"), "right-click on 'main' shows no context menu");
+const mainCtx = document.querySelector(".wb-ctx-menu");
+assert(Boolean(mainCtx), "right-click on 'main' opens a context menu");
+const mainItems = mainCtx ? [...mainCtx.querySelectorAll(".wb-ctx-item")] : [];
+assert(!mainItems.some((b) => /삭제하기/.test(b.textContent || "")), "'main' context menu has no 삭제하기");
+assert(mainItems.some((b) => /계속 켜두기/.test(b.textContent || "")), "'main' context menu offers 계속 켜두기");
 
 // Right-click 'alice' → a context menu with a delete item appears; no removal yet.
 rightClick(rowFor("alice")); await tick();

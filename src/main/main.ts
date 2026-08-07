@@ -17,6 +17,7 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArg
 import { WindowRegistry } from "./windowRegistry";
 import type { MemberPermissionInput, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
+import { sessionsForWindow, windowsServedLocally } from "./sessionListRouting";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 import { parseQueueCommand } from "../shared/messageQueue";
@@ -48,14 +49,24 @@ if (process.env.AGENTPARTY_USER_DATA) {
   app.setPath("userData", process.env.AGENTPARTY_USER_DATA);
 }
 
-// AgentParty runs as MANY independent processes — one per launch, for the same
-// cwd or different cwds. There is NO machine-global single-instance lock (it made
-// every process share/clobber global state, and forced a second launch to defer
-// to the first). Coordination is per-workspace instead: state lives in the
-// workspace's `.agent_party_app/` and discovery is per-workspace
-// (src/main/discovery.ts). "Open this workspace in the running app rather than a
-// duplicate" is the `agent-party` CLI's job (it finds the workspace's process via
-// discovery and asks it to open a window), not a global OS lock.
+// AgentParty runs as ONE process with MANY windows — any window on any
+// workspace, any party. A second launch becomes a window here (see the
+// single-instance lock at the bottom of this file).
+//
+// This reverses 5608fd5 ("remove single-instance lock", 2026-07-07), which
+// dropped the lock because it stopped a user from opening the same cwd twice —
+// at the time the only way to run two parties side by side was to run two apps.
+// Multi-window removes that need, and the multi-process shape turned out to cost
+// far more than it bought: session ids are per-process while the party store is
+// shared on disk, so two processes on one workspace could not see each other's
+// sessions and each started its own harness for the same member. Measured on a
+// live install before the fix: one member holding EIGHT `claude` processes on
+// the same conversation, ~2.5 GB, still climbing hours later.
+//
+// Per-workspace coordination did not go away — state still lives in the
+// workspace's `.agent_party_app/` and discovery is still per-workspace
+// (src/main/discovery.ts), which is what lets a member started here be
+// recognised rather than cloned (PartyApplicationService.startMember).
 
 let router: EmbeddedHarnessRouter | undefined;
 let sessionManager: SessionManager | undefined;
@@ -362,6 +373,17 @@ ${body}
             subscriptionProxy: subscriptionProxyConfig(),
           });
         },
+      },
+      // The distro engine died on its own. Drop it from the registry so the very
+      // next request builds a fresh one; a cached dead client would otherwise
+      // reject every call for the rest of the app's life, and the workspace
+      // would look permanently broken even though respawning fixes it.
+      (error) => {
+        log("warn", "engine", "dropping the dead remote engine so the next request respawns it", {
+          workspace: serialized,
+          error: error.message,
+        });
+        engineRegistry?.dispose(serialized);
       });
       // Stream the distro engine's live session activity to this workspace's windows.
       client.onEvent((channel, payload) => forwardRemoteEvent(serialized, channel, payload));
@@ -384,11 +406,13 @@ ${body}
   sessionManager.on("snapshot", (payload: any) => {
     broadcastToWorkspace(payload.workspace, "session:snapshot", payload);
   });
+  // Only the workspaces this process serves — a WSL workspace's list comes from
+  // its own engine through forwardRemoteEvent, and `session:list` replaces rather
+  // than merges. See main/sessionListRouting.ts for why that matters.
   sessionManager.on("sessions", () => {
-    for (const entry of registry().all()) {
-      const key = workspaceKey(entry.workspacePath);
-      const subset = sessionManager!.listSessions().filter((session) => workspaceKey(session.workspace) === key);
-      entry.window.webContents.send("session:list", subset);
+    const sessions = sessionManager!.listSessions();
+    for (const entry of windowsServedLocally(registry().all())) {
+      pushSessionList(entry, "local", sessionsForWindow(sessions, entry.workspacePath));
     }
   });
   // A member drove a party tool in-process (member-create / send / remove);
@@ -431,6 +455,10 @@ ${body}
   // starts, after the API binds) so a port fallback never leaves it fetching a
   // dead configured port ("-32603: fetch failed" on send/list).
   sessionManager.setAutomationBaseUrlProvider(() => automationApi?.baseUrl);
+  // Seed the idle-sleep policy before any engine exists, so the registry replays
+  // it onto each one it builds. A WSL engine reads the distro's settings.json,
+  // never the desktop's, so without this it silently runs on the built-in default.
+  void engineRegistry.setIdleSleep(getSettings().idleSleep);
   registerIpc();
   registerApplicationMenu();
   const launched = launchWorkspace();
@@ -490,6 +518,26 @@ function removeAllDiscovery(): void {
   }
 }
 
+/**
+ * The one place `session:list` is sent, so its "exactly one producer per window"
+ * rule is auditable at runtime instead of only by reading two call sites.
+ *
+ * `source` is recorded because the failure mode is not a wrong list but a
+ * SECOND one: the channel replaces the renderer's array, so a producer that does
+ * not own the workspace silently overwrites the owner's list. Debug-level — this
+ * fires on every session event, and the answer is only interesting when someone
+ * is asking why a member is flickering.
+ */
+function pushSessionList(entry: { id: string; workspacePath: string; window: BrowserWindow }, source: "local" | "remote", list: unknown): void {
+  log("debug", "window", "session list pushed", {
+    source,
+    window: entry.id,
+    workspace: entry.workspacePath,
+    count: Array.isArray(list) ? list.length : -1,
+  });
+  entry.window.webContents.send("session:list", list);
+}
+
 function broadcastToWorkspace(workspacePath: string, channel: string, payload: unknown): void {
   for (const entry of registry().forWorkspace(workspacePath)) {
     entry.window.webContents.send(channel, payload);
@@ -505,7 +553,7 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
   if (channel === "session:sessions") {
     const list = Array.isArray(payload) ? payload.map((session) => ({ ...session, workspace: workspacePath })) : payload;
     for (const entry of registry().forWorkspace(workspacePath)) {
-      entry.window.webContents.send("session:list", list);
+      pushSessionList(entry, "remote", list);
     }
     return;
   }
@@ -683,7 +731,7 @@ function registerIpc(): void {
   handle("window:minimize", async (event) => controller().minimizeWindow(senderWindowId(event)));
   handle("window:maximize", async (event) => controller().toggleMaximizeWindow(senderWindowId(event)));
   handle("window:close", async (event) => controller().closeWindow(senderWindowId(event)));
-  handle("window:new", async (_event, workspacePath?: string) => controller().openWindow(workspacePath));
+  handle("window:new", async (_event, workspacePath?: string, partyId?: string) => controller().openWindow(workspacePath, partyId));
   handle("window:list", async () => controller().listWindows());
 
   // Party ops carry the SENDER WINDOW id: each window has its own active party, so
@@ -707,11 +755,20 @@ function registerIpc(): void {
   handle("party:bind", async (event, name: string, sessionId: string) => controller().bindPartyMember(senderWorkspace(event), name, sessionId, senderWindowId(event)));
   handle("party:remove", async (event, name: string) => controller().removePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:autoCompact", async (event, name: string, autoCompact: unknown) => controller().setMemberAutoCompact(senderWorkspace(event), name, autoCompact, senderWindowId(event)));
+  // Idle sleep, driven by hand from the sidebar menu. These reach the same three
+  // party actions the idle sweep and the HTTP API use — one implementation.
+  handle("party:keepAwake", async (event, name: string, keepAwake: boolean) => controller().setMemberKeepAwake(senderWorkspace(event), name, keepAwake === true, senderWindowId(event)));
+  handle("party:sleep", async (event, name: string) => controller().sleepPartyMember(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:wake", async (event, name: string) => controller().wakePartyMember(senderWorkspace(event), name, senderWindowId(event)));
   // Member-scoped permission: persists AND applies to the live adapter, so a
   // change made while the member's session is down is not dropped.
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));
+  // Tab layout is PARTY state, not window state: one writer, broadcast to the
+  // other windows on that party (see AppController.setPartyLayout).
+  handle("party:layout:get", async (event) => controller().getPartyLayout(senderWorkspace(event), senderWindowId(event)));
+  handle("party:layout:set", async (event, layout: unknown) => controller().setPartyLayout(senderWorkspace(event), layout, senderWindowId(event)));
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
 }
@@ -818,10 +875,66 @@ function parsePort(baseUrl: string): number {
   }
 }
 
-app.whenReady().then(bootstrap).catch((error) => {
-  dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
+/**
+ * One AgentParty process per machine — a second launch becomes a WINDOW here.
+ *
+ * The party store lives on disk next to the workspace, but a session id only
+ * means anything inside the process that created it. Two processes on one
+ * workspace therefore could not see each other's sessions, and each started its
+ * own harness for the same member, overwrote the shared binding, and abandoned
+ * the other's process. Measured on a live install: one member holding EIGHT
+ * `claude` processes on the same conversation, ~2.5 GB, still growing.
+ *
+ * Multiplexing was never the problem — the app is already built for it.
+ * `EngineRegistry.forWorkspace` keys engines BY WORKSPACE, `WindowRegistry`
+ * tracks the workspace each window is viewing, and every request already routes
+ * through `engineFor(workspacePath)` / `partyForWindow(windowId)`. So one
+ * process can hold many workspaces and many parties at once; nothing but this
+ * lock was missing. (`main.ts` even documented a `second-instance` handler that
+ * did not exist.)
+ *
+ * `AGENTPARTY_ALLOW_MULTI_INSTANCE=1` keeps the old behaviour for QA: the e2e
+ * scripts drive several isolated apps at once and pass it already.
+ */
+const allowMultiInstance = process.env.AGENTPARTY_ALLOW_MULTI_INSTANCE === "1";
+if (!allowMultiInstance && !app.requestSingleInstanceLock()) {
+  // Another instance owns the lock; it will open our workspace as a window.
   app.quit();
-});
+} else {
+  if (!allowMultiInstance) {
+    app.on("second-instance", (_event, argv) => {
+      const requested = workspaceFromArgv(argv);
+      log("info", "window", "second instance folded into this process", { argv: argv.slice(1), resolvedWorkspace: requested });
+      // The lock is taken before `whenReady`, so a launch that races our own
+      // startup can land here while `bootstrap` is still running — and
+      // `registry()` throws until it finishes. Dropping the event is right: the
+      // window bootstrap is about to open serves that user just as well.
+      if (!windowRegistry) {
+        log("info", "window", "second instance arrived during startup; the launching window covers it");
+        return;
+      }
+      // A relaunch with no workspace is "show me the app", not "open a second
+      // window of the same thing" — surface what is already open instead.
+      const existing = registry().all();
+      if (!requested && existing.length > 0) {
+        const target = existing[0].window;
+        if (target.isMinimized()) {
+          target.restore();
+        }
+        target.focus();
+        return;
+      }
+      void createWindow(requested || defaultWorkspace()).catch((error) => {
+        log("error", "window", "could not open a window for the second instance", { error: error instanceof Error ? error.message : String(error) });
+      });
+    });
+  }
+
+  app.whenReady().then(bootstrap).catch((error) => {
+    dialog.showErrorBox("AgentParty failed to start", error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
+}
 
 app.on("activate", () => {
   if (registry().all().length === 0) {

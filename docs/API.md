@@ -195,6 +195,16 @@ Updates app settings.
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
 
+`idleSleep` controls when a quiet member's harness process is released to reclaim
+its memory — `{"idleSleep": {"enabled": true, "timeoutMinutes": 5}}`, the default.
+`timeoutMinutes` is clamped 1–1440: below a minute a member would be torn down and
+rebuilt between two halves of one thought, and past a day `enabled: false` says it
+better. The timeout is only a floor; the sweep still refuses a member that is
+mid-turn, waiting on an approval, compacting, holding detached background work or
+queued messages, running on Cursor, or marked `keepAwake` (see
+`/api/party/members/:name/sleep`). A sleeping member keeps its conversation and
+wakes on the next message.
+
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
 permission config (`permissionMode` for Claude Code, `codexPolicy` for Codex,
@@ -1230,7 +1240,19 @@ Lower-level compatibility endpoint that routes a message as an inter-member **ch
 
 ### `POST /api/party/members/:name/open`
 
-Marks a non-main member as opened in the UI without starting a harness session by itself. The Workbench may immediately call `start` for an active opened panel to prewarm the command/skill palette.
+Gives the member a **tab** in the workbench — the same thing a click on its
+sidebar row does, through the same code — and marks it opened. It does not start
+a harness session by itself; the Workbench prewarms an active opened panel,
+which is what puts a session behind it.
+
+Because the tab layout is party state (see `POST /api/party/layout`), the tab
+appears in **every window showing that party**, not only the one addressed by
+`?window=`.
+
+This used to set the status flag and nothing else, while still answering
+`Member 'X' opened.` — so an agent asking for a member got a success message and
+no tab anywhere. If you are looking for the older behaviour, there is none worth
+keeping: a status nobody can see is not "opened".
 
 ### `POST /api/party/members/:name/start`
 
@@ -1281,6 +1303,39 @@ Binds an existing active session to a member.
 ### `POST /api/party/members/:name/close`
 
 Closes the member's active session while keeping its registry/scaffold.
+
+### `POST /api/party/members/:name/sleep`
+
+Releases the member's harness process while KEEPING its conversation: status
+becomes `sleeping` and `harnessSessionId` carries the thread, so the next message
+resumes rather than restarts it. This is what the idle sweep does on its own once
+a member has been quiet past `idleSleep.timeoutMinutes`; the endpoint exists so a
+person or a QA run can exercise the same path without waiting it out.
+
+A member with no live session returns `ok` and says so — it is already released.
+The sweep additionally refuses (and logs) a member that is mid-turn, waiting on
+an approval, compacting, holding detached background work, holding queued turns,
+running on Cursor (which keeps no process between turns), or marked
+`keepAwake`. Calling this endpoint bypasses only the *timeout*, not those.
+
+```json
+{ "ok": true, "message": "Member 'impl' is sleeping; a message wakes it.", "member": { "name": "impl", "status": "sleeping", "sleptAt": "2026-08-06T02:10:00.000Z" } }
+```
+
+### `POST /api/party/members/:name/wake`
+
+Starts a sleeping member again, resuming its harness thread, and delivers
+anything waiting on its queue. Equivalent to `resume`; it exists as its own verb
+so the intent reads correctly against `sleep`. Sending a message to a sleeping
+member does this automatically — the message is queued, the sender gets an
+immediate `ok`, and the wake runs behind it.
+
+### `POST /api/party/members/:name/keep-awake`
+
+`{ "keepAwake": true }` pins the member awake regardless of how long it is quiet;
+`false` lets it follow the global setting again. Use it for a member doing work
+the app cannot observe, where a wake-up would not restore what was lost. Turning
+it on wakes the member if it is currently asleep.
 
 ### `POST /api/party/members/:name/remove`
 
@@ -1427,6 +1482,48 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+### `GET /api/party/layout`
+
+The workbench tab layout for the calling window's party: which members are open,
+in which panels, in what order, and which tab is frontmost in each.
+
+```json
+{
+  "ok": true,
+  "layout": {
+    "panels": [
+      { "id": "pa", "tabs": ["impl", "review"], "active": "impl", "weight": 1 },
+      { "id": "pb", "tabs": ["test"], "active": "test", "weight": 1 }
+    ],
+    "focusedPanelId": "pa"
+  }
+}
+```
+
+`layout` is absent when the party has none stored yet — the workbench then seeds
+one from the member list. A stored layout with **no panels is a different fact**:
+it means every tab was closed, and is honoured rather than reseeded.
+
+### `POST /api/party/layout`
+
+Sets that layout. Send `{ "layout": { ... } }` in the shape above.
+
+This is **party state, not window state**. Every window of this process showing
+that party moves with it, and the layout is stored with the workspace — so it
+survives a reinstall and follows the workspace to another machine. It used to
+live in each renderer's `localStorage`, where two windows on one party each kept
+a private copy of a shared key: a tab closed in one stayed open in the other, and
+that window's next change wrote the closed tab back.
+
+```json
+{ "ok": true, "changed": true, "partyId": "party-...", "layout": { "panels": [ ... ], "focusedPanelId": "pa" } }
+```
+
+`changed: false` means the layout already matched what was stored, so no window
+was told anything — re-sending is harmless. Panels with no `id` or no `tabs` are
+dropped, and a `focusedPanelId` naming no surviving panel falls back to the
+first, so a malformed body cannot leave the workbench unable to open anything.
+
 ## Harness Party API
 
 Harness skills and tools can call these local endpoints from inside a session. This is a local mechanical identity mechanism, not a public auth system.
@@ -1484,7 +1581,7 @@ directly instead of leaving the caller to click the strip:
 ```
 
 ```text
-general (기본 하네스 · Auto-compact · 입력창)
+general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
 harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
 gate    (Message Gate 리뷰어 기본값)
 discord (Discord 브리지 자격증명 + 연결된 멤버)
@@ -1521,6 +1618,14 @@ Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
 
 Opens a new window. Body `{ "workspacePath": "C:/path" }` (optional; defaults to
 the last-used workspace). Returns `{ id, workspacePath, focused }`.
+
+`{ "partyId": "party-…" }` opens the window ON that party instead of whatever the
+workspace last selected. The party is pinned before the window can ask, so it
+cannot land on the party another window happens to be showing. This backs the
+sidebar's party right-click → **새 창에서 열기**, and it is how several parties are
+run side by side: every window belongs to ONE app process, so they share the
+workspace's engine and its sessions — a member already running is reused, not
+started again.
 
 ### `POST /api/windows/:id/workspace`
 

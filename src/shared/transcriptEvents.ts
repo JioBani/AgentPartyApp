@@ -1,5 +1,5 @@
-import type { SessionView, TranscriptSave } from "../../shared/types";
-import type { TranscriptBlock } from "../workbench/types";
+import type { SessionView, TranscriptSave } from "./types";
+import type { TranscriptBlock } from "./transcript";
 
 // The party write-tools as the agent sees them (mcp__<server>__<tool>). Mirrors
 // PARTY_TOOL_PREFIX in src/core/partyBridge.ts; inlined so the renderer bundle

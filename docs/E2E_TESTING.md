@@ -88,6 +88,44 @@ asserts `supported:true`, the correct `harness` tag, and a well-formed `servers`
 array from the real SDK `mcpServerStatus()` (Claude) / app-server
 `mcpServerStatus/list` (Codex) — proving the real MCP path, not just the mock.
 
+`node scripts/e2e-wsl-workspace-open.mjs` (or `npm run test:e2e:wsl-workspace-open`)
+boots the real app and opens a `wsl+<distro>:` workspace through the same
+`POST /api/windows` call the `agent-party` CLI makes, then asserts `GET /api/state`
+comes back with the distro, the distro path, AND a session list — the last one is
+what proves the engine **inside** the distro answered, rather than the URI merely
+being parsed on the Windows side. Guards a whole failure class: the engine server
+is bundled as ESM and run by the distro's plain node, so any Electron-only
+dependency reaching its module graph (`import … from "electron"`, `__dirname`)
+kills it at LOAD time and the workspace silently renders as "작업공간 없음".
+Requires the distro; the workspace is created under `/tmp` inside it.
+
+`node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
+real app and drives idle sleep's two escape hatches through the AppController
+methods the UI calls: the global policy the Settings → 유휴 슬립 card writes
+(on/off, quiet period, and the 1–1440분 clamp an HTTP caller could otherwise step
+outside), and the per-member 계속 켜두기 pin from the sidebar's right-click menu.
+The pin is asserted to beat a *direct* sleep request, not only the timeout sweep
+— were it advisory there, the menu item would be lying. Then sleeps and wakes an
+un-pinned member and checks the session binding is released and re-bound. Offline
+and unbilled: the member is created but never messaged, since sleeping is a
+process-lifecycle concern and a model call would add cost without coverage.
+
+`node scripts/e2e-cross-workspace-status-flap.mjs` (or
+`npm run test:e2e:cross-workspace-flap`) boots the real app with TWO windows on
+TWO workspaces — one WSL, one local — in ONE process, starts a local member to
+generate session traffic, then asserts from the app's own debug log that this
+process never wrote the WSL window's session list. `session:list` replaces the
+renderer's array rather than merging, so a second producer silently overwrites
+the owner's list; that is what made a member flicker idle ↔ not-started.
+
+Asserts on the PUSH, not the paint, and that distinction is the whole test. An
+earlier version polled the rendered status every 400ms and **passed against the
+broken build**: the empty list is overwritten within milliseconds, so a DOM poll
+almost never catches it even though React paints it and the user sees the
+flicker. Measured against the reverted fix, the log showed 240 trespassing
+pushes to 1 legitimate one — the assertion fails loudly. Requires the distro;
+offline and unbilled.
+
 `node scripts/e2e-discovery.mjs` launches TWO real app processes that SHARE one
 userData but open DIFFERENT cwds (the exact condition that used to clobber the
 global `<userData>/automation.json`) and asserts they are independently

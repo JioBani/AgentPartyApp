@@ -34,6 +34,22 @@ function hasPendingApproval(transcript: TranscriptBlock[], session?: SessionView
 }
 
 function deriveStatus(member: PartyMember, session: SessionView | undefined, transcript: TranscriptBlock[]): MemberStatus {
+  // Checked before the no-session case below, which it would otherwise fall
+  // into: a sleeping member has no session BY DESIGN. Reporting it as
+  // "not started" would deny the conversation that is sitting right there in
+  // the transcript, and hide why the next message takes a moment to land.
+  if (member.status === "sleeping") {
+    return "sleeping";
+  }
+  // Checked here for the OPPOSITE reason to `sleeping`: a closed member refuses
+  // to start on its own. Calling it "not started" asserted the one thing that is
+  // untrue — that a message would start it — while prewarm skipped it and
+  // member-to-member delivery rejected it outright. Reachable without this
+  // window doing anything: another window on the same party closing that tab
+  // closes the member for everyone.
+  if (member.status === "closed") {
+    return "closed";
+  }
   if (!member.sessionId || !session) {
     return "not-started";
   }
@@ -200,6 +216,16 @@ export function statusLabel(status: MemberStatus): string {
     // messaging the member starts a fresh session and the conversation resumes.
     case "disconnected":
       return "disconnected";
+    // Deliberately not "stopped" or "closed": nothing was lost and nothing is
+    // wrong. The process was released to free memory and the next message wakes
+    // it — the label exists to explain that first short delay, not to alarm.
+    case "sleeping":
+      return "sleeping";
+    // Someone closed this member — here or in another window on the same party.
+    // Distinct from `sleeping` (which wakes itself on the next message) and from
+    // `not started` (which starts itself): this one waits to be asked.
+    case "closed":
+      return "closed";
     default:
       return "idle";
   }

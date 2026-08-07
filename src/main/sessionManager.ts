@@ -30,6 +30,13 @@ import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "
 import { CodexAuthenticationStore } from "./codexAuthenticationStore";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 
+/**
+ * Status strings that begin or end a turn. Used only by idle sleep's
+ * "conversational activity" clock — the statuses in between (and the ambient
+ * usage/diagnostic traffic a session emits on a timer) deliberately do not count.
+ */
+const TURN_BOUNDARY_STATUSES = new Set(["sent", "requesting", "responding", "interrupted", "compacted"]);
+
 interface ManagedSession {
   id: string;
   workspace: string;
@@ -42,6 +49,17 @@ interface ManagedSession {
   closed?: boolean;
   /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
   lastActivityAt: number;
+  /**
+   * Last CONVERSATIONAL activity, for idle sleep.
+   *
+   * Deliberately not {@link lastActivityAt}: that one answers "has the harness
+   * produced anything", which the account-usage poller satisfies every 60s all
+   * by itself. Idle sleep asking the same question could never see a member
+   * quiet for longer than one poll, so no member ever slept — the feature
+   * reported success and reclaimed nothing. Ambient bookkeeping does not count
+   * as someone using the member.
+   */
+  lastTurnActivityAt: number;
   turnActive: boolean;
   /**
    * Wall-clock start of the in-flight turn (ms), stamped when a turn transitions
@@ -671,7 +689,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
+    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
@@ -709,6 +727,22 @@ export class SessionManager extends EventEmitter {
   private trackTurnActivity(session: ManagedSession, event: ClaudeNormalizedEvent): void {
     session.lastActivityAt = Date.now();
     session.stallNotified = false;
+    // Idle sleep measures from TURN BOUNDARIES, not from "the harness said
+    // something". A session emits ambient traffic on its own — the 60s account
+    // usage poll and the status lines around it — and treating any of it as use
+    // kept `quietMs` resetting before it could ever reach the threshold, so no
+    // member slept. Per-event precision is not needed either: while a turn runs
+    // `turnActive` already blocks sleep, so the only moments that matter are
+    // when one starts, ends, or parks on the user.
+    const startsOrEndsTurn = event.type === "turn_complete"
+      || event.type === "error"
+      || event.type === "approval_request"
+      || event.type === "approval_resolved"
+      || event.type === "queue_dequeued"
+      || (event.type === "status" && TURN_BOUNDARY_STATUSES.has(String((event as { status?: unknown }).status || "")));
+    if (startsOrEndsTurn) {
+      session.lastTurnActivityAt = session.lastActivityAt;
+    }
     switch (event.type) {
       case "turn_complete":
       case "error":
@@ -762,6 +796,83 @@ export class SessionManager extends EventEmitter {
       default:
         break;
     }
+  }
+
+  /**
+   * Sessions quiet for at least `thresholdMs` that hold nothing THIS layer knows
+   * would be destroyed by ending them.
+   *
+   * Deliberately answers only about the session: a turn in flight, a prompt the
+   * user has not answered, a compaction, and work the harness detached from its
+   * turn. Member policy — an explicit keep-awake, a queued message, which
+   * harness it is — belongs to the caller, which owns member state.
+   *
+   * `backgroundTaskCount` is read from the adapter rather than the last
+   * broadcast snapshot: a task can be backgrounded without anything else
+   * changing, and acting on a stale count is exactly the mistake that would
+   * destroy running work.
+   */
+  idleCandidates(thresholdMs: number): { id: string; identity?: PartyIdentity; quietMs: number }[] {
+    const now = Date.now();
+    const candidates: { id: string; identity?: PartyIdentity; quietMs: number }[] = [];
+    for (const session of this.sessions.values()) {
+      const quietMs = now - session.lastTurnActivityAt;
+      if (quietMs < thresholdMs || this.sleepBlocker(session.id)) {
+        continue;
+      }
+      candidates.push({ id: session.id, identity: session.identity, quietMs });
+    }
+    return candidates;
+  }
+
+  /** Per-session quiet time and blocker, for diagnosing a member that never sleeps. */
+  describeIdleState(): { id: string; member?: string; quietMs: number; blocker?: string }[] {
+    const now = Date.now();
+    return [...this.sessions.values()].map((session) => ({
+      id: session.id,
+      member: session.identity?.member,
+      quietMs: now - session.lastTurnActivityAt,
+      blocker: this.sleepBlocker(session.id),
+    }));
+  }
+
+  /**
+   * What this session would LOSE if its process ended now, or undefined if
+   * nothing would. The single place the session-level answer is decided, so the
+   * timed sweep and a hand-driven sleep cannot disagree — and a hand-driven
+   * sleep is exactly when someone is most likely to destroy running work.
+   *
+   * `backgroundTaskCount` is read from the adapter rather than the last
+   * broadcast snapshot: a task can be backgrounded without anything else
+   * changing, and acting on a stale count is the mistake that destroys work.
+   */
+  sleepBlocker(sessionId: string): string | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.closed) {
+      return undefined;
+    }
+    if (session.turnActive) {
+      return "a turn is in flight";
+    }
+    if (session.awaitingUser) {
+      return "it is waiting on an approval";
+    }
+    if (session.compacting) {
+      return "a compaction is in flight";
+    }
+    const snapshot = session.adapter.getSnapshot();
+    const background = Number(snapshot.backgroundTaskCount || 0);
+    if (background > 0) {
+      return `${background} background task(s) are still running`;
+    }
+    // Turns buffered inside the adapter are lost on dispose, and unlike the
+    // app-level queue nothing can hand them back. An idle session should hold
+    // none — adapters buffer only while a turn runs — so this guards against
+    // being wrong about that, not an expected case.
+    if (Number(snapshot.queuedTurnCount || 0) > 0) {
+      return "turns are buffered in the harness";
+    }
+    return undefined;
   }
 
   /** Flags any active turn that has gone silent past the stall threshold (once). */

@@ -1,11 +1,11 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { clipboard, nativeImage } from "electron";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
@@ -206,6 +206,44 @@ export class AppController {
     return this.broadcastParty(workspacePath);
   }
 
+  /** The party's workbench tab layout, or undefined when none is stored yet. */
+  getPartyLayout(workspacePath: string, windowId?: string): Promise<ReturnType<PartyApplicationService["getPartyLayout"]>> {
+    return this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+  }
+
+  /**
+   * Records the party's tab layout and pushes it to every window showing that
+   * party, so closing a tab in one window closes it everywhere.
+   *
+   * Including the window the change came from. Skipping it looked like a free
+   * optimisation — that renderer already has the layout — but the UI is not the
+   * only caller: an HTTP client addressing a window would then move every window
+   * EXCEPT the one it named. The renderer ignores an echo of its own layout, so
+   * one unconditional rule costs nothing and behaves the same either way.
+   *
+   * A layout identical to the stored one broadcasts nothing at all.
+   */
+  async setPartyLayout(workspacePath: string, layout: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setPartyLayout"]>> {
+    const result = await this.engineFor(workspacePath).setPartyLayout(layout, this.partyForWindow(windowId));
+    if (!result.changed || !result.layout || !result.partyId) {
+      return result;
+    }
+    for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
+      // Only windows actually showing this party — another window of the same
+      // workspace may be on a different one, whose tabs must not be replaced.
+      //
+      // Resolved the way every READ resolves it, not by reading the pin map
+      // directly: a window that loaded before this workspace had any party never
+      // pinned one, and testing the raw map silently dropped it from the
+      // broadcast — the first window of a fresh workspace, i.e. the common case.
+      if (await this.pinnedPartyForWindow(workspacePath, entry.id) !== result.partyId) {
+        continue;
+      }
+      entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
+    }
+    return result;
+  }
+
   private windowFor(windowId?: string): BrowserWindow | undefined {
     return this.deps.windowRegistry.resolve(windowId)?.window;
   }
@@ -218,8 +256,14 @@ export class AppController {
    * location and prove it is driving the build it just made. Parallel worktrees
    * previously ran each other's builds and reported green for code that was
    * never under test.
+   *
+   * Guarded like the other module-dir reads in this codebase: the same class is
+   * bundled into the ESM engine server that runs under a distro's plain node,
+   * where `__dirname` does not exist and an unguarded read throws at LOAD time —
+   * taking the whole WSL workspace down. There the engine runs from its server
+   * dir, so cwd is the build's location.
    */
-  private static readonly APP_ROOT = __dirname;
+  private static readonly APP_ROOT = typeof __dirname === "string" ? __dirname : process.cwd();
 
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
@@ -302,6 +346,12 @@ export class AppController {
     this.deps.onSettingsChanged();
     if (typeof patch?.debugEnabled === "boolean" && patch.debugEnabled !== previous.debugEnabled) {
       this.deps.sessionManager.setDebugMode(patch.debugEnabled);
+    }
+    // Idle sleep is acted on by whichever host owns the sessions, which for a WSL
+    // workspace is inside the distro — and that host reads a different
+    // settings.json. Push the value instead of letting each engine look it up.
+    if (patch?.idleSleep) {
+      void this.deps.engineRegistry.setIdleSleep(getSettings().idleSleep);
     }
     const settings = getPublicSettings();
     // Settings are global — push to EVERY window so a change made over HTTP or in
@@ -471,8 +521,21 @@ export class AppController {
     return this.deps.windowRegistry.list();
   }
 
-  openWindow(workspacePath?: string): Promise<WindowInfo> {
-    return this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+  /**
+   * Opens a window, optionally ON a specific party.
+   *
+   * The party is PINNED before the window can ask, because pinning otherwise
+   * happens at the window's first `getState` and would capture whatever the
+   * shared advisory hint held at that moment — i.e. the party the OTHER window
+   * is on. Setting it up front is what makes "open this party in a new window"
+   * land on that party instead of a copy of the current one.
+   */
+  async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
+    const info = await this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+    if (partyId) {
+      this.activePartyByWindow.set(info.id, partyId);
+    }
+    return info;
   }
 
   /** Points a window at a different workspace and returns its fresh state. */
@@ -693,8 +756,20 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.respawnMember(name, input, this.partyForWindow(windowId)));
   }
 
-  openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
+  /**
+   * Opens a member — marks it opened AND gives it a tab.
+   *
+   * The tab was the missing half. This answered "Member 'X' opened." while only
+   * setting a status flag, so an agent (or any HTTP caller) asking for a member
+   * got a success message and no tab anywhere. Adding it to the party layout is
+   * exactly what a sidebar click does, through the same shared operation and the
+   * same broadcast, so both callers land in the same place.
+   */
+  async openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
+    const result = await this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
+    const stored = await this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+    await this.setPartyLayout(workspacePath, openMemberTab(stored ?? EMPTY_LAYOUT, name), windowId);
+    return result;
   }
 
   startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>> {
@@ -712,6 +787,25 @@ export class AppController {
   /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */
   setMemberAutoCompact(workspacePath: string, name: string, autoCompact: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>> {
     return this.handlePartyAction(workspacePath, name, "auto-compact", { autoCompact }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberAutoCompact"]>>;
+  }
+
+  /**
+   * Pins a member awake, or lets it follow the global idle-sleep policy again.
+   * Un-pinning does not sleep the member — the sweep decides that on its own
+   * once the member has been quiet long enough.
+   */
+  setMemberKeepAwake(workspacePath: string, name: string, keepAwake: boolean, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberKeepAwake"]>> {
+    return this.handlePartyAction(workspacePath, name, "keep-awake", { keepAwake }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberKeepAwake"]>>;
+  }
+
+  /** Releases a member's harness process now, keeping its conversation. */
+  sleepPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["sleepMember"]>> {
+    return this.handlePartyAction(workspacePath, name, "sleep", {}, windowId) as Promise<ReturnType<PartyApplicationService["sleepMember"]>>;
+  }
+
+  /** Brings a sleeping member's process back and resumes its conversation. */
+  wakePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["wakeMember"]>> {
+    return this.handlePartyAction(workspacePath, name, "wake", {}, windowId) as Promise<ReturnType<PartyApplicationService["wakeMember"]>>;
   }
 
   /**
@@ -1080,8 +1174,16 @@ export class AppController {
    * success — the user would paste nothing and never learn why. So an empty
    * decode is an error, and the size actually written comes back for the caller
    * to assert on.
+   *
+   * Electron is imported HERE, lazily, not at module scope: this controller is
+   * also the one the headless engine server runs inside a WSL distro, where
+   * `electron` does not exist. A top-level `import … from "electron"` made every
+   * WSL workspace fail to open (`WSL engine exited before ready (code 1)`), so
+   * the dependency must stay inside the one method that needs it — a headless
+   * caller then gets an explicit error instead of a dead engine.
    */
-  writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): { ok: true; width: number; height: number; bytes: number } {
+  async writeImageToClipboard(input: { dataBase64?: string; mediaType?: string }): Promise<{ ok: true; width: number; height: number; bytes: number }> {
+    const { clipboard, nativeImage } = await import("electron");
     const dataBase64 = String(input?.dataBase64 || "").trim();
     if (!dataBase64) {
       throw new Error("clipboard image requires 'dataBase64' (base64 bytes, no data: prefix).");

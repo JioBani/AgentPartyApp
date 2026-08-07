@@ -4,6 +4,7 @@ import type { ImageAttachment } from "../../shared/attachments";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
+import type { WorkbenchPanel } from "../../shared/workbenchLayout";
 
 /**
  * One in-session subagent, folded from `subagent` normalized events. Its output
@@ -30,61 +31,29 @@ export interface Subagent {
   updatedAt?: string;
 }
 
-/** Per-member transcript block — the rendering contract filled by agent events. */
-export type TranscriptBlock =
-  // `sent` marks a status line that is the harness echoing back a user turn the
-  // app just submitted. It is the user's own message, not agent output, so it
-  // does not end a reply that is still streaming (see appendText, [#14]).
-  // `fromQueue` marks a user block that WAITED in the member's message queue
-  // before being handed over. It is permanent on purpose: scrolling back, the
-  // badge is the only way to tell that this message reached the agent later than
-  // it was typed. `queuedN` > 1 means several queued items merged into it, and
-  // `from` names the sending member (absent = the user). See shared/messageQueue.ts.
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null }
-  | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
-  // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
-  | { id: string; kind: "plan"; steps: import("../../shared/codexItems").CodexPlanStep[]; explanation?: string; at?: string }
-  // A Codex fileChange item: per-file diff with +/- stats.
-  | { id: string; kind: "fileChange"; changes: import("../../shared/codexItems").CodexFileEdit[]; status?: string; at?: string }
-  // A surfaced Codex diagnostic (reroute / rate-limit / warning); never silently dropped.
-  // `repeat` counts consecutive identical occurrences folded into one block
-  // (≥2 renders a ×N badge) — a re-firing diagnostic ticks a counter, never stacks.
-  | { id: string; kind: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; repeat?: number; at?: string }
-  // Inter-member (agentparty channel) message. `direction` is relative to the
-  // member whose transcript this is: "in" = received, "out" = this member sent.
-  // `fromQueue` marks an inbound card whose message WAITED in this member's
-  // queue before delivery. Member-to-member traffic renders as this card rather
-  // than a user bubble, so the queue provenance rides here too — see applyEvents.
-  | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; error?: string; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord"; fromQueue?: boolean; queuedN?: number }
-  // A party write-action this member drove (member-create / member-remove).
-  | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
-  // A Message Gate outcome for an OUTGOING send by this member (inline badge).
-  // rejected = blocked (not delivered) · forced = bypassed the gate · failed =
-  // reviewer errored so it was delivered unreviewed (fail-open). UI-only.
-  | { id: string; kind: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at?: string }
-  | {
-      id: string;
-      kind: "approval";
-      requestId: string;
-      toolName: string;
-      title?: string;
-      description?: string;
-      input?: unknown;
-      resolved?: "allow" | "deny";
-      /** Codex approval metadata (command/diff/decision options); Codex requests only. */
-      codex?: import("../../shared/codexApproval").CodexApprovalMeta;
-      /** For AskUserQuestion: the user's chosen answers (question text -> label). */
-      answers?: Record<string, string>;
-      at?: string;
-    };
+/**
+ * Per-member transcript block — the rendering contract filled by agent events.
+ * Defined in `shared/transcript.ts` because the main process persists it;
+ * re-exported here so the renderer keeps its existing import path.
+ */
+import type { TranscriptBlock } from "../../shared/transcript";
+
+export type { TranscriptBlock };
+
 
 /**
  * `disconnected` is the member's own `missing_session`: it is bound to a session
  * that nothing is behind any more. It is deliberately NOT folded into
  * `not-started`, which means "never started, message it and it begins" — telling
  * a user that about a member they cannot reach is worse than saying nothing.
+ *
+ * `sleeping` is the opposite kind of fact: the app released the harness process
+ * after a quiet spell to reclaim memory, and the conversation is intact. Shown
+ * rather than hidden so the first message's short wake-up delay has a visible
+ * cause — and kept distinct from `not-started`, which would wrongly suggest
+ * there is no conversation to come back to.
  */
-export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected";
+export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected" | "sleeping" | "closed";
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 
@@ -138,10 +107,10 @@ export interface MemberView {
   compacting: boolean;
 }
 
-/** One watch-slot. Tabs time-share the slot; `active` is the visible member. */
-export interface PanelState {
-  id: string;
-  tabs: string[]; // member names, left -> right
-  active: string; // member name
-  weight: number; // flex weight relative to sibling panels
-}
+/**
+ * One watch-slot. Tabs time-share the slot; `active` is the visible member.
+ *
+ * Defined in `shared/workbenchLayout.ts` because the main process persists and
+ * broadcasts the layout; re-exported here so the renderer keeps its own name.
+ */
+export type PanelState = WorkbenchPanel;

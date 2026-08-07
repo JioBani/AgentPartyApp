@@ -87,6 +87,17 @@ export interface ClaudeSessionSnapshot {
    * used count without a ratio (never a fabricated denominator).
    */
   contextWindow?: number;
+  /**
+   * Harness tasks still in flight that are NOT the current turn — a backgrounded
+   * shell, a workflow, an MCP monitor, a subagent that outlived its turn.
+   *
+   * Read by idle-sleep: a member whose turn ended can still be doing work, and
+   * tearing its process down would destroy it silently. Like {@link harnessAlive}
+   * each adapter answers from what it actually knows, and a harness with no such
+   * signal reports nothing rather than a comforting zero — absent means "cannot
+   * tell", which callers must treat as "do not assume it is safe".
+   */
+  backgroundTaskCount?: number;
   /** Live inventory of slash commands the harness reports for this session. */
   slashCommands?: HarnessCommand[];
   /** Codex two-axis safety model (sandbox × approval + guardian); Codex sessions only. */

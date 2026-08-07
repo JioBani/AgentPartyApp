@@ -494,7 +494,8 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
  * and — critically — which tool surface to drive, so it never confuses our
  * in-process `agentparty-app` tools with legacy `agentparty` MCP servers that
  * may also be present (project `.mcp.json`, plugins). This is how we avoid
- * relying on model memory: the correct surface is stated up front, every time.
+ * relying on model memory: the correct surface is installed when the harness
+ * session starts (system/developer instructions where the harness supports it).
  */
 export function buildPartyPrimer(identity: PartyIdentity): string {
   const tool = (name: string) => `${PARTY_TOOL_PREFIX}${name}`;
@@ -578,7 +579,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
   return [
     tool(
       "send",
-      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). Errors if the recipient is not running or does not exist. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
+      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING (its process was released after a quiet spell) is started or woken for you and keeps its existing conversation — do not create a duplicate member for one of those. Errors only if the recipient does not exist or was explicitly closed. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
       {
         to: z.string().describe("Recipient member name in your party."),
         content: z.string().describe("Message body."),

@@ -449,6 +449,12 @@ function statusIcon(member: DiscordMemberState): string {
   if (member.busy || member.status === "running") {
     return "⚙️";
   }
+  // Distinct from ⚪: a sleeping member is reachable — a message wakes it and the
+  // conversation carries on. Showing it as unavailable would tell the user on
+  // their phone not to bother, which is the opposite of the truth.
+  if (member.status === "sleeping") {
+    return "💤";
+  }
   if (member.status === "closed" || member.status === "missing_session") {
     return "⚪";
   }

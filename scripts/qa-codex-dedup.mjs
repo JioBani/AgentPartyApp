@@ -33,7 +33,7 @@ async function bundleNode(entry, name) {
 }
 
 const { CodexAdapter } = await bundleNode("src/core/codexAdapter.ts", "codex-adapter-node.mjs");
-const T = await bundleNode("src/renderer/app/transcriptEvents.ts", "transcript-events-node.mjs");
+const T = await bundleNode("src/shared/transcriptEvents.ts", "transcript-events-node.mjs");
 
 const SENTINEL = "OCEANSENTINEL";
 const FULL = `The ocean is vast. ${SENTINEL} lives in it. It is deep.`;
