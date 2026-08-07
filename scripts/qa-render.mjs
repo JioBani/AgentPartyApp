@@ -103,6 +103,10 @@ const members = [
   // turn — exercises the "last known" (stale) meter a reopened app shows.
   { partyId: "p1", name: "reviewer", status: "running", runtime: "claude-code", role: "Review", sessionId: "s-reviewer", model: "o4-mini", lastContextTokens: 150000, lastContextWindow: 200000 },
   { partyId: "p1", name: "tester", status: "running", runtime: "claude-code", role: "QA", sessionId: "s-tester", model: "gpt-5" },
+  // No tab in the seeded layout and no live session. Its history is not this
+  // window's to hold, so its transcript must never be fetched — one member's
+  // file reaches ~15MB on disk and several times that once parsed.
+  { partyId: "p1", name: "archivist", status: "sleeping", runtime: "claude-code", role: "Docs", model: "claude-sonnet-4.5" },
 ];
 
 const initialState = {
@@ -130,6 +134,8 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+// Every member whose transcript this window asked the main process for.
+const transcriptFetches = [];
 // The main process's copy of the party tab layout, and every push this window made.
 let storedLayout;
 const persistedLayouts = [];
@@ -168,7 +174,7 @@ window.agentParty = {
   maximizeWindow: noop,
   closeWindow: noop,
   listParty: async () => initialState.party,
-  getMemberTranscript: async (name) => name === "frontend" ? frontendHistory : [],
+  getMemberTranscript: async (name) => { transcriptFetches.push(name); return name === "frontend" ? frontendHistory : []; },
   saveMemberTranscript: noop,
   createParty: async () => ({ ok: true, message: "", ...initialState.party }),
   selectParty: async () => ({ ok: true, message: "", ...initialState.party }),
@@ -439,6 +445,26 @@ assert(
   keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
   "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
 );
+
+// A window holds the history of members it has OPEN (or that hold a live
+// session), not the whole party: a transcript reaches ~15MB on disk and several
+// times that once parsed, so loading every member made each window pay for the
+// party's entire history — three windows on one party, three times over.
+assert(transcriptFetches.includes("frontend"), "an open member's transcript is fetched");
+assert(transcriptFetches.includes("tester"), "a background tab's transcript is fetched too (one click from being read)");
+assert(!transcriptFetches.includes("archivist"), "a member with no tab and no session is NOT fetched", transcriptFetches.join(","));
+
+// Opening it must load it — skipping is about what is not needed YET, not a
+// member the window can never show.
+const beforeOpenFetches = transcriptFetches.length;
+const archivistRow = [...document.querySelectorAll(".wb-member-row")]
+  .find((row) => row.querySelector(".wb-member-name")?.textContent === "archivist");
+assert(archivistRow != null, "archivist row present in the sidebar");
+if (archivistRow) {
+  archivistRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+assert(transcriptFetches.includes("archivist"), "opening it fetches its transcript", `${transcriptFetches.length - beforeOpenFetches} new fetch(es)`);
 
 // Tab layout is party state owned by the main process, so a change here must be
 // PUSHED there — the localStorage version was per-renderer and let two windows

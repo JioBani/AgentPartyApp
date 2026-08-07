@@ -73,7 +73,12 @@ export function App() {
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
+  // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
+  // Every member with a tab in this window, frontmost or not. A background tab
+  // is one click from being read, so its history must already be here — but a
+  // member with no tab at all is not this window's to hold.
+  const [openMembers, setOpenMembers] = useState<string[]>([]);
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
   // Members with a compaction in flight (transient toolbar spinner).
@@ -376,10 +381,36 @@ export function App() {
     });
   }, [visibleMembers, logsBySession, members]);
 
-  // Restore each member's persisted transcript from disk once, so a reopened app
-  // (or a closed member) shows its past conversation. Visible members are fetched
-  // FIRST so the panels on screen fill in immediately on a party switch; the rest
-  // still prefetch right after, keeping a switch to a backgrounded member instant.
+  /**
+   * Members whose history this window needs in memory.
+   *
+   * NOT the whole party. A transcript is capped at 800 blocks but a block can be
+   * a whole tool output, so one member's file reaches ~15MB on disk and several
+   * times that once parsed into JS objects and React elements. Loading every
+   * member of the party made each window pay for the party's entire history —
+   * and three windows on one party paid for it three times over.
+   *
+   * A member qualifies when it has a TAB OPEN (the user can see it, or reach it
+   * by clicking a background tab in the same panel), or when it holds a LIVE
+   * SESSION. The second is not about display: events for a session whose
+   * transcript has no owner queue in `pendingEventsBySessionRef` forever, so
+   * skipping a live member's restore would trade bounded history for an
+   * unbounded buffer.
+   */
+  const transcriptMembers = useMemo(() => {
+    const wanted = new Set(openMembers);
+    for (const member of members) {
+      if (member.sessionId) {
+        wanted.add(member.name);
+      }
+    }
+    return wanted;
+  }, [openMembers, members]);
+
+  // Restore each needed member's persisted transcript from disk once, so a
+  // reopened app (or a closed member) shows its past conversation. Visible
+  // members are fetched FIRST so the panels on screen fill in immediately on a
+  // party switch; the rest follow, keeping a click to a background tab instant.
   // `restoredByMember[key]` stays UNDEFINED until the fetch settles — it is the
   // "restore completed" signal the save effect below gates on. The old version
   // wrote a `[]` sentinel up front, so a session whose first events arrived
@@ -394,6 +425,9 @@ export function App() {
     );
     for (const member of ordered) {
       const key = memberKey(member);
+      if (!transcriptMembers.has(member.name)) {
+        continue;
+      }
       if (restoredRef.current[key] !== undefined || restoreRequestedRef.current.has(key)) {
         continue;
       }
@@ -410,7 +444,7 @@ export function App() {
         setTimeout(() => setRestoreRetryNonce((n) => n + 1), 2000);
       });
     }
-  }, [members, visibleMembers, restoreRetryNonce]);
+  }, [members, visibleMembers, transcriptMembers, restoreRetryNonce]);
 
   // This is the single transition that makes a session transcript writable:
   // member identity is known AND its persisted transcript read has settled.
@@ -1341,6 +1375,7 @@ export function App() {
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}
+                onOpenMembersChange={setOpenMembers}
                 onToggleSidebar={(open) => {
                   setSidebarOpen(open);
                   try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
