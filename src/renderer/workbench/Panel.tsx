@@ -123,9 +123,10 @@ export function Panel(props: PanelProps) {
 
       {view && (
         // The panel header is present at EVERY width (it no longer disappears
-        // when narrow). Density only trims what's inside: the status pill + K/K
-        // range are wide-only, and effort is hidden when narrow — but the ⋯
-        // button is always visible.
+        // when narrow, as the design had it). Density only trims what's inside:
+        // the status pill, the diagnostic badge, the K/K range and the effort
+        // pill are wide-only — but the model pill and the ⋯ button are always
+        // visible, so no control becomes unreachable by making a panel narrow.
         <div className="wb-toolbar">
           <div className="wb-toolbar-id">
             <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
@@ -157,6 +158,26 @@ export function Panel(props: PanelProps) {
               <span className="wb-mono">{modelLabel(view.model)}</span>
               <ChevronDown size={11} className="wb-pill-caret" />
             </button>
+            {/* Effort sits beside the model because it only means anything
+                against that model — and only when the model HAS levels, so a
+                model without them shows nothing instead of an empty pill.
+                Wide only: at mid the design trades it for the overflow menu.
+                Editing happens in Runtime, which the model pill opens too. */}
+            {wide && view.effortOptions.length > 0 && (
+              <button
+                type="button"
+                className="wb-pill"
+                title="추론 강도 · Runtime 에서 변경"
+                onClick={() => onOpenRuntime(view.name)}
+              >
+                <span className="wb-mono">
+                  {view.effortOptions.find((option) => option.id === view.effort)?.label || view.effort}
+                </span>
+                {/* Same caret as the model pill beside it: both open Runtime, so
+                    without it this one reads as a label rather than a control. */}
+                <ChevronDown size={11} className="wb-pill-caret" />
+              </button>
+            )}
             {view.context && (
               <ContextDonut
                 context={view.context}

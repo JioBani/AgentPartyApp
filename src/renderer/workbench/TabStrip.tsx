@@ -1,5 +1,5 @@
 import { PointerEvent } from "react";
-import { AlignLeft, MoreHorizontal, Plus, SquareSplitHorizontal, X } from "lucide-react";
+import { AlignLeft, Plus, SquareSplitHorizontal, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
@@ -81,8 +81,11 @@ export function TabStrip({ panel, views, density, draggingMember, canAdd, onSele
         })}
       </div>
       <div className="wb-tab-actions">
+        {/* No overflow button here. The design collapsed the toolbar into a ⋯
+            at narrow width, but this app keeps the toolbar at EVERY width, so
+            its own "더보기" menu (Panel.tsx) is already on screen — a second ⋯
+            one row above it did nothing when clicked. */}
         <button type="button" className="wb-icon-btn" title="Add member tab" onClick={onAdd} disabled={!canAdd}><Plus size={15} /></button>
-        {density === "narrow" && <button type="button" className="wb-icon-btn" title="More"><MoreHorizontal size={15} /></button>}
         <button type="button" className="wb-icon-btn" title="Split into new panel" onClick={onSplit}><SquareSplitHorizontal size={15} /></button>
       </div>
     </div>
