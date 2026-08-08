@@ -139,6 +139,8 @@ export interface EngineConnection {
    * so a REMOTE engine serves the images that live on its own disk.
    */
   getTranscriptImage(file: string): Promise<ReturnType<PartyApplicationService["getTranscriptImage"]>>;
+  /** Where the harness keeps its own untrimmed copy of this member's conversation. */
+  getHarnessOriginal(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
   /**
    * Persists the member's transcript (renderer-driven, debounced) + captures its
    * resumable thread id. `save.afterId` sends only the appended blocks — the

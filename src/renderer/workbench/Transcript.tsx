@@ -8,6 +8,7 @@ import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } fro
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
+import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
@@ -101,6 +102,7 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
           <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
         </div>
       )}
+      {!view.transcriptLoading && hiddenCount === 0 && isTranscriptAtCap(view.transcript) && <HarnessOriginalNote member={view.name} />}
       {!view.transcriptLoading && hiddenCount > 0 && (
         <button type="button" className="wb-transcript-older" onClick={showOlder}>
           이전 대화 {Math.min(hiddenCount, TAIL_BLOCKS)}개 더 보기 · {hiddenCount}개 숨김
@@ -672,6 +674,67 @@ function MsgImage({ image }: { image: ImageAttachment }) {
         </DetailModal>
       )}
     </>
+  );
+}
+
+/** Byte size for display. Scales the unit so a small file is not shown as "0 MB". */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+/**
+ * Shown at the very top of a transcript that is sitting at its retention cap.
+ *
+ * Scrolling to the top of a trimmed transcript looks exactly like reaching the
+ * beginning of the conversation, so the user reads a retention window as data
+ * loss. The harness keeps its own untrimmed copy, so the honest thing to say is
+ * where the rest is.
+ *
+ * Renders nothing until the lookup answers, and nothing at all if there is no
+ * original to point at — a note that says "the rest is somewhere" without
+ * naming it would be worse than silence.
+ */
+function HarnessOriginalNote({ member }: { member: string }) {
+  const [original, setOriginal] = useState<{ harness: string; path: string; exists: boolean; bytes?: number } | null>();
+  useEffect(() => {
+    let live = true;
+    setOriginal(undefined);
+    window.agentParty
+      .getHarnessOriginal(member)
+      .then((result) => { if (live) setOriginal(result.original); })
+      .catch(() => { if (live) setOriginal(null); });
+    return () => { live = false; };
+  }, [member]);
+  if (!original) {
+    return null;
+  }
+  return (
+    <div className="wb-transcript-origin">
+      <Info size={13} />
+      <div>
+        <div>여기부터 앞의 기록은 이 창의 보관 한도를 넘어 지워졌습니다.</div>
+        {original.exists ? (
+          <div className="wb-transcript-origin-path">
+            <span className="wb-mono">{original.path}</span>
+            {typeof original.bytes === "number" && <span> · {formatBytes(original.bytes)}</span>}
+            <CopyButton text={original.path} title="경로 복사" />
+          </div>
+        ) : (
+          // Claude Code keys its directory on the absolute cwd, so a moved
+          // project folder orphans the history. Say that instead of printing a
+          // path that leads nowhere.
+          <div className="wb-transcript-origin-path">
+            {original.harness} 원본을 찾지 못했습니다. 작업 폴더를 옮겼다면 하네스 기록은 이전 경로에 남아 있습니다.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

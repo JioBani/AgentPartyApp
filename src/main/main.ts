@@ -772,6 +772,7 @@ function registerIpc(): void {
   handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
   handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
   handle("party:transcript:image", async (event, file: string) => controller().getTranscriptImage(senderWorkspace(event), file));
+  handle("party:harness-original", async (event, name: string) => controller().getHarnessOriginal(senderWorkspace(event), name, senderWindowId(event)));
 }
 
 /**

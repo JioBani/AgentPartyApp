@@ -223,6 +223,7 @@ export class RemoteEngineClient implements EngineConnection {
   partyAction(name: string, action: string, body: any, partyId?: string) { return this.call<Result<"partyAction">>("partyAction", name, action, body, partyId); }
   getMemberTranscript(name: string, partyId?: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name, partyId); }
   getTranscriptImage(file: string) { return this.call<Result<"getTranscriptImage">>("getTranscriptImage", file); }
+  getHarnessOriginal(name: string, partyId?: string) { return this.call<Result<"getHarnessOriginal">>("getHarnessOriginal", name, partyId); }
   saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, save, partyId); }
   getPartyLayout(partyId?: string) { return this.call<Result<"getPartyLayout">>("getPartyLayout", partyId); }
   setPartyLayout(layout: unknown, partyId?: string) { return this.call<Result<"setPartyLayout">>("setPartyLayout", layout, partyId); }

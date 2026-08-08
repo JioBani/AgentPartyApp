@@ -91,6 +91,8 @@ const api = {
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   /** Bytes for one screenshot a transcript references, fetched only when shown. */
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),
+  /** Where the harness keeps its own untrimmed copy of this member's conversation. */
+  getHarnessOriginal: (name: string): Promise<{ ok: true; original: { harness: string; path: string; exists: boolean; bytes?: number } | null }> => ipcRenderer.invoke("party:harness-original", name),
   onSessionEvents: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("session:events", listener);

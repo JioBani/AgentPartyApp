@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import { capTranscript } from "../shared/transcriptCap";
 import { externalizeImages, extensionFor, TRANSCRIPT_IMAGE_DIR, type StoredImageSource } from "../shared/transcriptImages";
 import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
 import { log } from "./logger";
@@ -409,40 +410,6 @@ export class PartyRepository {
 
 const ROOT_DIR = ".agent_party_app";
 const LEGACY_ROOT = ".agentparty";
-/** Max CONVERSATION blocks persisted per member. See {@link capTranscript}. */
-const TRANSCRIPT_CAP = 800;
-/** Absolute block ceiling, including status. See {@link capTranscript}. */
-const TRANSCRIPT_HARD_CAP = 4000;
-
-function isStatusBlock(block: unknown): boolean {
-  return (block as { kind?: unknown } | null)?.kind === "status";
-}
-
-/**
- * Trims a transcript to its retention window, newest-first.
- *
- * The {@link TRANSCRIPT_CAP} budget counts conversation blocks only. `status`
- * blocks are progress chatter: 5% of the bytes but half of the blocks, so
- * charging them to the budget spent the window on chatter and evicted the
- * conversation instead. Measured transcripts sitting at the old cap held
- * 350-440 status blocks and, in three cases, zero user turns.
- *
- * Exempting them opens a hole — a member emitting only status never reaches
- * the budget and would grow without bound (one real transcript was 761 status
- * / 0 tool / 4 assistant). {@link TRANSCRIPT_HARD_CAP} closes it: unreachable
- * in normal use, and the only thing that bounds that shape.
- */
-function capTranscript(blocks: unknown[]): unknown[] {
-  let budget = TRANSCRIPT_CAP;
-  let start = blocks.length;
-  while (start > 0 && budget > 0) {
-    start -= 1;
-    if (!isStatusBlock(blocks[start])) {
-      budget -= 1;
-    }
-  }
-  return blocks.slice(Math.max(start, blocks.length - TRANSCRIPT_HARD_CAP));
-}
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

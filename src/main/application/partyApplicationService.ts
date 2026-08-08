@@ -35,6 +35,7 @@ import {
   type QueuedMessage,
 } from "../../shared/messageQueue";
 import { log } from "../logger";
+import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
@@ -1152,6 +1153,23 @@ export class PartyApplicationService {
     const state = this.readState();
     const member = this.requireMember(state, name, partyId);
     return this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
+  }
+
+  /**
+   * Where the HARNESS keeps its own full copy of this member's conversation.
+   *
+   * The app's transcript has a retention window; the harness file does not. So
+   * once a member's window is full, this is where the rest of the history still
+   * is. Returns `original: null` when the member has not produced a harness
+   * session yet, or the harness does not keep one we can name.
+   */
+  getHarnessOriginal(name: string, partyId?: string): { ok: true; original: HarnessOriginal | null } {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const sessionId = member.harnessSessionId
+      || (member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined);
+    // A member's cwd IS its workspace (the locked workspace model), which is
+    // exactly the key Claude Code derives its directory name from.
+    return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
   }
 
   /**

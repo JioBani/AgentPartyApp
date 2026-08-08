@@ -1503,6 +1503,22 @@ hash means re-reading the same screenshot does not store it twice.
 { "ok": true, "dataUrl": "data:image/png;base64,iVBORw0KGgo…", "bytes": 576936 }
 ```
 
+### `GET /api/party/members/:name/harness-original`
+
+Where the HARNESS keeps its own copy of this member's conversation. The app's
+transcript has a retention window; the harness file does not, so once a member's
+window is full this names where the rest of the history still is.
+
+```json
+{ "ok": true, "original": { "harness": "claude-code", "path": "C:\Users\me\.claude\projects\C--Project-App\<session>.jsonl", "exists": true, "bytes": 38578 } }
+```
+
+`original` is `null` when the member has no harness session yet, or the harness
+keeps none we can name. `exists: false` matters: Claude Code derives its
+directory from the ABSOLUTE cwd (every character outside `[a-zA-Z0-9]` becomes
+`-`), so **moving the project folder orphans the history** — the new path maps
+to a different, empty directory. Report that rather than a path leading nowhere.
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,

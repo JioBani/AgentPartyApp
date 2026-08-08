@@ -948,6 +948,11 @@ export class AppController {
     return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
   }
 
+  /** Where the harness keeps its own untrimmed copy of a member's conversation. */
+  getHarnessOriginal(workspacePath: string, name: string, windowId?: string) {
+    return this.engineFor(workspacePath).getHarnessOriginal(name, this.partyForWindow(windowId));
+  }
+
   /** One screenshot a transcript references, as a data URL (its bytes live out-of-line). */
   getTranscriptImage(workspacePath: string, file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> {
     return this.engineFor(workspacePath).getTranscriptImage(file);
