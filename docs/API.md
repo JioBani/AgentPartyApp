@@ -1482,6 +1482,27 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
+`<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
+reference, because base64-wrapped PNG is both the largest thing a transcript
+holds (measured at 564 KB for one block) and the one payload compression cannot
+shrink. Fetch the bytes with the next endpoint.
+
+```json
+{ "type": "image", "source": { "type": "agentparty-file", "file": "3f9a….png", "media_type": "image/png", "bytes": 576936 } }
+```
+
+### `GET /api/party/transcript-image/:file`
+
+The bytes of one screenshot a transcript references, as a data URL. `:file` is
+the `file` field of an `agentparty-file` source — a name inside the image store,
+never a path (anything resolving outside it is rejected). Naming files by content
+hash means re-reading the same screenshot does not store it twice.
+
+```json
+{ "ok": true, "dataUrl": "data:image/png;base64,iVBORw0KGgo…", "bytes": 576936 }
+```
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,

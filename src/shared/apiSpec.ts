@@ -83,6 +83,7 @@ export const automationEndpoints = [
   "POST /api/party/interrupt",
   "POST /api/party/broadcast",
   "GET /api/party/members/:name/transcript",
+  "GET /api/party/transcript-image/:file",
   "GET /api/party/layout",
   "POST /api/party/layout",
   "GET /api/harness/party",

@@ -1,6 +1,8 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import { externalizeImages, extensionFor, TRANSCRIPT_IMAGE_DIR, type StoredImageSource } from "../shared/transcriptImages";
 import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
 import { log } from "./logger";
 
@@ -195,10 +197,55 @@ export class PartyRepository {
       }
       next = stored.slice(0, anchor + 1).concat(incoming);
     }
-    const capped = capTranscript(next).map(stripAttachmentBytes);
+    const capped = capTranscript(next).map(stripAttachmentBytes).map((block) => this.externalizeBlockImages(workspacePath, block));
     this.writeJsonAtomic(this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
     this.lastWritten.set(this.transcriptKey(workspacePath, partyId, memberName), capped);
     return { applied: true };
+  }
+
+  /**
+   * Moves a block's inline base64 images out to {@link imageDir} and leaves a
+   * reference behind. Screenshots are the largest single things a transcript
+   * holds and the one payload compression cannot shrink, so keeping them inline
+   * costs both disk AND the renderer's parse of every block it never displays.
+   *
+   * A failed write is NOT allowed to drop the image silently: the block is kept
+   * exactly as it was (bytes inline) and the failure is logged. A fat transcript
+   * is a much smaller problem than a screenshot that vanished.
+   */
+  private externalizeBlockImages(workspacePath: string, block: unknown): unknown {
+    try {
+      return externalizeImages(block, (data, mediaType) => this.storeImage(workspacePath, data, mediaType));
+    } catch (error) {
+      log("error", "party", "transcript image externalization failed; keeping bytes inline", { error: errMsg(error) });
+      return block;
+    }
+  }
+
+  /** Writes image bytes under their own SHA-256, so a re-read costs nothing. */
+  private storeImage(workspacePath: string, data: string, mediaType: string | undefined): StoredImageSource {
+    const bytes = Buffer.from(data, "base64");
+    const file = `${crypto.createHash("sha256").update(bytes).digest("hex")}.${extensionFor(mediaType)}`;
+    const target = path.join(this.imageDir(workspacePath), file);
+    // Content-addressed: identical bytes already on disk are the same file.
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, bytes);
+    }
+    return { type: "agentparty-file", file, media_type: mediaType, bytes: bytes.byteLength };
+  }
+
+  /** Absolute path of an extracted image, or undefined if the name is not one. */
+  imagePath(workspacePath: string, file: string): string | undefined {
+    // `file` arrives from a transcript and, over HTTP, from a caller — resolve it
+    // and require the result to stay inside the image dir so no `../` escapes.
+    const dir = this.imageDir(workspacePath);
+    const resolved = path.resolve(dir, file);
+    return resolved.startsWith(path.resolve(dir) + path.sep) ? resolved : undefined;
+  }
+
+  private imageDir(workspacePath: string): string {
+    return path.join(this.rootDir(workspacePath), TRANSCRIPT_IMAGE_DIR);
   }
 
   /** The current on-disk blocks, from the write-through mirror when warm. */

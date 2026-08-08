@@ -7,6 +7,7 @@ import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
+import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
@@ -323,6 +324,9 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   const fullInput = toolInputDetail(block.input);
   // Command execution streams live output separately from its final result.
   const result = block.output || formatResult(block.result);
+  // Screenshots render as images. They used to fall through to JSON.stringify
+  // and print a wall of base64 that showed the user nothing.
+  const images = collectDisplayImages(block.result);
   const failed = block.status === "failed";
   // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
   const meta = toolMeta(block);
@@ -346,6 +350,7 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
       {meta && <div className="wb-tool-meta">{meta}</div>}
       {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
       {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
+      {images.map((image) => <ToolImage key={image.key} image={image} />)}
       {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </details>
   );
@@ -668,6 +673,45 @@ function MsgImage({ image }: { image: ImageAttachment }) {
       )}
     </>
   );
+}
+
+/**
+ * A screenshot a tool returned, whose bytes live outside the transcript.
+ *
+ * Fetched on mount rather than carried in the block: one of these is ~500 KB of
+ * base64, and a transcript holds many. Keeping them out of the file is the point
+ * of storing them out-of-line, so the renderer pays for the ones it shows.
+ *
+ * A read failure surfaces as visible text. The bytes are on disk and could have
+ * been moved or deleted, and a broken image icon would not say which.
+ */
+function ToolImage({ image }: { image: DisplayImage }) {
+  const file = image.kind === "stored" ? image.source.file : undefined;
+  const [fetched, setFetched] = useState<string>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    if (!file) {
+      return;
+    }
+    let live = true;
+    setFetched(undefined);
+    setError(undefined);
+    window.agentParty
+      .getTranscriptImage(file)
+      .then((result) => { if (live) setFetched(result.dataUrl); })
+      .catch((cause: unknown) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [file]);
+  const dataUrl = image.kind === "inline" ? image.dataUrl : fetched;
+  const bytes = image.kind === "inline" ? image.bytes : image.source.bytes;
+  const mediaType = image.kind === "inline" ? image.mediaType : image.source.media_type;
+  if (error) {
+    return <div className="wb-tool-image-missing"><ImageOff size={13} /> 이미지를 불러오지 못했습니다 — {error}</div>;
+  }
+  if (!dataUrl) {
+    return <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" /> 이미지 여는 중…</div>;
+  }
+  return <img className="wb-tool-image" src={dataUrl} alt={`${mediaType || "image"} · ${Math.round(bytes / 1024)} KB`} />;
 }
 
 /** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */
@@ -1009,8 +1053,15 @@ function formatResult(result: unknown): string {
   if (texts.length > 0) {
     return texts.join("\n");
   }
+  // Images render as images (see StoredImage). Falling through to stringify
+  // printed the whole base64 payload as text — half a megabyte of characters
+  // that showed the user nothing.
+  const withoutImages = blocks.filter((b) => !isRenderableImage(b));
+  if (withoutImages.length === 0) {
+    return "";
+  }
   try {
-    return JSON.stringify(result, null, 2);
+    return JSON.stringify(Array.isArray(result) ? withoutImages : withoutImages[0], null, 2);
   } catch {
     return String(result);
   }

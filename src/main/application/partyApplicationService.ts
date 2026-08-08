@@ -1155,6 +1155,25 @@ export class PartyApplicationService {
   }
 
   /**
+   * One extracted transcript image, as a data URL.
+   *
+   * Screenshots are persisted out-of-line (see `shared/transcriptImages.ts`), so
+   * the transcript a window loads carries references instead of megabytes of
+   * base64. The bytes are fetched here, per image, only when one is actually
+   * displayed. Reading it over this path (rather than a file:// URL) keeps the
+   * renderer sandboxed and lets a REMOTE engine serve its own images.
+   */
+  getTranscriptImage(file: string): { ok: true; dataUrl: string; bytes: number } {
+    const resolved = this.repository.imagePath(this.workspacePath(), file);
+    if (!resolved) {
+      throw new Error(`Transcript image '${file}' is not a name inside the image store.`);
+    }
+    const bytes = fs.readFileSync(resolved);
+    const mediaType = IMAGE_MEDIA_TYPES[path.extname(resolved).toLowerCase()] || "application/octet-stream";
+    return { ok: true, dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`, bytes: bytes.byteLength };
+  }
+
+  /**
    * The workbench tab layout for a party, or undefined when none is stored yet
    * (the renderer then seeds one from the member list).
    */

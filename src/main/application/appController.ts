@@ -948,6 +948,11 @@ export class AppController {
     return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
   }
 
+  /** One screenshot a transcript references, as a data URL (its bytes live out-of-line). */
+  getTranscriptImage(workspacePath: string, file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> {
+    return this.engineFor(workspacePath).getTranscriptImage(file);
+  }
+
   saveMemberTranscript(workspacePath: string, name: string, save: TranscriptSave, windowId?: string): Promise<TranscriptSaveResult> {
     return this.engineFor(workspacePath).saveMemberTranscript(name, save, this.partyForWindow(windowId));
   }
