@@ -143,8 +143,8 @@ export class PartyRepository {
   }
 
   /**
-   * The persisted transcript (assembled UI blocks) for one member. Capped to the
-   * most recent {@link TRANSCRIPT_CAP} blocks. Never throws — a missing or
+   * The persisted transcript (assembled UI blocks) for one member. Trimmed to
+   * the window described by {@link capTranscript}. Never throws — a missing or
    * corrupt file reads as an empty transcript.
    */
   readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
@@ -174,7 +174,7 @@ export class PartyRepository {
    * caller ships only what changed instead of the entire transcript. The anchor
    * is resolved against {@link lastWritten}, a write-through mirror of the file,
    * so an append costs no read: this process is the only writer for its
-   * workspace, and the head-trimming done by {@link TRANSCRIPT_CAP} means the
+   * workspace, and the head-trimming done by {@link capTranscript} means the
    * caller's indices do NOT match the file's — only ids can anchor safely.
    *
    * An anchor that is not found is NOT silently promoted to a full write: that
@@ -195,7 +195,7 @@ export class PartyRepository {
       }
       next = stored.slice(0, anchor + 1).concat(incoming);
     }
-    const capped = next.slice(-TRANSCRIPT_CAP).map(stripAttachmentBytes);
+    const capped = capTranscript(next).map(stripAttachmentBytes);
     this.writeJsonAtomic(this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
     this.lastWritten.set(this.transcriptKey(workspacePath, partyId, memberName), capped);
     return { applied: true };
@@ -362,8 +362,40 @@ export class PartyRepository {
 
 const ROOT_DIR = ".agent_party_app";
 const LEGACY_ROOT = ".agentparty";
-/** Max transcript blocks persisted per member (bounds the on-disk file). */
+/** Max CONVERSATION blocks persisted per member. See {@link capTranscript}. */
 const TRANSCRIPT_CAP = 800;
+/** Absolute block ceiling, including status. See {@link capTranscript}. */
+const TRANSCRIPT_HARD_CAP = 4000;
+
+function isStatusBlock(block: unknown): boolean {
+  return (block as { kind?: unknown } | null)?.kind === "status";
+}
+
+/**
+ * Trims a transcript to its retention window, newest-first.
+ *
+ * The {@link TRANSCRIPT_CAP} budget counts conversation blocks only. `status`
+ * blocks are progress chatter: 5% of the bytes but half of the blocks, so
+ * charging them to the budget spent the window on chatter and evicted the
+ * conversation instead. Measured transcripts sitting at the old cap held
+ * 350-440 status blocks and, in three cases, zero user turns.
+ *
+ * Exempting them opens a hole — a member emitting only status never reaches
+ * the budget and would grow without bound (one real transcript was 761 status
+ * / 0 tool / 4 assistant). {@link TRANSCRIPT_HARD_CAP} closes it: unreachable
+ * in normal use, and the only thing that bounds that shape.
+ */
+function capTranscript(blocks: unknown[]): unknown[] {
+  let budget = TRANSCRIPT_CAP;
+  let start = blocks.length;
+  while (start > 0 && budget > 0) {
+    start -= 1;
+    if (!isStatusBlock(blocks[start])) {
+      budget -= 1;
+    }
+  }
+  return blocks.slice(Math.max(start, blocks.length - TRANSCRIPT_HARD_CAP));
+}
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
