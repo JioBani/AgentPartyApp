@@ -20,8 +20,20 @@ export type ThemeColorToken =
   | "compact-zone"
   | "success" | "success-dim" | "success-bd"
   | "danger" | "danger-dim" | "danger-bd"
+  | "warning" | "warning-dim" | "warning-bd"
   | "grid"
-  | "scrim";
+  | "scrim"
+  /**
+   * Drop-shadow colour for raised surfaces (menus, popovers, modals, toasts).
+   *
+   * Themable because a shadow is NOT theme-neutral. Every popover used to
+   * hard-code `rgba(0,0,0,…)`: invisible over a dark background, but a hard
+   * grey-black edge over a light one — which is what a light-theme context menu
+   * reads as, since its surface is the same colour as the page behind it.
+   * `shadow` is everyday elevation; `shadow-strong` is for surfaces that float
+   * above everything (command palette, modals).
+   */
+  | "shadow" | "shadow-strong";
 
 export type ThemeShapeToken =
   | "radius-window" | "radius-panel" | "radius-card" | "radius-button"
@@ -84,10 +96,20 @@ const light: Theme = {
     "danger": "#cf4b45",
     "danger-dim": "rgba(207,75,69,.13)",
     "danger-bd": "rgba(207,75,69,.3)",
+    // Caution that is not failure (a stalled member, a warning diagnostic). The
+    // codebase already drew this distinction in markup (`is-warning` vs
+    // `is-error`) while painting it from a literal, so it could never be themed.
+    "warning": "#b07816",
+    "warning-dim": "rgba(176,120,22,.13)",
+    "warning-bd": "rgba(176,120,22,.3)",
     // Chart gridlines — faint, tuned per theme so the Token Usage charts read on
     // both backgrounds without competing with data marks.
     "grid": "rgba(20,25,35,.07)",
     "scrim": "rgba(20,23,29,.42)",
+    // Cool-tinted and far lighter than the dark theme's: on a near-white page a
+    // neutral-black shadow reads as a dirty outline rather than depth.
+    "shadow": "rgba(20,23,29,.13)",
+    "shadow-strong": "rgba(20,23,29,.2)",
   },
   shape: baseShape,
 };
@@ -124,8 +146,15 @@ const dark: Theme = {
     "danger": "#e0635d",
     "danger-dim": "rgba(224,99,93,.13)",
     "danger-bd": "rgba(224,99,93,.34)",
+    "warning": "#d9a441",
+    "warning-dim": "rgba(217,164,65,.16)",
+    "warning-bd": "rgba(217,164,65,.34)",
     "grid": "rgba(255,255,255,.06)",
     "scrim": "rgba(0,0,0,.5)",
+    // Unchanged from the literals these replace — on a near-black background a
+    // neutral-black shadow is correct, so the dark theme keeps its exact look.
+    "shadow": "rgba(0,0,0,.4)",
+    "shadow-strong": "rgba(0,0,0,.6)",
   },
   shape: baseShape,
 };

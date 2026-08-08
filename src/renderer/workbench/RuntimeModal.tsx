@@ -4,6 +4,7 @@ import type { WorkbenchActions } from "./actions";
 import type { RouteLike } from "./routes";
 import { DEFAULT_AUTO_COMPACT } from "../../shared/autoCompact";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
+import { thresholdWindowFor } from "./memberStatus";
 
 interface RuntimeModalProps {
   view: MemberView;
@@ -67,7 +68,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
       config={{ harness: true, effort: true, serviceTier: true, thinking: true, debug: true, autoCompact: true }}
       harnessLocked={harnessLocked}
       currentHarness={currentHarness}
-      contextWindow={view.context?.total || view.member.lastContextWindow}
+      contextWindow={thresholdWindowFor(view)}
       dim
       onApply={onApply}
       onClose={onClose}

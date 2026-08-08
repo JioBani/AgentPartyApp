@@ -83,6 +83,36 @@ next turn overwrites it with the fresh `snapshot` value.
 
 Returns the active log file path.
 
+### `GET /api/diagnostics`
+
+Everything a bug report needs about this install, in one call — the same report
+the settings **런타임 → 진단** tab shows and its `진단 정보 복사` button copies.
+No secrets: `auth` carries `id`/`label`/`status` only, never a key or token.
+
+```json
+{
+  "version": "0.1.0",
+  "packaged": false,
+  "appRoot": "C:\\Project\\AgentPartyApp\\dist\\main",
+  "os": { "platform": "win32", "release": "10.0.26200", "arch": "x64" },
+  "versions": { "node": "20.18.1", "electron": "33.2.1", "chrome": "130.0.6723.152" },
+  "workspace": { "uri": "C:\\Project\\AgentPartyApp", "kind": "local", "path": "C:\\Project\\AgentPartyApp" },
+  "logs": { "filePath": "…\\logs\\agentparty-….ndjson", "folderPath": "…\\logs" },
+  "auth": [{ "id": "claude", "label": "Claude 구독", "status": "configured" }]
+}
+```
+
+`version` is `""` only where the running process cannot know it (the headless
+WSL engine); then `versionError` states why rather than the field going blank.
+`workspace.kind` is `"wsl"` for a WSL workspace — that is the "WSL 여부" answer.
+
+### `POST /api/diagnostics/open-logs`
+
+Opens the log folder in the OS file manager. No body. Returns
+`{ "ok": true, "path": "…\\logs" }`, or **500 with the OS reason** when the
+folder could not be opened — it never reports success for a window that did not
+appear.
+
 ### `POST /api/capture`
 
 Captures the current Electron window and stores it as a PNG. If `path` is omitted, the file is written next to the current log file.
@@ -1585,6 +1615,7 @@ general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
 harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
 gate    (Message Gate 리뷰어 기본값)
 discord (Discord 브리지 자격증명 + 연결된 멤버)
+diagnostics (버전 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
 ```
 
 A `tab` on a screen that has none, or an unknown tab id, is an **error** — never

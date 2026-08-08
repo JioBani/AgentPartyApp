@@ -83,6 +83,12 @@ export function CodexPermissionControl({
             {CODEX_PRESET_LABELS[key]}
           </button>
         ))}
+        {/* A combination that matches no preset is a REAL state (codexPresetOf
+            returns "custom"), and without it the strip simply went blank — which
+            this codebase treats as "reads as broken", not as "nothing selected".
+            Deliberately NOT a button: there is no value to apply, so it must not
+            invite a click. It only appears while that state is actually held. */}
+        {preset === "custom" && <span className="wb-segment is-state">{CODEX_PRESET_LABELS.custom}</span>}
       </div>
       <div className="wb-axis-grid">
         <label className="wb-field-inline">

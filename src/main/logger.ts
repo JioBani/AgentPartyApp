@@ -41,18 +41,49 @@ export function setDebugLoggingEnabled(enabled: boolean): void {
   debugLoggingEnabled = enabled;
 }
 
+/**
+ * Appends one line to the log file. Returns `""` when it landed, or the reason
+ * it did not — `appendFileSync` is synchronous, so a successful return means the
+ * bytes are on disk, which is what lets the crash handler log and exit
+ * immediately without an explicit flush step.
+ */
+function appendLine(line: string): string {
+  try {
+    fs.appendFileSync(logFilePath || getLogFilePath(), line, "utf8");
+    return "";
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/**
+ * Records an entry whose loss would be the whole problem — a crash report.
+ *
+ * Differs from {@link log} in one way: a failed file write is REPORTED on stderr
+ * instead of swallowed. `log` may silently drop a line because logging must
+ * never break the app; for a crash record that same silence means the crash
+ * leaves no trace at all, which is the defect this exists to fix. The record
+ * also always goes to stderr, so it survives even when the file is unwritable
+ * (and stderr, unlike stdout, is never the engine server's RPC channel).
+ */
+export function logCritical(scope: string, message: string, data?: unknown): void {
+  const entry: LogEntry = { at: new Date().toISOString(), level: "error", scope, message, data: redact(data) };
+  const line = JSON.stringify(entry) + "\n";
+  const failure = appendLine(line);
+  process.stderr.write(line);
+  if (failure) {
+    process.stderr.write(`[logger] could not write the record above to ${logFilePath || "(no log file)"}: ${failure}\n`);
+  }
+}
+
 export function log(level: LogLevel, scope: string, message: string, data?: unknown): void {
   if (level === "debug" && !debugLoggingEnabled) {
     return;
   }
   const entry: LogEntry = { at: new Date().toISOString(), level, scope, message, data: redact(data) };
-  const line = JSON.stringify(entry) + "\n";
-  try {
-    const file = logFilePath || getLogFilePath();
-    fs.appendFileSync(file, line, "utf8");
-  } catch {
-    // Logging must never break the app.
-  }
+  // Logging must never break the app, so a write failure is dropped here. The
+  // one place that cannot afford that is `logCritical`.
+  appendLine(JSON.stringify(entry) + "\n");
   if (!consoleLogging) {
     return;
   }

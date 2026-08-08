@@ -3,6 +3,8 @@ export const automationEndpoints = [
   "GET /api/spec",
   "GET /api/state",
   "GET /api/logs",
+  "GET /api/diagnostics",
+  "POST /api/diagnostics/open-logs",
   "POST /api/capture",
   "POST /api/measure",
   "POST /api/settings",

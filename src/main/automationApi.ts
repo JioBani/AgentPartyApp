@@ -88,6 +88,16 @@ export class AutomationApiServer {
         sendJson(res, 200, c.getLogs());
         return;
       }
+      // Same two controller methods the settings 진단 card calls, so a report a
+      // user pastes and a report an agent pulls are byte-identical.
+      if (method === "GET" && url.pathname === "/api/diagnostics") {
+        sendJson(res, 200, await c.getDiagnostics(workspace));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/diagnostics/open-logs") {
+        sendJson(res, 200, await c.openLogFolder());
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/windows") {
         sendJson(res, 200, { windows: c.listWindows() });
         return;

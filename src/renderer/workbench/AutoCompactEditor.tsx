@@ -14,6 +14,7 @@ import {
 } from "../../shared/autoCompact";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
+import { thresholdWindowFor } from "./memberStatus";
 
 // The Auto-compact dialog's threshold slider band — the SAME settable range as the
 // Runtime modal's editor (10–95, step 1), so the two entry points never disagree.
@@ -134,7 +135,7 @@ interface ModalProps {
 export function CompactModal({ view, actions, onClose }: ModalProps) {
   const [local, setLocal] = useState<AutoCompactSetting>(view.autoCompact);
   const persistTimer = useRef<ReturnType<typeof setTimeout>>();
-  const contextWindow = view.context?.total || view.member.lastContextWindow;
+  const contextWindow = thresholdWindowFor(view);
 
   // Reflect an out-of-band change (e.g. runtime modal) while this is open.
   useEffect(() => {

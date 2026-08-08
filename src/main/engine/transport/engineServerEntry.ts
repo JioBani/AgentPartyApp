@@ -1,4 +1,5 @@
 import { setConsoleLogging } from "../../logger";
+import { installCrashHandlers } from "../../crashHandler";
 import { createEngineHost } from "../engineHost";
 import { AppController } from "../../application/appController";
 import { AutomationApiServer } from "../../automationApi";
@@ -28,6 +29,19 @@ async function main(): Promise<void> {
 
   const workspace = arg("workspace") || process.cwd();
   const storage = arg("storage") || workspace;
+
+  // This process runs a WSL workspace's whole engine with NO window attached, so
+  // a crash here is even less visible than one in the desktop: nobody sees a
+  // window vanish, the workspace simply stops answering. `logCritical` writes to
+  // stderr, which the spawning desktop already captures into its own log
+  // (wslEngine.ts), so one record lands on both sides of the boundary.
+  //
+  // No teardown on the way out: `shutdown()` disposes an engine whose state the
+  // crash just invalidated. Exit honestly instead.
+  installCrashHandlers({
+    exit: (code) => process.exit(code),
+    describeContext: () => ({ runtime: "engine-server", uptimeSec: Math.round(process.uptime()) }),
+  });
 
   // The Message Gate reviewer is the one piece of engine work that CANNOT run
   // here: it talks to the subscription bridge / embedded router, both bound to

@@ -205,6 +205,9 @@ export class LocalEngine implements EngineConnection {
   }
 
   async setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
+    // Checked BEFORE the adapter is touched: a live model change is the one way
+    // into a locked cross-harness pair that does not pass through createMember.
+    this.party.assertSessionModelAllowed(sessionId, model);
     this.deps.sessionManager.setModel(sessionId, model, providerId, runtimeModel);
     // Capture the runtime change on the owning member so a reopen/restart
     // restores the model the user last chose (same as permission mode below).

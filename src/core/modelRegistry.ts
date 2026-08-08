@@ -12,6 +12,7 @@ import {
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
 import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
+import { crossHarnessLockReason } from "../shared/modelIdentity";
 
 export type HarnessId = "claude-code" | "codex" | "cursor";
 export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "custom";
@@ -52,6 +53,12 @@ export interface ModelRoute {
   enabled: boolean;
   /** Visible explanation when a catalog combination cannot be executed. */
   unavailableReason?: string;
+  /**
+   * Disabled by the beta cross-harness lock rather than by a permanent lack of
+   * support — a difference the UI has to show, because one reads "never works"
+   * and the other "not during the beta" (B-12).
+   */
+  locked?: boolean;
 }
 
 export interface ModelPricing {
@@ -658,7 +665,21 @@ function addRoute(routes: ModelRoute[], seen: Set<string>, route: ModelRoute): v
     return;
   }
   seen.add(key);
-  routes.push(route);
+  routes.push(betaLocked(route));
+}
+
+/**
+ * Applies the B-12 beta lock on a route's way into the list. Done HERE, at the
+ * one point every route source funnels through (catalog, Codex discovery,
+ * OpenRouter, Cursor, custom), so a route added later cannot miss it. A route
+ * that is already unavailable keeps its own, stronger reason.
+ */
+function betaLocked(route: ModelRoute): ModelRoute {
+  if (!route.enabled) {
+    return route;
+  }
+  const reason = crossHarnessLockReason(route.model, route.harnessId);
+  return reason ? { ...route, enabled: false, locked: true, unavailableReason: reason } : route;
 }
 
 function normalizeCustomRoute(route: ModelRouteConfig): ModelRoute {

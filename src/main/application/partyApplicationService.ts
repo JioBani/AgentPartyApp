@@ -57,6 +57,7 @@ import {
   type EffectiveGate,
   type GateReviewer,
   type GateReviewResult,
+  classifyGateFailure,
 } from "../../shared/messageGate";
 import type { GateReviewMessage } from "../../core/messageGateReviewer";
 import {
@@ -68,6 +69,7 @@ import {
   normalizeHarnessId,
   normalizeMemberName,
 } from "./partyDomain";
+import { crossHarnessLockReason, type HarnessId } from "../../shared/modelIdentity";
 
 export interface PartyApplicationDeps {
   sessionManager: SessionManager;
@@ -461,6 +463,7 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, input.partyId);
     const member = buildPartyMember({ ...input, partyId: party.id }, getSettings());
+    this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
@@ -722,6 +725,7 @@ export class PartyApplicationService {
     const currentHarness = normalizeHarnessId(member.runtime);
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
     const nextHarness = requestedHarness || currentHarness;
+    this.assertNotBetaLocked(nextHarness, input.model || member.model);
     if (changesHarness && this.memberHasStartedTurn(member)) {
       throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
     }
@@ -1362,6 +1366,35 @@ export class PartyApplicationService {
    * `member.model`. Expects the catalog/route id (what the setter APIs receive),
    * never a display label.
    */
+  /**
+   * Refuses a (model, harness) pair the beta locks (B-12). Enforcement lives on
+   * the MUTATIONS, not only in the catalog list, because the list is one of four
+   * ways in: the member wizard, `POST /api/party/members`, the party
+   * `member-create` tool and a live model change all end up here.
+   */
+  private assertNotBetaLocked(harnessId: HarnessId, model: string | undefined): void {
+    const reason = model ? crossHarnessLockReason(model, harnessId) : undefined;
+    if (reason) {
+      throw new Error(reason);
+    }
+  }
+
+  /**
+   * {@link assertNotBetaLocked} for a live session, resolved through the member
+   * that owns it — a session carries no harness of its own. Called before the
+   * model is applied so a locked pair never reaches the adapter.
+   */
+  assertSessionModelAllowed(sessionId: string, model: string): void {
+    if (!sessionId || !model) {
+      return;
+    }
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (member) {
+      this.assertNotBetaLocked(normalizeHarnessId(member.runtime), model);
+    }
+  }
+
   syncMemberModel(sessionId: string, model: string): void {
     if (!sessionId || !model) {
       return;
@@ -1800,6 +1833,18 @@ export class PartyApplicationService {
           // is exactly the case where nothing else says so. Report it on the
           // result too, so HTTP/MCP/IPC callers cannot read this as a success.
           const detail = errorMessage(error);
+          // Record the failure as a gate-review turn as well. Only the SUCCESS
+          // path used to write one, so a gate that was failing open left a
+          // ledger showing 100% clean reviews — its error rate could not be
+          // measured at all, which is how "the gate is on" and "the gate is
+          // actually running" drifted apart unnoticed. Telemetry must never
+          // break delivery, so this stays best-effort like its success twin.
+          this.deps.sessionManager.recordGateReview?.(workspace, {
+            partyId: targetPartyId,
+            member: sender.name,
+            model: gate.reviewer.model,
+            failure: { layer: classifyGateFailure(error), detail },
+          });
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error" });
           log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, reviewer: gate.reviewer.model, error: detail });
           const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });

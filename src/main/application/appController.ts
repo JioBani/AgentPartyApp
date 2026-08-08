@@ -1,10 +1,12 @@
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { DiagnosticsReport } from "../../shared/diagnostics";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -44,6 +46,12 @@ export interface AppControllerDeps {
   subscriptionProxy?: SubscriptionProxyController;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
+  /**
+   * Identity of the running build, for diagnostics. Injected rather than read
+   * from `electron.app` so this controller still loads headless (WSL engine),
+   * where it is absent and the version is reported as explicitly unknown.
+   */
+  getAppBuild?: () => { version: string; packaged: boolean };
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
   onSettingsChanged: () => void;
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
@@ -298,6 +306,65 @@ export class AppController {
 
   getLogs(): { logFilePath: string } {
     return { logFilePath: getLogFilePath() };
+  }
+
+  // --- Diagnostics ----------------------------------------------------------
+  /**
+   * The facts a bug report needs, in one call: build, host, workspace, log
+   * location, auth wiring. Behind the settings screen's 진단 card AND
+   * `GET /api/diagnostics`, so what a user pastes and what an agent reads are
+   * the same report.
+   */
+  async getDiagnostics(workspacePath: string): Promise<DiagnosticsReport> {
+    // Absent only in the headless engine, which has no Electron `app` to ask.
+    // Reported as an explicit reason rather than an empty version string.
+    const build = this.deps.getAppBuild?.();
+    const logFilePath = getLogFilePath();
+    return {
+      version: build?.version || "",
+      versionError: build ? undefined : "이 프로세스는 앱 버전을 알 수 없습니다(헤드리스 엔진).",
+      packaged: build?.packaged === true,
+      appRoot: AppController.APP_ROOT,
+      os: { platform: process.platform, release: os.release(), arch: process.arch },
+      versions: { node: process.versions.node, electron: process.versions.electron, chrome: process.versions.chrome },
+      workspace: this.workspaceDisplay(workspacePath),
+      logs: { filePath: logFilePath, folderPath: path.dirname(logFilePath) },
+      auth: (await this.listAuthProviders()).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
+    };
+  }
+
+  /**
+   * Reveals the log folder in the OS file manager, so a non-technical beta user
+   * can actually hand over a log instead of copying a path they cannot follow.
+   *
+   * Electron is imported lazily for the same reason as
+   * {@link writeImageToClipboard}: this controller also runs headless inside a
+   * WSL distro, where `electron` does not exist.
+   */
+  async openLogFolder(): Promise<{ ok: true; path: string }> {
+    const { shell } = await import("electron");
+    const folder = path.dirname(getLogFilePath());
+    // Existence is checked HERE rather than left to the shell. Measured on
+    // Windows: handing `openPath` a missing directory pops Explorer's own modal
+    // error dialog and the promise does not settle until a human dismisses it —
+    // so the button would hang forever behind a dialog the app never mentioned.
+    try {
+      await fs.access(folder);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      log("error", "diagnostics", "log folder missing", { folder, reason });
+      throw new Error(`로그 폴더가 없습니다 (${folder}). 앱을 다시 시작하면 새로 만들어집니다.`);
+    }
+    // `openPath` RESOLVES with the OS error text on failure — it does not reject.
+    // Dropping that return is exactly the silent failure this project forbids:
+    // the button would report success while nothing appeared on screen.
+    const failure = await shell.openPath(folder);
+    if (failure) {
+      log("error", "diagnostics", "log folder open failed", { folder, failure });
+      throw new Error(`로그 폴더를 열지 못했습니다 (${folder}): ${failure}`);
+    }
+    log("info", "diagnostics", "log folder opened", { folder });
+    return { ok: true, path: folder };
   }
 
   // --- Model routes ---------------------------------------------------------

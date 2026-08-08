@@ -245,7 +245,7 @@
   padding: 1px 6px;
   border-radius: 999px;
   color: #fff;
-  background: var(--accent, #6d4aff);
+  background: var(--accent);
   white-space: nowrap;
 }
 
@@ -710,8 +710,8 @@
   padding: 4px;
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-1, var(--bg-2));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 
 .wb-ctx-item {
@@ -771,8 +771,8 @@
   padding: 10px 12px;
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-1, var(--bg-2));
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.36);
+  background: var(--bg-2);
+  box-shadow: 0 10px 30px var(--shadow);
   font-size: 12.5px;
   color: var(--text-1);
 }
@@ -823,7 +823,7 @@
   background: var(--bg-3);
   border: var(--border-width) dashed var(--member-wait-bd, var(--border));
   color: var(--member, var(--text-2));
-  font-family: var(--mono);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
@@ -1104,8 +1104,8 @@ body.wb-resizing {
 }
 
 .wb-status-pill.is-stalled {
-  color: var(--warning, #d9a441);
-  background: var(--warning-dim, rgba(217, 164, 65, 0.16));
+  color: var(--warning);
+  background: var(--warning-dim);
 }
 
 .wb-pill {
@@ -1238,7 +1238,7 @@ body.wb-resizing {
   background: var(--bg-2);
   border: var(--border-width) solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 18px 44px -16px var(--shadow-strong);
 }
 .wb-menu-item {
   display: flex;
@@ -1315,7 +1315,7 @@ body.wb-resizing {
   border-radius: 50%;
   background: var(--live);
   border: 2px solid var(--bg-2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px var(--shadow);
 }
 .wb-compact-ends {
   display: flex;
@@ -1468,9 +1468,9 @@ body.wb-resizing {
 .wb-transcript-older {
   align-self: center;
   padding: 4px 12px;
-  border: 1px solid var(--border-2);
+  border: var(--border-width) solid var(--border);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--bg-2);
   color: var(--text-3);
   font-size: 11.5px;
   cursor: pointer;
@@ -1478,7 +1478,7 @@ body.wb-resizing {
 
 .wb-transcript-older:hover {
   color: var(--text-1);
-  border-color: var(--border-1);
+  border-color: var(--border-strong);
 }
 
 .wb-block {
@@ -2044,7 +2044,7 @@ body.wb-resizing {
   border: var(--border-width) solid var(--border-subtle);
   background: var(--bg-3);
   color: var(--text-2);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 4px var(--shadow);
 }
 
 .wb-tool-expand:hover {
@@ -2103,7 +2103,7 @@ body.wb-resizing {
   align-items: center;
   justify-content: center;
   padding: 40px;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
 }
 
 .wb-tool-modal {
@@ -2111,10 +2111,10 @@ body.wb-resizing {
   flex-direction: column;
   width: min(900px, 92vw);
   max-height: 86vh;
-  background: var(--bg-1, var(--bg-2));
+  background: var(--bg-2);
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-card);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 16px 48px var(--shadow-strong);
   overflow: hidden;
 }
 
@@ -2567,7 +2567,7 @@ body.wb-resizing {
   height: 11px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  box-shadow: 0 1px 2px var(--shadow);
   transition: left .15s;
 }
 .wb-queue-switch.is-on .wb-queue-knob { left: 13px; }
@@ -2671,7 +2671,7 @@ body.wb-resizing {
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, .45);
+  box-shadow: 0 2px 8px -2px var(--shadow);
 }
 
 /* Same 6px the panel used when the rows were its direct children — the wrapper
@@ -2756,7 +2756,7 @@ body.wb-resizing {
   border-radius: 5px;
   background: var(--bg-3);
   color: var(--text-2);
-  font-family: var(--mono);
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10px;
   font-weight: 700;
 }
@@ -3131,7 +3131,7 @@ body.wb-resizing {
   background: var(--bg-2);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-card);
-  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, .45);
+  box-shadow: 0 18px 44px -16px var(--shadow-strong);
 }
 
 .wb-mention-pop.is-compact {
@@ -3331,7 +3331,7 @@ body.wb-resizing {
 }
 
 .wb-vision-tag.is-yes {
-  color: var(--ok, #22c55e);
+  color: var(--success);
 }
 
 .wb-vision-tag.is-no {
@@ -3535,8 +3535,8 @@ body.wb-resizing {
   max-height: 340px;
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-1, var(--bg-2));
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+  background: var(--bg-2);
+  box-shadow: 0 12px 32px var(--shadow);
   overflow: hidden;
 }
 
@@ -3646,7 +3646,7 @@ body.wb-resizing {
 .wb-cmd-preview-disabled {
   margin-top: 4px;
   font-size: 10.5px;
-  color: var(--danger, #d66);
+  color: var(--danger);
 }
 
 .wb-cmd-badges {
@@ -3673,7 +3673,7 @@ body.wb-resizing {
 
 .wb-cmd-badge.is-edits-files,
 .wb-cmd-badge.is-cloud {
-  color: var(--accent-fg, #fff);
+  color: var(--accent-fg);
   background: var(--accent);
 }
 
@@ -4424,6 +4424,14 @@ body.wb-resizing {
   white-space: nowrap;
 }
 
+/* A beta lock is temporary, so it reads as a notice rather than the neutral
+   grey of a combination that will never work (B-12). */
+.wb-model-off.is-locked {
+  background: var(--warning-dim);
+  color: var(--warning);
+  box-shadow: inset 0 0 0 1px var(--warning-bd);
+}
+
 .wb-model-name {
   display: flex;
   flex-direction: column;
@@ -4594,18 +4602,39 @@ body.wb-resizing {
 
 .wb-segment {
   flex: 1;
-  padding: 7px;
+  min-width: 0;
+  padding: 7px 4px;
   border: none;
   border-radius: calc(var(--radius-button) - 2px);
   background: transparent;
   color: var(--text-2);
   font-size: 12px;
   text-transform: capitalize;
+  /* Two-word labels ("Full Access") wrapped to a second line as soon as anything
+     else shared the strip, making the whole control taller than its neighbours. */
+  white-space: nowrap;
 }
 
 .wb-segment.is-active {
   background: var(--accent);
   color: var(--accent-fg);
+}
+
+/* "Custom" — a STATE the axes are currently in, not a preset you can pick.
+   Rendered as a span (no click target) and styled apart from the selectable
+   segments on purpose: it must read as a readout, so it takes only the space its
+   text needs, sits at the label weight of the strip, and never shows the accent
+   fill that means "selected". */
+.wb-segment.is-state {
+  flex: none;
+  align-self: center;
+  padding: 5px 8px;
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
 }
 
 .wb-toggle-card {
@@ -4702,7 +4731,7 @@ body.wb-resizing {
   margin: 0;
   padding: var(--space-3) var(--space-5);
   list-style: none;
-  border-bottom: 1px solid var(--border-1);
+  border-bottom: var(--border-width) solid var(--border-subtle);
 }
 .wb-wizard-step {
   display: flex;
@@ -4721,7 +4750,7 @@ body.wb-resizing {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  border: 1px solid var(--border-1);
+  border: var(--border-width) solid var(--border);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -4730,7 +4759,7 @@ body.wb-resizing {
 .wb-wizard-step.is-current .wb-wizard-step-n {
   border-color: var(--accent);
   background: var(--accent);
-  color: var(--accent-contrast, #fff);
+  color: var(--accent-fg);
 }
 .wb-wizard-step.is-done { color: var(--text-2); }
 .wb-wizard-step.is-done .wb-wizard-step-n {
@@ -4832,7 +4861,7 @@ body.wb-resizing {
 .wb-wizard-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
 
 .wb-wizard-hint { font-size: 11.5px; color: var(--text-3); margin: 0; }
-.wb-wizard-error { font-size: 11.5px; color: var(--danger, #e5484d); margin: 0; }
+.wb-wizard-error { font-size: 11.5px; color: var(--danger); margin: 0; }
 
 .wb-wizard-cards { display: flex; flex-direction: column; gap: var(--space-3); }
 .wb-wizard-card {
@@ -4994,7 +5023,7 @@ body.wb-resizing {
 }
 
 .wb-tool-result.is-failed {
-  color: var(--danger, #d66);
+  color: var(--danger);
 }
 
 .wb-plan {
@@ -5051,7 +5080,7 @@ body.wb-resizing {
 }
 
 .wb-plan-step.is-completed .wb-plan-step-ic {
-  color: var(--success, #3a9);
+  color: var(--success);
 }
 
 .wb-plan-step.is-completed .wb-plan-step-text {
@@ -5101,11 +5130,11 @@ body.wb-resizing {
 }
 
 .wb-diff-add {
-  color: var(--success, #3a9);
+  color: var(--success);
 }
 
 .wb-diff-del {
-  color: var(--danger, #d66);
+  color: var(--danger);
 }
 
 .wb-filechange-status {
@@ -5143,11 +5172,11 @@ body.wb-resizing {
 }
 
 .wb-filechange-kind.is-add {
-  color: var(--success, #3a9);
+  color: var(--success);
 }
 
 .wb-filechange-kind.is-delete {
-  color: var(--danger, #d66);
+  color: var(--danger);
 }
 
 .wb-filechange-path {
@@ -5170,11 +5199,11 @@ body.wb-resizing {
 }
 
 .wb-diagnostic.is-warning {
-  border-left-color: var(--warning, #d90);
+  border-left-color: var(--warning);
 }
 
 .wb-diagnostic.is-error {
-  border-left-color: var(--danger, #d66);
+  border-left-color: var(--danger);
 }
 
 .wb-diagnostic.is-info {
@@ -5193,11 +5222,11 @@ body.wb-resizing {
 }
 
 .wb-diagnostic.is-warning .wb-diagnostic-ic {
-  color: var(--warning, #d90);
+  color: var(--warning);
 }
 
 .wb-diagnostic.is-error .wb-diagnostic-ic {
-  color: var(--danger, #d66);
+  color: var(--danger);
 }
 
 .wb-diagnostic.is-info .wb-diagnostic-ic {
@@ -5250,11 +5279,11 @@ body.wb-resizing {
 }
 
 .wb-diag-badge.is-warning {
-  background: var(--warning, #d90);
+  background: var(--warning);
 }
 
 .wb-diag-badge.is-error {
-  background: var(--danger, #d66);
+  background: var(--danger);
 }
 
 .wb-diag-badge.is-info {
@@ -5659,7 +5688,7 @@ body.wb-resizing {
   background: var(--bg-2);
   border: var(--border-width) solid var(--border-strong);
   border-radius: 16px;
-  box-shadow: 0 34px 80px -24px rgba(0, 0, 0, 0.62);
+  box-shadow: 0 34px 80px -24px var(--shadow-strong);
   overflow: hidden;
 }
 /* header */
@@ -5993,6 +6022,16 @@ body.wb-resizing {
 /* Idle/failed bridge states — a status row must never render a colourless void. */
 .set-dot.is-idle { background: var(--text-3); }
 .set-dot.is-error { background: var(--danger); }
+
+/* diagnostics tab — fact rows, actions, and the pasteable report block.
+   The values here (log path, app root) are the LONGEST strings on the settings
+   screen, so the row wraps onto a second line instead of truncating: the point
+   of showing a path is that it can be read and typed by hand. */
+.set-diag-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 13px 20px 0; padding: 11px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; }
+.set-diag-key { flex: none; min-width: 76px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.set-diag-value { flex: 1; min-width: 0; font-size: 12px; color: var(--text-0); overflow-wrap: anywhere; }
+.set-diag-actions { display: flex; flex-wrap: wrap; gap: 9px; margin: 13px 20px 18px; }
+.set-diag-report { margin: 13px 20px 0; padding: 12px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; font-size: 11.5px; line-height: 1.65; color: var(--text-1); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Stacked form fields directly inside a settings card. `.set-field` alone has no
    gutter (it is designed to sit inside `.set-harness-pick`), so without this the
    inputs run edge to edge while every sibling block is inset by 20px. */
@@ -6115,7 +6154,7 @@ body.wb-resizing {
 .wb-subdock-caret.is-open { transform: rotate(90deg); }
 .wb-subdock-branch { flex: none; color: var(--accent); }
 .wb-subdock-label { font-size: 11.5px; font-weight: 600; color: var(--text-0); flex: none; }
-.wb-subdock-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 15px; padding: 0 5px; border-radius: 8px; background: var(--bg-3); color: var(--text-1); font: 700 9.5px var(--mono, monospace); flex: none; }
+.wb-subdock-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 15px; padding: 0 5px; border-radius: 8px; background: var(--bg-3); color: var(--text-1); font: 700 9.5px var(--font-mono, ui-monospace, monospace); flex: none; }
 .wb-subdock-dots { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; }
 .wb-subdock-dots .wb-subdot { width: 6px; height: 6px; }
 .wb-subdock-dots .wb-subdot-ring { inset: -2.5px; }
@@ -6158,7 +6197,7 @@ body.wb-resizing {
   transition: opacity 0.12s ease;
   background: color-mix(in srgb, var(--bg-0) 72%, transparent);
   border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-chip, 6px);
+  border-radius: var(--radius-badge);
   padding: 2px;
 }
 
@@ -6170,7 +6209,7 @@ body.wb-resizing {
 .wb-msg-image-error {
   margin-top: 4px;
   font-size: 11.5px;
-  color: var(--danger, #e35d6a);
+  color: var(--danger);
   max-width: 240px;
 }
 
@@ -6275,7 +6314,7 @@ body.wb-resizing {
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 50px -16px rgba(0, 0, 0, .62);
+  box-shadow: 0 20px 50px -16px var(--shadow-strong);
   padding: 14px; z-index: 200;
   display: flex; flex-direction: column; gap: 13px;
 }
@@ -6805,5 +6844,5 @@ body.wb-resizing {
   color: var(--accent-fg);
   font-size: 12.5px;
   font-weight: 700;
-  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, .5);
+  box-shadow: 0 12px 32px -10px var(--shadow);
 }

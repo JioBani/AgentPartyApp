@@ -27,10 +27,16 @@ export const CODEX_PRESETS: Record<Exclude<CodexPreset, "custom">, Omit<CodexPol
   "full-access": { sandbox: "danger-full-access", approval: "never" },
 };
 
-export const CODEX_PRESET_LABELS: Record<Exclude<CodexPreset, "custom">, string> = {
+/**
+ * Includes `custom`, which is NOT selectable — there is no combination to apply
+ * — but is a state the UI must be able to name, so the preset strip can say
+ * "these axes match no preset" instead of rendering with nothing highlighted.
+ */
+export const CODEX_PRESET_LABELS: Record<CodexPreset, string> = {
   "read-only": "Read Only",
   auto: "Auto",
   "full-access": "Full Access",
+  custom: "Custom",
 };
 
 export const DEFAULT_CODEX_POLICY: CodexPolicy = { sandbox: "workspace-write", approval: "on-request", guardian: false };

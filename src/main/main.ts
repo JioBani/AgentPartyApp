@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen, 
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
+import { installCrashHandlers } from "./crashHandler";
 import { getPublicSettings, getSettings } from "./settings";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
@@ -48,6 +49,21 @@ if (process.env.AGENTPARTY_DISABLE_GPU === "1") {
 if (process.env.AGENTPARTY_USER_DATA) {
   app.setPath("userData", process.env.AGENTPARTY_USER_DATA);
 }
+
+// Installed at module load, before anything else can fail: a handler registered
+// later cannot record what already went wrong. `app.exit` (not `app.quit`) is
+// the terminator — quit is cooperative and can be blocked by the very state the
+// crash just broke. Context is counts only; see CrashContext.
+installCrashHandlers({
+  exit: (code) => app.exit(code),
+  describeContext: () => ({
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    uptimeSec: Math.round(process.uptime()),
+    windows: windowRegistry?.list().length ?? 0,
+    sessions: sessionManager?.listSessions().length ?? 0,
+  }),
+});
 
 // AgentParty runs as ONE process with MANY windows — any window on any
 // workspace, any party. A second launch becomes a window here (see the
@@ -440,6 +456,7 @@ ${body}
     subscriptionProxy: subscriptionProxyService,
     getRouterBaseUrl: () => router?.baseUrl || getSettings().routerBaseUrl,
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
+    getAppBuild: () => ({ version: app.getVersion(), packaged: app.isPackaged }),
     openWindow: (workspacePath) => createWindow(workspacePath),
     onSettingsChanged: () => applyRuntimeSettings(),
     onWorkspacesChanged: () => reconcileDiscovery(),
@@ -717,6 +734,10 @@ function registerIpc(): void {
   handle("session:mcpReconnect", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "reconnect", { server }));
   handle("session:mcpToggle", async (event, sessionId: string, server: string, enabled: boolean) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "toggle", { server, enabled }));
   handle("session:mcpAuthenticate", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "authenticate", { server }));
+  // Diagnostics — the same controller methods as GET /api/diagnostics and
+  // POST /api/diagnostics/open-logs.
+  handle("diagnostics:get", async (event) => controller().getDiagnostics(senderWorkspace(event)));
+  handle("diagnostics:openLogFolder", async () => controller().openLogFolder());
   handle("shell:openExternal", async (_event, target: string) => {
     if (/^https?:\/\//i.test(String(target || ""))) {
       await shell.openExternal(String(target));

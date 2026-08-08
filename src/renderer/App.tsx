@@ -19,6 +19,7 @@ import type { WorkbenchActions } from "./workbench/actions";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
+import { ipcErrorMessage } from "./app/ipcError";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { isRuntimeTabId, type RuntimeTabId } from "../shared/runtimeTabs";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
@@ -523,6 +524,24 @@ export function App() {
     return () => clearTimeout(timer);
   }, [logsBySession, persistTranscript]);
 
+  /**
+   * `.catch` handler for an action dispatched as `void promise`.
+   *
+   * Nearly every mutation on this screen is fired from an event handler and left
+   * unawaited, so a rejection became an UNHANDLED rejection — recorded in the log
+   * and by the crash handler, yet invisible to the person who just clicked.
+   * Party creation was the clearest case: the name field clears exactly as it
+   * does on success, so a failed create read as "done" and the party simply
+   * never appeared. Routing these through the existing notice toast is what
+   * turns "the app ignored me" into a sentence the user can act on.
+   *
+   * `what` names the USER'S action, never the IPC channel.
+   */
+  const noticeOnFailure = useCallback(
+    (what: string) => (error: unknown) => setPartyNotice(`${what}: ${ipcErrorMessage(error)}`),
+    [],
+  );
+
   // Auto-dismiss the status toast so a transient notice doesn't linger.
   useEffect(() => {
     if (!partyNotice) {
@@ -556,14 +575,25 @@ export function App() {
   }
 
   async function createParty(name?: string, gate?: PartyGate) {
-    const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티", gate });
-    await applyPartyResult(result);
-    setCurrentView("workbench");
+    try {
+      const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티", gate });
+      await applyPartyResult(result);
+      setCurrentView("workbench");
+    } catch (error) {
+      // The sidebar clears its input on submit, which is indistinguishable from
+      // success — so a swallowed failure here read as "the party was created"
+      // while the list stayed empty.
+      noticeOnFailure("파티를 만들지 못했습니다")(error);
+    }
   }
 
   async function selectParty(partyId: string) {
-    const result = await window.agentParty.selectParty(partyId);
-    await applyPartyResult(result);
+    try {
+      const result = await window.agentParty.selectParty(partyId);
+      await applyPartyResult(result);
+    } catch (error) {
+      noticeOnFailure("파티를 전환하지 못했습니다")(error);
+    }
   }
 
   /**
@@ -706,14 +736,22 @@ export function App() {
     codexPolicy?: import("../shared/codexPolicy").CodexPolicy;
     cursorPolicy?: import("../shared/cursorPolicy").CursorPolicy;
   }) {
-    const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
-    await applyPartyResult(result);
+    try {
+      const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
+      await applyPartyResult(result);
+    } catch (error) {
+      noticeOnFailure(`'${input.name}' 멤버를 만들지 못했습니다`)(error);
+    }
   }
 
   // Direct removal for the Workbench sidebar, which owns its own confirm UI.
   async function removeMemberDirect(name: string) {
-    const result = await window.agentParty.removePartyMember(name);
-    await applyPartyResult(result);
+    try {
+      const result = await window.agentParty.removePartyMember(name);
+      await applyPartyResult(result);
+    } catch (error) {
+      noticeOnFailure(`'${name}' 멤버를 삭제하지 못했습니다`)(error);
+    }
   }
 
   /**
@@ -758,8 +796,12 @@ export function App() {
   // Deletes a whole party (cascades to its members); the sidebar arms a confirm
   // click before calling this.
   async function removePartyDirect(partyId: string) {
-    const result = await window.agentParty.deleteParty(partyId);
-    await applyPartyResult(result);
+    try {
+      const result = await window.agentParty.deleteParty(partyId);
+      await applyPartyResult(result);
+    } catch (error) {
+      noticeOnFailure("파티를 삭제하지 못했습니다")(error);
+    }
   }
 
   async function toggleDebug(enabled: boolean) {
@@ -899,7 +941,7 @@ export function App() {
       setPartyNotice(`'${name}' 세션이 없어 압축할 컨텍스트가 없습니다.`);
       return;
     }
-    void window.agentParty.compact(sessionId);
+    void window.agentParty.compact(sessionId).catch(noticeOnFailure("컨텍스트를 압축하지 못했습니다"));
     setCompactingByMember((current) => ({ ...current, [name]: true }));
     window.setTimeout(() => {
       setCompactingByMember((current) => {
@@ -1079,14 +1121,14 @@ export function App() {
         }
         prewarmFailureRef.current.set(name, reason);
         setPartyNotice(`'${name}' 세션을 준비하지 못했습니다: ${reason} 자동으로 다시 시도합니다.`);
-      });
+      }).catch(noticeOnFailure(`'${name}' 세션을 준비하지 못했습니다`));
     },
     approve(name, requestId, behavior, updatedInput) {
       const sessionId = sessionIdFor(name);
       if (!sessionId) {
         return;
       }
-      void window.agentParty.approve(sessionId, requestId, behavior, updatedInput);
+      void window.agentParty.approve(sessionId, requestId, behavior, updatedInput).catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, behavior));
     },
     answerQuestion(name, requestId, input, answers) {
@@ -1095,27 +1137,27 @@ export function App() {
         return;
       }
       const updatedInput = { ...(input && typeof input === "object" ? input : {}), answers };
-      void window.agentParty.approve(sessionId, requestId, "allow", updatedInput);
+      void window.agentParty.approve(sessionId, requestId, "allow", updatedInput).catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, "allow", answers));
     },
     interrupt(name) {
       const sessionId = sessionIdFor(name);
-      if (sessionId) void window.agentParty.interrupt(sessionId);
+      if (sessionId) void window.agentParty.interrupt(sessionId).catch(noticeOnFailure("중단하지 못했습니다"));
     },
     forceStop(name) {
       const sessionId = sessionIdFor(name);
-      if (sessionId) void window.agentParty.forceStop(sessionId);
+      if (sessionId) void window.agentParty.forceStop(sessionId).catch(noticeOnFailure("강제 종료하지 못했습니다"));
     },
     restart(name) {
       const sessionId = sessionIdFor(name);
-      if (sessionId) void window.agentParty.restart(sessionId);
+      if (sessionId) void window.agentParty.restart(sessionId).catch(noticeOnFailure("세션을 재시작하지 못했습니다"));
     },
     respawn(name) {
       // Reload the member's session while continuing the conversation
       // (respawnMember: restart + resume the same harness thread). Rebuilds from
       // the member's current config and re-reads MCP, so newly-added servers
       // take effect without losing context.
-      void window.agentParty.respawnPartyMember(name);
+      void window.agentParty.respawnPartyMember(name).catch(noticeOnFailure(`'${name}' 세션을 재시작하지 못했습니다`));
     },
     compact(name) {
       runCompact(name);
@@ -1125,22 +1167,22 @@ export function App() {
       // reflects it back into every member view (toolbar pill + sidebar badge).
       // Re-arm the trigger so a fresh threshold takes effect immediately.
       autoArmedRef.current[name] = true;
-      void window.agentParty.setMemberAutoCompact(name, setting ?? null);
+      void window.agentParty.setMemberAutoCompact(name, setting ?? null).catch(noticeOnFailure(`'${name}' auto-compact 설정을 저장하지 못했습니다`));
     },
     setMemberGate(name, patch) {
       // Persist through the shared party-action path; party:update reflects the
       // new effective gate into every member view + the gate manager.
-      void window.agentParty.setMemberGate(name, patch);
+      void window.agentParty.setMemberGate(name, patch).catch(noticeOnFailure(`'${name}' Message Gate 설정을 저장하지 못했습니다`));
     },
     setPartyGate(partyId, gate) {
-      void window.agentParty.setPartyGate(partyId, gate);
+      void window.agentParty.setPartyGate(partyId, gate).catch(noticeOnFailure("파티 Message Gate 설정을 저장하지 못했습니다"));
     },
     closeSession(name) {
       // Closing the tab tears down the member's session and marks it closed, so
       // it stops occupying context / provider usage. Addressed by member name
       // (not sessionId): a prewarmed-but-not-yet-bound member still gets closed,
       // and the closed status blocks auto-prewarm from resurrecting it.
-      void window.agentParty.closePartyMember(name);
+      void window.agentParty.closePartyMember(name).catch(noticeOnFailure(`'${name}' 멤버를 닫지 못했습니다`));
     },
     async applyRuntime(name, runtime) {
       if (runtime.debug !== state.settings.debugEnabled) {
@@ -1191,14 +1233,14 @@ export function App() {
     setEffort(name, effort) {
       const sessionId = sessionIdFor(name);
       if (sessionId) {
-        void window.agentParty.setEffort(sessionId, effort);
+        void window.agentParty.setEffort(sessionId, effort).catch(noticeOnFailure("추론 강도를 바꾸지 못했습니다"));
       }
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], effort } }));
     },
     setThinking(name, mode, budget) {
       const sessionId = sessionIdFor(name);
       if (sessionId) {
-        void window.agentParty.setThinking(sessionId, mode, budget);
+        void window.agentParty.setThinking(sessionId, mode, budget).catch(noticeOnFailure("추론 모드를 바꾸지 못했습니다"));
       }
     },
     setCodexPolicy(name, policy) {
@@ -1361,7 +1403,7 @@ export function App() {
                 views={views}
                 routes={routes}
                 codexModels={state.codexModels}
-                onRefreshCodexModels={() => void window.agentParty.refreshCodexModels()}
+                onRefreshCodexModels={() => void window.agentParty.refreshCodexModels().catch(noticeOnFailure("Codex 모델 목록을 새로고침하지 못했습니다"))}
                 defaultProfile={defaultMemberProfileOf(state.settings)}
                 harnessDefaults={state.settings.harnessDefaults}
                 gateDefaults={state.settings.gateDefaults}
@@ -1441,7 +1483,7 @@ export function App() {
                   router={state.router.baseUrl}
                   settings={state.settings}
                   codexModels={state.codexModels}
-                  onRefreshCodexModels={() => void window.agentParty.refreshCodexModels()}
+                  onRefreshCodexModels={() => void window.agentParty.refreshCodexModels().catch(noticeOnFailure("Codex 모델 목록을 새로고침하지 못했습니다"))}
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}

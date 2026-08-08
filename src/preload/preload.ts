@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -53,6 +54,9 @@ const api = {
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
   authenticateMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpAuthenticate", sessionId, server),
+  getDiagnostics: (): Promise<DiagnosticsReport> => ipcRenderer.invoke("diagnostics:get"),
+  /** Reveals the log folder. Rejects with the OS reason when it cannot open. */
+  openLogFolder: (): Promise<{ ok: true; path: string }> => ipcRenderer.invoke("diagnostics:openLogFolder"),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
   copyImageToClipboard: (image: { dataBase64: string; mediaType: string }) => ipcRenderer.invoke("clipboard:writeImage", image),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
