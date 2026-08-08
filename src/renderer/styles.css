@@ -1017,6 +1017,113 @@ body.wb-resizing {
   color: var(--text-0);
 }
 
+/* Tab overflow. Tabs that do not fit fold into a +N chip at the end of the
+   strip instead of scrolling off it — a member scrolled out of view is a member
+   whose approval request nobody sees. */
+.wb-tab-overflow-wrap {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+}
+
+.wb-tab-overflow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: none;
+  border-left: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wb-tab-overflow:hover,
+.wb-tab-overflow.is-open {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+
+/* Carries the colour of the folded-away member that needs attention, so the
+   count says WHO is waiting and not merely that someone is. */
+.wb-tab-overflow-alert {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.wb-tab-overflow-caret {
+  transition: transform .15s ease;
+}
+
+.wb-tab-overflow.is-open .wb-tab-overflow-caret {
+  transform: rotate(180deg);
+}
+
+.wb-tab-overflow-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 45;
+  width: 252px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 22px 48px -20px var(--shadow-strong);
+}
+
+.wb-tab-overflow-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text-3);
+}
+
+.wb-tab-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.wb-tab-overflow-item:hover {
+  background: var(--bg-3);
+}
+
+.wb-tab-overflow-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-tab-overflow-foot {
+  margin-top: 4px;
+  padding: 7px 8px 5px;
+  border-top: var(--border-width) solid var(--border-subtle);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
 .wb-tab-actions {
   display: flex;
   align-items: stretch;

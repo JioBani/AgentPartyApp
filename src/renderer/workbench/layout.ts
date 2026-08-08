@@ -75,6 +75,26 @@ export function setActiveTab(state: LayoutState, panelId: string, memberName: st
   };
 }
 
+/**
+ * Brings a tab to the FRONT of its panel and activates it — how a member is
+ * picked out of the overflow list.
+ *
+ * Moving it rather than only activating it is the point: the strip hides tabs
+ * from the end, so a member chosen while hidden would be activated and then
+ * folded straight back out of sight. Putting it first keeps it on screen, and
+ * the order ends up reflecting what the user last reached for.
+ */
+export function promoteTab(state: LayoutState, panelId: string, memberName: string): LayoutState {
+  return {
+    panels: state.panels.map((panel) => (
+      panel.id === panelId && panel.tabs.includes(memberName)
+        ? { ...panel, tabs: [memberName, ...panel.tabs.filter((name) => name !== memberName)], active: memberName }
+        : panel
+    )),
+    focusedPanelId: panelId,
+  };
+}
+
 export function closeTab(state: LayoutState, panelId: string, memberName: string): LayoutState {
   const panels: PanelState[] = [];
   for (const panel of state.panels) {

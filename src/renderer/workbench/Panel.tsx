@@ -22,12 +22,12 @@ interface PanelProps {
   focused: boolean;
   draggingMember: string | null;
   dropTarget: boolean;
-  canAdd: boolean;
   actions: WorkbenchActions;
   onFocus: () => void;
   onSelectTab: (member: string) => void;
   onCloseTab: (member: string) => void;
-  onAdd: () => void;
+  /** Move a tab to the front of this panel and activate it (overflow list). */
+  onPromoteTab: (member: string) => void;
   onSplit: () => void;
   onOpenRuntime: (member: string) => void;
   onOpenMcp: (member: string) => void;
@@ -43,8 +43,8 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, canAdd, actions, onFocus, onSelectTab, onCloseTab, onAdd, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
-  const { ref, density } = useDensity<HTMLDivElement>();
+  const { panel, views, focused, draggingMember, dropTarget, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -112,11 +112,11 @@ export function Panel(props: PanelProps) {
         panel={panel}
         views={views}
         density={density}
+        width={width}
         draggingMember={draggingMember}
-        canAdd={canAdd}
         onSelect={onSelectTab}
         onClose={onCloseTab}
-        onAdd={onAdd}
+        onPromote={onPromoteTab}
         onSplit={onSplit}
         onTabPointerDown={onTabPointerDown}
       />
