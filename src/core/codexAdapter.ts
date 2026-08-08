@@ -129,6 +129,8 @@ export class CodexAdapter extends EventEmitter {
   private requestSeq = 0;
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  /** Raw `RequestId` per pending server request — see `respond()` for why. */
+  private readonly wireIds = new Map<string, string | number>();
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
   private policy: CodexPolicy;
@@ -944,11 +946,24 @@ export class CodexAdapter extends EventEmitter {
     this.process.stdin.write(`${JSON.stringify({ method, params })}\n`);
   }
 
+  /**
+   * Answers a server→client request, echoing its id back with the ORIGINAL type.
+   *
+   * The app-server's `RequestId` is `string | number` and it really does send
+   * numbers (measured: every approval in codex-cli 0.145.0 arrives as `id: 0`).
+   * Everything above this line keys approvals by a string, so the raw id is
+   * looked up here instead of being reconstructed: replying `"0"` to a request
+   * whose id was `0` leaves the server waiting forever — the command never runs
+   * and the turn never ends. Recorded proof of both outcomes is in
+   * scripts/fixtures/approvals/codex-command-once{,-stringid-hang}.jsonl.
+   */
   private respond(id: string, result: unknown): void {
     if (!this.process?.stdin.writable) {
       return;
     }
-    const message = { id, result };
+    const wireId = this.wireIds.get(id);
+    this.wireIds.delete(id);
+    const message = { id: wireId ?? id, result };
     this.log("out", message);
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
   }
@@ -1001,6 +1016,7 @@ export class CodexAdapter extends EventEmitter {
     const requestId = String(message.id);
     const method = String(message.method);
     const params = message.params || {};
+    this.wireIds.set(requestId, message.id);
     if (method === "item/tool/call") {
       void this.handleDynamicToolCall(requestId, params);
       return;
@@ -1537,6 +1553,7 @@ export class CodexAdapter extends EventEmitter {
     }
     this.pendingRequests.clear();
     this.pendingApprovals.clear();
+    this.wireIds.clear();
   }
 
   private emitEvent(event: ClaudeNormalizedEvent): void {
