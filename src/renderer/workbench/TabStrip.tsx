@@ -49,8 +49,8 @@ function TabMarkers({ view }: { view: MemberView }) {
 export function TabStrip({ panel, views, density, width, draggingMember, onSelect, onClose, onPromote, onSplit, onTabPointerDown }: TabStripProps) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const { visible, hidden } = useMemo(
-    () => splitTabs(panel.tabs, panel.active, width, views, density),
-    [panel.tabs, panel.active, width, views, density],
+    () => splitTabs(panel.tabs, panel.active, width),
+    [panel.tabs, panel.active, width],
   );
 
   // Widening the panel (or closing a tab) can empty the overflow while its list
@@ -65,7 +65,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, onSelec
     || hidden.find((name) => (views.get(name)?.unread || 0) > 0);
 
   return (
-    <div className="wb-tabstrip" data-drop-tabstrip={panel.id}>
+    <div className={"wb-tabstrip" + (hidden.length > 0 ? " has-overflow" : "")} data-drop-tabstrip={panel.id}>
       <div className="wb-tabs">
         {visible.map((member) => {
           const view = views.get(member);

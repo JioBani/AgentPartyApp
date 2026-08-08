@@ -995,6 +995,21 @@ body.wb-resizing {
   white-space: nowrap;
 }
 
+/* Once tabs start folding away, the ones still shown SHARE the row so the strip
+   ends up full. Leaving them at their natural width put empty space beside the
+   "+6", which reads as "there is room" — the opposite of what the chip means.
+   The name gives up its space first; the dot and the live badges do not. */
+.wb-tabstrip.has-overflow .wb-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+.wb-tabstrip.has-overflow .wb-tab-name {
+  flex: 1;
+  min-width: 0;
+}
+
 .wb-tab-close {
   display: grid;
   place-items: center;

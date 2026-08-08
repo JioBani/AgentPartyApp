@@ -1,43 +1,17 @@
-import type { MemberView, PanelDensity } from "./types";
+/**
+ * The narrowest a tab is allowed to get before one is folded away instead.
+ * Below this the name has no room left to say which member it is.
+ */
+const MIN_TAB = 116;
 
-/** Widest a tab can render (`.wb-tab` max-width plus its right border). */
-const TAB_MAX = 178;
+/** Width the `+N ⌄` chip occupies once it appears. */
+const OVERFLOW_CHIP = 46;
 
-/** Space kept clear at the end of the strip for the `+N ⌄` chip itself. */
-const OVERFLOW_CHIP = 52;
+/** The split button that always sits at the end of the strip. */
+const STRIP_ACTIONS = 30;
 
 /** The strip's own horizontal border. */
 const STRIP_CHROME = 2;
-
-/**
- * Estimated rendered width of one tab, in pixels.
- *
- * Estimated rather than measured on purpose: measuring would require the tabs
- * to already be in the DOM, and the whole point is to decide which ones to put
- * there. The terms mirror what {@link TabStrip} actually draws — accent, dot,
- * name, and the badges that appear only in some states — so a tab carrying an
- * approval badge is correctly treated as wider than a bare one.
- *
- * The badge terms follow the RENDERING, not the data: the strip shows the
- * unread count only when there is no approval badge, so this counts one or the
- * other, never both.
- */
-export function estimateTabWidth(view: MemberView, density: PanelDensity): number {
-  const name = view.name || "";
-  let width = 19 + 7 + 7 + Math.min(100, Math.max(34, name.length * 7)) + 7 + 17 + 1;
-  if (density !== "narrow") {
-    width += 25; // harness chip (18px) + gap — this app's tab has one, the design's does not
-  }
-  if (view.pendingApproval) {
-    width += 37;
-  } else if (view.unread > 0) {
-    width += 29;
-  }
-  if ((view.member.queue?.items.length || 0) > 0) {
-    width += 43;
-  }
-  return Math.min(TAB_MAX, width);
-}
 
 export interface TabSplit {
   /** Tabs drawn in the strip, in order. */
@@ -47,11 +21,20 @@ export interface TabSplit {
 }
 
 /**
- * Splits a panel's tabs into the ones that fit and the ones that fold into the
- * overflow chip.
+ * Splits a panel's tabs into the ones that are drawn and the ones that fold
+ * into the overflow chip.
+ *
+ * This counts how many tabs fit at {@link MIN_TAB} rather than adding up each
+ * tab's own width. Estimating individual widths was wrong twice over: the
+ * estimate ran 5–12px high per tab, and even a perfect one leaves the row
+ * ending in a gap the width of whatever tab did not fit — so the strip showed
+ * empty space next to a `+6`, which reads as "there is room, why is it hiding
+ * things". Tabs instead SHRINK to share the row (see `.wb-tab` flex rules), so
+ * the count is the only decision left here and an overflowing strip is always
+ * visually full — which is what makes "no more room" self-evident.
  *
  * Two rules make this safe rather than merely tidy:
- * - **The active tab is never hidden.** If the budget would push it out, it
+ * - **The active tab is never hidden.** If the count would push it out, it
  *   trades places with the last visible tab, so the panel always shows which
  *   member it is displaying.
  * - **At least one tab is always visible**, even in a panel too narrow for it —
@@ -60,39 +43,20 @@ export interface TabSplit {
  * A width of 0 means the panel has not been measured yet; everything stays
  * visible for that first paint rather than briefly collapsing to one tab.
  */
-export function splitTabs(
-  tabs: string[],
-  active: string,
-  panelWidth: number,
-  views: Map<string, MemberView>,
-  density: PanelDensity,
-): TabSplit {
+export function splitTabs(tabs: string[], active: string, panelWidth: number): TabSplit {
   if (panelWidth <= 0 || tabs.length <= 1) {
     return { visible: tabs.slice(), hidden: [] };
   }
-  const widthOf = (member: string) => {
-    const view = views.get(member);
-    return view ? estimateTabWidth(view, density) : 0;
-  };
-  const total = tabs.reduce((sum, member) => sum + widthOf(member), 0);
-  if (total <= panelWidth - STRIP_CHROME) {
+
+  const fitsIn = (reserved: number) => Math.max(1, Math.floor((panelWidth - STRIP_CHROME - STRIP_ACTIONS - reserved) / MIN_TAB));
+  if (fitsIn(0) >= tabs.length) {
     return { visible: tabs.slice(), hidden: [] };
   }
+  // Something has to fold, so the chip is on screen and takes room of its own.
+  const count = Math.min(tabs.length - 1, fitsIn(OVERFLOW_CHIP));
 
-  const budget = panelWidth - STRIP_CHROME - OVERFLOW_CHIP;
-  const visible: string[] = [];
-  const hidden: string[] = [];
-  let used = 0;
-  for (const member of tabs) {
-    const width = widthOf(member);
-    if (used + width <= budget || visible.length === 0) {
-      used += width;
-      visible.push(member);
-    } else {
-      hidden.push(member);
-    }
-  }
-
+  const visible = tabs.slice(0, count);
+  const hidden = tabs.slice(count);
   const activeHidden = hidden.indexOf(active);
   if (activeHidden >= 0 && visible.length > 0) {
     const displaced = visible[visible.length - 1];
