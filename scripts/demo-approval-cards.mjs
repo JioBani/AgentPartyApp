@@ -21,7 +21,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const argOf = (flag, fallback) => { const i = argv.indexOf(flag); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
-const shotDir = path.resolve(argOf("--shots", path.join(os.tmpdir(), "b18-approval-shots")));
+// Defaults NEXT TO THE DOC, not into the OS temp dir: these are a handoff
+// artifact for whoever redesigns the card, and temp gets swept.
+const shotDir = path.resolve(argOf("--shots", path.join(root, "docs", "베타 공개 준비", "승인 카드 캡처")));
 const closeAfter = argv.includes("--close");
 
 const ws = path.resolve(os.tmpdir(), "agentparty-b18-demo-ws");
