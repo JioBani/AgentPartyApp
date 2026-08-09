@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
+import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 
 /**
  * Per-WORKSPACE automation discovery — how external tools (the `agent-party`
@@ -19,7 +20,7 @@ import { log } from "./logger";
  * the distro (`\\wsl$\<distro>\...`) so the in-distro shim reads the same path.
  */
 
-const ROOT_DIR = ".agent_party_app";
+const ROOT_DIR = STORAGE_DIR;
 const INSTANCES_DIR = "instances";
 
 /** The `.agent_party_app/instances` dir on the host where the workspace lives. */
@@ -41,6 +42,9 @@ function instanceFile(workspace: string): string {
 export function writeInstanceDiscovery(workspace: string, baseUrl: string, startedAt: string): void {
   try {
     const file = instanceFile(workspace);
+    // On a fresh workspace this is what FIRST creates the storage root — before
+    // any party exists — so marking it is this writer's job, not the repository's.
+    ensureStorageDir(path.dirname(instancesDir(workspace)));
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify({ baseUrl, pid: process.pid, workspace, startedAt }, null, 2)}\n`);
   } catch (error) {
