@@ -227,86 +227,26 @@ async function handleLine(line) {
   }
 }
 
+/**
+ * Hands the call to the app and returns its answer untouched.
+ *
+ * This server used to map each tool onto the REST endpoints the UI uses and
+ * return the response raw, which made it a SECOND copy of the agent-facing
+ * contract — and the copies drifted. A message the Message Gate rejected came
+ * back as `ok: true` (the refusal buried in a `message` field), and every call
+ * returned the UI's whole command result: the party list, every member record
+ * and up to 200 messages. Measured on a real party that was 297KB, about
+ * 74,000 tokens, for one `send` whose true answer is 36 bytes.
+ *
+ * `/api/harness/party/tools/<name>` runs the SAME `invokePartyTool` the
+ * in-process harnesses use, so there is one implementation of what a tool does
+ * and what it answers. Keep this function a pump: any behaviour added here
+ * would only apply to Codex and start the drift over again.
+ */
 async function callTool(name, args) {
   recordCall(name, args);
   assertBaseUrl();
-  switch (name) {
-    case "send":
-      return post("/api/harness/party/messages", {
-        to: String(args.to || ""),
-        from: member,
-        content: String(args.content || ""),
-        interrupt: args.interrupt === true,
-        force: args.force === true,
-        forceReason: typeof args.forceReason === "string" ? args.forceReason : undefined,
-      }, { "x-agentparty-member": member });
-    case "member-create": {
-      const created = await post("/api/party/members", {
-        partyId: party || undefined,
-        name: String(args.name || ""),
-        requirement: String(args.role || ""),
-        role: String(args.role || ""),
-        runtime: String(args.harness || "claude-code"),
-        model: typeof args.model === "string" ? args.model : undefined,
-        reasoning: typeof args.reasoning === "string" ? args.reasoning : undefined,
-        reasoningBudget: typeof args.reasoningBudget === "number" ? args.reasoningBudget : undefined,
-        effort: typeof args.effort === "string" ? args.effort : undefined,
-        permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
-        codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
-      });
-      if (created?.member?.name) {
-        await post(`/api/party/members/${encodeURIComponent(created.member.name)}/start`, {
-          model: typeof args.model === "string" ? args.model : undefined,
-          effort: typeof args.effort === "string" ? args.effort : undefined,
-          permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
-          codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
-        }).catch((error) => ({ ok: false, error: error.message }));
-      }
-      return created;
-    }
-    case "member-remove":
-      return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/remove`, {});
-    case "member-permission":
-      return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/permission`, {
-        permissionMode: typeof args.permissionMode === "string" ? args.permissionMode : undefined,
-        codexPolicy: args.codexPolicy && typeof args.codexPolicy === "object" ? args.codexPolicy : undefined,
-      });
-    case "gate-set": {
-      const gate = {};
-      if (args.mode === "inherit" || args.mode === "on" || args.mode === "off") gate.mode = args.mode;
-      if ("rule" in args && (args.rule === null || typeof args.rule === "string")) gate.rule = args.rule;
-      if ("reviewer" in args && (args.reviewer === null || typeof args.reviewer === "object")) gate.reviewer = args.reviewer;
-      return post(`/api/party/members/${encodeURIComponent(String(args.name || ""))}/gate`, { gate });
-    }
-    case "party-gate-set": {
-      if (!party) return { ok: false, error: "AGENTPARTY_PARTY is not set." };
-      const state = await get("/api/harness/party");
-      const current = state?.parties?.find((item) => item.id === party)?.gate || { enabled: false, rule: "" };
-      const gate = { ...current };
-      if (typeof args.enabled === "boolean") gate.enabled = args.enabled;
-      if (typeof args.rule === "string") gate.rule = args.rule;
-      if ("reviewer" in args && (args.reviewer === null || typeof args.reviewer === "object")) {
-        if (args.reviewer === null) delete gate.reviewer;
-        else gate.reviewer = args.reviewer;
-      }
-      return post(`/api/parties/${encodeURIComponent(party)}/gate`, gate);
-    }
-    case "list":
-      return get("/api/harness/party");
-    case "list-models":
-      return get("/api/models");
-    case "member-status":
-      return post(`/api/party/members/${encodeURIComponent(String(args.name || "*"))}/status`, {});
-    case "interrupt": {
-      const target = String(args.target || "");
-      if (target === member) return { ok: false, error: "You cannot interrupt yourself." };
-      return post(`/api/party/members/${encodeURIComponent(target === "all" ? "*" : target)}/interrupt`, target === "all" ? { exclude: member } : {});
-    }
-    case "broadcast":
-      return post("/api/party/broadcast", { from: member, content: String(args.content || ""), interrupt: args.interrupt === true });
-    default:
-      return { ok: false, error: `Unknown AgentParty tool '${name}'.` };
-  }
+  return post(`/api/harness/party/tools/${encodeURIComponent(name)}`, args);
 }
 
 function assertBaseUrl() {
@@ -315,15 +255,10 @@ function assertBaseUrl() {
   }
 }
 
-async function get(path) {
-  const response = await fetch(baseUrl + path, { headers: partyHeaders() });
-  return readResponse(response, path);
-}
-
-async function post(path, body, headers = {}) {
+async function post(path, body) {
   const response = await fetch(baseUrl + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...partyHeaders(), ...headers },
+    headers: { "Content-Type": "application/json", ...partyHeaders() },
     body: JSON.stringify(body || {}),
   });
   return readResponse(response, path);

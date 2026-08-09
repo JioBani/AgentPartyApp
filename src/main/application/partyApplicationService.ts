@@ -43,7 +43,7 @@ import type { TranscriptBlock } from "../../shared/transcript";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
-import type { PartyBridge } from "../../core/partyBridge";
+import { invokePartyTool, type PartyBridge, type PartyToolResult } from "../../core/partyBridge";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
@@ -2503,6 +2503,36 @@ export class PartyApplicationService {
   // `from` is closure-bound to the calling member; every operation is scoped to
   // the caller's OWN party (`party`), never a shared/default one — an agent's
   // party tools must act inside its party regardless of what any window is viewing.
+  /**
+   * Runs one party tool ON BEHALF OF a member that reaches us over HTTP instead
+   * of in-process — today, a Codex member, whose tools live in a separate stdio
+   * MCP server (`scripts/agentparty-codex-mcp-server.mjs`).
+   *
+   * It exists so that transport is the ONLY difference between harnesses. That
+   * server used to call the same REST endpoints the UI uses and hand the answer
+   * back raw, which meant the agent-facing contract was written twice — and the
+   * two copies had already drifted apart:
+   *
+   * - a message the gate REJECTED came back as `ok: true`, with the refusal
+   *   buried in a `message` field, so a Codex member was told its message was
+   *   delivered when it was not;
+   * - every call returned the UI's whole command result — the party list, every
+   *   member record and up to 200 messages. Measured on a real party: 297KB,
+   *   roughly 74,000 tokens, per `send`. The correct answer is 36 bytes.
+   *
+   * `invokePartyTool` is the one place that decides what a tool returns, so both
+   * harnesses now go through it and there is no second copy to drift.
+   */
+  async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): Promise<PartyToolResult> {
+    const state = this.repository.read(this.workspacePath());
+    const caller = state.members.find((m) => m.name === member && (!partyId || m.partyId === partyId));
+    if (!caller) {
+      return { ok: false, error: `Member '${member}' is not in this party.` };
+    }
+    const party = this.partyIdOf(caller);
+    return invokePartyTool(this.partyBridgeFor(party, caller.name), { party, member: caller.name, role: caller.role }, tool, args);
+  }
+
   private partyBridgeFor(party: string, selfMember: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {

@@ -91,6 +91,7 @@ export const automationEndpoints = [
   "POST /api/party/layout",
   "GET /api/harness/party",
   "POST /api/harness/party/messages",
+  "POST /api/harness/party/tools/:tool",
   "GET /api/windows",
   "POST /api/windows",
   "POST /api/windows/:id/workspace",
