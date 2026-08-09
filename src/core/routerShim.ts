@@ -8,7 +8,7 @@ import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/dee
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
-import { grokSubscriptionToken } from "./grokSubscriptionAuth";
+import { GrokSubscriptionAuthError, grokSubscriptionToken } from "./grokSubscriptionAuth";
 import { createXaiSseFilter, normalizeAnthropicRequestForXai, stripThinkingFromAnthropicResponse } from "./xaiRequestCompat";
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
@@ -224,7 +224,23 @@ export class EmbeddedHarnessRouter {
         return;
       }
       if (!res.headersSent && !res.destroyed) {
-        sendJson(res, 500, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
+        // A missing or expired provider credential must reach the user with the
+        // one instruction that fixes it (`grok login`). Measured on a WSL engine
+        // whose distro has no ~/.grok:
+        //   500 → the Anthropic SDK retries with backoff and the member sits at
+        //         "requesting" forever, showing nothing;
+        //   401 → Claude Code swallows the body and reports
+        //         "API Error: 400 status code (no body)";
+        //   400 → the body is surfaced verbatim in the transcript.
+        // So the actionable failure goes out as 400 even though the cause is
+        // authentication. Status semantics lose to the user actually seeing it.
+        const authFailure = error instanceof GrokSubscriptionAuthError;
+        sendJson(res, authFailure ? 400 : 500, {
+          error: {
+            type: authFailure ? "invalid_request_error" : "api_error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
       } else if (!res.destroyed) {
         res.destroy(error instanceof Error ? error : new Error(String(error)));
       }
