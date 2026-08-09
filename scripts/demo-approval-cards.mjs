@@ -233,126 +233,19 @@ async function main() {
 }
 
 /**
- * The handoff note.
+ * The handoff note, copied from scripts/fixtures/approvals/INDEX.template.md.
  *
- * Written for whoever redesigns this card, not for us. A screenshot alone does
- * not say when the card appears, what the person is deciding, or what each
- * button actually does — and those are the only things a design can be judged
- * against. Every consequence below was measured against a live harness, not
- * inferred from the code.
+ * Kept as a markdown FILE rather than a string in here: it is prose for whoever
+ * redesigns the card, it is full of backticks, and it should be editable and
+ * reviewable as markdown instead of as an escaped JS template literal.
+ *
+ * It is organised by approval TYPE, not by the prompts used to record the
+ * shots. A designer given "I asked Codex to make a file" designs for that one
+ * command; given "arbitrary command execution, and here is what the user must
+ * judge" they design the case.
  */
 function indexDoc() {
-  return `# 승인 카드 — 디자인 인계
-
-> 이 폴더의 이미지는 **실제 하네스가 보낸 값**으로 그려졌다.
-> \`node scripts/demo-approval-cards.mjs\` 로 언제든 다시 만들 수 있다(과금 없음).
-
----
-
-## 0. 이 화면이 왜 중요한가
-
-**AI 가 사용자 컴퓨터에서 명령을 실행하거나 파일을 고치기 직전에 멈춰 서서 묻는 화면**이다.
-사용자가 "허용"을 누르면 그 순간 실제로 실행된다. 되돌리는 버튼은 없다.
-
-- **신규 사용자가 가장 많이 보는 화면이다.** 처음 온 사람은 AI 에게 권한을 다 주지 않으므로
-  승인 모드가 기본 동선이 된다. (반대로 이 앱을 만든 사람은 거의 안 써서 검증이 가장 비어 있던 곳이다)
-- **놓치면 작업이 멈춘다.** 사용자가 답할 때까지 AI 는 아무것도 못 한다.
-  ⚠️ 지금 승인 대기를 알릴 경로가 최악의 경우 **탭의 26px 짜리 칩 하나**뿐이다.
-  (사이드바를 접고 패널을 나누면 나머지 표시가 전부 사라진다 — 별도 이슈로 열려 있다)
-
-## 1. 사용자는 무엇을 정하는가
-
-| 버튼 | 누르면 실제로 (실측) |
-|---|---|
-| **거부** | 명령이 실행되지 않는다. AI 에게 "사용자가 거부함"이 전달되고, AI 는 보통 *"권한이 없어 못 했다"* 고 답하며 다른 방법을 찾거나 멈춘다 |
-| **이번만 허용** | 이번 건만 실행된다. 같은 명령을 또 하려 하면 **다시 묻는다** |
-| **이 세션 동안** | 실행되고, **이 대화가 끝날 때까지** 같은 요청을 안 묻는다. 앱을 끄면 사라진다 |
-| **항상 허용 (규칙)** | 실행되고 **규칙이 디스크에 저장된다.** 다음에 앱을 새로 켜도 안 묻는다 |
-
-⚠️ **"항상 허용"은 침묵을 약속하지 못한다.** 규칙은 저장되지만, *다른 이유*(예: 작업공간 밖 경로)로
-다시 물을 수 있고 그 사유는 세션 단위로만 허용된다. 그래서 버튼 설명이
-*"앞으로 묻지 않습니다"* 가 아니라 *"'…' 규칙을 저장합니다"* 로 되어 있다. **이 문구는 실측 결과다.**
-
-## 2. 카드별 — 언제 뜨고 무엇을 보여주는가
-
-### \`pending-codex-command-once.png\` — 명령 실행 승인 (가장 흔함)
-**상황**: Codex 멤버에게 파일을 하나 만들어 달라고 했다. 작업공간이 읽기 전용이라
-Codex 가 *"이 명령을 실행해도 되나"* 고 묻는다.
-**보여주는 것**: 요청 사유(AI 가 쓴 문장) · 실행할 명령 · 실제 실행 형태 · 작업 디렉터리 · 저장될 규칙
-**결정**: 4개 전부
-
-### \`pending-codex-untrusted-no-reason.png\` — 사유가 없는 카드
-**상황**: 같은 요청인데 사용자가 **가장 엄격한 승인 설정**을 골랐을 때.
-**차이**: **요청 사유가 아예 없다.** AI 가 권한을 요청하는 게 아니라 그냥 신뢰 목록에 없는 명령이라 멈춘 것이다.
-⚠️ **여기서 허용을 눌러도 실패한다** — 승인과 샌드박스 해제가 별개라서다. 실측으로 확인됐다.
-**→ 디자인 질문: 사용자가 허용했는데 실패하는 이 상황을 어떻게 알릴 것인가?**
-
-### \`pending-codex-file-change.png\` — 파일 변경 승인
-**상황**: Codex 가 파일을 직접 고치려 한다.
-**보여주는 것**: 바뀌는 파일 경로와 그 내용/차이.
-(원래 이 카드는 제목과 버튼뿐이었다 — 무엇이 바뀌는지 모르고 승인해야 했다. 고쳤다)
-**결정**: 3개 — 파일 변경에는 "항상 허용" 규칙이 없다
-
-### \`pending-claude-bash.png\` — Claude 명령 승인
-**상황**: Claude 멤버에게 셸 명령을 시켰다.
-**보여주는 것**: AI 가 쓴 설명 · 명령 · **막힌 경로** · 저장될 규칙(\`echo one *\` 처럼 읽히는 패턴)
-**결정**: 3개 — Claude 에는 "이 세션 동안"이 없다
-
-### \`pending-claude-file-edit.png\` — Claude 파일 편집
-**상황**: Claude 가 기존 파일의 한 부분을 고치려 한다.
-**보여주는 것**: **바뀌기 전과 후**를 나란히
-
-### \`pending-claude-write-outside-cwd.png\` — 작업공간 밖 쓰기
-**상황**: AI 가 작업 폴더 **바깥** 파일을 건드리려 한다. 위험도가 다른 경우다.
-**차이**: 이때만 사유가 붙는다(*"허용된 작업 디렉터리 밖의 경로"*)
-
-### \`resolved-*.png\` — 누른 뒤
-카드가 사라지지 않고 **무엇을 승인/거부했는지 기록으로 남는다.** 지금은 작은 배지 하나뿐이다.
-**→ 디자인 질문: 나중에 대화를 훑을 때 "내가 뭘 허용했더라"를 이걸로 알 수 있나?**
-
-### \`question-*.png\` — AI 가 되묻는 카드 (승인과 다른 계열)
-**상황**: AI 가 진행하다 막혀서 사용자에게 선택지를 물을 때. 위험한 동작이 아니라 **의사결정**이다.
-단일 선택 · 다중 선택 · 자유 입력 · 비밀 입력(마스킹) · 여러 질문 연속(건너뛰기/다음).
-🐛 여러 질문 카드에 진행 표시(\`1/3\`)가 **두 번** 나온다.
-
-## 3. ⚠️ 하네스마다 다른 것 — 카드 하나로 못 덮는다
-
-| | Claude | Codex |
-|---|---|---|
-| 결정 개수 | 3개 | **4개** |
-| "이 세션 동안" | **없음** | 있음 |
-| 파일 변경 미리보기 | 전/후 | 파일 + 내용 |
-| 저장되는 규칙 | \`echo one *\` — **읽힌다** | 명령 전체 + 실행 경로 — **길고 안 읽힌다** |
-| 요청 사유 | 보통 없음 | 설정에 따라 있음/없음 |
-
-**같은 레이아웃을 두 하네스에 그대로 쓰면 한쪽은 빈칸이 생기고 한쪽은 넘친다.**
-특히 Codex 의 "저장될 규칙"은 한 줄에 안 들어간다.
-
-## 4. 아직 그림이 없는 케이스 — **비워 뒀다**
-
-실제로 본 적이 없어서 비웠다. 못 본 모양으로 카드를 그리면 추측이 그대로 스펙이 된다.
-다만 **버튼 구성은 코드상 확정**이므로 그것만 적는다.
-
-| 케이스 | 언제 뜰 것인가 | 결정 |
-|---|---|---|
-| Codex 권한 상승 | AI 가 네트워크·경로 권한을 더 달라고 할 때 | 거부 / 이번만 / 이 세션 |
-| Codex 명령(규칙 제안 없음) | 규칙으로 만들 수 없는 명령일 때 | 거부 / 이번만 / 이 세션 |
-| Codex 사용자 입력 | AI 가 값을 물을 때 (아직 실험 기능) | 질문 카드 계열 |
-| Codex MCP 서버 요청 | 외부 도구가 확인을 요청할 때 | 거부 / 이번만 / 이 세션 |
-| Claude 서브에이전트 승인 | **AI 의 하위 작업자**가 요청할 때 — 누가 요청했는지 표시가 필요하다 | 거부 / 이번만 / 항상 |
-| Cursor | 조사 결과 **승인 화면 자체가 없다**(실행 전에 미리 정해진다) | — |
-
-## 5. 파일 목록
-
-| 파일 | 무엇 |
-|---|---|
-${[...CARDS.map((c) => `| \`pending-${c.scenario}.png\` | ${c.caption} |`),
-   ...RESOLVED.map((c) => `| \`resolved-${c.member}.png\` | ${c.caption} |`),
-   ...QUESTIONS.map((q) => `| \`question-${q.member}.png\` | ${q.caption} |`)].join("\n")}
-| \`sheet-pending*.png\` | 승인 카드 나란히 (라이트/다크) |
-| \`sheet-questions*.png\` | 질문 카드 나란히 (라이트/다크) |
-| \`sheet-resolved.png\` | 처리된 카드 나란히 |
-`;
+  return fs.readFileSync(path.join(root, "scripts", "fixtures", "approvals", "INDEX.template.md"), "utf8");
 }
 
 main().catch(async (error) => {
