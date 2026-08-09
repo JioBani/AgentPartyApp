@@ -785,6 +785,15 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, partyId || this.partyForWindow(windowId), options));
   }
 
+  /**
+   * Runs one party tool as a member whose harness reaches us over HTTP (Codex).
+   * The party comes from the CALLER's own identity, never from a window: the
+   * member's tools act inside its own party regardless of what anyone is viewing.
+   */
+  invokePartyToolAs(workspacePath: string, member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+    return this.mutateParty(workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
+  }
+
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
   sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId), options));

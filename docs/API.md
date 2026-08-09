@@ -1610,6 +1610,35 @@ Sends a member-to-member message. The caller can be supplied in JSON as `from` o
 }
 ```
 
+Returns the UI's command result (party list, members, messages) — it is the same
+endpoint the app itself uses. **Agents should not call it**; use the tool
+endpoint below, which answers with the compact tool result instead.
+
+### `POST /api/harness/party/tools/:tool`
+
+Runs ONE party tool as the calling member, for a harness whose tools live
+outside the app process — today Codex, via
+`scripts/agentparty-codex-mcp-server.mjs`. `:tool` is a party tool name
+(`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
+the body is that tool's arguments.
+
+The caller is taken from `X-AgentParty-Member` and never from the body, so an
+agent cannot act as another member. `X-AgentParty-Party` scopes it to that
+member's own party.
+
+This runs the same `invokePartyTool` the in-process harnesses use, so every
+harness gets identical behaviour and identical answers:
+
+```json
+{ "ok": true }
+{ "ok": true, "data": { "queued": true } }
+{ "ok": false, "error": "Rewrite it as one line; the party rule forbids status essays." }
+```
+
+`ok: false` means it did NOT happen — a Message Gate rejection included. Do not
+read a `message` field for that verdict; the older path returned `ok: true` with
+the refusal buried inside, which is exactly what this endpoint exists to end.
+
 ## Window
 
 ### `POST /api/window/minimize`

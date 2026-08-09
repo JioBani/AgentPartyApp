@@ -275,6 +275,22 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.setPartyGate(workspace, decodeURIComponent(partyGateMatch[1]), await readJson(req), windowId));
         return;
       }
+      const partyToolMatch = url.pathname.match(/^\/api\/harness\/party\/tools\/([^/]+)$/);
+      if (method === "POST" && partyToolMatch) {
+        // The party tool surface for a harness whose tools run OUTSIDE this
+        // process (Codex, via scripts/agentparty-codex-mcp-server.mjs). The
+        // caller is the member named in the header, never a body field, so an
+        // agent cannot act as somebody else — and the answer is the compact
+        // agent-facing tool result rather than the UI command result the other
+        // party routes return.
+        const toolCaller = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
+        if (!toolCaller) {
+          sendJson(res, 400, { ok: false, error: "x-agentparty-member header is required." });
+          return;
+        }
+        sendJson(res, 200, await c.invokePartyToolAs(workspace, toolCaller, decodeURIComponent(partyToolMatch[1]), await readJson(req), partyId));
+        return;
+      }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
