@@ -15,7 +15,7 @@ import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPEN
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 
 export type HarnessId = "claude-code" | "codex" | "cursor";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "custom";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -605,6 +605,7 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
   const routed = model.provider !== "anthropic";
   const subscriptionRouted = model.provider === "openai" && Boolean(model.codexModel);
   const cursorRouted = model.provider === "cursor" && Boolean(model.cursorAcpModelId);
+  const xaiRouted = model.provider === "xai" && Boolean(model.xaiModel);
   return {
     harnessId: "claude-code",
     providerId: model.provider,
@@ -616,13 +617,17 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
         ? `${model.description || ""} Runs on the Claude Code harness through your Codex/ChatGPT subscription (local CLIProxyAPI).`.trim()
         : cursorRouted
           ? `${model.description || ""} Runs on the Claude Code harness through your Cursor subscription (local ACP bridge).`.trim()
-          : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
+          : xaiRouted
+            ? `${model.description || ""} Runs on the Claude Code harness through your Grok subscription (xAI's Anthropic-compatible API, signed in with \`grok login\`).`.trim()
+            : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
       : model.description,
     pricing: subscriptionRouted
       ? { billing: "subscription", directPrice: "Codex subscription", context: model.context }
       : cursorRouted
         ? { billing: "subscription", directPrice: "Cursor subscription", context: model.context }
-        : routed
+        : xaiRouted
+          ? { billing: "subscription", directPrice: "Grok subscription", context: model.context }
+          : routed
           ? { ...pricingFromCatalog(model), billing: "token" }
           : pricingFromCatalog(model),
     capabilities: capabilitiesFromCatalog(model),

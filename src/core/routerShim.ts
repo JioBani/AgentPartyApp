@@ -1,14 +1,21 @@
 import * as crypto from "node:crypto";
 import * as http from "node:http";
 import * as net from "node:net";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
+import { grokSubscriptionToken } from "./grokSubscriptionAuth";
+import { createXaiSseFilter, normalizeAnthropicRequestForXai, stripThinkingFromAnthropicResponse } from "./xaiRequestCompat";
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
 const CLAUDE_PROTOCOL = HARNESS_PROTOCOLS["claude-code"];
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+/** xAI's Anthropic-compatible surface; the caller appends /v1/messages. */
+const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 const MAX_ACCOUNTING_CAPTURE_BYTES = 256 * 1024;
 
 export interface EmbeddedHarnessRouterOptions {
@@ -19,6 +26,8 @@ export interface EmbeddedHarnessRouterOptions {
   deepseekApiKey?: string;
   /** Override exists for protocol-contract QA; production uses DeepSeek. */
   deepseekAnthropicBaseUrl?: string;
+  /** Override exists for protocol-contract QA; production uses api.x.ai. */
+  xaiBaseUrl?: string;
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
@@ -214,6 +223,9 @@ export class EmbeddedHarnessRouter {
     if (target.kind === "deepseek") {
       return this.forwardToDeepSeek(body, incomingHeaders, target, signal);
     }
+    if (target.kind === "xai-subscription") {
+      return this.forwardToXai(body, incomingHeaders, target, signal);
+    }
     return target.kind === "codex-subscription"
       ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
       : this.forwardToOpenRouter(body, incomingHeaders, target, signal);
@@ -295,6 +307,43 @@ export class EmbeddedHarnessRouter {
       signal,
     });
     return { response, openRouter: false };
+  }
+
+  /**
+   * xAI's own Anthropic-format endpoint, billed to the user's Grok
+   * subscription via the token `grok login` stored. Same pass-through shape as
+   * the DeepSeek leg — api.x.ai speaks Messages natively, so only the model is
+   * rewritten.
+   *
+   * Effort and service-tier are NOT forwarded: measured 2026-08-10, this
+   * surface accepts and discards both (it 200s on `service_tier: "fast"`, an
+   * enum value its own OpenAI surface rejects). Catalog entries pin them for
+   * the same reason, so there is nothing here to strip.
+   */
+  private async forwardToXai(
+    body: any,
+    incomingHeaders: http.IncomingHttpHeaders,
+    target: RouterTarget & { kind: "xai-subscription" },
+    signal: AbortSignal,
+  ): Promise<UpstreamRoute> {
+    const credential = grokSubscriptionToken();
+    const payload = JSON.stringify(normalizeAnthropicRequestForXai(rewriteAnthropicRequestModel(body, target.model)));
+    const response = await fetch(apiEndpoint(this.options.xaiBaseUrl || DEFAULT_XAI_BASE_URL, CLAUDE_PROTOCOL.endpoint), {
+      method: "POST",
+      headers: anthropicUpstreamHeaders(incomingHeaders, credential.accessToken),
+      body: payload,
+      signal,
+    });
+    if (response.status >= 400 && process.env.AGENTPARTY_ROUTER_DUMP) {
+      // An upstream 4xx here means xAI rejected the harness's request SHAPE, and
+      // the error text alone ("Invalid message role") does not say which field.
+      // Opt-in so a normal run never writes conversation content to disk.
+      const dump = path.join(os.tmpdir(), `agentparty-xai-reject-${Date.now()}.json`);
+      const cloned = response.clone();
+      fs.writeFileSync(dump, JSON.stringify({ status: response.status, upstream: await cloned.text(), request: JSON.parse(payload) }, null, 1));
+      console.error(`[router:xai] upstream ${response.status}; request dumped to ${dump}`);
+    }
+    return { response: response.ok ? filterXaiThinking(response) : response, openRouter: false };
   }
 
   private async forwardToOpenRouter(
@@ -632,4 +681,81 @@ function waitForDrain(res: http.ServerResponse, signal: AbortSignal): Promise<vo
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Removes xAI's unsigned `thinking` blocks from a response, in both shapes the
+ * gateway can carry. See xaiRequestCompat for why they cannot be forwarded.
+ */
+function filterXaiThinking(response: Response): Response {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream")) {
+    const rewritten = response
+      .clone()
+      .json()
+      .then((body) => JSON.stringify(stripThinkingFromAnthropicResponse(body as Record<string, unknown>)))
+      .catch(() => response.clone().text());
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode(await rewritten));
+          controller.close();
+        },
+      }),
+      { status: response.status, statusText: response.statusText, headers: response.headers },
+    );
+  }
+
+  const filter = createXaiSseFilter();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = response.body?.getReader();
+      if (!reader) {
+        controller.close();
+        return;
+      }
+      const flush = (chunk: string) => {
+        // One SSE frame: optional "event:" line plus a "data:" line. Frames the
+        // filter rejects are dropped whole so no half-event reaches the client.
+        const dataLine = chunk.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) {
+          controller.enqueue(encoder.encode(chunk + "\n\n"));
+          return;
+        }
+        let parsed: Record<string, unknown> | undefined;
+        try {
+          parsed = JSON.parse(dataLine.slice(5).trim());
+        } catch {
+          controller.enqueue(encoder.encode(chunk + "\n\n"));
+          return;
+        }
+        const kept = filter(parsed as Record<string, unknown>);
+        if (!kept) {
+          return;
+        }
+        controller.enqueue(encoder.encode(`event: ${String(kept.type)}\ndata: ${JSON.stringify(kept)}\n\n`));
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          flush(buffer.slice(0, boundary));
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+      if (buffer.trim()) {
+        flush(buffer.trim());
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
 }

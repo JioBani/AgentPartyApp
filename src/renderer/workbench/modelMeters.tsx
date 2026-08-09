@@ -37,7 +37,7 @@ export function CostMeter({ value }: { value: number | undefined }) {
 }
 
 export function groupByProvider(entries: RouteEntry[]): Array<{ provider: ProviderId; entries: RouteEntry[] }> {
-  const order: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "custom"];
+  const order: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "xai", "custom"];
   const buckets = new Map<ProviderId, RouteEntry[]>();
   for (const entry of entries) {
     const provider = routeProvider(entry.route);
