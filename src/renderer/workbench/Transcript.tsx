@@ -1017,14 +1017,21 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
 
   return (
     <div className={"wb-block wb-approval wb-question density-" + density}>
+      {/* Same shell as an approval, deliberately without its temperature: this
+          is a question, not a risk, so nothing here is red and the actions read
+          "답변 보내기 / 건너뛰기" rather than allow/deny. */}
       <div className="wb-approval-head">
-        <ListChecks size={14} />
-        <strong>질문에 답해주세요</strong>
-        {current.header && <span className="wb-chip wb-mono">{current.header}</span>}
-        {multiple && <span className="wb-question-progress">{clampedStep + 1} / {questions.length}</span>}
+        <ListChecks size={15} />
+        <strong>답을 기다리는 중</strong>
+        {current.header && <span className="wb-chip">{current.header}</span>}
+        <span className="wb-approval-head-spacer" />
+        {multiple && <span className="wb-approval-origin">{clampedStep + 1} / {questions.length}</span>}
       </div>
       <div className="wb-question-item">
-        <p className="wb-question-text">{current.question}</p>
+        <div className="wb-question-prompt">
+          <span className="wb-question-text">{current.question}</span>
+          {current.multiSelect && <span className="wb-question-hint">복수 선택</span>}
+        </div>
         <div className="wb-question-options">
           {current.options.map((opt, oi) => {
             const active = currentPicked.includes(opt.label);
@@ -1037,13 +1044,21 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
                 aria-pressed={active}
                 onClick={() => { toggle(current, opt.label); if (advance) setStep(clampedStep + 1); }}
               >
-                <span className="wb-question-option-label">{opt.label}</span>
-                {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+                {/* Round for one-of, square for many-of: the shape says how many
+                    answers are allowed before anything is clicked. */}
+                <span className={current.multiSelect ? "wb-question-mark is-box" : "wb-question-mark"}>
+                  {active && (current.multiSelect ? <Check size={10} strokeWidth={3.4} /> : <span className="wb-question-mark-dot" />)}
+                </span>
+                <span className="wb-question-option-body">
+                  <span className="wb-question-option-label">{opt.label}</span>
+                  {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+                </span>
               </button>
             );
           })}
           {/* Offered only when the asker accepts a written-in answer. A pure
-              free-text question (no options) shows just the input, no button. */}
+              free-text question (no options) shows just the input, no button.
+              Dashed, because it is the one choice that is not on the list. */}
           {allowsOther && current.options.length > 0 && (
             <button
               type="button"
@@ -1051,8 +1066,13 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
               aria-pressed={otherActive}
               onClick={() => toggle(current, OTHER)}
             >
-              <span className="wb-question-option-label">기타 (직접 입력)</span>
-              <span className="wb-question-option-desc">원하는 답을 직접 적습니다.</span>
+              <span className={current.multiSelect ? "wb-question-mark is-box" : "wb-question-mark"}>
+                {otherActive && (current.multiSelect ? <Check size={10} strokeWidth={3.4} /> : <span className="wb-question-mark-dot" />)}
+              </span>
+              <span className="wb-question-option-body">
+                <span className="wb-question-option-label">직접 입력</span>
+                <span className="wb-question-option-desc">원하는 답을 적습니다.</span>
+              </span>
             </button>
           )}
           {otherActive && (
@@ -1069,9 +1089,14 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
         </div>
       </div>
       <div className="wb-approval-actions">
-        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
+        {/* How many are picked, on the left, so a multi-select says what state
+            it is in without the user recounting the ticks. */}
+        {current.multiSelect && currentPicked.length > 0 && (
+          <span className="wb-approval-actions-note">{currentPicked.length}개 선택됨</span>
+        )}
+        <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
         {multiple && clampedStep > 0 && (
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => setStep(clampedStep - 1)}>이전</button>
+          <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => setStep(clampedStep - 1)}>이전</button>
         )}
         {isLast ? (
           <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}>답변 보내기</button>

@@ -93,7 +93,7 @@ const QUESTIONS = [
   },
   {
     member: "q-multi", caption: "질문 — 다중 선택",
-    questions: [{ question: "어떤 검사를 돌릴까요? (복수 선택)", header: "검사", multiSelect: true, options: [
+    questions: [{ question: "어떤 검사를 돌릴까요?", header: "검사", multiSelect: true, options: [
       { label: "타입체크", description: "tsc --noEmit" },
       { label: "단위 테스트", description: "npm run test:ui" },
       { label: "빌드", description: "npm run build" },

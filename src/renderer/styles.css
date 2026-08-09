@@ -2450,7 +2450,21 @@ body.wb-resizing {
 .wb-question-item {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 11px;
+  padding: 14px;
+}
+
+/* The question itself carries the weight; "복수 선택" rides beside it. */
+.wb-question-prompt {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.wb-question-hint {
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
 .wb-question-summary {
@@ -2479,7 +2493,8 @@ body.wb-resizing {
 
 .wb-question-text {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text-0);
   white-space: pre-wrap;
   word-break: break-word;
@@ -2487,17 +2502,24 @@ body.wb-resizing {
 
 .wb-question-options {
   display: grid;
-  gap: var(--space-2);
+  gap: 7px;
 }
 
+/*
+ * A question is not a risk, so nothing in this card is member-tinted or red:
+ * the accent stays neutral and the selected state is the only colour. Danger
+ * belongs to approvals alone — otherwise "which colour means dangerous" stops
+ * meaning anything.
+ */
 .wb-question-option {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
   text-align: left;
-  padding: 8px 11px;
+  padding: 10px 12px;
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-button);
+  border-radius: 9px;
   background: var(--bg-2);
   color: var(--text-0);
   cursor: pointer;
@@ -2505,13 +2527,75 @@ body.wb-resizing {
 }
 
 .wb-question-option:hover:not(:disabled) {
-  border-color: var(--member, var(--accent));
+  border-color: var(--border-strong);
+  background: var(--bg-3);
 }
 
 .wb-question-option.is-active {
-  border-color: var(--member, var(--accent));
-  background: var(--member-ring, var(--accent-dim, var(--bg-3)));
-  box-shadow: inset 0 0 0 1px var(--member, var(--accent));
+  border: 1.5px solid var(--accent);
+  background: var(--accent-dim);
+  box-shadow: none;
+}
+
+.wb-question-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Round = pick one, square = pick many. Readable before anything is clicked. */
+.wb-question-mark {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.wb-question-mark.is-box {
+  border-radius: 4px;
+}
+
+.wb-question-option.is-active .wb-question-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.wb-question-mark-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* Multi-select rows centre their mark; single-select ones hang it at the top
+   beside a two-line label. */
+.wb-question-option:has(.wb-question-mark.is-box) {
+  align-items: center;
+  padding: 9px 12px;
+}
+
+.wb-question-option:has(.wb-question-mark.is-box) .wb-question-mark {
+  margin-top: 0;
+}
+
+/* The one choice that is not on the list. */
+.wb-question-other {
+  border-style: dashed;
+}
+
+.wb-question-other .wb-question-mark {
+  border-style: dashed;
+}
+
+.wb-question-other.is-active .wb-question-mark {
+  border-style: solid;
 }
 
 .wb-question-option:disabled {
