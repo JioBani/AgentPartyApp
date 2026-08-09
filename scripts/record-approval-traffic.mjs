@@ -42,7 +42,11 @@ const model = argOf("--model", "gpt-5.4-mini");
 const stringifyId = argv.includes("--stringify-id");
 
 const outDir = path.join(root, "scripts", "fixtures", "approvals");
-const workspace = path.join(os.tmpdir(), `agentparty-b18-${harness}-ws`);
+// path.resolve, not path.join: under Git Bash `os.tmpdir()` is "/tmp", which
+// joins to a drive-relative "\tmp\..." — Claude Code then reports the workspace
+// as "outside allowed working directories" and every write becomes that special
+// case instead of an ordinary approval.
+const workspace = path.resolve(os.tmpdir(), `agentparty-b18-${harness}-ws`);
 
 /**
  * One short turn each, chosen to force a specific approval kind and decision.
@@ -248,11 +252,109 @@ function sandboxPolicyObject(mode) {
   return { type: "readOnly", networkAccess: false };
 }
 
+/*
+ * Claude Code has no external protocol to tap: the approval boundary IS the
+ * SDK's `canUseTool` callback (src/core/claudeAdapter.ts:840). So we open a real
+ * `query()` with the same options the adapter uses and record every argument the
+ * callback receives — the whole `options` object, not just the keys we already
+ * know about. Recording only known keys is how `availableDecisions` stayed
+ * invisible on the Codex side until it was dumped wholesale.
+ */
+const CLAUDE_SCENARIOS = [
+  { id: "bash", prompt: "Run this exact shell command, then stop: echo one > b18a.txt", behavior: "allow" },
+  { id: "file-write", prompt: "Create a file named b18.txt whose only content is the word hi. Then stop.", behavior: "allow" },
+  { id: "file-edit", prompt: "In seed.txt, replace the word seed with sprout. Change nothing else, then stop.", behavior: "allow" },
+  { id: "bash-deny", prompt: "Run this exact shell command, then stop: echo two > b18b.txt", behavior: "deny" },
+  // Negative control: a read Claude considers safe never reaches canUseTool.
+  { id: "no-approval-trusted-read", prompt: "Run this exact shell command, then stop: git status", behavior: "allow", expectNoApproval: true },
+];
+
+async function recordClaudeScenario(scenario) {
+  const frames = [];
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  let approvalSeen = false;
+
+  const canUseTool = async (toolName, input, options) => {
+    approvalSeen = true;
+    // Dump every option key verbatim; `signal` is the only unserializable one.
+    const seen = {};
+    for (const key of Object.keys(options)) {
+      if (key === "signal") continue;
+      seen[key] = options[key];
+    }
+    frames.push({
+      ts: new Date().toISOString(),
+      direction: "permission_request",
+      payload: { toolName, input, optionKeys: Object.keys(options), options: seen },
+    });
+    const result = scenario.behavior === "allow"
+      ? { behavior: "allow", updatedInput: input, toolUseID: options.toolUseID, decisionClassification: "user_temporary" }
+      : { behavior: "deny", message: "Denied by B-18 recorder", toolUseID: options.toolUseID, decisionClassification: "user_reject" };
+    frames.push({ ts: new Date().toISOString(), direction: "permission_response", payload: result });
+    return result;
+  };
+
+  const query = sdk.query({
+    prompt: scenario.prompt,
+    options: {
+      cwd: workspace,
+      model,
+      permissionMode: "default",
+      canUseTool,
+      includePartialMessages: true,
+      tools: { type: "preset", preset: "claude_code" },
+      settingSources: [],
+      stderr: (text) => frames.push({ ts: new Date().toISOString(), direction: "stderr", payload: text }),
+    },
+  });
+
+  try {
+    for await (const message of query) {
+      frames.push({ ts: new Date().toISOString(), direction: "sdk_message", payload: message });
+    }
+  } catch (error) {
+    frames.push({ ts: new Date().toISOString(), direction: "error", payload: String(error?.message || error) });
+  }
+  return { frames, approvalSeen, reason: "query ended" };
+}
+
 async function main() {
+  fs.mkdirSync(outDir, { recursive: true });
+
+  if (harness === "claude") {
+    const scenarios = CLAUDE_SCENARIOS.filter((s) => !only || s.id === only);
+    for (const scenario of scenarios) {
+      prepareWorkspace();
+      process.stdout.write(`\n── claude/${scenario.id} (${scenario.behavior}) ──\n`);
+      const { frames, approvalSeen, reason } = await recordClaudeScenario(scenario);
+      const file = path.join(outDir, `claude-${scenario.id}.jsonl`);
+      fs.writeFileSync(file, frames.map((f) => JSON.stringify(f)).join("\n") + "\n");
+      console.log(`  ${frames.length} frames → ${path.basename(file)} (ended: ${reason})`);
+      if (scenario.expectNoApproval) {
+        if (approvalSeen) {
+          notCaptured.push(`claude/${scenario.id}: expected NO approval but one arrived`);
+          console.log("  ✗ unexpected approval request");
+        } else {
+          captured.push(`claude/${scenario.id} (negative control: auto-approved, as expected)`);
+          console.log("  ✓ negative control: no approval, as expected");
+        }
+      } else if (approvalSeen) {
+        captured.push(`claude/${scenario.id}`);
+        console.log("  ✓ approval request captured");
+      } else {
+        notCaptured.push(`claude/${scenario.id}: no approval request in this turn`);
+        console.log("  ✗ NOT CAPTURED — no approval request");
+      }
+    }
+    console.log("\n=== summary ===");
+    captured.forEach((l) => console.log(`  ✓ ${l}`));
+    notCaptured.forEach((l) => console.log(`  ✗ ${l}`));
+    process.exit(notCaptured.length ? 1 : 0);
+  }
+
   if (harness !== "codex") {
     throw new Error(`--harness ${harness} not implemented yet in this recorder.`);
   }
-  fs.mkdirSync(outDir, { recursive: true });
 
   const scenarios = CODEX_SCENARIOS.filter((s) => !only || s.id === only);
   for (const scenario of scenarios) {

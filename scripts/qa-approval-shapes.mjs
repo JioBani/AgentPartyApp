@@ -179,6 +179,56 @@ console.log("\n음성 대조 (negative control):");
   assert(outcomeOf(path.join(fixtureDir, "codex-no-approval-trusted-read.jsonl")).completed, "…and the turn still completes");
 }
 
+// ============ 9. Claude Code — the SDK callback boundary ============
+console.log("\nClaude Code (canUseTool, recorded from claude-haiku-4-5):");
+{
+  const claudeRequest = (name) => {
+    for (const frame of readJsonl(path.join(fixtureDir, name))) {
+      if (frame.direction === "permission_request") return frame.payload;
+    }
+    return undefined;
+  };
+
+  const bash = claudeRequest("claude-bash.jsonl");
+  const edit = claudeRequest("claude-file-edit.jsonl");
+  assert(bash !== undefined && edit !== undefined, "Bash + Edit approvals recorded");
+
+  // Unlike Codex, the SDK's declared option list is complete — nothing extra.
+  const declared = ["signal", "suggestions", "blockedPath", "decisionReason", "title", "displayName", "description", "toolUseID", "agentID"];
+  const unknown = bash.optionKeys.filter((k) => !declared.includes(k));
+  assert(unknown.length === 0, `no undeclared option keys (unlike Codex's availableDecisions)`);
+
+  // C2: blockedPath is real and populated — and never reaches the UI.
+  assert(typeof bash.options.blockedPath === "string" && bash.options.blockedPath.length > 0,
+    `blockedPath carries a real path (${path.basename(bash.options.blockedPath)})`);
+
+  // C1: the "always allow" payload is not just present, it is a PREFIX RULE.
+  const rules = (bash.options.suggestions || []).filter((s) => s.type === "addRules");
+  assert(rules.length > 0, "suggestions include an addRules update");
+  const rule = rules[0].rules[0];
+  assert(typeof rule.ruleContent === "string" && rule.ruleContent.includes("*"),
+    `…and it is a displayable prefix rule (${JSON.stringify(rule.ruleContent)})`);
+  assert(rules[0].destination === "localSettings", "…persisted to localSettings, not merely the session");
+
+  // 설명 (1-10-1): Bash carries the model's own description of the command.
+  assert(typeof bash.options.description === "string" && bash.options.description.length > 0,
+    `설명 present (${JSON.stringify(bash.options.description)})`);
+  assert(bash.options.title === undefined, "title is absent → the card falls back to displayName");
+
+  // 파일 diff: Claude does carry the before/after, unlike Codex.
+  assert(typeof edit.input.old_string === "string" && typeof edit.input.new_string === "string",
+    "Edit input carries old_string/new_string — a diff IS reconstructable for Claude");
+  assert(edit.options.decisionReason === undefined, "…but an ordinary in-cwd edit has NO decisionReason (사유 칸이 빈다)");
+
+  // The outside-cwd variant is a different card: it gains a reason.
+  const outside = claudeRequest("claude-write-outside-cwd.jsonl");
+  assert(outside.options.decisionReason === "Path is outside allowed working directories",
+    "writing outside the workspace DOES give a reason");
+
+  const auto = claudeRequest("claude-no-approval-trusted-read.jsonl");
+  assert(auto === undefined, "`git status` never reaches canUseTool — auto-allowed, like Codex");
+}
+
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "PASSED"} — ${files.length} recordings`);
 failures.forEach((f) => console.log(`  ✗ ${f}`));
 process.exit(failures.length ? 1 : 0);
