@@ -1753,6 +1753,36 @@ clicking an option in the UI). Returns the generated `requestId`.
 }
 ```
 
+#### `type: "approval"` — replay a recorded approval card
+
+Injects a **real, recorded** approval request so the approval card can be
+designed, demoed and QA'd without paying for a model turn each time:
+
+```json
+{ "type": "approval", "scenario": "codex-command-once" }
+```
+
+Every scenario is generated from traffic captured off a live harness
+(`scripts/fixtures/approvals/*.jsonl` → `src/shared/approvalScenarios.ts`) and is
+expanded through the **same mapping a live harness goes through**
+(`src/shared/approvalRequest.ts`), so an injected card and a real one cannot
+drift apart. Nothing in it is hand-authored.
+
+Scenario names follow `<harness>-<situation>`, e.g. `codex-command-once`,
+`codex-command-always` (prefix-rule variant), `codex-untrusted-no-reason` (a card
+with no 요청 사유), `claude-bash` (carries `blockedPath` + a `"echo one *"` prefix
+rule), `claude-file-edit` (carries `old_string`/`new_string`, so a diff is
+renderable). An unknown name returns **400 with the available list** rather than
+injecting nothing.
+
+⚠️ **Refused on a real member.** Injecting into a session backed by a live
+harness returns an error: the harness never issued the request, so the card's
+buttons would have nothing to answer. Getting a genuine approval means running a
+real turn — `scripts/record-approval-traffic.mjs` documents which prompts
+actually raise one (`git status`, for instance, never does on either harness).
+
+#### Answering
+
 `questions` is optional — a sensible default question is used when omitted.
 `requestId` is optional and auto-generated if not supplied. To answer, allow the
 request with the chosen labels folded into the tool input:

@@ -229,6 +229,44 @@ console.log("\nClaude Code (canUseTool, recorded from claude-haiku-4-5):");
   assert(auto === undefined, "`git status` never reaches canUseTool — auto-allowed, like Codex");
 }
 
+// ============ 10. the shipped QA mock is the recording, not a copy ============
+console.log("\nQA 목업 (src/shared/approvalScenarios.ts, generated):");
+{
+  const { APPROVAL_SCENARIOS, approvalScenarioNames } = await bundle("src/shared/approvalScenarios.ts", "approval-scenarios.mjs");
+  const { codexApprovalFields, claudeApprovalFields } = await bundle("src/shared/approvalRequest.ts", "approval-request.mjs");
+
+  // Drift guard: regenerating from the fixtures must reproduce the module.
+  // Without this the generated file could be edited by hand and quietly stop
+  // being real traffic — the failure mode this whole issue is about.
+  for (const name of approvalScenarioNames()) {
+    const recorded = approvalRequestOf(path.join(fixtureDir, `${name}.jsonl`));
+    const scenario = APPROVAL_SCENARIOS[name];
+    if (scenario.harness === "codex") {
+      assert(JSON.stringify(scenario.params) === JSON.stringify(recorded.params),
+        `${name}: shipped params are byte-identical to the recording`);
+    } else {
+      const frame = readJsonl(path.join(fixtureDir, `${name}.jsonl`)).find((f) => f.direction === "permission_request");
+      assert(JSON.stringify(scenario.input) === JSON.stringify(frame.payload.input),
+        `${name}: shipped input is byte-identical to the recording`);
+    }
+  }
+
+  // Expansion: injecting a scenario must produce the same card fields a live
+  // harness produces, because both go through the same mapping.
+  const codexCard = codexApprovalFields(APPROVAL_SCENARIOS["codex-command-once"].method, APPROVAL_SCENARIOS["codex-command-once"].params);
+  assert(codexCard.codex.kind === "command" && codexCard.codex.command.includes("echo one"), "codex scenario expands to a command card with the real command");
+  assert(codexCard.title === "명령 실행 승인", "…with the harness-specific title");
+
+  const bash = APPROVAL_SCENARIOS["claude-bash"];
+  const claudeCard = claudeApprovalFields(bash.toolName, bash.input, bash.options);
+  assert(claudeCard.blockedPath && claudeCard.blockedPath.endsWith("b18a.txt"), "claude scenario expands with blockedPath reaching the card (C2)");
+  assert(Array.isArray(claudeCard.suggestions) && claudeCard.suggestions.some((s) => s.type === "addRules"), "…and the prefix rule reaching the card (C1)");
+  assert(claudeCard.title === "Bash", "…and displayName standing in for the absent title");
+
+  // Negative controls must NOT become injectable blank cards.
+  assert(!approvalScenarioNames().includes("codex-no-approval-trusted-read"), "negative controls are excluded from the injectable set");
+}
+
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "PASSED"} — ${files.length} recordings`);
 failures.forEach((f) => console.log(`  ✗ ${f}`));
 process.exit(failures.length ? 1 : 0);

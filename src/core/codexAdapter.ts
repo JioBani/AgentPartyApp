@@ -27,8 +27,8 @@ import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./sub
 import { pricingForModel, visionForModel } from "./modelRegistry";
 import { resolveCatalogModel } from "../shared/modelCatalog";
 import type { ImageAttachment } from "../shared/attachments";
-import type { CodexApprovalKind } from "../shared/codexApproval";
-import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
+import { approvalResult, codexDecisionOf } from "../shared/codexApproval";
+import { codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
@@ -1022,18 +1022,10 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.pendingApprovals.set(requestId, { method, input: params });
-    const meta = approvalMeta(method, params);
-    // A tool asking for a value reuses the interactive question card; its answers
-    // are shaped like AskUserQuestion so the renderer can drive it.
-    const input = meta.kind === "userInput" ? { questions: normalizeUserInputQuestions(params.questions) } : params;
     this.emitEvent({
       type: "approval_request",
       requestId,
-      toolName: method,
-      input,
-      title: approvalTitle(meta.kind),
-      description: meta.reason,
-      codex: meta,
+      ...codexApprovalFields(method, params),
       at: now(),
     });
   }
@@ -1598,23 +1590,6 @@ function effortFor(model: string, effort: ClaudeEffort): string | null {
     return null;
   }
   return effort;
-}
-
-function approvalTitle(kind: CodexApprovalKind): string {
-  switch (kind) {
-    case "command":
-      return "명령 실행 승인";
-    case "fileChange":
-      return "파일 변경 승인";
-    case "permissions":
-      return "권한 상승 승인";
-    case "userInput":
-      return "Codex가 입력을 요청함";
-    case "elicitation":
-      return "MCP 서버 요청";
-    default:
-      return "Codex 승인 요청";
-  }
 }
 
 /**

@@ -8,6 +8,8 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import { workspaceKey } from "../../shared/workspaceLocation";
 import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
+import { APPROVAL_SCENARIOS, approvalScenarioNames } from "../../shared/approvalScenarios";
+import { claudeApprovalFields, codexApprovalFields } from "../../shared/approvalRequest";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
@@ -329,6 +331,9 @@ export class LocalEngine implements EngineConnection {
   }
 
   async qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }> {
+    if (body.type === "approval") {
+      return this.qaInjectApproval(name, body.scenario, body.requestId);
+    }
     const sessionId = this.qaSessionIdFor(name);
     const requestId = body.requestId || `qa-ask-${name}-${Date.now()}`;
     const questions = normalizeQuestions(body.questions);
@@ -398,6 +403,45 @@ export class LocalEngine implements EngineConnection {
       return;
     }
     this.deps.sessionManager.setMockStatus(sessionId, status === "working" ? "responding" : "idle");
+  }
+
+  /**
+   * Injects a RECORDED approval request as the owning harness would emit it.
+   *
+   * Two refusals here rather than a convincing fake, following the qaKillHarness
+   * precedent ([#21], where a mock status stood in for a real process kill and
+   * hid a defect in two harnesses):
+   *
+   * - an unknown scenario names the available ones instead of injecting nothing;
+   * - a REAL member is refused outright. A card injected there would carry a
+   *   requestId the harness has never heard of, so its buttons could not resolve
+   *   anything — `respondApproval` would answer "Unknown approval request". A
+   *   card that looks live and cannot be answered is worse than no card, and it
+   *   is precisely the substitution B-18 exists to remove. Getting a real
+   *   approval means running a real turn (scripts/record-approval-traffic.mjs
+   *   shows which prompts actually raise one).
+   */
+  private qaInjectApproval(name: string, scenario: string, requestId?: string): { requestId: string } {
+    const recorded = APPROVAL_SCENARIOS[scenario];
+    if (!recorded) {
+      throw new Error(
+        `Unknown approval scenario '${scenario}'. Available: ${approvalScenarioNames().join(", ")}`,
+      );
+    }
+    const sessionId = this.qaSessionIdFor(name);
+    if (!this.deps.sessionManager.isMockSession(sessionId)) {
+      throw new Error(
+        `Member '${name}' runs a REAL harness, so a recorded approval cannot be injected into it: `
+          + "the harness never issued this request, so the card's buttons would have nothing to answer. "
+          + "Inject into a mock member, or drive the real harness until it asks for approval itself.",
+      );
+    }
+    const fields = recorded.harness === "codex"
+      ? codexApprovalFields(recorded.method, recorded.params)
+      : claudeApprovalFields(recorded.toolName, recorded.input, recorded.options as any);
+    const id = requestId || `qa-approval-${name}-${Date.now()}`;
+    this.deps.sessionManager.injectMockEvent(sessionId, { type: "approval_request", requestId: id, ...fields });
+    return { requestId: id };
   }
 
   private qaSessionIdFor(name: string): string {

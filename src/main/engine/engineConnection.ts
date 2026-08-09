@@ -68,15 +68,19 @@ export interface QaQuestion {
 }
 
 /**
- * Drives a model-style interaction (e.g. an AskUserQuestion prompt) into a mock
- * member without a real model, so the interactive UI can be exercised over the
- * automation API. Extend the `type` union as more interactions are mocked.
+ * Drives a model-style interaction into a mock member without a real model, so
+ * the interactive UI can be exercised over the automation API.
+ *
+ * `approval` replays a RECORDED harness approval (src/shared/approvalScenarios.ts,
+ * generated from scripts/fixtures/approvals/*.jsonl) through the same mapping a
+ * live harness goes through. It carries no authored values: the card that
+ * appears is the one the real harness produces, which is the whole point of
+ * B-18 — the previous mock could only ever make a question card, so the
+ * approval card's actual content was never verifiable.
  */
-export interface QaInteractionInput {
-  type: "askUserQuestion";
-  requestId?: string;
-  questions?: QaQuestion[];
-}
+export type QaInteractionInput =
+  | { type: "askUserQuestion"; requestId?: string; questions?: QaQuestion[] }
+  | { type: "approval"; scenario: string; requestId?: string };
 
 /**
  * Every method is async: the engine may be in another host (a WSL distro)
