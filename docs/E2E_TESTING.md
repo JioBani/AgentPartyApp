@@ -100,6 +100,17 @@ dependency reaching its module graph (`import … from "electron"`, `__dirname`)
 kills it at LOAD time and the workspace silently renders as "작업공간 없음".
 Requires the distro; the workspace is created under `/tmp` inside it.
 
+`node scripts/e2e-live-codex-approval-roundtrip.mjs` drives the REAL
+`CodexAdapter` against a real `codex app-server` (billed — one short turn) and
+asserts an approval round-trips: the card fields arrive, the decision is sent,
+and the turn actually FINISHES. This is the only tier that catches the approval
+path breaking, because `scripts/fake-codex-appserver.mjs` answers with a string
+request id while the real server numbers requests from ZERO — two separate bugs
+(an `id: 0` dropped by a truthiness check, and a reply stringified so the server
+never matched it) both hid behind that fake and made every Codex approval hang
+forever. `--regress` re-breaks the reply in memory and asserts the turn then
+hangs, so reverting the fix fails loudly instead of silently.
+
 `node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
 real app and drives idle sleep's two escape hatches through the AppController
 methods the UI calls: the global policy the Settings → 유휴 슬립 card writes
