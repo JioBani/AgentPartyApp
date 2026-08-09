@@ -2204,6 +2204,20 @@ body.wb-resizing {
   gap: 0;
 }
 
+/*
+ * Dark mode needs a stronger step: --bg-3 sits close enough to --bg-2 there that
+ * the three bands read as one surface and the structure disappears. The border
+ * does the separating instead of the fill alone.
+ */
+[data-theme="dark"] .wb-approval-head,
+[data-theme="dark"] .wb-approval-actions {
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .wb-approval-head {
+  background: var(--bg-4);
+}
+
 /* 머리 — 유형 이름이 먼저, 도구·모델은 부차 정보로 뒤에. */
 .wb-approval-head {
   display: flex;
@@ -5131,6 +5145,17 @@ body.wb-resizing {
 .wb-approval-meta > :not(.wb-mono) {
   font-family: var(--font-mono);
   color: var(--text-1);
+  word-break: break-all;
+}
+
+/*
+ * Claude's single path line. Deliberately NOT the meta grid: that grid exists to
+ * align Codex's two rows, and one item in it reads as a half-empty table.
+ */
+.wb-approval-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
   word-break: break-all;
 }
 

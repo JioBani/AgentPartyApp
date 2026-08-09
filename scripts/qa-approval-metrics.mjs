@@ -44,7 +44,7 @@ const SPEC = [
   ["본문", ".wb-approval-body", { paddingTop: "14px", paddingRight: "14px", paddingBottom: "14px", paddingLeft: "14px", rowGap: "12px" }],
   ["설명", ".wb-approval-desc", { fontSize: "13px" }],
   ["명령 블록", ".wb-approval-cmd", { borderRadius: "8px", paddingTop: "10px", paddingLeft: "12px", fontSize: "12.5px" }],
-  ["메타 그리드", ".wb-approval-meta", { fontSize: "12px", rowGap: "6px", columnGap: "12px", gridTemplateColumns: "76px" }],
+  ["경로 줄(Claude)", ".wb-approval-path", { fontSize: "12px" }],
 
   ["바닥", ".wb-approval-actions", { paddingTop: "12px", paddingRight: "14px", paddingBottom: "12px", paddingLeft: "14px", columnGap: "8px", borderTopWidth: "1px" }],
   ["버튼", ".wb-approval-actions .wb-btn", { height: "36px", borderRadius: "8px", fontSize: "12.5px" }],
@@ -68,6 +68,10 @@ const DIFF_SPEC = [
  * silently measured the wrong control. Exclude it explicitly.
  */
 const CODEX_SPEC = [
+  // The label/value grid is Codex's: it aligns 실행 + 작업 폴더. Claude sends one
+  // path and uses a plain line, so measuring the grid there was measuring an
+  // element that should not exist on that card.
+  ["메타 그리드", ".wb-approval-meta", { fontSize: "12px", rowGap: "6px", columnGap: "12px", gridTemplateColumns: "76px" }],
   ["세션 버튼", ".wb-approval-actions .wb-btn-soft:not(.wb-btn-rule)", { paddingLeft: "13px", paddingRight: "13px", height: "36px" }],
   ["규칙 버튼(4개짜리)", ".wb-approval-actions .wb-btn-rule", { paddingLeft: "12px", paddingRight: "12px" }],
 ];
@@ -196,6 +200,36 @@ async function measureGaps(cdp, label, containerSelector, expected) {
   }
 }
 
+/**
+ * Reads DOM properties rather than styles.
+ *
+ * Masking cannot be seen in a capture — an empty password field and an empty
+ * text field look identical, placeholder and all — so whether a secret answer is
+ * hidden is only knowable by asking the element what it is.
+ */
+async function measureProps(cdp, label, selector, expected) {
+  const props = Object.keys(expected);
+  const actual = await cdp.eval(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const out = {};
+    for (const p of ${JSON.stringify(props)}) out[p] = el[p];
+    return out;
+  })()`);
+  if (!actual) {
+    failures.push(`${label} (${selector}) — 요소 없음`);
+    console.log(`  ✗ ${label.padEnd(16)} 요소 없음`);
+    return;
+  }
+  const bad = Object.entries(expected).filter(([k, v]) => String(actual[k]) !== String(v)).map(([k, v]) => `${k} ${actual[k]} ≠ ${v}`);
+  if (bad.length) {
+    failures.push(`${label}: ${bad.join(", ")}`);
+    console.log(`  ✗ ${label.padEnd(16)} ${bad.join(" · ")}`);
+  } else {
+    console.log(`  ✓ ${label.padEnd(16)} ${props.map((p) => `${p}=${actual[p]}`).join(", ")}`);
+  }
+}
+
 /** Reads the computed values for one selector, or reports it missing. */
 async function measure(cdp, label, selector, expected) {
   const props = Object.keys(expected);
@@ -236,7 +270,7 @@ async function main() {
   const windows = (await get("/api/windows")).windows || [];
   await post(`/api/windows/${windows[0].id}/workspace`, { workspacePath: ws });
   await post("/api/qa/reset").catch(() => {});
-  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-done" }] });
+  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }] });
 
   const cdp = await attachRenderer();
 
@@ -263,6 +297,17 @@ async function main() {
   await delay(900);
   for (const [label, selector, expected] of CODEX_SPEC) await measure(cdp, label, selector, expected);
   await measureGaps(cdp, "Codex 본문", ".wb-approval-body", { padTop: 14, padBottom: 14, between: 12 });
+
+  console.log("\n질문 카드 — 비밀 입력 마스킹:");
+  await post("/api/qa/members/m-secret/interaction", { type: "askUserQuestion", questions: [{ question: "API 키를 입력하세요.", header: "인증", secret: true, options: [] }] });
+  await post("/api/qa/open", { panels: [["m-secret"]] });
+  await delay(900);
+  await measureProps(cdp, "비밀 입력", ".wb-question-other-input", { type: "password" });
+
+  await post("/api/qa/members/m-free/interaction", { type: "askUserQuestion", questions: [{ question: "브랜치 이름은?", header: "브랜치", options: [] }] });
+  await post("/api/qa/open", { panels: [["m-free"]] });
+  await delay(900);
+  await measureProps(cdp, "일반 입력", ".wb-question-other-input", { type: "text" });
 
   console.log("\n처리 후 카드:");
   const { requestId } = await post("/api/qa/members/m-done/interaction", { type: "approval", scenario: "claude-bash" });

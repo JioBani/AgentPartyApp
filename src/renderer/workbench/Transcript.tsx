@@ -750,8 +750,12 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
             <DiffLines before={edit.before} after={edit.after} />
           </>
         )}
-        {block.blockedPath && <div className="wb-approval-meta"><span className="wb-mono">경로</span><span>{block.blockedPath}</span></div>}
-        {block.agentID && <div className="wb-approval-meta"><span className="wb-mono">서브에이전트</span><span>{block.agentID}</span></div>}
+        {/* No label/value grid here. Codex sends two rows that need aligning
+            (실행 + 작업 폴더); Claude sends one path, and borrowing the grid left
+            a 76px label column holding a single item with empty space beside it.
+            The harnesses send different data, so they get different bodies. */}
+        {block.blockedPath && <div className="wb-approval-path">{block.blockedPath}</div>}
+        {block.agentID && <div className="wb-approval-path">서브에이전트 {block.agentID}</div>}
       </div>
       <div className="wb-approval-actions">
         <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>

@@ -474,6 +474,11 @@ function normalizeQuestions(questions: QaQuestion[] | undefined): QaQuestion[] {
     question: String(q.question || "질문"),
     header: q.header ? String(q.header) : undefined,
     multiSelect: Boolean(q.multiSelect),
+    // Carried through, not dropped: without these the mock can only ever make
+    // the plainest question. `secret` decides whether the answer is masked —
+    // a QA tool that silently un-masks a secret prompt is worse than none.
+    secret: Boolean(q.secret),
+    other: q.other === undefined ? undefined : Boolean(q.other),
     options: (Array.isArray(q.options) ? q.options : [])
       .map((o) => ({ label: String(o.label || ""), description: o.description ? String(o.description) : undefined }))
       .filter((o) => o.label),

@@ -64,6 +64,10 @@ export interface QaQuestion {
   question: string;
   header?: string;
   multiSelect?: boolean;
+  /** Mask the answer (Codex marks this per question with `isSecret`). */
+  secret?: boolean;
+  /** Whether a written-in answer is accepted besides the listed options. */
+  other?: boolean;
   options: QaQuestionOption[];
 }
 
