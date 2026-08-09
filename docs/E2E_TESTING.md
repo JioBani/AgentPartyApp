@@ -110,6 +110,9 @@ request id while the real server numbers requests from ZERO — two separate bug
 never matched it) both hid behind that fake and made every Codex approval hang
 forever. `--regress` re-breaks the reply in memory and asserts the turn then
 hangs, so reverting the fix fails loudly instead of silently.
+`--file-change` drives the OTHER approval kind, where the request carries no
+diff at all and the card depends on the adapter having joined the `fileChange`
+item it names — an ordering-dependent join a fixture replay cannot prove.
 
 `node scripts/e2e-live-claude-always-allow.mjs` drives the REAL
 `ClaudeAdapter` through two turns (billed) to check that "항상 허용 (규칙)"

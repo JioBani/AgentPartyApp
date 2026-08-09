@@ -31,6 +31,11 @@ const argv = process.argv.slice(2);
 const argOf = (flag, fallback) => { const i = argv.indexOf(flag); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
 const model = argOf("--model", "gpt-5.6-luna");
 const regress = argv.includes("--regress");
+// Exercises the file-change path instead of the command one: the approval there
+// carries no diff, so the card depends on the adapter having remembered the
+// `fileChange` item it names. That join is ordering-dependent, which a replay
+// cannot prove.
+const filePatch = argv.includes("--file-change");
 
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
@@ -95,7 +100,9 @@ adapter.on("event", (event) => {
 
 console.log(`\nLive Codex approval round-trip (${model}${regress ? ", REGRESSION MODE" : ""}):`);
 adapter.start?.();
-adapter.sendUserTurn("Run this exact shell command, then stop: echo one > b18a.txt");
+adapter.sendUserTurn(filePatch
+  ? "Use the apply_patch tool (NOT the shell) to change the word seed to sprout in seed.txt. Then stop."
+  : "Run this exact shell command, then stop: echo one > b18a.txt");
 
 // The regression run is EXPECTED to hang; give it a shorter leash so proving
 // the failure does not cost three minutes of wall clock.
@@ -105,7 +112,13 @@ while (Date.now() < deadline && !turnEnded) {
 }
 
 assert(Boolean(approvalSeen), "the real adapter emitted an approval_request");
-if (approvalSeen) {
+if (approvalSeen && filePatch) {
+  assert(approvalSeen.codex?.kind === "fileChange", `it is a file-change approval (${approvalSeen.codex?.kind})`);
+  const edits = approvalSeen.codex?.edits || [];
+  assert(edits.length > 0, "the adapter joined the file edits onto it — WITHOUT this the card is empty");
+  assert(edits.some((e) => typeof e.path === "string" && e.path.length > 0), `…naming the file (${edits[0]?.path || "none"})`);
+  assert(edits.some((e) => typeof e.diff === "string" && e.diff.length > 0), `…and carrying its diff (${JSON.stringify(edits[0]?.diff || "")})`);
+} else if (approvalSeen) {
   assert(typeof approvalSeen.codex?.command === "string" && approvalSeen.codex.command.length > 0, "…carrying the command");
   assert(typeof approvalSeen.codex?.cwd === "string", "…and the working directory");
   assert(Boolean(approvalSeen.codex?.commandDisplay), "…and Codex's readable parse of it");
