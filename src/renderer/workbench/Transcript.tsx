@@ -735,8 +735,13 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
         <div className="wb-approval-actions">
           <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
           <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
+          {/* The title says what gets stored, not that the asking stops.
+              Measured: a later turn can still be held up by a separate gate (a
+              write outside the allowed directories), and THAT one is only ever
+              grantable for the session — so no choice here can promise silence,
+              and claiming otherwise is the lie the user notices first. */}
           {rule && (
-            <button type="button" className="wb-btn wb-btn-soft" title={`앞으로 '${rule.hint}' 을(를) 묻지 않습니다.`} onClick={() => decide("always")}>
+            <button type="button" className="wb-btn wb-btn-soft" title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`} onClick={() => decide("always")}>
               항상 허용 (규칙)
             </button>
           )}

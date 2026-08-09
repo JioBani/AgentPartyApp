@@ -27,6 +27,7 @@
     "test:e2e:codex-party-port-fallback": "npm run build && node scripts/e2e-codex-party-port-fallback.mjs",
     "test:e2e:codex-approval": "npm run build && node scripts/e2e-codex-approval.mjs",
     "test:e2e:codex-approval-live": "node scripts/e2e-live-codex-approval-roundtrip.mjs",
+    "test:e2e:claude-always-allow": "node scripts/e2e-live-claude-always-allow.mjs",
     "test:e2e:codex-items": "npm run build && node scripts/e2e-codex-items.mjs",
     "test:e2e:codex-discovery": "npm run build && node scripts/e2e-codex-discovery.mjs",
     "test:e2e:codex-diagnostics": "npm run build && node scripts/e2e-codex-diagnostics.mjs",

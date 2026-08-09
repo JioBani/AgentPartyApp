@@ -111,6 +111,16 @@ never matched it) both hid behind that fake and made every Codex approval hang
 forever. `--regress` re-breaks the reply in memory and asserts the turn then
 hangs, so reverting the fix fails loudly instead of silently.
 
+`node scripts/e2e-live-claude-always-allow.mjs` drives the REAL
+`ClaudeAdapter` through two turns (billed) to check that "항상 허용 (규칙)"
+stores something. It asserts on what lands on DISK, not on whether the model
+asked again: measured, a repeat command in the SAME session is not re-prompted
+even when nothing was stored, so an earlier version of this check passed for
+that wrong reason. `--regress` answers "once" instead and asserts no rule is
+written and a fresh session IS asked. Also pins the honest limit — a fresh
+session can still be stopped by the DIRECTORY gate, whose only remedy is
+`destination: "session"`, so no choice can promise silence.
+
 `node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
 real app and drives idle sleep's two escape hatches through the AppController
 methods the UI calls: the global policy the Settings → 유휴 슬립 card writes
