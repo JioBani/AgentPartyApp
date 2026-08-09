@@ -986,11 +986,17 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.log("in", message);
-    if (message.id && this.pendingRequests.has(String(message.id))) {
+    // `hasId`, not a truthiness check: `RequestId` is `string | number` and the
+    // app-server numbers its requests from ZERO. `message.id && …` therefore
+    // dropped every first server request of a session — which is the approval
+    // prompt. Nothing was emitted and nothing was answered, so the card never
+    // appeared and the turn waited forever on a reply that could not come.
+    const hasId = message.id !== undefined && message.id !== null;
+    if (hasId && this.pendingRequests.has(String(message.id))) {
       this.completeRequest(String(message.id), message);
       return;
     }
-    if (message.id && message.method) {
+    if (hasId && message.method) {
       this.handleServerRequest(message);
       return;
     }
