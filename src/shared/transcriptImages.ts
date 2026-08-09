@@ -32,10 +32,25 @@ export type StoredImageSource = {
 
 type Base64Source = { type: "base64"; data: string; media_type?: string };
 
-export type ImageContentBlock = { type: "image"; source: Base64Source | StoredImageSource | unknown };
+export type ImageContentBlock = { type: "image"; source?: Base64Source | StoredImageSource | unknown; data?: unknown; mimeType?: unknown };
 
 export function isImageBlock(value: unknown): value is ImageContentBlock {
   return Boolean(value) && typeof value === "object" && (value as { type?: unknown }).type === "image";
+}
+
+/**
+ * The MCP image shape: the bytes sit directly on the block as `data`/`mimeType`
+ * rather than under an Anthropic-style `source`.
+ *
+ * Codex uses this for tool results — measured at 152 KB for one block across
+ * 320 rollouts on a real machine. Handling only the `source` form left every
+ * Codex screenshot inline, i.e. unfixed for exactly the case this module exists
+ * for. Rewriting it attaches a `source` reference and drops `data`, so both
+ * harnesses converge on one stored shape.
+ */
+function isMcpImageBlock(value: unknown): value is { type: "image"; data: string; mimeType?: string } {
+  const b = value as { type?: unknown; data?: unknown } | null;
+  return Boolean(b) && b!.type === "image" && typeof b!.data === "string" && (b!.data as string).length > 0;
 }
 
 export function isStoredImageSource(source: unknown): source is StoredImageSource {
@@ -82,6 +97,10 @@ export function externalizeImages(value: unknown, store: (data: string, mediaTyp
   if (isImageBlock(value) && isBase64Source(value.source)) {
     return { ...value, source: store(value.source.data, value.source.media_type) };
   }
+  if (isMcpImageBlock(value)) {
+    const { data, ...rest } = value;
+    return { ...rest, source: store(data, value.mimeType) };
+  }
   let changed = false;
   const next: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
@@ -120,8 +139,12 @@ export function collectDisplayImages(value: unknown): DisplayImage[] {
         found.push({ kind: "stored", key: node.source.file, source: node.source });
         return;
       }
-      if (isBase64Source(node.source)) {
-        const { data, media_type: mediaType } = node.source;
+      // Inline bytes, either shape: Anthropic's `source.data` or MCP's `data`.
+      const inline = isBase64Source(node.source)
+        ? { data: node.source.data, mediaType: node.source.media_type }
+        : isMcpImageBlock(node) ? { data: node.data, mediaType: node.mimeType } : undefined;
+      if (inline) {
+        const { data, mediaType } = inline;
         found.push({
           kind: "inline",
           // Index-based: inline bytes have no identity, and hashing ~500 KB on
@@ -143,5 +166,5 @@ export function collectDisplayImages(value: unknown): DisplayImage[] {
 
 /** True for a content block the UI renders as an image, not as text. */
 export function isRenderableImage(value: unknown): boolean {
-  return isImageBlock(value) && (isStoredImageSource(value.source) || isBase64Source(value.source));
+  return isImageBlock(value) && (isStoredImageSource(value.source) || isBase64Source(value.source) || isMcpImageBlock(value));
 }
