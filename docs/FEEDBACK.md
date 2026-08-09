@@ -31,6 +31,7 @@
 
 | # | 내용 |
 |---|---|
+| [#28] | Codex 멤버의 파티 도구 응답에 파티 전체가 실리고(297KB), 게이트 거부가 `ok:true` 로 옴 |
 | [#27] | 대화 기록 저장이 EPERM 으로 실패 (Windows, 열린 핸들) + 저장소가 사용자 git 을 더럽힘 |
 | [#22] | 대기 중이던 메시지가 조용히 사라지는 경로 3건 |
 | [#21] | Codex 멤버는 죽어도 `idle` 로 보임 ([#13] 이 절반만 고쳐져 있었음) |
@@ -93,6 +94,51 @@
 ---
 
 ## 이슈 목록
+
+### #28 Codex 멤버는 파티 도구 응답으로 파티 전체를 받고, 거부를 성공으로 받는다 ✅ FIXED
+
+- **상태**: FIXED (2026-08-09 사용자 발견 · 같은 날 수정, master)
+- **심각도**: 높음 — 조용한 실패 + 컨텍스트 오염
+
+사용자가 `impl-req002`(Codex 멤버)의 도구 기록을 보고 *"content 가 엄청나게 길어"* 라고 지적했다.
+
+```json
+{"ok":true,"message":"Message to 'main' was rejected by the message gate.","parties":[{ …
+```
+
+#### 두 가지가 동시에 잘못돼 있었다
+
+**1) 거부인데 `ok:true`.** 게이트가 막았는데 성공으로 보고하고, 거부 사유는 `message` 필드에
+묻혀 있었다. `ok` 를 보고 판단하는 에이전트는 전달됐다고 믿는다. 멤버에게 주는 안내문에는
+*"거부되면 `{ok:false, error}` 가 온다"* 고 적혀 있어 **문서와 실제가 어긋났다.**
+
+**2) 응답에 파티 전체가 실렸다.** 파티 목록 + 멤버 전원 + 그 파티 메시지 최대 200건.
+실제 파티에서 측정: **send 한 번당 297KB ≈ 74,000 토큰.** 올바른 응답은 36바이트다.
+
+#### 원인 — 하네스마다 경로가 다르고, 규칙이 두 벌이었다
+
+Claude 멤버는 앱 안의 `PartyBridge` 를 직접 쓴다. Codex 멤버는 `mcp_servers` 설정으로 붙는
+별도 stdio 서버(`scripts/agentparty-codex-mcp-server.mjs`)를 쓰는데, 그 서버가 **UI 용 REST
+엔드포인트를 호출하고 응답을 가공 없이 반환**했다. 전달/큐잉/거부 판정 로직이 TypeScript 쪽에
+한 벌, `.mjs` 쪽에 또 한 벌(사실상 없음) 있었던 것이다. 한쪽만 고치면 다시 어긋난다.
+
+#### 고친 방식
+
+`POST /api/harness/party/tools/:tool` 를 추가하고, 그 안에서 **in-process 하네스가 쓰는 것과
+같은 `invokePartyTool` 을 그대로 실행**한다. 호출자는 `X-AgentParty-Member` 헤더로만 정해져
+에이전트가 남을 사칭할 수 없다. shim 은 판정 없는 펌프가 됐다(약 80줄 삭제).
+
+덤으로 shim 이 아예 구현하지 않아 Codex 멤버가 못 쓰던 **discord 도구 4개**도 함께 열렸다.
+
+#### 검증 (실제 앱 + 실제 shim, 9/9)
+
+앱이 Codex 에게 띄우는 그 stdio 서버를 JSON-RPC 로 직접 몰았다.
+
+```
+send 응답        {"ok":true}                                  11 bytes  (이전 297KB)
+게이트 거부      {"ok":false,"error":"메시지는 정확히 …"}      47 bytes  · isError=true
+member-status    새 경로로도 동작
+```
 
 ### #27 대화 기록 저장이 EPERM 으로 실패한다 (Windows) ✅ FIXED
 
