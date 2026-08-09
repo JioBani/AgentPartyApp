@@ -31,6 +31,7 @@
 
 | # | 내용 |
 |---|---|
+| [#27] | 대화 기록 저장이 EPERM 으로 실패 (Windows, 열린 핸들) + 저장소가 사용자 git 을 더럽힘 |
 | [#22] | 대기 중이던 메시지가 조용히 사라지는 경로 3건 |
 | [#21] | Codex 멤버는 죽어도 `idle` 로 보임 ([#13] 이 절반만 고쳐져 있었음) |
 | [#19] | 재시작/이동 후 멤버가 꺼진 것으로 인식 → 채팅하면 대화 날아가며 재spawn |
@@ -92,6 +93,75 @@
 ---
 
 ## 이슈 목록
+
+### #27 대화 기록 저장이 EPERM 으로 실패한다 (Windows) ✅ FIXED
+
+- **상태**: FIXED (2026-08-09 사용자 발견 · 같은 날 수정, master)
+- **심각도**: 높음 — 저장이 안 되면 대화가 유실된다
+
+사용자 화면에 반복해서 떴다. 같은 멤버(`api`), 같은 프로세스에서 계속 났다.
+
+```
+'api' 대화 기록 저장 실패 — EPERM: operation not permitted,
+rename '...\members\api\transcript.json.29912.tmp' -> '...\members\api\transcript.json'
+```
+
+#### 원인 — 권한도, 백신도 아니다
+
+Windows 는 **다른 프로세스가 열고 있는 파일 위로 rename 하는 것을 거부**하고 Node 가 그걸
+`EPERM` 으로 올린다. 측정으로 다른 후보를 전부 제거했다:
+
+| 조건 | EPERM |
+|---|---|
+| 아무도 안 잡음 (700KB / 2KB / 실제 transcript 1.2MB, Defender 실시간 ON) | **0/500** |
+| 다른 프로세스가 읽기 핸들 1개 보유 | **40/40** (재시도 20회로도 회복 0) |
+| 저장소가 git 추적 대상 + `git status` 루프 | **35/120** |
+| 같은 조건, gitignore 됨 | **0/120** |
+
+앱 메인 프로세스의 워크스페이스 파일 접근은 전수 확인 결과 **전부 동기**라 자기 자신과는
+겹칠 수 없다. 잡고 있는 건 외부 프로세스다(해당 사례에서는 그 폴더를 연 VS Code 가 유일한 후보).
+
+#### 구조적 원인 — 저장소가 사용자 저장소 안에 있는데 자기 표시를 안 했다
+
+`.agent_party_app` 은 워크스페이스 안에 있고 앱은 자기를 ignore 시키지 않았다. 그래서
+사용자 저장소가 `?? .agent_party_app/` 로 더러워지고, 멤버 에이전트가 `git add -A` 를
+한 번만 해도 그 뒤로 모든 `git status` 가 수 MB 짜리 transcript 를 다시 해싱한다 → 위 표의
+**29%** 상태로 영구 전환. 덤으로 대화 기록이 사용자 저장소에 커밋된다.
+
+#### ⚠️ 대상을 지우고 rename 하지 마라 (한 번 그렇게 고쳤다가 되돌림)
+
+`codexAuthenticationStore` 에 있던 "실패하면 대상 삭제 후 rename" 을 그대로 가져왔는데,
+**제품 e2e 가 그게 데이터를 지우는 걸 잡았다.** Windows 에서 열린 파일을 지우면 이름이
+**삭제 대기**로 남고, 그 이름으로는 아무것도 만들 수 없다. rename 도 실패해서 결과적으로
+`transcript.json` 이 사라졌다.
+
+```
+warn  atomic rename blocked by an open handle; replacing instead
+error EPERM ... rename tmp -> transcript.json
+error EPERM ... lstat transcript.json
+결과: members/scribe/ 에 transcript.json 없음
+```
+
+#### 고친 방식
+
+1. **`ensureStorageDir`** (`src/main/workspaceStorage.ts`, 신규) — 저장소 루트를 만드는
+   세 곳(`discovery` · `partyRepository` · `usageLedger`)이 전부 여기를 지나가고, 처음
+   만들 때 `.gitignore`(`*`)를 심는다. 신선한 워크스페이스에서는 파티보다 discovery 가
+   먼저 만들기 때문에 한 곳만 고치면 놓친다.
+2. **`writeReplacing`** (`partyRepository.ts`) — 평소엔 temp+rename(원자적). EPERM 이면
+   **지우지 않고 그 파일에 그대로 덮어쓴다**(측정 40/40 성공). 읽기 핸들은 쓰기를 막지 않는다.
+3. **`readJsonSurvivingWrite`** — 2번의 대가로 그 경로만 원자적이지 않으므로, 다른 인스턴스가
+   반쯤 쓰인 파일을 읽을 수 있다. temp 파일 존재를 신호로 짧게 재시도한다. 파싱 실패를
+   "빈 대화"로 읽으면 멤버 기록이 통째로 사라져 보이기 때문이다.
+
+#### 검증 (제품 e2e, 실제 앱 + 실제 턴, 14/14)
+
+git 저장소인 워크스페이스에서 앱을 띄우고 → `.gitignore` 자동 생성과 `git status` 청결 확인 →
+실제 모델 턴으로 transcript 생성 → **다른 프로세스가 그 파일을 붙잡은 채** 두 번째 턴 →
+저장 성공·JSON 유효·**파일 삭제되지 않음**·로그에 대체 경로 기록됨까지 단언.
+
+기존 사용자는 다음 실행 때 `.gitignore` 가 자동으로 생긴다. 이미 `git add` 된 저장소라면
+`git rm -r --cached .agent_party_app` 이 한 번 필요하다.
 
 ### #26 잘린 대화가 **잘렸다는 표시 없이** 끝난다 — "이전 대화 N개 더 보기"
 
