@@ -22,13 +22,31 @@ const outFile = path.join(root, "src", "shared", "approvalScenarios.ts");
 const readJsonl = (file) =>
   fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
 
+/**
+ * The file edits belonging to an approval, taken from the `fileChange` item it
+ * names in `itemId`. A file-change approval carries no diff itself, so without
+ * this the injected card is as empty as the live one used to be.
+ */
+function editsFor(frames, itemId) {
+  if (!itemId) return undefined;
+  for (const frame of frames) {
+    const item = frame.payload?.params?.item;
+    if (item?.type === "fileChange" && item.id === itemId && Array.isArray(item.changes)) {
+      return item.changes;
+    }
+  }
+  return undefined;
+}
+
 /** Pulls the one approval request out of a recording, with its harness tag. */
 function scenarioOf(file) {
-  for (const frame of readJsonl(file)) {
+  const frames = readJsonl(file);
+  for (const frame of frames) {
     const p = frame.payload;
     if (frame.direction === "in" && p && typeof p.method === "string" && p.id !== undefined
       && /requestApproval|requestUserInput|elicitation\/request/.test(p.method)) {
-      return { harness: "codex", method: p.method, params: p.params };
+      const changes = editsFor(frames, p.params?.itemId);
+      return { harness: "codex", method: p.method, params: p.params, ...(changes ? { changes } : {}) };
     }
     if (frame.direction === "permission_request") {
       const options = { ...p.options };
@@ -73,7 +91,7 @@ const header = `/**
 
 /** A recorded server request, tagged with the harness that sent it. */
 export type ApprovalScenario =
-  | { harness: "codex"; method: string; params: Record<string, unknown> }
+  | { harness: "codex"; method: string; params: Record<string, unknown>; changes?: unknown[] }
   | { harness: "claude-code"; toolName: string; input: unknown; options: Record<string, unknown> };
 
 export const APPROVAL_SCENARIOS: Record<string, ApprovalScenario> = `;

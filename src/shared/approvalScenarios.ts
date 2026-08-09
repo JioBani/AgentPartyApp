@@ -13,7 +13,7 @@
 
 /** A recorded server request, tagged with the harness that sent it. */
 export type ApprovalScenario =
-  | { harness: "codex"; method: string; params: Record<string, unknown> }
+  | { harness: "codex"; method: string; params: Record<string, unknown>; changes?: unknown[] }
   | { harness: "claude-code"; toolName: string; input: unknown; options: Record<string, unknown> };
 
 export const APPROVAL_SCENARIOS: Record<string, ApprovalScenario> = {
@@ -354,6 +354,27 @@ export const APPROVAL_SCENARIOS: Record<string, ApprovalScenario> = {
         "cancel"
       ]
     }
+  },
+  "codex-file-change": {
+    "harness": "codex",
+    "method": "item/fileChange/requestApproval",
+    "params": {
+      "threadId": "019fe73c-82bc-7b93-8ef8-e2f78588846b",
+      "turnId": "019fe73c-972d-7ac3-84ba-b5837ed09705",
+      "itemId": "exec-23ad6734-6974-4565-9918-22bb0f6c464f",
+      "startedAtMs": 1786290957769,
+      "reason": null,
+      "grantRoot": null
+    },
+    "changes": [
+      {
+        "path": "C:\\Users\\Dev\\AppData\\Local\\Temp\\agentparty-b18-codex-ws\\seed.txt",
+        "kind": {
+          "type": "add"
+        },
+        "diff": "sprout\n"
+      }
+    ]
   },
   "codex-file-write": {
     "harness": "codex",

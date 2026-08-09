@@ -30,6 +30,7 @@ import type { ImageAttachment } from "../shared/attachments";
 import { approvalResult, codexDecisionOf } from "../shared/codexApproval";
 import { codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
+import type { CodexFileEdit } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
@@ -131,6 +132,8 @@ export class CodexAdapter extends EventEmitter {
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   /** Raw `RequestId` per pending server request — see `respond()` for why. */
   private readonly wireIds = new Map<string, string | number>();
+  /** File edits per item id, so a file-change approval can show its diff. */
+  private readonly fileChangesByItem = new Map<string, CodexFileEdit[]>();
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
   private policy: CodexPolicy;
@@ -1031,7 +1034,7 @@ export class CodexAdapter extends EventEmitter {
     this.emitEvent({
       type: "approval_request",
       requestId,
-      ...codexApprovalFields(method, params),
+      ...codexApprovalFields(method, params, this.fileChangesByItem.get(String(params?.itemId ?? ""))),
       at: now(),
     });
   }
@@ -1346,6 +1349,15 @@ export class CodexAdapter extends EventEmitter {
     }
     if (item.type === "fileChange") {
       const changes = fileEditsFrom(item.changes);
+      // Remembered so the approval card can show WHAT is being changed. The
+      // approval request itself carries no diff (measured: reason and grantRoot
+      // both null, nothing else), but it names an `itemId`, and that is this
+      // item — which does carry the changes. Without the join the card is a
+      // title and three buttons, asking the user to approve an edit they cannot
+      // see. See scripts/fixtures/approvals/codex-file-change.jsonl.
+      if (id) {
+        this.fileChangesByItem.set(id, changes);
+      }
       this.emitEvent({ type: "file_change", changes, status: typeof item.status === "string" ? item.status : undefined, at: now() });
       return;
     }

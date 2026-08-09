@@ -13,6 +13,7 @@
 
 import { approvalMeta, approvalKindOf, normalizeUserInputQuestions } from "./codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta } from "./codexApproval";
+import type { CodexFileEdit } from "./codexItems";
 
 /** The card-facing part of an `approval_request` event (adapters add id + time). */
 export interface ApprovalRequestFields {
@@ -45,9 +46,17 @@ export function approvalTitle(kind: CodexApprovalKind): string {
   }
 }
 
-/** Codex app-server server→client request → card fields. */
-export function codexApprovalFields(method: string, params: any): ApprovalRequestFields {
-  const meta = approvalMeta(method, params);
+/**
+ * Codex app-server server→client request → card fields.
+ *
+ * `edits` come from the `fileChange` item this approval names in `itemId`. A
+ * file-change approval carries no diff of its own — measured, its params are
+ * threadId/turnId/itemId/startedAtMs plus a null reason and grantRoot — so
+ * without them the card can only say "파일 변경 승인" and offer three buttons,
+ * asking the user to approve an edit they cannot see.
+ */
+export function codexApprovalFields(method: string, params: any, edits?: CodexFileEdit[]): ApprovalRequestFields {
+  const meta = approvalMeta(method, params, edits);
   // A tool asking for a value reuses the interactive question card; its answers
   // are shaped like AskUserQuestion so the renderer can drive it.
   const input = meta.kind === "userInput" ? { questions: normalizeUserInputQuestions(params?.questions) } : params;

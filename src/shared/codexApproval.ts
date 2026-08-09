@@ -9,6 +9,8 @@
  * CommandExecutionApprovalDecision, FileChangeApprovalDecision).
  */
 
+import type { CodexFileEdit } from "./codexItems";
+
 /** User-facing decision on a Codex approval request. */
 export type CodexDecision = "once" | "session" | "always" | "decline";
 
@@ -39,8 +41,14 @@ export interface CodexApprovalMeta {
   cwd?: string;
   /** Why Codex is asking (e.g. "needs network access"). */
   reason?: string;
-  /** Unified diff for file-change approvals, when available. */
+  /** Unified diff for file-change approvals, when the request carries one. */
   diff?: string;
+  /**
+   * Per-file edits for a file-change approval, joined from the `fileChange`
+   * item the request names in `itemId`. Real Codex puts the diff there and not
+   * on the approval, so this is what the card actually has to show.
+   */
+  edits?: CodexFileEdit[];
   /** True when the request offers a prefix rule (execpolicy amendment) → enables "always". */
   canAlways?: boolean;
   /** The command pattern that "always" would auto-approve, for the button hint. */
@@ -177,7 +185,7 @@ export function approvalKindOf(method: string): CodexApprovalKind {
 }
 
 /** Builds the card metadata (command/diff/reason/rule) from raw request params. */
-export function approvalMeta(method: string, params: any): CodexApprovalMeta {
+export function approvalMeta(method: string, params: any, edits?: CodexFileEdit[]): CodexApprovalMeta {
   const kind = approvalKindOf(method);
   const amendment: string[] | undefined = Array.isArray(params?.proposedExecpolicyAmendment) ? params.proposedExecpolicyAmendment : undefined;
   const action = Array.isArray(params?.commandActions) ? params.commandActions.find((item: any) => typeof item?.command === "string") : undefined;
@@ -190,7 +198,10 @@ export function approvalMeta(method: string, params: any): CodexApprovalMeta {
     commandDisplay: action && typeof action.command === "string" ? action.command : commandText(params?.parsedCmd?.[0]?.cmd),
     cwd: typeof params?.cwd === "string" ? params.cwd : undefined,
     reason: typeof params?.reason === "string" ? params.reason : undefined,
+    // The request's own diff when it has one; otherwise the edits joined from
+    // the `fileChange` item this approval names (real Codex sends no diff here).
     diff: typeof params?.unifiedDiff === "string" ? params.unifiedDiff : typeof params?.diff === "string" ? params.diff : undefined,
+    edits: edits && edits.length ? edits : undefined,
     canAlways: kind === "command" && Boolean(amendment && amendment.length),
     alwaysHint: amendment && amendment.length ? amendment.join(" ") : undefined,
     serverName: typeof params?.serverName === "string" ? params.serverName : undefined,

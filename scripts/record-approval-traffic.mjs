@@ -75,13 +75,37 @@ const CODEX_SCENARIOS = [
    * the write fails anyway. The two policies produce visibly different cards.
    */
   { id: "untrusted-no-reason", prompt: "Run this exact shell command, then stop: echo five > b18e.txt", decision: "once", approvalPolicy: "untrusted" },
+
+  /*
+   * The other approval KINDS. Naming the tool is what makes the model take the
+   * path we need: left to itself gpt-5.x reaches for the shell every time, which
+   * is why the first file-write attempt came back as a command approval instead
+   * of a patch.
+   */
+  { id: "file-change", prompt: "Use the apply_patch tool (NOT the shell) to change the word seed to sprout in seed.txt. Then stop.", decision: "once" },
+  { id: "user-input", prompt: "Use your request-user-input tool to ask me which colour to use, offering exactly the options red and blue. Do not guess. Then stop.", decision: "once" },
+  { id: "permissions", prompt: "Fetch https://example.com using the shell. You will need network access, which this sandbox denies. Then stop.", decision: "once" },
+  // A command with no prefix rule on offer, which drops the 항상 허용 button.
+  { id: "command-no-rule", prompt: "Use the apply_patch tool (NOT the shell) to create a file named b18f.txt containing only: six. Then stop.", decision: "session" },
 ];
 
 const notCaptured = [];
 const captured = [];
 
 function prepareWorkspace() {
-  fs.rmSync(workspace, { recursive: true, force: true });
+  // The just-killed codex process can still hold the directory for a moment;
+  // an EBUSY here would otherwise abandon the remaining scenarios mid-run.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.rmSync(workspace, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (attempt >= 20) throw error;
+      // Synchronous sleep without a shell: `timeout /nobreak` needs a TTY and
+      // fails outright when this runs with stdio ignored.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
   fs.mkdirSync(workspace, { recursive: true });
   // A real git repo so `git status` is a meaningful command to approve.
   execFileSync("git", ["init", "-q"], { cwd: workspace });

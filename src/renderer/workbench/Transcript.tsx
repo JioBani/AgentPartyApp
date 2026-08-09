@@ -790,6 +790,17 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
       )}
       {codex.cwd && <div className="wb-approval-meta"><span className="wb-mono">cwd</span> {codex.cwd}</div>}
       {codex.diff && <pre className="wb-pre wb-approval-diff">{codex.diff}</pre>}
+      {/* A file-change approval carries no diff of its own; these are joined from
+          the item it names, so the user can see the edit before allowing it. */}
+      {!codex.diff && codex.edits?.map((edit) => (
+        <div key={edit.path}>
+          <div className="wb-approval-meta">
+            <span className="wb-mono">{edit.kind}</span> {edit.path}
+            {(edit.added || edit.removed) ? <span className="wb-chip wb-mono">+{edit.added} −{edit.removed}</span> : null}
+          </div>
+          {edit.diff && <pre className="wb-pre wb-approval-diff">{edit.diff}</pre>}
+        </div>
+      ))}
       {codex.canAlways && codex.alwaysHint && (
         <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {codex.alwaysHint}</div>
       )}

@@ -10,6 +10,7 @@ import { workspaceKey } from "../../shared/workspaceLocation";
 import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
 import { APPROVAL_SCENARIOS, approvalScenarioNames } from "../../shared/approvalScenarios";
 import { claudeApprovalFields, codexApprovalFields } from "../../shared/approvalRequest";
+import { fileEditsFrom } from "../../shared/codexItems";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
@@ -437,7 +438,7 @@ export class LocalEngine implements EngineConnection {
       );
     }
     const fields = recorded.harness === "codex"
-      ? codexApprovalFields(recorded.method, recorded.params)
+      ? codexApprovalFields(recorded.method, recorded.params, fileEditsFrom((recorded as any).changes))
       : claudeApprovalFields(recorded.toolName, recorded.input, recorded.options as any);
     const id = requestId || `qa-approval-${name}-${Date.now()}`;
     this.deps.sessionManager.injectMockEvent(sessionId, { type: "approval_request", requestId: id, ...fields });
