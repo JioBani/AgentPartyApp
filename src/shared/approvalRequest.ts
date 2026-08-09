@@ -92,6 +92,48 @@ export function claudeApprovalFields(
   };
 }
 
+/**
+ * What Claude Code's "always allow" would actually agree to.
+ *
+ * The SDK hands the caller a ready-made set of `PermissionUpdate`s in
+ * `suggestions` and expects them back as `updatedPermissions` when the user
+ * picks "always allow" — measured, a Bash write offers
+ * `{addRules, rules:[{toolName:"Bash", ruleContent:"echo one *"}],
+ *   behavior:"allow", destination:"localSettings"}`, i.e. a real prefix rule
+ * that is written to disk rather than kept for the session.
+ *
+ * `hint` is that rule in words, so the card can state what is being agreed to
+ * instead of offering a blank promise. Returns undefined when the request
+ * carries no rule, which is how the card knows not to offer the choice.
+ */
+export function claudeAlwaysRule(suggestions: unknown): { hint: string; scope: string } | undefined {
+  if (!Array.isArray(suggestions)) {
+    return undefined;
+  }
+  for (const suggestion of suggestions) {
+    const update = asRecord(suggestion);
+    if (!update) {
+      continue;
+    }
+    if (update.type === "addRules" && Array.isArray(update.rules)) {
+      const rules = update.rules
+        .map((rule) => asRecord(rule))
+        .map((rule) => (typeof rule?.ruleContent === "string" && rule.ruleContent ? rule.ruleContent : typeof rule?.toolName === "string" ? rule.toolName : ""))
+        .filter(Boolean);
+      if (rules.length) {
+        return { hint: rules.join(", "), scope: String(update.destination || "") };
+      }
+    }
+    if (update.type === "addDirectories" && Array.isArray(update.directories) && update.directories.length) {
+      return { hint: update.directories.filter((d) => typeof d === "string").join(", "), scope: String(update.destination || "") };
+    }
+    if (update.type === "setMode" && typeof update.mode === "string") {
+      return { hint: `${update.mode} 모드`, scope: String(update.destination || "") };
+    }
+  }
+  return undefined;
+}
+
 /** Adds a normalized `filePath` so the card can name the file for any tool. */
 export function withFilePath(value: unknown): unknown {
   const record = asRecord(value);

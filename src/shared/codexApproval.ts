@@ -23,8 +23,18 @@ export type CodexApprovalKind =
 /** Display metadata carried on an approval_request so the card renders exactly. */
 export interface CodexApprovalMeta {
   kind: CodexApprovalKind;
-  /** Command to run (command approvals). */
+  /** Command to run (command approvals), exactly as Codex will run it. */
   command?: string;
+  /**
+   * The readable form of that command.
+   *
+   * Measured: `command` arrives wrapped in the shell Codex actually invokes —
+   * `"C:\…\powershell.exe" -Command 'echo one > b18a.txt'` — while Codex's own
+   * parse of what it means sits in `commandActions`. The wrapper stays in
+   * `command` because that is what is really being approved; this is what the
+   * card can lead with so the user is not reading a launcher path.
+   */
+  commandDisplay?: string;
   /** Working directory the command/patch runs in. */
   cwd?: string;
   /** Why Codex is asking (e.g. "needs network access"). */
@@ -161,9 +171,11 @@ export function approvalKindOf(method: string): CodexApprovalKind {
 export function approvalMeta(method: string, params: any): CodexApprovalMeta {
   const kind = approvalKindOf(method);
   const amendment: string[] | undefined = Array.isArray(params?.proposedExecpolicyAmendment) ? params.proposedExecpolicyAmendment : undefined;
+  const action = Array.isArray(params?.commandActions) ? params.commandActions.find((item: any) => typeof item?.command === "string") : undefined;
   return {
     kind,
     command: typeof params?.command === "string" ? params.command : undefined,
+    commandDisplay: action && typeof action.command === "string" ? action.command : undefined,
     cwd: typeof params?.cwd === "string" ? params.cwd : undefined,
     reason: typeof params?.reason === "string" ? params.reason : undefined,
     diff: typeof params?.unifiedDiff === "string" ? params.unifiedDiff : typeof params?.diff === "string" ? params.diff : undefined,

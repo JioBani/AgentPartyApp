@@ -267,6 +267,84 @@ console.log("\nQA 목업 (src/shared/approvalScenarios.ts, generated):");
   assert(!approvalScenarioNames().includes("codex-no-approval-trusted-read"), "negative controls are excluded from the injectable set");
 }
 
+// ============ 11. the card, rendered from the recordings ============
+console.log("\n승인 카드 DOM (rendered from the recorded scenarios):");
+{
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
+  const { window } = dom;
+  const def = (n, v) => { try { Object.defineProperty(globalThis, n, { value: v, configurable: true, writable: true }); } catch {} };
+  def("window", window); def("document", window.document); def("HTMLElement", window.HTMLElement);
+  def("getComputedStyle", window.getComputedStyle.bind(window));
+  def("requestAnimationFrame", (cb) => setTimeout(() => cb(1), 0)); def("cancelAnimationFrame", clearTimeout);
+  window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  globalThis.ResizeObserver = window.ResizeObserver;
+
+  const uiBundle = async (entry, name) => {
+    const r = await build({
+      entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "browser",
+      jsx: "automatic", loader: { ".css": "empty" }, define: { "process.env.NODE_ENV": '"development"' },
+      external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false,
+    });
+    const p = path.join(outDir, name);
+    writeFileSync(p, r.outputFiles[0].text);
+    return import(pathToFileURL(p).href);
+  };
+
+  const { Transcript } = await uiBundle("src/renderer/workbench/Transcript.tsx", "approval-transcript.mjs");
+  const { applyEvents } = await uiBundle("src/shared/transcriptEvents.ts", "approval-fold.mjs");
+  const { APPROVAL_SCENARIOS } = await bundle("src/shared/approvalScenarios.ts", "approval-scenarios-dom.mjs");
+  const { codexApprovalFields, claudeApprovalFields } = await bundle("src/shared/approvalRequest.ts", "approval-request-dom.mjs");
+  const React = await import("react");
+  const reactDom = await import("react-dom/client");
+  const mount = (el) => { const host = window.document.createElement("div"); window.document.body.appendChild(host); reactDom.createRoot(host).render(el); return host; };
+  const click = (el) => el?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  const settle = () => new Promise((r) => setTimeout(r, 60));
+
+  let captured = null;
+  const actions = { approve: (name, requestId, behavior, updatedInput) => { captured = { name, requestId, behavior, updatedInput }; }, answerQuestion() {} };
+
+  /** Injects a recorded scenario exactly as the engine does, then renders it. */
+  const cardFor = async (scenarioName, runtime) => {
+    const recorded = APPROVAL_SCENARIOS[scenarioName];
+    const fields = recorded.harness === "codex"
+      ? codexApprovalFields(recorded.method, recorded.params)
+      : claudeApprovalFields(recorded.toolName, recorded.input, recorded.options);
+    const state = applyEvents({}, "s", [{ type: "approval_request", requestId: "r-" + scenarioName, ...fields, at: "t" }]);
+    const view = { name: "m", color: "#888", member: { name: "m", runtime }, status: "approval", transcript: state.s, unread: 0, pendingApproval: true, busy: false, model: "x", effort: "medium", permissionMode: "default" };
+    const host = mount(React.createElement(Transcript, { view, density: "wide", actions }));
+    await settle();
+    return host;
+  };
+
+  const codex = await cardFor("codex-command-once", "codex");
+  assert(codex.textContent.includes("echo one > b18a.txt"), "Codex card leads with the readable command, not the PowerShell wrapper");
+  assert(codex.textContent.includes("powershell.exe"), "…and still shows what actually runs");
+  assert(/Do you want/.test(codex.textContent), "요청 사유 is shown on a command approval (it used to be suppressed by the command)");
+  assert(codex.textContent.includes("agentparty-b18-codex-ws"), "작업 디렉터리 shown");
+
+  const claude = await cardFor("claude-bash", "claude-code");
+  assert(claude.textContent.includes("echo one > b18a.txt"), "Claude card shows the command");
+  assert(claude.textContent.includes("b18a.txt"), "…and the blockedPath that triggered it (C2)");
+  const claudeBtns = [...claude.querySelectorAll(".wb-approval-actions .wb-btn")].map((b) => b.textContent);
+  assert(claudeBtns.includes("항상 허용 (규칙)"), `'항상 허용' offered because the request carried a rule (C1) — ${JSON.stringify(claudeBtns)}`);
+  assert(claude.textContent.includes("echo one *"), "…and the card states the rule being agreed to");
+  click([...claude.querySelectorAll(".wb-approval-actions .wb-btn")].find((b) => b.textContent === "항상 허용 (규칙)"));
+  assert(captured?.behavior === "allow" && captured?.updatedInput?.__approvalScope === "always", "clicking it sends the always scope");
+
+  const edit = await cardFor("claude-file-edit", "claude-code");
+  assert(edit.querySelector(".wb-approval-diff"), "Claude Edit approval renders a file diff (1-10-1)");
+  assert(edit.textContent.includes("- seed changed") && edit.textContent.includes("+ sprout changed"), "…showing before and after");
+
+  // A card with no rule must not offer a promise the harness cannot keep.
+  const noRule = await cardFor("claude-file-write", "claude-code");
+  const noRuleBtns = [...noRule.querySelectorAll(".wb-approval-actions .wb-btn")].map((b) => b.textContent);
+  assert(noRuleBtns.includes("이번만 허용"), "a request without an addRules suggestion still allows once");
+
+  const untrusted = await cardFor("codex-untrusted-no-reason", "codex");
+  assert(!untrusted.querySelector(".wb-approval-desc"), "the untrusted card draws no 사유 line rather than an empty one");
+}
+
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "PASSED"} — ${files.length} recordings`);
 failures.forEach((f) => console.log(`  ✗ ${f}`));
 process.exit(failures.length ? 1 : 0);

@@ -6,6 +6,7 @@ import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
+import { claudeAlwaysRule } from "../../shared/approvalRequest";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
@@ -690,22 +691,55 @@ function ApprovalBlock({ block, view, density, actions }: { block: Extract<Trans
   if (block.codex) {
     return <CodexApprovalBlock block={block} codex={block.codex} view={view} density={density} actions={actions} />;
   }
+  return <ClaudeApprovalBlock block={block} view={view} density={density} actions={actions} />;
+}
+
+/**
+ * Claude Code approval card.
+ *
+ * Shows what the SDK actually sends (measured, see scripts/fixtures/approvals):
+ * the command or the edit's before/after, the path that triggered the prompt,
+ * and — when the request carries one — the rule "always allow" would store, in
+ * words. That last part is why the choice can be offered at all: the SDK hands
+ * over ready-made permission updates, so agreeing to a stated rule is a real
+ * action rather than a promise the app cannot keep.
+ */
+function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
   const command = approvalCommand(block.input);
+  const edit = approvalEdit(block.input);
+  const rule = claudeAlwaysRule(block.suggestions);
+  const decide = (scope?: "always") =>
+    actions.approve(view.name, block.requestId, "allow", scope ? { __approvalScope: scope } : undefined);
   return (
     <div className={"wb-block wb-approval density-" + density}>
       <div className="wb-approval-head">
         <ShieldCheck size={14} />
-        <strong>Approval required</strong>
+        <strong>{block.title || "승인 요청"}</strong>
         <span className="wb-chip wb-mono">{block.toolName}</span>
       </div>
       {block.description && <p className="wb-approval-desc">{block.description}</p>}
-      {command && <pre className="wb-pre wb-approval-cmd">{command}</pre>}
+      {command && <pre className="wb-pre wb-approval-cmd">$ {command}</pre>}
+      {edit && (
+        <pre className="wb-pre wb-approval-diff">
+          {edit.before.split("\n").map((line) => `- ${line}`).join("\n")}
+          {"\n"}
+          {edit.after.split("\n").map((line) => `+ ${line}`).join("\n")}
+        </pre>
+      )}
+      {block.blockedPath && <div className="wb-approval-meta"><span className="wb-mono">경로</span> {block.blockedPath}</div>}
+      {block.agentID && <div className="wb-approval-meta"><span className="wb-mono">서브에이전트</span> {block.agentID}</div>}
+      {rule && <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {rule.hint}</div>}
       {block.resolved ? (
-        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "Allowed" : "Denied"}</span>
+        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "승인함" : "거부함"}</span>
       ) : (
         <div className="wb-approval-actions">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>Deny</button>
-          <button type="button" className="wb-btn wb-btn-member" onClick={() => actions.approve(view.name, block.requestId, "allow")}>Allow once</button>
+          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
+          <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
+          {rule && (
+            <button type="button" className="wb-btn wb-btn-soft" title={`앞으로 '${rule.hint}' 을(를) 묻지 않습니다.`} onClick={() => decide("always")}>
+              항상 허용 (규칙)
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -737,12 +771,20 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
         {CODEX_APPROVAL_ICON[codex.kind]}
         <strong>{block.title || "Codex 승인 요청"}</strong>
       </div>
+      {/* The reason used to render only when there was no command — which meant
+          it never showed on a command approval, the one kind that always has
+          both. Measured: the reason is a full sentence explaining the ask. */}
+      {codex.reason && <p className="wb-approval-desc">{codex.reason}</p>}
       {codex.command && (
-        <pre className="wb-pre wb-approval-cmd">$ {codex.command}</pre>
+        // Lead with Codex's own parse; the wrapper underneath is what actually
+        // runs, so it stays visible rather than being quietly swapped out.
+        <pre className="wb-pre wb-approval-cmd">$ {codex.commandDisplay || codex.command}</pre>
+      )}
+      {codex.commandDisplay && codex.command !== codex.commandDisplay && (
+        <div className="wb-approval-meta"><span className="wb-mono">실행</span> {codex.command}</div>
       )}
       {codex.cwd && <div className="wb-approval-meta"><span className="wb-mono">cwd</span> {codex.cwd}</div>}
       {codex.diff && <pre className="wb-pre wb-approval-diff">{codex.diff}</pre>}
-      {codex.reason && !codex.command && <p className="wb-approval-desc">{codex.reason}</p>}
       {codex.canAlways && codex.alwaysHint && (
         <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {codex.alwaysHint}</div>
       )}
@@ -963,10 +1005,30 @@ function approvalCommand(input: unknown): string {
     const record = input as Record<string, unknown>;
     const command = record.command ?? record.cmd;
     if (typeof command === "string") {
-      return `$ ${command}`;
+      return command;
     }
   }
   return "";
+}
+
+/**
+ * Before/after of an Edit approval.
+ *
+ * Claude's Edit input carries `old_string`/`new_string`, so the card can show
+ * what the file change is before it happens — measured, and the reason a file
+ * diff is renderable here while a Codex approval has none to show at all.
+ */
+function approvalEdit(input: unknown): { before: string; after: string } | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  const before = record.old_string;
+  const after = record.new_string;
+  if (typeof before !== "string" || typeof after !== "string") {
+    return undefined;
+  }
+  return { before, after };
 }
 
 /**
