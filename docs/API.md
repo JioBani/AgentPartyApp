@@ -1512,6 +1512,43 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
+`<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
+reference, because base64-wrapped PNG is both the largest thing a transcript
+holds (measured at 564 KB for one block) and the one payload compression cannot
+shrink. Fetch the bytes with the next endpoint.
+
+```json
+{ "type": "image", "source": { "type": "agentparty-file", "file": "3f9a….png", "media_type": "image/png", "bytes": 576936 } }
+```
+
+### `GET /api/party/transcript-image/:file`
+
+The bytes of one screenshot a transcript references, as a data URL. `:file` is
+the `file` field of an `agentparty-file` source — a name inside the image store,
+never a path (anything resolving outside it is rejected). Naming files by content
+hash means re-reading the same screenshot does not store it twice.
+
+```json
+{ "ok": true, "dataUrl": "data:image/png;base64,iVBORw0KGgo…", "bytes": 576936 }
+```
+
+### `GET /api/party/members/:name/harness-original`
+
+Where the HARNESS keeps its own copy of this member's conversation. The app's
+transcript has a retention window; the harness file does not, so once a member's
+window is full this names where the rest of the history still is.
+
+```json
+{ "ok": true, "original": { "harness": "claude-code", "path": "C:\Users\me\.claude\projects\C--Project-App\<session>.jsonl", "exists": true, "bytes": 38578 } }
+```
+
+`original` is `null` when the member has no harness session yet, or the harness
+keeps none we can name. `exists: false` matters: Claude Code derives its
+directory from the ABSOLUTE cwd (every character outside `[a-zA-Z0-9]` becomes
+`-`), so **moving the project folder orphans the history** — the new path maps
+to a different, empty directory. Report that rather than a path leading nowhere.
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,

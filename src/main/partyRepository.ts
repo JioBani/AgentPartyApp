@@ -1,6 +1,9 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import { capTranscript } from "../shared/transcriptCap";
+import { externalizeImages, extensionFor, TRANSCRIPT_IMAGE_DIR, type StoredImageSource } from "../shared/transcriptImages";
 import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
 import { log } from "./logger";
 
@@ -143,8 +146,8 @@ export class PartyRepository {
   }
 
   /**
-   * The persisted transcript (assembled UI blocks) for one member. Capped to the
-   * most recent {@link TRANSCRIPT_CAP} blocks. Never throws — a missing or
+   * The persisted transcript (assembled UI blocks) for one member. Trimmed to
+   * the window described by {@link capTranscript}. Never throws — a missing or
    * corrupt file reads as an empty transcript.
    */
   readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
@@ -174,7 +177,7 @@ export class PartyRepository {
    * caller ships only what changed instead of the entire transcript. The anchor
    * is resolved against {@link lastWritten}, a write-through mirror of the file,
    * so an append costs no read: this process is the only writer for its
-   * workspace, and the head-trimming done by {@link TRANSCRIPT_CAP} means the
+   * workspace, and the head-trimming done by {@link capTranscript} means the
    * caller's indices do NOT match the file's — only ids can anchor safely.
    *
    * An anchor that is not found is NOT silently promoted to a full write: that
@@ -195,10 +198,55 @@ export class PartyRepository {
       }
       next = stored.slice(0, anchor + 1).concat(incoming);
     }
-    const capped = next.slice(-TRANSCRIPT_CAP).map(stripAttachmentBytes);
+    const capped = capTranscript(next).map(stripAttachmentBytes).map((block) => this.externalizeBlockImages(workspacePath, block));
     this.writeJsonAtomic(this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
     this.lastWritten.set(this.transcriptKey(workspacePath, partyId, memberName), capped);
     return { applied: true };
+  }
+
+  /**
+   * Moves a block's inline base64 images out to {@link imageDir} and leaves a
+   * reference behind. Screenshots are the largest single things a transcript
+   * holds and the one payload compression cannot shrink, so keeping them inline
+   * costs both disk AND the renderer's parse of every block it never displays.
+   *
+   * A failed write is NOT allowed to drop the image silently: the block is kept
+   * exactly as it was (bytes inline) and the failure is logged. A fat transcript
+   * is a much smaller problem than a screenshot that vanished.
+   */
+  private externalizeBlockImages(workspacePath: string, block: unknown): unknown {
+    try {
+      return externalizeImages(block, (data, mediaType) => this.storeImage(workspacePath, data, mediaType));
+    } catch (error) {
+      log("error", "party", "transcript image externalization failed; keeping bytes inline", { error: errMsg(error) });
+      return block;
+    }
+  }
+
+  /** Writes image bytes under their own SHA-256, so a re-read costs nothing. */
+  private storeImage(workspacePath: string, data: string, mediaType: string | undefined): StoredImageSource {
+    const bytes = Buffer.from(data, "base64");
+    const file = `${crypto.createHash("sha256").update(bytes).digest("hex")}.${extensionFor(mediaType)}`;
+    const target = path.join(this.imageDir(workspacePath), file);
+    // Content-addressed: identical bytes already on disk are the same file.
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, bytes);
+    }
+    return { type: "agentparty-file", file, media_type: mediaType, bytes: bytes.byteLength };
+  }
+
+  /** Absolute path of an extracted image, or undefined if the name is not one. */
+  imagePath(workspacePath: string, file: string): string | undefined {
+    // `file` arrives from a transcript and, over HTTP, from a caller — resolve it
+    // and require the result to stay inside the image dir so no `../` escapes.
+    const dir = this.imageDir(workspacePath);
+    const resolved = path.resolve(dir, file);
+    return resolved.startsWith(path.resolve(dir) + path.sep) ? resolved : undefined;
+  }
+
+  private imageDir(workspacePath: string): string {
+    return path.join(this.rootDir(workspacePath), TRANSCRIPT_IMAGE_DIR);
   }
 
   /** The current on-disk blocks, from the write-through mirror when warm. */
@@ -362,8 +410,6 @@ export class PartyRepository {
 
 const ROOT_DIR = ".agent_party_app";
 const LEGACY_ROOT = ".agentparty";
-/** Max transcript blocks persisted per member (bounds the on-disk file). */
-const TRANSCRIPT_CAP = 800;
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

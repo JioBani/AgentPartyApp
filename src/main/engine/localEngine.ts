@@ -130,6 +130,14 @@ export class LocalEngine implements EngineConnection {
     return this.party.getMemberTranscript(name, partyId);
   }
 
+  async getTranscriptImage(file: string) {
+    return this.party.getTranscriptImage(file);
+  }
+
+  async getHarnessOriginal(name: string, partyId?: string) {
+    return this.party.getHarnessOriginal(name, partyId);
+  }
+
   async saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult> {
     return this.party.saveMemberTranscript(name, save, partyId);
   }

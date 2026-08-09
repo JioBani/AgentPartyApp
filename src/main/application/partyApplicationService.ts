@@ -35,6 +35,7 @@ import {
   type QueuedMessage,
 } from "../../shared/messageQueue";
 import { log } from "../logger";
+import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
@@ -1156,6 +1157,42 @@ export class PartyApplicationService {
     const state = this.readState();
     const member = this.requireMember(state, name, partyId);
     return this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
+  }
+
+  /**
+   * Where the HARNESS keeps its own full copy of this member's conversation.
+   *
+   * The app's transcript has a retention window; the harness file does not. So
+   * once a member's window is full, this is where the rest of the history still
+   * is. Returns `original: null` when the member has not produced a harness
+   * session yet, or the harness does not keep one we can name.
+   */
+  getHarnessOriginal(name: string, partyId?: string): { ok: true; original: HarnessOriginal | null } {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const sessionId = member.harnessSessionId
+      || (member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined);
+    // A member's cwd IS its workspace (the locked workspace model), which is
+    // exactly the key Claude Code derives its directory name from.
+    return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
+  }
+
+  /**
+   * One extracted transcript image, as a data URL.
+   *
+   * Screenshots are persisted out-of-line (see `shared/transcriptImages.ts`), so
+   * the transcript a window loads carries references instead of megabytes of
+   * base64. The bytes are fetched here, per image, only when one is actually
+   * displayed. Reading it over this path (rather than a file:// URL) keeps the
+   * renderer sandboxed and lets a REMOTE engine serve its own images.
+   */
+  getTranscriptImage(file: string): { ok: true; dataUrl: string; bytes: number } {
+    const resolved = this.repository.imagePath(this.workspacePath(), file);
+    if (!resolved) {
+      throw new Error(`Transcript image '${file}' is not a name inside the image store.`);
+    }
+    const bytes = fs.readFileSync(resolved);
+    const mediaType = IMAGE_MEDIA_TYPES[path.extname(resolved).toLowerCase()] || "application/octet-stream";
+    return { ok: true, dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`, bytes: bytes.byteLength };
   }
 
   /**

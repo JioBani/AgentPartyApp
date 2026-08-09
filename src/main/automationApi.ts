@@ -325,6 +325,20 @@ export class AutomationApiServer {
         sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1]), windowId) });
         return;
       }
+      // A transcript stores screenshots out-of-line, so its blocks carry a file
+      // reference. This is how a caller (or the UI) turns one back into bytes.
+      const transcriptImageMatch = url.pathname.match(/^\/api\/party\/transcript-image\/([^/]+)$/);
+      if (method === "GET" && transcriptImageMatch) {
+        sendJson(res, 200, await c.getTranscriptImage(workspace, decodeURIComponent(transcriptImageMatch[1])));
+        return;
+      }
+      // The app's transcript has a retention window; the harness's own copy does
+      // not. This names where the rest of the history still is.
+      const originalMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/harness-original$/);
+      if (method === "GET" && originalMatch) {
+        sendJson(res, 200, await c.getHarnessOriginal(workspace, decodeURIComponent(originalMatch[1]), windowId));
+        return;
+      }
       // Party-wide conveniences (agents' broadcast / stop-all / status-all):
       // routed through the same party-action dispatch with the "*" member name.
       if (method === "POST" && url.pathname === "/api/party/broadcast") {
