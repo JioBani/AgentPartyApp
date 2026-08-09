@@ -46,6 +46,18 @@ export interface RouterTurnUsage {
   generationId?: string;
   costUnavailableReason?: string;
   requestCount: number;
+  /**
+   * Tokens summed from the upstream responses this turn actually made.
+   *
+   * Claude Code reports its own `result.usage`, but for a router-backed model
+   * it reports ZEROS — a Grok turn landed in the ledger as 0 in / 0 out while
+   * really costing ~100k input tokens per request, so the usage dashboard and
+   * the context meter told the user nothing and a subscription drained
+   * invisibly. The gateway is the one place that sees the true numbers, so it
+   * measures them here and the adapter prefers them when the harness reports
+   * nothing.
+   */
+  tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
 interface CostBucket {
@@ -54,6 +66,11 @@ interface CostBucket {
   generationIds: string[];
   unavailableReasons: string[];
   hasCost: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  hasTokens: boolean;
 }
 
 interface UpstreamRoute {
@@ -99,6 +116,11 @@ export class EmbeddedHarnessRouter {
       generationIds: [],
       unavailableReasons: [],
       hasCost: false,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      hasTokens: false,
     });
   }
 
@@ -113,6 +135,14 @@ export class EmbeddedHarnessRouter {
       generationId: bucket.generationIds.join(",") || undefined,
       costUnavailableReason: bucket.unavailableReasons.join("; ") || undefined,
       requestCount: bucket.requestCount,
+      tokens: bucket.hasTokens
+        ? {
+            input: bucket.inputTokens,
+            output: bucket.outputTokens,
+            cacheRead: bucket.cacheReadTokens,
+            cacheWrite: bucket.cacheWriteTokens,
+          }
+        : undefined,
     };
   }
 
@@ -400,8 +430,10 @@ export class EmbeddedHarnessRouter {
       }
     }
 
+    const capturedText = Buffer.concat(captured).toString("utf8");
+    this.recordUpstreamTokens(accountingKey, capturedText);
     if (route.openRouter) {
-      await this.recordOpenRouterCost(accountingKey, Buffer.concat(captured).toString("utf8"));
+      await this.recordOpenRouterCost(accountingKey, capturedText);
     }
     res.end();
   }
@@ -421,12 +453,57 @@ export class EmbeddedHarnessRouter {
     });
   }
 
+  /**
+   * Sums the Anthropic `usage` numbers out of one upstream response, streamed
+   * or not. Input/cache counts arrive on `message_start` and the output count
+   * on `message_delta`, so both are scanned; a non-streaming body carries them
+   * together on `usage`.
+   */
+  private recordUpstreamTokens(accountingKey: string, responseText: string): void {
+    const bucket = this.costBuckets.get(accountingKey);
+    if (!bucket || !responseText) {
+      return;
+    }
+    bucket.requestCount += 1;
+    const add = (usage: Record<string, unknown> | undefined) => {
+      if (!usage) {
+        return;
+      }
+      const input = numberValue(usage.input_tokens) ?? 0;
+      const output = numberValue(usage.output_tokens) ?? 0;
+      const cacheRead = numberValue(usage.cache_read_input_tokens) ?? 0;
+      const cacheWrite = numberValue(usage.cache_creation_input_tokens) ?? 0;
+      if (input || output || cacheRead || cacheWrite) {
+        bucket.inputTokens += input;
+        bucket.outputTokens += output;
+        bucket.cacheReadTokens += cacheRead;
+        bucket.cacheWriteTokens += cacheWrite;
+        bucket.hasTokens = true;
+      }
+    };
+    if (responseText.includes("data:")) {
+      for (const line of responseText.split("\n")) {
+        if (!line.startsWith("data:")) {
+          continue;
+        }
+        let event: any;
+        try {
+          event = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        add(asRecord(event?.message?.usage) || asRecord(event?.usage));
+      }
+      return;
+    }
+    add(asRecord(parseResponsePayload(responseText)?.usage));
+  }
+
   private async recordOpenRouterCost(accountingKey: string, responseText: string): Promise<void> {
     const bucket = this.costBuckets.get(accountingKey);
     if (!bucket) {
       return;
     }
-    bucket.requestCount += 1;
     const payload = parseResponsePayload(responseText);
     const generationId = responseGenerationId(payload, responseText);
     if (generationId) {
@@ -758,4 +835,8 @@ function filterXaiThinking(response: Response): Response {
     },
   });
   return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }

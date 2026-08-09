@@ -1070,7 +1070,8 @@ export class ClaudeAdapter extends EventEmitter {
         return;
       }
       const harnessCostUsd = typeof (message as any).total_cost_usd === "number" ? (message as any).total_cost_usd : undefined;
-      const usage = mergeUsage(extractUsage(message), this.consumeRouterTurnUsage());
+      const routerUsage = this.consumeRouterTurnUsage();
+      const usage = mergeUsage(extractUsage(message), routerUsage);
       const cost = await this.costResolver.resolve({
         providerId: this.providerId,
         model: this.model,
@@ -1089,7 +1090,10 @@ export class ClaudeAdapter extends EventEmitter {
         // streamed message so it drops after /compact) — NOT the cumulative turn
         // total, which grows with tool round-trips and would misrepresent the
         // context window actually held. input/cacheRead/... stay cumulative (cost).
-        usage: withContextOccupancy(tokenBreakdownFromClaudeUsage((message as any).usage), this.contextTokens),
+        usage: withContextOccupancy(
+          tokenBreakdownFromRouterOrHarness((message as any).usage, routerUsage),
+          this.contextTokens,
+        ),
         at: now(),
       });
       this.drainQueuedTurn();
@@ -1718,6 +1722,35 @@ function appendJsonDelta(current: unknown, delta: string | undefined): unknown {
  * undefined when the harness reported no token counts — a missing field must
  * read as "not reported", never zero.
  */
+/**
+ * The harness's own token report, or the gateway's measurement when the harness
+ * reports nothing usable.
+ *
+ * Claude Code returns an all-zero `result.usage` for router-backed models, which
+ * put Grok turns in the ledger as 0 in / 0 out while each request really carried
+ * ~100k tokens — the dashboard looked idle while a subscription drained. The
+ * gateway counts what actually crossed the wire, so it is the honest source
+ * whenever the harness has nothing; a harness that does report keeps precedence,
+ * since it also sees requests the gateway never proxied.
+ */
+function tokenBreakdownFromRouterOrHarness(
+  harnessUsage: unknown,
+  routerUsage: RouterTurnUsage | undefined,
+): TurnTokenBreakdown | undefined {
+  const fromHarness = tokenBreakdownFromClaudeUsage(harnessUsage);
+  const reported = (fromHarness?.input ?? 0) + (fromHarness?.output ?? 0)
+    + (fromHarness?.cacheRead ?? 0) + (fromHarness?.cacheWrite ?? 0);
+  if (reported > 0 || !routerUsage?.tokens) {
+    return fromHarness;
+  }
+  return {
+    input: routerUsage.tokens.input,
+    output: routerUsage.tokens.output,
+    cacheRead: routerUsage.tokens.cacheRead,
+    cacheWrite: routerUsage.tokens.cacheWrite,
+  };
+}
+
 function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | undefined {
   const record = asRecord(usage);
   if (!record) {
