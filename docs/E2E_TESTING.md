@@ -124,6 +124,17 @@ written and a fresh session IS asked. Also pins the honest limit — a fresh
 session can still be stopped by the DIRECTORY gate, whose only remedy is
 `destination: "session"`, so no choice can promise silence.
 
+`node scripts/qa-approval-metrics.mjs` (or `npm run qa:approval-metrics`)
+MEASURES the approval card against the confirmed design instead of eyeballing a
+capture: it boots the app with `--remote-debugging-port=0`, injects the recorded
+scenarios, and compares `getComputedStyle` with the values declared in
+"Approval Cards.dc.html" — 27 of them across head/body/footer, the diff rows and
+the collapsed resolved line. Offline and unbilled. Two mismatches it caught that
+the screenshots did not: the tool chip inheriting the shared chip's roomier
+padding, and the decline button inheriting the base button's width. ⚠️ Selector
+care matters here — `.wb-btn-soft` also matches the rule button, so measuring the
+session button on a Claude card silently measured a different control.
+
 `node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
 real app and drives idle sleep's two escape hatches through the AppController
 methods the UI calls: the global policy the Settings → 유휴 슬립 card writes

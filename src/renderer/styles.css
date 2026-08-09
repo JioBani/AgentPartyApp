@@ -2229,6 +2229,12 @@ body.wb-resizing {
   min-width: 6px;
 }
 
+/* The shared chip is roomier (2px 7px); the head needs the design's tighter box
+   so the tool sits level with the title rather than inflating the band. */
+.wb-approval-head .wb-chip {
+  padding: 1px 6px;
+}
+
 .wb-approval-origin {
   font-size: 11px;
   color: var(--text-2);
@@ -2320,6 +2326,16 @@ body.wb-resizing {
 
 .wb-approval-actions .wb-btn-member:hover {
   filter: brightness(1.07);
+}
+
+/* Each scope has its own width in the design; without these they all inherit
+   the base button's 16px and the row loses its intended rhythm. */
+.wb-approval-actions .wb-btn-ghost {
+  padding: 0 14px;
+}
+
+.wb-approval-actions .wb-btn-soft {
+  padding: 0 13px;
 }
 
 .wb-approval-actions .wb-btn-ghost:hover {

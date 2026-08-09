@@ -67,6 +67,7 @@
     "test:subagents": "node scripts/qa-subagents.mjs",
     "test:subagent-tracker": "node scripts/qa-subagent-tracker.mjs",
     "test:approval-shapes": "node scripts/qa-approval-shapes.mjs",
+    "qa:approval-metrics": "npm run build && node scripts/qa-approval-metrics.mjs",
     "test:background-tasks": "node scripts/qa-background-tasks.mjs",
     "test:party-store": "node scripts/qa-party-store.mjs",
     "test:render": "node scripts/qa-render.mjs",
