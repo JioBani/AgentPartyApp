@@ -1679,7 +1679,7 @@ function stringArray(value: unknown): string[] {
  * back to bare "node" (PATH-resolved). Off Windows the resolved path is used
  * verbatim (the WSL/Linux spawn is verified and must stay unchanged).
  */
-function spawnableNodeCommand(): string {
+export function spawnableNodeCommand(): string {
   const resolved = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
   if (process.platform !== "win32" || !resolved.includes(" ")) {
     return resolved;
@@ -1695,7 +1695,7 @@ function spawnableNodeCommand(): string {
   return "node";
 }
 
-function resolvePartyMcpServerScript(): string {
+export function resolvePartyMcpServerScript(): string {
   const scriptName = "agentparty-codex-mcp-server.mjs";
   const override = process.env.AGENTPARTY_CODEX_MCP_SERVER;
   if (override) {

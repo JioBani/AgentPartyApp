@@ -17,7 +17,7 @@ export function isPermissionModeSetting(value: unknown): value is PermissionMode
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
 export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
@@ -60,6 +60,8 @@ export interface AppSettings {
   claudeExecutablePath: string;
   /** Cursor Agent executable/bundle override. Empty = auto-discover official install. */
   cursorExecutablePath: string;
+  /** Optional override for the official `grok` binary; resolved automatically when empty. */
+  grokExecutablePath?: string;
   claudeSafeMode: boolean;
   /** The harness a brand-new member defaults to. */
   selectedHarnessId: HarnessId;
@@ -111,7 +113,7 @@ export interface AppSettings {
 }
 
 /** All harnesses that have defaults, in a stable order. */
-export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor"];
+export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor", "grok"];
 
 /** The creation defaults for one harness (falls back to the default harness). */
 export function harnessDefaultsOf(settings: AppSettings, harnessId?: HarnessId): HarnessDefaults {
@@ -161,7 +163,7 @@ export interface PartyMember {
    * `missing_session` (something died unexpectedly) cannot promise.
    */
   status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
-  runtime?: "codex" | "claude" | "claude-code" | "cursor";
+  runtime?: "codex" | "claude" | "claude-code" | "cursor" | "grok";
   role?: string;
   sessionId?: string;
   /**
@@ -299,7 +301,7 @@ export interface CreateMemberInput {
   requirement: string;
   role?: string;
   initialTask?: string;
-  runtime?: "codex" | "claude" | "claude-code" | "cursor";
+  runtime?: "codex" | "claude" | "claude-code" | "cursor" | "grok";
   model?: string;
   effort?: string;
   reasoning?: string;

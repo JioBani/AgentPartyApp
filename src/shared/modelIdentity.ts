@@ -17,7 +17,7 @@
  */
 import { resolveCatalogModel } from "./modelCatalog";
 
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
@@ -90,6 +90,10 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
   if (harnessId === "cursor") {
     return entry.cursorModel ? { kind: "cursor-agent", slug: entry.cursorModel } : undefined;
   }
+  if (harnessId === "grok") {
+    // Grok Build owns its own model list; the catalog does not route it.
+    return undefined;
+  }
   // codex harness
   if (entry.codexModel) {
     return { kind: "codex-account", slug: entry.codexModel };
@@ -112,6 +116,7 @@ const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
   "claude-code": "anthropic",
   codex: "openai",
   cursor: "cursor",
+  grok: "xai",
 };
 
 /** Providers that ship a harness of their own; every other provider has none. */
@@ -121,6 +126,7 @@ const HARNESS_LABEL: Record<HarnessId, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   cursor: "Cursor CLI",
+  grok: "Grok Build",
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
