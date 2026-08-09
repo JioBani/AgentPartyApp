@@ -76,6 +76,39 @@ const CODEX_SPEC = [
   ["규칙 버튼(4개짜리)", ".wb-approval-actions .wb-btn-rule", { paddingLeft: "12px", paddingRight: "12px" }],
 ];
 
+/*
+ * The question card (유형 E). Same shell as an approval, different insides —
+ * and deliberately no danger colour, which is asserted as "the primary is the
+ * accent" rather than a member hue.
+ */
+const QUESTION_SPEC = [
+  ["질문 머리", ".wb-question .wb-approval-head", { paddingTop: "11px", paddingLeft: "14px", columnGap: "9px" }],
+  ["질문 머리 칩", ".wb-question .wb-approval-head .wb-chip", { fontSize: "10.5px", borderRadius: "5px", paddingLeft: "6px" }],
+  ["질문 본문", ".wb-question-item", { paddingTop: "14px", paddingLeft: "14px", rowGap: "11px" }],
+  ["질문 문장", ".wb-question-text", { fontSize: "13.5px", fontWeight: "600" }],
+  ["선택지 목록", ".wb-question-options", { rowGap: "7px" }],
+  ["선택지", ".wb-question-option", { paddingTop: "10px", paddingLeft: "12px", borderRadius: "9px", columnGap: "10px" }],
+  ["선택지 라벨", ".wb-question-option-label", { fontSize: "12.5px" }],
+  ["선택지 설명", ".wb-question-option-desc", { fontSize: "11.5px" }],
+  /*
+   * No border-width assertion here. The design asks for 1.5px, but Chrome
+   * reports the USED value and rounds borders to whole device pixels, so at
+   * dpr 1 a 1.5px border computes as 1px no matter what is declared. Asserting
+   * the design number would fail forever on a 1x display and asserting 1px
+   * would fail on a 2x one; the declared value is checked by reading the rule,
+   * and the rendered width is reported as a note below.
+   */
+  ["표시 동그라미", ".wb-question-mark", { width: "15px", height: "15px", borderRadius: "50%" }],
+  ["건너뛰기", ".wb-question .wb-btn-ghost", { paddingLeft: "14px", paddingRight: "14px", height: "36px" }],
+  ["답변 보내기", ".wb-question .wb-btn-member", { paddingLeft: "16px", paddingRight: "16px", height: "36px" }],
+];
+
+const MULTI_SPEC = [
+  ["다중 선택지", ".wb-question-option", { paddingTop: "9px", paddingLeft: "12px" }],
+  ["표시 네모", ".wb-question-mark.is-box", { width: "15px", height: "15px", borderRadius: "4px" }],
+  ["복수 선택 안내", ".wb-question-hint", { fontSize: "11.5px" }],
+];
+
 const RESOLVED_SPEC = [
   ["처리 후 줄", ".wb-approval.is-resolved", { paddingTop: "10px", paddingLeft: "13px", borderRadius: "9px", columnGap: "10px", borderLeftWidth: "2px" }],
   ["처리 후 라벨", ".wb-approval-resolved-label", { fontSize: "12.5px" }],
@@ -270,7 +303,7 @@ async function main() {
   const windows = (await get("/api/windows")).windows || [];
   await post(`/api/windows/${windows[0].id}/workspace`, { workspacePath: ws });
   await post("/api/qa/reset").catch(() => {});
-  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }] });
+  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-q1" }, { name: "m-q2" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }] });
 
   const cdp = await attachRenderer();
 
@@ -297,6 +330,37 @@ async function main() {
   await delay(900);
   for (const [label, selector, expected] of CODEX_SPEC) await measure(cdp, label, selector, expected);
   await measureGaps(cdp, "Codex 본문", ".wb-approval-body", { padTop: 14, padBottom: 14, between: 12 });
+
+  console.log("\n질문 카드 (단일 선택):");
+  await post("/api/qa/members/m-q1/interaction", { type: "askUserQuestion", questions: [{ question: "어떤 작업을 진행할까요?", header: "작업 선택", options: [
+    { label: "코드 리뷰", description: "현재 변경점을 리뷰합니다." },
+    { label: "버그 수정", description: "보고된 버그를 수정합니다." },
+  ] }] });
+  await post("/api/qa/open", { panels: [["m-q1"]] });
+  await delay(900);
+  for (const [label, selector, expected] of QUESTION_SPEC) await measure(cdp, label, selector, expected);
+  // Reported, not asserted — see the note on the mark's border above.
+  const ring = await cdp.eval(`(() => {
+    const el = document.querySelector(".wb-question-mark");
+    const rule = [...document.styleSheets].flatMap((s) => { try { return [...s.cssRules]; } catch { return []; } })
+      .find((r) => r.selectorText === ".wb-question-mark");
+    // The bundled rule uses the border shorthand, so the longhand reads empty.
+    return { dpr: window.devicePixelRatio, declared: rule?.style?.borderTopWidth || rule?.style?.border || "?", used: getComputedStyle(el).borderTopWidth };
+  })()`);
+  notes.push(`표시 동그라미 테두리: 선언 ${ring.declared} → 렌더 ${ring.used} (dpr ${ring.dpr}; 브라우저가 디바이스 픽셀로 반올림)`);
+  console.log(`  · 표시 동그라미 테두리   선언 ${ring.declared} → 렌더 ${ring.used} (dpr ${ring.dpr})`);
+
+  await measureGaps(cdp, "질문 본문 사이", ".wb-question-item", { padTop: 14, padBottom: 14, between: 11 });
+  await measureGaps(cdp, "선택지 사이", ".wb-question-options", { padTop: 0, padBottom: 0, between: 7 });
+
+  console.log("\n질문 카드 (다중 선택):");
+  await post("/api/qa/members/m-q2/interaction", { type: "askUserQuestion", questions: [{ question: "어떤 검사를 돌릴까요?", header: "검사", multiSelect: true, options: [
+    { label: "타입체크", description: "tsc --noEmit" },
+    { label: "빌드", description: "npm run build" },
+  ] }] });
+  await post("/api/qa/open", { panels: [["m-q2"]] });
+  await delay(900);
+  for (const [label, selector, expected] of MULTI_SPEC) await measure(cdp, label, selector, expected);
 
   console.log("\n질문 카드 — 비밀 입력 마스킹:");
   await post("/api/qa/members/m-secret/interaction", { type: "askUserQuestion", questions: [{ question: "API 키를 입력하세요.", header: "인증", secret: true, options: [] }] });
