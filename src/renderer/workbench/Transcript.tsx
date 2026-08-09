@@ -810,7 +810,8 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
 }
 
 interface ParsedOption { label: string; description?: string }
-interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[]; secret?: boolean }
+/** `other` = the asker allows a free-text answer besides the listed options. */
+interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[]; secret?: boolean; other: boolean }
 
 /**
  * Renders an AskUserQuestion interaction as selectable choices. When the model
@@ -859,7 +860,11 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
   const current = questions[clampedStep];
   const currentPicked = selections[current.question] || [];
   // A question with no preset options is pure free text: the input is always shown.
-  const otherActive = currentPicked.includes(OTHER) || current.options.length === 0;
+  // Otherwise the free-text choice appears only when the asker allows it —
+  // Codex marks that per question (`isOther`), and offering it regardless would
+  // invite an answer the tool is going to refuse.
+  const allowsOther = current.other || current.options.length === 0;
+  const otherActive = allowsOther && (currentPicked.includes(OTHER) || current.options.length === 0);
   const isLast = clampedStep === questions.length - 1;
 
   if (resolved) {
@@ -909,9 +914,9 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
               </button>
             );
           })}
-          {/* Claude Code always offers a free-text answer; mirror that here. A
-              pure free-text question (no options) shows only the input, no button. */}
-          {current.options.length > 0 && (
+          {/* Offered only when the asker accepts a written-in answer. A pure
+              free-text question (no options) shows just the input, no button. */}
+          {allowsOther && current.options.length > 0 && (
             <button
               type="button"
               className={"wb-question-option wb-question-other" + (otherActive ? " is-active" : "")}
@@ -962,7 +967,9 @@ function parseQuestions(input: unknown): ParsedQuestion[] {
       const options = Array.isArray(q.options)
         ? (q.options as Record<string, unknown>[]).map((o) => ({ label: String(o.label ?? ""), description: o.description ? String(o.description) : undefined })).filter((o) => o.label)
         : [];
-      return { question: String(q.question ?? q.header ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options, secret: Boolean(q.secret) };
+      // `other` defaults to true: AskUserQuestion always accepts a written-in
+      // answer, and only Codex states the restriction explicitly.
+      return { question: String(q.question ?? q.header ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options, secret: Boolean(q.secret), other: q.other === undefined ? true : Boolean(q.other) };
     })
     // Options are optional: a request-user-input question may be pure free text
     // (the card always offers a "직접 입력" fallback), so only require the prompt.
