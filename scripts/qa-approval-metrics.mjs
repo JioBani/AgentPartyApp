@@ -143,6 +143,59 @@ async function attachRenderer() {
   };
 }
 
+/**
+ * Measures the RENDERED vertical gap between every pair of adjacent children in
+ * a container, and the padding between the container edge and its first/last
+ * child.
+ *
+ * The per-property checks above only see spacing someone remembered to declare.
+ * A wrapper element with no gap of its own collapses two rows together and
+ * every declared value still matches — which is exactly how the file row ended
+ * up flush against its diff. This walks what is actually on screen instead.
+ */
+async function measureGaps(cdp, label, containerSelector, expected) {
+  const gaps = await cdp.eval(`(() => {
+    const box = document.querySelector(${JSON.stringify(containerSelector)});
+    if (!box) return null;
+    const kids = [...box.children].filter((el) => el.getClientRects().length > 0);
+    const cs = getComputedStyle(box);
+    const boxRect = box.getBoundingClientRect();
+    const rects = kids.map((el) => ({ cls: el.className || el.tagName.toLowerCase(), r: el.getBoundingClientRect() }));
+    const out = { padTop: 0, padBottom: 0, between: [] };
+    if (rects.length) {
+      out.padTop = Math.round((rects[0].r.top - boxRect.top - parseFloat(cs.borderTopWidth)) * 10) / 10;
+      out.padBottom = Math.round((boxRect.bottom - rects[rects.length - 1].r.bottom - parseFloat(cs.borderBottomWidth)) * 10) / 10;
+    }
+    for (let i = 1; i < rects.length; i += 1) {
+      out.between.push({
+        from: String(rects[i - 1].cls).split(" ")[0],
+        to: String(rects[i].cls).split(" ")[0],
+        gap: Math.round((rects[i].r.top - rects[i - 1].r.bottom) * 10) / 10,
+      });
+    }
+    return out;
+  })()`);
+  if (!gaps) {
+    failures.push(`${label} (${containerSelector}) — 요소 없음`);
+    console.log(`  ✗ ${label.padEnd(16)} 요소 없음`);
+    return;
+  }
+  const bad = [];
+  if (expected.padTop !== undefined && gaps.padTop !== expected.padTop) bad.push(`위 여백 ${gaps.padTop} ≠ ${expected.padTop}`);
+  if (expected.padBottom !== undefined && gaps.padBottom !== expected.padBottom) bad.push(`아래 여백 ${gaps.padBottom} ≠ ${expected.padBottom}`);
+  for (const pair of gaps.between) {
+    if (expected.between !== undefined && pair.gap !== expected.between) {
+      bad.push(`${pair.from}→${pair.to} ${pair.gap} ≠ ${expected.between}`);
+    }
+  }
+  if (bad.length) {
+    failures.push(`${label}: ${bad.join(", ")}`);
+    console.log(`  ✗ ${label.padEnd(16)} ${bad.join(" · ")}`);
+  } else {
+    console.log(`  ✓ ${label.padEnd(16)} 여백 ${gaps.padTop}/${gaps.padBottom}, 사이 ${gaps.between.length}곳 모두 ${expected.between ?? "-"}px`);
+  }
+}
+
 /** Reads the computed values for one selector, or reports it missing. */
 async function measure(cdp, label, selector, expected) {
   const props = Object.keys(expected);
@@ -192,18 +245,24 @@ async function main() {
   await post("/api/qa/open", { panels: [["m-cmd"]] });
   await delay(900);
   for (const [label, selector, expected] of SPEC) await measure(cdp, label, selector, expected);
+  await measureGaps(cdp, "명령카드 본문", ".wb-approval-body", { padTop: 14, padBottom: 14, between: 12 });
+  await measureGaps(cdp, "명령카드 바닥", ".wb-approval-actions", { padTop: 12, padBottom: 12 });
 
   console.log("\n파일 변경 카드:");
   await post("/api/qa/members/m-file/interaction", { type: "approval", scenario: "claude-file-edit" });
   await post("/api/qa/open", { panels: [["m-file"]] });
   await delay(900);
   for (const [label, selector, expected] of DIFF_SPEC) await measure(cdp, label, selector, expected);
+  // The gap the wrapper used to swallow: file row → its diff.
+  await measureGaps(cdp, "파일카드 본문", ".wb-approval-body", { padTop: 14, padBottom: 14, between: 12 });
+  await measureGaps(cdp, "diff 줄 사이", ".wb-approval-diff", { padTop: 0, padBottom: 0, between: 0 });
 
   console.log("\nCodex 카드 (버튼 4개):");
   await post("/api/qa/members/m-codex/interaction", { type: "approval", scenario: "codex-command-once" });
   await post("/api/qa/open", { panels: [["m-codex"]] });
   await delay(900);
   for (const [label, selector, expected] of CODEX_SPEC) await measure(cdp, label, selector, expected);
+  await measureGaps(cdp, "Codex 본문", ".wb-approval-body", { padTop: 14, padBottom: 14, between: 12 });
 
   console.log("\n처리 후 카드:");
   const { requestId } = await post("/api/qa/members/m-done/interaction", { type: "approval", scenario: "claude-bash" });

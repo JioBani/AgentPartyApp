@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -6,7 +6,7 @@ import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
-import { claudeAlwaysRule, extractToolFilePath } from "../../shared/approvalRequest";
+import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
 import { harnessShort } from "./harnessLabel";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { memberColorVars } from "../theme/memberColors";
@@ -764,12 +764,12 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
         {rule && (
           <button
             type="button"
-            className="wb-btn wb-btn-soft wb-btn-widest wb-btn-rule"
+            className={"wb-btn wb-btn-soft wb-btn-widest" + (ruleAddsInformation(rule.hint, command) ? " wb-btn-rule" : "")}
             title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`}
             onClick={() => decide("always")}
           >
             <span>항상 허용</span>
-            <span className="wb-btn-rule-hint">{rule.hint}</span>
+            {ruleAddsInformation(rule.hint, command) && <span className="wb-btn-rule-hint">{rule.hint}</span>}
           </button>
         )}
       </div>
@@ -894,14 +894,14 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
       {/* A file-change approval carries no diff of its own; these are joined from
           the item it names, so the user can see the edit before allowing it. */}
       {!codex.diff && codex.edits?.map((edit) => (
-        <div key={edit.path} className="wb-approval-filechange">
+        <Fragment key={edit.path}>
           <div className="wb-approval-file">
             <span className="wb-approval-file-kind">{edit.kind}</span>
             <span className="wb-approval-file-path">{shortPath(edit.path)}</span>
             {(edit.added || edit.removed) ? <span className="wb-approval-file-stat">+{edit.added} −{edit.removed}</span> : null}
           </div>
           {edit.diff && <DiffLines diff={edit.diff} />}
-        </div>
+        </Fragment>
       ))}
       </div>
       <div className="wb-approval-actions wb-codex-approval-actions">
@@ -918,7 +918,7 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
             }
             onClick={() => decide(decision)}
           >
-            {decision === "always" && codex.alwaysHint ? (
+            {decision === "always" && ruleAddsInformation(codex.alwaysHint, codex.commandDisplay || codex.command) ? (
               <>
                 <span>항상 허용</span>
                 <span className="wb-btn-rule-hint">{codex.alwaysHint}</span>

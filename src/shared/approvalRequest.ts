@@ -158,6 +158,32 @@ export function claudeAlwaysRule(suggestions: unknown): { hint: string; scope: s
   return undefined;
 }
 
+/**
+ * Whether the stored rule is worth spelling out on the button.
+ *
+ * The point of showing it is that the user can see WHAT they are agreeing to,
+ * and the two harnesses differ sharply there. Claude offers a pattern —
+ * `echo one *` — which appears nowhere else on the card, so it earns its line.
+ * Codex offers the whole command it just showed, launcher path and all, so
+ * repeating it says nothing the card has not already said twice and pushes the
+ * button wide enough to unbalance the row.
+ *
+ * Compared loosely: the two are written differently (one quoted, one joined
+ * argv) even when they mean the same command.
+ */
+export function ruleAddsInformation(hint: string | undefined, shownCommand: string | undefined): boolean {
+  if (!hint) {
+    return false;
+  }
+  if (!shownCommand) {
+    return true;
+  }
+  const flatten = (value: string) => value.replace(/["']/g, "").replace(/\\+/g, "\\").replace(/\s+/g, " ").trim().toLowerCase();
+  const rule = flatten(hint);
+  const shown = flatten(shownCommand);
+  return !(shown.includes(rule) || rule.includes(shown));
+}
+
 /** Adds a normalized `filePath` so the card can name the file for any tool. */
 export function withFilePath(value: unknown): unknown {
   const record = asRecord(value);
