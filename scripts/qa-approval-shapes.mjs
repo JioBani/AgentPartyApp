@@ -261,7 +261,9 @@ console.log("\nQA 목업 (src/shared/approvalScenarios.ts, generated):");
   const claudeCard = claudeApprovalFields(bash.toolName, bash.input, bash.options);
   assert(claudeCard.blockedPath && claudeCard.blockedPath.endsWith("b18a.txt"), "claude scenario expands with blockedPath reaching the card (C2)");
   assert(Array.isArray(claudeCard.suggestions) && claudeCard.suggestions.some((s) => s.type === "addRules"), "…and the prefix rule reaching the card (C1)");
-  assert(claudeCard.title === "Bash", "…and displayName standing in for the absent title");
+  // The heading names the approval TYPE; the tool keeps its own chip. Claude
+  // sends no title of its own (measured), so this is derived from the tool.
+  assert(claudeCard.title === "명령 실행 승인", `…and the heading names the type, not the tool (${claudeCard.title})`);
 
   // Negative controls must NOT become injectable blank cards.
   assert(!approvalScenarioNames().includes("codex-no-approval-trusted-read"), "negative controls are excluded from the injectable set");
@@ -327,14 +329,19 @@ console.log("\n승인 카드 DOM (rendered from the recorded scenarios):");
   assert(claude.textContent.includes("echo one > b18a.txt"), "Claude card shows the command");
   assert(claude.textContent.includes("b18a.txt"), "…and the blockedPath that triggered it (C2)");
   const claudeBtns = [...claude.querySelectorAll(".wb-approval-actions .wb-btn")].map((b) => b.textContent);
-  assert(claudeBtns.includes("항상 허용 (규칙)"), `'항상 허용' offered because the request carried a rule (C1) — ${JSON.stringify(claudeBtns)}`);
-  assert(claude.textContent.includes("echo one *"), "…and the card states the rule being agreed to");
-  click([...claude.querySelectorAll(".wb-approval-actions .wb-btn")].find((b) => b.textContent === "항상 허용 (규칙)"));
+  assert(claudeBtns.some((t) => t.startsWith("항상 허용")), `'항상 허용' offered because the request carried a rule (C1) — ${JSON.stringify(claudeBtns)}`);
+  // The rule rides INSIDE the button as its second line: agreeing to a rule you
+  // cannot read is not consent, so it is not tucked away in a tooltip.
+  assert(Boolean(claude.querySelector(".wb-btn-rule-hint")), "…and the rule is stated on the button itself");
+  assert(claude.querySelector(".wb-btn-rule-hint").textContent === "echo one *", "…spelling out the pattern being stored");
+  click([...claude.querySelectorAll(".wb-approval-actions .wb-btn")].find((b) => b.textContent.startsWith("항상 허용")));
   assert(captured?.behavior === "allow" && captured?.updatedInput?.__approvalScope === "always", "clicking it sends the always scope");
 
   const edit = await cardFor("claude-file-edit", "claude-code");
   assert(edit.querySelector(".wb-approval-diff"), "Claude Edit approval renders a file diff (1-10-1)");
-  assert(edit.textContent.includes("- seed changed") && edit.textContent.includes("+ sprout changed"), "…showing before and after");
+  const diffRows = [...edit.querySelectorAll(".wb-approval-diff-line")].map((r) => r.textContent);
+  assert(diffRows.some((t) => t.includes("seed changed")) && diffRows.some((t) => t.includes("sprout changed")), `…showing before and after (${JSON.stringify(diffRows)})`);
+  assert(Boolean(edit.querySelector(".wb-approval-diff-line.is-del")) && Boolean(edit.querySelector(".wb-approval-diff-line.is-add")), "…tinted as removed/added rather than relying on the glyph alone");
 
   // A card with no rule must not offer a promise the harness cannot keep.
   const noRule = await cardFor("claude-file-write", "claude-code");

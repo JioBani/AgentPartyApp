@@ -6,7 +6,8 @@ import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
-import { claudeAlwaysRule } from "../../shared/approvalRequest";
+import { claudeAlwaysRule, extractToolFilePath } from "../../shared/approvalRequest";
+import { harnessShort } from "./harnessLabel";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
@@ -710,43 +711,128 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
   const rule = claudeAlwaysRule(block.suggestions);
   const decide = (scope?: "always") =>
     actions.approve(view.name, block.requestId, "allow", scope ? { __approvalScope: scope } : undefined);
+  const filePath = extractToolFilePath(block.input);
+
+  if (block.resolved) {
+    return (
+      <ResolvedApproval
+        block={block}
+        density={density}
+        summary={command || filePath || block.description || block.toolName}
+        scope={block.resolved === "allow" ? "이번만" : undefined}
+      />
+    );
+  }
   return (
     <div className={"wb-block wb-approval density-" + density}>
       <div className="wb-approval-head">
-        <ShieldCheck size={14} />
+        <ShieldCheck size={15} />
         <strong>{block.title || "승인 요청"}</strong>
         <span className="wb-chip wb-mono">{block.toolName}</span>
+        <span className="wb-approval-head-spacer" />
+        <span className="wb-approval-origin">{approvalOrigin(view)}</span>
       </div>
-      {block.description && <p className="wb-approval-desc">{block.description}</p>}
-      {command && <pre className="wb-pre wb-approval-cmd">$ {command}</pre>}
-      {edit && (
-        <pre className="wb-pre wb-approval-diff">
-          {edit.before.split("\n").map((line) => `- ${line}`).join("\n")}
-          {"\n"}
-          {edit.after.split("\n").map((line) => `+ ${line}`).join("\n")}
-        </pre>
-      )}
-      {block.blockedPath && <div className="wb-approval-meta"><span className="wb-mono">경로</span> {block.blockedPath}</div>}
-      {block.agentID && <div className="wb-approval-meta"><span className="wb-mono">서브에이전트</span> {block.agentID}</div>}
-      {rule && <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {rule.hint}</div>}
-      {block.resolved ? (
-        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "승인함" : "거부함"}</span>
-      ) : (
-        <div className="wb-approval-actions">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
-          <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
-          {/* The title says what gets stored, not that the asking stops.
-              Measured: a later turn can still be held up by a separate gate (a
-              write outside the allowed directories), and THAT one is only ever
-              grantable for the session — so no choice here can promise silence,
-              and claiming otherwise is the lie the user notices first. */}
-          {rule && (
-            <button type="button" className="wb-btn wb-btn-soft" title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`} onClick={() => decide("always")}>
-              항상 허용 (규칙)
-            </button>
-          )}
+      <div className="wb-approval-body">
+        {/* For an edit the SDK's description is just the file name, which the
+            file row below already states — so it would read twice. */}
+        {block.description && !(filePath && filePath.endsWith(block.description)) && (
+          <p className="wb-approval-desc">{block.description}</p>
+        )}
+        {command && <pre className="wb-pre wb-approval-cmd"><span className="wb-approval-diff-mark">$</span> {command}</pre>}
+        {edit && (
+          <>
+            {filePath && (
+              <div className="wb-approval-file">
+                <span className="wb-approval-file-kind">수정</span>
+                <span className="wb-approval-file-path">{shortPath(filePath)}</span>
+              </div>
+            )}
+            <DiffLines before={edit.before} after={edit.after} />
+          </>
+        )}
+        {block.blockedPath && <div className="wb-approval-meta"><span className="wb-mono">경로</span><span>{block.blockedPath}</span></div>}
+        {block.agentID && <div className="wb-approval-meta"><span className="wb-mono">서브에이전트</span><span>{block.agentID}</span></div>}
+      </div>
+      <div className="wb-approval-actions">
+        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
+        <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
+        {/* States what gets stored, not that the asking stops. Measured: a later
+            turn can still be held up by a separate gate (a write outside the
+            allowed directories), and THAT one is only ever grantable for the
+            session — so no choice here can promise silence, and claiming
+            otherwise is the lie the user notices first. */}
+        {rule && (
+          <button
+            type="button"
+            className="wb-btn wb-btn-soft wb-btn-widest wb-btn-rule"
+            title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`}
+            onClick={() => decide("always")}
+          >
+            <span>항상 허용</span>
+            <span className="wb-btn-rule-hint">{rule.hint}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Harness · model, shown small on the right of the head. */
+function approvalOrigin(view: MemberView): string {
+  const harness = harnessShort((view.member as { runtime?: string } | undefined)?.runtime);
+  return [harness, view.model].filter(Boolean).join(" · ");
+}
+
+/** Trims a long absolute path to its tail, which is the part that identifies it. */
+function shortPath(value: string): string {
+  const parts = value.split(/[\\/]/).filter(Boolean);
+  return parts.length <= 2 ? value : `…/${parts.slice(-2).join("/")}`;
+}
+
+/** Before/after as tinted −/+ rows rather than one undifferentiated block. */
+function DiffLines({ before, after, diff }: { before?: string; after?: string; diff?: string }) {
+  const rows: Array<{ mark: string; text: string; cls: string }> = [];
+  if (typeof diff === "string") {
+    for (const line of diff.split("\n")) {
+      if (!line) continue;
+      const add = line.startsWith("+");
+      const del = line.startsWith("-");
+      rows.push({ mark: add ? "+" : del ? "−" : " ", text: add || del ? line.slice(1) : line, cls: add ? "is-add" : del ? "is-del" : "" });
+    }
+  } else {
+    for (const line of (before || "").split("\n")) rows.push({ mark: "−", text: line, cls: "is-del" });
+    for (const line of (after || "").split("\n")) rows.push({ mark: "+", text: line, cls: "is-add" });
+  }
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div className="wb-approval-diff">
+      {rows.map((row, index) => (
+        <div className={`wb-approval-diff-line ${row.cls}`} key={index}>
+          <span className="wb-approval-diff-mark">{row.mark}</span>
+          {row.text}
         </div>
-      )}
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A handled approval, collapsed to one line.
+ *
+ * It stays in the transcript rather than disappearing: scrolling back is how
+ * someone answers "what did I agree to", and that needs the WHAT and the scope
+ * on the same line, not just a coloured badge.
+ */
+function ResolvedApproval({ block, density, summary, scope }: { block: Extract<TranscriptBlock, { kind: "approval" }>; density: PanelDensity; summary: string; scope?: string }) {
+  const allowed = block.resolved === "allow";
+  return (
+    <div className={`wb-block wb-approval is-resolved density-${density}${allowed ? "" : " is-denied"}`}>
+      {allowed ? <Check size={14} /> : <X size={14} />}
+      <span className="wb-approval-resolved-label">{allowed ? "허용함" : "거부함"}</span>
+      <span className="wb-approval-resolved-summary" title={summary}>{summary}</span>
+      {allowed && scope && <span className="wb-approval-resolved-scope">{scope}</span>}
     </div>
   );
 }
@@ -770,12 +856,25 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
   const options = codexApprovalOptions(codex);
   const decide = (decision: CodexDecision) =>
     actions.approve(view.name, block.requestId, decision === "decline" ? "deny" : "allow", { codexDecision: decision });
+  if (block.resolved) {
+    return (
+      <ResolvedApproval
+        block={block}
+        density={density}
+        summary={codex.commandDisplay || codex.command || codex.edits?.map((edit) => edit.path).join(", ") || block.title || "요청"}
+        scope="이번만"
+      />
+    );
+  }
   return (
     <div className={"wb-block wb-approval wb-codex-approval density-" + density}>
       <div className="wb-approval-head">
         {CODEX_APPROVAL_ICON[codex.kind]}
         <strong>{block.title || "Codex 승인 요청"}</strong>
+        <span className="wb-approval-head-spacer" />
+        <span className="wb-approval-origin">{approvalOrigin(view)}</span>
       </div>
+      <div className="wb-approval-body">
       {/* The reason used to render only when there was no command — which meant
           it never showed on a command approval, the one kind that always has
           both. Measured: the reason is a full sentence explaining the ask. */}
@@ -783,44 +882,53 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
       {codex.command && (
         // Lead with Codex's own parse; the wrapper underneath is what actually
         // runs, so it stays visible rather than being quietly swapped out.
-        <pre className="wb-pre wb-approval-cmd">$ {codex.commandDisplay || codex.command}</pre>
+        <pre className="wb-pre wb-approval-cmd"><span className="wb-approval-diff-mark">$</span> {codex.commandDisplay || codex.command}</pre>
       )}
-      {codex.commandDisplay && codex.command !== codex.commandDisplay && (
-        <div className="wb-approval-meta"><span className="wb-mono">실행</span> {codex.command}</div>
-      )}
-      {codex.cwd && <div className="wb-approval-meta"><span className="wb-mono">cwd</span> {codex.cwd}</div>}
-      {codex.diff && <pre className="wb-pre wb-approval-diff">{codex.diff}</pre>}
+      <div className="wb-approval-meta">
+        {codex.commandDisplay && codex.command !== codex.commandDisplay && (
+          <><span className="wb-mono">실행</span><span>{codex.command}</span></>
+        )}
+        {codex.cwd && <><span className="wb-mono">작업 폴더</span><span>{codex.cwd}</span></>}
+      </div>
+      {codex.diff && <DiffLines diff={codex.diff} />}
       {/* A file-change approval carries no diff of its own; these are joined from
           the item it names, so the user can see the edit before allowing it. */}
       {!codex.diff && codex.edits?.map((edit) => (
-        <div key={edit.path}>
-          <div className="wb-approval-meta">
-            <span className="wb-mono">{edit.kind}</span> {edit.path}
-            {(edit.added || edit.removed) ? <span className="wb-chip wb-mono">+{edit.added} −{edit.removed}</span> : null}
+        <div key={edit.path} className="wb-approval-filechange">
+          <div className="wb-approval-file">
+            <span className="wb-approval-file-kind">{edit.kind}</span>
+            <span className="wb-approval-file-path">{shortPath(edit.path)}</span>
+            {(edit.added || edit.removed) ? <span className="wb-approval-file-stat">+{edit.added} −{edit.removed}</span> : null}
           </div>
-          {edit.diff && <pre className="wb-pre wb-approval-diff">{edit.diff}</pre>}
+          {edit.diff && <DiffLines diff={edit.diff} />}
         </div>
       ))}
-      {codex.canAlways && codex.alwaysHint && (
-        <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {codex.alwaysHint}</div>
-      )}
-      {block.resolved ? (
-        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "승인함" : "거부함"}</span>
-      ) : (
-        <div className="wb-approval-actions wb-codex-approval-actions">
-          {options.map((decision) => (
-            <button
-              key={decision}
-              type="button"
-              title={CODEX_DECISION_HINTS[decision]}
-              className={"wb-btn " + (decision === "decline" ? "wb-btn-ghost" : decision === "once" ? "wb-btn-member" : "wb-btn-soft")}
-              onClick={() => decide(decision)}
-            >
-              {CODEX_DECISION_LABELS[decision]}
-            </button>
-          ))}
-        </div>
-      )}
+      </div>
+      <div className="wb-approval-actions wb-codex-approval-actions">
+        {options.map((decision) => (
+          <button
+            key={decision}
+            type="button"
+            title={CODEX_DECISION_HINTS[decision]}
+            className={
+              "wb-btn "
+              + (decision === "decline" ? "wb-btn-ghost" : decision === "once" ? "wb-btn-member" : "wb-btn-soft")
+              // Emphasis drops as the scope widens, so "이번만" stays the default.
+              + (decision === "always" ? " wb-btn-widest wb-btn-rule" : decision === "session" ? " wb-btn-widest" : "")
+            }
+            onClick={() => decide(decision)}
+          >
+            {decision === "always" && codex.alwaysHint ? (
+              <>
+                <span>항상 허용</span>
+                <span className="wb-btn-rule-hint">{codex.alwaysHint}</span>
+              </>
+            ) : (
+              CODEX_DECISION_LABELS[decision]
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

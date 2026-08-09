@@ -93,12 +93,27 @@ export function claudeApprovalFields(
   return {
     toolName,
     input: withFilePath(input),
-    title: options.title || options.displayName,
+    // The heading names the TYPE of approval, not the tool — the tool already
+    // has its own chip beside it, and "Bash" twice tells the user nothing about
+    // what they are being asked to allow. The SDK's own prompt sentence wins
+    // when it sends one (measured: it usually does not).
+    title: options.title || claudeApprovalTitle(toolName),
     description: options.description || options.decisionReason,
     suggestions: options.suggestions,
     blockedPath: options.blockedPath,
     agentID: options.agentID,
   };
+}
+
+/** Claude has no approval "kind" of its own, so the tool decides the heading. */
+export function claudeApprovalTitle(toolName: string): string {
+  if (/^(Bash|BashOutput|KillShell)$/.test(toolName)) {
+    return approvalTitle("command");
+  }
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName)) {
+    return approvalTitle("fileChange");
+  }
+  return approvalTitle("generic");
 }
 
 /**

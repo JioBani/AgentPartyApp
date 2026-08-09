@@ -294,7 +294,8 @@ for (const name of ["backend", "frontend", "reviewer", "tester"]) {
 }
 assert(text.includes("verifyRefresh"), "backend assistant transcript streamed");
 assert(text.includes("read_file"), "tool block rendered");
-assert(text.includes("Approval required"), "reviewer approval card rendered");
+// The heading names the approval TYPE now, in Korean like the rest of the card.
+assert(text.includes("승인"), "reviewer approval card rendered");
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
 
