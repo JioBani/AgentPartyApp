@@ -17,6 +17,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
   "claude-code": "새 멤버가 첫 작업부터 사용할 Claude Code 권한 모드입니다.",
   codex: "Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.",
   cursor: "Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.",
+  grok: "Grok Build는 도구 실행을 클라이언트에 묻지 않습니다. 플랜 모드만 적용되고, 나머지 권한 설정은 이 하니스에 영향을 주지 않습니다.",
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
@@ -56,7 +57,14 @@ const CURSOR_HARNESS: HarnessChoice = {
   icon: <HarnessIcon harness="cursor" size={16} />,
   hint: "Cursor Agent CLI · Auto / Grok 4.5",
 };
-const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS];
+const GROK_HARNESS: HarnessChoice = {
+  id: "grok",
+  label: "Grok Build",
+  status: "available",
+  icon: <HarnessIcon harness="grok" size={16} />,
+  hint: "xAI Grok Build CLI · 구독 · 도구를 스스로 승인",
+};
+const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS];
 
 /**
  * Creating a party member, in three steps: identity → runtime → permission.
@@ -158,7 +166,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
   const selectedHarness = ALL_HARNESSES.find((item) => item.id === harness);
-  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : "claude-code";
+  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : "claude-code";
 
   useEffect(() => {
     if (executionHarness === "codex") {
@@ -335,7 +343,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
             {step === "permission" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span></div>
+              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : executionHarness === "grok" ? "Grok Build" : "Claude Code"}</span></div>
               <HarnessPermissionControl
                 harnessId={executionHarness}
                 variant="inline"

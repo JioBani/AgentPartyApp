@@ -5,7 +5,7 @@ import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 
 export interface HarnessSession extends EventEmitter {
   start(): void;
@@ -80,5 +80,11 @@ export const harnesses: HarnessDescriptor[] = [
     label: "Cursor CLI",
     status: "available",
     description: "Cursor Agent CLI harness with Auto and Cursor Grok 4.5.",
+  },
+  {
+    id: "grok",
+    label: "Grok Build",
+    status: "available",
+    description: "xAI's Grok Build CLI over ACP, on your Grok subscription. Approves its own tool calls.",
   },
 ];

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
@@ -1285,7 +1285,7 @@ export function App() {
   };
 
   /** Persists one harness's creation defaults (model/effort/reasoning/permission). */
-  async function saveHarnessDefaults(harnessId: "claude-code" | "codex" | "cursor", patch: Partial<HarnessDefaults>) {
+  async function saveHarnessDefaults(harnessId: HarnessId, patch: Partial<HarnessDefaults>) {
     const current = state.settings.harnessDefaults[harnessId];
     const settings = await window.agentParty.updateSettings({
       harnessDefaults: { ...state.settings.harnessDefaults, [harnessId]: { ...current, ...patch } },
@@ -1294,7 +1294,7 @@ export function App() {
   }
 
   /** Sets which harness a brand-new member defaults to. */
-  async function setDefaultHarness(harnessId: "claude-code" | "codex" | "cursor") {
+  async function setDefaultHarness(harnessId: HarnessId) {
     const settings = await window.agentParty.updateSettings({ selectedHarnessId: harnessId });
     setState((prev) => ({ ...prev, settings }));
   }

@@ -90,11 +90,11 @@ export function buildChannelPayload(message: PartyMessage, target: PartyMember):
 }
 
 export function normalizeRuntime(value: unknown): PartyMember["runtime"] {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "claude" ? "claude" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : value === "claude" ? "claude" : "claude-code";
 }
 
 export function normalizeHarnessId(value: unknown): HarnessId {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : "claude-code";
 }
 
 export function normalizeMemberName(value: unknown): string {
