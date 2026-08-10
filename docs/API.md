@@ -247,6 +247,30 @@ Codex/ChatGPT subscription proxy.
 A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
 
+### Grok
+
+Grok reaches the app two ways, both paid for by the user's Grok subscription and
+both reading the credential the official CLI wrote (`grok login`). AgentParty
+only ever READS it: the refresh token rotates under the CLI's own lock, so a
+second writer would invalidate the login. `GET /api/auth` reports a `grok`
+provider that separates "not installed" from "installed but not signed in".
+
+- **Grok models on the Claude Code harness** — `selectedProviderId: "xai"` with a
+  catalog model such as `Grok 4.5 xAI`. The embedded gateway forwards to
+  `api.x.ai/v1/messages`, xAI's Anthropic-compatible surface.
+- **The Grok Build harness** — `selectedHarnessId: "grok"` (member `runtime:
+  "grok"`), which runs the official `grok` CLI over ACP. Party tools reach it
+  through `session/new`'s `mcpServers`, so nothing is written to disk.
+
+Three xAI-side limits are reported rather than hidden, measured 2026-08-10:
+reasoning **effort is ignored** on both paths (it is pinned in the catalog and
+refused by the harness instead of offered); the Grok Build harness **never asks
+for tool approval**, so its permission capability is declared unsupported; and
+`GET /api/usage` reports the `grok` provider as `available: false` because xAI
+publishes no plan-quota surface. Per-turn tokens ARE recorded — the gateway
+measures them from the upstream response, because Claude Code reports zeros for
+router-backed models.
+
 `favoriteModels` is the list of catalog model **ids** the user has starred. The
 model catalog pins them above the provider groups, in catalog order. It drives
 the same path as the star button in the catalog UI, e.g.

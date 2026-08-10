@@ -83,6 +83,24 @@ export async function resolveGrokCli(explicit?: string): Promise<GrokCliInfo> {
 }
 
 /**
+ * Where the `grok` binary sits, without running it.
+ *
+ * The Authentication view builds synchronously, so it cannot await the
+ * `--version` probe {@link resolveGrokCli} uses to tell the official build from
+ * the same-named community one. This answers the weaker question the settings
+ * screen actually asks — "is it installed at all" — and start-up still does the
+ * full identity check before spawning anything.
+ */
+export function grokCliInstalledPath(explicit?: string): string | undefined {
+  for (const candidate of candidatePaths(explicit)) {
+    if (candidate !== "grok" && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Environment for a Grok Build child.
  *
  * `--no-auto-update` is a GLOBAL flag and must precede the subcommand, which is
