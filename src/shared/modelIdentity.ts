@@ -16,6 +16,7 @@
  * downstream code branches on `Backend.kind`, never on the model spelling.
  */
 import { resolveCatalogModel } from "./modelCatalog";
+import { harnessLabel } from "./types";
 
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
@@ -122,17 +123,16 @@ const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
 /** Providers that ship a harness of their own; every other provider has none. */
 const PROVIDERS_WITH_A_HARNESS = new Set(Object.values(HARNESS_NATIVE_PROVIDER));
 
-const HARNESS_LABEL: Record<HarnessId, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor CLI",
-  grok: "Grok Build",
-};
-
+/**
+ * Vendor names for the lock message. Every provider in
+ * `PROVIDERS_WITH_A_HARNESS` needs an entry — a missing one falls back to the
+ * raw catalog id and the user reads "xai 구독 모델을…".
+ */
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   cursor: "Cursor",
+  xai: "Grok",
 };
 
 /**
@@ -162,7 +162,7 @@ export function crossHarnessLockReason(model: string, harnessId: HarnessId): str
     return undefined;
   }
   const providerLabel = PROVIDER_LABEL[provider] || provider;
-  return `베타 기간에는 잠긴 조합입니다. ${providerLabel} 구독 모델을 ${HARNESS_LABEL[harnessId]} 하네스에서 실행하는 경로는 정식 공개 때 다시 엽니다.`;
+  return `베타 기간에는 잠긴 조합입니다. ${providerLabel} 구독 모델을 ${harnessLabel(harnessId)} 하네스에서 실행하는 경로는 정식 공개 때 다시 엽니다.`;
 }
 
 /** The exact model id string this backend hands to the harness/router. */

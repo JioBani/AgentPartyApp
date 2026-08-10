@@ -21,7 +21,7 @@ async function load(entry, name) {
   return import(pathToFileURL(out).href);
 }
 
-const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider } = await load("src/core/modelRegistry.ts", "mr.mjs");
+const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider, grokHarnessRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
 const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
@@ -130,7 +130,21 @@ const cursorModelCount = modelCatalog().filter((m) => m.cursorModel).length;
 const cursorBridgeServesClaudeCode = modelCatalog().some((m) => m.provider === "cursor" && m.cursorAcpModelId);
 const unavailableCursorProviderCount = cursorModelCount * (cursorBridgeServesClaudeCode ? 1 : 2);
 const deepseekCodexCount = deepseekModels().length;
-assert(modelCatalog().length + codexAccountCount + orRoutedModels().length + claudeSubscriptionModels().length + deepseekCodexCount + modelCatalog().length + unavailableCursorProviderCount + 1 === routes.length, "all catalog combinations plus executable Cursor routes are produced");
+// One term per route-producing rule in buildModelRoutes, named so that adding a
+// harness shows up here as a missing term rather than as an off-by-N on an
+// anonymous sum. The Grok Build CLI owns its own model list (the catalog does
+// not route it), so its count comes from the registry, not from modelCatalog().
+const expectedRouteCount =
+  modelCatalog().length            // claude-code: every catalog entry
+  + codexAccountCount              // codex: native OpenAI models
+  + orRoutedModels().length        // codex: OpenRouter-served models
+  + claudeSubscriptionModels().length  // codex: Claude subscription models
+  + deepseekCodexCount             // codex: DeepSeek's own API
+  + grokHarnessRoutes().length     // grok: what the Grok Build CLI serves
+  + modelCatalog().length          // cursor: every catalog entry
+  + unavailableCursorProviderCount // cursor-provider models parked on other harnesses
+  + 1;                             // cursor: the Auto route
+assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor and Grok routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
 // DeepSeek direct API: claude-code reaches every model through the Anthropic
 // endpoint; codex only reaches the ones DeepSeek serves on the Responses wire.
 console.log("\nDeepSeek direct API routes:");

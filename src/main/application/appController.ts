@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
+import { harnessDefaultsOf, harnessForRuntime } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
@@ -192,7 +192,7 @@ export class AppController {
       try {
         const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
         for (const member of party.members || []) {
-          const harnessId = member.runtime === "codex" ? "codex" : member.runtime === "cursor" ? "cursor" : "claude-code";
+          const harnessId = harnessForRuntime(member.runtime);
           const provider = providerOfHarness(harnessId);
           if (provider) {
             providers.add(provider);

@@ -45,7 +45,13 @@ console.log("\nharness accessors:");
 assert(T.harnessDefaultsOf(settings).model === "sonnet", "harnessDefaultsOf defaults to the selected harness");
 assert(T.harnessDefaultsOf(settings, "codex").model === "gpt-5.4-mini", "harnessDefaultsOf resolves a specific harness");
 assert(T.defaultMemberProfileOf(settings, "codex").codexPolicy?.sandbox === "read-only", "codex profile carries the codex policy default");
-assert(T.HARNESS_IDS.join() === "claude-code,codex,cursor", "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
+assert(T.HARNESS_IDS.join() === "claude-code,codex,cursor,grok", "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
+// A member's stored runtime must resolve to a harness for EVERY spelling. The
+// hand-written ternaries this replaced knew only codex/cursor, so a Grok member
+// fell through to Claude Code and was shown Claude Code's model catalog.
+assert(T.harnessForRuntime("grok") === "grok" && T.harnessForRuntime("cursor") === "cursor" && T.harnessForRuntime("codex") === "codex", "harnessForRuntime maps each runtime to its own harness");
+assert(T.harnessForRuntime("claude") === "claude-code" && T.harnessForRuntime(undefined) === "claude-code", "the legacy 'claude' spelling and an unset runtime both mean Claude Code");
+assert(T.HARNESS_IDS.every((id) => Boolean(T.harnessLabel(id))), "every harness has a UI label");
 assert(CP.cursorPolicyFromLegacyPermission("plan").mode === "plan", "legacy Cursor plan keeps Plan mode");
 assert(CP.cursorPolicyFromLegacyPermission("auto").approval === "auto-review", "legacy Cursor auto keeps Auto-review");
 assert(CP.cursorPolicyFromLegacyPermission("bypassPermissions").approval === "unrestricted", "legacy Cursor bypass keeps Run Everything");

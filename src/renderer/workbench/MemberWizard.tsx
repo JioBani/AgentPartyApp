@@ -9,6 +9,7 @@ import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
+import { harnessLabel } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
 
@@ -343,7 +344,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
             {step === "permission" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{executionHarness === "codex" ? "Codex" : executionHarness === "cursor" ? "Cursor CLI" : executionHarness === "grok" ? "Grok Build" : "Claude Code"}</span></div>
+              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{harnessLabel(executionHarness)}</span></div>
               <HarnessPermissionControl
                 harnessId={executionHarness}
                 variant="inline"

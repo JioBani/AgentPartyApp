@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronRight, ExternalLink, KeyRound, Lock, Plug, Power,
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../../shared/mcp";
+import { harnessForRuntime, harnessLabel } from "../../shared/types";
 
 interface McpModalProps {
   view: MemberView;
@@ -30,7 +31,7 @@ const MAX_TOOL_CHIPS = 16;
  * (canReconnect / canToggle / canAuthenticate) — never a button that no-ops.
  */
 export function McpModal({ view, actions, onClose }: McpModalProps) {
-  const fallbackHarness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
+  const fallbackHarness = harnessForRuntime(view.member.runtime);
   const [snapshot, setSnapshot] = useState<McpServerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -158,7 +159,7 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
               <span className="mcp-mem-dot" style={{ background: view.color }} />
               <span className="mcp-mem-name">{view.name}</span>
               <span className="mcp-sep" />
-              <span className="wb-mono mcp-harness">{(snapshot?.harness || fallbackHarness) === "codex" ? "Codex" : "Claude Code"}</span>
+              <span className="wb-mono mcp-harness">{harnessLabel(snapshot?.harness || fallbackHarness)}</span>
             </span>
           </div>
           <div className="mcp-head-actions">

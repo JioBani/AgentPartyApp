@@ -10,6 +10,7 @@ import { PROVIDER_DOTS, PROVIDER_LABELS, modelView, routeProvider } from "./mode
 import { CostMeter, PerfMeter, perfLabel, type RouteEntry } from "./modelMeters";
 import { buildCatalogView, catalogCountLabel, initialProvOpen } from "./modelCatalogGroups";
 import { toggleFavoriteModelId, useFavoriteModels } from "../app/favoriteModelPrefs";
+import { HARNESS_IDS, harnessLabel } from "../../shared/types";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -61,12 +62,7 @@ interface ModelCatalogModalProps {
   dim?: boolean;
 }
 
-const HARNESS_CHOICES = [
-  { id: "claude-code", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-  { id: "cursor", label: "Cursor CLI" },
-  { id: "grok", label: "Grok Build" },
-];
+const HARNESS_CHOICES = HARNESS_IDS.map((id) => ({ id, label: harnessLabel(id) }));
 
 /**
  * The single reusable model-catalog modal (the Runtime picker's UI, extracted).

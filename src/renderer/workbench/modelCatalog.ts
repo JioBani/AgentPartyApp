@@ -46,11 +46,17 @@ export interface ModelView {
   context: string;
 }
 
-const PROVIDERS: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "custom"];
+/**
+ * Derived from PROVIDER_LABELS on purpose: a hand-written second copy of this
+ * list is how `xai` routes silently rendered as "Custom" — the provider was
+ * added to the labels, the dots and the group order, but not to the membership
+ * check. Adding a key to PROVIDER_LABELS is now the only step.
+ */
+const PROVIDERS = new Set<string>(Object.keys(PROVIDER_LABELS));
 
 export function routeProvider(route: RouteLike): ProviderId {
   const provider = route.providerId as ProviderId;
-  return PROVIDERS.includes(provider) ? provider : "custom";
+  return PROVIDERS.has(provider) ? provider : "custom";
 }
 
 function price(value: number | undefined): string | undefined {
