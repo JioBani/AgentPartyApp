@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -6,6 +6,8 @@ import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
+import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
+import { harnessShort } from "./harnessLabel";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
 import { isTranscriptAtCap } from "../../shared/transcriptCap";
@@ -797,24 +799,151 @@ function ApprovalBlock({ block, view, density, actions }: { block: Extract<Trans
   if (block.codex) {
     return <CodexApprovalBlock block={block} codex={block.codex} view={view} density={density} actions={actions} />;
   }
+  return <ClaudeApprovalBlock block={block} view={view} density={density} actions={actions} />;
+}
+
+/**
+ * Claude Code approval card.
+ *
+ * Shows what the SDK actually sends (measured, see scripts/fixtures/approvals):
+ * the command or the edit's before/after, the path that triggered the prompt,
+ * and — when the request carries one — the rule "always allow" would store, in
+ * words. That last part is why the choice can be offered at all: the SDK hands
+ * over ready-made permission updates, so agreeing to a stated rule is a real
+ * action rather than a promise the app cannot keep.
+ */
+function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract<TranscriptBlock, { kind: "approval" }>; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
   const command = approvalCommand(block.input);
+  const edit = approvalEdit(block.input);
+  const rule = claudeAlwaysRule(block.suggestions);
+  const decide = (scope?: "always") =>
+    actions.approve(view.name, block.requestId, "allow", scope ? { __approvalScope: scope } : undefined);
+  const filePath = extractToolFilePath(block.input);
+
+  if (block.resolved) {
+    return (
+      <ResolvedApproval
+        block={block}
+        density={density}
+        summary={command || filePath || block.description || block.toolName}
+        scope={block.resolved === "allow" ? "이번만" : undefined}
+      />
+    );
+  }
   return (
     <div className={"wb-block wb-approval density-" + density}>
       <div className="wb-approval-head">
-        <ShieldCheck size={14} />
-        <strong>Approval required</strong>
+        <ShieldCheck size={15} />
+        <strong>{block.title || "승인 요청"}</strong>
         <span className="wb-chip wb-mono">{block.toolName}</span>
+        <span className="wb-approval-head-spacer" />
+        <span className="wb-approval-origin">{approvalOrigin(view)}</span>
       </div>
-      {block.description && <p className="wb-approval-desc">{block.description}</p>}
-      {command && <pre className="wb-pre wb-approval-cmd">{command}</pre>}
-      {block.resolved ? (
-        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "Allowed" : "Denied"}</span>
-      ) : (
-        <div className="wb-approval-actions">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>Deny</button>
-          <button type="button" className="wb-btn wb-btn-member" onClick={() => actions.approve(view.name, block.requestId, "allow")}>Allow once</button>
+      <div className="wb-approval-body">
+        {/* For an edit the SDK's description is just the file name, which the
+            file row below already states — so it would read twice. */}
+        {block.description && !(filePath && filePath.endsWith(block.description)) && (
+          <p className="wb-approval-desc">{block.description}</p>
+        )}
+        {command && <pre className="wb-pre wb-approval-cmd"><span className="wb-approval-diff-mark">$</span> {command}</pre>}
+        {edit && (
+          <>
+            {filePath && (
+              <div className="wb-approval-file">
+                <span className="wb-approval-file-kind">수정</span>
+                <span className="wb-approval-file-path">{shortPath(filePath)}</span>
+              </div>
+            )}
+            <DiffLines before={edit.before} after={edit.after} />
+          </>
+        )}
+        {/* No label/value grid here. Codex sends two rows that need aligning
+            (실행 + 작업 폴더); Claude sends one path, and borrowing the grid left
+            a 76px label column holding a single item with empty space beside it.
+            The harnesses send different data, so they get different bodies. */}
+        {block.blockedPath && <div className="wb-approval-path">{block.blockedPath}</div>}
+        {block.agentID && <div className="wb-approval-path">서브에이전트 {block.agentID}</div>}
+      </div>
+      <div className="wb-approval-actions">
+        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
+        <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
+        {/* States what gets stored, not that the asking stops. Measured: a later
+            turn can still be held up by a separate gate (a write outside the
+            allowed directories), and THAT one is only ever grantable for the
+            session — so no choice here can promise silence, and claiming
+            otherwise is the lie the user notices first. */}
+        {rule && (
+          <button
+            type="button"
+            className={"wb-btn wb-btn-soft wb-btn-widest" + (ruleAddsInformation(rule.hint, command) ? " wb-btn-rule" : "")}
+            title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`}
+            onClick={() => decide("always")}
+          >
+            <span>항상 허용</span>
+            {ruleAddsInformation(rule.hint, command) && <span className="wb-btn-rule-hint">{rule.hint}</span>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Harness · model, shown small on the right of the head. */
+function approvalOrigin(view: MemberView): string {
+  const harness = harnessShort((view.member as { runtime?: string } | undefined)?.runtime);
+  return [harness, view.model].filter(Boolean).join(" · ");
+}
+
+/** Trims a long absolute path to its tail, which is the part that identifies it. */
+function shortPath(value: string): string {
+  const parts = value.split(/[\\/]/).filter(Boolean);
+  return parts.length <= 2 ? value : `…/${parts.slice(-2).join("/")}`;
+}
+
+/** Before/after as tinted −/+ rows rather than one undifferentiated block. */
+function DiffLines({ before, after, diff }: { before?: string; after?: string; diff?: string }) {
+  const rows: Array<{ mark: string; text: string; cls: string }> = [];
+  if (typeof diff === "string") {
+    for (const line of diff.split("\n")) {
+      if (!line) continue;
+      const add = line.startsWith("+");
+      const del = line.startsWith("-");
+      rows.push({ mark: add ? "+" : del ? "−" : " ", text: add || del ? line.slice(1) : line, cls: add ? "is-add" : del ? "is-del" : "" });
+    }
+  } else {
+    for (const line of (before || "").split("\n")) rows.push({ mark: "−", text: line, cls: "is-del" });
+    for (const line of (after || "").split("\n")) rows.push({ mark: "+", text: line, cls: "is-add" });
+  }
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div className="wb-approval-diff">
+      {rows.map((row, index) => (
+        <div className={`wb-approval-diff-line ${row.cls}`} key={index}>
+          <span className="wb-approval-diff-mark">{row.mark}</span>
+          {row.text}
         </div>
-      )}
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A handled approval, collapsed to one line.
+ *
+ * It stays in the transcript rather than disappearing: scrolling back is how
+ * someone answers "what did I agree to", and that needs the WHAT and the scope
+ * on the same line, not just a coloured badge.
+ */
+function ResolvedApproval({ block, density, summary, scope }: { block: Extract<TranscriptBlock, { kind: "approval" }>; density: PanelDensity; summary: string; scope?: string }) {
+  const allowed = block.resolved === "allow";
+  return (
+    <div className={`wb-block wb-approval is-resolved density-${density}${allowed ? "" : " is-denied"}`}>
+      {allowed ? <Check size={14} /> : <X size={14} />}
+      <span className="wb-approval-resolved-label">{allowed ? "허용함" : "거부함"}</span>
+      <span className="wb-approval-resolved-summary" title={summary}>{summary}</span>
+      {allowed && scope && <span className="wb-approval-resolved-scope">{scope}</span>}
     </div>
   );
 }
@@ -838,44 +967,86 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
   const options = codexApprovalOptions(codex);
   const decide = (decision: CodexDecision) =>
     actions.approve(view.name, block.requestId, decision === "decline" ? "deny" : "allow", { codexDecision: decision });
+  if (block.resolved) {
+    return (
+      <ResolvedApproval
+        block={block}
+        density={density}
+        summary={codex.commandDisplay || codex.command || codex.edits?.map((edit) => edit.path).join(", ") || block.title || "요청"}
+        scope="이번만"
+      />
+    );
+  }
   return (
     <div className={"wb-block wb-approval wb-codex-approval density-" + density}>
       <div className="wb-approval-head">
         {CODEX_APPROVAL_ICON[codex.kind]}
         <strong>{block.title || "Codex 승인 요청"}</strong>
+        <span className="wb-approval-head-spacer" />
+        <span className="wb-approval-origin">{approvalOrigin(view)}</span>
       </div>
+      <div className="wb-approval-body">
+      {/* The reason used to render only when there was no command — which meant
+          it never showed on a command approval, the one kind that always has
+          both. Measured: the reason is a full sentence explaining the ask. */}
+      {codex.reason && <p className="wb-approval-desc">{codex.reason}</p>}
       {codex.command && (
-        <pre className="wb-pre wb-approval-cmd">$ {codex.command}</pre>
+        // Lead with Codex's own parse; the wrapper underneath is what actually
+        // runs, so it stays visible rather than being quietly swapped out.
+        <pre className="wb-pre wb-approval-cmd"><span className="wb-approval-diff-mark">$</span> {codex.commandDisplay || codex.command}</pre>
       )}
-      {codex.cwd && <div className="wb-approval-meta"><span className="wb-mono">cwd</span> {codex.cwd}</div>}
-      {codex.diff && <pre className="wb-pre wb-approval-diff">{codex.diff}</pre>}
-      {codex.reason && !codex.command && <p className="wb-approval-desc">{codex.reason}</p>}
-      {codex.canAlways && codex.alwaysHint && (
-        <div className="wb-approval-meta"><span className="wb-mono">규칙</span> {codex.alwaysHint}</div>
-      )}
-      {block.resolved ? (
-        <span className={"wb-status-badge " + (block.resolved === "allow" ? "is-allow" : "is-deny")}>{block.resolved === "allow" ? "승인함" : "거부함"}</span>
-      ) : (
-        <div className="wb-approval-actions wb-codex-approval-actions">
-          {options.map((decision) => (
-            <button
-              key={decision}
-              type="button"
-              title={CODEX_DECISION_HINTS[decision]}
-              className={"wb-btn " + (decision === "decline" ? "wb-btn-ghost" : decision === "once" ? "wb-btn-member" : "wb-btn-soft")}
-              onClick={() => decide(decision)}
-            >
-              {CODEX_DECISION_LABELS[decision]}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="wb-approval-meta">
+        {codex.commandDisplay && codex.command !== codex.commandDisplay && (
+          <><span className="wb-mono">실행</span><span>{codex.command}</span></>
+        )}
+        {codex.cwd && <><span className="wb-mono">작업 폴더</span><span>{codex.cwd}</span></>}
+      </div>
+      {codex.diff && <DiffLines diff={codex.diff} />}
+      {/* A file-change approval carries no diff of its own; these are joined from
+          the item it names, so the user can see the edit before allowing it. */}
+      {!codex.diff && codex.edits?.map((edit) => (
+        <Fragment key={edit.path}>
+          <div className="wb-approval-file">
+            <span className="wb-approval-file-kind">{edit.kind}</span>
+            <span className="wb-approval-file-path">{shortPath(edit.path)}</span>
+            {(edit.added || edit.removed) ? <span className="wb-approval-file-stat">+{edit.added} −{edit.removed}</span> : null}
+          </div>
+          {edit.diff && <DiffLines diff={edit.diff} />}
+        </Fragment>
+      ))}
+      </div>
+      <div className="wb-approval-actions wb-codex-approval-actions">
+        {options.map((decision) => (
+          <button
+            key={decision}
+            type="button"
+            title={CODEX_DECISION_HINTS[decision]}
+            className={
+              "wb-btn "
+              + (decision === "decline" ? "wb-btn-ghost" : decision === "once" ? "wb-btn-member" : "wb-btn-soft")
+              // Emphasis drops as the scope widens, so "이번만" stays the default.
+              + (decision === "always" ? " wb-btn-widest wb-btn-rule" : decision === "session" ? " wb-btn-widest" : "")
+            }
+            onClick={() => decide(decision)}
+          >
+            {decision === "always" && ruleAddsInformation(codex.alwaysHint, codex.commandDisplay || codex.command) ? (
+              <>
+                <span>항상 허용</span>
+                <span className="wb-btn-rule-hint">{codex.alwaysHint}</span>
+              </>
+            ) : (
+              CODEX_DECISION_LABELS[decision]
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
 interface ParsedOption { label: string; description?: string }
-interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[]; secret?: boolean }
+/** `other` = the asker allows a free-text answer besides the listed options. */
+interface ParsedQuestion { question: string; header?: string; multiSelect: boolean; options: ParsedOption[]; secret?: boolean; other: boolean }
 
 /**
  * Renders an AskUserQuestion interaction as selectable choices. When the model
@@ -924,7 +1095,11 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
   const current = questions[clampedStep];
   const currentPicked = selections[current.question] || [];
   // A question with no preset options is pure free text: the input is always shown.
-  const otherActive = currentPicked.includes(OTHER) || current.options.length === 0;
+  // Otherwise the free-text choice appears only when the asker allows it —
+  // Codex marks that per question (`isOther`), and offering it regardless would
+  // invite an answer the tool is going to refuse.
+  const allowsOther = current.other || current.options.length === 0;
+  const otherActive = allowsOther && (currentPicked.includes(OTHER) || current.options.length === 0);
   const isLast = clampedStep === questions.length - 1;
 
   if (resolved) {
@@ -949,14 +1124,21 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
 
   return (
     <div className={"wb-block wb-approval wb-question density-" + density}>
+      {/* Same shell as an approval, deliberately without its temperature: this
+          is a question, not a risk, so nothing here is red and the actions read
+          "답변 보내기 / 건너뛰기" rather than allow/deny. */}
       <div className="wb-approval-head">
-        <ListChecks size={14} />
-        <strong>질문에 답해주세요</strong>
-        {current.header && <span className="wb-chip wb-mono">{current.header}</span>}
-        {multiple && <span className="wb-question-progress">{clampedStep + 1} / {questions.length}</span>}
+        <ListChecks size={15} />
+        <strong>답을 기다리는 중</strong>
+        {current.header && <span className="wb-chip">{current.header}</span>}
+        <span className="wb-approval-head-spacer" />
+        {multiple && <span className="wb-approval-origin">{clampedStep + 1} / {questions.length}</span>}
       </div>
       <div className="wb-question-item">
-        <p className="wb-question-text">{current.question}</p>
+        <div className="wb-question-prompt">
+          <span className="wb-question-text">{current.question}</span>
+          {current.multiSelect && <span className="wb-question-hint">복수 선택</span>}
+        </div>
         <div className="wb-question-options">
           {current.options.map((opt, oi) => {
             const active = currentPicked.includes(opt.label);
@@ -969,22 +1151,35 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
                 aria-pressed={active}
                 onClick={() => { toggle(current, opt.label); if (advance) setStep(clampedStep + 1); }}
               >
-                <span className="wb-question-option-label">{opt.label}</span>
-                {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+                {/* Round for one-of, square for many-of: the shape says how many
+                    answers are allowed before anything is clicked. */}
+                <span className={current.multiSelect ? "wb-question-mark is-box" : "wb-question-mark"}>
+                  {active && (current.multiSelect ? <Check size={10} strokeWidth={3.4} /> : <span className="wb-question-mark-dot" />)}
+                </span>
+                <span className="wb-question-option-body">
+                  <span className="wb-question-option-label">{opt.label}</span>
+                  {opt.description && <span className="wb-question-option-desc">{opt.description}</span>}
+                </span>
               </button>
             );
           })}
-          {/* Claude Code always offers a free-text answer; mirror that here. A
-              pure free-text question (no options) shows only the input, no button. */}
-          {current.options.length > 0 && (
+          {/* Offered only when the asker accepts a written-in answer. A pure
+              free-text question (no options) shows just the input, no button.
+              Dashed, because it is the one choice that is not on the list. */}
+          {allowsOther && current.options.length > 0 && (
             <button
               type="button"
               className={"wb-question-option wb-question-other" + (otherActive ? " is-active" : "")}
               aria-pressed={otherActive}
               onClick={() => toggle(current, OTHER)}
             >
-              <span className="wb-question-option-label">기타 (직접 입력)</span>
-              <span className="wb-question-option-desc">원하는 답을 직접 적습니다.</span>
+              <span className={current.multiSelect ? "wb-question-mark is-box" : "wb-question-mark"}>
+                {otherActive && (current.multiSelect ? <Check size={10} strokeWidth={3.4} /> : <span className="wb-question-mark-dot" />)}
+              </span>
+              <span className="wb-question-option-body">
+                <span className="wb-question-option-label">직접 입력</span>
+                <span className="wb-question-option-desc">원하는 답을 적습니다.</span>
+              </span>
             </button>
           )}
           {otherActive && (
@@ -1001,9 +1196,14 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
         </div>
       </div>
       <div className="wb-approval-actions">
-        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
+        {/* How many are picked, on the left, so a multi-select says what state
+            it is in without the user recounting the ticks. */}
+        {current.multiSelect && currentPicked.length > 0 && (
+          <span className="wb-approval-actions-note">{currentPicked.length}개 선택됨</span>
+        )}
+        <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
         {multiple && clampedStep > 0 && (
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={() => setStep(clampedStep - 1)}>이전</button>
+          <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => setStep(clampedStep - 1)}>이전</button>
         )}
         {isLast ? (
           <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}>답변 보내기</button>
@@ -1027,7 +1227,9 @@ function parseQuestions(input: unknown): ParsedQuestion[] {
       const options = Array.isArray(q.options)
         ? (q.options as Record<string, unknown>[]).map((o) => ({ label: String(o.label ?? ""), description: o.description ? String(o.description) : undefined })).filter((o) => o.label)
         : [];
-      return { question: String(q.question ?? q.header ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options, secret: Boolean(q.secret) };
+      // `other` defaults to true: AskUserQuestion always accepts a written-in
+      // answer, and only Codex states the restriction explicitly.
+      return { question: String(q.question ?? q.header ?? ""), header: q.header ? String(q.header) : undefined, multiSelect: Boolean(q.multiSelect), options, secret: Boolean(q.secret), other: q.other === undefined ? true : Boolean(q.other) };
     })
     // Options are optional: a request-user-input question may be pure free text
     // (the card always offers a "직접 입력" fallback), so only require the prompt.
@@ -1070,10 +1272,30 @@ function approvalCommand(input: unknown): string {
     const record = input as Record<string, unknown>;
     const command = record.command ?? record.cmd;
     if (typeof command === "string") {
-      return `$ ${command}`;
+      return command;
     }
   }
   return "";
+}
+
+/**
+ * Before/after of an Edit approval.
+ *
+ * Claude's Edit input carries `old_string`/`new_string`, so the card can show
+ * what the file change is before it happens — measured, and the reason a file
+ * diff is renderable here while a Codex approval has none to show at all.
+ */
+function approvalEdit(input: unknown): { before: string; after: string } | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  const before = record.old_string;
+  const after = record.new_string;
+  if (typeof before !== "string" || typeof after !== "string") {
+    return undefined;
+  }
+  return { before, after };
 }
 
 /**

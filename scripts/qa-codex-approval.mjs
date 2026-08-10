@@ -97,11 +97,13 @@ await settle();
 assert(Boolean(cmdHost.querySelector(".wb-codex-approval")), "codex approval card renders");
 assert(cmdHost.textContent.includes("npm test"), "the exact command is shown");
 const cmdBtns = [...cmdHost.querySelectorAll(".wb-codex-approval-actions .wb-btn")].map((b) => b.textContent);
-assert(cmdBtns.includes("항상 허용 (규칙)"), "'always' button shown because a rule was offered");
+// The rule is the button's second line, so match the label rather than the
+// whole text content: what it stores has to be readable ON the control.
+assert(cmdBtns.some((t) => t.startsWith("항상 허용")), `'always' button shown because a rule was offered (${JSON.stringify(cmdBtns)})`);
 assert(cmdBtns.includes("이 세션 동안") && cmdBtns.includes("이번만 허용") && cmdBtns.includes("거부"), "once/session/decline buttons shown");
-click([...cmdHost.querySelectorAll(".wb-codex-approval-actions .wb-btn")].find((b) => b.textContent === "이 세션 동안"));
+click([...cmdHost.querySelectorAll(".wb-codex-approval-actions .wb-btn")].find((b) => b.textContent.startsWith("이 세션")));
 assert(captured?.behavior === "allow" && captured?.updatedInput?.codexDecision === "session", "clicking 'this session' sends codexDecision=session");
-click([...cmdHost.querySelectorAll(".wb-codex-approval-actions .wb-btn")].find((b) => b.textContent === "거부"));
+click([...cmdHost.querySelectorAll(".wb-codex-approval-actions .wb-btn")].find((b) => b.textContent.startsWith("거부")));
 assert(captured?.behavior === "deny" && captured?.updatedInput?.codexDecision === "decline", "clicking decline sends deny + codexDecision=decline");
 
 console.log("\nTranscript codex file-change approval:");

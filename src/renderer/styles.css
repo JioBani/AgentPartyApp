@@ -2308,27 +2308,82 @@ body.wb-resizing {
   font-size: 11.5px;
 }
 
+/*
+ * Approval card — four layers (머리 / 본문 / 바닥), per the confirmed design in
+ * the Claude Design project ("승인 카드 — 유형별 설계", Approval Cards.dc.html).
+ *
+ * The card no longer pads itself: head and foot carry their own bands so the
+ * decision row reads as a separate surface from the thing being decided.
+ */
 .wb-approval {
-  border: var(--border-width) solid var(--member-bd, var(--accent-bd));
-  border-radius: var(--radius-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
   background: var(--bg-2);
-  box-shadow: 0 0 0 3px var(--member-ring, transparent);
-  padding: var(--space-4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 0;
 }
 
+/*
+ * Dark mode needs a stronger step: --bg-3 sits close enough to --bg-2 there that
+ * the three bands read as one surface and the structure disappears. The border
+ * does the separating instead of the fill alone.
+ */
+[data-theme="dark"] .wb-approval-head,
+[data-theme="dark"] .wb-approval-actions {
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .wb-approval-head {
+  background: var(--bg-4);
+}
+
+/* 머리 — 유형 이름이 먼저, 도구·모델은 부차 정보로 뒤에. */
 .wb-approval-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 9px;
+  padding: 11px 14px;
+  background: var(--bg-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
   color: var(--member, var(--accent));
 }
 
 .wb-approval-head strong {
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 650;
   color: var(--text-0);
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Pushes the harness/model identity to the right edge of the head. */
+.wb-approval-head-spacer {
+  flex: 1 1 auto;
+  min-width: 6px;
+}
+
+/* The shared chip is roomier (2px 7px); the head needs the design's tighter box
+   so the tool sits level with the title rather than inflating the band. */
+.wb-approval-head .wb-chip {
+  padding: 1px 6px;
+}
+
+.wb-approval-origin {
+  font-size: 11px;
+  color: var(--text-2);
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 본문 */
+.wb-approval-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .wb-chip {
@@ -2342,27 +2397,147 @@ body.wb-resizing {
 
 .wb-approval-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-1);
 }
 
 .wb-approval-cmd {
-  border-radius: var(--radius-button);
+  margin: 0;
+  border-radius: 8px;
   border: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-1);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--text-0);
 }
 
+/*
+ * 바닥 — its own band. The emphasis DROPS as the scope widens ("이번만" filled,
+ * the wider scopes outlined and progressively dimmer) so the narrowest choice
+ * reads as the natural default rather than the leftmost habit.
+ */
 .wb-approval-actions {
+  padding: 12px 14px;
+  border-top: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-1);
   display: flex;
-  gap: var(--space-3);
+  gap: 8px;
+  align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* A note that belongs to the decision (e.g. the mode already in effect). */
+.wb-approval-actions-note {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-approval-actions .wb-btn {
+  flex: none;
+  white-space: nowrap;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/*
+ * The primary action is the app accent, not the member colour: the member is
+ * already named in the head, and here the colour has a different job — marking
+ * which choice is the safe default. A per-member hue would make "이번만 허용"
+ * read as louder or quieter depending on who is asking.
+ */
+.wb-approval-actions .wb-btn-member {
+  font-weight: 650;
+  padding: 0 16px;
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.wb-approval-actions .wb-btn-member:hover {
+  filter: brightness(1.07);
+}
+
+/* Each scope has its own width in the design; without these they all inherit
+   the base button's 16px and the row loses its intended rhythm. */
+.wb-approval-actions .wb-btn-ghost {
+  padding: 0 14px;
+}
+
+.wb-approval-actions .wb-btn-soft {
+  padding: 0 13px;
+}
+
+.wb-approval-actions .wb-btn-ghost:hover {
+  border-color: var(--danger-bd);
+  color: var(--danger);
+}
+
+/*
+ * Wider scopes keep the same shape but neutral fill and lower contrast, so the
+ * row reads as one scale from "이번만" outwards. A member-tinted fill here would
+ * compete with the primary and make the widest choice look the most inviting.
+ */
+.wb-approval-actions .wb-btn-soft {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--text-1);
+}
+
+.wb-approval-actions .wb-btn-soft:hover {
+  border-color: var(--border-strong);
+}
+
+.wb-approval-actions .wb-btn-widest {
+  color: var(--text-2);
+}
+
+/*
+ * "항상 허용" states the rule it stores on a second line, because agreeing to a
+ * rule you cannot read is not consent. Measured: Claude offers a readable
+ * pattern, Codex offers the whole command line — hence the ellipsis.
+ */
+/* Specific enough to beat the base `.wb-btn` padding, which is defined later
+   and would otherwise push the second line outside the 36px row. */
+.wb-approval-actions .wb-btn-rule {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  line-height: 1.25;
+  padding: 0 12px;
+  max-width: 260px;
+}
+
+.wb-btn-rule .wb-btn-rule-hint {
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .density-narrow .wb-approval-actions {
   flex-direction: column-reverse;
+  align-items: stretch;
 }
 
 .density-narrow .wb-approval-actions .wb-btn {
   width: 100%;
+}
+
+.density-narrow .wb-btn-rule {
+  max-width: none;
+  align-items: center;
 }
 
 .wb-status-badge {
@@ -2397,7 +2572,21 @@ body.wb-resizing {
 .wb-question-item {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 11px;
+  padding: 14px;
+}
+
+/* The question itself carries the weight; "복수 선택" rides beside it. */
+.wb-question-prompt {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.wb-question-hint {
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
 .wb-question-summary {
@@ -2426,7 +2615,8 @@ body.wb-resizing {
 
 .wb-question-text {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text-0);
   white-space: pre-wrap;
   word-break: break-word;
@@ -2434,17 +2624,24 @@ body.wb-resizing {
 
 .wb-question-options {
   display: grid;
-  gap: var(--space-2);
+  gap: 7px;
 }
 
+/*
+ * A question is not a risk, so nothing in this card is member-tinted or red:
+ * the accent stays neutral and the selected state is the only colour. Danger
+ * belongs to approvals alone — otherwise "which colour means dangerous" stops
+ * meaning anything.
+ */
 .wb-question-option {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
   text-align: left;
-  padding: 8px 11px;
+  padding: 10px 12px;
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-button);
+  border-radius: 9px;
   background: var(--bg-2);
   color: var(--text-0);
   cursor: pointer;
@@ -2452,13 +2649,76 @@ body.wb-resizing {
 }
 
 .wb-question-option:hover:not(:disabled) {
-  border-color: var(--member, var(--accent));
+  border-color: var(--border-strong);
+  background: var(--bg-3);
 }
 
 .wb-question-option.is-active {
-  border-color: var(--member, var(--accent));
-  background: var(--member-ring, var(--accent-dim, var(--bg-3)));
-  box-shadow: inset 0 0 0 1px var(--member, var(--accent));
+  border: 1.5px solid var(--accent);
+  background: var(--accent-dim);
+  box-shadow: none;
+}
+
+.wb-question-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Round = pick one, square = pick many. Readable before anything is clicked. */
+.wb-question-mark {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.wb-question-mark.is-box {
+  border-radius: 4px;
+}
+
+.wb-question-option.is-active .wb-question-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.wb-question-mark-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* Multi-select rows centre their mark; single-select ones hang it at the top
+   beside a two-line label. */
+.wb-question-option:has(.wb-question-mark.is-box) {
+  align-items: center;
+  padding: 9px 12px;
+}
+
+.wb-question-option:has(.wb-question-mark.is-box) .wb-question-mark {
+  margin-top: 0;
+}
+
+/* The one choice that is not on the list. */
+.wb-question-other {
+  border-style: dashed;
+}
+
+.wb-question-other .wb-question-mark {
+  border-style: dashed;
+}
+
+.wb-question-other.is-active .wb-question-mark {
+  border-style: solid;
 }
 
 .wb-question-option:disabled {
@@ -2467,12 +2727,12 @@ body.wb-resizing {
 }
 
 .wb-question-option-label {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
 .wb-question-option-desc {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-2);
 }
 
@@ -5097,29 +5357,167 @@ body.wb-resizing {
   background: color-mix(in srgb, var(--member, var(--accent)) 22%, var(--bg-2));
 }
 
-/* ---------- Codex approval card (Item 2) ---------- */
-.wb-codex-approval .wb-approval-meta {
-  font-size: 11.5px;
-  color: var(--text-1);
-  display: flex;
-  gap: var(--space-2);
+/* ---------- Approval card body rows ---------- */
+/*
+ * Label/value pairs on a fixed label column, so cwd / 경로 / 규칙 line up
+ * instead of each row starting at a different place.
+ */
+.wb-approval-meta {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
   align-items: baseline;
 }
 
-.wb-codex-approval .wb-approval-meta .wb-mono {
-  font-size: 10px;
+.wb-approval-meta .wb-mono {
+  font-size: 12px;
   color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-sans);
+}
+
+.wb-approval-meta > :not(.wb-mono) {
+  font-family: var(--font-mono);
+  color: var(--text-1);
+  word-break: break-all;
+}
+
+/*
+ * Claude's single path line. Deliberately NOT the meta grid: that grid exists to
+ * align Codex's two rows, and one item in it reads as a half-empty table.
+ */
+.wb-approval-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+/* One changed file: what kind of change, which file, how much. */
+.wb-approval-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  flex-wrap: wrap;
+}
+
+.wb-approval-file-kind {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--live);
+  background: var(--live-dim);
+  border: var(--border-width) solid var(--live-bd);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex: none;
+}
+
+.wb-approval-file-path {
+  color: var(--text-0);
+  word-break: break-all;
+}
+
+.wb-approval-file-stat {
+  color: var(--text-3);
+  font-size: 11px;
+  flex: none;
+  white-space: nowrap;
 }
 
 .wb-approval-diff {
+  margin: 0;
   max-height: 260px;
   overflow: auto;
-  border-radius: var(--radius-button);
+  border-radius: 8px;
   border: var(--border-width) solid var(--border-subtle);
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 0;
+  background: var(--bg-2);
+}
+
+/* Added/removed lines are tinted rather than relying on the +/- glyph alone. */
+.wb-approval-diff-line {
+  display: flex;
+  gap: 9px;
+  padding: 5px 12px;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.wb-approval-diff-line > .wb-approval-diff-mark {
+  width: 8px;
+  flex: none;
+}
+
+.wb-approval-diff-line.is-add {
+  background: var(--success-dim);
+}
+
+.wb-approval-diff-line.is-add > .wb-approval-diff-mark {
+  color: var(--success);
+}
+
+.wb-approval-diff-line.is-del {
+  background: var(--danger-dim);
+}
+
+.wb-approval-diff-line.is-del > .wb-approval-diff-mark {
+  color: var(--danger);
+}
+
+/*
+ * 처리한 뒤 — collapses to ONE line that still says what was allowed and how
+ * widely, so scrolling back through a conversation answers "what did I agree
+ * to" without reopening anything.
+ */
+.wb-approval.is-resolved {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 9px;
+  border-left: 2px solid var(--success);
+  box-shadow: none;
+}
+
+.wb-approval.is-resolved.is-denied {
+  border-left-color: var(--danger);
+}
+
+.wb-approval-resolved-label {
+  font-size: 12.5px;
+  color: var(--text-1);
+  white-space: nowrap;
+  flex: none;
+}
+
+.wb-approval-resolved-summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-approval-resolved-scope {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  flex: none;
 }
 
 .wb-codex-approval-actions {

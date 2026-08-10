@@ -27,9 +27,10 @@ import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./sub
 import { pricingForModel, visionForModel } from "./modelRegistry";
 import { resolveCatalogModel } from "../shared/modelCatalog";
 import type { ImageAttachment } from "../shared/attachments";
-import type { CodexApprovalKind } from "../shared/codexApproval";
-import { approvalMeta, approvalResult, codexDecisionOf, normalizeUserInputQuestions } from "../shared/codexApproval";
+import { approvalResult, codexDecisionOf } from "../shared/codexApproval";
+import { codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
+import type { CodexFileEdit } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
@@ -129,6 +130,10 @@ export class CodexAdapter extends EventEmitter {
   private requestSeq = 0;
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  /** Raw `RequestId` per pending server request — see `respond()` for why. */
+  private readonly wireIds = new Map<string, string | number>();
+  /** File edits per item id, so a file-change approval can show its diff. */
+  private readonly fileChangesByItem = new Map<string, CodexFileEdit[]>();
   private readonly startedAt = now();
   private readonly costResolver = new DefaultTurnCostResolver();
   private policy: CodexPolicy;
@@ -944,11 +949,24 @@ export class CodexAdapter extends EventEmitter {
     this.process.stdin.write(`${JSON.stringify({ method, params })}\n`);
   }
 
+  /**
+   * Answers a server→client request, echoing its id back with the ORIGINAL type.
+   *
+   * The app-server's `RequestId` is `string | number` and it really does send
+   * numbers (measured: every approval in codex-cli 0.145.0 arrives as `id: 0`).
+   * Everything above this line keys approvals by a string, so the raw id is
+   * looked up here instead of being reconstructed: replying `"0"` to a request
+   * whose id was `0` leaves the server waiting forever — the command never runs
+   * and the turn never ends. Recorded proof of both outcomes is in
+   * scripts/fixtures/approvals/codex-command-once{,-stringid-hang}.jsonl.
+   */
   private respond(id: string, result: unknown): void {
     if (!this.process?.stdin.writable) {
       return;
     }
-    const message = { id, result };
+    const wireId = this.wireIds.get(id);
+    this.wireIds.delete(id);
+    const message = { id: wireId ?? id, result };
     this.log("out", message);
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
   }
@@ -971,11 +989,17 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.log("in", message);
-    if (message.id && this.pendingRequests.has(String(message.id))) {
+    // `hasId`, not a truthiness check: `RequestId` is `string | number` and the
+    // app-server numbers its requests from ZERO. `message.id && …` therefore
+    // dropped every first server request of a session — which is the approval
+    // prompt. Nothing was emitted and nothing was answered, so the card never
+    // appeared and the turn waited forever on a reply that could not come.
+    const hasId = message.id !== undefined && message.id !== null;
+    if (hasId && this.pendingRequests.has(String(message.id))) {
       this.completeRequest(String(message.id), message);
       return;
     }
-    if (message.id && message.method) {
+    if (hasId && message.method) {
       this.handleServerRequest(message);
       return;
     }
@@ -1001,23 +1025,16 @@ export class CodexAdapter extends EventEmitter {
     const requestId = String(message.id);
     const method = String(message.method);
     const params = message.params || {};
+    this.wireIds.set(requestId, message.id);
     if (method === "item/tool/call") {
       void this.handleDynamicToolCall(requestId, params);
       return;
     }
     this.pendingApprovals.set(requestId, { method, input: params });
-    const meta = approvalMeta(method, params);
-    // A tool asking for a value reuses the interactive question card; its answers
-    // are shaped like AskUserQuestion so the renderer can drive it.
-    const input = meta.kind === "userInput" ? { questions: normalizeUserInputQuestions(params.questions) } : params;
     this.emitEvent({
       type: "approval_request",
       requestId,
-      toolName: method,
-      input,
-      title: approvalTitle(meta.kind),
-      description: meta.reason,
-      codex: meta,
+      ...codexApprovalFields(method, params, this.fileChangesByItem.get(String(params?.itemId ?? ""))),
       at: now(),
     });
   }
@@ -1332,6 +1349,15 @@ export class CodexAdapter extends EventEmitter {
     }
     if (item.type === "fileChange") {
       const changes = fileEditsFrom(item.changes);
+      // Remembered so the approval card can show WHAT is being changed. The
+      // approval request itself carries no diff (measured: reason and grantRoot
+      // both null, nothing else), but it names an `itemId`, and that is this
+      // item — which does carry the changes. Without the join the card is a
+      // title and three buttons, asking the user to approve an edit they cannot
+      // see. See scripts/fixtures/approvals/codex-file-change.jsonl.
+      if (id) {
+        this.fileChangesByItem.set(id, changes);
+      }
       this.emitEvent({ type: "file_change", changes, status: typeof item.status === "string" ? item.status : undefined, at: now() });
       return;
     }
@@ -1537,6 +1563,7 @@ export class CodexAdapter extends EventEmitter {
     }
     this.pendingRequests.clear();
     this.pendingApprovals.clear();
+    this.wireIds.clear();
   }
 
   private emitEvent(event: ClaudeNormalizedEvent): void {
@@ -1581,23 +1608,6 @@ function effortFor(model: string, effort: ClaudeEffort): string | null {
     return null;
   }
   return effort;
-}
-
-function approvalTitle(kind: CodexApprovalKind): string {
-  switch (kind) {
-    case "command":
-      return "명령 실행 승인";
-    case "fileChange":
-      return "파일 변경 승인";
-    case "permissions":
-      return "권한 상승 승인";
-    case "userInput":
-      return "Codex가 입력을 요청함";
-    case "elicitation":
-      return "MCP 서버 요청";
-    default:
-      return "Codex 승인 요청";
-  }
 }
 
 /**

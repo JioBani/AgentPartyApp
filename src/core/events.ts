@@ -137,7 +137,10 @@ export type ClaudeNormalizedEvent =
   // instead of every live session racing to overwrite each other's values.
   // QA injection stamps a reserved `qa` id that always passes the filter.
   | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; at: string; sourceId?: string }
-  | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
+  // `blockedPath`/`agentID` are Claude Code's — the path that triggered the
+  // prompt and the subagent that asked. Both arrive populated from the SDK and
+  // used to be dropped here, so the card could not show either.
+  | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; blockedPath?: string; agentID?: string; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   // A message that waited in the app-level queue has just been handed to the

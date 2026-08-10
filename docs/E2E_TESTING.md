@@ -59,6 +59,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-subagents` | subagent-observation view-models (dock + drill-in detail) + the `applySubagentEvents` fold that keeps subagent output in a SEPARATE slice from the parent transcript: status→style mapping, live one-line `currentAction` selection (`deriveSubagentAction`, the swap point in `src/shared/subagentActivity.ts`), responsive dock thresholds, empty assistant/status blocks dropped so a query-less/empty item never renders as a blank "선처럼" strip. Driven by the mock scenarios in `src/shared/subagentScenarios.ts`. Also locks that a LONG delegated prompt collapses to a preview + "전체 보기" popup instead of filling the drill-in view, while a short one still shows whole. |
 | `qa-party-store` | party storage **split** (`PartyRepository`): the on-disk layout is a SHARED index `parties.json` + PER-PARTY `parties/<id>/party.json` (members/messages), so two processes editing different parties of one workspace never clobber. Locks in: legacy single-`state.json` → split migration (data intact, blob kept as backup, no re-migrate on the 2nd read), per-party **write isolation** (editing party A leaves party B's file byte-identical + mtime unchanged), and **authoritative partyId** (a member's party is its FILE — a missing/wrong stored `partyId` is corrected, never silently mis-routed). |
 | `qa-subagent-tracker` | subagent **attribution** replayed against RECORDED real harness traffic (`scripts/fixtures/subagents/*.jsonl`, captured live from Haiku + gpt-mini): `ClaudeSubagentTracker` (task_started/progress/updated keyed by task_id+tool_use_id; `local_bash` steps never become their own rows) and `CodexSubagentTracker` (child-`threadId` routing, `collabAgentToolCall` prompt capture, powershell/bash launcher unwrap, `web_search` card with `action.queries` fallback so an empty top-level `query` still shows). Locks correct attribution + parent/child separation against the ACTUAL protocol shapes. |
+| `qa-approval-shapes` | approval **card content** replayed against RECORDED real harness traffic (`scripts/fixtures/approvals/*.jsonl`, captured live from codex-cli 0.145.0 + gpt-5.4-mini by `scripts/record-approval-traffic.mjs`). Locks what a card can actually show — 명령 원문/작업 디렉터리/요청 사유/항상 허용될 규칙 present, **파일 diff absent from every real request** — and that all four Codex decision scopes (once/session/always/decline) really are honoured by the server. Also a **regression lock for the stringified-id hang**: `RequestId` is `string | number` and Codex sends `0`, so replying `"0"` leaves the turn waiting forever; both outcomes are recorded side by side. Guards the trap that hid these — `fake-codex-appserver.mjs` invents a `diff` field and a string id that real Codex never sends. |
 
 When you add a QA script or `/api/*` endpoint, update this table (and `docs/API.md`
 for endpoints) so other sessions can discover it.
@@ -98,6 +99,41 @@ is bundled as ESM and run by the distro's plain node, so any Electron-only
 dependency reaching its module graph (`import … from "electron"`, `__dirname`)
 kills it at LOAD time and the workspace silently renders as "작업공간 없음".
 Requires the distro; the workspace is created under `/tmp` inside it.
+
+`node scripts/e2e-live-codex-approval-roundtrip.mjs` drives the REAL
+`CodexAdapter` against a real `codex app-server` (billed — one short turn) and
+asserts an approval round-trips: the card fields arrive, the decision is sent,
+and the turn actually FINISHES. This is the only tier that catches the approval
+path breaking, because `scripts/fake-codex-appserver.mjs` answers with a string
+request id while the real server numbers requests from ZERO — two separate bugs
+(an `id: 0` dropped by a truthiness check, and a reply stringified so the server
+never matched it) both hid behind that fake and made every Codex approval hang
+forever. `--regress` re-breaks the reply in memory and asserts the turn then
+hangs, so reverting the fix fails loudly instead of silently.
+`--file-change` drives the OTHER approval kind, where the request carries no
+diff at all and the card depends on the adapter having joined the `fileChange`
+item it names — an ordering-dependent join a fixture replay cannot prove.
+
+`node scripts/e2e-live-claude-always-allow.mjs` drives the REAL
+`ClaudeAdapter` through two turns (billed) to check that "항상 허용 (규칙)"
+stores something. It asserts on what lands on DISK, not on whether the model
+asked again: measured, a repeat command in the SAME session is not re-prompted
+even when nothing was stored, so an earlier version of this check passed for
+that wrong reason. `--regress` answers "once" instead and asserts no rule is
+written and a fresh session IS asked. Also pins the honest limit — a fresh
+session can still be stopped by the DIRECTORY gate, whose only remedy is
+`destination: "session"`, so no choice can promise silence.
+
+`node scripts/qa-approval-metrics.mjs` (or `npm run qa:approval-metrics`)
+MEASURES the approval card against the confirmed design instead of eyeballing a
+capture: it boots the app with `--remote-debugging-port=0`, injects the recorded
+scenarios, and compares `getComputedStyle` with the values declared in
+"Approval Cards.dc.html" — 27 of them across head/body/footer, the diff rows and
+the collapsed resolved line. Offline and unbilled. Two mismatches it caught that
+the screenshots did not: the tool chip inheriting the shared chip's roomier
+padding, and the decline button inheriting the base button's width. ⚠️ Selector
+care matters here — `.wb-btn-soft` also matches the rule button, so measuring the
+session button on a Claude card silently measured a different control.
 
 `node scripts/e2e-idle-sleep.mjs` (or `npm run test:e2e:idle-sleep`) boots the
 real app and drives idle sleep's two escape hatches through the AppController

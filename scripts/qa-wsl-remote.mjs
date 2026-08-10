@@ -72,16 +72,48 @@ try {
   await client.qaEmit("wr-1", { events: [{ type: "assistant_text_delta", text: "driven from Windows" }], status: "working" });
   assert(true, "qaEmit over wsl.exe stdio accepted");
 
+  /*
+   * Approval injection across the transport (B-18). Worth its own coverage for
+   * two reasons: the recorded scenarios are a NEW module reaching the engine
+   * bundle, which is run by the distro's plain node and dies at load on any
+   * Electron dependency; and a refusal has to survive the RPC boundary as a
+   * REJECTION. If the transport turned a throw into a resolved promise, the
+   * "cannot fake an approval" guard would silently no-op in WSL only.
+   */
+  const injected = await client.qaInteraction("wr-1", { type: "approval", scenario: "codex-command-once" });
+  assert(Boolean(injected?.requestId), `recorded approval injected over wsl.exe stdio (${injected?.requestId})`);
+
+  // The session snapshot, not the transcript: an injected approval is a LIVE
+  // event that the renderer folds, so nothing is persisted server-side. What the
+  // engine does record is that the member is now waiting on someone.
+  const sessions = await client.listWorkspaceSessions();
+  const waiting = sessions.find((s) => (s.snapshot?.pendingApprovalCount || 0) > 0);
+  assert(Boolean(waiting), `the WSL engine registered a pending approval (not merely accepted the call)`);
+
+  let remoteRefusal = "";
+  try {
+    await client.qaInteraction("wr-1", { type: "approval", scenario: "does-not-exist" });
+  } catch (error) {
+    remoteRefusal = String(error?.message || error);
+  }
+  assert(Boolean(remoteRefusal), "an unknown scenario REJECTS across the transport (no silent success in WSL)");
+  assert(/does-not-exist/.test(remoteRefusal), `…and the reason survives the boundary (${remoteRefusal.slice(0, 70)}…)`);
+
   // Verify the engine persisted to the distro's own ext4 fs.
+  // The layout is the SPLIT one (a shared `parties.json` index plus a per-party
+  // `parties/<id>/party.json`); this used to look for the pre-split
+  // `state.json`, which the app stopped writing when the store was split, so the
+  // check had been failing on a file that is no longer supposed to exist.
   const fsCheck = execFileSync("wsl.exe", ["-d", distro, "-e", "bash", "-lc",
-    `test -f "${wslWs}/.agent_party_app/state.json" && echo STATE_OK; df -T "${wslWs}/.agent_party_app" | tail -1`],
+    `test -f "${wslWs}/.agent_party_app/parties.json" && echo INDEX_OK; ls "${wslWs}/.agent_party_app/parties"/*/party.json >/dev/null 2>&1 && echo PARTY_OK; df -T "${wslWs}/.agent_party_app" | tail -1`],
     { encoding: "utf8" });
   console.log(fsCheck.trim().split("\n").map((l) => `    ${l}`).join("\n"));
-  assert(/STATE_OK/.test(fsCheck), "WSL engine persisted state.json to the distro");
+  assert(/INDEX_OK/.test(fsCheck), "WSL engine persisted the parties index to the distro");
+  assert(/PARTY_OK/.test(fsCheck), "…and a per-party file beside it (split layout)");
   assert(/\bext4\b/.test(fsCheck), "store is on the distro's native ext4 fs");
 
-  const stateText = execFileSync("wsl.exe", ["-d", distro, "-e", "bash", "-lc", `cat "${wslWs}/.agent_party_app/state.json"`], { encoding: "utf8" });
-  assert(/"wr-1"/.test(stateText), "persisted state contains wr-1");
+  const stateText = execFileSync("wsl.exe", ["-d", distro, "-e", "bash", "-lc", `cat "${wslWs}/.agent_party_app/parties"/*/party.json`], { encoding: "utf8" });
+  assert(/"wr-1"/.test(stateText), "persisted party contains wr-1");
 } finally {
   client.dispose();
 }

@@ -7,6 +7,7 @@ import type {
   McpServerStatus,
   PermissionMode,
   PermissionResult,
+  PermissionUpdate,
   Query,
   SDKMessage,
   SDKUserMessage,
@@ -25,6 +26,7 @@ import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usa
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
 import { BackgroundTaskTracker } from "./backgroundTasks";
 import { RawLogger } from "./rawLogger";
+import { claudeApprovalFields, extractToolFilePath, withFilePath } from "../shared/approvalRequest";
 import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
@@ -194,6 +196,8 @@ export class ClaudeAdapter extends EventEmitter {
       toolName: string;
       input: Record<string, unknown>;
       toolUseID: string;
+      /** The SDK's own "always allow" updates, handed back on that choice. */
+      suggestions?: PermissionUpdate[];
     }
   >();
   private readonly activeTools = new Map<string, { id: string; name: string; input?: unknown; parentId?: string; subagent?: boolean }>();
@@ -527,13 +531,29 @@ export class ClaudeAdapter extends EventEmitter {
       return;
     }
 
+    // `updatedInput` doubles as a control envelope: the card sends
+    // `{ __approvalScope: "always" }` for "always allow". It must be stripped,
+    // because anything left here is handed to the SDK as the TOOL's input.
+    const control = asRecord(updatedInput);
+    const scope = control?.__approvalScope;
+    const rest = control ? Object.fromEntries(Object.entries(control).filter(([key]) => key !== "__approvalScope")) : undefined;
+    const toolInput = rest && Object.keys(rest).length ? rest : pending.input;
+
+    // "always allow" means handing the SDK's own suggestions back as
+    // `updatedPermissions`, which is how a rule gets stored (the SDK's words:
+    // "if presenting the user an option 'always allow'… return this full set").
+    // Without it every approval was permanently "just this once", even though
+    // the request arrived carrying a ready-made prefix rule.
+    const always = scope === "always" && pending.suggestions?.length ? pending.suggestions : undefined;
+
     const result: PermissionResult =
       behavior === "allow"
         ? {
             behavior: "allow",
-            updatedInput: asRecord(updatedInput) ?? pending.input,
+            updatedInput: toolInput,
+            ...(always ? { updatedPermissions: always } : {}),
             toolUseID: pending.toolUseID,
-            decisionClassification: "user_temporary",
+            decisionClassification: always ? "user_permanent" : "user_temporary",
           }
         : {
             behavior: "deny",
@@ -847,16 +867,12 @@ export class ClaudeAdapter extends EventEmitter {
     const requestId = options.toolUseID || `permission-${Date.now()}`;
 
     return await new Promise<PermissionResult>((resolve) => {
-      this.pendingApprovals.set(requestId, { resolve, toolName, input, toolUseID: options.toolUseID });
+      this.pendingApprovals.set(requestId, { resolve, toolName, input, toolUseID: options.toolUseID, suggestions: options.suggestions });
       this.log("permission_request", { requestId, toolName, input, options: scrubPermissionOptions(options) });
       this.emitEvent({
         type: "approval_request",
         requestId,
-        toolName,
-        input: withFilePath(input),
-        title: options.title || options.displayName,
-        description: options.description || options.decisionReason,
-        suggestions: options.suggestions,
+        ...claudeApprovalFields(toolName, input, options),
         at: now(),
       });
       this.emit("snapshot", this.getSnapshot());
@@ -1835,32 +1851,6 @@ function subagentToolArg(input: unknown): string {
 /** Non-empty string or undefined. */
 function str(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
-}
-
-function withFilePath(value: unknown): unknown {
-  const record = asRecord(value);
-  if (!record || record.filePath) {
-    return value;
-  }
-  const filePath = extractToolFilePath(record);
-  if (typeof filePath !== "string" || !filePath) {
-    return value;
-  }
-  return { ...record, filePath };
-}
-
-function extractToolFilePath(value: unknown): string | undefined {
-  const record = asRecord(value);
-  if (!record) {
-    return undefined;
-  }
-  for (const key of ["filePath", "file_path", "path", "notebook_path", "filename"]) {
-    const field = record[key];
-    if (typeof field === "string" && field) {
-      return field;
-    }
-  }
-  return undefined;
 }
 
 function scrubPermissionOptions(options: Parameters<CanUseTool>[2]): Record<string, unknown> {

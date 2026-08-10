@@ -84,7 +84,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "fileChange", changes: event.changes, status: event.status, at: nowTime() });
       }
     } else if (event.type === "approval_request") {
-      next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, at: nowTime() });
+      next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, suggestions: event.suggestions, blockedPath: event.blockedPath, agentID: event.agentID, at: nowTime() });
     } else if (event.type === "approval_resolved") {
       next = markApprovalResolved(next, sessionId, event.requestId, event.decision);
     } else if (event.type === "turn_complete") {

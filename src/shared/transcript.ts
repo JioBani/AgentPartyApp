@@ -52,6 +52,12 @@ export type TranscriptBlock =
       resolved?: "allow" | "deny";
       /** Codex approval metadata (command/diff/decision options); Codex requests only. */
       codex?: import("./codexApproval").CodexApprovalMeta;
+      /** Claude Code: the permission updates an "always allow" would store. */
+      suggestions?: unknown[];
+      /** Claude Code: the path that triggered the prompt (e.g. a write outside cwd). */
+      blockedPath?: string;
+      /** Claude Code: the subagent that raised it, when not the main loop. */
+      agentID?: string;
       /** For AskUserQuestion: the user's chosen answers (question text -> label). */
       answers?: Record<string, string>;
       at?: string;

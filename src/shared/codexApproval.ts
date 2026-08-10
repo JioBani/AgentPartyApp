@@ -9,6 +9,8 @@
  * CommandExecutionApprovalDecision, FileChangeApprovalDecision).
  */
 
+import type { CodexFileEdit } from "./codexItems";
+
 /** User-facing decision on a Codex approval request. */
 export type CodexDecision = "once" | "session" | "always" | "decline";
 
@@ -23,14 +25,30 @@ export type CodexApprovalKind =
 /** Display metadata carried on an approval_request so the card renders exactly. */
 export interface CodexApprovalMeta {
   kind: CodexApprovalKind;
-  /** Command to run (command approvals). */
+  /** Command to run (command approvals), exactly as Codex will run it. */
   command?: string;
+  /**
+   * The readable form of that command.
+   *
+   * Measured: `command` arrives wrapped in the shell Codex actually invokes —
+   * `"C:\…\powershell.exe" -Command 'echo one > b18a.txt'` — while Codex's own
+   * parse of what it means sits in `commandActions`. The wrapper stays in
+   * `command` because that is what is really being approved; this is what the
+   * card can lead with so the user is not reading a launcher path.
+   */
+  commandDisplay?: string;
   /** Working directory the command/patch runs in. */
   cwd?: string;
   /** Why Codex is asking (e.g. "needs network access"). */
   reason?: string;
-  /** Unified diff for file-change approvals, when available. */
+  /** Unified diff for file-change approvals, when the request carries one. */
   diff?: string;
+  /**
+   * Per-file edits for a file-change approval, joined from the `fileChange`
+   * item the request names in `itemId`. Real Codex puts the diff there and not
+   * on the approval, so this is what the card actually has to show.
+   */
+  edits?: CodexFileEdit[];
   /** True when the request offers a prefix rule (execpolicy amendment) → enables "always". */
   canAlways?: boolean;
   /** The command pattern that "always" would auto-approve, for the button hint. */
@@ -114,8 +132,17 @@ export function fileChangeDecision(decision: CodexDecision): "accept" | "acceptF
   }
 }
 
-/** Legacy ReviewDecision for execCommandApproval / applyPatchApproval. */
-export function reviewDecision(decision: CodexDecision, amendment?: string[]): unknown {
+/**
+ * Legacy ReviewDecision for execCommandApproval / applyPatchApproval.
+ *
+ * Denial is an OBJECT, not the bare string `"denied"`: the generated schema is
+ * `"approved" | {approved_execpolicy_amendment} | "approved_for_session" |
+ * {network_policy_amendment} | {denied:{rejection:string}} | "timed_out" |
+ * "abort"`. A bare `"denied"` is not in that union, so a legacy decline was
+ * malformed on the wire. Nothing caught it because the tests answer a fake
+ * app-server that accepts anything.
+ */
+export function reviewDecision(decision: CodexDecision, amendment?: string[], rejection?: string): unknown {
   switch (decision) {
     case "once":
       return "approved";
@@ -126,7 +153,7 @@ export function reviewDecision(decision: CodexDecision, amendment?: string[]): u
         ? { approved_execpolicy_amendment: { proposed_execpolicy_amendment: amendment } }
         : "approved_for_session";
     case "decline":
-      return "denied";
+      return { denied: { rejection: rejection || "사용자가 거부했습니다." } };
   }
 }
 
@@ -158,19 +185,39 @@ export function approvalKindOf(method: string): CodexApprovalKind {
 }
 
 /** Builds the card metadata (command/diff/reason/rule) from raw request params. */
-export function approvalMeta(method: string, params: any): CodexApprovalMeta {
+export function approvalMeta(method: string, params: any, edits?: CodexFileEdit[]): CodexApprovalMeta {
   const kind = approvalKindOf(method);
   const amendment: string[] | undefined = Array.isArray(params?.proposedExecpolicyAmendment) ? params.proposedExecpolicyAmendment : undefined;
+  const action = Array.isArray(params?.commandActions) ? params.commandActions.find((item: any) => typeof item?.command === "string") : undefined;
   return {
     kind,
-    command: typeof params?.command === "string" ? params.command : undefined,
+    // Legacy `execCommandApproval` sends `command: Array<string>` (argv tokens)
+    // while v2 sends a string. Reading only the string left the legacy card with
+    // no 명령 원문 at all — the single most important line on it.
+    command: commandText(params?.command),
+    commandDisplay: action && typeof action.command === "string" ? action.command : commandText(params?.parsedCmd?.[0]?.cmd),
     cwd: typeof params?.cwd === "string" ? params.cwd : undefined,
     reason: typeof params?.reason === "string" ? params.reason : undefined,
+    // The request's own diff when it has one; otherwise the edits joined from
+    // the `fileChange` item this approval names (real Codex sends no diff here).
     diff: typeof params?.unifiedDiff === "string" ? params.unifiedDiff : typeof params?.diff === "string" ? params.diff : undefined,
+    edits: edits && edits.length ? edits : undefined,
     canAlways: kind === "command" && Boolean(amendment && amendment.length),
     alwaysHint: amendment && amendment.length ? amendment.join(" ") : undefined,
     serverName: typeof params?.serverName === "string" ? params.serverName : undefined,
   };
+}
+
+/** A command as either a string (v2) or argv tokens (legacy), rendered for display. */
+function commandText(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value || undefined;
+  }
+  if (Array.isArray(value)) {
+    const parts = value.filter((item): item is string => typeof item === "string");
+    return parts.length ? parts.join(" ") : undefined;
+  }
+  return undefined;
 }
 
 /** Normalizes ToolRequestUserInputQuestion[] into the AskUserQuestion card shape. */
@@ -182,8 +229,13 @@ export function normalizeUserInputQuestions(questions: any): unknown[] {
     id: String(q?.id ?? ""),
     header: q?.header ? String(q.header) : undefined,
     question: String(q?.question ?? q?.header ?? ""),
+    // Codex's schema has no multi-select for these; `false` is the real answer,
+    // not a placeholder.
     multiSelect: false,
     secret: Boolean(q?.isSecret),
+    // Whether a written-in answer is accepted. Dropping it made the card offer
+    // "기타 (직접 입력)" on questions Codex restricts to its listed options.
+    other: Boolean(q?.isOther),
     options: Array.isArray(q?.options)
       ? q.options.map((o: any) => ({ label: String(o?.label ?? ""), description: o?.description ? String(o.description) : undefined })).filter((o: any) => o.label)
       : [],
