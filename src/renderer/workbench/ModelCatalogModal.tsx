@@ -65,6 +65,7 @@ const HARNESS_CHOICES = [
   { id: "claude-code", label: "Claude Code" },
   { id: "codex", label: "Codex" },
   { id: "cursor", label: "Cursor CLI" },
+  { id: "grok", label: "Grok Build" },
 ];
 
 /**

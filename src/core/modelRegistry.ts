@@ -14,7 +14,7 @@ import type { CodexModelInfo } from "../shared/codexModels";
 import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "custom";
 
 export interface HarnessDescriptor {
@@ -171,6 +171,12 @@ export const harnesses: HarnessDescriptor[] = [
     enabled: true,
     description: "Cursor Agent CLI with Cursor Auto or the Grok 4.5 named model.",
   },
+  {
+    id: "grok",
+    label: "Grok Build",
+    enabled: true,
+    description: "xAI's Grok Build CLI over ACP, on your Grok subscription.",
+  },
 ];
 
 export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[]): ModelRoute[] {
@@ -207,6 +213,9 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   // labelled with the key it bills.
   for (const model of deepseekModels()) {
     addRoute(routes, seen, codexDeepseekRoute(model));
+  }
+  for (const route of grokHarnessRoutes()) {
+    addRoute(routes, seen, route);
   }
   addRoute(routes, seen, cursorAutoRoute());
   for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
@@ -464,6 +473,39 @@ export function cursorRouteFromCatalog(model: CatalogModel): ModelRoute {
     },
     enabled: true,
   };
+}
+
+/**
+ * What the Grok Build CLI itself serves. It owns its model list — the catalog
+ * does not route it — so the entry here mirrors what `session/new` reports
+ * (measured: exactly grok-4.5, 500k context).
+ *
+ * Effort and permission are declared UNSUPPORTED rather than copied from the
+ * catalog: this harness ignores every effort route the binary offers and never
+ * asks the client to approve a tool call, so offering either control would put
+ * a knob in the UI that does nothing. Plan mode is the one real setting, and it
+ * rides the permission mode the member already carries.
+ */
+export function grokHarnessRoutes(): ModelRoute[] {
+  return [{
+    harnessId: "grok",
+    providerId: "xai",
+    model: "grok-4.5",
+    runtimeModel: "grok-4.5",
+    label: "Grok 4.5 (Grok Build)",
+    description:
+      "xAI's Grok Build CLI on your Grok subscription. It approves its own tool calls and ignores reasoning effort, " +
+      "and it loads your ~/.claude hooks and permission rules.",
+    pricing: { billing: "subscription", directPrice: "Grok subscription", context: "500K" },
+    capabilities: {
+      effort: { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: { image: false },
+    },
+    meta: { perf: 3, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
+    enabled: true,
+  }];
 }
 
 function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {

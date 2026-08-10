@@ -14,6 +14,7 @@ const HARNESS_NAMES: Record<string, { label: string; short: string }> = {
   "claude-code": { label: "Claude Code", short: "CC" },
   codex: { label: "Codex", short: "CDX" },
   cursor: { label: "Cursor CLI", short: "CUR" },
+  grok: { label: "Grok Build", short: "GRK" },
 };
 
 /** Full display name, e.g. "Claude Code". */
