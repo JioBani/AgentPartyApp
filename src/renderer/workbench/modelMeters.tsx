@@ -15,14 +15,17 @@ export function perfLabel(value: number | undefined): string {
 }
 
 /**
- * Bar heights per size, taken from the design. Four bars, not five: the top two
- * tiers are told apart by COLOUR (4+ turns green), not by an extra bar. The
- * numeric tier is always spelled out beside the meter, so the bars are a shape
- * to scan, not the thing carrying the value.
+ * Bar heights per size. FIVE bars, one per point of the 0–5 tier — the design
+ * draws four, which cannot tell perf 4 from perf 5: both fill every bar and both
+ * are green (the colour switches at 4, so it does not separate them either). The
+ * detail panel prints "N / 5" beside its meter, but a catalog ROW does not, so
+ * four bars would make the top two tiers indistinguishable exactly where the
+ * user is comparing models. Everything else is the design's: bar width, gap, the
+ * ramp step of 3px, and the 4+ colour switch.
  */
 const PERF_BARS = {
-  sm: [6, 9, 12, 15],
-  lg: [7, 10.5, 13.5, 16.5],
+  sm: [3, 6, 9, 12, 15],
+  lg: [4.5, 7.5, 10.5, 13.5, 16.5],
 } as const;
 
 export function PerfMeter({ value, size = "sm" }: { value: number | undefined; size?: keyof typeof PERF_BARS }) {
