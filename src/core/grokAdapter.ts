@@ -117,6 +117,7 @@ export class GrokAdapter extends EventEmitter {
       at: now(),
     });
     this.warnAboutHarnessLimits(cli.version);
+    this.reportUsageUnavailable();
     this.drain();
   }
 
@@ -138,6 +139,18 @@ export class GrokAdapter extends EventEmitter {
       recovery: "Use a Claude Code or Codex member when tool calls must be approved.",
       at: now(),
     });
+  }
+
+  /**
+   * States plainly that no plan meter exists for Grok, so the indicator shows
+   * "not applicable" rather than an empty bar a user would read as 0% used.
+   * xAI exposes per-turn tokens and nothing else: api.x.ai answers 404 for every
+   * usage/billing path and rejects the subscription token on /v1/me, and the ACP
+   * stream carries no account window (measured 2026-08-10). Per-turn spend is
+   * still recorded — it lands in the Token Usage ledger.
+   */
+  private reportUsageUnavailable(): void {
+    this.emitEvent({ type: "usage_limit", provider: "grok", windows: [], available: false, at: now() });
   }
 
   sendUserTurn(text: string): void {
