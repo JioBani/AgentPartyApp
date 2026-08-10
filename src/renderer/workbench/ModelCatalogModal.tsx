@@ -1,13 +1,13 @@
 import { createPortal } from "react-dom";
 import { useSubtreeVisible } from "./SubtreeVisibility";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronRight, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Clock, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { findRoute, type RouteCapabilities, type RouteLike, routeKey } from "./routes";
 import { AutoCompactEditor } from "./AutoCompactEditor";
 import { DEFAULT_AUTO_COMPACT, type AutoCompactSetting } from "../../shared/autoCompact";
 import { VisionTag } from "./VisionTag";
 import { PROVIDER_DOTS, PROVIDER_LABELS, modelView, routeProvider } from "./modelCatalog";
-import { CostMeter, PerfMeter, perfLabel, type RouteEntry } from "./modelMeters";
+import { CostMeter, PerfMeter, type RouteEntry } from "./modelMeters";
 import { buildCatalogView, catalogCountLabel, initialProvOpen } from "./modelCatalogGroups";
 import { toggleFavoriteModelId, useFavoriteModels } from "../app/favoriteModelPrefs";
 import { HARNESS_IDS, harnessLabel } from "../../shared/types";
@@ -65,6 +65,37 @@ interface ModelCatalogModalProps {
 const HARNESS_CHOICES = HARNESS_IDS.map((id) => ({ id, label: harnessLabel(id) }));
 
 /**
+ * The harnesses that keep a permanent button in the strip; everything else folds
+ * into the "더보기" menu beside them. Two is what the strip fits at 344px without
+ * ellipsing a label, so the menu is what lets the harness list grow.
+ */
+const PRIMARY_HARNESS_COUNT = 2;
+
+/** `#rrggbb` at a given alpha — the provider dot's halo in the detail header. */
+function dotHalo(hex: string | undefined, alpha: number): string {
+  const value = /^#([0-9a-f]{6})$/i.exec(hex || "");
+  if (!value) {
+    return "transparent";
+  }
+  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(value[1].slice(offset, offset + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * The one-line summary under the model name: its performance tier, its cost
+ * tier, and whether it reasons. Derived rather than taken from the route's own
+ * `description`, which is a paragraph of provider prose — it belongs in the
+ * tooltip, not in a slot sized for a single line.
+ */
+function modelBlurb(perf: number | undefined, cost: number | undefined, thinking: boolean): string {
+  const tier =
+    perf == null ? "" : perf >= 5 ? "최상위 성능" : perf === 4 ? "고성능" : perf === 3 ? "균형형" : perf === 2 ? "경량·고속" : "보조용";
+  const price =
+    cost == null ? "" : cost >= 5 ? "비용 매우 높음" : cost >= 4 ? "비용 높음" : cost >= 3 ? "비용 보통" : cost >= 1 ? "비용 낮음" : "무료 · 로컬";
+  return [tier, price, thinking ? "추론 모드 지원" : "추론 모드 없음"].filter(Boolean).join(" · ");
+}
+
+/**
  * The single reusable model-catalog modal (the Runtime picker's UI, extracted).
  * Each usage turns sections on/off via `config` — harness / effort / thinking are
  * shown where relevant; debug + auto-compact are Workbench-only. Rendered through
@@ -90,6 +121,8 @@ export function ModelCatalogModal({
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
 
   const [harness, setHarness] = useState(value.harness || currentHarness);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
   const displayEntries = useMemo(
     () => (config.harness ? entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness) : entries),
     [entries, config.harness, harness],
@@ -239,6 +272,13 @@ export function ModelCatalogModal({
       if (event.key !== "Escape") {
         return;
       }
+      // Innermost layer first: an open harness menu is what Escape means while
+      // it is up, exactly as a query is while one is typed.
+      if (moreOpen) {
+        event.stopPropagation();
+        setMoreOpen(false);
+        return;
+      }
       if (query) {
         event.stopPropagation();
         clearQuery();
@@ -248,9 +288,37 @@ export function ModelCatalogModal({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, query]);
+  }, [onClose, query, moreOpen]);
+
+  /** The harness menu is a popover, so anything outside it dismisses it. */
+  useEffect(() => {
+    if (!moreOpen) {
+      return;
+    }
+    const onDown = (event: PointerEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [moreOpen]);
 
   const selectedMeta = selected?.meta;
+  const primaryHarnesses = HARNESS_CHOICES.slice(0, PRIMARY_HARNESS_COUNT);
+  const overflowHarnesses = HARNESS_CHOICES.slice(PRIMARY_HARNESS_COUNT);
+  const selectedOverflow = overflowHarnesses.find((choice) => choice.id === harness);
+  const lockedHarnessHint = "턴이 시작된 뒤에는 하네스를 바꿀 수 없습니다 (새 세션 필요)";
+  const harnessCount = (id: string) => entries.filter((entry) => (entry.route.harnessId || "claude-code") === id).length;
+  const selectedStarred = Boolean(selected && favorites.includes(selected.route.model));
+  /** Whether anything follows the stat grid — the rule must not head an empty run. */
+  const hasRunSettings = Boolean(
+    (config.effort && effortCap?.supported && effortCap.options.length > 0) ||
+    (config.serviceTier && serviceTierCap?.supported && serviceTierCap.options.length > 0) ||
+    (config.thinking && thinkingCap?.supported && (thinkingCap.modes || []).length > 0) ||
+    config.debug ||
+    config.autoCompact,
+  );
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
 
@@ -287,7 +355,7 @@ export function ModelCatalogModal({
 
   return createPortal(
     <div className={"wb-modal-scrim wb-catalog-scrim" + (dim ? " is-dim" : "")}>
-      <div className="wb-modal" role="dialog" aria-modal="true">
+      <div className="wb-modal wb-modal-catalog" role="dialog" aria-modal="true">
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             {icon ?? <SlidersHorizontal size={16} />}
@@ -302,22 +370,58 @@ export function ModelCatalogModal({
             {config.harness && (
               <div className="wb-model-list-harness">
                 <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note"> · 잠금 (턴 시작됨)</span>}</div>
-                <div className="wb-segmented">
-                  {HARNESS_CHOICES.map((choice) => {
+                <div className="wb-harness-strip" ref={moreRef}>
+                  {primaryHarnesses.map((choice) => {
                     const locked = harnessLocked && choice.id !== currentHarness;
                     return (
                       <button
                         type="button"
                         key={choice.id}
                         disabled={locked}
-                        title={locked ? "턴이 시작된 뒤에는 하네스를 바꿀 수 없습니다 (새 세션 필요)" : undefined}
-                        className={"wb-segment" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
+                        title={locked ? lockedHarnessHint : choice.label}
+                        className={"wb-harness-tab" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
                         onClick={() => { if (!locked) setHarness(choice.id); }}
                       >
                         {choice.label}
                       </button>
                     );
                   })}
+                  {overflowHarnesses.length > 0 && (
+                    <button
+                      type="button"
+                      title="다른 하네스"
+                      aria-haspopup="menu"
+                      aria-expanded={moreOpen}
+                      className={"wb-harness-more" + (selectedOverflow ? " is-active" : "")}
+                      onClick={() => setMoreOpen((open) => !open)}
+                    >
+                      {selectedOverflow ? selectedOverflow.label : "더보기"}
+                      <ChevronDown size={10} className={"wb-harness-more-caret" + (moreOpen ? " is-open" : "")} aria-hidden="true" />
+                    </button>
+                  )}
+                  {moreOpen && (
+                    <div className="wb-harness-menu" role="menu">
+                      <div className="wb-harness-menu-label">다른 하네스</div>
+                      {overflowHarnesses.map((choice) => {
+                        const locked = harnessLocked && choice.id !== currentHarness;
+                        return (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={choice.id}
+                            disabled={locked}
+                            title={locked ? lockedHarnessHint : undefined}
+                            className={"wb-harness-menu-item" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
+                            onClick={() => { if (!locked) { setHarness(choice.id); setMoreOpen(false); } }}
+                          >
+                            <span className="wb-harness-menu-name">{choice.label}</span>
+                            <span className="wb-mono">{harnessCount(choice.id)}</span>
+                            <Check size={13} className={"wb-harness-menu-check" + (choice.id === harness ? " is-on" : "")} aria-hidden="true" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -450,38 +554,81 @@ export function ModelCatalogModal({
             {selectedMeta && (
               <>
                 <div className="wb-detail-head">
-                  <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[selectedMeta.provider] }} />
-                  <strong className="wb-mono">{selectedMeta.name}</strong>
-                  <span className="wb-chip">{PROVIDER_LABELS[selectedMeta.provider]}</span>
+                  <span
+                    className="wb-provider-dot wb-detail-dot"
+                    style={{
+                      background: PROVIDER_DOTS[selectedMeta.provider],
+                      boxShadow: `0 0 0 4px ${dotHalo(PROVIDER_DOTS[selectedMeta.provider], 0.16)}`,
+                    }}
+                  />
+                  <div className="wb-detail-ident">
+                    <div className="wb-detail-name-row">
+                      <strong className="wb-mono">{selectedMeta.name}</strong>
+                      <span className="wb-chip">{PROVIDER_LABELS[selectedMeta.provider]}</span>
+                    </div>
+                    {/* The route's own paragraph stays in the tooltip — this slot
+                        is one line, and prose would push the stats off screen. */}
+                    <span className="wb-detail-blurb" title={selected?.route.description}>
+                      {modelBlurb(selectedMeta.perf, selectedMeta.cost, Boolean(thinkingCap?.supported))}
+                    </span>
+                  </div>
+                  {selected && (
+                    <button
+                      type="button"
+                      className={"wb-detail-fav" + (selectedStarred ? " is-on" : "")}
+                      title={selectedStarred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+                      aria-pressed={selectedStarred}
+                      onClick={() => void toggleFavorite(selected)}
+                    >
+                      <Star size={13} />
+                      {selectedStarred ? "즐겨찾기" : "즐겨찾기 추가"}
+                    </button>
+                  )}
                 </div>
 
-                <div className="wb-stat-cards">
-                  <div className="wb-stat-card">
+                <div className="wb-stat-grid">
+                  <div className="wb-stat-cell">
                     <div className="wb-modal-label">Performance</div>
-                    <div className="wb-stat-row"><PerfMeter value={selectedMeta.perf} /><strong>{perfLabel(selectedMeta.perf)}</strong></div>
-                  </div>
-                  <div className="wb-stat-card">
-                    <div className="wb-modal-label">Cost · per 1M</div>
-                    <div className="wb-stat-row wb-mono wb-cost-prices">
-                      {selectedMeta.inPerM && <span><b>{selectedMeta.inPerM}</b> in</span>}
-                      {selectedMeta.outPerM && <span><b>{selectedMeta.outPerM}</b> out</span>}
-                      {selectedMeta.ioPerM && <span><b>{selectedMeta.ioPerM}</b> io</span>}
+                    <div className="wb-stat-line">
+                      <span className="wb-stat-value wb-mono">{selectedMeta.perf ?? "—"}</span>
+                      <span className="wb-stat-unit wb-mono">/ 5</span>
+                      <PerfMeter value={selectedMeta.perf} size="lg" />
                     </div>
-                    <CostMeter value={selectedMeta.cost} />
                   </div>
-                  <div className="wb-stat-card">
+                  <div className="wb-stat-cell">
+                    <div className="wb-modal-label">Cost · per 1M</div>
+                    <div className="wb-stat-stack">
+                      <div className="wb-stat-line wb-mono">
+                        <span className="wb-stat-value">{selectedMeta.inPerM || "—"}</span>
+                        <span className="wb-stat-unit">→</span>
+                        <span className="wb-stat-value">{selectedMeta.outPerM || "—"}</span>
+                      </div>
+                      <span className="wb-stat-sub wb-mono">in → out{selectedMeta.ioPerM ? ` · 평균 ${selectedMeta.ioPerM}` : ""}</span>
+                    </div>
+                  </div>
+                  <div className="wb-stat-cell">
                     <div className="wb-modal-label">Context</div>
-                    <div className="wb-stat-row wb-mono"><strong>{selectedMeta.context}</strong></div>
+                    <div className="wb-stat-line">
+                      <span className="wb-stat-value wb-mono">{selectedMeta.context}</span>
+                      <span className="wb-stat-unit is-plain">tokens</span>
+                    </div>
                   </div>
-                  <div className="wb-stat-card">
+                  <div className="wb-stat-cell">
                     <div className="wb-modal-label">이미지 입력</div>
-                    <div className="wb-stat-row wb-mono"><VisionTag image={capabilities.vision?.image} /></div>
+                    <VisionTag image={capabilities.vision?.image} />
                   </div>
                 </div>
+
+                {hasRunSettings && (
+                  <div className="wb-detail-rule">
+                    <span>실행 설정</span>
+                    <i />
+                  </div>
+                )}
 
                 {config.effort && effortCap?.supported && effortCap.options.length > 0 && (
                   <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>Effort</strong> <span>모델별 추론 강도</span></div>
+                    <div className="wb-detail-section-head"><strong>Effort</strong> <span>추론 강도 · 높일수록 느리고 정확합니다</span></div>
                     <div className="wb-segmented">
                       {effortCap.options.map((option) => (
                         <button type="button" key={option.id} className={"wb-segment" + (option.id === effort ? " is-active" : "")} onClick={() => setEffort(option.id)}>
@@ -507,7 +654,7 @@ export function ModelCatalogModal({
 
                 {config.thinking && thinkingCap?.supported && thinkingCap.modes && thinkingCap.modes.length > 0 && (
                   <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong><Lightbulb size={13} /> Thinking</strong> <span>모델별 추론 모드</span></div>
+                    <div className="wb-detail-section-head"><strong><Lightbulb size={14} /> Thinking</strong> <span>추론 모드 · 필요할 때만 길게 생각합니다</span></div>
                     <div className="wb-segmented">
                       {thinkingCap.modes.map((mode) => (
                         <button type="button" key={mode.id} className={"wb-segment" + (mode.id === thinkingMode ? " is-active" : "")} onClick={() => setThinkingMode(mode.id)}>
@@ -534,18 +681,23 @@ export function ModelCatalogModal({
                 {config.debug && (
                   <label className="wb-toggle-card">
                     <span className="wb-toggle-text">
-                      <SlidersHorizontal size={15} />
-                      <span><strong>Debug logging</strong><small>원시 하니스 이벤트를 로그로 남깁니다.</small></span>
+                      <SlidersHorizontal size={17} />
+                      <span><strong>Debug logging</strong><small>원시 하네스 이벤트를 로그로 남깁니다.</small></span>
                     </span>
                     <input type="checkbox" className="wb-switch" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
                   </label>
                 )}
 
+                {/* No section heading above it: the card names the feature
+                    itself, and a heading repeating "Auto-compact" over a card
+                    that says it again is one label too many. */}
                 {config.autoCompact && (
-                  <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>Auto-compact</strong> <span>컨텍스트 자동 압축</span></div>
-                    <AutoCompactEditor setting={compact} contextWindow={contextWindow} onChange={setCompact} />
-                  </div>
+                  <AutoCompactEditor
+                    setting={compact}
+                    contextWindow={contextWindow}
+                    title="Auto-compact · 임계치 초과 시 압축"
+                    onChange={setCompact}
+                  />
                 )}
               </>
             )}
@@ -553,7 +705,10 @@ export function ModelCatalogModal({
         </div>
 
         <footer className="wb-modal-foot">
-          <span className={"wb-dirty-note" + (dirty ? " is-dirty" : "")}>{dirty ? "변경됨 — Apply 시 적용됩니다" : "변경 사항 없음"}</span>
+          <span className={"wb-dirty-note" + (dirty ? " is-dirty" : "")}>
+            <Clock size={13} aria-hidden="true" />
+            {dirty ? "적용하지 않은 변경 사항" : "변경 사항 없음"}
+          </span>
           <div className="wb-modal-actions">
             <button type="button" className="wb-btn wb-btn-ghost" onClick={onClose}>Cancel</button>
             <button type="button" className="wb-btn wb-btn-accent" disabled={!dirty} onClick={apply}>{applyLabel}</button>

@@ -14,12 +14,23 @@ export function perfLabel(value: number | undefined): string {
   return `${value} / 5`;
 }
 
-export function PerfMeter({ value }: { value: number | undefined }) {
+/**
+ * Bar heights per size, taken from the design. Four bars, not five: the top two
+ * tiers are told apart by COLOUR (4+ turns green), not by an extra bar. The
+ * numeric tier is always spelled out beside the meter, so the bars are a shape
+ * to scan, not the thing carrying the value.
+ */
+const PERF_BARS = {
+  sm: [6, 9, 12, 15],
+  lg: [7, 10.5, 13.5, 16.5],
+} as const;
+
+export function PerfMeter({ value, size = "sm" }: { value: number | undefined; size?: keyof typeof PERF_BARS }) {
   const v = value ?? 0;
   return (
-    <span className={"wb-meter wb-perf" + (v >= 4 ? " is-high" : "")} title={value == null ? "Performance n/a" : `Performance ${v}/5`}>
-      {[1, 2, 3, 4, 5].map((bar) => (
-        <i key={bar} className={bar <= v ? "is-on" : ""} style={{ height: `${3 + bar * 2}px` }} />
+    <span className={`wb-meter wb-perf is-${size}` + (v >= 4 ? " is-high" : "")} title={value == null ? "Performance n/a" : `Performance ${v}/5`}>
+      {PERF_BARS[size].map((height, index) => (
+        <i key={height} className={index + 1 <= v ? "is-on" : ""} style={{ height: `${height}px` }} />
       ))}
     </span>
   );

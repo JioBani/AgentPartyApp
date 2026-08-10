@@ -7,10 +7,10 @@ import { Image as ImageIcon, ImageOff, HelpCircle } from "lucide-react";
  */
 export function VisionTag({ image }: { image?: boolean }) {
   if (image === true) {
-    return <strong className="wb-vision-tag is-yes"><ImageIcon size={12} /> 지원</strong>;
+    return <strong className="wb-vision-tag is-yes"><ImageIcon size={16} /> 지원</strong>;
   }
   if (image === false) {
-    return <strong className="wb-vision-tag is-no"><ImageOff size={12} /> 미지원</strong>;
+    return <strong className="wb-vision-tag is-no"><ImageOff size={16} /> 미지원</strong>;
   }
-  return <strong className="wb-vision-tag is-unknown"><HelpCircle size={12} /> 알 수 없음</strong>;
+  return <strong className="wb-vision-tag is-unknown"><HelpCircle size={16} /> 알 수 없음</strong>;
 }

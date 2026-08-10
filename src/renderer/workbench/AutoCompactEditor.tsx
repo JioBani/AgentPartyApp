@@ -31,6 +31,12 @@ interface EditorProps {
   setting: AutoCompactSetting;
   /** Context window (tokens) for the "≈ NN K 토큰" estimate; omitted when unknown. */
   contextWindow?: number;
+  /**
+   * Card title. Callers that already sit under an "Auto-compact" heading take
+   * the default; the model catalog names the feature here because the card is
+   * the only place it appears there.
+   */
+  title?: string;
   onChange: (setting: AutoCompactSetting) => void;
 }
 
@@ -39,7 +45,7 @@ interface EditorProps {
  * threshold slider (50–95%, step 5) with a live readout and token estimate.
  * Controlled; reused by the threshold modal, the runtime modal, and settings.
  */
-export function AutoCompactEditor({ setting, contextWindow, onChange }: EditorProps) {
+export function AutoCompactEditor({ setting, contextWindow, title = "임계치 초과 시 자동 압축", onChange }: EditorProps) {
   const tokens = thresholdTokens(setting.at, contextWindow);
   // The number field keeps its own raw text while typing, committing (clamped
   // into the settable band) on blur / Enter — so a partial value like "1" isn't
@@ -65,8 +71,8 @@ export function AutoCompactEditor({ setting, contextWindow, onChange }: EditorPr
     <div className="wb-compact-editor">
       <label className="wb-toggle-card">
         <span className="wb-toggle-text">
-          <ChevronsDownUp size={15} />
-          <span><strong>임계치 초과 시 자동 압축</strong><small>끄면 수동 압축만 사용합니다.</small></span>
+          <ChevronsDownUp size={17} />
+          <span><strong>{title}</strong><small>끄면 수동 압축만 사용합니다.</small></span>
         </span>
         <input
           type="checkbox"
