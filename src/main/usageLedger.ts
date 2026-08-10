@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { log } from "./logger";
+import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 import type { TurnUsageRecord } from "../shared/tokenUsage";
 
 /**
@@ -17,7 +18,7 @@ import type { TurnUsageRecord } from "../shared/tokenUsage";
  * a live turn.
  */
 export class UsageLedger {
-  private static readonly ROOT_DIR = ".agent_party_app";
+  private static readonly ROOT_DIR = STORAGE_DIR;
   private static readonly LEDGER_DIR = "usage";
   private static readonly LEDGER_FILE = "turns.jsonl";
 
@@ -29,6 +30,7 @@ export class UsageLedger {
   append(workspacePath: string, record: TurnUsageRecord): void {
     try {
       const file = this.filePath(workspacePath);
+      ensureStorageDir(path.join(workspacePath, UsageLedger.ROOT_DIR));
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.appendFileSync(file, `${JSON.stringify(record)}\n`);
     } catch (err) {

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowRight, Check, ChevronDown, Copy, FlaskConical, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
+import { ipcErrorMessage } from "./ipcError";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -541,6 +543,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "harness", label: "하네스 기본값", icon: <SquareTerminal size={14} /> },
   { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
+  { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
 export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveDiscord, tabRequest }: {
@@ -727,8 +730,156 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             )}
         </SubtreeVisibility>
         </div>
+
+        {/* Diagnostics — what a bug report needs: build, host, log folder. */}
+        <div className="set-tab-panel" hidden={tab !== "diagnostics"}>
+        <SubtreeVisibility visible={tab === "diagnostics"}>
+          <DiagnosticsCard active={tab === "diagnostics"} />
+        </SubtreeVisibility>
+        </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Version + log access + a one-paste diagnostic report.
+ *
+ * Loaded on FIRST reveal rather than on mount: the report reads live auth state,
+ * which spawns the Cursor CLI, and every settings tab stays mounted — so an
+ * eager fetch would put that cost on every window that opens this screen for an
+ * unrelated tab.
+ */
+function DiagnosticsCard({ active }: { active: boolean }) {
+  const [report, setReport] = useState<DiagnosticsReport | undefined>();
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [openError, setOpenError] = useState("");
+  const [copied, setCopied] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      setReport(await window.agentParty.getDiagnostics());
+    } catch (error) {
+      setReport(undefined);
+      setLoadError(ipcErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active && !report && !loading && !loadError) void load();
+  }, [active, report, loading, loadError, load]);
+
+  function copy(id: string, value: string) {
+    void navigator.clipboard?.writeText(value);
+    setCopied(id);
+    setTimeout(() => setCopied((current) => (current === id ? "" : current)), 1300);
+  }
+
+  async function openLogFolder() {
+    setOpenError("");
+    try {
+      await window.agentParty.openLogFolder();
+    } catch (error) {
+      // The folder did not open. Saying so is the whole point — a button that
+      // reports nothing leaves the user believing the app is broken elsewhere.
+      setOpenError(ipcErrorMessage(error));
+    }
+  }
+
+  const versionText = report
+    ? (report.version ? `v${report.version}` : "버전 불명") + (report.packaged ? "" : " (개발 빌드)")
+    : "";
+  const reportText = report ? formatDiagnosticsReport(report) : "";
+
+  return (
+    <>
+      <div className="set-tab-note">
+        <InfoIcon size={14} />
+        <span>문제가 생겼을 때 <b>버전과 로그</b>를 함께 전달하면 원인을 훨씬 빨리 찾을 수 있습니다.</span>
+      </div>
+
+      {loadError && (
+        <div className="set-inline-note is-error">
+          <AlertTriangle size={14} />
+          <span>진단 정보를 읽지 못했습니다: {loadError}</span>
+          <button type="button" className="set-link-btn" onClick={() => void load()}><RefreshCw size={12} /> 다시 시도</button>
+        </div>
+      )}
+
+      <section className="set-card">
+        <div className="set-card-label">버전<span className="set-card-sub wb-mono">제보할 때 이 값을 함께 알려주세요</span></div>
+        <DiagnosticsRow label="AgentParty" value={versionText} loading={loading} copiedId={copied} copyId="version" onCopy={copy} />
+        {report?.versionError && (
+          <div className="set-inline-note is-warn">
+            <AlertTriangle size={14} />
+            <span>{report.versionError}</span>
+          </div>
+        )}
+        <DiagnosticsRow label="OS" value={report ? `${report.os.platform} ${report.os.release} (${report.os.arch})` : ""} loading={loading} />
+        <DiagnosticsRow label="작업공간" value={report ? `${report.workspace.kind === "wsl" ? `WSL(${report.workspace.distro || "?"})` : "로컬"} · ${report.workspace.path}` : ""} loading={loading} />
+        <DiagnosticsRow label="앱 경로" value={report?.appRoot || ""} loading={loading} />
+      </section>
+
+      <section className="set-card">
+        <div className="set-card-label">로그<span className="set-card-sub wb-mono">NDJSON · 실행할 때마다 새 파일</span></div>
+        <DiagnosticsRow label="파일" value={report?.logs.filePath || ""} loading={loading} copiedId={copied} copyId="logFile" onCopy={copy} />
+        <div className="set-diag-actions">
+          <button type="button" className="set-btn-soft" data-diag="open-logs" disabled={!report} onClick={() => void openLogFolder()}><FolderOpen size={14} /> 로그 폴더 열기</button>
+          <button type="button" className="set-btn-soft" data-diag="copy-log-folder" disabled={!report} onClick={() => copy("logFolder", report?.logs.folderPath || "")}>
+            {copied === "logFolder" ? <Check size={14} /> : <Copy size={14} />} 폴더 경로 복사
+          </button>
+        </div>
+        {openError && (
+          <div className="set-inline-note is-error">
+            <AlertTriangle size={14} />
+            <span>{openError}</span>
+          </div>
+        )}
+      </section>
+
+      <section className="set-card">
+        <div className="set-card-label">진단 정보<span className="set-card-sub wb-mono">한 번에 복사해서 붙여넣기</span></div>
+        <div className="set-inline-note">
+          <InfoIcon size={14} />
+          <span>버전·OS·작업공간·로그 위치·인증 상태를 한 덩어리로 모은 것입니다. <b>비밀 키는 담기지 않습니다</b> — 그대로 붙여넣어도 안전합니다.</span>
+        </div>
+        <pre className="set-diag-report wb-mono">{reportText || (loading ? "읽는 중…" : "—")}</pre>
+        <div className="set-diag-actions">
+          <button type="button" className="set-btn-accent" data-diag="copy-report" disabled={!report} onClick={() => copy("report", reportText)}>
+            {copied === "report" ? <Check size={14} /> : <Copy size={14} />} 진단 정보 복사
+          </button>
+          <button type="button" className="set-btn-soft" data-diag="refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={14} /> 새로고침</button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+/** One `label — value [copy]` line. Wraps rather than truncating: a log path is
+ *  the value most likely to be long AND the one most likely to be read by eye. */
+function DiagnosticsRow({ label, value, loading, copyId, copiedId, onCopy }: {
+  label: string;
+  value: string;
+  loading: boolean;
+  copyId?: string;
+  copiedId?: string;
+  onCopy?: (id: string, value: string) => void;
+}) {
+  return (
+    <div className="set-diag-row">
+      <span className="set-diag-key">{label}</span>
+      <span className="set-diag-value wb-mono">{value || (loading ? "읽는 중…" : "—")}</span>
+      {copyId && onCopy && (
+        <button type="button" className="set-icon-btn" data-diag={`copy-${copyId}`} title="복사" disabled={!value} onClick={() => onCopy(copyId, value)}>
+          {copiedId === copyId ? <Check size={14} /> : <Copy size={13} />}
+        </button>
+      )}
+    </div>
   );
 }
 

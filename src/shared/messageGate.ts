@@ -176,3 +176,42 @@ export function collapseMemberGate(gate: MemberGateOverride | undefined): Member
   }
   return next;
 }
+
+/**
+ * Which layer a failed review broke in. The gate fails OPEN, so a failure is
+ * invisible in the delivered message — the only way to know the gate is not
+ * actually filtering is to count these, and the only way to fix it is to know
+ * which layer to look at.
+ *
+ * - `parsing`   — the reviewer answered, but not in a verdict this app can read.
+ * - `timeout`   — the call was aborted before an answer arrived.
+ * - `transport` — the call never completed (connection, auth, HTTP status).
+ * - `unknown`   — recognised as a failure, but not attributable. Deliberately
+ *   NOT folded into one of the above: guessing a layer would send the next
+ *   investigation to the wrong place.
+ */
+export type GateFailureLayer = "parsing" | "timeout" | "transport" | "unknown";
+
+/**
+ * Classifies a reviewer failure into the layer that produced it.
+ *
+ * The patterns were derived from 15 real failures in this app's logs, not from
+ * guesswork: 10 were `Reviewer verdict was invalid: …` (the reviewer returning
+ * `{"verdict":"compliant"}`, which the parser does not accept) and 5 were
+ * `This operation was aborted` from the 60s abort. Ordering matters — an abort
+ * also mentions "operation", so timeout is tested before the broader
+ * transport patterns.
+ */
+export function classifyGateFailure(error: unknown): GateFailureLayer {
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  if (/abort|timed?\s*out|ETIMEDOUT/i.test(text)) {
+    return "timeout";
+  }
+  if (/verdict was invalid|JSON|parse|unexpected token|schema/i.test(text)) {
+    return "parsing";
+  }
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|socket|network|certificate|\b(401|403|404|429|5\d\d)\b|unavailable|not connected|proxy/i.test(text)) {
+    return "transport";
+  }
+  return "unknown";
+}

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -53,6 +54,9 @@ const api = {
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
   authenticateMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpAuthenticate", sessionId, server),
+  getDiagnostics: (): Promise<DiagnosticsReport> => ipcRenderer.invoke("diagnostics:get"),
+  /** Reveals the log folder. Rejects with the OS reason when it cannot open. */
+  openLogFolder: (): Promise<{ ok: true; path: string }> => ipcRenderer.invoke("diagnostics:openLogFolder"),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
   copyImageToClipboard: (image: { dataBase64: string; mediaType: string }) => ipcRenderer.invoke("clipboard:writeImage", image),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
@@ -89,6 +93,10 @@ const api = {
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
   getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
+  /** Bytes for one screenshot a transcript references, fetched only when shown. */
+  getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),
+  /** Where the harness keeps its own untrimmed copy of this member's conversation. */
+  getHarnessOriginal: (name: string): Promise<{ ok: true; original: { harness: string; path: string; exists: boolean; bytes?: number } | null }> => ipcRenderer.invoke("party:harness-original", name),
   onSessionEvents: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("session:events", listener);

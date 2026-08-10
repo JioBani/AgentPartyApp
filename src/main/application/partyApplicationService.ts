@@ -35,6 +35,7 @@ import {
   type QueuedMessage,
 } from "../../shared/messageQueue";
 import { log } from "../logger";
+import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
@@ -42,7 +43,7 @@ import type { TranscriptBlock } from "../../shared/transcript";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
-import type { PartyBridge } from "../../core/partyBridge";
+import { invokePartyTool, type PartyBridge, type PartyToolResult } from "../../core/partyBridge";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
@@ -57,6 +58,7 @@ import {
   type EffectiveGate,
   type GateReviewer,
   type GateReviewResult,
+  classifyGateFailure,
 } from "../../shared/messageGate";
 import type { GateReviewMessage } from "../../core/messageGateReviewer";
 import {
@@ -68,6 +70,7 @@ import {
   normalizeHarnessId,
   normalizeMemberName,
 } from "./partyDomain";
+import { crossHarnessLockReason, type HarnessId } from "../../shared/modelIdentity";
 
 export interface PartyApplicationDeps {
   sessionManager: SessionManager;
@@ -461,6 +464,7 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, input.partyId);
     const member = buildPartyMember({ ...input, partyId: party.id }, getSettings());
+    this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
@@ -722,6 +726,7 @@ export class PartyApplicationService {
     const currentHarness = normalizeHarnessId(member.runtime);
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
     const nextHarness = requestedHarness || currentHarness;
+    this.assertNotBetaLocked(nextHarness, input.model || member.model);
     if (changesHarness && this.memberHasStartedTurn(member)) {
       throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
     }
@@ -1155,6 +1160,42 @@ export class PartyApplicationService {
   }
 
   /**
+   * Where the HARNESS keeps its own full copy of this member's conversation.
+   *
+   * The app's transcript has a retention window; the harness file does not. So
+   * once a member's window is full, this is where the rest of the history still
+   * is. Returns `original: null` when the member has not produced a harness
+   * session yet, or the harness does not keep one we can name.
+   */
+  getHarnessOriginal(name: string, partyId?: string): { ok: true; original: HarnessOriginal | null } {
+    const member = this.requireMember(this.readState(), name, partyId);
+    const sessionId = member.harnessSessionId
+      || (member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined);
+    // A member's cwd IS its workspace (the locked workspace model), which is
+    // exactly the key Claude Code derives its directory name from.
+    return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
+  }
+
+  /**
+   * One extracted transcript image, as a data URL.
+   *
+   * Screenshots are persisted out-of-line (see `shared/transcriptImages.ts`), so
+   * the transcript a window loads carries references instead of megabytes of
+   * base64. The bytes are fetched here, per image, only when one is actually
+   * displayed. Reading it over this path (rather than a file:// URL) keeps the
+   * renderer sandboxed and lets a REMOTE engine serve its own images.
+   */
+  getTranscriptImage(file: string): { ok: true; dataUrl: string; bytes: number } {
+    const resolved = this.repository.imagePath(this.workspacePath(), file);
+    if (!resolved) {
+      throw new Error(`Transcript image '${file}' is not a name inside the image store.`);
+    }
+    const bytes = fs.readFileSync(resolved);
+    const mediaType = IMAGE_MEDIA_TYPES[path.extname(resolved).toLowerCase()] || "application/octet-stream";
+    return { ok: true, dataUrl: `data:${mediaType};base64,${bytes.toString("base64")}`, bytes: bytes.byteLength };
+  }
+
+  /**
    * The workbench tab layout for a party, or undefined when none is stored yet
    * (the renderer then seeds one from the member list).
    */
@@ -1362,6 +1403,35 @@ export class PartyApplicationService {
    * `member.model`. Expects the catalog/route id (what the setter APIs receive),
    * never a display label.
    */
+  /**
+   * Refuses a (model, harness) pair the beta locks (B-12). Enforcement lives on
+   * the MUTATIONS, not only in the catalog list, because the list is one of four
+   * ways in: the member wizard, `POST /api/party/members`, the party
+   * `member-create` tool and a live model change all end up here.
+   */
+  private assertNotBetaLocked(harnessId: HarnessId, model: string | undefined): void {
+    const reason = model ? crossHarnessLockReason(model, harnessId) : undefined;
+    if (reason) {
+      throw new Error(reason);
+    }
+  }
+
+  /**
+   * {@link assertNotBetaLocked} for a live session, resolved through the member
+   * that owns it — a session carries no harness of its own. Called before the
+   * model is applied so a locked pair never reaches the adapter.
+   */
+  assertSessionModelAllowed(sessionId: string, model: string): void {
+    if (!sessionId || !model) {
+      return;
+    }
+    const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
+    const member = state.members.find((item) => item.sessionId === sessionId);
+    if (member) {
+      this.assertNotBetaLocked(normalizeHarnessId(member.runtime), model);
+    }
+  }
+
   syncMemberModel(sessionId: string, model: string): void {
     if (!sessionId || !model) {
       return;
@@ -1800,6 +1870,18 @@ export class PartyApplicationService {
           // is exactly the case where nothing else says so. Report it on the
           // result too, so HTTP/MCP/IPC callers cannot read this as a success.
           const detail = errorMessage(error);
+          // Record the failure as a gate-review turn as well. Only the SUCCESS
+          // path used to write one, so a gate that was failing open left a
+          // ledger showing 100% clean reviews — its error rate could not be
+          // measured at all, which is how "the gate is on" and "the gate is
+          // actually running" drifted apart unnoticed. Telemetry must never
+          // break delivery, so this stays best-effort like its success twin.
+          this.deps.sessionManager.recordGateReview?.(workspace, {
+            partyId: targetPartyId,
+            member: sender.name,
+            model: gate.reviewer.model,
+            failure: { layer: classifyGateFailure(error), detail },
+          });
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error" });
           log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, reviewer: gate.reviewer.model, error: detail });
           const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
@@ -2421,6 +2503,36 @@ export class PartyApplicationService {
   // `from` is closure-bound to the calling member; every operation is scoped to
   // the caller's OWN party (`party`), never a shared/default one — an agent's
   // party tools must act inside its party regardless of what any window is viewing.
+  /**
+   * Runs one party tool ON BEHALF OF a member that reaches us over HTTP instead
+   * of in-process — today, a Codex member, whose tools live in a separate stdio
+   * MCP server (`scripts/agentparty-codex-mcp-server.mjs`).
+   *
+   * It exists so that transport is the ONLY difference between harnesses. That
+   * server used to call the same REST endpoints the UI uses and hand the answer
+   * back raw, which meant the agent-facing contract was written twice — and the
+   * two copies had already drifted apart:
+   *
+   * - a message the gate REJECTED came back as `ok: true`, with the refusal
+   *   buried in a `message` field, so a Codex member was told its message was
+   *   delivered when it was not;
+   * - every call returned the UI's whole command result — the party list, every
+   *   member record and up to 200 messages. Measured on a real party: 297KB,
+   *   roughly 74,000 tokens, per `send`. The correct answer is 36 bytes.
+   *
+   * `invokePartyTool` is the one place that decides what a tool returns, so both
+   * harnesses now go through it and there is no second copy to drift.
+   */
+  async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): Promise<PartyToolResult> {
+    const state = this.repository.read(this.workspacePath());
+    const caller = state.members.find((m) => m.name === member && (!partyId || m.partyId === partyId));
+    if (!caller) {
+      return { ok: false, error: `Member '${member}' is not in this party.` };
+    }
+    const party = this.partyIdOf(caller);
+    return invokePartyTool(this.partyBridgeFor(party, caller.name), { party, member: caller.name, role: caller.role }, tool, args);
+  }
+
   private partyBridgeFor(party: string, selfMember: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {

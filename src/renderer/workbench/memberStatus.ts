@@ -2,6 +2,7 @@ import type { PartyMember, SessionView } from "../../shared/types";
 import { memberColor } from "../theme/memberColors";
 import { parseContextTokens } from "../../shared/modelCatalog";
 import { resolveAutoCompact, type AutoCompactSetting } from "../../shared/autoCompact";
+import { harnessCapabilities } from "../../shared/harnessCapabilities";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import { findRoute, type RouteLike, type RouteVision } from "./routes";
 
@@ -129,6 +130,11 @@ function effortOptionsFor(model: string, routes?: RouteLike[]): { id: string; la
  * an error-masking fallback. When no window resolves, the meter still shows the
  * used count, just without a ratio (never a guessed denominator).
  *
+ * A harness without {@link HarnessCapabilities.contextWindow} skips that whole
+ * chain: for Cursor there is no window to find, so the catalog string (which
+ * describes the vendor's native model, not the variant Cursor serves) would be
+ * a guessed denominator rather than a known one.
+ *
  * When no live session reports usage yet (a closed member, or a freshly reopened
  * app), it falls back to the member's PERSISTED last-known occupancy so the meter
  * appears immediately — flagged `stale` so the UI marks it not-yet-refreshed
@@ -143,8 +149,24 @@ function contextFor(session: SessionView | undefined, member: PartyMember, model
     return undefined;
   }
   const route = routeForModel(model, routes) || routeForModel(configuredModel, routes);
-  const total = session?.snapshot.contextWindow || (stale ? member.lastContextWindow : undefined) || parseContextTokens(route?.meta?.context);
+  const total = harnessCapabilities(member.runtime).contextWindow
+    ? session?.snapshot.contextWindow || (stale ? member.lastContextWindow : undefined) || parseContextTokens(route?.meta?.context)
+    : undefined;
   return { used, total: total && total > 0 ? total : undefined, stale };
+}
+
+/**
+ * The window an auto-compaction threshold is sized against, for the dialogs that
+ * need one before any usage has been reported. Prefers the live meter, then the
+ * member's last known window — but a harness with no window has none to restore
+ * either: a Cursor member's PERSISTED value predates this rule and would put the
+ * fabricated 500K back on screen.
+ */
+export function thresholdWindowFor(view: MemberView): number | undefined {
+  if (!harnessCapabilities(view.member.runtime).contextWindow) {
+    return undefined;
+  }
+  return view.context?.total || view.member.lastContextWindow;
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */

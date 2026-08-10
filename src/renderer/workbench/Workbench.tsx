@@ -18,6 +18,7 @@ import {
   openMember,
   openMemberInNewPanel,
   panelOf,
+  promoteTab,
   pruneLayout,
   resizeAt,
   setActiveTab,
@@ -434,16 +435,6 @@ export function Workbench(props: WorkbenchProps) {
     // once it arrives via the party broadcast (uniform for wizard + agent creates).
   }
 
-  function addFirstAvailable(panelId: string) {
-    const open = new Set(layout.panels.flatMap((panel) => panel.tabs));
-    const candidate = views.find((view) => !open.has(view.name));
-    if (!candidate) {
-      return;
-    }
-    setLayout((current) => openMember(focusPanel(current, panelId), candidate.name));
-    onMemberOpened(candidate.name);
-  }
-
   // --- Tab drag-and-drop --------------------------------------------------
   function onTabPointerDown(member: string, event: ReactPointerEvent) {
     if (event.button !== 0) {
@@ -565,7 +556,6 @@ export function Workbench(props: WorkbenchProps) {
   const gateView = gateTarget ? viewMap.get(gateTarget) : undefined;
   const activeParty = parties.find((party) => party.id === activePartyId);
   const gateParty = partyGateTarget ? parties.find((party) => party.id === partyGateTarget) : undefined;
-  const canAddAny = views.some((view) => !openMembers.has(view.name));
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
 
@@ -629,7 +619,6 @@ export function Workbench(props: WorkbenchProps) {
               focused={panel.id === layout.focusedPanelId}
               draggingMember={drag?.member ?? null}
               dropTarget={Boolean(drag && !drag.overNew && drag.overPanelId === panel.id)}
-              canAdd={canAddAny}
               actions={actions}
               onFocus={() => setLayout((current) => focusPanel(current, panel.id))}
               onSelectTab={(member) => setLayout((current) => setActiveTab(current, panel.id, member))}
@@ -639,7 +628,7 @@ export function Workbench(props: WorkbenchProps) {
                 actions.closeSession(member);
                 setLayout((current) => closeTab(current, panel.id, member));
               }}
-              onAdd={() => addFirstAvailable(panel.id)}
+              onPromoteTab={(member) => setLayout((current) => promoteTab(current, panel.id, member))}
               onSplit={() => setLayout((current) => splitPanel(current, panel.id))}
               onOpenRuntime={setRuntimeTarget}
               onOpenMcp={setMcpTarget}

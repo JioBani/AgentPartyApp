@@ -5,7 +5,6 @@ import * as readline from "node:readline";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import type { ImageAttachment } from "../shared/attachments";
-import { parseContextTokens } from "../shared/modelCatalog";
 import { RawLogger } from "./rawLogger";
 import { resolveCursorAgentCommand } from "./cursorAgentCli";
 import { fetchCursorUsage, readCursorAccessToken } from "./cursorUsage";
@@ -308,7 +307,12 @@ export class CursorAdapter extends EventEmitter {
       turnCount: this.turnCount,
       queuedTurnCount: this.queuedTurns.length,
       contextTokens: this.contextTokens,
-      contextWindow: isCursorAuto(this.model) ? undefined : parseContextTokens("500K"),
+      // No window: the Cursor CLI never reports one. Its `stream-json` surface
+      // carries a single usage frame of four per-turn counters and its ACP
+      // surface carries none at all (both measured against the real CLI). This
+      // used to claim a hardcoded 500K, which made the app believe it knew the
+      // capacity and let auto-compaction fire on a ratio nobody had measured.
+      contextWindow: undefined,
     };
   }
 

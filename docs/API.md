@@ -83,6 +83,36 @@ next turn overwrites it with the fresh `snapshot` value.
 
 Returns the active log file path.
 
+### `GET /api/diagnostics`
+
+Everything a bug report needs about this install, in one call — the same report
+the settings **런타임 → 진단** tab shows and its `진단 정보 복사` button copies.
+No secrets: `auth` carries `id`/`label`/`status` only, never a key or token.
+
+```json
+{
+  "version": "0.1.0",
+  "packaged": false,
+  "appRoot": "C:\\Project\\AgentPartyApp\\dist\\main",
+  "os": { "platform": "win32", "release": "10.0.26200", "arch": "x64" },
+  "versions": { "node": "20.18.1", "electron": "33.2.1", "chrome": "130.0.6723.152" },
+  "workspace": { "uri": "C:\\Project\\AgentPartyApp", "kind": "local", "path": "C:\\Project\\AgentPartyApp" },
+  "logs": { "filePath": "…\\logs\\agentparty-….ndjson", "folderPath": "…\\logs" },
+  "auth": [{ "id": "claude", "label": "Claude 구독", "status": "configured" }]
+}
+```
+
+`version` is `""` only where the running process cannot know it (the headless
+WSL engine); then `versionError` states why rather than the field going blank.
+`workspace.kind` is `"wsl"` for a WSL workspace — that is the "WSL 여부" answer.
+
+### `POST /api/diagnostics/open-logs`
+
+Opens the log folder in the OS file manager. No body. Returns
+`{ "ok": true, "path": "…\\logs" }`, or **500 with the OS reason** when the
+folder could not be opened — it never reports success for a window that did not
+appear.
+
 ### `POST /api/capture`
 
 Captures the current Electron window and stores it as a PNG. If `path` is omitted, the file is written next to the current log file.
@@ -1482,6 +1512,43 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
+`<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
+reference, because base64-wrapped PNG is both the largest thing a transcript
+holds (measured at 564 KB for one block) and the one payload compression cannot
+shrink. Fetch the bytes with the next endpoint.
+
+```json
+{ "type": "image", "source": { "type": "agentparty-file", "file": "3f9a….png", "media_type": "image/png", "bytes": 576936 } }
+```
+
+### `GET /api/party/transcript-image/:file`
+
+The bytes of one screenshot a transcript references, as a data URL. `:file` is
+the `file` field of an `agentparty-file` source — a name inside the image store,
+never a path (anything resolving outside it is rejected). Naming files by content
+hash means re-reading the same screenshot does not store it twice.
+
+```json
+{ "ok": true, "dataUrl": "data:image/png;base64,iVBORw0KGgo…", "bytes": 576936 }
+```
+
+### `GET /api/party/members/:name/harness-original`
+
+Where the HARNESS keeps its own copy of this member's conversation. The app's
+transcript has a retention window; the harness file does not, so once a member's
+window is full this names where the rest of the history still is.
+
+```json
+{ "ok": true, "original": { "harness": "claude-code", "path": "C:\Users\me\.claude\projects\C--Project-App\<session>.jsonl", "exists": true, "bytes": 38578 } }
+```
+
+`original` is `null` when the member has no harness session yet, or the harness
+keeps none we can name. `exists: false` matters: Claude Code derives its
+directory from the ABSOLUTE cwd (every character outside `[a-zA-Z0-9]` becomes
+`-`), so **moving the project folder orphans the history** — the new path maps
+to a different, empty directory. Report that rather than a path leading nowhere.
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,
@@ -1543,6 +1610,35 @@ Sends a member-to-member message. The caller can be supplied in JSON as `from` o
 }
 ```
 
+Returns the UI's command result (party list, members, messages) — it is the same
+endpoint the app itself uses. **Agents should not call it**; use the tool
+endpoint below, which answers with the compact tool result instead.
+
+### `POST /api/harness/party/tools/:tool`
+
+Runs ONE party tool as the calling member, for a harness whose tools live
+outside the app process — today Codex, via
+`scripts/agentparty-codex-mcp-server.mjs`. `:tool` is a party tool name
+(`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
+the body is that tool's arguments.
+
+The caller is taken from `X-AgentParty-Member` and never from the body, so an
+agent cannot act as another member. `X-AgentParty-Party` scopes it to that
+member's own party.
+
+This runs the same `invokePartyTool` the in-process harnesses use, so every
+harness gets identical behaviour and identical answers:
+
+```json
+{ "ok": true }
+{ "ok": true, "data": { "queued": true } }
+{ "ok": false, "error": "Rewrite it as one line; the party rule forbids status essays." }
+```
+
+`ok: false` means it did NOT happen — a Message Gate rejection included. Do not
+read a `message` field for that verdict; the older path returned `ok: true` with
+the refusal buried inside, which is exactly what this endpoint exists to end.
+
 ## Window
 
 ### `POST /api/window/minimize`
@@ -1585,6 +1681,7 @@ general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
 harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
 gate    (Message Gate 리뷰어 기본값)
 discord (Discord 브리지 자격증명 + 연결된 멤버)
+diagnostics (버전 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
 ```
 
 A `tab` on a screen that has none, or an unknown tab id, is an **error** — never

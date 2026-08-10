@@ -49,6 +49,8 @@ export type RouteLike = {
   description?: string;
   enabled?: boolean;
   unavailableReason?: string;
+  /** Disabled by the beta cross-harness lock, not by a permanent gap (B-12). */
+  locked?: boolean;
   meta?: RouteMeta;
   capabilities?: RouteCapabilities;
 };

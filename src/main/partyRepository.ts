@@ -1,8 +1,12 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import { capTranscript } from "../shared/transcriptCap";
+import { externalizeImages, extensionFor, TRANSCRIPT_IMAGE_DIR, type StoredImageSource } from "../shared/transcriptImages";
 import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
 import { log } from "./logger";
+import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 
 /**
  * The composed, in-memory party state — the shared party index PLUS every
@@ -79,7 +83,7 @@ export class PartyRepository {
 
   /** Writes the SHARED party index (list + advisory last-active hint). Rare. */
   writeIndex(workspacePath: string, parties: PartyDefinition[], lastActivePartyId?: string): void {
-    this.writeJsonAtomic(this.indexPath(workspacePath), { version: 2, parties, lastActivePartyId });
+    this.writeJsonAtomic(workspacePath, this.indexPath(workspacePath), { version: 2, parties, lastActivePartyId });
   }
 
   /**
@@ -99,7 +103,7 @@ export class PartyRepository {
 
   /** Writes ONE party's detail file (its members + messages). Isolated per party. */
   writeParty(workspacePath: string, partyId: string, members: PartyMember[], messages: PartyMessage[]): void {
-    this.writeJsonAtomic(this.partyFilePath(workspacePath, partyId), { version: 2, members, messages: messages.slice(-200) });
+    this.writeJsonAtomic(workspacePath, this.partyFilePath(workspacePath, partyId), { version: 2, members, messages: messages.slice(-200) });
   }
 
   /** The on-disk directory holding one party's members (role files, transcripts). */
@@ -124,8 +128,8 @@ export class PartyRepository {
    */
   readLayout(workspacePath: string, partyId: string): WorkbenchLayout | undefined {
     try {
-      const raw = fs.readFileSync(this.layoutPath(workspacePath, partyId), "utf8");
-      return sanitizeLayout(JSON.parse(raw)?.layout);
+      const parsed = readJsonSurvivingWrite(this.layoutPath(workspacePath, partyId)) as { layout?: unknown } | undefined;
+      return parsed === undefined ? undefined : sanitizeLayout(parsed.layout);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         log("warn", "party", "failed to read workbench layout", { partyId, error: errMsg(error) });
@@ -135,7 +139,7 @@ export class PartyRepository {
   }
 
   writeLayout(workspacePath: string, partyId: string, layout: WorkbenchLayout): void {
-    this.writeJsonAtomic(this.layoutPath(workspacePath, partyId), { version: 1, layout });
+    this.writeJsonAtomic(workspacePath, this.layoutPath(workspacePath, partyId), { version: 1, layout });
   }
 
   private layoutPath(workspacePath: string, partyId: string): string {
@@ -143,8 +147,8 @@ export class PartyRepository {
   }
 
   /**
-   * The persisted transcript (assembled UI blocks) for one member. Capped to the
-   * most recent {@link TRANSCRIPT_CAP} blocks. Never throws — a missing or
+   * The persisted transcript (assembled UI blocks) for one member. Trimmed to
+   * the window described by {@link capTranscript}. Never throws — a missing or
    * corrupt file reads as an empty transcript.
    */
   readTranscript(workspacePath: string, partyId: string, memberName: string): unknown[] {
@@ -155,8 +159,7 @@ export class PartyRepository {
       // EPERM. A sync read completes before returning, so read/save never race
       // on the same file. At ~700KB the parse is only a few ms, and the switch-
       // time render cost (bounded by the tail-first UI) is the real lever.
-      const raw = fs.readFileSync(file, "utf8");
-      const parsed = JSON.parse(raw);
+      const parsed = readJsonSurvivingWrite(file) as { blocks?: unknown } | undefined;
       return Array.isArray(parsed?.blocks) ? parsed.blocks : [];
     } catch (error) {
       // ENOENT (no transcript yet) is normal — restore reads as empty, not a warning.
@@ -174,7 +177,7 @@ export class PartyRepository {
    * caller ships only what changed instead of the entire transcript. The anchor
    * is resolved against {@link lastWritten}, a write-through mirror of the file,
    * so an append costs no read: this process is the only writer for its
-   * workspace, and the head-trimming done by {@link TRANSCRIPT_CAP} means the
+   * workspace, and the head-trimming done by {@link capTranscript} means the
    * caller's indices do NOT match the file's — only ids can anchor safely.
    *
    * An anchor that is not found is NOT silently promoted to a full write: that
@@ -195,10 +198,55 @@ export class PartyRepository {
       }
       next = stored.slice(0, anchor + 1).concat(incoming);
     }
-    const capped = next.slice(-TRANSCRIPT_CAP).map(stripAttachmentBytes);
-    this.writeJsonAtomic(this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
+    const capped = capTranscript(next).map(stripAttachmentBytes).map((block) => this.externalizeBlockImages(workspacePath, block));
+    this.writeJsonAtomic(workspacePath, this.transcriptPath(workspacePath, partyId, memberName), { version: 1, blocks: capped });
     this.lastWritten.set(this.transcriptKey(workspacePath, partyId, memberName), capped);
     return { applied: true };
+  }
+
+  /**
+   * Moves a block's inline base64 images out to {@link imageDir} and leaves a
+   * reference behind. Screenshots are the largest single things a transcript
+   * holds and the one payload compression cannot shrink, so keeping them inline
+   * costs both disk AND the renderer's parse of every block it never displays.
+   *
+   * A failed write is NOT allowed to drop the image silently: the block is kept
+   * exactly as it was (bytes inline) and the failure is logged. A fat transcript
+   * is a much smaller problem than a screenshot that vanished.
+   */
+  private externalizeBlockImages(workspacePath: string, block: unknown): unknown {
+    try {
+      return externalizeImages(block, (data, mediaType) => this.storeImage(workspacePath, data, mediaType));
+    } catch (error) {
+      log("error", "party", "transcript image externalization failed; keeping bytes inline", { error: errMsg(error) });
+      return block;
+    }
+  }
+
+  /** Writes image bytes under their own SHA-256, so a re-read costs nothing. */
+  private storeImage(workspacePath: string, data: string, mediaType: string | undefined): StoredImageSource {
+    const bytes = Buffer.from(data, "base64");
+    const file = `${crypto.createHash("sha256").update(bytes).digest("hex")}.${extensionFor(mediaType)}`;
+    const target = path.join(this.imageDir(workspacePath), file);
+    // Content-addressed: identical bytes already on disk are the same file.
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, bytes);
+    }
+    return { type: "agentparty-file", file, media_type: mediaType, bytes: bytes.byteLength };
+  }
+
+  /** Absolute path of an extracted image, or undefined if the name is not one. */
+  imagePath(workspacePath: string, file: string): string | undefined {
+    // `file` arrives from a transcript and, over HTTP, from a caller — resolve it
+    // and require the result to stay inside the image dir so no `../` escapes.
+    const dir = this.imageDir(workspacePath);
+    const resolved = path.resolve(dir, file);
+    return resolved.startsWith(path.resolve(dir) + path.sep) ? resolved : undefined;
+  }
+
+  private imageDir(workspacePath: string): string {
+    return path.join(this.rootDir(workspacePath), TRANSCRIPT_IMAGE_DIR);
   }
 
   /** The current on-disk blocks, from the write-through mirror when warm. */
@@ -237,11 +285,10 @@ export class PartyRepository {
   }
 
   private readIndexFile(workspacePath: string): PartyIndex | null {
-    const file = this.indexPath(workspacePath);
-    if (!fs.existsSync(file)) {
+    const parsed = readJsonSurvivingWrite(this.indexPath(workspacePath)) as PartyIndex | undefined;
+    if (parsed === undefined) {
       return null;
     }
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     return {
       parties: Array.isArray(parsed.parties) ? parsed.parties : [],
       lastActivePartyId: typeof parsed.lastActivePartyId === "string" ? parsed.lastActivePartyId : undefined,
@@ -250,11 +297,10 @@ export class PartyRepository {
 
   private readPartyFile(workspacePath: string, partyId: string): PartyDetail {
     try {
-      const file = this.partyFilePath(workspacePath, partyId);
-      if (!fs.existsSync(file)) {
+      const parsed = readJsonSurvivingWrite(this.partyFilePath(workspacePath, partyId)) as PartyDetail | undefined;
+      if (parsed === undefined) {
         return { members: [], messages: [] };
       }
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
       return {
         members: Array.isArray(parsed.members) ? parsed.members : [],
         messages: Array.isArray(parsed.messages) ? parsed.messages : [],
@@ -332,15 +378,14 @@ export class PartyRepository {
     log("info", "party", "migrated legacy state.json to per-party layout", { workspacePath, parties: state.parties.length, members: state.members.length });
   }
 
-  private writeJsonAtomic(file: string, data: unknown): void {
+  private writeJsonAtomic(workspacePath: string, file: string, data: unknown): void {
+    ensureStorageDir(this.rootDir(workspacePath));
     fs.mkdirSync(path.dirname(file), { recursive: true });
     // Per-process temp name: two processes editing the same workspace (now a
     // supported multi-instance case) must never collide on one temp file, or
     // one's writeFile/rename would clobber the other's mid-flight. rename onto
     // the final path stays atomic. Mirrors settings.ts's writer.
-    const tempPath = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`);
-    fs.renameSync(tempPath, file);
+    writeReplacing(file, `${JSON.stringify(data, null, 2)}\n`);
   }
 
   private transcriptPath(workspacePath: string, partyId: string, memberName: string): string {
@@ -360,10 +405,107 @@ export class PartyRepository {
   }
 }
 
-const ROOT_DIR = ".agent_party_app";
+const ROOT_DIR = STORAGE_DIR;
 const LEGACY_ROOT = ".agentparty";
-/** Max transcript blocks persisted per member (bounds the on-disk file). */
-const TRANSCRIPT_CAP = 800;
+
+/**
+ * Writes `contents` to `target`, surviving a Windows handle someone else holds.
+ *
+ * Normally this is the usual temp-then-rename, which is atomic. But Windows
+ * refuses to rename ONTO a file another process has open, and Node reports that
+ * as EPERM. It is not a permission problem and it is not the antivirus:
+ * measured, 500 renames with nobody holding the file failed 0 times with
+ * real-time protection on, while one reader handle failed 40 of 40, and
+ * retrying never cleared it while the handle stayed open.
+ *
+ * ⚠️ Do NOT "fix" this by unlinking the target first. That was tried, and this
+ * fix's own product e2e caught it destroying data: on Windows, deleting a file
+ * someone holds open does not free the NAME, it marks it delete-pending, and
+ * nothing can be created at a delete-pending name until the last handle closes.
+ * The rename then failed too — leaving the member's transcript deleted and no
+ * replacement in place.
+ *
+ * Writing THROUGH the existing file is what actually works (measured 40 of 40),
+ * because a reader's handle does not deny writes. The cost is that this one
+ * path is not atomic: a reader in another process could catch a half-written
+ * file. {@link readJsonSurvivingWrite} is the other half of that trade.
+ */
+function writeReplacing(target: string, contents: string): void {
+  const temp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, contents);
+  try {
+    fs.renameSync(temp, target);
+  } catch (error) {
+    if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+      throw error;
+    }
+    // Visible on purpose: it names a real condition on the user's machine —
+    // something else is holding our storage open — even though we recover.
+    log("warn", "party", "another process holds this file open; writing in place instead", { target });
+    fs.writeFileSync(target, contents);
+  } finally {
+    // A rename that threw leaves the temp behind. The next write reuses the
+    // name, but a crash in between would strand a megabyte of JSON.
+    if (fs.existsSync(temp)) {
+      fs.rmSync(temp, { force: true });
+    }
+  }
+}
+
+/** Blocks briefly without a busy-loop. Only ever used to ride out a replace. */
+function sleepMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Reads a file that {@link replaceFile} may be swapping out from under us.
+ *
+ * During a replace the target is briefly absent. A reader landing in that gap
+ * gets a file that is half old and half new, and `JSON.parse` rejects it. A
+ * transcript that fails to parse reads as "this member never said anything",
+ * so one unlucky read would blank a member's whole history.
+ *
+ * The writer's temp file is the tell, and it is exact: it exists only while a
+ * write is in flight. Checking for it costs one readdir on the failure path
+ * only, so a file that is genuinely absent or genuinely corrupt still answers
+ * at once instead of sleeping through retries it can never satisfy.
+ *
+ * This is a CROSS-PROCESS guard. Writes here are synchronous, so no read in the
+ * writing process can observe a partial write of its own; the reader at risk is
+ * a second app instance on the same workspace.
+ *
+ * Returns undefined when the file is simply not there — a normal answer for a
+ * member who has not spoken yet, or a party with no layout saved.
+ */
+function readJsonSurvivingWrite(file: string): unknown | undefined {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" && !writeInFlight(file)) {
+        return undefined;
+      }
+      if (attempt >= WRITE_READ_RETRIES || !writeInFlight(file)) {
+        throw error;
+      }
+      sleepMs(WRITE_READ_WAIT_MS);
+    }
+  }
+}
+
+/** True while some process is part-way through writing `file`. */
+function writeInFlight(file: string): boolean {
+  const prefix = `${path.basename(file)}.`;
+  try {
+    return fs.readdirSync(path.dirname(file)).some((entry) => entry.startsWith(prefix) && entry.endsWith(".tmp"));
+  } catch {
+    return false;
+  }
+}
+
+/** A write is one syscall on a file of a few megabytes; this outlasts it. */
+const WRITE_READ_RETRIES = 8;
+const WRITE_READ_WAIT_MS = 15;
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

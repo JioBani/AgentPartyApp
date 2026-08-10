@@ -391,6 +391,11 @@ export function ModelCatalogModal({
                     const key = routeKey(entry.route);
                     const starred = favorites.includes(entry.route.model);
                     const unavailable = entry.route.enabled === false;
+                    // "미지원" and "베타 잠금" are not the same news: the first
+                    // never works, the second works and we closed it for now.
+                    // Reading one as the other sends the user off to look for a
+                    // different model they did not need to change.
+                    const locked = unavailable && entry.route.locked === true;
                     // The row is a container, not a button: it also holds the
                     // star, and a button cannot nest inside a button. It still
                     // selects on click so the whole row stays the target — for a
@@ -421,7 +426,7 @@ export function ModelCatalogModal({
                               {PROVIDER_LABELS[entry.meta.provider]}
                             </small>
                           </span>
-                          {unavailable && <span className="wb-model-off">미지원</span>}
+                          {unavailable && <span className={"wb-model-off" + (locked ? " is-locked" : "")}>{locked ? "베타 잠금" : "미지원"}</span>}
                           <PerfMeter value={entry.meta.perf} />
                           <CostMeter value={entry.meta.cost} />
                         </button>

@@ -85,6 +85,10 @@ export class LocalEngine implements EngineConnection {
     return this.party.sendGatedMessage(name, content, from, attachments, partyId, options);
   }
 
+  async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string) {
+    return this.party.invokePartyToolAs(member, tool, args, partyId);
+  }
+
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) {
     return this.party.sendUserMessage(name, text, attachments, partyId, options);
   }
@@ -131,6 +135,14 @@ export class LocalEngine implements EngineConnection {
 
   async getMemberTranscript(name: string, partyId?: string) {
     return this.party.getMemberTranscript(name, partyId);
+  }
+
+  async getTranscriptImage(file: string) {
+    return this.party.getTranscriptImage(file);
+  }
+
+  async getHarnessOriginal(name: string, partyId?: string) {
+    return this.party.getHarnessOriginal(name, partyId);
   }
 
   async saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult> {
@@ -208,6 +220,9 @@ export class LocalEngine implements EngineConnection {
   }
 
   async setSessionModel(sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
+    // Checked BEFORE the adapter is touched: a live model change is the one way
+    // into a locked cross-harness pair that does not pass through createMember.
+    this.party.assertSessionModelAllowed(sessionId, model);
     this.deps.sessionManager.setModel(sessionId, model, providerId, runtimeModel);
     // Capture the runtime change on the owning member so a reopen/restart
     // restores the model the user last chose (same as permission mode below).

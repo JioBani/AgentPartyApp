@@ -122,6 +122,12 @@ export interface EngineConnection {
   setPartyGate(partyId: string | undefined, gate: unknown): Promise<ReturnType<PartyApplicationService["setPartyGate"]>>;
   createMember(input: CreateMemberInput): Promise<ReturnType<PartyApplicationService["createMember"]>>;
   sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyMutationResult>;
+  /**
+   * One party tool, run AS `member`, for a harness whose tools reach the app
+   * over HTTP instead of in-process. Returns the agent-facing result rather
+   * than the UI's command result — see `PartyApplicationService.invokePartyToolAs`.
+   */
+  invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   /** Messages addressed to a busy member that it has not been handed yet (shared/messageQueue.ts). */
@@ -140,6 +146,15 @@ export interface EngineConnection {
   partyAction(name: string, action: string, body: any, partyId?: string): Promise<PartyMutationResult>;
   /** The member's persisted transcript (assembled UI blocks), restored on load. */
   getMemberTranscript(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
+  /**
+   * One screenshot a transcript references, as a data URL. Transcripts store
+   * images out-of-line, so this is what materialises them — per image, on
+   * display. It belongs to the ENGINE rather than a file read in the renderer
+   * so a REMOTE engine serves the images that live on its own disk.
+   */
+  getTranscriptImage(file: string): Promise<ReturnType<PartyApplicationService["getTranscriptImage"]>>;
+  /** Where the harness keeps its own untrimmed copy of this member's conversation. */
+  getHarnessOriginal(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
   /**
    * Persists the member's transcript (renderer-driven, debounced) + captures its
    * resumable thread id. `save.afterId` sends only the appended blocks — the

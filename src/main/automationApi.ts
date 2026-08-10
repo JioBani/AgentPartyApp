@@ -88,6 +88,16 @@ export class AutomationApiServer {
         sendJson(res, 200, c.getLogs());
         return;
       }
+      // Same two controller methods the settings 진단 card calls, so a report a
+      // user pastes and a report an agent pulls are byte-identical.
+      if (method === "GET" && url.pathname === "/api/diagnostics") {
+        sendJson(res, 200, await c.getDiagnostics(workspace));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/diagnostics/open-logs") {
+        sendJson(res, 200, await c.openLogFolder());
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/windows") {
         sendJson(res, 200, { windows: c.listWindows() });
         return;
@@ -265,6 +275,22 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.setPartyGate(workspace, decodeURIComponent(partyGateMatch[1]), await readJson(req), windowId));
         return;
       }
+      const partyToolMatch = url.pathname.match(/^\/api\/harness\/party\/tools\/([^/]+)$/);
+      if (method === "POST" && partyToolMatch) {
+        // The party tool surface for a harness whose tools run OUTSIDE this
+        // process (Codex, via scripts/agentparty-codex-mcp-server.mjs). The
+        // caller is the member named in the header, never a body field, so an
+        // agent cannot act as somebody else — and the answer is the compact
+        // agent-facing tool result rather than the UI command result the other
+        // party routes return.
+        const toolCaller = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
+        if (!toolCaller) {
+          sendJson(res, 400, { ok: false, error: "x-agentparty-member header is required." });
+          return;
+        }
+        sendJson(res, 200, await c.invokePartyToolAs(workspace, toolCaller, decodeURIComponent(partyToolMatch[1]), await readJson(req), partyId));
+        return;
+      }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
@@ -313,6 +339,20 @@ export class AutomationApiServer {
       const transcriptMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/transcript$/);
       if (method === "GET" && transcriptMatch) {
         sendJson(res, 200, { ok: true, blocks: await c.getMemberTranscript(workspace, decodeURIComponent(transcriptMatch[1]), windowId) });
+        return;
+      }
+      // A transcript stores screenshots out-of-line, so its blocks carry a file
+      // reference. This is how a caller (or the UI) turns one back into bytes.
+      const transcriptImageMatch = url.pathname.match(/^\/api\/party\/transcript-image\/([^/]+)$/);
+      if (method === "GET" && transcriptImageMatch) {
+        sendJson(res, 200, await c.getTranscriptImage(workspace, decodeURIComponent(transcriptImageMatch[1])));
+        return;
+      }
+      // The app's transcript has a retention window; the harness's own copy does
+      // not. This names where the rest of the history still is.
+      const originalMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/harness-original$/);
+      if (method === "GET" && originalMatch) {
+        sendJson(res, 200, await c.getHarnessOriginal(workspace, decodeURIComponent(originalMatch[1]), windowId));
         return;
       }
       // Party-wide conveniences (agents' broadcast / stop-all / status-all):

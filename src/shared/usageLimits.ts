@@ -210,7 +210,14 @@ export function mergeProviderUsage(
     // read stamp available:false hid a real 30%/14% reading behind "N/A".
     available: windows.length > 0 ? true : incoming.available ?? prev?.available,
     windows,
-    updatedAt: incoming.updatedAt,
+    // A report carrying NO windows is a failed/unavailable read, never a partial
+    // one: every path that has data sends at least one window (claudeAdapter
+    // 941/1111, codexAdapter 811/1272, cursorAdapter 162), while `windows: []`
+    // is emitted only by the failure branches. The windows kept above are then
+    // the PREVIOUS read's — so advancing the stamp would claim a freshness the
+    // data does not have. Nothing renders `updatedAt` yet, which is exactly why
+    // this went unnoticed; staleness is at least representable now.
+    updatedAt: incoming.windows.length > 0 ? incoming.updatedAt : prev?.updatedAt ?? incoming.updatedAt,
   };
 }
 

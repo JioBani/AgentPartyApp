@@ -1,4 +1,5 @@
 import { resolveCatalogModel } from "./modelCatalog";
+import type { GateFailureLayer } from "./messageGate";
 
 /**
  * Per-turn usage ledger — the real, append-only accounting the Token Usage
@@ -86,9 +87,22 @@ export interface TurnUsageRecord {
   costBasis?: string;
   /** Cost source: `claude-code` | `openrouter` | `codex` | `estimate` | … */
   costSource?: string;
-  /** Present on `gate-review` turns: the reviewer's verdict, so the dashboard can
-   *  compute the gate's reject rate and net effect from measured data. */
-  gate?: { verdict: "allow" | "reject" };
+  /**
+   * Present on `gate-review` turns.
+   *
+   * `verdict` is set when the review COMPLETED; `failure` is set instead when it
+   * did not and the gate failed open. Recording the failure is the whole point:
+   * the message is delivered either way, so a review that never reached a
+   * verdict used to leave no trace in the ledger at all — which made the gate's
+   * own error rate unmeasurable while the feature looked like it was filtering.
+   *
+   * The two are mutually exclusive, and `verdict` keeps its exact old meaning so
+   * every existing reader stays correct.
+   */
+  gate?: {
+    verdict?: "allow" | "reject";
+    failure?: { layer: GateFailureLayer; detail?: string };
+  };
 }
 
 // ── Aggregation ────────────────────────────────────────────────────────────
@@ -194,7 +208,20 @@ export interface TokenUsageAggregate {
    *  when the gate never ran. `netTokens` is the gate's net effect measured on the
    *  cost side (−reviewTokens) — downstream savings aren't measurable, so a
    *  persistently negative net is the honest "게이트가 순비용" signal. */
-  gate?: { reviews: number; rejects: number; rejectRate: number; reviewTokens: number; netTokens: number };
+  gate?: {
+    /** Reviews that COMPLETED (reached a verdict). Excludes failures. */
+    reviews: number;
+    rejects: number;
+    /** rejects / reviews — over completed reviews only. */
+    rejectRate: number;
+    reviewTokens: number;
+    netTokens: number;
+    /** Reviews that failed open without a verdict. */
+    failures: number;
+    /** failures / (reviews + failures) — how much of the gate is not running. */
+    failureRate: number;
+    failuresByLayer: Partial<Record<GateFailureLayer, number>>;
+  };
   /** How many raw records fed this aggregate — 0 ⇒ the UI shows "아직 없음". */
   recordCount: number;
 }
@@ -343,7 +370,8 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
   const members = new Map<string, RollupRow>();
   const triggers = new Map<string, RollupRow>();
   const totals = emptyTotals();
-  let gateReviews = 0, gateRejects = 0, gateReviewTokens = 0;
+  let gateReviews = 0, gateRejects = 0, gateReviewTokens = 0, gateFailures = 0;
+  const gateFailuresByLayer: Partial<Record<GateFailureLayer, number>> = {};
   // Per-row + global turn intervals [start,end]ms, unioned into activeMs later.
   const partyIvals = new Map<string, Array<[number, number]>>();
   const memberIvals = new Map<string, Array<[number, number]>>();
@@ -403,8 +431,18 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
     pushIval(triggerIvals, r.trigger, r);
     addTurn(totals, r, midMs);
     if (r.trigger === "gate-review" && r.gate) {
-      gateReviews += 1;
-      if (r.gate.verdict === "reject") gateRejects += 1;
+      // A failed review is counted separately, NOT as a review: folding it in
+      // would quietly shrink `rejectRate` (more denominator, same rejects) and
+      // read as "the gate is passing more", when in fact it did not run.
+      if (r.gate.failure) {
+        gateFailures += 1;
+        const layer = r.gate.failure.layer;
+        gateFailuresByLayer[layer] = (gateFailuresByLayer[layer] || 0) + 1;
+      } else {
+        gateReviews += 1;
+        if (r.gate.verdict === "reject") gateRejects += 1;
+      }
+      // Tokens count either way — a failed review can still have burned them.
       gateReviewTokens += turnTokensTotal(r.tokens);
     }
   }
@@ -443,8 +481,19 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
     activeMsUnion,
     ratePerHour: activeMsUnion > 0 ? totalTokens / (activeMsUnion / 3_600_000) : undefined,
     overheadRatio: totalTokens > 0 ? totals.overheadTokens / totalTokens : undefined,
-    gate: gateReviews > 0
-      ? { reviews: gateReviews, rejects: gateRejects, rejectRate: gateRejects / gateReviews, reviewTokens: gateReviewTokens, netTokens: -gateReviewTokens }
+    gate: gateReviews > 0 || gateFailures > 0
+      ? {
+          reviews: gateReviews,
+          rejects: gateRejects,
+          rejectRate: gateReviews > 0 ? gateRejects / gateReviews : 0,
+          reviewTokens: gateReviewTokens,
+          netTokens: -gateReviewTokens,
+          failures: gateFailures,
+          // Share of attempts that never reached a verdict — the number that
+          // says how much of the gate is actually running.
+          failureRate: gateReviews + gateFailures > 0 ? gateFailures / (gateReviews + gateFailures) : 0,
+          failuresByLayer: gateFailuresByLayer,
+        }
       : undefined,
     recordCount: inRange.length,
   };

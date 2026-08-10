@@ -1,3 +1,4 @@
+import type { GateFailureLayer } from "../shared/messageGate";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
@@ -1339,7 +1340,11 @@ export class SessionManager extends EventEmitter {
     partyId?: string;
     member?: string;
     model?: string;
-    verdict: "allow" | "reject";
+    /** Set when the review reached a decision. Omit when it failed open. */
+    verdict?: "allow" | "reject";
+    /** Set INSTEAD of `verdict` when the review failed and the gate let the
+     *  message through unreviewed. Without this the failure left no trace. */
+    failure?: { layer: GateFailureLayer; detail?: string };
     usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
   }): void {
     const record: TurnUsageRecord = {
@@ -1358,7 +1363,7 @@ export class SessionManager extends EventEmitter {
       },
       costBasis: "subscription",
       costSource: "estimate",
-      gate: { verdict: input.verdict },
+      gate: input.failure ? { failure: input.failure } : { verdict: input.verdict },
     };
     this.ledger.append(workspace, record);
   }

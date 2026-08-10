@@ -9,6 +9,8 @@ import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
 import { harnessShort } from "./harnessLabel";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
+import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
+import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
@@ -102,6 +104,7 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
           <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
         </div>
       )}
+      {!view.transcriptLoading && hiddenCount === 0 && isTranscriptAtCap(view.transcript) && <HarnessOriginalNote member={view.name} />}
       {!view.transcriptLoading && hiddenCount > 0 && (
         <button type="button" className="wb-transcript-older" onClick={showOlder}>
           이전 대화 {Math.min(hiddenCount, TAIL_BLOCKS)}개 더 보기 · {hiddenCount}개 숨김
@@ -325,6 +328,9 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   const fullInput = toolInputDetail(block.input);
   // Command execution streams live output separately from its final result.
   const result = block.output || formatResult(block.result);
+  // Screenshots render as images. They used to fall through to JSON.stringify
+  // and print a wall of base64 that showed the user nothing.
+  const images = collectDisplayImages(block.result);
   const failed = block.status === "failed";
   // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
   const meta = toolMeta(block);
@@ -348,6 +354,7 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
       {meta && <div className="wb-tool-meta">{meta}</div>}
       {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
       {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
+      {images.map((image) => <ToolImage key={image.key} image={image} />)}
       {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </details>
   );
@@ -670,6 +677,106 @@ function MsgImage({ image }: { image: ImageAttachment }) {
       )}
     </>
   );
+}
+
+/** Byte size for display. Scales the unit so a small file is not shown as "0 MB". */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+/**
+ * Shown at the very top of a transcript that is sitting at its retention cap.
+ *
+ * Scrolling to the top of a trimmed transcript looks exactly like reaching the
+ * beginning of the conversation, so the user reads a retention window as data
+ * loss. The harness keeps its own untrimmed copy, so the honest thing to say is
+ * where the rest is.
+ *
+ * Renders nothing until the lookup answers, and nothing at all if there is no
+ * original to point at — a note that says "the rest is somewhere" without
+ * naming it would be worse than silence.
+ */
+function HarnessOriginalNote({ member }: { member: string }) {
+  const [original, setOriginal] = useState<{ harness: string; path: string; exists: boolean; bytes?: number } | null>();
+  useEffect(() => {
+    let live = true;
+    setOriginal(undefined);
+    window.agentParty
+      .getHarnessOriginal(member)
+      .then((result) => { if (live) setOriginal(result.original); })
+      .catch(() => { if (live) setOriginal(null); });
+    return () => { live = false; };
+  }, [member]);
+  if (!original) {
+    return null;
+  }
+  return (
+    <div className="wb-transcript-origin">
+      <Info size={13} />
+      <div>
+        <div>여기부터 앞의 기록은 이 창의 보관 한도를 넘어 지워졌습니다.</div>
+        {original.exists ? (
+          <div className="wb-transcript-origin-path">
+            <span className="wb-mono">{original.path}</span>
+            {typeof original.bytes === "number" && <span> · {formatBytes(original.bytes)}</span>}
+            <CopyButton text={original.path} title="경로 복사" />
+          </div>
+        ) : (
+          // Claude Code keys its directory on the absolute cwd, so a moved
+          // project folder orphans the history. Say that instead of printing a
+          // path that leads nowhere.
+          <div className="wb-transcript-origin-path">
+            {original.harness} 원본을 찾지 못했습니다. 작업 폴더를 옮겼다면 하네스 기록은 이전 경로에 남아 있습니다.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A screenshot a tool returned, whose bytes live outside the transcript.
+ *
+ * Fetched on mount rather than carried in the block: one of these is ~500 KB of
+ * base64, and a transcript holds many. Keeping them out of the file is the point
+ * of storing them out-of-line, so the renderer pays for the ones it shows.
+ *
+ * A read failure surfaces as visible text. The bytes are on disk and could have
+ * been moved or deleted, and a broken image icon would not say which.
+ */
+function ToolImage({ image }: { image: DisplayImage }) {
+  const file = image.kind === "stored" ? image.source.file : undefined;
+  const [fetched, setFetched] = useState<string>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    if (!file) {
+      return;
+    }
+    let live = true;
+    setFetched(undefined);
+    setError(undefined);
+    window.agentParty
+      .getTranscriptImage(file)
+      .then((result) => { if (live) setFetched(result.dataUrl); })
+      .catch((cause: unknown) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [file]);
+  const dataUrl = image.kind === "inline" ? image.dataUrl : fetched;
+  const bytes = image.kind === "inline" ? image.bytes : image.source.bytes;
+  const mediaType = image.kind === "inline" ? image.mediaType : image.source.media_type;
+  if (error) {
+    return <div className="wb-tool-image-missing"><ImageOff size={13} /> 이미지를 불러오지 못했습니다 — {error}</div>;
+  }
+  if (!dataUrl) {
+    return <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" /> 이미지 여는 중…</div>;
+  }
+  return <img className="wb-tool-image" src={dataUrl} alt={`${mediaType || "image"} · ${Math.round(bytes / 1024)} KB`} />;
 }
 
 /** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */
@@ -1231,8 +1338,15 @@ function formatResult(result: unknown): string {
   if (texts.length > 0) {
     return texts.join("\n");
   }
+  // Images render as images (see StoredImage). Falling through to stringify
+  // printed the whole base64 payload as text — half a megabyte of characters
+  // that showed the user nothing.
+  const withoutImages = blocks.filter((b) => !isRenderableImage(b));
+  if (withoutImages.length === 0) {
+    return "";
+  }
   try {
-    return JSON.stringify(result, null, 2);
+    return JSON.stringify(Array.isArray(result) ? withoutImages : withoutImages[0], null, 2);
   } catch {
     return String(result);
   }

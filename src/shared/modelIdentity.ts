@@ -103,6 +103,62 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
   return undefined;
 }
 
+/**
+ * The provider each harness signs into with its OWN subscription. That is the
+ * only thing that makes a pair "cross-routed" in the sense 기능정의서 1-12-2
+ * means: two subscriptions crossed over each other.
+ */
+const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
+  "claude-code": "anthropic",
+  codex: "openai",
+  cursor: "cursor",
+};
+
+/** Providers that ship a harness of their own; every other provider has none. */
+const PROVIDERS_WITH_A_HARNESS = new Set(Object.values(HARNESS_NATIVE_PROVIDER));
+
+const HARNESS_LABEL: Record<HarnessId, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor CLI",
+};
+
+const PROVIDER_LABEL: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  cursor: "Cursor",
+};
+
+/**
+ * Why this (model, harness) pair is locked for the beta, or undefined when it is
+ * allowed. See `docs/베타 공개 준비/B-12 교차 하네스.md`.
+ *
+ * A pair is locked ONLY when the model's provider runs a harness of its own AND
+ * that harness is not the one executing — the three cross-SUBSCRIPTION routes
+ * 기능정의서 1-12-2 defines. Defects cluster there because such a pair is
+ * exposed to BOTH vendors' changes at once. The lock is temporary and the code
+ * paths stay in place, so reopening it is flipping this predicate.
+ *
+ * ⚠️ A model whose provider has NO harness (OpenRouter, DeepSeek, …) is not a
+ * cross route at all: running it on claude-code or codex is its only way to
+ * execute, so it stays allowed on every harness. Judging by `Backend.kind`
+ * instead of the provider would sweep those up — `claude-router` carries the
+ * locked GPT/Cursor-subscription routes and the allowed OpenRouter ones in one
+ * bucket.
+ */
+export function crossHarnessLockReason(model: string, harnessId: HarnessId): string | undefined {
+  const entry = resolveCatalogModel(model);
+  if (!entry) {
+    return undefined;
+  }
+  const provider = String(entry.provider || "");
+  if (!PROVIDERS_WITH_A_HARNESS.has(provider) || provider === HARNESS_NATIVE_PROVIDER[harnessId]) {
+    return undefined;
+  }
+  const providerLabel = PROVIDER_LABEL[provider] || provider;
+  return `베타 기간에는 잠긴 조합입니다. ${providerLabel} 구독 모델을 ${HARNESS_LABEL[harnessId]} 하네스에서 실행하는 경로는 정식 공개 때 다시 엽니다.`;
+}
+
 /** The exact model id string this backend hands to the harness/router. */
 export function backendSlug(backend: Backend): string {
   switch (backend.kind) {
