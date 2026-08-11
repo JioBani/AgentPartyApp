@@ -28,7 +28,7 @@ import { pricingForModel, visionForModel } from "./modelRegistry";
 import { resolveCatalogModel } from "../shared/modelCatalog";
 import type { ImageAttachment } from "../shared/attachments";
 import { approvalResult, codexDecisionOf } from "../shared/codexApproval";
-import { codexApprovalFields } from "../shared/approvalRequest";
+import { approvalAnswers, codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import type { CodexFileEdit } from "../shared/codexItems";
 import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
@@ -578,7 +578,7 @@ export class CodexAdapter extends EventEmitter {
     const result = approvalResult(approval.method, decision, params, updatedInput);
     this.respond(requestId, result);
     this.pendingApprovals.delete(requestId);
-    this.emitEvent({ type: "approval_resolved", requestId, decision: decision === "decline" ? "deny" : "allow", at: now() });
+    this.emitEvent({ type: "approval_resolved", requestId, decision: decision === "decline" ? "deny" : "allow", answers: approvalAnswers(updatedInput), at: now() });
   }
 
   private async ensureThread(): Promise<void> {

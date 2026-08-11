@@ -12,7 +12,7 @@
  *
  * Run: node scripts/demo-approval-cards.mjs [--shots <dir>] [--close]
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -76,6 +76,19 @@ const RESOLVED = [
 ];
 
 /*
+ * An ANSWERED question. This state was missing from the sheet, and that is
+ * exactly why it shipped still wearing the pending card's shell: nothing here
+ * ever rendered it, so no capture and no measurement could disagree with it.
+ */
+const ANSWERED = {
+  member: "q-answered",
+  runtime: "claude-code",
+  caption: "질문 — 답변함 (처리 후)",
+  questions: [{ question: "어떤 하네스로 만들까요?", header: "멤버 설정", multiSelect: false, options: [{ label: "Claude Code" }, { label: "Codex" }] }],
+  answers: { "어떤 하네스로 만들까요?": "Claude Code" },
+};
+
+/*
  * The interactive question card (기능정의서 1-10-2). These go through the
  * askUserQuestion injection, whose shape mirrors what Claude's AskUserQuestion
  * sends. ⚠️ Codex's own `item/tool/requestUserInput` could NOT be recorded —
@@ -130,6 +143,18 @@ if (stale) {
   process.exit(1);
 }
 
+/*
+ * Build FIRST. The guard above only refuses a stale running app, so a source
+ * change that was never compiled sailed straight past it: `npm run start` does
+ * not build, the demo drove the previous bundle, and the failure it produced
+ * pointed at the source we had just fixed. Same hazard the guard exists for.
+ */
+const build = spawnSync(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "build"], { cwd: root, stdio: "inherit", windowsHide: true });
+if (build.status !== 0) {
+  console.error("Build failed — refusing to demo a bundle that does not match the source.");
+  process.exit(1);
+}
+
 const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
   cwd: root,
   stdio: ["ignore", "pipe", "pipe"],
@@ -165,11 +190,19 @@ async function main() {
     throw new Error(`refusing to drive: app serves '${served}', not the demo workspace`);
   }
 
-  const all = [...CARDS, ...RESOLVED, ...QUESTIONS];
+  const all = [...CARDS, ...RESOLVED, ...QUESTIONS, ANSWERED];
   await post("/api/qa/reset").catch(() => {});
   await post("/api/qa/seed", {
     party: "승인 카드 데모",
-    members: all.map((c) => ({ name: c.member, role: c.caption, model: c.runtime === "codex" ? "gpt-5.4-mini" : "claude-sonnet-4.5" })),
+    // The runtime travels WITH the model. Seeding a Codex model onto the
+    // default claude-code runtime made the badge lie about which harness sent
+    // the card, and the beta cross-harness lock then rejected the pair outright.
+    members: all.map((c) => ({
+      name: c.member,
+      role: c.caption,
+      runtime: c.runtime,
+      model: c.runtime === "codex" ? "gpt-5.4-mini" : "claude-sonnet-4.5",
+    })),
   });
 
   const shot = async (member, name, extra) => {
@@ -199,6 +232,16 @@ async function main() {
   for (const q of QUESTIONS) {
     await post(`/api/qa/members/${q.member}/interaction`, { type: "askUserQuestion", questions: q.questions });
     await shot(q.member, `question-${q.member}`);
+  }
+
+  // Answered through the SAME approve call the card's button makes, so the
+  // captured state is one a user could actually reach.
+  {
+    const { requestId } = await post(`/api/qa/members/${ANSWERED.member}/interaction`, { type: "askUserQuestion", questions: ANSWERED.questions });
+    const sessionId = (await get("/api/party")).members.find((m) => m.name === ANSWERED.member)?.sessionId;
+    await post(`/api/sessions/${sessionId}/approve`, { requestId, behavior: "allow", updatedInput: { questions: ANSWERED.questions, answers: ANSWERED.answers } });
+    await delay(400);
+    await shot(ANSWERED.member, "question-answered");
   }
 
   // Contact sheets, plus a dark pass since the colours are tokens.

@@ -303,7 +303,7 @@ async function main() {
   const windows = (await get("/api/windows")).windows || [];
   await post(`/api/windows/${windows[0].id}/workspace`, { workspacePath: ws });
   await post("/api/qa/reset").catch(() => {});
-  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-q1" }, { name: "m-q2" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }] });
+  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-q1" }, { name: "m-q2" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }, { name: "m-answered" }] });
 
   const cdp = await attachRenderer();
 
@@ -380,6 +380,18 @@ async function main() {
   await post("/api/qa/open", { panels: [["m-done"]] });
   await delay(900);
   for (const [label, selector, expected] of RESOLVED_SPEC) await measure(cdp, label, selector, expected);
+
+  // An ANSWERED question. Nothing measured this state, so it kept the pending
+  // card's shell long after the approvals were rebuilt — and the answer itself
+  // was never carried on the resolution event, so it read "—" anywhere but the
+  // window that clicked. Both are asserted here now.
+  const q = await post("/api/qa/members/m-answered/interaction", { type: "askUserQuestion", questions: [{ question: "어떤 하네스로 만들까요?", header: "멤버 설정", options: [{ label: "Claude Code" }, { label: "Codex" }] }] });
+  const answeredSession = (await get("/api/party")).members.find((m) => m.name === "m-answered")?.sessionId;
+  await post(`/api/sessions/${answeredSession}/approve`, { requestId: q.requestId, behavior: "allow", updatedInput: { answers: { "어떤 하네스로 만들까요?": "Claude Code" } } });
+  await post("/api/qa/open", { panels: [["m-answered"]] });
+  await delay(900);
+  await measure(cdp, "답변한 질문 줄", ".wb-question.is-resolved", { paddingTop: "10px", paddingLeft: "13px", borderRadius: "9px", columnGap: "10px", borderLeftWidth: "2px" });
+  await measureProps(cdp, "답변 내용", ".wb-question.is-resolved .wb-approval-resolved-summary", { textContent: "멤버 설정: Claude Code" });
 
   cdp.close();
   console.log(`\n${failures.length ? `FAILED (${failures.length})` : "PASSED"} — 시안 대비 실측`);

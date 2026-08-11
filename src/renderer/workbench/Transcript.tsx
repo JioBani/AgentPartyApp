@@ -1213,21 +1213,19 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
   const isLast = clampedStep === questions.length - 1;
 
   if (resolved) {
+    // An answered question collapses to the SAME one-line record as a resolved
+    // approval. It used to keep the full pending shell — head band, a
+    // space-between Q/A row that flung the answer to the far edge, and a badge
+    // floating on its own line — so the one card in the transcript that is
+    // finished and needs the least room took the most.
+    const summary = questions
+      .map((q) => `${q.header || q.question}: ${answerLabels(block.answers, q.question).join(", ") || "—"}`)
+      .join(" · ");
     return (
-      <div className={"wb-block wb-approval wb-question density-" + density}>
-        <div className="wb-approval-head">
-          <ListChecks size={14} />
-          <strong>질문에 답함</strong>
-        </div>
-        <div className="wb-question-summary">
-          {questions.map((q, qi) => (
-            <div className="wb-question-summary-row" key={qi}>
-              <span className="wb-question-summary-q">{q.header || q.question}</span>
-              <span className="wb-question-summary-a">{answerLabels(block.answers, q.question).join(", ") || "—"}</span>
-            </div>
-          ))}
-        </div>
-        <span className="wb-status-badge is-allow">답변함</span>
+      <div className={"wb-block wb-approval wb-question is-resolved density-" + density}>
+        <Check size={14} />
+        <span className="wb-approval-resolved-label">답변함</span>
+        <span className="wb-approval-resolved-summary" title={summary}>{summary}</span>
       </div>
     );
   }

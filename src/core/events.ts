@@ -141,7 +141,11 @@ export type ClaudeNormalizedEvent =
   // prompt and the subagent that asked. Both arrive populated from the SDK and
   // used to be dropped here, so the card could not show either.
   | { type: "approval_request"; requestId: string; toolName: string; input: unknown; title?: string; description?: string; suggestions?: unknown[]; blockedPath?: string; agentID?: string; codex?: import("../shared/codexApproval").CodexApprovalMeta; at: string }
-  | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; at: string }
+  // `answers` rides along so the resolution is self-contained. It used to be
+  // applied only by the window whose button was clicked, so the same answered
+  // question read "—" in every other window sharing the workspace and after a
+  // session restore — the record lived nowhere but that one renderer.
+  | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; answers?: Record<string, string>; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   // A message that waited in the app-level queue has just been handed to the
   // harness. Authored by the app, not by any harness — it is the only record

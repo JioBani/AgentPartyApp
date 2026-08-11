@@ -2589,28 +2589,10 @@ body.wb-resizing {
   color: var(--text-2);
 }
 
-.wb-question-summary {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.wb-question-summary-row {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.wb-question-summary-q {
-  color: var(--text-2);
-}
-
-.wb-question-summary-a {
-  color: var(--text-0);
-  font-weight: 600;
-  text-align: right;
+/* An answered question records prose, not a command, so it drops the resolved
+   row's monospace while keeping its size and truncation. */
+.wb-question.is-resolved .wb-approval-resolved-summary {
+  font-family: inherit;
 }
 
 .wb-question-text {

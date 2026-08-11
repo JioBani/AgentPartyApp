@@ -26,7 +26,7 @@ import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usa
 import { ClaudeSubagentTracker, type SubagentEmit } from "./subagentTracker";
 import { BackgroundTaskTracker } from "./backgroundTasks";
 import { RawLogger } from "./rawLogger";
-import { claudeApprovalFields, extractToolFilePath, withFilePath } from "../shared/approvalRequest";
+import { approvalAnswers, claudeApprovalFields, extractToolFilePath, withFilePath } from "../shared/approvalRequest";
 import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
@@ -564,7 +564,7 @@ export class ClaudeAdapter extends EventEmitter {
             decisionClassification: "user_reject",
           };
 
-    this.emitEvent({ type: "approval_resolved", requestId, decision: behavior, at: now() });
+    this.emitEvent({ type: "approval_resolved", requestId, decision: behavior, answers: approvalAnswers(updatedInput), at: now() });
     this.pendingApprovals.delete(requestId);
     this.log("permission_response", { requestId, result });
     pending.resolve(result);

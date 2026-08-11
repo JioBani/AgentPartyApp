@@ -10,6 +10,7 @@ import type {
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { HarnessId } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
@@ -39,6 +40,13 @@ export type PartyMutationResult = ReturnType<PartyApplicationService["sendMessag
 export interface QaMemberSpec {
   name: string;
   role?: string;
+  /**
+   * Harness the mock member belongs to. Mock members used to be forced to
+   * `claude-code` while still being given the other harness's model, so a QA
+   * screen showing a Codex card carried a Claude runtime badge — and once the
+   * beta locked cross-harness pairs, seeding that combination failed outright.
+   */
+  runtime?: HarnessId;
   model?: string;
   effort?: string;
   status?: "working" | "idle" | "approval";

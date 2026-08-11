@@ -383,7 +383,7 @@ export class LocalEngine implements EngineConnection {
       this.party.createMember({
         name: spec.name,
         requirement: spec.role || `QA mock member ${spec.name}`,
-        runtime: "claude-code",
+        runtime: spec.runtime || "claude-code",
         model: spec.model,
         effort: spec.effort,
       });

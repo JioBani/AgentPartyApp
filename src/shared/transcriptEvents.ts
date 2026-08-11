@@ -89,7 +89,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
     } else if (event.type === "approval_request") {
       next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, suggestions: event.suggestions, blockedPath: event.blockedPath, agentID: event.agentID, at: nowTime() });
     } else if (event.type === "approval_resolved") {
-      next = markApprovalResolved(next, sessionId, event.requestId, event.decision);
+      next = markApprovalResolved(next, sessionId, event.requestId, event.decision, event.answers);
     } else if (event.type === "turn_complete") {
       const cost = event.cost ? ` - ${event.cost.label}` : "";
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: `turn complete${cost}${event.stopReason ? ` - ${event.stopReason}` : ""}`, at: nowTime() });

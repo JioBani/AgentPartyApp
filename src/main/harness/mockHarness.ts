@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../../core/events";
 import type { HarnessSession } from "./types";
+import { approvalAnswers } from "../../shared/approvalRequest";
 import type { HarnessId } from "../../shared/types";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot } from "../../shared/mcp";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -244,8 +245,10 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     this.pushSnapshot();
   }
 
-  respondApproval(requestId: string, behavior: "allow" | "deny"): void {
-    this.inject({ type: "approval_resolved", requestId, decision: behavior, at: now() });
+  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): void {
+    // Carries the answers like the real adapters do, so a QA-driven answer
+    // produces the same resolved card a user's click would.
+    this.inject({ type: "approval_resolved", requestId, decision: behavior, answers: approvalAnswers(updatedInput), at: now() });
   }
 
   // MCP: deterministic in-memory servers so the status + action path (and the

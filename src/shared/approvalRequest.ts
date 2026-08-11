@@ -184,6 +184,21 @@ export function ruleAddsInformation(hint: string | undefined, shownCommand: stri
   return !(shown.includes(rule) || rule.includes(shown));
 }
 
+/**
+ * The answers a question card submitted, pulled off the `updatedInput` it sends
+ * back. Every harness answers a question through the same approve call, so the
+ * resolution event can carry them and no consumer has to have witnessed the
+ * click that produced them.
+ */
+export function approvalAnswers(updatedInput: unknown): Record<string, string> | undefined {
+  const answers = asRecord(asRecord(updatedInput)?.answers);
+  if (!answers) {
+    return undefined;
+  }
+  const entries = Object.entries(answers).filter(([, value]) => typeof value === "string") as [string, string][];
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 /** Adds a normalized `filePath` so the card can name the file for any tool. */
 export function withFilePath(value: unknown): unknown {
   const record = asRecord(value);
