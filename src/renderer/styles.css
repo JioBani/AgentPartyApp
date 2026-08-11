@@ -5668,6 +5668,42 @@ body.wb-resizing {
   background: var(--surface-2, transparent);
 }
 
+/* An image the member attached for the user (attach-image). It is the member's
+   output, so it sits in the flow like a reply rather than inside a tool box. */
+.wb-attached-image {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+/* Bigger than a user's pasted attachment on purpose: this image IS the answer —
+   the member attached it for the user to look at, not as a reference beside
+   text. Both caps are plain px because a percentage here would be circular
+   while the figure's shrink-to-fit width is resolved, which detaches the
+   hover toolbar from the picture (see .wb-msg-image-hit). */
+.wb-attached-image .wb-msg-image-hit .wb-msg-image {
+  max-width: 560px;
+  max-height: 360px;
+}
+
+.wb-attached-image-caption {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.wb-attached-image.is-failed {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.wb-attached-image-error {
+  color: var(--danger);
+}
+
 /* Head of a transcript that is sitting at its retention cap: where the rest is. */
 .wb-transcript-origin {
   display: flex;
@@ -6848,8 +6884,12 @@ body.wb-resizing {
   max-width: 100%;
 }
 
+/* inline-flex, not block: a block button fills the row, and the toolbar is
+   positioned against this box — so the copy/enlarge buttons ended up floating
+   in the empty space beside the picture instead of on it. Shrink-wrapping here
+   respects the image's own max-width, which `width: max-content` would not. */
 .wb-msg-image-hit {
-  display: block;
+  display: inline-flex;
   padding: 0;
   margin: 0;
   border: none;
@@ -6858,9 +6898,15 @@ body.wb-resizing {
   max-width: 100%;
 }
 
+/* A plain px cap, NOT `min(220px, 100%)`. The percentage makes the constraint
+   circular while the shrink-to-fit width of the button around it is being
+   resolved, so the browser drops it and sizes the button to the image's
+   INTRINSIC width — which is how the toolbar ended up hovering in the empty
+   space beside a thumbnail. The wrapper's own max-width keeps a narrow panel
+   from overflowing. */
 .wb-msg-image-hit .wb-msg-image {
   display: block;
-  max-width: min(220px, 100%);
+  max-width: 220px;
   max-height: 220px;
 }
 
@@ -6876,6 +6922,19 @@ body.wb-resizing {
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-badge);
   padding: 2px;
+}
+
+/* Compact: these sit ON a thumbnail a couple of hundred pixels wide, where the
+   app's standard 30px icon button covers a quarter of the picture. */
+.wb-msg-image-toolbar .wb-icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.wb-msg-image-toolbar .wb-icon-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .wb-msg-image-wrap:hover .wb-msg-image-toolbar,

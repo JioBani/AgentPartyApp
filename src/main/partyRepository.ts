@@ -223,8 +223,14 @@ export class PartyRepository {
     }
   }
 
-  /** Writes image bytes under their own SHA-256, so a re-read costs nothing. */
-  private storeImage(workspacePath: string, data: string, mediaType: string | undefined): StoredImageSource {
+  /**
+   * Writes image bytes under their own SHA-256, so a re-read costs nothing.
+   *
+   * Public because a member attaching an image to its own conversation stores it
+   * the same way a tool screenshot is stored — the bytes must land here rather
+   * than in the tool result, which is part of the model's conversation.
+   */
+  storeImage(workspacePath: string, data: string, mediaType: string | undefined): StoredImageSource {
     const bytes = Buffer.from(data, "base64");
     const file = `${crypto.createHash("sha256").update(bytes).digest("hex")}.${extensionFor(mediaType)}`;
     const target = path.join(this.imageDir(workspacePath), file);

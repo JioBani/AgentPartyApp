@@ -1663,6 +1663,32 @@ harness gets identical behaviour and identical answers:
 read a `message` field for that verdict; the older path returned `ok: true` with
 the refusal buried inside, which is exactly what this endpoint exists to end.
 
+#### `attach-image`
+
+Puts an image into the CALLING member's own conversation for the user to look
+at. Takes `path` (a file on the machine that member runs on) **or** `url`
+(`http`/`https`), never both, plus an optional `caption`.
+
+```json
+{ "path": "C:\\shots\\bug.png", "caption": "the row that overflows" }
+{ "url": "https://example.com/chart.png" }
+```
+
+The reply carries only a reference, never the picture:
+
+```json
+{ "ok": true, "data": { "file": "<sha256>.png", "mediaType": "image/png", "bytes": 20480 } }
+{ "ok": true, "data": { "url": "https://example.com/chart.png" } }
+```
+
+That is the whole point of the tool. A file is copied into the workspace image
+store (content-addressed — the same store tool screenshots use) and rendered
+from `GET /api/party/transcript-image/:file`; a URL is kept as given and loaded
+from its own source. **The bytes never enter the model's context**: a tool
+result IS part of the conversation, so returning them there would cost exactly
+what this avoids. The member consequently cannot see what it attached, and
+should say in its reply whatever the conversation needs to remember about it.
+
 ## Window
 
 ### `POST /api/window/minimize`

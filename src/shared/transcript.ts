@@ -35,6 +35,17 @@ export type TranscriptBlock =
   // queue before delivery. Member-to-member traffic renders as this card rather
   // than a user bubble, so the queue provenance rides here too — see applyEvents.
   | { id: string; kind: "channel"; direction: "in" | "out"; from: string; to: string; text: string; state?: "ok" | "failed"; error?: string; at?: string; /** Envelope origin: another member ("agentparty") or the Discord bridge. */ source?: "agentparty" | "discord"; fromQueue?: boolean; queuedN?: number }
+  /**
+   * An image the MEMBER attached for the user to look at (attach-image).
+   *
+   * Deliberately NOT a `user` block with `attachments`: those bytes are fed to
+   * the model, and this card exists precisely so they are not. The member knows
+   * only the path or URL it named — the picture rides here, outside the
+   * conversation. `file` is a name in the workspace image store (served by
+   * `GET /api/party/transcript-image/:file`); `url` is a remote address the
+   * renderer loads directly, kept as given rather than downloaded.
+   */
+  | { id: string; kind: "image"; file?: string; url?: string; mediaType?: string; bytes?: number; caption?: string; origin?: string; state?: "ok" | "failed"; error?: string; at?: string }
   // A party write-action this member drove (member-create / member-remove).
   | { id: string; kind: "partyAction"; action: "create" | "remove"; member: string; role?: string; model?: string; harness?: string; state?: "ok" | "failed"; error?: string; at?: string }
   // A Message Gate outcome for an OUTGOING send by this member (inline badge).

@@ -58,7 +58,9 @@ const api = {
   /** Reveals the log folder. Rejects with the OS reason when it cannot open. */
   openLogFolder: (): Promise<{ ok: true; path: string }> => ipcRenderer.invoke("diagnostics:openLogFolder"),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
-  copyImageToClipboard: (image: { dataBase64: string; mediaType: string }) => ipcRenderer.invoke("clipboard:writeImage", image),
+  // `mediaType` is optional because the main process sniffs the real format off
+  // the bytes — an image copied from a remote URL may not declare one.
+  copyImageToClipboard: (image: { dataBase64: string; mediaType?: string }) => ipcRenderer.invoke("clipboard:writeImage", image),
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
