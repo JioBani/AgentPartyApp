@@ -803,8 +803,14 @@ export class AppController {
    * The party comes from the CALLER's own identity, never from a window: the
    * member's tools act inside its own party regardless of what anyone is viewing.
    */
-  invokePartyToolAs(workspacePath: string, member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
-    return this.mutateParty(workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
+  async invokePartyToolAs(workspacePath: string, member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+    // `workspacePath` came from the FOCUSED WINDOW, because an HTTP caller has
+    // no window of its own — and one process serves every open window. With a
+    // second workspace open, every member of the unfocused one was looked up in
+    // the wrong place ("Member 'refactor' is not in this party."). The party the
+    // member names is the reliable key, so it decides which engine runs the tool.
+    const owner = partyId ? await this.deps.engineRegistry.workspaceOwningParty(partyId, workspacePath) : undefined;
+    return this.mutateParty(owner || workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
   }
 
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
