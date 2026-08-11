@@ -51,6 +51,45 @@ export class EngineRegistry {
     return engine;
   }
 
+  /**
+   * Which LIVE workspace owns `partyId`, preferring `preferred` when it does.
+   *
+   * A harness that reaches the app over HTTP (Codex) carries no window id, so
+   * the API falls back to the focused window's workspace — and one process
+   * serves every open window. A Codex member in the second window therefore had
+   * its party tools executed against the FIRST window's workspace, where its own
+   * name does not exist: "Member 'refactor' is not in this party."
+   *
+   * The party id the member already sends is the reliable key. It also avoids
+   * the workspace-path trap: a WSL engine knows its workspace as a bare posix
+   * path while the desktop knows it as `wsl+Distro:/path`, so routing by path
+   * would break exactly where routing matters most.
+   *
+   * Only live engines are consulted — a member's session exists only where its
+   * engine is running, so there is nothing to find on disk.
+   */
+  async workspaceOwningParty(partyId: string, preferred?: string): Promise<string | undefined> {
+    const owns = async (engine: EngineConnection) => {
+      try {
+        return (await engine.listParty(undefined)).parties.some((party) => party.id === partyId);
+      } catch {
+        return false;   // an engine that cannot answer cannot be the owner
+      }
+    };
+    if (preferred) {
+      const engine = this.engines.get(workspaceKey(preferred));
+      if (engine && await owns(engine)) {
+        return engine.workspacePath;
+      }
+    }
+    for (const engine of this.engines.values()) {
+      if (await owns(engine)) {
+        return engine.workspacePath;
+      }
+    }
+    return undefined;
+  }
+
   /** Applies one account generation to every currently hosted engine. */
   async setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
     this.codexAuthentication = update;
