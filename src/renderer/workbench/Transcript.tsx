@@ -186,6 +186,8 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return <ToolBlock block={block} density={density} />;
     case "channel":
       return <ChannelBlock block={block} view={view} />;
+    case "image":
+      return <AttachedImageBlock block={block} />;
     case "partyAction":
       return <PartyActionBlock block={block} />;
     case "gate":
@@ -296,6 +298,58 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
  * Rendered as a compact action card (with the new member's role/model/harness on
  * create) so spawning/removing is legible without expanding a raw tool box.
  */
+/**
+ * An image the MEMBER put in the conversation for the user to look at.
+ *
+ * A stored file is fetched from the workspace image store; a `url` is loaded
+ * from its own source, because the member asked for that address rather than a
+ * copy of it. Either way the picture only ever exists here — the member has not
+ * seen it, which is why the card names what it asked for.
+ */
+function AttachedImageBlock({ block }: { block: Extract<TranscriptBlock, { kind: "image" }> }) {
+  const [fetched, setFetched] = useState<string>();
+  const [loadError, setLoadError] = useState<string>();
+  const file = block.file;
+  useEffect(() => {
+    if (!file) {
+      return;
+    }
+    let live = true;
+    setFetched(undefined);
+    setLoadError(undefined);
+    window.agentParty
+      .getTranscriptImage(file)
+      .then((result) => { if (live) setFetched(result.dataUrl); })
+      .catch((cause: unknown) => { if (live) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [file]);
+
+  const src = file ? fetched : block.url;
+  const label = block.caption || block.origin || "이미지";
+
+  if (block.state === "failed") {
+    return (
+      <div className="wb-block wb-attached-image is-failed">
+        <ImageOff size={13} />
+        <span>이미지를 붙이지 못했습니다{block.origin ? ` — ${block.origin}` : ""}</span>
+        {block.error && <span className="wb-attached-image-error">{block.error}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="wb-block wb-attached-image">
+      {loadError && <div className="wb-tool-image-missing"><ImageOff size={13} /> 이미지를 불러오지 못했습니다 — {loadError}</div>}
+      {!loadError && !src && <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" /> 이미지 여는 중…</div>}
+      {!loadError && src && (
+        <>
+          <ImageFigure src={src} label={label} copySource={() => imageBytesFrom(src)} />
+          {block.caption && <span className="wb-attached-image-caption">{block.caption}</span>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "partyAction" }> }) {
   const isCreate = block.action === "create";
   const failed = block.state === "failed";
@@ -569,6 +623,69 @@ function DetailModal({ title, onClose, actions, wide, children }: {
  * is nothing left to copy or enlarge.
  */
 function MsgImage({ image }: { image: ImageAttachment }) {
+  if (!image.dataBase64) {
+    return (
+      <span className="wb-msg-image-stub" title={image.name}>
+        <ImageOff size={12} /> {image.name || "이미지"}
+      </span>
+    );
+  }
+  return (
+    <ImageFigure
+      src={imageDataUrl(image)}
+      label={image.name || "이미지"}
+      copySource={async () => ({ dataBase64: image.dataBase64!, mediaType: image.mediaType })}
+    />
+  );
+}
+
+/**
+ * Bytes for the clipboard, fetched only when the user actually asks to copy.
+ * A member's attached image may live behind a URL, where the app deliberately
+ * holds no copy — so the source is a function, not a value.
+ */
+type ImageCopySource = () => Promise<{ dataBase64: string; mediaType?: string }>;
+
+/**
+ * Clipboard bytes for whatever a rendered `src` points at.
+ *
+ * A stored image is already a `data:` URL, so it is split apart. A remote one is
+ * fetched at copy time — the app holds no copy of a URL the member attached, by
+ * design. A fetch the host refuses surfaces through the copy button's failed
+ * state rather than as a silent no-op.
+ */
+async function imageBytesFrom(src: string): Promise<{ dataBase64: string; mediaType?: string }> {
+  const fromDataUrl = (value: string) => {
+    const comma = value.indexOf(",");
+    const mediaType = /^data:([^;,]+)/.exec(value)?.[1];
+    return { dataBase64: value.slice(comma + 1), mediaType };
+  };
+  if (src.startsWith("data:")) {
+    return fromDataUrl(src);
+  }
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`.trim());
+  }
+  const blob = await response.blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error("이미지를 읽지 못했습니다."));
+    reader.readAsDataURL(blob);
+  });
+  return fromDataUrl(dataUrl);
+}
+
+/**
+ * One image with the affordances every image in a transcript has: click to
+ * enlarge (fit / actual size) and copy to the clipboard.
+ *
+ * Split out of {@link MsgImage} so an image a MEMBER attached behaves exactly
+ * like one the user pasted. The two differ only in where the bytes come from,
+ * which is what `copySource` abstracts.
+ */
+function ImageFigure({ src, label, copySource }: { src: string; label: string; copySource?: ImageCopySource }) {
   const [viewer, setViewer] = useState(false);
   // Fit shrinks to the viewport; actual shows native pixels and scrolls when
   // the image is larger than the modal. Default to fit so a huge screenshot
@@ -579,22 +696,15 @@ function MsgImage({ image }: { image: ImageAttachment }) {
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  if (!image.dataBase64) {
-    return (
-      <span className="wb-msg-image-stub" title={image.name}>
-        <ImageOff size={12} /> {image.name || "이미지"}
-      </span>
-    );
-  }
-
-  const src = imageDataUrl(image);
-  const label = image.name || "이미지";
-
   async function copyImage(event?: { preventDefault(): void; stopPropagation(): void }) {
     event?.preventDefault();
     event?.stopPropagation();
     try {
-      await window.agentParty.copyImageToClipboard({ dataBase64: image.dataBase64!, mediaType: image.mediaType });
+      if (!copySource) {
+        throw new Error("복사할 수 있는 원본이 없습니다.");
+      }
+      const bytes = await copySource();
+      await window.agentParty.copyImageToClipboard({ dataBase64: bytes.dataBase64, mediaType: bytes.mediaType });
       setCopyError("");
       setCopyState("copied");
       clearTimeout(timer.current);

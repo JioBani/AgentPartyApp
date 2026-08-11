@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
+import { harnessDefaultsOf, harnessForRuntime } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
@@ -192,7 +192,7 @@ export class AppController {
       try {
         const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
         for (const member of party.members || []) {
-          const harnessId = member.runtime === "codex" ? "codex" : member.runtime === "cursor" ? "cursor" : "claude-code";
+          const harnessId = harnessForRuntime(member.runtime);
           const provider = providerOfHarness(harnessId);
           if (provider) {
             providers.add(provider);
@@ -591,6 +591,11 @@ export class AppController {
   /**
    * Opens a window, optionally ON a specific party.
    *
+   * A party id is meaningful only inside its workspace. Validate that pair
+   * before creating the BrowserWindow: PartyApplicationService.list() normally
+   * falls back from an unknown id to the workspace's current party, which would
+   * make a routing bug look like a successful open of an unrelated party.
+   *
    * The party is PINNED before the window can ask, because pinning otherwise
    * happens at the window's first `getState` and would capture whatever the
    * shared advisory hint held at that moment — i.e. the party the OTHER window
@@ -598,7 +603,15 @@ export class AppController {
    * land on that party instead of a copy of the current one.
    */
   async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
-    const info = await this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+    const targetWorkspace = workspacePath || getSettings().workspacePath || process.cwd();
+    if (partyId) {
+      const listing = await this.engineFor(targetWorkspace).listParty(undefined);
+      if (!(listing.parties || []).some((party) => party.id === partyId)) {
+        throw new Error(`Party '${partyId}' does not exist in workspace '${targetWorkspace}'.`);
+      }
+    }
+
+    const info = await this.deps.openWindow(targetWorkspace);
     if (partyId) {
       this.activePartyByWindow.set(info.id, partyId);
     }

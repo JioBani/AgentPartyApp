@@ -8,7 +8,7 @@
 import type { RouteLike } from "./routes";
 import { modelProviderLabel } from "../../shared/modelProviders";
 
-export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "custom";
+export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "xai" | "custom";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   // Internal catalog ids name API vendors; the product surface names the
@@ -18,6 +18,7 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   cursor: modelProviderLabel("cursor"),
   openrouter: modelProviderLabel("openrouter"),
   deepseek: modelProviderLabel("deepseek"),
+  xai: modelProviderLabel("xai"),
   custom: "Custom",
 };
 
@@ -27,6 +28,7 @@ export const PROVIDER_DOTS: Record<ProviderId, string> = {
   cursor: "#5b8cff",
   openrouter: "#a07bff",
   deepseek: "#4d6bfe",
+  xai: "#c8cdd4",
   custom: "#79808d",
 };
 
@@ -44,11 +46,17 @@ export interface ModelView {
   context: string;
 }
 
-const PROVIDERS: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "custom"];
+/**
+ * Derived from PROVIDER_LABELS on purpose: a hand-written second copy of this
+ * list is how `xai` routes silently rendered as "Custom" — the provider was
+ * added to the labels, the dots and the group order, but not to the membership
+ * check. Adding a key to PROVIDER_LABELS is now the only step.
+ */
+const PROVIDERS = new Set<string>(Object.keys(PROVIDER_LABELS));
 
 export function routeProvider(route: RouteLike): ProviderId {
   const provider = route.providerId as ProviderId;
-  return PROVIDERS.includes(provider) ? provider : "custom";
+  return PROVIDERS.has(provider) ? provider : "custom";
 }
 
 function price(value: number | undefined): string | undefined {

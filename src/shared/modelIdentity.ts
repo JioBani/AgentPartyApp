@@ -16,8 +16,9 @@
  * downstream code branches on `Backend.kind`, never on the model spelling.
  */
 import { resolveCatalogModel } from "./modelCatalog";
+import { harnessLabel } from "./types";
 
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
@@ -90,6 +91,10 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
   if (harnessId === "cursor") {
     return entry.cursorModel ? { kind: "cursor-agent", slug: entry.cursorModel } : undefined;
   }
+  if (harnessId === "grok") {
+    // Grok Build owns its own model list; the catalog does not route it.
+    return undefined;
+  }
   // codex harness
   if (entry.codexModel) {
     return { kind: "codex-account", slug: entry.codexModel };
@@ -112,32 +117,45 @@ const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
   "claude-code": "anthropic",
   codex: "openai",
   cursor: "cursor",
+  grok: "xai",
 };
 
-/** Providers that ship a harness of their own; every other provider has none. */
-const PROVIDERS_WITH_A_HARNESS = new Set(Object.values(HARNESS_NATIVE_PROVIDER));
+/**
+ * Providers whose cross-subscription routes stay closed for the beta.
+ *
+ * Written out rather than derived from {@link HARNESS_NATIVE_PROVIDER}. It used
+ * to be `new Set(Object.values(HARNESS_NATIVE_PROVIDER))`, which meant that
+ * adding the Grok harness — one line, `grok: "xai"` — silently closed the nine
+ * Claude-Code × Grok-subscription routes the commit before it had just built
+ * and verified against the live API. Closing a route is now a decision someone
+ * has to type here, not a side effect of registering a harness.
+ *
+ * `xai` is deliberately absent: Grok on Claude Code is open.
+ */
+const BETA_LOCKED_PROVIDERS = new Set(["anthropic", "openai", "cursor"]);
 
-const HARNESS_LABEL: Record<HarnessId, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor CLI",
-};
-
+/**
+ * Vendor names for the lock message. Every provider in
+ * {@link BETA_LOCKED_PROVIDERS} needs an entry — a missing one falls back to
+ * the raw catalog id and the user reads "xai 구독 모델을…".
+ */
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   cursor: "Cursor",
+  xai: "Grok",
 };
 
 /**
  * Why this (model, harness) pair is locked for the beta, or undefined when it is
  * allowed. See `docs/베타 공개 준비/B-12 교차 하네스.md`.
  *
- * A pair is locked ONLY when the model's provider runs a harness of its own AND
- * that harness is not the one executing — the three cross-SUBSCRIPTION routes
- * 기능정의서 1-12-2 defines. Defects cluster there because such a pair is
- * exposed to BOTH vendors' changes at once. The lock is temporary and the code
- * paths stay in place, so reopening it is flipping this predicate.
+ * A pair is locked ONLY when the model's provider is in
+ * {@link BETA_LOCKED_PROVIDERS} AND that provider's own harness is not the one
+ * executing — a cross-SUBSCRIPTION route in the sense 기능정의서 1-12-2 defines.
+ * Defects cluster there because such a pair is exposed to BOTH vendors' changes
+ * at once. The lock is temporary and the code paths stay in place, so reopening
+ * one is removing its provider from that set.
  *
  * ⚠️ A model whose provider has NO harness (OpenRouter, DeepSeek, …) is not a
  * cross route at all: running it on claude-code or codex is its only way to
@@ -152,11 +170,11 @@ export function crossHarnessLockReason(model: string, harnessId: HarnessId): str
     return undefined;
   }
   const provider = String(entry.provider || "");
-  if (!PROVIDERS_WITH_A_HARNESS.has(provider) || provider === HARNESS_NATIVE_PROVIDER[harnessId]) {
+  if (!BETA_LOCKED_PROVIDERS.has(provider) || provider === HARNESS_NATIVE_PROVIDER[harnessId]) {
     return undefined;
   }
   const providerLabel = PROVIDER_LABEL[provider] || provider;
-  return `베타 기간에는 잠긴 조합입니다. ${providerLabel} 구독 모델을 ${HARNESS_LABEL[harnessId]} 하네스에서 실행하는 경로는 정식 공개 때 다시 엽니다.`;
+  return `베타 기간에는 잠긴 조합입니다. ${providerLabel} 구독 모델을 ${harnessLabel(harnessId)} 하네스에서 실행하는 경로는 정식 공개 때 다시 엽니다.`;
 }
 
 /** The exact model id string this backend hands to the harness/router. */

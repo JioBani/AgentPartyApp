@@ -7,7 +7,7 @@
  */
 import catalog from "./modelCatalog.json";
 
-export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek";
+export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai";
 
 /** Effort levels transportable to the harness (SDK `effort`). */
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -91,6 +91,31 @@ export interface CatalogModel {
    * https://api-docs.deepseek.com/guides/responses_api/
    */
   deepseekResponsesApi?: boolean;
+  /**
+   * Model id on xAI's own API (e.g. "grok-4.5"). Presence + provider "xai"
+   * routes the claude-code gateway at https://api.x.ai/v1/messages, xAI's
+   * documented Anthropic-compatible surface, authenticated with the token the
+   * official `grok login` already wrote — so the user's SuperGrok subscription
+   * pays, not console credits.
+   *
+   * Measured 2026-08-10 against that surface: it accepts and then IGNORES every
+   * reasoning-effort spelling and every `service_tier` value (it 200s on
+   * `service_tier: "fast"`, which the OpenAI surface rejects as an invalid
+   * enum). Effort/tier are therefore PINNED on xai entries rather than offered
+   * as knobs that would silently do nothing. Both are real on
+   * /v1/chat/completions, which is the codex harness's route, not this one.
+   */
+  xaiModel?: string;
+  /**
+   * Whether xAI gates CLIENT-SIDE TOOLS on this model behind a beta it has not
+   * granted. A harness always sends its toolset, so such a model cannot run on
+   * claude-code at all — measured 2026-08-10, every turn came back
+   * `400 {"code":"invalid-argument","error":"Client-side tools for multi-agent
+   * models require beta access"}` after the request was already billed as a
+   * turn. Flagged so the route is offered as unavailable WITH that reason
+   * instead of failing once the user has already picked it.
+   */
+  xaiClientToolsBeta?: boolean;
   subscription: boolean;
   description?: string;
   context?: string;
@@ -294,7 +319,8 @@ export type RouterTarget =
   | { kind: "codex-subscription"; model: string }
   | { kind: "openrouter"; model: string }
   | { kind: "cursor-subscription"; model: string }
-  | { kind: "deepseek"; model: string };
+  | { kind: "deepseek"; model: string }
+  | { kind: "xai-subscription"; model: string };
 
 /** Exact provider target for one Claude Code gateway alias. */
 export function routerTargetForModel(model: string): RouterTarget | undefined {
@@ -313,6 +339,9 @@ export function routerTargetForModel(model: string): RouterTarget | undefined {
   }
   if (entry.provider === "cursor" && entry.cursorAcpModelId) {
     return { kind: "cursor-subscription", model: entry.cursorAcpModelId };
+  }
+  if (entry.provider === "xai" && entry.xaiModel) {
+    return { kind: "xai-subscription", model: entry.xaiModel };
   }
   return undefined;
 }

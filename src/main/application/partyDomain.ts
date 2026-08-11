@@ -1,5 +1,5 @@
 import type { AppSettings, CreateMemberInput, HarnessId, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
-import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
+import { harnessDefaultsOf, harnessForRuntime, isPermissionModeSetting } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, requireCodexPolicy } from "../../shared/codexPolicy";
 import { cursorPolicyOf, requireCursorPolicy } from "../../shared/cursorPolicy";
 
@@ -39,7 +39,7 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
   // A member is created from ITS harness's defaults (not one global profile), so
   // e.g. a Codex member starts with the Codex default model + sandbox policy.
   const runtime = normalizeRuntime(input.runtime || settings.selectedHarnessId);
-  const harnessId: HarnessId = runtime === "codex" ? "codex" : runtime === "cursor" ? "cursor" : "claude-code";
+  const harnessId: HarnessId = harnessForRuntime(runtime);
   const profile = harnessDefaultsOf(settings, harnessId);
   const model = input.model || profile.model;
   return {
@@ -90,11 +90,11 @@ export function buildChannelPayload(message: PartyMessage, target: PartyMember):
 }
 
 export function normalizeRuntime(value: unknown): PartyMember["runtime"] {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "claude" ? "claude" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : value === "claude" ? "claude" : "claude-code";
 }
 
 export function normalizeHarnessId(value: unknown): HarnessId {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : "claude-code";
 }
 
 export function normalizeMemberName(value: unknown): string {

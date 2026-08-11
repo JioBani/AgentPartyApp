@@ -17,7 +17,7 @@ export function isPermissionModeSetting(value: unknown): value is PermissionMode
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
 export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
-export type HarnessId = "claude-code" | "codex" | "cursor";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
 /**
@@ -60,6 +60,8 @@ export interface AppSettings {
   claudeExecutablePath: string;
   /** Cursor Agent executable/bundle override. Empty = auto-discover official install. */
   cursorExecutablePath: string;
+  /** Optional override for the official `grok` binary; resolved automatically when empty. */
+  grokExecutablePath?: string;
   claudeSafeMode: boolean;
   /** The harness a brand-new member defaults to. */
   selectedHarnessId: HarnessId;
@@ -111,7 +113,49 @@ export interface AppSettings {
 }
 
 /** All harnesses that have defaults, in a stable order. */
-export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor"];
+export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor", "grok"];
+
+/**
+ * What a member's `runtime` field may say. `claude` is the legacy spelling of
+ * `claude-code` kept for parties written before the rename.
+ */
+export type MemberRuntime = "codex" | "claude" | "claude-code" | "cursor" | "grok";
+
+/**
+ * The harness that runs a given member runtime.
+ *
+ * This lookup exists because the mapping used to be a hand-written
+ * `runtime === "codex" ? … : runtime === "cursor" ? … : "claude-code"` ternary
+ * repeated across the renderer and the main process. When the Grok Build
+ * harness was added, every one of those copies kept falling through to
+ * `claude-code`, so a Grok member was shown Claude Code's model catalog and
+ * started with Claude Code's defaults. `satisfies Record<MemberRuntime, …>`
+ * turns the next such omission into a compile error instead.
+ */
+const HARNESS_BY_RUNTIME = {
+  codex: "codex",
+  cursor: "cursor",
+  grok: "grok",
+  claude: "claude-code",
+  "claude-code": "claude-code",
+} as const satisfies Record<MemberRuntime, HarnessId>;
+
+/** The harness for a member's runtime; defaults to Claude Code when unset. */
+export function harnessForRuntime(runtime: MemberRuntime | undefined): HarnessId {
+  return runtime ? HARNESS_BY_RUNTIME[runtime] : "claude-code";
+}
+
+/** What each harness is called in the UI. Exhaustive for the same reason. */
+export const HARNESS_LABELS = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor CLI",
+  grok: "Grok Build",
+} as const satisfies Record<HarnessId, string>;
+
+export function harnessLabel(harnessId: HarnessId): string {
+  return HARNESS_LABELS[harnessId];
+}
 
 /** The creation defaults for one harness (falls back to the default harness). */
 export function harnessDefaultsOf(settings: AppSettings, harnessId?: HarnessId): HarnessDefaults {
@@ -161,7 +205,7 @@ export interface PartyMember {
    * `missing_session` (something died unexpectedly) cannot promise.
    */
   status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
-  runtime?: "codex" | "claude" | "claude-code" | "cursor";
+  runtime?: MemberRuntime;
   role?: string;
   sessionId?: string;
   /**
@@ -299,7 +343,7 @@ export interface CreateMemberInput {
   requirement: string;
   role?: string;
   initialTask?: string;
-  runtime?: "codex" | "claude" | "claude-code" | "cursor";
+  runtime?: MemberRuntime;
   model?: string;
   effort?: string;
   reasoning?: string;

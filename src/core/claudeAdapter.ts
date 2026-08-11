@@ -180,6 +180,8 @@ export class ClaudeAdapter extends EventEmitter {
   private lastEventAt: string | undefined;
   private lastUserMessageAt: string | undefined;
   private lastAssistantMessageAt: string | undefined;
+  /** Whether the CURRENT assistant message already arrived as text deltas. */
+  private streamedAssistantText = false;
   private lastError: string | undefined;
   private supportedSlashCommands: HarnessCommand[] = [];
   private supportedModels: ModelRoute[] = [];
@@ -838,7 +840,15 @@ export class ClaudeAdapter extends EventEmitter {
       return {};
     }
     const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
-    const server = sdk.createSdkMcpServer({ name: PARTY_MCP_SERVER, version: "0.1.0", tools });
+    const server = sdk.createSdkMcpServer({
+      name: PARTY_MCP_SERVER,
+      version: "0.1.0",
+      tools,
+      // Party coordination must never depend on Claude finding these tools via
+      // ToolSearch. In particular, a woken/resumed member has to be able to
+      // reply on its very first turn even when tool search is enabled.
+      alwaysLoad: true,
+    });
     return { mcpServers: { [PARTY_MCP_SERVER]: server } };
   }
 
@@ -1086,7 +1096,8 @@ export class ClaudeAdapter extends EventEmitter {
         return;
       }
       const harnessCostUsd = typeof (message as any).total_cost_usd === "number" ? (message as any).total_cost_usd : undefined;
-      const usage = mergeUsage(extractUsage(message), this.consumeRouterTurnUsage());
+      const routerUsage = this.consumeRouterTurnUsage();
+      const usage = mergeUsage(extractUsage(message), routerUsage);
       const cost = await this.costResolver.resolve({
         providerId: this.providerId,
         model: this.model,
@@ -1105,7 +1116,10 @@ export class ClaudeAdapter extends EventEmitter {
         // streamed message so it drops after /compact) — NOT the cumulative turn
         // total, which grows with tool round-trips and would misrepresent the
         // context window actually held. input/cacheRead/... stay cumulative (cost).
-        usage: withContextOccupancy(tokenBreakdownFromClaudeUsage((message as any).usage), this.contextTokens),
+        usage: withContextOccupancy(
+          tokenBreakdownFromRouterOrHarness((message as any).usage, routerUsage),
+          this.contextTokens,
+        ),
         at: now(),
       });
       this.drainQueuedTurn();
@@ -1285,6 +1299,7 @@ export class ClaudeAdapter extends EventEmitter {
           this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: delta.text }, at: now() });
         } else {
           this.lastAssistantMessageAt = now();
+          this.streamedAssistantText = true;
           this.emitEvent({ type: "assistant_text_delta", text: delta.text, blockIndex: event.index, at: now() });
         }
       } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string" && !subagentId) {
@@ -1336,12 +1351,27 @@ export class ClaudeAdapter extends EventEmitter {
         } else {
           this.emitEvent({ type: "tool_call", id: item.id || item.name || `tool-${Date.now()}`, name: item.name || "tool", input: withFilePath(item.input), status: "started", at: now() });
         }
-      } else if (item?.type === "text" && typeof item.text === "string" && subagentId) {
-        this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: item.text }, at: now() });
+      } else if (item?.type === "text" && typeof item.text === "string") {
+        if (subagentId) {
+          this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: item.text }, at: now() });
+        } else if (!this.streamedAssistantText) {
+          // The snapshot is the ONLY source of the reply when the SDK could not
+          // stream. Measured 2026-08-10 on Grok via the xAI route: the SDK
+          // logged "Error streaming, falling back to non-streaming mode:
+          // Content block not found", delivered `message_start` and nothing
+          // else, and the finished text arrived only here — so the member
+          // completed its turn (`end_turn`) with an empty transcript. Guarded on
+          // the streaming flag because the normal path already emitted this
+          // text delta by delta, and emitting it again would double the reply.
+          this.lastAssistantMessageAt = now();
+          this.emitEvent({ type: "assistant_text_delta", text: item.text, at: now() });
+        }
       } else if (item?.type === "tool_result") {
         this.normalizeToolResult(item, subagentId);
       }
     }
+    // One snapshot ends one assistant message; the next one streams afresh.
+    this.streamedAssistantText = false;
   }
 
   private normalizeUserSnapshot(message: any, parentToolUseId?: string): void {
@@ -1734,6 +1764,35 @@ function appendJsonDelta(current: unknown, delta: string | undefined): unknown {
  * undefined when the harness reported no token counts — a missing field must
  * read as "not reported", never zero.
  */
+/**
+ * The harness's own token report, or the gateway's measurement when the harness
+ * reports nothing usable.
+ *
+ * Claude Code returns an all-zero `result.usage` for router-backed models, which
+ * put Grok turns in the ledger as 0 in / 0 out while each request really carried
+ * ~100k tokens — the dashboard looked idle while a subscription drained. The
+ * gateway counts what actually crossed the wire, so it is the honest source
+ * whenever the harness has nothing; a harness that does report keeps precedence,
+ * since it also sees requests the gateway never proxied.
+ */
+function tokenBreakdownFromRouterOrHarness(
+  harnessUsage: unknown,
+  routerUsage: RouterTurnUsage | undefined,
+): TurnTokenBreakdown | undefined {
+  const fromHarness = tokenBreakdownFromClaudeUsage(harnessUsage);
+  const reported = (fromHarness?.input ?? 0) + (fromHarness?.output ?? 0)
+    + (fromHarness?.cacheRead ?? 0) + (fromHarness?.cacheWrite ?? 0);
+  if (reported > 0 || !routerUsage?.tokens) {
+    return fromHarness;
+  }
+  return {
+    input: routerUsage.tokens.input,
+    output: routerUsage.tokens.output,
+    cacheRead: routerUsage.tokens.cacheRead,
+    cacheWrite: routerUsage.tokens.cacheWrite,
+  };
+}
+
 function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | undefined {
   const record = asRecord(usage);
   if (!record) {

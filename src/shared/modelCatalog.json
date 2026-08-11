@@ -1016,6 +1016,151 @@
         "maxImages": 20,
         "maxBytesPerImage": 5242880
       }
+    },
+    {
+      "id": "Grok 4.5 xAI",
+      "label": "Grok 4.5 (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-4-5",
+      "xaiModel": "grok-4.5",
+      "subscription": true,
+      "description": "xAI's frontier model on your SuperGrok / X Premium+ subscription, through xAI's own Anthropic-compatible API. List price $2.00/$6.00 per M, but billed to the subscription here, not to console credits. xAI documents effort low/medium/high/xhigh (default high); measured 2026-08-10 this endpoint accepts and ignores every effort spelling, so it is pinned to the documented default rather than offered as a knob that does nothing.",
+      "context": "500K",
+      "perf": 3,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "high"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "Grok 4.3 xAI",
+      "label": "Grok 4.3 (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-4-3",
+      "xaiModel": "grok-4.3",
+      "subscription": true,
+      "description": "1M-context Grok on your Grok subscription. List price $1.25/$2.50 per M. Effort is pinned to xAI's documented default (low) because this endpoint ignores the parameter.",
+      "context": "1M",
+      "perf": 2,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "Grok 4.20 Reasoning xAI",
+      "label": "Grok 4.20 Reasoning (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-4-20-reasoning",
+      "xaiModel": "grok-4.20-0309-reasoning",
+      "subscription": true,
+      "description": "1M-context reasoning variant on your Grok subscription. List price $1.25/$2.50 per M. xAI publishes no effort options for this model, so there is no effort control to offer.",
+      "context": "1M",
+      "perf": 2,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "Grok 4.20 Non-Reasoning xAI",
+      "label": "Grok 4.20 Non-Reasoning (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-4-20-non-reasoning",
+      "xaiModel": "grok-4.20-0309-non-reasoning",
+      "subscription": true,
+      "description": "The fastest Grok shape on this route: 1M context with reasoning off entirely. Speed is chosen by picking this model, because xAI's separate service_tier knob (auto/default/flex/standard/priority) is silently discarded by the Anthropic-compatible endpoint. List price $1.25/$2.50 per M.",
+      "context": "1M",
+      "perf": 1,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "Grok 4.20 Multi-Agent xAI",
+      "label": "Grok 4.20 Multi-Agent (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-4-20-multi-agent",
+      "xaiModel": "grok-4.20-multi-agent-0309",
+      "xaiClientToolsBeta": true,
+      "subscription": true,
+      "description": "Multi-agent Grok, where xAI maps reasoning effort to the number of agents rather than reasoning depth. Pinned to the documented default (low) since this endpoint ignores the parameter. List price $1.25/$2.50 per M.",
+      "context": "1M",
+      "perf": 2,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low"
+          ],
+          "default": "low"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "Grok Build 0.1 xAI",
+      "label": "Grok Build 0.1 (Grok subscription)",
+      "provider": "xai",
+      "runtimeModel": "claude-xai-grok-build-0-1",
+      "xaiModel": "grok-build-0.1",
+      "subscription": true,
+      "description": "xAI's coding-tuned model (formerly grok-code-fast-1), 256K context, cheapest of the family at a $1.00/$2.00 list price. No effort options are published for it. This is a distinct earlier-generation model, not the model behind the Grok Build CLI — that one is grok-4.5.",
+      "context": "256K",
+      "perf": 2,
+      "costTier": 5,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
     }
   ]
 }

@@ -525,7 +525,7 @@ function DiscordBridgeCard({ status, onSave, onDirtyChange }: { status?: Discord
   );
 }
 
-const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI" };
+const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI", grok: "Grok Build" };
 
 /** Discord's wordmark glyph — lucide has no Discord icon and a generic speech
  *  bubble would read as "chat", not "the Discord bridge". */

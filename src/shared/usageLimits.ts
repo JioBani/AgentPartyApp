@@ -12,7 +12,7 @@
  * suites build the identical view from the same code.
  */
 
-export type UsageProviderId = "claude" | "codex" | "cursor";
+export type UsageProviderId = "claude" | "codex" | "cursor" | "grok";
 
 /**
  * The rolling windows the indicator can show. Claude/Codex report 5-hour +
@@ -47,6 +47,7 @@ export type UsageLimitsSnapshot = {
   claude?: ProviderUsage;
   codex?: ProviderUsage;
   cursor?: ProviderUsage;
+  grok?: ProviderUsage;
 };
 
 /** Provider display metadata. Brand colors are design literals, not theme tokens. */
@@ -54,10 +55,11 @@ export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: st
   claude: { label: "Claude", brand: "#c5835f" },
   codex: { label: "Codex", brand: "#2bb67e" },
   cursor: { label: "Cursor", brand: "#8e92a3" },
+  grok: { label: "Grok", brand: "#c8cdd4" },
 };
 
 /** Fixed display order (matches the design). */
-export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex", "cursor"];
+export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex", "cursor", "grok"];
 
 /**
  * The windows each provider actually has. Rendering the union for everyone
@@ -68,6 +70,12 @@ export const PROVIDER_WINDOW_KINDS: Record<UsageProviderId, UsageWindowKind[]> =
   claude: ["five_hour", "weekly"],
   codex: ["five_hour", "weekly"],
   cursor: ["monthly"],
+  // xAI publishes no plan-quota surface: the ACP stream carries per-turn tokens
+  // only, and api.x.ai answers 404 for every usage/billing path and rejects the
+  // subscription token on /v1/me (measured 2026-08-10). An empty list is the
+  // honest answer — the alternative is a permanently blank 5-hour/weekly row
+  // that reads as "0% used" on a plan that is actually being consumed.
+  grok: [],
 };
 
 /** The usage provider a party member's runtime draws its account quota from. */
@@ -88,6 +96,7 @@ export function providerOfRuntime(runtime: string | undefined): UsageProviderId 
 export function providerOfHarness(harnessId: string | undefined): UsageProviderId | undefined {
   if (harnessId === "codex") return "codex";
   if (harnessId === "cursor") return "cursor";
+  if (harnessId === "grok") return "grok";
   if (harnessId === "claude-code" || harnessId === "claude") return "claude";
   return undefined;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
-import { defaultMemberProfileOf, harnessDefaultsOf } from "../shared/types";
+import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -607,7 +607,10 @@ export function App() {
    */
   async function openPartyInNewWindow(partyId: string) {
     try {
-      await window.agentParty.newWindow?.(state.settings.workspacePath, partyId);
+      // The main process owns the authoritative workspace for this renderer's
+      // BrowserWindow. Do not forward settings.workspacePath here: settings are
+      // shared across windows and may now point at a different window's cwd.
+      await window.agentParty.newWindow?.(undefined, partyId);
     } catch (error) {
       setPartyNotice(`새 창을 열지 못했습니다 — ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -980,7 +983,7 @@ export function App() {
     startingRef.current.add(identity);
     try {
       const draft = runtimeDrafts[name];
-      const memberHarness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
+      const memberHarness = harnessForRuntime(member?.runtime);
       const memberRoute = findRoute(
         member?.model,
         routes.filter((route) => (route.harnessId || "claude-code") === memberHarness),
@@ -1190,8 +1193,11 @@ export function App() {
       }
       const sessionId = sessionIdFor(name);
       const member = members.find((item) => item.name === name);
-      const selectedHarness = runtime.route?.harnessId === "codex" ? "codex" : runtime.route?.harnessId === "cursor" ? "cursor" : "claude-code";
-      const currentHarness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
+      // A route already carries its harness id — re-deriving it through a
+      // ternary only created a chance to forget a harness (grok did not exist
+      // when this was written, so a Grok route read as claude-code).
+      const selectedHarness = (runtime.route?.harnessId as HarnessId | undefined) || "claude-code";
+      const currentHarness = harnessForRuntime(member?.runtime);
       if (runtime.route && (selectedHarness !== currentHarness || runtime.serviceTier !== member?.serviceTier)) {
         // A harness is the adapter PROCESS, not model metadata. Recreate the
         // prewarmed session only when the actual selected harness changes.
@@ -1253,7 +1259,7 @@ export function App() {
     async listMcp(name) {
       const sessionId = sessionIdFor(name);
       const member = members.find((item) => item.name === name);
-      const harness = member?.runtime === "codex" ? "codex" : member?.runtime === "cursor" ? "cursor" : "claude-code";
+      const harness = harnessForRuntime(member?.runtime);
       if (!sessionId) {
         return { supported: true, harness, servers: [], note: "세션을 먼저 시작하세요 (멤버에게 메시지를 보내거나 패널을 열면 준비됩니다)." };
       }
@@ -1285,7 +1291,7 @@ export function App() {
   };
 
   /** Persists one harness's creation defaults (model/effort/reasoning/permission). */
-  async function saveHarnessDefaults(harnessId: "claude-code" | "codex" | "cursor", patch: Partial<HarnessDefaults>) {
+  async function saveHarnessDefaults(harnessId: HarnessId, patch: Partial<HarnessDefaults>) {
     const current = state.settings.harnessDefaults[harnessId];
     const settings = await window.agentParty.updateSettings({
       harnessDefaults: { ...state.settings.harnessDefaults, [harnessId]: { ...current, ...patch } },
@@ -1294,7 +1300,7 @@ export function App() {
   }
 
   /** Sets which harness a brand-new member defaults to. */
-  async function setDefaultHarness(harnessId: "claude-code" | "codex" | "cursor") {
+  async function setDefaultHarness(harnessId: HarnessId) {
     const settings = await window.agentParty.updateSettings({ selectedHarnessId: harnessId });
     setState((prev) => ({ ...prev, settings }));
   }

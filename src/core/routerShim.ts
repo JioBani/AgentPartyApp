@@ -1,14 +1,21 @@
 import * as crypto from "node:crypto";
 import * as http from "node:http";
 import * as net from "node:net";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
+import { GrokSubscriptionAuthError, grokSubscriptionToken } from "./grokSubscriptionAuth";
+import { createXaiSseFilter, normalizeAnthropicRequestForXai, stripThinkingFromAnthropicResponse } from "./xaiRequestCompat";
 import { assertSubscriptionModelAvailable, subscriptionProxyConfig } from "./subscriptionProxy";
 
 const CLAUDE_PROTOCOL = HARNESS_PROTOCOLS["claude-code"];
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+/** xAI's Anthropic-compatible surface; the caller appends /v1/messages. */
+const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 const MAX_ACCOUNTING_CAPTURE_BYTES = 256 * 1024;
 
 export interface EmbeddedHarnessRouterOptions {
@@ -19,6 +26,8 @@ export interface EmbeddedHarnessRouterOptions {
   deepseekApiKey?: string;
   /** Override exists for protocol-contract QA; production uses DeepSeek. */
   deepseekAnthropicBaseUrl?: string;
+  /** Override exists for protocol-contract QA; production uses api.x.ai. */
+  xaiBaseUrl?: string;
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
@@ -37,6 +46,18 @@ export interface RouterTurnUsage {
   generationId?: string;
   costUnavailableReason?: string;
   requestCount: number;
+  /**
+   * Tokens summed from the upstream responses this turn actually made.
+   *
+   * Claude Code reports its own `result.usage`, but for a router-backed model
+   * it reports ZEROS — a Grok turn landed in the ledger as 0 in / 0 out while
+   * really costing ~100k input tokens per request, so the usage dashboard and
+   * the context meter told the user nothing and a subscription drained
+   * invisibly. The gateway is the one place that sees the true numbers, so it
+   * measures them here and the adapter prefers them when the harness reports
+   * nothing.
+   */
+  tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
 interface CostBucket {
@@ -45,6 +66,11 @@ interface CostBucket {
   generationIds: string[];
   unavailableReasons: string[];
   hasCost: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  hasTokens: boolean;
 }
 
 interface UpstreamRoute {
@@ -90,6 +116,11 @@ export class EmbeddedHarnessRouter {
       generationIds: [],
       unavailableReasons: [],
       hasCost: false,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      hasTokens: false,
     });
   }
 
@@ -104,6 +135,14 @@ export class EmbeddedHarnessRouter {
       generationId: bucket.generationIds.join(",") || undefined,
       costUnavailableReason: bucket.unavailableReasons.join("; ") || undefined,
       requestCount: bucket.requestCount,
+      tokens: bucket.hasTokens
+        ? {
+            input: bucket.inputTokens,
+            output: bucket.outputTokens,
+            cacheRead: bucket.cacheReadTokens,
+            cacheWrite: bucket.cacheWriteTokens,
+          }
+        : undefined,
     };
   }
 
@@ -185,7 +224,23 @@ export class EmbeddedHarnessRouter {
         return;
       }
       if (!res.headersSent && !res.destroyed) {
-        sendJson(res, 500, { error: { type: "api_error", message: error instanceof Error ? error.message : String(error) } });
+        // A missing or expired provider credential must reach the user with the
+        // one instruction that fixes it (`grok login`). Measured on a WSL engine
+        // whose distro has no ~/.grok:
+        //   500 → the Anthropic SDK retries with backoff and the member sits at
+        //         "requesting" forever, showing nothing;
+        //   401 → Claude Code swallows the body and reports
+        //         "API Error: 400 status code (no body)";
+        //   400 → the body is surfaced verbatim in the transcript.
+        // So the actionable failure goes out as 400 even though the cause is
+        // authentication. Status semantics lose to the user actually seeing it.
+        const authFailure = error instanceof GrokSubscriptionAuthError;
+        sendJson(res, authFailure ? 400 : 500, {
+          error: {
+            type: authFailure ? "invalid_request_error" : "api_error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
       } else if (!res.destroyed) {
         res.destroy(error instanceof Error ? error : new Error(String(error)));
       }
@@ -213,6 +268,9 @@ export class EmbeddedHarnessRouter {
     }
     if (target.kind === "deepseek") {
       return this.forwardToDeepSeek(body, incomingHeaders, target, signal);
+    }
+    if (target.kind === "xai-subscription") {
+      return this.forwardToXai(body, incomingHeaders, target, signal);
     }
     return target.kind === "codex-subscription"
       ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
@@ -297,6 +355,43 @@ export class EmbeddedHarnessRouter {
     return { response, openRouter: false };
   }
 
+  /**
+   * xAI's own Anthropic-format endpoint, billed to the user's Grok
+   * subscription via the token `grok login` stored. Same pass-through shape as
+   * the DeepSeek leg — api.x.ai speaks Messages natively, so only the model is
+   * rewritten.
+   *
+   * Effort and service-tier are NOT forwarded: measured 2026-08-10, this
+   * surface accepts and discards both (it 200s on `service_tier: "fast"`, an
+   * enum value its own OpenAI surface rejects). Catalog entries pin them for
+   * the same reason, so there is nothing here to strip.
+   */
+  private async forwardToXai(
+    body: any,
+    incomingHeaders: http.IncomingHttpHeaders,
+    target: RouterTarget & { kind: "xai-subscription" },
+    signal: AbortSignal,
+  ): Promise<UpstreamRoute> {
+    const credential = grokSubscriptionToken();
+    const payload = JSON.stringify(normalizeAnthropicRequestForXai(rewriteAnthropicRequestModel(body, target.model)));
+    const response = await fetch(apiEndpoint(this.options.xaiBaseUrl || DEFAULT_XAI_BASE_URL, CLAUDE_PROTOCOL.endpoint), {
+      method: "POST",
+      headers: anthropicUpstreamHeaders(incomingHeaders, credential.accessToken),
+      body: payload,
+      signal,
+    });
+    if (response.status >= 400 && process.env.AGENTPARTY_ROUTER_DUMP) {
+      // An upstream 4xx here means xAI rejected the harness's request SHAPE, and
+      // the error text alone ("Invalid message role") does not say which field.
+      // Opt-in so a normal run never writes conversation content to disk.
+      const dump = path.join(os.tmpdir(), `agentparty-xai-reject-${Date.now()}.json`);
+      const cloned = response.clone();
+      fs.writeFileSync(dump, JSON.stringify({ status: response.status, upstream: await cloned.text(), request: JSON.parse(payload) }, null, 1));
+      console.error(`[router:xai] upstream ${response.status}; request dumped to ${dump}`);
+    }
+    return { response: response.ok ? filterXaiThinking(response) : response, openRouter: false };
+  }
+
   private async forwardToOpenRouter(
     body: any,
     incomingHeaders: http.IncomingHttpHeaders,
@@ -351,8 +446,10 @@ export class EmbeddedHarnessRouter {
       }
     }
 
+    const capturedText = Buffer.concat(captured).toString("utf8");
+    this.recordUpstreamTokens(accountingKey, capturedText);
     if (route.openRouter) {
-      await this.recordOpenRouterCost(accountingKey, Buffer.concat(captured).toString("utf8"));
+      await this.recordOpenRouterCost(accountingKey, capturedText);
     }
     res.end();
   }
@@ -372,12 +469,57 @@ export class EmbeddedHarnessRouter {
     });
   }
 
+  /**
+   * Sums the Anthropic `usage` numbers out of one upstream response, streamed
+   * or not. Input/cache counts arrive on `message_start` and the output count
+   * on `message_delta`, so both are scanned; a non-streaming body carries them
+   * together on `usage`.
+   */
+  private recordUpstreamTokens(accountingKey: string, responseText: string): void {
+    const bucket = this.costBuckets.get(accountingKey);
+    if (!bucket || !responseText) {
+      return;
+    }
+    bucket.requestCount += 1;
+    const add = (usage: Record<string, unknown> | undefined) => {
+      if (!usage) {
+        return;
+      }
+      const input = numberValue(usage.input_tokens) ?? 0;
+      const output = numberValue(usage.output_tokens) ?? 0;
+      const cacheRead = numberValue(usage.cache_read_input_tokens) ?? 0;
+      const cacheWrite = numberValue(usage.cache_creation_input_tokens) ?? 0;
+      if (input || output || cacheRead || cacheWrite) {
+        bucket.inputTokens += input;
+        bucket.outputTokens += output;
+        bucket.cacheReadTokens += cacheRead;
+        bucket.cacheWriteTokens += cacheWrite;
+        bucket.hasTokens = true;
+      }
+    };
+    if (responseText.includes("data:")) {
+      for (const line of responseText.split("\n")) {
+        if (!line.startsWith("data:")) {
+          continue;
+        }
+        let event: any;
+        try {
+          event = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        add(asRecord(event?.message?.usage) || asRecord(event?.usage));
+      }
+      return;
+    }
+    add(asRecord(parseResponsePayload(responseText)?.usage));
+  }
+
   private async recordOpenRouterCost(accountingKey: string, responseText: string): Promise<void> {
     const bucket = this.costBuckets.get(accountingKey);
     if (!bucket) {
       return;
     }
-    bucket.requestCount += 1;
     const payload = parseResponsePayload(responseText);
     const generationId = responseGenerationId(payload, responseText);
     if (generationId) {
@@ -632,4 +774,85 @@ function waitForDrain(res: http.ServerResponse, signal: AbortSignal): Promise<vo
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Removes xAI's unsigned `thinking` blocks from a response, in both shapes the
+ * gateway can carry. See xaiRequestCompat for why they cannot be forwarded.
+ */
+function filterXaiThinking(response: Response): Response {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream")) {
+    const rewritten = response
+      .clone()
+      .json()
+      .then((body) => JSON.stringify(stripThinkingFromAnthropicResponse(body as Record<string, unknown>)))
+      .catch(() => response.clone().text());
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode(await rewritten));
+          controller.close();
+        },
+      }),
+      { status: response.status, statusText: response.statusText, headers: response.headers },
+    );
+  }
+
+  const filter = createXaiSseFilter();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = response.body?.getReader();
+      if (!reader) {
+        controller.close();
+        return;
+      }
+      const flush = (chunk: string) => {
+        // One SSE frame: optional "event:" line plus a "data:" line. Frames the
+        // filter rejects are dropped whole so no half-event reaches the client.
+        const dataLine = chunk.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) {
+          controller.enqueue(encoder.encode(chunk + "\n\n"));
+          return;
+        }
+        let parsed: Record<string, unknown> | undefined;
+        try {
+          parsed = JSON.parse(dataLine.slice(5).trim());
+        } catch {
+          controller.enqueue(encoder.encode(chunk + "\n\n"));
+          return;
+        }
+        const kept = filter(parsed as Record<string, unknown>);
+        if (!kept) {
+          return;
+        }
+        controller.enqueue(encoder.encode(`event: ${String(kept.type)}\ndata: ${JSON.stringify(kept)}\n\n`));
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          flush(buffer.slice(0, boundary));
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+      if (buffer.trim()) {
+        flush(buffer.trim());
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }

@@ -5,6 +5,7 @@ import type { RouteLike } from "./routes";
 import { DEFAULT_AUTO_COMPACT } from "../../shared/autoCompact";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import { thresholdWindowFor } from "./memberStatus";
+import { harnessForRuntime, harnessLabel } from "../../shared/types";
 
 interface RuntimeModalProps {
   view: MemberView;
@@ -20,7 +21,7 @@ interface RuntimeModalProps {
  * thinking, debug, auto-compact). Apply restarts the member's session.
  */
 export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: RuntimeModalProps) {
-  const currentHarness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
+  const currentHarness = harnessForRuntime(view.member.runtime);
   const harnessLocked =
     (view.session?.snapshot.turnCount ?? 0) > 0 ||
     view.transcript.some((block) => block.kind === "user" || block.kind === "assistant");
@@ -60,7 +61,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
           <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
             <span className="wb-dot" /> {view.name}
           </span>
-          <span className="wb-mono wb-modal-sub">{currentHarness === "codex" ? "Codex" : currentHarness === "cursor" ? "Cursor CLI" : "Claude Code"}</span>
+          <span className="wb-mono wb-modal-sub">{harnessLabel(currentHarness)}</span>
         </>
       }
       routes={routes}

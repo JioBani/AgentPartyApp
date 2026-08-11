@@ -19,6 +19,7 @@ import { discoverBaseUrls } from "./lib/discovery.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ud = fs.mkdtempSync(path.join(os.tmpdir(), "ap-2win-ud-"));
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ap-2win-ws-"));
+const otherWs = fs.mkdtempSync(path.join(os.tmpdir(), "ap-2win-other-ws-"));
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -36,11 +37,19 @@ async function liveUrls(workspace) { const urls = discoverBaseUrls(workspace); c
 async function waitCount(workspace, n) { for (let i = 0; i < 80; i++) { if ((await liveUrls(workspace)).length >= n) return true; await delay(500); } return false; }
 function kill(pid) { if (!pid) return; try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch {} }
 async function post(baseUrl, u, b) { const r = await fetch(`${baseUrl}${u}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); return r.json(); }
+async function postRaw(baseUrl, u, b) {
+  const response = await fetch(`${baseUrl}${u}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) });
+  return { status: response.status, body: await response.json() };
+}
 async function get(baseUrl, u) { const r = await fetch(`${baseUrl}${u}`); return r.json(); }
 
 const proc = launch(ws);
 try {
-  assert(await waitCount(ws, 1), "the app process came up on the workspace");
+  const started = await waitCount(ws, 1);
+  assert(started, "the app process came up on the workspace");
+  if (!started) {
+    throw new Error("Electron app did not expose its automation API");
+  }
   const [base] = await liveUrls(ws);
 
   // Second `agent-party` on the same cwd = a second WINDOW in THIS process.
@@ -82,13 +91,33 @@ try {
   await post(base, `/api/parties/${idB}/select?window=${win1}`, {});
   const cur2again = (await get(base, `/api/party?window=${win2}`)).currentPartyId;
   assert(cur2again === idB, `window #2 stayed on B while window #1 moved to B (got ${cur2again})`);
+
+  // Cross-workspace routing regression: identical party names are legal, but
+  // opening must use the exact workspace + id pair. An id from this workspace
+  // must never silently fall back to the current party in another workspace.
+  const otherWindow = await post(base, "/api/windows", { workspacePath: otherWs });
+  const otherWindowId = otherWindow?.id;
+  assert(Boolean(otherWindowId), "opened a window on a second workspace");
+  const sameNameHere = (await post(base, `/api/parties?window=${win1}`, { name: "SAME-PARTY-NAME" }))?.currentPartyId;
+  const sameNameThere = (await post(base, `/api/parties?window=${otherWindowId}`, { name: "SAME-PARTY-NAME" }))?.currentPartyId;
+  assert(Boolean(sameNameHere && sameNameThere && sameNameHere !== sameNameThere), "same party name can exist in two workspaces with distinct ids");
+
+  const exactWindow = await post(base, "/api/windows", { workspacePath: ws, partyId: sameNameHere });
+  const exactParty = (await get(base, `/api/party?window=${exactWindow?.id}`)).currentPartyId;
+  assert(exactParty === sameNameHere, `valid workspace + party id opens the exact party (got ${exactParty})`);
+
+  const beforeMismatch = (await get(base, "/api/windows")).windows?.length || 0;
+  const mismatch = await postRaw(base, "/api/windows", { workspacePath: otherWs, partyId: sameNameHere });
+  const afterMismatch = (await get(base, "/api/windows")).windows?.length || 0;
+  assert(mismatch.status === 500 && /does not exist in workspace/.test(mismatch.body?.error || ""), "cross-workspace party id is rejected visibly");
+  assert(afterMismatch === beforeMismatch, "rejected workspace + party id does not create an orphan window");
 } catch (error) {
   console.error(error);
   failures.push(String(error?.message || error));
 } finally {
   kill(proc.pid);
   await delay(500);
-  for (const p of [ud, ws]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
+  for (const p of [ud, ws, otherWs]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
 }
 
 console.log("");

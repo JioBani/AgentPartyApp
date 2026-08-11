@@ -30,12 +30,16 @@ export interface HarnessCapabilities {
   contextWindow: boolean;
 }
 
-const CAPABILITIES: Record<"claude-code" | "codex" | "cursor", HarnessCapabilities> = {
+const CAPABILITIES: Record<"claude-code" | "codex" | "cursor" | "grok", HarnessCapabilities> = {
   "claude-code": { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false, contextWindow: true },
   codex: { twoAxisPermission: true, guardian: true, cloud: true, subagents: true, steer: true, contextWindow: true },
   cursor: { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false, contextWindow: false },
+  // Grok Build never asks the client for permission, so there is no approval
+  // axis to offer at all; the context window IS trustworthy (ACP reports the
+  // model's real 500k and a running occupancy on every update).
+  grok: { twoAxisPermission: false, guardian: false, cloud: false, subagents: false, steer: false, contextWindow: true },
 };
 
 export function harnessCapabilities(harness: string | undefined): HarnessCapabilities {
-  return CAPABILITIES[harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : "claude-code"];
+  return CAPABILITIES[harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : "claude-code"];
 }

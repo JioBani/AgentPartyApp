@@ -247,6 +247,30 @@ Codex/ChatGPT subscription proxy.
 A legacy settings.json with flat `claudeModel`/`claudeEffort`/
 `claudePermissionMode` is migrated into `harnessDefaults["claude-code"]` on load.
 
+### Grok
+
+Grok reaches the app two ways, both paid for by the user's Grok subscription and
+both reading the credential the official CLI wrote (`grok login`). AgentParty
+only ever READS it: the refresh token rotates under the CLI's own lock, so a
+second writer would invalidate the login. `GET /api/auth` reports a `grok`
+provider that separates "not installed" from "installed but not signed in".
+
+- **Grok models on the Claude Code harness** — `selectedProviderId: "xai"` with a
+  catalog model such as `Grok 4.5 xAI`. The embedded gateway forwards to
+  `api.x.ai/v1/messages`, xAI's Anthropic-compatible surface.
+- **The Grok Build harness** — `selectedHarnessId: "grok"` (member `runtime:
+  "grok"`), which runs the official `grok` CLI over ACP. Party tools reach it
+  through `session/new`'s `mcpServers`, so nothing is written to disk.
+
+Three xAI-side limits are reported rather than hidden, measured 2026-08-10:
+reasoning **effort is ignored** on both paths (it is pinned in the catalog and
+refused by the harness instead of offered); the Grok Build harness **never asks
+for tool approval**, so its permission capability is declared unsupported; and
+`GET /api/usage` reports the `grok` provider as `available: false` because xAI
+publishes no plan-quota surface. Per-turn tokens ARE recorded — the gateway
+measures them from the upstream response, because Claude Code reports zeros for
+router-backed models.
+
 `favoriteModels` is the list of catalog model **ids** the user has starred. The
 model catalog pins them above the provider groups, in catalog order. It drives
 the same path as the star button in the catalog UI, e.g.
@@ -1639,6 +1663,32 @@ harness gets identical behaviour and identical answers:
 read a `message` field for that verdict; the older path returned `ok: true` with
 the refusal buried inside, which is exactly what this endpoint exists to end.
 
+#### `attach-image`
+
+Puts an image into the CALLING member's own conversation for the user to look
+at. Takes `path` (a file on the machine that member runs on) **or** `url`
+(`http`/`https`), never both, plus an optional `caption`.
+
+```json
+{ "path": "C:\\shots\\bug.png", "caption": "the row that overflows" }
+{ "url": "https://example.com/chart.png" }
+```
+
+The reply carries only a reference, never the picture:
+
+```json
+{ "ok": true, "data": { "file": "<sha256>.png", "mediaType": "image/png", "bytes": 20480 } }
+{ "ok": true, "data": { "url": "https://example.com/chart.png" } }
+```
+
+That is the whole point of the tool. A file is copied into the workspace image
+store (content-addressed — the same store tool screenshots use) and rendered
+from `GET /api/party/transcript-image/:file`; a URL is kept as given and loaded
+from its own source. **The bytes never enter the model's context**: a tool
+result IS part of the conversation, so returning them there would cost exactly
+what this avoids. The member consequently cannot see what it attached, and
+should say in its reply whatever the conversation needs to remember about it.
+
 ## Window
 
 ### `POST /api/window/minimize`
@@ -1723,6 +1773,10 @@ sidebar's party right-click → **새 창에서 열기**, and it is how several 
 run side by side: every window belongs to ONE app process, so they share the
 workspace's engine and its sessions — a member already running is reused, not
 started again.
+
+When `partyId` is supplied, it must exist in the target `workspacePath`. A
+mismatched pair returns an error and does not open a window; the server never
+silently substitutes that workspace's currently selected party.
 
 ### `POST /api/windows/:id/workspace`
 

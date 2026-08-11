@@ -2,7 +2,8 @@ import type { GateFailureLayer } from "../shared/messageGate";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
-import { CodexAdapter } from "../core/codexAdapter";
+import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from "../core/codexAdapter";
+import { GrokAdapter } from "../core/grokAdapter";
 import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
@@ -1206,6 +1207,33 @@ export class SessionManager extends EventEmitter {
         partyPrimer: partyRuntime?.primer,
         usageSourceId,
       });
+    }
+    if (selectedHarness === "grok") {
+      // Grok Build takes MCP servers as a session/new parameter, so the party
+      // tool relay is injected per session — nothing is written into the user's
+      // ~/.grok/config.toml or into the repo's .grok/, unlike the Codex and
+      // Cursor paths which have to place files on disk.
+      const automationBaseUrl = this.codexAutomationBaseUrl(settings.automationApiPort);
+      const partyServers = binding && automationBaseUrl
+        ? [{
+            name: "agentparty-app",
+            command: spawnableNodeCommand(),
+            args: [resolvePartyMcpServerScript()],
+            env: [
+              { name: "AGENTPARTY_AUTOMATION_BASE_URL", value: automationBaseUrl },
+              { name: "AGENTPARTY_MEMBER", value: binding.identity.member },
+              { name: "AGENTPARTY_PARTY", value: binding.identity.party },
+            ],
+          }]
+        : undefined;
+      return new GrokAdapter({
+        sessionId: id,
+        cwd,
+        executablePath: settings.grokExecutablePath,
+        model: selectedModel,
+        permissionMode: request.permissionMode || harnessDefaults.permissionMode,
+        mcpServers: partyServers,
+      }) as unknown as HarnessSession;
     }
     if (selectedHarness === "codex") {
       const adapterScope = binding

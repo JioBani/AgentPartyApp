@@ -4,6 +4,8 @@ import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core
 import { isE2E } from "./runtimeMode";
 import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "../shared/deepseekDefaults";
 import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
+import { grokCliInstalledPath } from "../core/grokAgentCli";
+import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
 
 const CURSOR_AUTH_TTL_MS = 30_000;
 let cursorAuthCache: { at: number; value: CursorAgentAuthStatus } | undefined;
@@ -65,6 +67,8 @@ export function getAuthState(): AuthProviderState[] {
   } catch (error) {
     cursorError = error instanceof Error ? error.message : String(error);
   }
+  const grokCli = grokCliInstalledPath(settings.grokExecutablePath);
+  const grokLogin = grokSubscriptionAvailable();
   return [
     {
       id: "claude",
@@ -94,6 +98,23 @@ export function getAuthState(): AuthProviderState[] {
       detail: cursorSource
         ? "Cursor CLI is installed. Auto is plan-compatible; named-model access (Grok 4.5) depends on the signed-in Cursor plan."
         : cursorError,
+    },
+    {
+      // One credential, two consumers: the Grok Build harness runs the CLI with
+      // it, and Claude Code/Codex members running Grok models reuse the same
+      // token. So the status has to distinguish "not installed" from "installed
+      // but not signed in" — only the second is fixed by `grok login`.
+      id: "grok",
+      label: "Grok",
+      kind: "subscription",
+      status: grokLogin.ok ? "available" : "missing",
+      description: "Uses the account signed in to the Grok Build CLI, for both the Grok Build harness and Grok models on other harnesses.",
+      source: grokLogin.ok ? (grokCli ? `Grok Build CLI (${grokCli})` : "Grok Build CLI login") : undefined,
+      detail: grokLogin.ok
+        ? `Signed in${grokLogin.email ? ` as ${grokLogin.email}` : ""}. AgentParty reads this credential and never refreshes it — the CLI owns that.`
+        : grokCli
+          ? `Grok Build is installed at ${grokCli} but not signed in. Run \`grok login\`.`
+          : "Grok Build is not installed. Install it with `irm https://x.ai/cli/install.ps1 | iex`, then run `grok login`.",
     },
     {
       id: "openrouter",

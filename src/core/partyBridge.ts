@@ -113,13 +113,19 @@ export interface PartyBridge {
   discordSendImage(path: string, caption?: string): Promise<PartyToolResult>;
   /** Stop bridging THIS member; the Discord channel and its history remain. */
   discordDisconnect(): Promise<PartyToolResult>;
+  /**
+   * Put an image into THIS member's own conversation for the user to look at.
+   * The picture never enters the model's context — the app keeps the bytes and
+   * the tool result carries only a reference.
+   */
+  attachImage(input: { path?: string; url?: string; caption?: string }): Promise<PartyToolResult>;
 }
 
 /** MCP server name for the in-process party tool surface. */
 export const PARTY_MCP_SERVER = "agentparty-app";
 /** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
 export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -136,6 +142,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-connect": "Bridge YOURSELF to Discord so the user can read your reports and reply from a phone or another PC. Creates (or reuses) a text channel named after you in the user's server. Call this once, before discord-send. Only affects you — you cannot bridge another member.",
   "discord-send": "Post one message from you into YOUR Discord channel. Plain text only — Discord's limit is 2000 characters and longer content is REJECTED, not truncated, so split long reports into several sends. If Discord rate limits you the tool returns an error containing retry_after_ms: wait that long, then send again yourself (nothing is queued or retried for you). Write for a person reading on a phone: summarize, do not paste raw logs or diffs.",
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
+  "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
   broadcast: "Send a message to EVERY other member of your party at once. Like send, each delivery is QUEUED: a member that is mid-turn only picks it up after its current turn finishes (for a Codex member, at its next tool call). Set interrupt=true to stop their current turns so the message is handled right away.",
 };
@@ -305,6 +312,15 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     additionalProperties: false,
   },
   "discord-disconnect": { type: "object", properties: {}, additionalProperties: false },
+  "attach-image": {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "Path to an image file on the machine you are running on. Give this or url, not both." },
+      url: { type: "string", description: "http/https address of an image. Stored as the address, so it renders from its source." },
+      caption: { type: "string", description: "Optional one-line label shown under the image." },
+    },
+    additionalProperties: false,
+  },
   broadcast: {
     type: "object",
     properties: {
@@ -485,6 +501,17 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
     }
     case "discord-disconnect":
       return bridge.discordDisconnect();
+    case "attach-image": {
+      const imagePath = typeof input.path === "string" ? input.path : undefined;
+      const url = typeof input.url === "string" ? input.url : undefined;
+      if (!imagePath && !url) {
+        return { ok: false, error: "attach-image requires one of: path, url." };
+      }
+      if (imagePath && url) {
+        return { ok: false, error: "attach-image takes path OR url, not both." };
+      }
+      return bridge.attachImage({ path: imagePath, url, caption: typeof input.caption === "string" ? input.caption : undefined });
+    }
   }
 }
 
@@ -720,6 +747,24 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "Stop bridging yourself to Discord. The channel and its history stay in Discord.",
       {},
       async () => envelope(await bridge.discordDisconnect()),
+    ),
+    tool(
+      "attach-image",
+      partyDynamicToolDescriptions["attach-image"],
+      {
+        path: z.string().optional().describe("Path to an image file on the machine you are running on. Give this or url, not both."),
+        url: z.string().optional().describe("http/https address of an image. Stored as the address, so it renders from its source."),
+        caption: z.string().optional().describe("Optional one-line label shown under the image."),
+      },
+      async (args: { path?: string; url?: string; caption?: string }) => {
+        if (!args.path && !args.url) {
+          return envelope({ ok: false, error: "attach-image requires one of: path, url." });
+        }
+        if (args.path && args.url) {
+          return envelope({ ok: false, error: "attach-image takes path OR url, not both." });
+        }
+        return envelope(await bridge.attachImage(args));
+      },
     ),
   ];
 }

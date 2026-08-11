@@ -24,6 +24,11 @@ export const HARNESS_PROTOCOLS = {
     wireApi: "cursor-agent",
     endpoint: "cli",
   },
+  grok: {
+    id: "grok-build-acp",
+    wireApi: "acp",
+    endpoint: "stdio",
+  },
 } as const satisfies Record<HarnessId, {
   id: string;
   wireApi: string;

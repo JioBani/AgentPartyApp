@@ -7,6 +7,7 @@ import type { TranscriptBlock } from "./transcript";
 const PARTY_SEND_TOOL = "mcp__agentparty-app__send";
 const PARTY_CREATE_TOOL = "mcp__agentparty-app__member-create";
 const PARTY_REMOVE_TOOL = "mcp__agentparty-app__member-remove";
+const PARTY_ATTACH_IMAGE_TOOL = "mcp__agentparty-app__attach-image";
 
 export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionId: string, events: any[]): Record<string, TranscriptBlock[]> {
   let next = current;
@@ -64,6 +65,8 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       const existing = (next[sessionId] || []).find((item) => item.id === event.id);
       if (event.name === PARTY_SEND_TOOL || (existing?.kind === "channel" && existing.direction === "out")) {
         next = upsertChannelSendBlock(next, sessionId, event);
+      } else if (event.name === PARTY_ATTACH_IMAGE_TOOL || existing?.kind === "image") {
+        next = upsertImageBlock(next, sessionId, event);
       } else if (event.name === PARTY_CREATE_TOOL || event.name === PARTY_REMOVE_TOOL || existing?.kind === "partyAction") {
         const action = existing?.kind === "partyAction" ? existing.action : event.name === PARTY_CREATE_TOOL ? "create" : "remove";
         next = upsertPartyActionBlock(next, sessionId, event, action);
@@ -392,6 +395,75 @@ function upsertPartyActionBlock(current: Record<string, TranscriptBlock[]>, sess
 }
 
 /** Reads a party tool's result envelope into a {state, error} pair (failed if the bridge returned !ok). */
+/**
+ * The image card a member produced with `attach-image`.
+ *
+ * The picture is NOT in this event: the bridge stored it and returned only a
+ * reference, which is the whole point — the bytes must stay out of the model's
+ * conversation. `file` names an entry in the workspace image store, `url` is a
+ * remote address kept as given.
+ */
+function upsertImageBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, event: any): Record<string, TranscriptBlock[]> {
+  const id = event.id || crypto.randomUUID();
+  const items = current[sessionId] || [];
+  const index = items.findIndex((item) => item.kind === "image" && item.id === id);
+  const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
+  const str = (value: unknown) => (typeof value === "string" && value ? value : undefined);
+  const payload = resultPayload(event.result);
+  const { state, error } = partyToolResult(event);
+  const incoming: Extract<TranscriptBlock, { kind: "image" }> = {
+    id, kind: "image",
+    file: str(payload.file),
+    url: str(payload.url) || str(input.url),
+    mediaType: str(payload.mediaType),
+    bytes: typeof payload.bytes === "number" ? payload.bytes : undefined,
+    caption: str(input.caption),
+    // What the member asked for, kept so a failed card can say what it wanted.
+    origin: str(input.path) || str(input.url),
+    state, error, at: nowTime(),
+  };
+  if (index < 0) {
+    // The tool is announced before its streamed input names anything; an empty
+    // card would flash on every call.
+    if (!incoming.origin && !incoming.file && !incoming.url) {
+      return current;
+    }
+    return appendBlock(current, sessionId, incoming);
+  }
+  const prev = items[index] as Extract<TranscriptBlock, { kind: "image" }>;
+  const nextItems = items.slice();
+  nextItems[index] = {
+    ...prev,
+    file: incoming.file ?? prev.file,
+    url: incoming.url ?? prev.url,
+    mediaType: incoming.mediaType ?? prev.mediaType,
+    bytes: incoming.bytes ?? prev.bytes,
+    caption: incoming.caption ?? prev.caption,
+    origin: incoming.origin ?? prev.origin,
+    state: incoming.state ?? prev.state,
+    error: incoming.error ?? prev.error,
+  };
+  return { ...current, [sessionId]: nextItems };
+}
+
+/** The bridge's `data` object, dug out of whichever result shape an adapter used. */
+function resultPayload(result: unknown): Record<string, unknown> {
+  let value: unknown = result;
+  if (Array.isArray(value)) {
+    value = value.map((part: any) => part?.text).filter(Boolean).join("");
+  } else if (value && typeof value === "object" && Array.isArray((value as any).content)) {
+    value = (value as any).content.map((part: any) => part?.text).filter(Boolean).join("");
+  }
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
 function partyToolResult(event: any): { state: "ok" | "failed" | undefined; error?: string } {
   if (event.status === "failed") {
     return { state: "failed", error: resultEnvelope(event.result).error };

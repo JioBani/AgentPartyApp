@@ -16,6 +16,7 @@ import type {
 import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
+import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
 import {
   clearQueue,
   describeQueueFailure,
@@ -2767,6 +2768,36 @@ export class PartyApplicationService {
         try {
           const result = await discord.sendImageAsMember(this.workspacePath(), party, selfMember, image, caption);
           return { ok: true, data: { channel: result.channelName } };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
+      attachImage: async ({ path: imagePath, url, caption }) => {
+        // A URL is kept as given rather than downloaded, so it renders from its
+        // own source and nothing has to be retained for it.
+        if (url) {
+          if (!/^https?:\/\//i.test(url)) {
+            return { ok: false, error: "attach-image url must start with http:// or https://." };
+          }
+          return { ok: true, data: { url, caption } };
+        }
+        // Read HERE, in the process the member runs in: a WSL member's path
+        // exists only inside the distro. Only the decoded bytes cross.
+        let image: { dataBase64: string; filename: string; mediaType: string };
+        try {
+          image = readImageFile(String(imagePath));
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+        if (base64ByteLength(image.dataBase64) > DEFAULT_MAX_IMAGE_BYTES) {
+          return { ok: false, error: `'${image.filename}' is larger than the ${Math.round(DEFAULT_MAX_IMAGE_BYTES / (1024 * 1024))} MB limit for an attached image.` };
+        }
+        try {
+          // STORED, not returned. The tool result is part of the model's
+          // conversation, so the bytes must not ride back in it — the card
+          // exists precisely so the picture stays out of the context.
+          const stored = this.repository.storeImage(this.workspacePath(), image.dataBase64, image.mediaType);
+          return { ok: true, data: { file: stored.file, mediaType: stored.media_type, bytes: stored.bytes, caption } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }

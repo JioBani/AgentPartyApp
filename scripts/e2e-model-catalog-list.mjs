@@ -33,13 +33,15 @@ const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`);
 const near = (actual, expected, tol, msg) => assert(Math.abs(actual - expected) <= tol, `${msg} — ${actual} vs ${expected} (±${tol})`);
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* What the confirmed mockup measured, rendered and probed the same way. */
+/* What the confirmed mockup measured, rendered and probed the same way.
+   Source: `docs/디자인 핸드오프/design_handoff_model_catalog/Model Catalog.dc.html`
+   (2026-08-10 handoff — the search box grew 30 → 32, the star shrank 24 → 22). */
 const MOCKUP = {
-  searchWrapHeight: 30,
+  searchWrapHeight: 32,
   searchWrapRadius: 8,
   searchWrapGap: 7,
   searchFontSize: 12,
-  starBox: 24,
+  starBox: 22,
   columnTiers: 3,
 };
 

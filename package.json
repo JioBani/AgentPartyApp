@@ -52,6 +52,7 @@
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:composer-input": "npm run build && node scripts/e2e-composer-input.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
+    "test:party-window-routing": "npm run build && node scripts/qa-party-window-routing.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",
     "test:e2e:permission-ui": "npm run build && node scripts/e2e-member-permission-ui.mjs",
     "test:e2e:member-liveness": "npm run build && node scripts/e2e-member-liveness.mjs",

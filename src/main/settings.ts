@@ -36,6 +36,9 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   // selectable even before live model/list discovery lands.
   codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { ...DEFAULT_CODEX_POLICY } },
   cursor: { model: "Grok 4.5", effort: "high", serviceTier: "standard", cursorPolicy: { ...DEFAULT_CURSOR_POLICY } },
+  // Grok Build serves exactly one model and ignores effort, so the default is
+  // the only real choice; permissionMode is carried for plan mode alone.
+  grok: { model: "grok-4.5", effort: "high", permissionMode: "default" },
 };
 
 const defaults: AppSettings = {
@@ -110,6 +113,7 @@ export function migrateSettings(stored: Record<string, any>): Partial<AppSetting
       },
       codex: { ...HARNESS_DEFAULTS.codex },
       cursor: { ...HARNESS_DEFAULTS.cursor },
+      grok: { ...HARNESS_DEFAULTS.grok },
     },
   };
 }

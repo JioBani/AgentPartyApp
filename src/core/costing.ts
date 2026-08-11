@@ -33,7 +33,7 @@ interface CostProvider {
 export class DefaultTurnCostResolver implements TurnCostResolver {
   private readonly providers: CostProvider[];
 
-  constructor(providers: CostProvider[] = [new OpenRouterCostProvider(), new CodexSubscriptionCostProvider(), new ClaudeCodeCostProvider()]) {
+  constructor(providers: CostProvider[] = [new OpenRouterCostProvider(), new SubscriptionCostProvider(), new ClaudeCodeCostProvider()]) {
     this.providers = providers;
   }
 
@@ -73,14 +73,28 @@ class ClaudeCodeCostProvider implements CostProvider {
   }
 }
 
-class CodexSubscriptionCostProvider implements CostProvider {
+/**
+ * Which subscription a turn drew from, by provider. This used to be hardcoded
+ * to "codex" for every subscription route, so the usage dashboard attributed
+ * Claude, Cursor and Grok spend to Codex alike — visible in the ledger as a
+ * native Sonnet turn stamped `costSource: "codex"`.
+ */
+const SUBSCRIPTION_COST_SOURCES: Partial<Record<ModelProviderId, TurnCost["source"]>> = {
+  anthropic: "claude-code",
+  openai: "codex",
+  cursor: "cursor",
+  xai: "grok",
+};
+
+/** Any subscription-billed route, whichever provider backs it. */
+class SubscriptionCostProvider implements CostProvider {
   supports(context: TurnCostContext): boolean {
     return context.pricing?.billing === "subscription";
   }
 
   async resolve(context: TurnCostContext): Promise<TurnCost> {
     return {
-      source: "codex",
+      source: SUBSCRIPTION_COST_SOURCES[context.providerId] ?? "codex",
       basis: "subscription",
       label: context.pricing?.directPrice || "subscription",
       detail: `${context.pricing?.directPrice || "Subscription"}-backed route; no per-turn token bill is available from this harness.`,

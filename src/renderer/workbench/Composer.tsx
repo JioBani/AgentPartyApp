@@ -6,6 +6,7 @@ import type { WorkbenchActions } from "./actions";
 import { Dropdown } from "./Dropdown";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
+import { harnessForRuntime } from "../../shared/types";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
 import {
@@ -85,7 +86,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const knownRefs = useRef<FileReference[]>([]);
   /** Last text pushed INTO the editor, so we only rebuild on external changes. */
   const renderedRef = useRef("");
-  const harness = view.member.runtime === "codex" ? "codex" : view.member.runtime === "cursor" ? "cursor" : "claude-code";
+  const harness = harnessForRuntime(view.member.runtime);
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
   // until the turn actually closes, so anything past the grace period is a turn

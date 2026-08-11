@@ -4417,6 +4417,60 @@ body.wb-resizing {
   overflow: hidden;
 }
 
+/* --- Model catalog: sizes from the design handoff -------------------------
+   `docs/디자인 핸드오프/design_handoff_model_catalog/Model Catalog.dc.html`.
+   Scoped to `.wb-modal-catalog` so the shared modal/segment rules keep serving
+   the other surfaces (Codex permissions, wizard) unchanged. */
+.wb-modal-catalog {
+  width: min(1000px, 94vw);
+}
+
+.wb-modal-catalog .wb-modal-head {
+  gap: var(--space-4);
+  padding: 15px 18px 14px;
+}
+
+.wb-modal-catalog .wb-modal-body {
+  /* A fixed body keeps the catalog from resizing as groups expand; the modal's
+     own max-height still wins on a short screen. */
+  grid-template-columns: 344px 1fr;
+  height: 742px;
+  max-height: calc(88vh - 116px);
+}
+
+.wb-modal-catalog .wb-modal-foot {
+  padding: 11px 16px;
+  gap: var(--space-4);
+  background: var(--bg-1);
+}
+
+.wb-modal-catalog .wb-modal-actions {
+  gap: 7px;
+}
+
+.wb-modal-catalog .wb-btn {
+  height: 30px;
+  padding: 0 13px;
+}
+
+.wb-modal-catalog .wb-btn-accent {
+  padding: 0 var(--space-6);
+}
+
+/* The detail header's provider tag — larger than the app's inline chip because
+   it sits against a 21px model name. */
+.wb-modal-catalog .wb-detail-name-row .wb-chip {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-1);
+  border-color: var(--border-subtle);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
 /* Small single-column modal (threshold editor). */
 .wb-modal.wb-modal-sm { width: min(430px, 92vw); }
 .wb-modal-body-col {
@@ -4431,11 +4485,10 @@ body.wb-resizing {
    match count stay visible however long the catalog grows. */
 .wb-model-list {
   border-right: var(--border-width) solid var(--border-subtle);
-  padding: var(--space-5) 0 0;
+  padding: 14px 0 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
   min-height: 0;
 }
 
@@ -4443,13 +4496,24 @@ body.wb-resizing {
 .wb-model-list-head,
 .wb-model-search-row {
   flex: none;
-  padding-inline: var(--space-5);
 }
 
+/* Each tier owns its own padding: the design spaces them individually
+   (16px sides for the two heads, 12px for the search, 10px for the list) so
+   the rows can sit wider than the labels above them. */
 .wb-model-list-harness {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 7px;
+  padding: 0 16px;
+}
+
+.wb-model-list-head {
+  padding: 13px 16px 8px;
+}
+
+.wb-model-search-row {
+  padding: 0 12px 10px;
 }
 
 .wb-model-scroll {
@@ -4458,24 +4522,178 @@ body.wb-resizing {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: 0 var(--space-5) var(--space-5);
+  gap: var(--space-2);
+  padding: 0 10px 14px;
+}
+
+/* Harness strip --------------------------------------------------------- */
+.wb-harness-strip {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 9px;
+}
+
+.wb-harness-tab {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The overflow button sizes to its label instead of sharing the tabs' equal
+   split: it names the selected harness when one is chosen from the menu, and a
+   name that gets ellipsed there would hide which harness is in use. */
+.wb-harness-more {
+  flex: none;
+  height: 28px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wb-harness-tab:hover:not(.is-active):not(:disabled),
+.wb-harness-more:hover:not(.is-active) {
+  color: var(--text-0);
+}
+
+.wb-harness-tab.is-active,
+.wb-harness-more.is-active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.wb-harness-tab.is-locked {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.wb-harness-more-caret {
+  flex: none;
+  transition: transform .15s;
+}
+
+.wb-harness-more-caret.is-open {
+  transform: rotate(180deg);
+}
+
+.wb-harness-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 20;
+  width: 214px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
+}
+
+.wb-harness-menu-label {
+  padding: 7px 9px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.wb-harness-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+}
+
+.wb-harness-menu-item:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+.wb-harness-menu-item.is-active {
+  background: var(--accent-dim);
+}
+
+.wb-harness-menu-item.is-locked {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.wb-harness-menu-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-harness-menu-item.is-active .wb-harness-menu-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.wb-harness-menu-item .wb-mono {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.wb-harness-menu-check {
+  flex: none;
+  color: var(--accent);
+  opacity: 0;
+}
+
+.wb-harness-menu-check.is-on {
+  opacity: 1;
 }
 
 /* Search field ---------------------------------------------------------- */
 .wb-model-search {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: 30px;
-  padding: 0 var(--space-3);
-  background: var(--bg-2);
+  gap: 7px;
+  height: 32px;
+  padding: 0 var(--space-3) 0 9px;
+  background: var(--bg-1);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-input);
 }
 
 .wb-model-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--accent-bd);
 }
 
 .wb-model-search-icon {
@@ -4579,7 +4797,7 @@ body.wb-resizing {
 .wb-model-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 2px;
 }
 
 .wb-model-provider {
@@ -4649,6 +4867,10 @@ body.wb-resizing {
   text-align: left;
 }
 
+.wb-modal-catalog .wb-model-provider-btn {
+  padding: 6px var(--space-3);
+}
+
 .wb-model-provider-btn:hover {
   background: var(--bg-3);
 }
@@ -4665,10 +4887,10 @@ body.wb-resizing {
 
 .wb-model-provider-name {
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .4px;
+  font-weight: 700;
+  letter-spacing: .5px;
   text-transform: uppercase;
-  color: var(--text-2);
+  color: var(--text-1);
   white-space: nowrap;
 }
 
@@ -4681,10 +4903,10 @@ body.wb-resizing {
 .wb-model-inuse {
   flex: none;
   height: 15px;
-  padding: 0 var(--space-1);
+  padding: 0 5px;
   display: inline-flex;
   align-items: center;
-  border-radius: var(--radius-badge);
+  border-radius: 4px;
   background: var(--accent-dim);
   color: var(--accent);
   font-size: 9.5px;
@@ -4704,14 +4926,33 @@ body.wb-resizing {
 }
 
 .wb-model-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-4);
+  padding: 9px var(--space-4) 9px 13px;
   border: var(--border-width) solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: 9px;
   background: transparent;
   text-align: left;
+}
+
+/* Selected rows also carry a bar down the leading edge. The tinted fill alone
+   is easy to lose against a hovered neighbour; the bar is what survives at a
+   glance down a long list. */
+.wb-model-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.wb-model-row.is-selected::before {
+  background: var(--accent);
 }
 
 /* The selectable area of a row. The row is a container (it also holds the star,
@@ -4733,8 +4974,8 @@ body.wb-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -4757,7 +4998,7 @@ body.wb-resizing {
 .wb-model-origin {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 5px;
   font-size: 11px;
   color: var(--text-3);
 }
@@ -4817,50 +5058,76 @@ body.wb-resizing {
 .wb-model-name {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
 
 .wb-model-name .wb-mono {
-  font-size: 12px;
+  font-size: 12.5px;
+  color: var(--text-1);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-model-row.is-selected .wb-model-name .wb-mono {
   color: var(--text-0);
-  font-weight: 600;
 }
 
 .wb-model-name small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
 }
 
 .wb-model-check {
+  flex: none;
   color: var(--accent);
 }
 
 .wb-meter {
   display: inline-flex;
   align-items: flex-end;
-  gap: 2px;
   flex: none;
 }
 
+.wb-perf {
+  gap: 2px;
+  height: 15px;
+}
+
+.wb-perf.is-lg {
+  gap: 2.5px;
+  margin-left: auto;
+}
+
 .wb-perf i {
-  width: 3px;
+  width: 3.5px;
   border-radius: 1px;
-  background: var(--border-strong);
+  background: var(--bg-4);
+}
+
+.wb-perf.is-lg i {
+  width: 4px;
 }
 
 .wb-perf i.is-on {
-  background: var(--text-2);
+  background: var(--text-1);
 }
 
 .wb-perf.is-high i.is-on {
   background: var(--success);
 }
 
+/* Fixed width so the five glyphs occupy the same column on every row — a
+   proportional run of "$" made the star and check jitter line to line. */
 .wb-cost {
-  font-size: 11px;
-  letter-spacing: 1px;
+  gap: 1px;
+  width: 42px;
+  justify-content: flex-end;
+  font-size: 12px;
+  letter-spacing: -.5px;
 }
 
 .wb-cost .is-on {
@@ -4868,67 +5135,173 @@ body.wb-resizing {
 }
 
 .wb-cost .is-off {
-  color: var(--border-strong);
+  color: var(--border);
 }
 
 .wb-model-detail {
-  padding: var(--space-6);
+  padding: 18px 22px 20px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
 }
 
 .wb-detail-head {
   display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding-bottom: 2px;
+}
+
+/* Aligned to the model name's cap height rather than to the flex line, so the
+   dot reads as a bullet on the title and not as a marker for the whole block. */
+.wb-detail-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  margin-top: var(--space-3);
+}
+
+.wb-detail-ident {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wb-detail-name-row {
+  display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 .wb-detail-head strong {
-  font-size: 15px;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -.3px;
   color: var(--text-0);
 }
 
-.wb-stat-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-3);
+.wb-detail-blurb {
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
 }
 
-.wb-stat-card {
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--bg-2);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.wb-stat-row {
+.wb-detail-fav {
+  flex: none;
+  height: 30px;
+  padding: 0 11px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 12.5px;
-  color: var(--text-1);
-}
-
-.wb-stat-row strong {
-  color: var(--text-0);
-}
-
-.wb-cost-prices {
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.wb-cost-prices span {
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-input);
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-2);
+  white-space: nowrap;
 }
 
-.wb-cost-prices b {
+.wb-detail-fav:hover {
+  border-color: var(--border-strong);
+}
+
+.wb-detail-fav.is-on {
+  background: var(--live-dim);
+  border-color: var(--live-bd);
+  color: var(--live);
+}
+
+.wb-detail-fav.is-on svg {
+  fill: var(--live);
+}
+
+/* One bordered block split by dividers, not four floating cards: the four
+   numbers are one readout of the same model, and gaps between them made each
+   look like a separate control. */
+.wb-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.wb-stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 14px var(--space-6) 15px;
+  border-right: var(--border-width) solid var(--border-subtle);
+  min-width: 0;
+}
+
+.wb-stat-cell:last-child {
+  border-right: none;
+}
+
+.wb-stat-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.wb-stat-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.wb-stat-value {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -.3px;
   color: var(--text-0);
+  white-space: nowrap;
+}
+
+.wb-stat-unit {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-stat-unit.is-plain {
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.wb-stat-sub {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Neutral inside the readout: the four cells are facts about the model, and a
+   green/red pair here read as pass/fail on the model itself. Supported states
+   at full contrast, the absent one dimmed, is the same information without the
+   verdict. */
+.wb-stat-cell .wb-vision-tag {
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wb-stat-cell .wb-vision-tag.is-yes {
+  color: var(--text-0);
+}
+
+.wb-stat-cell .wb-vision-tag.is-no,
+.wb-stat-cell .wb-vision-tag.is-unknown {
+  color: var(--text-3);
 }
 
 .wb-detail-section-head strong svg {
@@ -4956,6 +5329,29 @@ body.wb-resizing {
   accent-color: var(--member, var(--accent));
 }
 
+/* Separates the model's facts above from the settings you can change below. */
+.wb-detail-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-top: var(--space-1);
+}
+
+.wb-detail-rule span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-detail-rule i {
+  flex: 1;
+  height: var(--border-width);
+  background: var(--border-subtle);
+}
+
 .wb-detail-section-head {
   display: flex;
   align-items: baseline;
@@ -4971,6 +5367,27 @@ body.wb-resizing {
 .wb-detail-section-head span {
   font-size: 11px;
   color: var(--text-3);
+}
+
+.wb-modal-catalog .wb-detail-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-modal-catalog .wb-detail-section-head {
+  gap: var(--space-3);
+  margin-bottom: 9px;
+}
+
+.wb-modal-catalog .wb-detail-section-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.wb-modal-catalog .wb-detail-section-head span {
+  font-size: 11.5px;
 }
 
 .wb-segmented {
@@ -5002,6 +5419,30 @@ body.wb-resizing {
   color: var(--accent-fg);
 }
 
+/* Roomier strip inside the catalog: these are the two controls a user actually
+   reaches for after picking a model, so they get a full touch-sized row rather
+   than the compact strip the settings surfaces use. */
+.wb-modal-catalog .wb-segmented {
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-1);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.wb-modal-catalog .wb-segment {
+  height: 36px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-input);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.wb-modal-catalog .wb-segment.is-active {
+  font-weight: 600;
+  box-shadow: 0 1px 3px var(--accent-bd);
+}
+
 /* "Custom" — a STATE the axes are currently in, not a preset you can pick.
    Rendered as a span (no click target) and styled apart from the selectable
    segments on purpose: it must read as a readout, so it takes only the space its
@@ -5030,6 +5471,16 @@ body.wb-resizing {
   background: var(--bg-2);
 }
 
+.wb-modal-catalog .wb-toggle-card {
+  gap: var(--space-5);
+  padding: 13px 15px;
+  border-radius: var(--radius-panel);
+}
+
+.wb-modal-catalog .wb-toggle-card:hover {
+  border-color: var(--border);
+}
+
 .wb-toggle-text {
   display: flex;
   align-items: center;
@@ -5037,9 +5488,46 @@ body.wb-resizing {
   color: var(--live);
 }
 
+.wb-modal-catalog .wb-toggle-text {
+  gap: var(--space-5);
+  /* Debug logging is plumbing, not a live-state feature — the amber that marks
+     auto-compact would misfile it. Auto-compact keeps the amber below. */
+  color: var(--text-2);
+}
+
+.wb-modal-catalog .wb-compact-editor .wb-toggle-text {
+  color: var(--live);
+}
+
+/* One card, not a card plus a loose slider: the threshold only exists while the
+   toggle above it is on, so it reads as that toggle's detail. The inset keeps
+   it aligned to the title rather than to the icon. */
+.wb-modal-catalog .wb-compact-editor {
+  gap: 0;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+
+.wb-modal-catalog .wb-compact-editor .wb-toggle-card {
+  border: none;
+  border-radius: 0;
+}
+
+.wb-modal-catalog .wb-compact-slider {
+  gap: 9px;
+  padding: 12px 14px 14px 43px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
 .wb-toggle-text > span {
   display: flex;
   flex-direction: column;
+}
+
+.wb-modal-catalog .wb-toggle-text > span {
+  gap: 1px;
 }
 
 .wb-toggle-text strong {
@@ -5047,9 +5535,19 @@ body.wb-resizing {
   color: var(--text-0);
 }
 
+.wb-modal-catalog .wb-toggle-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .wb-toggle-text small {
   font-size: 11px;
   color: var(--text-3);
+}
+
+.wb-modal-catalog .wb-toggle-text small {
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
 .wb-switch {
@@ -5293,8 +5791,15 @@ body.wb-resizing {
 .wb-wizard-review dd { margin: 0; color: var(--text-0); text-align: right; }
 
 .wb-dirty-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: 11.5px;
   color: var(--text-3);
+}
+
+.wb-dirty-note svg {
+  flex: none;
 }
 
 .wb-dirty-note.is-dirty {
@@ -5559,6 +6064,52 @@ body.wb-resizing {
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-sm, 4px);
   background: var(--surface-2, transparent);
+}
+
+/* An image the member attached for the user (attach-image). It is the member's
+   output, so it sits in the flow like a reply rather than inside a tool box. */
+.wb-attached-image {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+/* Bigger than a user's pasted attachment on purpose: this image IS the answer —
+   the member attached it for the user to look at, not as a reference beside
+   text. Both caps are plain px because a percentage here would be circular
+   while the figure's shrink-to-fit width is resolved, which detaches the
+   hover toolbar from the picture (see .wb-msg-image-hit). */
+/* Shrinks with the panel via FLEX, not a percentage. `max-width: min(560px,
+   100%)` would be circular while the button's shrink-to-fit width is resolved
+   (the browser then drops it and uses the intrinsic width — see
+   .wb-msg-image-hit), so instead the picture is a flex item allowed to shrink:
+   roomy panels give it 560px, narrow ones squeeze it down to the panel and the
+   toolbar stays on its corner either way. `min-width: 0` is what lets it go
+   below its intrinsic width at all. */
+.wb-attached-image .wb-msg-image-hit .wb-msg-image {
+  max-width: 560px;
+  max-height: 360px;
+  min-width: 0;
+  height: auto;
+  object-fit: contain;
+}
+
+.wb-attached-image-caption {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.wb-attached-image.is-failed {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.wb-attached-image-error {
+  color: var(--danger);
 }
 
 /* Head of a transcript that is sitting at its retention cap: where the rest is. */
@@ -6741,8 +7292,12 @@ body.wb-resizing {
   max-width: 100%;
 }
 
+/* inline-flex, not block: a block button fills the row, and the toolbar is
+   positioned against this box — so the copy/enlarge buttons ended up floating
+   in the empty space beside the picture instead of on it. Shrink-wrapping here
+   respects the image's own max-width, which `width: max-content` would not. */
 .wb-msg-image-hit {
-  display: block;
+  display: inline-flex;
   padding: 0;
   margin: 0;
   border: none;
@@ -6751,9 +7306,15 @@ body.wb-resizing {
   max-width: 100%;
 }
 
+/* A plain px cap, NOT `min(220px, 100%)`. The percentage makes the constraint
+   circular while the shrink-to-fit width of the button around it is being
+   resolved, so the browser drops it and sizes the button to the image's
+   INTRINSIC width — which is how the toolbar ended up hovering in the empty
+   space beside a thumbnail. The wrapper's own max-width keeps a narrow panel
+   from overflowing. */
 .wb-msg-image-hit .wb-msg-image {
   display: block;
-  max-width: min(220px, 100%);
+  max-width: 220px;
   max-height: 220px;
 }
 
@@ -6769,6 +7330,19 @@ body.wb-resizing {
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-badge);
   padding: 2px;
+}
+
+/* Compact: these sit ON a thumbnail a couple of hundred pixels wide, where the
+   app's standard 30px icon button covers a quarter of the picture. */
+.wb-msg-image-toolbar .wb-icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.wb-msg-image-toolbar .wb-icon-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .wb-msg-image-wrap:hover .wb-msg-image-toolbar,

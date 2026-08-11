@@ -27,7 +27,7 @@ export interface HarnessCommand {
 
 export interface TurnCost {
   amountUsd?: number;
-  source: "claude-code" | "openrouter" | "codex" | "estimate" | "unknown";
+  source: "claude-code" | "openrouter" | "codex" | "cursor" | "grok" | "estimate" | "unknown";
   basis: "provider-reported" | "harness-reported" | "estimated" | "subscription" | "free" | "unavailable";
   label: string;
   detail?: string;

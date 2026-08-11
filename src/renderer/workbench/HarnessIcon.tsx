@@ -33,6 +33,18 @@ export function HarnessIcon({ harness, size = 14, className = "", ...props }: Ha
     );
   }
 
+  // xAI's mark: crossing strokes, drawn as strokes rather than a filled path so
+  // it stays legible at the 14-16px the sidebar and wizard render it at.
+  if (harness === "grok") {
+    return (
+      <svg {...common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M4.5 19.5 19.5 4.5" />
+        <path d="M10 14 19.5 19.5" />
+        <path d="M4.5 10 9 4.5" />
+      </svg>
+    );
+  }
+
   if (harness === "codex") {
     return (
       <svg {...common} viewBox="0 0 20 20" fill="currentColor">
