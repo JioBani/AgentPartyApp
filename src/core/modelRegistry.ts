@@ -681,7 +681,16 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
       ioPerM: model.ioPerM,
       context: model.context,
     },
-    enabled: true,
+    // A harness always sends its toolset, so a model xAI gates client-side tools
+    // on cannot run here at all. Offered-but-explained rather than hidden: the
+    // model exists and the block is xAI's, not ours.
+    ...(model.xaiClientToolsBeta
+      ? {
+          enabled: false,
+          unavailableReason:
+            "xAI가 이 멀티 에이전트 모델의 클라이언트 툴 사용을 베타 권한으로 제한합니다. 하네스는 항상 툴 목록을 보내므로 이 조합은 실행할 수 없습니다 (400 invalid-argument).",
+        }
+      : { enabled: true }),
   };
 }
 

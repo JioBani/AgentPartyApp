@@ -178,6 +178,8 @@ export class ClaudeAdapter extends EventEmitter {
   private lastEventAt: string | undefined;
   private lastUserMessageAt: string | undefined;
   private lastAssistantMessageAt: string | undefined;
+  /** Whether the CURRENT assistant message already arrived as text deltas. */
+  private streamedAssistantText = false;
   private lastError: string | undefined;
   private supportedSlashCommands: HarnessCommand[] = [];
   private supportedModels: ModelRoute[] = [];
@@ -818,7 +820,15 @@ export class ClaudeAdapter extends EventEmitter {
       return {};
     }
     const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
-    const server = sdk.createSdkMcpServer({ name: PARTY_MCP_SERVER, version: "0.1.0", tools });
+    const server = sdk.createSdkMcpServer({
+      name: PARTY_MCP_SERVER,
+      version: "0.1.0",
+      tools,
+      // Party coordination must never depend on Claude finding these tools via
+      // ToolSearch. In particular, a woken/resumed member has to be able to
+      // reply on its very first turn even when tool search is enabled.
+      alwaysLoad: true,
+    });
     return { mcpServers: { [PARTY_MCP_SERVER]: server } };
   }
 
@@ -1273,6 +1283,7 @@ export class ClaudeAdapter extends EventEmitter {
           this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: delta.text }, at: now() });
         } else {
           this.lastAssistantMessageAt = now();
+          this.streamedAssistantText = true;
           this.emitEvent({ type: "assistant_text_delta", text: delta.text, blockIndex: event.index, at: now() });
         }
       } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string" && !subagentId) {
@@ -1324,12 +1335,27 @@ export class ClaudeAdapter extends EventEmitter {
         } else {
           this.emitEvent({ type: "tool_call", id: item.id || item.name || `tool-${Date.now()}`, name: item.name || "tool", input: withFilePath(item.input), status: "started", at: now() });
         }
-      } else if (item?.type === "text" && typeof item.text === "string" && subagentId) {
-        this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: item.text }, at: now() });
+      } else if (item?.type === "text" && typeof item.text === "string") {
+        if (subagentId) {
+          this.emitEvent({ type: "subagent", agentId: subagentId, block: { kind: "assistant", text: item.text }, at: now() });
+        } else if (!this.streamedAssistantText) {
+          // The snapshot is the ONLY source of the reply when the SDK could not
+          // stream. Measured 2026-08-10 on Grok via the xAI route: the SDK
+          // logged "Error streaming, falling back to non-streaming mode:
+          // Content block not found", delivered `message_start` and nothing
+          // else, and the finished text arrived only here — so the member
+          // completed its turn (`end_turn`) with an empty transcript. Guarded on
+          // the streaming flag because the normal path already emitted this
+          // text delta by delta, and emitting it again would double the reply.
+          this.lastAssistantMessageAt = now();
+          this.emitEvent({ type: "assistant_text_delta", text: item.text, at: now() });
+        }
       } else if (item?.type === "tool_result") {
         this.normalizeToolResult(item, subagentId);
       }
     }
+    // One snapshot ends one assistant message; the next one streams afresh.
+    this.streamedAssistantText = false;
   }
 
   private normalizeUserSnapshot(message: any, parentToolUseId?: string): void {

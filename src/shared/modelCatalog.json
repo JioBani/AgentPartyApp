@@ -1119,6 +1119,7 @@
       "provider": "xai",
       "runtimeModel": "claude-xai-grok-4-20-multi-agent",
       "xaiModel": "grok-4.20-multi-agent-0309",
+      "xaiClientToolsBeta": true,
       "subscription": true,
       "description": "Multi-agent Grok, where xAI maps reasoning effort to the number of agents rather than reasoning depth. Pinned to the documented default (low) since this endpoint ignores the parameter. List price $1.25/$2.50 per M.",
       "context": "1M",

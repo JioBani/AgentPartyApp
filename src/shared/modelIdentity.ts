@@ -120,13 +120,24 @@ const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
   grok: "xai",
 };
 
-/** Providers that ship a harness of their own; every other provider has none. */
-const PROVIDERS_WITH_A_HARNESS = new Set(Object.values(HARNESS_NATIVE_PROVIDER));
+/**
+ * Providers whose cross-subscription routes stay closed for the beta.
+ *
+ * Written out rather than derived from {@link HARNESS_NATIVE_PROVIDER}. It used
+ * to be `new Set(Object.values(HARNESS_NATIVE_PROVIDER))`, which meant that
+ * adding the Grok harness — one line, `grok: "xai"` — silently closed the nine
+ * Claude-Code × Grok-subscription routes the commit before it had just built
+ * and verified against the live API. Closing a route is now a decision someone
+ * has to type here, not a side effect of registering a harness.
+ *
+ * `xai` is deliberately absent: Grok on Claude Code is open.
+ */
+const BETA_LOCKED_PROVIDERS = new Set(["anthropic", "openai", "cursor"]);
 
 /**
  * Vendor names for the lock message. Every provider in
- * `PROVIDERS_WITH_A_HARNESS` needs an entry — a missing one falls back to the
- * raw catalog id and the user reads "xai 구독 모델을…".
+ * {@link BETA_LOCKED_PROVIDERS} needs an entry — a missing one falls back to
+ * the raw catalog id and the user reads "xai 구독 모델을…".
  */
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: "Anthropic",
@@ -139,11 +150,12 @@ const PROVIDER_LABEL: Record<string, string> = {
  * Why this (model, harness) pair is locked for the beta, or undefined when it is
  * allowed. See `docs/베타 공개 준비/B-12 교차 하네스.md`.
  *
- * A pair is locked ONLY when the model's provider runs a harness of its own AND
- * that harness is not the one executing — the three cross-SUBSCRIPTION routes
- * 기능정의서 1-12-2 defines. Defects cluster there because such a pair is
- * exposed to BOTH vendors' changes at once. The lock is temporary and the code
- * paths stay in place, so reopening it is flipping this predicate.
+ * A pair is locked ONLY when the model's provider is in
+ * {@link BETA_LOCKED_PROVIDERS} AND that provider's own harness is not the one
+ * executing — a cross-SUBSCRIPTION route in the sense 기능정의서 1-12-2 defines.
+ * Defects cluster there because such a pair is exposed to BOTH vendors' changes
+ * at once. The lock is temporary and the code paths stay in place, so reopening
+ * one is removing its provider from that set.
  *
  * ⚠️ A model whose provider has NO harness (OpenRouter, DeepSeek, …) is not a
  * cross route at all: running it on claude-code or codex is its only way to
@@ -158,7 +170,7 @@ export function crossHarnessLockReason(model: string, harnessId: HarnessId): str
     return undefined;
   }
   const provider = String(entry.provider || "");
-  if (!PROVIDERS_WITH_A_HARNESS.has(provider) || provider === HARNESS_NATIVE_PROVIDER[harnessId]) {
+  if (!BETA_LOCKED_PROVIDERS.has(provider) || provider === HARNESS_NATIVE_PROVIDER[harnessId]) {
     return undefined;
   }
   const providerLabel = PROVIDER_LABEL[provider] || provider;
