@@ -1762,6 +1762,7 @@ normalized events as a real one, so the UI renders it identically.
   "members": [
     {
       "name": "backend",
+      "runtime": "claude-code",
       "model": "claude-sonnet-4.5",
       "role": "API/auth",
       "status": "working",
@@ -1775,6 +1776,10 @@ normalized events as a real one, so the UI renders it identically.
 }
 ```
 
+- `runtime`: `claude-code` | `codex` | `cursor` (default `claude-code`). Send it
+  whenever `model` belongs to another harness — the mock member is created with
+  this pair, so a mismatch both mislabels the harness badge and is rejected by
+  the beta cross-harness lock.
 - `status`: `working` | `idle` | `approval` (drives the busy indicator).
 - `autoReply` (default `true`): a real composer message gets a canned mock reply.
 - `blocks`: an array of normalized events (`assistant_text_delta`,
