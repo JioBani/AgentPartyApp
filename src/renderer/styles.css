@@ -5682,9 +5682,19 @@ body.wb-resizing {
    text. Both caps are plain px because a percentage here would be circular
    while the figure's shrink-to-fit width is resolved, which detaches the
    hover toolbar from the picture (see .wb-msg-image-hit). */
+/* Shrinks with the panel via FLEX, not a percentage. `max-width: min(560px,
+   100%)` would be circular while the button's shrink-to-fit width is resolved
+   (the browser then drops it and uses the intrinsic width — see
+   .wb-msg-image-hit), so instead the picture is a flex item allowed to shrink:
+   roomy panels give it 560px, narrow ones squeeze it down to the panel and the
+   toolbar stays on its corner either way. `min-width: 0` is what lets it go
+   below its intrinsic width at all. */
 .wb-attached-image .wb-msg-image-hit .wb-msg-image {
   max-width: 560px;
   max-height: 360px;
+  min-width: 0;
+  height: auto;
+  object-fit: contain;
 }
 
 .wb-attached-image-caption {
