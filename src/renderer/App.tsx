@@ -607,7 +607,10 @@ export function App() {
    */
   async function openPartyInNewWindow(partyId: string) {
     try {
-      await window.agentParty.newWindow?.(state.settings.workspacePath, partyId);
+      // The main process owns the authoritative workspace for this renderer's
+      // BrowserWindow. Do not forward settings.workspacePath here: settings are
+      // shared across windows and may now point at a different window's cwd.
+      await window.agentParty.newWindow?.(undefined, partyId);
     } catch (error) {
       setPartyNotice(`새 창을 열지 못했습니다 — ${error instanceof Error ? error.message : String(error)}`);
     }

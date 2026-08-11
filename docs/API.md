@@ -1748,6 +1748,10 @@ run side by side: every window belongs to ONE app process, so they share the
 workspace's engine and its sessions — a member already running is reused, not
 started again.
 
+When `partyId` is supplied, it must exist in the target `workspacePath`. A
+mismatched pair returns an error and does not open a window; the server never
+silently substitutes that workspace's currently selected party.
+
 ### `POST /api/windows/:id/workspace`
 
 Points an existing window at a different workspace. Body

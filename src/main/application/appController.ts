@@ -591,6 +591,11 @@ export class AppController {
   /**
    * Opens a window, optionally ON a specific party.
    *
+   * A party id is meaningful only inside its workspace. Validate that pair
+   * before creating the BrowserWindow: PartyApplicationService.list() normally
+   * falls back from an unknown id to the workspace's current party, which would
+   * make a routing bug look like a successful open of an unrelated party.
+   *
    * The party is PINNED before the window can ask, because pinning otherwise
    * happens at the window's first `getState` and would capture whatever the
    * shared advisory hint held at that moment — i.e. the party the OTHER window
@@ -598,7 +603,15 @@ export class AppController {
    * land on that party instead of a copy of the current one.
    */
   async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
-    const info = await this.deps.openWindow(workspacePath || getSettings().workspacePath || process.cwd());
+    const targetWorkspace = workspacePath || getSettings().workspacePath || process.cwd();
+    if (partyId) {
+      const listing = await this.engineFor(targetWorkspace).listParty(undefined);
+      if (!(listing.parties || []).some((party) => party.id === partyId)) {
+        throw new Error(`Party '${partyId}' does not exist in workspace '${targetWorkspace}'.`);
+      }
+    }
+
+    const info = await this.deps.openWindow(targetWorkspace);
     if (partyId) {
       this.activePartyByWindow.set(info.id, partyId);
     }

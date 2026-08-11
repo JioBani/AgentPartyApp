@@ -134,6 +134,9 @@ const closedMembers = [];
 const respawnedMembers = [];
 // Records session ids hard-restarted via the member right-click menu.
 const restartedSessions = [];
+// New-party-window requests must let IPC resolve the sender BrowserWindow's
+// workspace instead of forwarding the shared settings.workspacePath.
+const newWindowCalls = [];
 // Every member whose transcript this window asked the main process for.
 const transcriptFetches = [];
 // The main process's copy of the party tab layout, and every push this window made.
@@ -173,6 +176,10 @@ window.agentParty = {
   minimizeWindow: noop,
   maximizeWindow: noop,
   closeWindow: noop,
+  newWindow: async (workspacePath, partyId) => {
+    newWindowCalls.push({ workspacePath, partyId });
+    return { id: "new-party-window", workspacePath: "/dev/acme-api", focused: false };
+  },
   listParty: async () => initialState.party,
   getMemberTranscript: async (name) => { transcriptFetches.push(name); return name === "frontend" ? frontendHistory : []; },
   saveMemberTranscript: noop,
@@ -289,6 +296,7 @@ assert(html.length > 2000, "root rendered substantial markup");
 assert(text.includes("Workbench"), "workbench nav label shown");
 assert(text.includes("Refactor Auth"), "active party name shown in sidebar");
 assert(document.querySelectorAll('[data-panel-id]').length === 2, "two panels rendered from seeded layout");
+
 for (const name of ["backend", "frontend", "reviewer", "tester"]) {
   assert(text.includes(name), `member '${name}' present`);
 }
@@ -354,6 +362,21 @@ assert(busySend !== null, "a busy member's composer offers 대기열에 추가 (
 assert(document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop') === null, "Stop no longer takes over the composer's send slot");
 assert(document.querySelector('[data-panel-id="pa"] .wb-stop-pill') !== null, "a busy member's toolbar shows Stop");
 assert(document.querySelector('[data-panel-id="pb"] .wb-stop-pill') === null, "an idle member's toolbar has no Stop");
+
+// Party right-click -> new window carries only the stable party id. The main
+// process derives cwd from the sender window; forwarding settings.workspacePath
+// is the cross-workspace regression this test guards.
+const firstPartyRow = document.querySelector(".wb-party-row");
+if (firstPartyRow) {
+  firstPartyRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const openPartyWindowItem = document.querySelector(".wb-ctx-menu .wb-ctx-item");
+  openPartyWindowItem?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+}
+assert(newWindowCalls.length === 1, "party right-click opens one new window");
+assert(newWindowCalls[0]?.partyId === "p1", "party right-click routes by party id, not duplicate-prone name");
+assert(newWindowCalls[0]?.workspacePath === undefined, "party right-click leaves cwd resolution to the sender window");
 if (restartMenuItem) {
   restartMenuItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 100));

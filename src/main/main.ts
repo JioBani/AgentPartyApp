@@ -752,7 +752,9 @@ function registerIpc(): void {
   handle("window:minimize", async (event) => controller().minimizeWindow(senderWindowId(event)));
   handle("window:maximize", async (event) => controller().toggleMaximizeWindow(senderWindowId(event)));
   handle("window:close", async (event) => controller().closeWindow(senderWindowId(event)));
-  handle("window:new", async (_event, workspacePath?: string, partyId?: string) => controller().openWindow(workspacePath, partyId));
+  handle("window:new", async (event, workspacePath?: string, partyId?: string) =>
+    controller().openWindow(workspacePath || senderWorkspace(event), partyId)
+  );
   handle("window:list", async () => controller().listWindows());
 
   // Party ops carry the SENDER WINDOW id: each window has its own active party, so
