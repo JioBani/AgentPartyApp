@@ -4,6 +4,7 @@
  * Run after `npm run build`.
  */
 import { spawn } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -40,10 +41,19 @@ async function main() {
     base = await waitForLiveBaseUrl(ws, { since: launchedAt, timeoutMs: 20_000 });
     if (!base) throw new Error("real app did not advertise a live automation endpoint");
     assert((await get("/api/health")).ok, `real app is up at ${base}`);
-    await post("/api/qa/seed", {
+    const seeded = await post("/api/qa/seed", {
       party: "member interrupt e2e",
-      members: [{ name: "sender" }, { name: "target-runtime" }, { name: "target-member" }, { name: "target-explicit" }, { name: "target-idle" }, { name: "target-sleeping" }],
+      members: [{ name: "sender" }, { name: "그록" }, { name: "한글-수신자" }, { name: "target-split" }, { name: "target-runtime" }, { name: "target-member" }, { name: "target-explicit" }, { name: "target-idle" }, { name: "target-sleeping" }],
     });
+
+    const unicodeSend = await callPartyMcpAs("그록", seeded.currentPartyId, "한글-수신자", "한글 발신자와 수신자");
+    assert(unicodeSend.ok === true, "standalone party MCP sends between Korean member names without a ByteString header failure");
+    const splitMessage = "청크 경계에서도 한글과 🚀가 보존됩니다";
+    const split = await postUtf8Split("/api/party/messages", {
+      from: "그록", to: "target-split", content: splitMessage,
+    }, seeded.currentPartyId);
+    assert(split.contentType === "application/json; charset=utf-8", "automation JSON responses declare UTF-8 explicitly");
+    assert(split.body?.partyMessage?.from === "그록" && split.body?.partyMessage?.content === splitMessage, "automation JSON preserves Unicode split inside a multibyte code point");
 
     const runtime = await post("/api/settings", { memberMessaging: { interruptOnSend: true } });
     assert(runtime.memberMessaging?.interruptOnSend === true, "Runtime default persists as interrupt");
@@ -116,6 +126,79 @@ function waitForExit(child) {
 function killTree(pid) {
   if (!pid) return;
   spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
+}
+
+function callPartyMcpAs(member, party, to, content) {
+  return new Promise((resolve, reject) => {
+    const relay = spawn(process.execPath, [path.join(root, "scripts", "agentparty-codex-mcp-server.mjs")], {
+      cwd: root,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+      env: {
+        ...process.env,
+        AGENTPARTY_AUTOMATION_BASE_URL: base,
+        AGENTPARTY_MEMBER: member,
+        AGENTPARTY_PARTY: party,
+      },
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => finish(new Error(`party MCP timed out: ${stderr}`)), 10_000);
+    const finish = (error, value) => {
+      clearTimeout(timer);
+      relay.kill();
+      if (error) reject(error); else resolve(value);
+    };
+    relay.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    relay.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+      const lineEnd = stdout.indexOf("\n");
+      if (lineEnd < 0) return;
+      try {
+        const response = JSON.parse(stdout.slice(0, lineEnd));
+        if (response.error) return finish(new Error(response.error.message));
+        const text = response.result?.content?.find((item) => item.type === "text")?.text;
+        finish(undefined, JSON.parse(text || "{}"));
+      } catch (error) {
+        finish(error);
+      }
+    });
+    relay.once("exit", (code) => {
+      if (code && code !== 0) finish(new Error(`party MCP exited ${code}: ${stderr}`));
+    });
+    relay.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "send", arguments: { to, content } } })}\n`);
+  });
+}
+
+function postUtf8Split(pathname, value, party) {
+  const bytes = Buffer.from(JSON.stringify(value), "utf8");
+  const marker = Buffer.from("그", "utf8");
+  const markerAt = bytes.indexOf(marker);
+  const splitAt = markerAt + 1;
+  return new Promise((resolve, reject) => {
+    const request = http.request(`${base}${pathname}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": String(bytes.length),
+        "x-agentparty-party": party,
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        try {
+          resolve({
+            body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
+            contentType: response.headers["content-type"],
+          });
+        } catch (error) { reject(error); }
+      });
+    });
+    request.on("error", reject);
+    request.write(bytes.subarray(0, splitAt));
+    setTimeout(() => request.end(bytes.subarray(splitAt)), 5);
+  });
 }
 
 await main();

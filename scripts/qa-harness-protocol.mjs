@@ -88,18 +88,11 @@ try {
   const messages = [
     { role: "user", content: [{ type: "text", text: "OLD_REQUEST" }] },
     { role: "user", content: [{ type: "text", text: "[Request interrupted by user]" }] },
-    { role: "user", content: [{ type: "text", text: "NEW_REQUEST" }] },
+    { role: "user", content: [{ type: "text", text: "새 요청 🚀" }] },
     { role: "assistant", content: [{ type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "README.md" } }] },
     { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-1", content: "cancelled" }] },
   ];
-  const response = await fetch(`${gateway.baseUrl}/v1/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer qa-client",
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
+  const requestBody = {
       model: "claude-gpt-5.4-mini",
       system: [{ type: "text", text: "SYSTEM" }],
       messages,
@@ -110,14 +103,20 @@ try {
       stream: false,
       models: ["unrequested-fallback"],
       fallbacks: ["unrequested-fallback"],
-    }),
+  };
+  const response = await splitUtf8Request(`${gateway.baseUrl}/v1/messages`, requestBody, {
+      Authorization: "Bearer qa-client",
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
   });
-  const payload = await response.json();
+  const payload = response.body;
 
   assert(response.status === 200 && payload.content?.[0]?.text === "PROTOCOL_OK", "native Anthropic response is relayed without response conversion");
   assert(observed?.method === "POST" && observed?.url === "/v1/messages", "GPT subscription receives POST /v1/messages, not /chat/completions");
   assert(observed?.body?.model === "gpt-5.4-mini", "only the provider model alias is resolved");
   assert(JSON.stringify(observed?.body?.messages) === JSON.stringify(messages), "interrupt, user and tool blocks remain Anthropic and in order");
+  assert(observed?.body?.messages?.[2]?.content?.[0]?.text === "새 요청 🚀", "router preserves Unicode when the request splits inside a UTF-8 code point");
+  assert(response.headers["content-type"] === "application/json; charset=utf-8", "router JSON responses declare UTF-8 explicitly");
   assert(observed?.body?.system?.[0]?.text === "SYSTEM" && observed?.body?.tools?.[0]?.name === "Read", "system and tools remain Anthropic-native");
   assert(observed?.body?.thinking?.type === "disabled" && observed?.body?.output_config?.effort === "low", "thinking and effort remain harness-native");
   assert(observed?.body?.models === undefined && observed?.body?.fallbacks === undefined, "unrequested model fallback fields are rejected at the gateway");
@@ -139,4 +138,27 @@ function listen(server) {
 
 function close(server) {
   return new Promise((resolve) => server.close(resolve));
+}
+
+function splitUtf8Request(url, value, headers) {
+  const bytes = Buffer.from(JSON.stringify(value), "utf8");
+  const markerAt = bytes.indexOf(Buffer.from("새", "utf8"));
+  const splitAt = markerAt + 1;
+  return new Promise((resolve, reject) => {
+    const request = http.request(url, {
+      method: "POST",
+      headers: { ...headers, "Content-Length": String(bytes.length) },
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        try {
+          resolve({ status: response.statusCode, headers: response.headers, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+        } catch (error) { reject(error); }
+      });
+    });
+    request.on("error", reject);
+    request.write(bytes.subarray(0, splitAt));
+    setTimeout(() => request.end(bytes.subarray(splitAt)), 5);
+  });
 }

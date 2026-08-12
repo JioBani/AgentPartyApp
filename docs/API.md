@@ -1696,7 +1696,9 @@ Returns the same member/message state as `GET /api/party`.
 
 ### `POST /api/harness/party/messages`
 
-Sends a member-to-member message. The caller can be supplied in JSON as `from` or via `X-AgentParty-Member`.
+Sends a member-to-member message. The caller can be supplied in JSON as `from`
+or via the UTF-8/base64url `X-AgentParty-Member-Base64url` header described
+below. The legacy raw `X-AgentParty-Member` header remains accepted.
 
 ```json
 {
@@ -1717,9 +1719,12 @@ outside the app process — today Codex, via
 (`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
 the body is that tool's arguments.
 
-The caller is taken from `X-AgentParty-Member` and never from the body, so an
-agent cannot act as another member. `X-AgentParty-Party` scopes it to that
-member's own party.
+The caller is taken from `X-AgentParty-Member-Base64url` (the member name's
+UTF-8 bytes encoded as base64url) and never from the body, so an agent cannot
+act as another member. `X-AgentParty-Party-Base64url` scopes it to that member's
+own party. The ASCII-only encoding is required because Fetch header values use
+the ByteString contract while member names may be Unicode. Legacy raw
+`X-AgentParty-Member` / `X-AgentParty-Party` headers remain accepted.
 
 This runs the same `invokePartyTool` the in-process harnesses use, so every
 harness gets identical behaviour and identical answers:

@@ -63,8 +63,30 @@ export class AutomationApiServer {
 
   /** Pins an agent member's HTTP tools to the party that spawned its session. */
   private targetPartyId(req: http.IncomingMessage): string | undefined {
-    const header = req.headers["x-agentparty-party"];
-    return typeof header === "string" && header.trim() ? header.trim() : undefined;
+    return this.partyIdentityHeader(req, "party");
+  }
+
+  /**
+   * Reads an exact UTF-8 party identity from an ASCII-safe base64url header.
+   * Raw headers remain supported for older relays, but cannot represent every
+   * user-facing member name through Fetch's ByteString header contract.
+   */
+  private partyIdentityHeader(req: http.IncomingMessage, field: "member" | "party"): string | undefined {
+    const encoded = req.headers[`x-agentparty-${field}-base64url`];
+    if (typeof encoded === "string" && encoded) {
+      try {
+        const value = Buffer.from(encoded, "base64url").toString("utf8");
+        const canonical = Buffer.from(value, "utf8").toString("base64url");
+        if (value && canonical === encoded.replace(/=+$/, "")) {
+          return value;
+        }
+      } catch {
+        // Fall through to the legacy header. A missing caller is reported by
+        // the tool route instead of silently inventing an identity.
+      }
+    }
+    const legacy = req.headers[`x-agentparty-${field}`];
+    return typeof legacy === "string" && legacy.trim() ? legacy.trim() : undefined;
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -283,9 +305,12 @@ export class AutomationApiServer {
         // agent cannot act as somebody else — and the answer is the compact
         // agent-facing tool result rather than the UI command result the other
         // party routes return.
-        const toolCaller = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
+        const toolCaller = this.partyIdentityHeader(req, "member") || "";
         if (!toolCaller) {
-          sendJson(res, 400, { ok: false, error: "x-agentparty-member header is required." });
+          sendJson(res, 400, {
+            ok: false,
+            error: "x-agentparty-member-base64url (or legacy x-agentparty-member) header is required.",
+          });
           return;
         }
         sendJson(res, 200, await c.invokePartyToolAs(workspace, toolCaller, decodeURIComponent(partyToolMatch[1]), await readJson(req), partyId));
@@ -293,7 +318,7 @@ export class AutomationApiServer {
       }
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
-        const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
+        const headerMember = this.partyIdentityHeader(req, "member") || "";
         sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }, partyId));
         return;
       }

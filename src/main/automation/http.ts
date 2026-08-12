@@ -3,7 +3,7 @@ import * as net from "node:net";
 
 export function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, {
-    "Content-Type": "application/json",
+    "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "http://127.0.0.1",
   });
   res.end(JSON.stringify(payload));
@@ -12,7 +12,11 @@ export function sendJson(res: http.ServerResponse, status: number, payload: unkn
 export function readJson(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => { data += chunk; });
+    // Let Node's StringDecoder retain an incomplete UTF-8 sequence between
+    // chunks. Calling Buffer#toString independently for each chunk corrupts a
+    // Korean/emoji code point whenever the transport splits its bytes.
+    req.setEncoding("utf8");
+    req.on("data", (chunk: string) => { data += chunk; });
     req.on("end", () => {
       try {
         resolve(data ? JSON.parse(data) : {});

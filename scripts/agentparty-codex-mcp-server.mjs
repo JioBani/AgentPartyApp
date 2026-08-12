@@ -266,8 +266,13 @@ async function post(path, body) {
 
 function partyHeaders() {
   return {
-    "x-agentparty-member": member,
-    ...(party ? { "x-agentparty-party": party } : {}),
+    // Fetch/undici requires header values to be ByteStrings. Member names are
+    // user-facing Unicode (for example "그록"), so carrying them raw throws
+    // before the HTTP request is made. Base64url is ASCII-only and preserves
+    // the exact UTF-8 identity; the automation API keeps legacy raw headers as
+    // a backwards-compatible fallback for external callers.
+    "x-agentparty-member-base64url": Buffer.from(member, "utf8").toString("base64url"),
+    ...(party ? { "x-agentparty-party-base64url": Buffer.from(party, "utf8").toString("base64url") } : {}),
   };
 }
 

@@ -592,7 +592,9 @@ function relayHeaders(headers: Headers): Record<string, string> {
   ]) {
     const value = headers.get(name);
     if (value) {
-      relayed[name] = value;
+      relayed[name] = name === "content-type" && /^application\/json(?:\s*;|$)/i.test(value) && !/charset=/i.test(value)
+        ? `${value}; charset=utf-8`
+        : value;
     }
   }
   return relayed;
@@ -683,14 +685,15 @@ async function fetchOpenRouterGenerationStats(
 }
 
 function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => {
+    req.setEncoding("utf8");
+    req.on("data", (chunk: string) => {
       data += chunk;
     });
     req.on("end", () => {
