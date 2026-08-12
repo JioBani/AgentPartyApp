@@ -116,6 +116,17 @@ const RESOLVED_SPEC = [
   ["처리 후 범위 칩", ".wb-approval-resolved-scope", { fontSize: "11px", borderRadius: "5px", paddingLeft: "7px", paddingTop: "1px" }],
 ];
 
+/* 대화 압축 블록 — 시안(Workbench Multi.dc.html)의 선언값. */
+const COMPACT_SPEC = [
+  ["압축 카드", ".wb-compact", { borderRadius: "8px", overflowX: "hidden" }],
+  ["압축 줄", ".wb-compact-row", { paddingTop: "8px", paddingLeft: "10px", columnGap: "8px", flexWrap: "wrap", alignItems: "center" }],
+  ["압축 제목", ".wb-compact-title", { fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }],
+  ["압축 수치", ".wb-compact-delta", { fontSize: "11px" }],
+  ["감소율 배지", ".wb-compact-pct", { fontSize: "10.5px", fontWeight: "600", borderRadius: "4px", paddingLeft: "5px", paddingTop: "1px" }],
+  ["유지 안내", ".wb-compact-note", { fontSize: "11px", minWidth: "60px", textOverflow: "ellipsis" }],
+  ["소요 시간", ".wb-compact-dur", { fontSize: "10.5px" }],
+];
+
 const post = async (route, body) => {
   const r = await fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   if (!r.ok) throw new Error(`${route} ${r.status}: ${await r.text()}`);
@@ -240,6 +251,35 @@ async function measureGaps(cdp, label, containerSelector, expected) {
  * text field look identical, placeholder and all — so whether a secret answer is
  * hidden is only knowable by asking the element what it is.
  */
+/**
+ * Asserts selectors match NOTHING — and fails loudly if the card they belong to
+ * is itself missing. Without that guard the check passes for the wrong reason:
+ * an empty panel has no delta and no percentage either.
+ */
+/** How many of a selector exist. A count, unlike a style, cannot be eyeballed. */
+async function measureCount(cdp, label, selector, expected) {
+  const actual = await cdp.eval(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
+  if (actual === expected) {
+    console.log(`  ✓ ${label.padEnd(16)} ${actual}개`);
+  } else {
+    failures.push(`${label}: ${actual}개 ≠ ${expected}개`);
+    console.log(`  ✗ ${label.padEnd(16)} ${actual}개 ≠ ${expected}개`);
+  }
+}
+
+async function measureAbsent(cdp, label, selectors) {
+  const present = await cdp.eval(`(() => {
+    if (!document.querySelector(".wb-compact")) return "카드 자체가 없음";
+    return ${JSON.stringify(selectors)}.filter((s) => document.querySelector(s)).join(", ");
+  })()`);
+  if (present) {
+    failures.push(`${label}: ${present}`);
+    console.log(`  ✗ ${label.padEnd(16)} ${present}`);
+  } else {
+    console.log(`  ✓ ${label.padEnd(16)} ${selectors.length}개 모두 없음 (카드는 있음)`);
+  }
+}
+
 async function measureProps(cdp, label, selector, expected) {
   const props = Object.keys(expected);
   const actual = await cdp.eval(`(() => {
@@ -303,7 +343,7 @@ async function main() {
   const windows = (await get("/api/windows")).windows || [];
   await post(`/api/windows/${windows[0].id}/workspace`, { workspacePath: ws });
   await post("/api/qa/reset").catch(() => {});
-  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-q1" }, { name: "m-q2" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }, { name: "m-answered" }] });
+  await post("/api/qa/seed", { party: "metrics", members: [{ name: "m-cmd" }, { name: "m-file" }, { name: "m-codex" }, { name: "m-q1" }, { name: "m-q2" }, { name: "m-secret" }, { name: "m-free" }, { name: "m-done" }, { name: "m-answered" }, { name: "m-compact" }, { name: "m-compact-bare" }, { name: "m-compact-run" }, { name: "m-answered-many" }] });
 
   const cdp = await attachRenderer();
 
@@ -391,7 +431,80 @@ async function main() {
   await post("/api/qa/open", { panels: [["m-answered"]] });
   await delay(900);
   await measure(cdp, "답변한 질문 줄", ".wb-question.is-resolved", { paddingTop: "10px", paddingLeft: "13px", borderRadius: "9px", columnGap: "10px", borderLeftWidth: "2px" });
-  await measureProps(cdp, "답변 내용", ".wb-question.is-resolved .wb-approval-resolved-summary", { textContent: "멤버 설정: Claude Code" });
+  await measureProps(cdp, "답변 라벨", ".wb-answered-q", { textContent: "멤버 설정" });
+  await measureProps(cdp, "답변 내용", ".wb-answered-a", { textContent: "Claude Code" });
+
+  // Several answers, one long enough to overflow. Both defects this caught are
+  // invisible in a capture: an `align-items` rule that lost to a later one at
+  // equal specificity, and an expand icon gated on a character count instead of
+  // whether the text actually fits.
+  const many = [
+    { question: "멘션을 어떻게 적용할까요?", header: "적용 여부", options: [{ label: "텍스트로만 넣는다" }] },
+    { question: "단일 @ 는 어떻게 처리할까요?", header: "단일 @", options: [{ label: "짧게" }] },
+  ];
+  const manyReq = await post("/api/qa/members/m-answered-many/interaction", { type: "askUserQuestion", questions: many });
+  const manySession = (await get("/api/party")).members.find((m) => m.name === "m-answered-many")?.sessionId;
+  await post(`/api/sessions/${manySession}/approve`, { requestId: manyReq.requestId, behavior: "allow", updatedInput: { answers: {
+    "멘션을 어떻게 적용할까요?": "텍스트로만 넣는다",
+    // Long enough that it cannot fit at any panel width this window produces.
+    // A merely longish answer proved nothing: it fitted, so the button was
+    // correctly absent and the check failed for the wrong reason.
+    "단일 @ 는 어떻게 처리할까요?": "'@@' 만 멤버로 인식하고, '@' 하나만 적힌 경우에는 아무 것도 하지 않으며 그대로 글자로 남긴다. 기존 대화에 이미 적혀 있던 '@' 는 소급해서 바꾸지 않고, 자동 완성 목록도 '@@' 를 입력했을 때만 연다. 붙여넣기로 들어온 문자열도 같은 규칙을 그대로 적용하며, 코드 블록 안에 있는 '@' 는 어떤 경우에도 멤버로 해석하지 않는다.",
+  } } });
+  await post("/api/qa/open", { panels: [["m-answered-many"]] });
+  await delay(900);
+  await measureCount(cdp, "답변 줄 수", ".wb-answered-row", 2);
+  await measure(cdp, "답변 카드 정렬", ".wb-approval.wb-question.is-answered", { alignItems: "flex-start" });
+  await measure(cdp, "답변 줄", ".wb-answered-row", { columnGap: "8px", alignItems: "baseline" });
+  await measure(cdp, "답변 질문", ".wb-answered-q", { fontSize: "11.5px", whiteSpace: "nowrap" });
+  await measure(cdp, "답변 값", ".wb-answered-a", { fontSize: "12px", textOverflow: "ellipsis" });
+  await measureCount(cdp, "전체 보기 버튼", ".wb-answered-expand", 1);
+  // …and the other direction. Checking only that a long answer offers the popup
+  // would also pass if the button were shown unconditionally, which is exactly
+  // the clutter it is meant to avoid.
+  await post("/api/qa/open", { panels: [["m-answered"]] });
+  await delay(700);
+  await measureCount(cdp, "짧은 답변엔 버튼 없음", ".wb-answered-expand", 0);
+
+  console.log("\n대화 압축 블록:");
+  await post("/api/qa/members/m-compact/emit", { events: [{ type: "compact_state", state: "done", trigger: "manual", preTokens: 823598, postTokens: 6883, durationMs: 197155, keptCount: 3 }] });
+  await post("/api/qa/open", { panels: [["m-compact"]] });
+  await delay(900);
+  for (const [label, selector, expected] of COMPACT_SPEC) await measure(cdp, label, selector, expected);
+  // The abbreviations are the point of the card: the raw JSON said 823598 and
+  // 197155, and a card that repeated those would not be an improvement.
+  await measureProps(cdp, "축약 수치", ".wb-compact-delta", { textContent: "824K → 6.9K" });
+  await measureProps(cdp, "감소율", ".wb-compact-pct", { textContent: "-99%" });
+  await measureProps(cdp, "유지 건수", ".wb-compact-note", { textContent: "최근 3건 유지" });
+  await measureProps(cdp, "시간 표기", ".wb-compact-dur", { textContent: "3분 17초" });
+
+  // Codex sends no figures. The card must then show NOTHING numeric rather than
+  // zeroes — the one case where an empty card is the correct card.
+  await post("/api/qa/members/m-compact-bare/emit", { events: [{ type: "compact_state", state: "done" }] });
+  await post("/api/qa/open", { panels: [["m-compact-bare"]] });
+  await delay(700);
+  await measureAbsent(cdp, "수치 없는 압축", [".wb-compact-delta", ".wb-compact-pct", ".wb-compact-dur", ".wb-compact-note:not(:empty)"]);
+
+  await post("/api/qa/members/m-compact-run/emit", { events: [{ type: "compact_state", state: "running", trigger: "manual" }] });
+  await post("/api/qa/open", { panels: [["m-compact-run"]] });
+  await delay(700);
+  await measure(cdp, "진행 바", ".wb-compact-bar", { height: "2px", overflowX: "hidden" });
+  // The design declares `width:40%`, but getComputedStyle reports the USED
+  // value in px, so the percentage can only be checked as a ratio of the bar.
+  await measure(cdp, "진행 바 스윕", ".wb-compact-bar > span", { position: "absolute" });
+  const sweep = await cdp.eval(`(() => {
+    const bar = document.querySelector(".wb-compact-bar");
+    const span = document.querySelector(".wb-compact-bar > span");
+    if (!bar || !span) return null;
+    return Math.round((span.getBoundingClientRect().width / bar.getBoundingClientRect().width) * 1000) / 10;
+  })()`);
+  if (sweep === 40) {
+    console.log(`  ✓ ${"스윕 폭 비율".padEnd(16)} 바 대비 ${sweep}%`);
+  } else {
+    failures.push(`스윕 폭 비율: ${sweep}% ≠ 40%`);
+    console.log(`  ✗ ${"스윕 폭 비율".padEnd(16)} ${sweep}% ≠ 40%`);
+  }
+  await measureProps(cdp, "경과 시간", ".wb-compact-elapsed", { textContent: "0:00" });
 
   cdp.close();
   console.log(`\n${failures.length ? `FAILED (${failures.length})` : "PASSED"} — 시안 대비 실측`);

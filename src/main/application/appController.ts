@@ -1431,6 +1431,22 @@ export class AppController {
     return { ok: true, sessionId, pid };
   }
 
+  /**
+   * Opens the card design gallery: a party of MOCK members, one per transcript
+   * card case, each already showing its card.
+   *
+   * Every case used to live inside a demo script, so looking at the full set
+   * meant running that script — the product itself had no way to show its own
+   * cards. Same method behind the HTTP route and the UI, so what a designer
+   * opens and what a driver captures cannot drift.
+   */
+  async qaDesignGallery(workspacePath: string): Promise<{ ok: true; party: string; members: string[] }> {
+    this.requireQa();
+    const built = await this.engineFor(workspacePath).qaDesignGallery();
+    await this.broadcastParty(workspacePath);
+    return { ok: true, ...built };
+  }
+
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {
     this.requireQa();
     const listing = await this.engineFor(workspacePath).qaReset();

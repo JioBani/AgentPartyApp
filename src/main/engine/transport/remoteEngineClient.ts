@@ -260,5 +260,6 @@ export class RemoteEngineClient implements EngineConnection {
   qaEmit(name: string, body: QaEmitInput) { return this.call<Result<"qaEmit">>("qaEmit", name, body); }
   qaEmitSubagents(name: string, scenario: string) { return this.call<Result<"qaEmitSubagents">>("qaEmitSubagents", name, scenario); }
   qaInteraction(name: string, body: QaInteractionInput) { return this.call<Result<"qaInteraction">>("qaInteraction", name, body); }
+  qaDesignGallery() { return this.call<Result<"qaDesignGallery">>("qaDesignGallery"); }
   qaReset() { return this.call<Result<"qaReset">>("qaReset"); }
 }

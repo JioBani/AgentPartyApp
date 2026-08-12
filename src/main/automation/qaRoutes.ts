@@ -36,6 +36,10 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
     sendJson(res, 200, c.qaWindowBounds(windowId, await readJson(req)));
     return;
   }
+  if (method === "POST" && url.pathname === "/api/qa/design-gallery") {
+    sendJson(res, 200, await c.qaDesignGallery(workspace));
+    return;
+  }
   if (method === "POST" && url.pathname === "/api/qa/reset") {
     sendJson(res, 200, await c.qaReset(workspace));
     return;

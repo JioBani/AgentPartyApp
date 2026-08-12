@@ -140,6 +140,20 @@ export class ClaudeAdapter extends EventEmitter {
   private abortController: AbortController | undefined;
   private started = false;
   private currentStatus = "created";
+  /**
+   * Where a compaction this adapter asked for has got to.
+   *
+   * Success is reported TWICE and differently — `compact_boundary` carries the
+   * numbers, a `status` with `compact_result` carries only "success" — and
+   * neither is guaranteed. Tracking the phase means whichever lands first
+   * settles the card, and the second cannot overwrite a measured card with an
+   * empty one. Without it a missing boundary leaves "압축 중" spinning forever.
+   *
+   * It also gates the noise suppression below: `/compact` is an ordinary user
+   * turn to the SDK, so this is the only way to tell the echo of OUR request
+   * from a user genuinely typing `/compact` — whose message must still show.
+   */
+  private compactPhase: "idle" | "running" | "settled" = "idle";
   private turnState: string | undefined;
   /** True once a live rate_limit_event has fed the usage meter (real windows). */
   private hasLiveUsageWindows = false;
@@ -366,10 +380,21 @@ export class ClaudeAdapter extends EventEmitter {
     this.turnState = "submitted";
     this.currentStatus = "requesting";
     this.log("stdin", { type: "user", text });
+    // The `/compact` WE submit is plumbing, not something the user said. Its
+    // echo used to open the raw run of log lines the compact card replaces.
+    // A user who types `/compact` themselves still sees their message: this
+    // only fires between our own request and the harness settling it.
+    if (this.compactPhase === "running" && text === "/compact") {
+      return;
+    }
     this.emitEvent({ type: "status", status: "sent", detail: text, at: now() });
   }
 
   compact(): void {
+    // The block goes in BEFORE the harness is asked, so the card is what the
+    // user sees from the first moment rather than after the round trip.
+    this.emitEvent({ type: "compact_state", state: "running", trigger: "manual", at: now() });
+    this.compactPhase = "running";
     this.sendUserTurn("/compact");
   }
 
@@ -1195,11 +1220,23 @@ export class ClaudeAdapter extends EventEmitter {
       // compaction and carries whatever reason the harness gave (even a terse
       // "failed" — e.g. nothing to compact on a short session).
       if (message.compact_error) {
+        // The card carries the failure now. The diagnostic stays because it is
+        // the durable, filterable record — the card is a transcript affordance,
+        // not a log — but the raw "compacted: …" status line is gone.
+        this.compactPhase = "settled";
+        this.emitEvent({ type: "compact_state", state: "failed", reason: String(message.compact_error), at: now() });
         this.emitEvent({ type: "diagnostic", severity: "warning", category: "compact", title: "Compaction failed", detail: String(message.compact_error), at: now() });
         return;
       }
       if (message.compact_result) {
-        this.emitStatus("compacted", String(message.compact_result));
+        // Success arrives here WITHOUT numbers; the numbers come separately on
+        // `compact_boundary`. Whichever lands first settles the card — this one
+        // only reports done if the boundary has not already done it with real
+        // figures, so a measured card is never replaced by an empty one.
+        if (this.compactPhase === "running") {
+          this.compactPhase = "settled";
+          this.emitEvent({ type: "compact_state", state: "done", at: now() });
+        }
         return;
       }
       this.emitStatus(this.currentStatus, message.permissionMode);
@@ -1255,7 +1292,22 @@ export class ClaudeAdapter extends EventEmitter {
     }
 
     if (message.subtype === "compact_boundary") {
-      this.emitStatus("compact", JSON.stringify(message.compact_metadata));
+      // Structured, not `JSON.stringify(metadata)`. `preserved_messages` has no
+      // count of its own — it carries the kept UUIDs, so N is their length, and
+      // it is absent entirely when the compaction summarized everything.
+      this.compactPhase = "settled";
+      const meta = message.compact_metadata || {};
+      const kept = Array.isArray(meta.preserved_messages?.uuids) ? meta.preserved_messages.uuids.length : undefined;
+      this.emitEvent({
+        type: "compact_state",
+        state: "done",
+        trigger: meta.trigger === "auto" ? "auto" : "manual",
+        preTokens: numberOrUndefined(meta.pre_tokens),
+        postTokens: numberOrUndefined(meta.post_tokens),
+        durationMs: numberOrUndefined(meta.duration_ms),
+        keptCount: kept,
+        at: now(),
+      });
     }
   }
 
@@ -2008,6 +2060,11 @@ function claudeUsageWindow(kind: UsageWindowKind, value: any): UsageWindow | und
  * "No conversation found with session ID ..." and close variants.
  */
 /** True when the harness wording means a user/party stop, not a session crash. */
+/** A finite number, or nothing — so an absent SDK field never renders as 0. */
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function isUserInterruptMessage(message: string): boolean {
   return /interrupted by user|interrupted by client|request interrupted|harness request interrupted/i.test(message);
 }

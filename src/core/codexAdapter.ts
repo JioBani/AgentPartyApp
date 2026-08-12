@@ -332,10 +332,17 @@ export class CodexAdapter extends EventEmitter {
     // Surface the compaction — otherwise the app-server compacts silently and the
     // only visible effect is a context number that quietly drops, which reads as
     // unexplained. Announce start, then the outcome (done / failed), never dropped.
-    this.emitEvent({ type: "status", status: "compacting", detail: "compacting context", at: now() });
+    // Measured: `thread/compact/start` reports only that it finished — no token
+    // counts, no duration, no kept-message list. So the card renders here with
+    // none of those, rather than inventing figures Codex never sent.
+    this.emitEvent({ type: "compact_state", state: "running", trigger: "manual", at: now() });
     void this.request("thread/compact/start", { threadId: this.sessionId })
-      .then(() => this.emitEvent({ type: "status", status: "compacted", detail: "context compacted", at: now() }))
-      .catch((error) => this.emitEvent({ type: "diagnostic", severity: "warning", category: "compact", title: "Compaction failed", detail: String(error?.message || error), at: now() }));
+      .then(() => this.emitEvent({ type: "compact_state", state: "done", at: now() }))
+      .catch((error) => {
+        const detail = String(error?.message || error);
+        this.emitEvent({ type: "compact_state", state: "failed", reason: detail, at: now() });
+        this.emitEvent({ type: "diagnostic", severity: "warning", category: "compact", title: "Compaction failed", detail, at: now() });
+      });
   }
 
   /** Writes one raw JSON-RPC frame to the debug trace (no-op unless debug on). */

@@ -90,6 +90,8 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, suggestions: event.suggestions, blockedPath: event.blockedPath, agentID: event.agentID, at: nowTime() });
     } else if (event.type === "approval_resolved") {
       next = markApprovalResolved(next, sessionId, event.requestId, event.decision, event.answers);
+    } else if (event.type === "compact_state") {
+      next = applyCompactState(next, sessionId, event);
     } else if (event.type === "turn_complete") {
       const cost = event.cost ? ` - ${event.cost.label}` : "";
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: `turn complete${cost}${event.stopReason ? ` - ${event.stopReason}` : ""}`, at: nowTime() });
@@ -246,6 +248,45 @@ export function markApprovalResolved(current: Record<string, TranscriptBlock[]>,
       item.kind === "approval" && item.requestId === requestId ? { ...item, resolved: decision, answers: answers ?? item.answers } : item
     )),
   };
+}
+
+/**
+ * Folds a compaction into ONE block: the first event inserts it, every later
+ * one REPLACES it in place. Appending instead would leave the "압축 중" card
+ * sitting above its own result, which is the trail of log lines this block
+ * exists to remove.
+ *
+ * A terminal event with no running block still inserts one — a compaction can
+ * finish in a window that opened mid-flight, and dropping it there would lose
+ * the only record that the conversation was compacted at all.
+ */
+export function applyCompactState(
+  current: Record<string, TranscriptBlock[]>,
+  sessionId: string,
+  event: { state: "running" | "done" | "failed"; trigger?: "manual" | "auto"; preTokens?: number; postTokens?: number; durationMs?: number; keptCount?: number; reason?: string },
+): Record<string, TranscriptBlock[]> {
+  const blocks = current[sessionId] || [];
+  const index = blocks.findIndex((item) => item.kind === "compact" && item.state === "running");
+  const running = index >= 0 ? (blocks[index] as Extract<TranscriptBlock, { kind: "compact" }>) : undefined;
+  const merged: TranscriptBlock = {
+    id: running?.id || crypto.randomUUID(),
+    kind: "compact",
+    state: event.state,
+    // The running block knows the trigger; the SDK's boundary repeats it. Keep
+    // whichever is present so a replacement never blanks what was shown.
+    trigger: event.trigger ?? running?.trigger,
+    preTokens: event.preTokens ?? running?.preTokens,
+    postTokens: event.postTokens,
+    durationMs: event.durationMs,
+    keptCount: event.keptCount,
+    reason: event.reason,
+    at: running?.at || nowTime(),
+    startedMs: running?.startedMs ?? Date.now(),
+  };
+  if (index >= 0) {
+    return { ...current, [sessionId]: blocks.map((item, i) => (i === index ? merged : item)) };
+  }
+  return appendBlock(current, sessionId, merged);
 }
 
 export function upsertSession(sessions: SessionView[], session: SessionView): SessionView[] {

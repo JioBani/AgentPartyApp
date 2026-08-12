@@ -39,7 +39,7 @@ import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
  * "conversational activity" clock — the statuses in between (and the ambient
  * usage/diagnostic traffic a session emits on a timer) deliberately do not count.
  */
-const TURN_BOUNDARY_STATUSES = new Set(["sent", "requesting", "responding", "interrupted", "compacted"]);
+const TURN_BOUNDARY_STATUSES = new Set(["sent", "requesting", "responding", "interrupted"]);
 
 interface ManagedSession {
   id: string;
@@ -794,6 +794,10 @@ export class SessionManager extends EventEmitter {
       || event.type === "approval_request"
       || event.type === "approval_resolved"
       || event.type === "queue_dequeued"
+      // A compaction bounds a turn exactly as the old `compacted` STATUS did.
+      // Dropping it here would leave a long compaction looking like silence to
+      // the stall watchdog, which is precisely when it must not fire.
+      || event.type === "compact_state"
       || (event.type === "status" && TURN_BOUNDARY_STATUSES.has(String((event as { status?: unknown }).status || "")));
     if (startsOrEndsTurn) {
       session.lastTurnActivityAt = session.lastActivityAt;
@@ -829,13 +833,17 @@ export class SessionManager extends EventEmitter {
           session.awaitingUser = false;
           session.compacting = false;
         }
-        // The harness's compaction outcome (success both adapters emit) clears the
-        // in-flight flag; failure arrives as a `diagnostic` handled below.
-        if (status === "compacted") {
+        break;
+      }
+      // The compaction outcome. This used to ride on a `compacted` STATUS line,
+      // which was also the raw text shown in the transcript; now that the card
+      // replaced it, the flag follows the structured event instead. Both
+      // terminal states clear it — a failed compaction is not still in flight.
+      case "compact_state":
+        if (String((event as { state?: unknown }).state || "") !== "running") {
           session.compacting = false;
         }
         break;
-      }
       case "diagnostic":
         if (String((event as { category?: unknown }).category || "") === "compact") {
           session.compacting = false;

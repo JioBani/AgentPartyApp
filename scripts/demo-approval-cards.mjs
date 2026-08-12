@@ -76,17 +76,51 @@ const RESOLVED = [
 ];
 
 /*
+ * Context compaction. The figures are the SDK's own `compact_metadata` fields —
+ * `pre_tokens`/`post_tokens`/`duration_ms` and the LENGTH of
+ * `preserved_messages.uuids` (there is no count field). Codex sends none of
+ * them, which is why one card here carries no numbers at all: that is the real
+ * Codex shape, not an oversight.
+ */
+const COMPACTS = [
+  { member: "cmp-run", runtime: "claude-code", caption: "압축 중 — 경과 시간 + 스윕 바", events: [{ type: "compact_state", state: "running", trigger: "manual" }] },
+  { member: "cmp-done", runtime: "claude-code", caption: "압축됨 — 수치 전부 도착", events: [{ type: "compact_state", state: "done", trigger: "manual", preTokens: 823598, postTokens: 6883, durationMs: 197155, keptCount: 3 }] },
+  { member: "cmp-bare", runtime: "codex", caption: "압축됨 — Codex(수치 없음)", events: [{ type: "compact_state", state: "done" }] },
+  { member: "cmp-fail", runtime: "claude-code", caption: "압축 실패 — 다시 시도", events: [{ type: "compact_state", state: "failed", reason: "context too short to compact" }] },
+];
+
+/*
  * An ANSWERED question. This state was missing from the sheet, and that is
  * exactly why it shipped still wearing the pending card's shell: nothing here
  * ever rendered it, so no capture and no measurement could disagree with it.
  */
-const ANSWERED = {
-  member: "q-answered",
-  runtime: "claude-code",
-  caption: "질문 — 답변함 (처리 후)",
-  questions: [{ question: "어떤 하네스로 만들까요?", header: "멤버 설정", multiSelect: false, options: [{ label: "Claude Code" }, { label: "Codex" }] }],
-  answers: { "어떤 하네스로 만들까요?": "Claude Code" },
-};
+const ANSWERED = [
+  {
+    member: "q-answered",
+    runtime: "claude-code",
+    caption: "질문 — 답변함 (처리 후)",
+    questions: [{ question: "어떤 하네스로 만들까요?", header: "멤버 설정", multiSelect: false, options: [{ label: "Claude Code" }, { label: "Codex" }] }],
+    answers: { "어떤 하네스로 만들까요?": "Claude Code" },
+  },
+  {
+    // Three answers, one of them long. A single-question case cannot show the
+    // defect this card was rebuilt for: the answers after the first were not
+    // readable at all, and nothing here rendered more than one.
+    member: "q-answered-many",
+    runtime: "claude-code",
+    caption: "질문 — 여러 답변 + 긴 답변(전체 보기)",
+    questions: [
+      { question: "멘션을 어떻게 적용할까요?", header: "적용 여부", multiSelect: false, options: [{ label: "텍스트로만 넣는다" }] },
+      { question: "단일 @ 는 어떻게 처리할까요?", header: "단일 @", multiSelect: false, options: [{ label: "'@@' 만 멤버, '@' 는 아무 것도 안 한다" }] },
+      { question: "키 배분은 어떤 기준으로 나눌까요?", header: "키 배분", multiSelect: false, options: [{ label: "일반" }] },
+    ],
+    answers: {
+      "멘션을 어떻게 적용할까요?": "텍스트로만 넣는다",
+      "단일 @ 는 어떻게 처리할까요?": "'@@' 만 멤버로 인식하고, '@' 하나만 적힌 경우에는 아무 것도 하지 않는다",
+      "키 배분은 어떤 기준으로 나눌까요?": "일반 배분을 그대로 쓰되 멤버가 직접 지정한 값이 있으면 그쪽을 우선한다",
+    },
+  },
+];
 
 /*
  * The interactive question card (기능정의서 1-10-2). These go through the
@@ -185,12 +219,18 @@ async function main() {
   const windows = (await get("/api/windows")).windows || [];
   await post(`/api/windows/${windows[0].id}/workspace`, { workspacePath: ws });
 
-  const served = (await get("/api/state"))?.workspacePath;
-  if (served && path.resolve(served) !== ws) {
+  // `settings.workspacePath` — there is no top-level one, so this read
+  // `undefined` and the `served &&` skipped the comparison altogether. The
+  // guard reported success without ever checking the target it was protecting.
+  const served = (await get("/api/state"))?.settings?.workspacePath;
+  if (!served) {
+    throw new Error("refusing to drive: /api/state reported no workspace, so the target cannot be verified");
+  }
+  if (path.resolve(served) !== ws) {
     throw new Error(`refusing to drive: app serves '${served}', not the demo workspace`);
   }
 
-  const all = [...CARDS, ...RESOLVED, ...QUESTIONS, ANSWERED];
+  const all = [...CARDS, ...RESOLVED, ...QUESTIONS, ...ANSWERED, ...COMPACTS];
   await post("/api/qa/reset").catch(() => {});
   await post("/api/qa/seed", {
     party: "승인 카드 데모",
@@ -236,13 +276,24 @@ async function main() {
 
   // Answered through the SAME approve call the card's button makes, so the
   // captured state is one a user could actually reach.
-  {
-    const { requestId } = await post(`/api/qa/members/${ANSWERED.member}/interaction`, { type: "askUserQuestion", questions: ANSWERED.questions });
-    const sessionId = (await get("/api/party")).members.find((m) => m.name === ANSWERED.member)?.sessionId;
-    await post(`/api/sessions/${sessionId}/approve`, { requestId, behavior: "allow", updatedInput: { questions: ANSWERED.questions, answers: ANSWERED.answers } });
+  for (const a of ANSWERED) {
+    const { requestId } = await post(`/api/qa/members/${a.member}/interaction`, { type: "askUserQuestion", questions: a.questions });
+    const sessionId = (await get("/api/party")).members.find((m) => m.name === a.member)?.sessionId;
+    await post(`/api/sessions/${sessionId}/approve`, { requestId, behavior: "allow", updatedInput: { questions: a.questions, answers: a.answers } });
     await delay(400);
-    await shot(ANSWERED.member, "question-answered");
+    await shot(a.member, `question-${a.member}`);
   }
+
+  console.log("\n대화 압축 블록:");
+  for (const c of COMPACTS) {
+    await post(`/api/qa/members/${c.member}/emit`, { events: c.events });
+    await shot(c.member, `compact-${c.member}`);
+  }
+
+  await post("/api/qa/open", { panels: COMPACTS.map((c) => [c.member]) });
+  await delay(900);
+  await post("/api/capture", { path: path.join(shotDir, "sheet-compact.png") });
+  await post("/api/capture", { path: path.join(shotDir, "sheet-compact-dark.png"), theme: "dark" });
 
   // Contact sheets, plus a dark pass since the colours are tokens.
   await post("/api/qa/open", { panels: CARDS.map((c) => [c.member]) });

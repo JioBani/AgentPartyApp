@@ -2110,6 +2110,22 @@ Only the given fields change (`x`, `y`, `width`, `height`); a maximized window i
 restored first, since bounds are ignored while maximized. Returns the resulting
 `{ bounds }`.
 
+### `POST /api/qa/design-gallery`
+
+Builds the **card design gallery**: a party named `카드 디자인 갤러리` with one
+mock member per transcript-card case, each already showing its card — approval
+requests, their allowed/denied states, question cards (single / multi / free /
+secret / multi-step), answered questions, and the compaction block (running /
+done / no-figures / failed).
+
+Every member is a mock session, so nothing launches a harness, calls a model, or
+runs a command. Approval payloads are the recordings in
+`src/shared/approvalScenarios.ts`; the case list is `src/shared/designGallery.ts`,
+read by both this route and the scripts, so there is no second copy to drift.
+
+Returns `{ ok, party, members }`. `npm run design:gallery` launches the app on an
+isolated userData + workspace and opens it.
+
 ### `POST /api/qa/reset`
 
 Removes every mock member (real members are left untouched).

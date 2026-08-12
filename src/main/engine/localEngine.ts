@@ -10,6 +10,7 @@ import { workspaceKey } from "../../shared/workspaceLocation";
 import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
 import { APPROVAL_SCENARIOS, approvalScenarioNames } from "../../shared/approvalScenarios";
 import { claudeApprovalFields, codexApprovalFields } from "../../shared/approvalRequest";
+import { GALLERY_CASES, GALLERY_MODELS, GALLERY_PARTY } from "../../shared/designGallery";
 import { fileEditsFrom } from "../../shared/codexItems";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
@@ -21,6 +22,7 @@ import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
 import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
+import { log } from "../logger";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -368,6 +370,61 @@ export class LocalEngine implements EngineConnection {
       title: "AskUserQuestion",
     });
     return { requestId };
+  }
+
+  /**
+   * Builds the card design gallery: one mock member per case, each already
+   * showing its card.
+   *
+   * It composes the EXISTING injection paths rather than adding a second way to
+   * make a card. A gallery with its own private rendering would be the one
+   * screen guaranteed to disagree with the product.
+   *
+   * Nothing here talks to a harness: every member is a mock session, and the
+   * resolved states are produced by answering through the same approve call the
+   * card's own button makes.
+   */
+  async qaDesignGallery(): Promise<{ party: string; members: string[] }> {
+    const parties = this.party.list().parties;
+    const existing = parties.find((item) => item.name === GALLERY_PARTY);
+    if (existing) {
+      this.party.selectParty(existing.id);
+    } else {
+      this.party.createParty({ name: GALLERY_PARTY });
+    }
+    const members: string[] = [];
+    for (const item of GALLERY_CASES) {
+      const model = GALLERY_MODELS[item.runtime];
+      if (!model) {
+        throw new Error(`Gallery case '${item.member}' names harness '${item.runtime}', which has no recorded traffic — add its recordings before listing it.`);
+      }
+      const sessionId = this.startMockMember({
+        name: item.member,
+        role: item.caption,
+        runtime: item.runtime,
+        model,
+        autoReply: false,
+      });
+      if (!sessionId) {
+        throw new Error(`Gallery member '${item.member}' could not be started — the gallery must not be shown half-built.`);
+      }
+      if (item.scenario) {
+        const { requestId } = await this.qaInjectApproval(item.member, item.scenario);
+        if (item.resolve) {
+          this.deps.sessionManager.approve(sessionId, requestId, item.resolve);
+        }
+      }
+      if (item.questions) {
+        const { requestId } = await this.qaInteraction(item.member, { type: "askUserQuestion", questions: item.questions as QaQuestion[] });
+        if (item.answers) {
+          this.deps.sessionManager.approve(sessionId, requestId, "allow", { answers: item.answers });
+        }
+      }
+      this.applyBlocks(sessionId, item.events);
+      members.push(item.member);
+    }
+    log("info", "qa", "design gallery built", { party: GALLERY_PARTY, members: members.length });
+    return { party: GALLERY_PARTY, members };
   }
 
   async qaReset(): Promise<PartyListing> {

@@ -111,6 +111,7 @@ export const automationEndpoints = [
   "POST /api/qa/input",
   "POST /api/qa/window/bounds",
   "POST /api/qa/usage",
+  "POST /api/qa/design-gallery",
   "POST /api/qa/reset",
 ] as const;
 

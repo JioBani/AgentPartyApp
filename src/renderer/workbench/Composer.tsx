@@ -638,7 +638,11 @@ export function Composer({ view, density, actions }: ComposerProps) {
    * where the typing happens; it just must not be the same button. Two
    * controls, side by side: one adds to the queue, one stops the turn.
    */
-  const stopBeside = (view.busy || interrupting) && !forceStop ? (
+  // A compaction is work in flight even though the member is not "working": it
+  // can run for minutes with no way to call it off, because Stop keyed on
+  // `busy` alone and a compacting member is not busy. The compact card
+  // deliberately carries no cancel of its own — this is where stopping lives.
+  const stopBeside = (view.busy || view.compacting || interrupting) && !forceStop ? (
     <button type="button" className="wb-composer-stop" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
       <CircleStop size={14} /> {interrupting ? "중단 중" : "Stop"}
     </button>

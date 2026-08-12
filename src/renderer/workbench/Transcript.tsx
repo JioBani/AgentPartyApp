@@ -192,6 +192,8 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       return <PartyActionBlock block={block} />;
     case "gate":
       return <GateBlock block={block} view={view} />;
+    case "compact":
+      return <CompactBlock block={block} view={view} actions={actions} />;
     case "status":
       return (
         <div className="wb-block wb-status">
@@ -228,6 +230,116 @@ const GATE_META = {
  * (rejected / forced / failed). Reason is clamped to 2 lines and expands; the
  * violated rule (rejected/forced) or error code (failed) shows when expanded.
  */
+/** `823598` → `824K`. The card states a size, so a digit-exact count is noise. */
+export function compactTokens(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "";
+  }
+  if (value >= 1_000_000) {
+    return `${Math.round(value / 100_000) / 10}M`;
+  }
+  if (value >= 10_000) {
+    return `${Math.round(value / 1000)}K`;
+  }
+  if (value >= 1000) {
+    return `${Math.round(value / 100) / 10}K`;
+  }
+  return String(value);
+}
+
+/** `197155` → `3분 17초`. Sub-minute compactions read as plain seconds. */
+export function compactDuration(ms: number | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes ? `${minutes}분 ${seconds}초` : `${seconds}초`;
+}
+
+/** Elapsed while running, as `m:ss` — the one figure no event carries. */
+export function compactElapsed(sinceMs: number, nowMs: number): string {
+  const total = Math.max(0, Math.round((nowMs - sinceMs) / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** `824K → 6.9K` shrank by 99%. Empty unless BOTH figures actually arrived. */
+export function compactReduction(pre: number | undefined, post: number | undefined): string {
+  if (typeof pre !== "number" || typeof post !== "number" || !Number.isFinite(pre) || !Number.isFinite(post) || pre <= 0) {
+    return "";
+  }
+  return `-${Math.min(99, Math.round(((pre - post) / pre) * 100))}%`;
+}
+
+/**
+ * One compaction, as one line that is replaced in place.
+ *
+ * What it may show is decided by what the harness actually sent: Codex reports
+ * no figures at all, and Claude declares `post_tokens`/`duration_ms` optional,
+ * so every numeric part is conditional. Printing a zero where a number never
+ * arrived would be a claim about the conversation that nothing supports.
+ */
+function CompactBlock({ block, view, actions }: { block: Extract<TranscriptBlock, { kind: "compact" }>; view: MemberView; actions: WorkbenchActions }) {
+  const running = block.state === "running";
+  const [elapsed, setElapsed] = useState(() => compactElapsed(startedAtMs(block), Date.now()));
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    setElapsed(compactElapsed(startedAtMs(block), Date.now()));
+    const timer = setInterval(() => setElapsed(compactElapsed(startedAtMs(block), Date.now())), 1000);
+    return () => clearInterval(timer);
+  }, [running, block.startedMs]);
+
+  const delta = block.state === "done" && compactTokens(block.preTokens) && compactTokens(block.postTokens)
+    ? `${compactTokens(block.preTokens)} → ${compactTokens(block.postTokens)}`
+    : "";
+  const reduction = block.state === "done" ? compactReduction(block.preTokens, block.postTokens) : "";
+  const note = block.state === "done" && typeof block.keptCount === "number" ? `최근 ${block.keptCount}건 유지` : "";
+  const duration = block.state === "done" ? compactDuration(block.durationMs) : "";
+
+  return (
+    <div className={"wb-block wb-compact is-" + block.state}>
+      <div className="wb-compact-row">
+        {/* The design draws its own glyphs. Substituting near-matches from the
+            icon set would quietly change the shapes, so these are its paths. */}
+        {running && (
+          <svg className="wb-compact-icon wb-compact-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--live)" strokeWidth="1.9">
+            <path d="M4 9h7V2M20 15h-7v7M4 15h7v7M20 9h-7V2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+        {block.state === "done" && (
+          <svg className="wb-compact-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.4">
+            <path d="M5 12l4.5 4.5L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+        {block.state === "failed" && (
+          <svg className="wb-compact-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.9">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v5M12 17h.01" strokeLinecap="round" />
+          </svg>
+        )}
+        <span className="wb-compact-title">{running ? "대화 압축 중" : block.state === "failed" ? "압축 실패" : "대화 압축됨"}</span>
+        {delta && <span className="wb-compact-delta wb-mono">{delta}</span>}
+        {reduction && <span className="wb-compact-pct">{reduction}</span>}
+        <span className="wb-compact-note">{note}</span>
+        {running && <span className="wb-compact-elapsed wb-mono">{elapsed}</span>}
+        {duration && <span className="wb-compact-dur wb-mono">{duration}</span>}
+        {block.state === "failed" && (
+          <button type="button" className="wb-compact-retry" onClick={() => actions.compact(view.name)}>다시 시도</button>
+        )}
+      </div>
+      {running && <div className="wb-compact-bar"><span /></div>}
+    </div>
+  );
+}
+
+/** When the running card started, so the elapsed clock has an origin. */
+function startedAtMs(block: Extract<TranscriptBlock, { kind: "compact" }>): number {
+  return typeof block.startedMs === "number" && Number.isFinite(block.startedMs) ? block.startedMs : Date.now();
+}
+
 function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "gate" }>; view: MemberView }) {
   const [open, setOpen] = useState(false);
   const meta = GATE_META[block.gate];
@@ -540,6 +652,80 @@ function previewOf(text: string): string {
  * transcript stays scannable (the full content is one click away), and by the
  * subagent detail view for the delegated task prompt.
  */
+/**
+ * What the user answered, after the question card is done with.
+ *
+ * ONE line per question. Joining them into a single ellipsized sentence fit the
+ * card but hid every answer after the first — the second and third simply could
+ * not be read, which for a record of one's own decisions is the whole point of
+ * it being there. Long answers clip to their line and open in the same
+ * "전체 보기" popup the rest of the transcript uses.
+ */
+function AnsweredQuestion({ questions, answers, density }: { questions: ParsedQuestion[]; answers?: Record<string, string>; density: PanelDensity }) {
+  const [full, setFull] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const rowsRef = useRef<HTMLSpanElement>(null);
+  const rows = questions.map((q) => ({
+    label: q.header || q.question,
+    // The full question is the tooltip and the popup heading: a header like
+    // "적용 여부" is a filing label, not the thing that was actually asked.
+    question: q.question,
+    value: answerLabels(answers, q.question).join(", ") || "—",
+  }));
+  /*
+   * "Too long" is not a character count — it is whether the text fits, which
+   * depends on how wide the panel happens to be right now. A fixed threshold
+   * offered the popup for answers that were fully visible and withheld it for
+   * short ones in a narrow panel. So ask the layout: an answer is clipped when
+   * it overflows its own line, re-checked whenever the card is resized.
+   */
+  useEffect(() => {
+    const host = rowsRef.current;
+    if (!host) {
+      return;
+    }
+    const check = () => setClipped(
+      Array.from(host.querySelectorAll(".wb-answered-a")).some((el) => el.scrollWidth > el.clientWidth + 1),
+    );
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [questions, answers]);
+
+  return (
+    <div className={"wb-block wb-approval wb-question is-resolved is-answered density-" + density}>
+      <Check size={14} />
+      <span className="wb-approval-resolved-label">답변함</span>
+      <span className="wb-answered-rows" ref={rowsRef}>
+        {rows.map((row, index) => (
+          <span className="wb-answered-row" key={index}>
+            <span className="wb-answered-q" title={row.question}>{row.label}</span>
+            <span className="wb-answered-a">{row.value}</span>
+          </span>
+        ))}
+      </span>
+      {clipped && (
+        <button type="button" className="wb-answered-expand" title="전체 보기" onClick={() => setFull(true)}>
+          <Maximize2 size={12} />
+        </button>
+      )}
+      {full && (
+        <DetailModal title="답변한 내용" onClose={() => setFull(false)}>
+          <div className="wb-answered-full">
+            {rows.map((row, index) => (
+              <div className="wb-answered-full-row" key={index}>
+                <div className="wb-answered-full-q">{row.question}</div>
+                <div className="wb-answered-full-a">{row.value}</div>
+              </div>
+            ))}
+          </div>
+        </DetailModal>
+      )}
+    </div>
+  );
+}
+
 export function ExpandableText({ text, title, markdown, chips }: { text: string; title: string; markdown?: boolean; chips?: boolean }) {
   const [full, setFull] = useState(false);
   const members = usePartyMembers();
@@ -1218,16 +1404,7 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
     // space-between Q/A row that flung the answer to the far edge, and a badge
     // floating on its own line — so the one card in the transcript that is
     // finished and needs the least room took the most.
-    const summary = questions
-      .map((q) => `${q.header || q.question}: ${answerLabels(block.answers, q.question).join(", ") || "—"}`)
-      .join(" · ");
-    return (
-      <div className={"wb-block wb-approval wb-question is-resolved density-" + density}>
-        <Check size={14} />
-        <span className="wb-approval-resolved-label">답변함</span>
-        <span className="wb-approval-resolved-summary" title={summary}>{summary}</span>
-      </div>
-    );
+    return <AnsweredQuestion questions={questions} answers={block.answers} density={density} />;
   }
 
   return (

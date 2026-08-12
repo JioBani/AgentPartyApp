@@ -239,5 +239,11 @@ export interface EngineConnection {
   qaEmitSubagents(name: string, scenario: string): Promise<{ scenario: string; count: number }>;
   /** Mocks an interactive prompt (e.g. AskUserQuestion) into a mock member. */
   qaInteraction(name: string, body: QaInteractionInput): Promise<{ requestId: string }>;
+  /**
+   * Builds the card design gallery — one MOCK member per transcript-card case.
+   * Nothing in it reaches a harness, so the cards can be looked at without a
+   * model turn (or a command being run to produce an approval).
+   */
+  qaDesignGallery(): Promise<{ party: string; members: string[] }>;
   qaReset(): Promise<PartyListing>;
 }

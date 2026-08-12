@@ -146,6 +146,13 @@ export type ClaudeNormalizedEvent =
   // question read "—" in every other window sharing the workspace and after a
   // session restore — the record lived nowhere but that one renderer.
   | { type: "approval_resolved"; requestId: string; decision: "allow" | "deny"; answers?: Record<string, string>; at: string }
+  /**
+   * Compaction progress, structured. The metadata used to be stringified into a
+   * status line, so the transcript showed the harness's raw JSON and the UI had
+   * nothing to render from. Every number is optional because the SDK declares
+   * it optional (`post_tokens`, `duration_ms`) and Codex sends none of them.
+   */
+  | { type: "compact_state"; state: "running" | "done" | "failed"; trigger?: "manual" | "auto"; preTokens?: number; postTokens?: number; durationMs?: number; keptCount?: number; reason?: string; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   // A message that waited in the app-level queue has just been handed to the
   // harness. Authored by the app, not by any harness — it is the only record
