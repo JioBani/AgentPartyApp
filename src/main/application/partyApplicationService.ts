@@ -72,6 +72,7 @@ import {
   normalizeMemberName,
 } from "./partyDomain";
 import { crossHarnessLockReason, type HarnessId } from "../../shared/modelIdentity";
+import { normalizeMemberMessagingSettings, resolveMemberMessageInterrupt, type MemberMessagingSettings } from "../../shared/memberMessaging";
 
 export interface PartyApplicationDeps {
   sessionManager: SessionManager;
@@ -599,6 +600,27 @@ export class PartyApplicationService {
     return this.result(`Member '${member.name}' message gate updated.`, state, member);
   }
 
+  /** Sets or clears the sender-specific interrupt default for member messages. */
+  setMemberOutboundInterrupt(name: string, value: unknown, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (value !== null && value !== undefined && typeof value !== "boolean") {
+      throw new Error("outboundInterrupt must be true, false, or null (inherit).");
+    }
+    if (typeof value === "boolean") member.outboundInterrupt = value;
+    else delete member.outboundInterrupt;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member outbound interrupt updated", {
+      workspace,
+      partyId: this.partyIdOf(member),
+      member: member.name,
+      outboundInterrupt: member.outboundInterrupt,
+    });
+    return this.result(`Member '${member.name}' message interrupt default updated.`, state, member);
+  }
+
   /**
    * Persists the party-wide Message Gate default (enablement + rule text). Any
    * member with mode "inherit" follows this. Party-level state lives in the
@@ -778,6 +800,10 @@ export class PartyApplicationService {
     const member = this.requireMember(state, name, partyId);
     let session: SessionView | undefined;
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
+    // Interrupt is meaningful only for a turn that existed when this message
+    // arrived. Starting/waking an idle member must not create a turn and then
+    // immediately stop it with the same message.
+    const turnWasActive = sessionId ? this.isSessionBusy(sessionId) : false;
     if (!sessionId) {
       const started = this.startMember(member.name, {}, {}, this.partyIdOf(member));
       session = started.session;
@@ -789,7 +815,7 @@ export class PartyApplicationService {
     // Busy: always the app queue. `interrupt` only changes WHERE in the queue
     // and WHETHER the turn is stopped — never whether the harness is handed the
     // turn while still working.
-    if (this.isSessionBusy(sessionId)) {
+    if (turnWasActive) {
       const cutIn = options?.interrupt === true;
       const compacting = this.deps.sessionManager.isCompacting(sessionId);
       return this.enqueueForMember(member.name, this.partyIdOf(member), { text, attachments, from: null }, {
@@ -1602,6 +1628,14 @@ export class PartyApplicationService {
 
   private idleSleepPolicy: IdleSleepSettings | undefined;
 
+  /** Desktop-owned Runtime policy, pushed to remote engines just like idle sleep. */
+  setMemberMessaging(settings: MemberMessagingSettings): void {
+    this.memberMessagingPolicy = normalizeMemberMessagingSettings(settings);
+    log("info", "party", "member messaging policy applied", { workspace: this.workspacePath(), ...this.memberMessagingPolicy });
+  }
+
+  private memberMessagingPolicy: MemberMessagingSettings | undefined;
+
   private sweepIdleMembers(): void {
     const idleSleep = this.idleSleepPolicy || getSettings().idleSleep;
     if (!idleSleep.enabled) {
@@ -1948,6 +1982,12 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     let state = this.ensureMigrated(this.repository.read(workspace));
     let target = this.requireMember(state, to, partyId);
+    // A human turn has a separate composer preference. This inheritance chain
+    // applies only when the recorded sender is another member in this party.
+    const sender = state.members.find((member) => member.name === from && this.partyIdOf(member) === this.partyIdOf(target));
+    const interrupt = sender
+      ? resolveMemberMessageInterrupt(options?.interrupt, sender.outboundInterrupt, this.memberMessagingPolicy || getSettings().memberMessaging)
+      : options?.interrupt === true;
     const message = createPartyMessage(target, content, from);
     // R-63: an open tab without a live session used to record
     // `target_member_has_no_active_session` and never deliver. User turns already
@@ -1956,6 +1996,10 @@ export class PartyApplicationService {
     // If auto-start itself cannot run (stubbed harness, missing runtime), fall
     // through to the no-session diagnostic instead of crashing the send path.
     let sessionId = target.sessionId && this.deps.sessionManager.hasSession(target.sessionId) ? target.sessionId : undefined;
+    // Freeze the arrival-time fact. A sleeping/not-started member may transition
+    // through startup statuses while this send wakes it, but there was no turn
+    // to interrupt when the sender acted.
+    const turnWasActive = sessionId ? this.isSessionBusy(sessionId) : false;
     // A sleeping member is woken OUT OF BAND: park the message on the member's
     // own durable queue, answer the sender immediately, and bring the process
     // back behind them. Waking a remote (WSL) member is a round trip, and making
@@ -1993,14 +2037,14 @@ export class PartyApplicationService {
       }
     }
     if (sessionId) {
-      if (this.isSessionBusy(sessionId)) {
+      if (turnWasActive) {
         // Busy: same visible queue a user's message uses. `interrupt` parks at
         // the front and stops the turn (unless compacting); it never hands the
         // harness a turn while still working — that was the uncancellable path
         // (#23). Record the routing first, THEN enqueue: the other order writes
         // this (pre-enqueue) state snapshot over the queue the enqueue just
         // saved, silently losing the message.
-        const cutIn = options?.interrupt === true;
+        const cutIn = interrupt;
         const compacting = this.deps.sessionManager.isCompacting(sessionId);
         message.error = "queued_for_busy_member";
         target.updatedAt = message.createdAt;
@@ -2156,7 +2200,7 @@ export class PartyApplicationService {
         failed.push({ name: target.name, error: errorMessage(error) });
       }
     }
-    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: Boolean(options?.interrupt) });
+    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: options?.interrupt ?? "inherited" });
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
     const reach = queuedMembers.length ? `${delivered.length} delivered, ${queuedMembers.length} queued` : `${delivered.length}`;
     return { ...this.result(`Broadcast reached ${reach}/${targets.length} member(s).`, state, undefined, party.id), delivered, queuedMembers, failed };
@@ -2195,6 +2239,12 @@ export class PartyApplicationService {
   }
 
   private isSessionBusy(sessionId?: string): boolean {
+    if (!sessionId) return false;
+    // Older test doubles predate the lifecycle method; production always uses
+    // SessionManager's exact flag. The fallback keeps isolated legacy fixtures
+    // meaningful without weakening the real routing decision.
+    const active = this.deps.sessionManager.isTurnActive?.(sessionId);
+    if (typeof active === "boolean") return active;
     const view = this.sessionViewOf(sessionId);
     return Boolean(view && BUSY_SESSION_STATUSES.has(String(view.snapshot.status)));
   }

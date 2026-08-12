@@ -36,6 +36,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     thinkingBudget: view.thinkingBudget,
     debug: debugEnabled,
     autoCompact: initialCompact,
+    outboundInterrupt: view.member.outboundInterrupt,
   };
 
   function onApply(next: ModelCatalogValue) {
@@ -49,6 +50,9 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
     });
     if (next.autoCompact && (next.autoCompact.on !== initialCompact.on || next.autoCompact.at !== initialCompact.at)) {
       actions.setAutoCompact(view.name, next.autoCompact);
+    }
+    if (next.outboundInterrupt !== view.member.outboundInterrupt) {
+      actions.setMemberOutboundInterrupt(view.name, next.outboundInterrupt);
     }
   }
 
@@ -66,7 +70,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
       }
       routes={routes}
       value={value}
-      config={{ harness: true, effort: true, serviceTier: true, thinking: true, debug: true, autoCompact: true }}
+      config={{ harness: true, effort: true, serviceTier: true, thinking: true, debug: true, autoCompact: true, outboundInterrupt: true }}
       harnessLocked={harnessLocked}
       currentHarness={currentHarness}
       contextWindow={thresholdWindowFor(view)}

@@ -3,14 +3,14 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import { sanitizeAttachments } from "../../shared/attachments";
 import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "permission" | "gate" | "sleep" | "wake" | "keep-awake";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "permission" | "gate" | "outbound-interrupt" | "sleep" | "wake" | "keep-awake";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult | Promise<PartyMutationResult>;
 
 const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // Member-originated sends go through the gated path (Message Gate review); a
   // human user turn uses sendMemberMessage instead and is never gated.
-  send: (party, name, body, partyId) => party.sendGatedMessage(name, String(body.content || ""), body.from, sanitizeAttachments(body.attachments), partyId, { interrupt: body.interrupt === true, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
+  send: (party, name, body, partyId) => party.sendGatedMessage(name, String(body.content || ""), body.from, sanitizeAttachments(body.attachments), partyId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
   close: (party, name, _body, partyId) => party.closeMember(name, partyId),
   resume: (party, name, _body, partyId) => party.resumeMember(name, partyId),
   respawn: (party, name, body, partyId) => party.respawnMember(name, body, partyId),
@@ -21,6 +21,7 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   permission: (party, name, body, partyId) => party.setMemberPermission(name, body || {}, partyId),
   // Per-member Message Gate override (mode/rule/reviewer patch). Cross-editable.
   gate: (party, name, body, partyId) => party.setMemberGate(name, body?.gate ?? body ?? {}, partyId),
+  "outbound-interrupt": (party, name, body, partyId) => party.setMemberOutboundInterrupt(name, body?.outboundInterrupt, partyId),
   // Idle sleep, driven by hand. The sweep does this on its own after the
   // configured quiet period; these exist so a person or a QA run does not have
   // to wait it out to exercise the same code path.
@@ -43,7 +44,7 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // The composer surfaces this only after a Stop went unanswered.
   "force-stop": (party, name, _body, partyId) => party.forceStopMember(name, partyId),
   // Party-wide message; the URL member name is ignored (callers use "*").
-  broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, { interrupt: body.interrupt === true, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
+  broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
 };
 
 export function runPartyAction(party: PartyApplicationService, name: string, action: string, body: any, partyId?: string): PartyMutationResult | Promise<PartyMutationResult> {

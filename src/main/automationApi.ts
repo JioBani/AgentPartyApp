@@ -294,7 +294,7 @@ export class AutomationApiServer {
       if (method === "POST" && (url.pathname === "/api/party/messages" || url.pathname === "/api/harness/party/messages")) {
         const body = await readJson(req);
         const headerMember = typeof req.headers["x-agentparty-member"] === "string" ? req.headers["x-agentparty-member"] : "";
-        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: body.interrupt === true, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }, partyId));
+        sendJson(res, 200, await c.sendPartyMessage(workspace, String(body.to || ""), String(body.content || ""), String(body.from || headerMember || "agent"), sanitizeAttachments(body.attachments), windowId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }, partyId));
         return;
       }
       const memberMessageMatch = url.pathname.match(/^\/api\/party\/members\/([^/]+)\/message$/);

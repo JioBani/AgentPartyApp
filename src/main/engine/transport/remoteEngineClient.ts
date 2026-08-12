@@ -10,6 +10,7 @@ import { readLines, writeLine, type RpcHostCall, type RpcResponse } from "./rpc"
 import { log } from "../../logger";
 import type { CodexAuthenticationUpdate } from "../../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../../shared/idleSleep";
+import type { MemberMessagingSettings } from "../../../shared/memberMessaging";
 import type { TokenUsageQuery, TokenUsageTurnsQuery } from "../../../shared/tokenUsage";
 
 /** Awaited return type of an EngineConnection method. */
@@ -203,6 +204,7 @@ export class RemoteEngineClient implements EngineConnection {
 
   listParty(viewPartyId?: string) { return this.call<Result<"listParty">>("listParty", viewPartyId); }
   setIdleSleep(settings: IdleSleepSettings) { return this.call<Result<"setIdleSleep">>("setIdleSleep", settings); }
+  setMemberMessaging(settings: MemberMessagingSettings) { return this.call<Result<"setMemberMessaging">>("setMemberMessaging", settings); }
   setCodexAuthentication(update: CodexAuthenticationUpdate) { return this.call<Result<"setCodexAuthentication">>("setCodexAuthentication", update); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }
   selectParty(partyId: string) { return this.call<Result<"selectParty">>("selectParty", partyId); }

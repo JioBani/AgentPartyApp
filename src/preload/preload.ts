@@ -90,6 +90,7 @@ const api = {
   wakePartyMember: (name: string) => ipcRenderer.invoke("party:wake", name),
   setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
+  setMemberOutboundInterrupt: (name: string, outboundInterrupt: boolean | null) => ipcRenderer.invoke("party:outbound-interrupt", name, outboundInterrupt),
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),

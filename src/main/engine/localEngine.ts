@@ -17,6 +17,7 @@ import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, 
 import { runPartyAction } from "./partyActions";
 import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
+import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
 import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
@@ -48,6 +49,10 @@ export class LocalEngine implements EngineConnection {
 
   async setIdleSleep(settings: IdleSleepSettings) {
     this.party.setIdleSleep(settings);
+  }
+
+  async setMemberMessaging(settings: MemberMessagingSettings) {
+    this.party.setMemberMessaging(settings);
   }
 
   async setCodexAuthentication(update: CodexAuthenticationUpdate) {

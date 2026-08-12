@@ -408,6 +408,9 @@ export class AppController {
     if (patch?.idleSleep) {
       void this.deps.engineRegistry.setIdleSleep(getSettings().idleSleep);
     }
+    if (patch?.memberMessaging) {
+      void this.deps.engineRegistry.setMemberMessaging(getSettings().memberMessaging);
+    }
     const settings = getPublicSettings();
     // Settings are global — push to EVERY window so a change made over HTTP or in
     // another window reflects live (e.g. transcript zoom), not only on next load.
@@ -905,6 +908,11 @@ export class AppController {
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */
   setMemberGate(workspacePath: string, name: string, gate: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberGate"]>> {
     return this.handlePartyAction(workspacePath, name, "gate", { gate }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberGate"]>>;
+  }
+
+  /** Sets true/false, or clears to the Runtime default with null/undefined. */
+  setMemberOutboundInterrupt(workspacePath: string, name: string, outboundInterrupt: boolean | null | undefined, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberOutboundInterrupt"]>> {
+    return this.handlePartyAction(workspacePath, name, "outbound-interrupt", { outboundInterrupt }, windowId) as Promise<ReturnType<PartyApplicationService["setMemberOutboundInterrupt"]>>;
   }
 
   /** Persists the party-wide Message Gate default (enablement + rule). */

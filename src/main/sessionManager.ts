@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from "../core/codexAdapter";
+import { partyMcpRuntimeEnv } from "../core/partyMcpRuntime";
 import { GrokAdapter } from "../core/grokAdapter";
 import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
@@ -711,7 +712,23 @@ export class SessionManager extends EventEmitter {
   }
 
   setMockStatus(id: string, status: string): void {
-    this.mockAdapter(id).setStatus(status);
+    const session = this.sessions.get(id);
+    if (!session || !(session.adapter instanceof MockHarnessSession)) {
+      throw new Error(`Mock session '${id}' not found`);
+    }
+    session.adapter.setStatus(status);
+    // QA's status control represents the same lifecycle state as a real
+    // normalized status event. Keep the canonical flag in sync so product E2E
+    // does not accidentally test only the presentation snapshot.
+    if (status === "sent" || status === "requesting" || status === "responding") {
+      if (!session.turnActive) session.turnStartedAt = Date.now();
+      session.turnActive = true;
+      session.awaitingUser = false;
+    } else if (status === "idle" || status === "interrupted") {
+      session.turnActive = false;
+      session.awaitingUser = false;
+      session.compacting = false;
+    }
   }
 
   isMockSession(id: string): boolean {
@@ -1046,6 +1063,18 @@ export class SessionManager extends EventEmitter {
     return Boolean(this.sessions.get(id)?.compacting);
   }
 
+  /**
+   * Whether a real model turn is in flight right now.
+   *
+   * Do not infer this from the adapter's display status: a stale `responding`
+   * or a process being woken can outlive the actual turn boundary. Interrupt
+   * routing needs the lifecycle flag maintained by {@link trackTurnActivity}.
+   */
+  isTurnActive(id: string): boolean {
+    const session = this.sessions.get(id);
+    return Boolean(session && !session.closed && session.turnActive);
+  }
+
   closeSession(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) {
@@ -1263,6 +1292,7 @@ export class SessionManager extends EventEmitter {
             command: spawnableNodeCommand(),
             args: [resolvePartyMcpServerScript()],
             env: [
+              ...Object.entries(partyMcpRuntimeEnv()).map(([name, value]) => ({ name, value })),
               { name: "AGENTPARTY_AUTOMATION_BASE_URL", value: automationBaseUrl },
               { name: "AGENTPARTY_MEMBER", value: binding.identity.member },
               { name: "AGENTPARTY_PARTY", value: binding.identity.party },

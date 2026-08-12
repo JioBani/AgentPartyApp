@@ -87,6 +87,8 @@ export interface WorkbenchActions {
    * path (works with or without a live session); cross-editable across members.
    */
   setMemberGate(memberName: string, patch: MemberGatePatch): void;
+  /** Sets the sender default; undefined clears it back to the Runtime default. */
+  setMemberOutboundInterrupt(memberName: string, value: boolean | undefined): void;
   /** Sets the party-wide Message Gate default (enablement + rule). */
   setPartyGate(partyId: string, gate: PartyGate): void;
   /**

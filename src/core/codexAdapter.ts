@@ -1,4 +1,4 @@
-import { spawn, execFileSync, ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import * as fs from "node:fs";
@@ -28,6 +28,7 @@ import { pricingForModel, visionForModel } from "./modelRegistry";
 import { resolveCatalogModel } from "../shared/modelCatalog";
 import type { ImageAttachment } from "../shared/attachments";
 import { approvalResult, codexDecisionOf } from "../shared/codexApproval";
+import { partyMcpRuntimeEnv, spawnablePartyMcpCommand } from "./partyMcpRuntime";
 import { approvalAnswers, codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import type { CodexFileEdit } from "../shared/codexItems";
@@ -655,6 +656,7 @@ export class CodexAdapter extends EventEmitter {
     }
     const serverScript = resolvePartyMcpServerScript();
     const nodeCommand = spawnableNodeCommand();
+    const runtimeEnv = partyMcpRuntimeEnv();
     return [
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.command=${tomlString(nodeCommand)}`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.args=[${tomlString(serverScript)}]`,
@@ -665,6 +667,7 @@ export class CodexAdapter extends EventEmitter {
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_AUTOMATION_BASE_URL=${tomlString(this.options.automationBaseUrl || "")}`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_MEMBER=${tomlString(this.options.partyIdentity.member)}`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_PARTY=${tomlString(this.options.partyIdentity.party)}`,
+      ...Object.entries(runtimeEnv).flatMap(([name, value]) => ["-c", `mcp_servers.${PARTY_MCP_SERVER}.env.${name}=${tomlString(value)}`]),
       ...(process.env.AGENTPARTY_CODEX_MCP_OUT ? ["-c", `mcp_servers.${PARTY_MCP_SERVER}.env.AGENTPARTY_CODEX_MCP_OUT=${tomlString(process.env.AGENTPARTY_CODEX_MCP_OUT)}`] : []),
     ];
   }
@@ -1690,19 +1693,7 @@ function stringArray(value: unknown): string[] {
  * verbatim (the WSL/Linux spawn is verified and must stay unchanged).
  */
 export function spawnableNodeCommand(): string {
-  const resolved = process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node";
-  if (process.platform !== "win32" || !resolved.includes(" ")) {
-    return resolved;
-  }
-  try {
-    const short = execFileSync("cmd", ["/d", "/c", `for %I in ("${resolved}") do @echo %~sI`], { encoding: "utf8", windowsHide: true }).trim();
-    if (short && !short.includes(" ")) {
-      return short;
-    }
-  } catch {
-    // 8.3 lookup failed; fall through to PATH resolution.
-  }
-  return "node";
+  return spawnablePartyMcpCommand();
 }
 
 export function resolvePartyMcpServerScript(): string {

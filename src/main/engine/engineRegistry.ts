@@ -5,6 +5,7 @@ import type { EngineConnection } from "./engineConnection";
 import { LocalEngine } from "./localEngine";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
+import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 
 export interface EngineRegistryDeps {
   workspaceManager: WorkspaceManager;
@@ -29,6 +30,7 @@ export class EngineRegistry {
   private codexAuthentication: CodexAuthenticationUpdate | undefined;
   /** Latest idle-sleep policy, replayed onto engines built later (see setIdleSleep). */
   private idleSleep: IdleSleepSettings | undefined;
+  private memberMessaging: MemberMessagingSettings | undefined;
 
   constructor(private readonly deps: EngineRegistryDeps) {}
 
@@ -46,6 +48,9 @@ export class EngineRegistry {
       // which for a distro is a different file entirely.
       if (this.idleSleep) {
         void engine.setIdleSleep(this.idleSleep).catch(() => undefined);
+      }
+      if (this.memberMessaging) {
+        void engine.setMemberMessaging(this.memberMessaging).catch(() => undefined);
       }
     }
     return engine;
@@ -100,6 +105,12 @@ export class EngineRegistry {
   async setIdleSleep(settings: IdleSleepSettings): Promise<void> {
     this.idleSleep = settings;
     await Promise.all([...this.engines.values()].map((engine) => engine.setIdleSleep(settings).catch(() => undefined)));
+  }
+
+  /** Applies the desktop's member-message default to every hosted engine. */
+  async setMemberMessaging(settings: MemberMessagingSettings): Promise<void> {
+    this.memberMessaging = settings;
+    await Promise.all([...this.engines.values()].map((engine) => engine.setMemberMessaging(settings).catch(() => undefined)));
   }
 
   /** Tears down the engine for a workspace (e.g. when its last window closes). */

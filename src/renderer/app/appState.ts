@@ -3,6 +3,7 @@ import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { DEFAULT_COMPOSER_SETTINGS } from "../../shared/composerSettings";
 import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
+import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 
 export type ViewId = "workbench" | "sessions" | "usage" | "auth" | "runtime" | "automation";
 
@@ -43,6 +44,7 @@ export const initialState: InitialAppState = {
     idleSleep: { ...DEFAULT_IDLE_SLEEP },
     gateDefaults: { model: "haiku", effort: "low" },
     composer: { ...DEFAULT_COMPOSER_SETTINGS },
+    memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
     favoriteModels: [],
   },
   auth: [],

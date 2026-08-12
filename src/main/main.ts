@@ -476,6 +476,7 @@ ${body}
   // it onto each one it builds. A WSL engine reads the distro's settings.json,
   // never the desktop's, so without this it silently runs on the built-in default.
   void engineRegistry.setIdleSleep(getSettings().idleSleep);
+  void engineRegistry.setMemberMessaging(getSettings().memberMessaging);
   registerIpc();
   registerApplicationMenu();
   const launched = launchWorkspace();
@@ -787,6 +788,7 @@ function registerIpc(): void {
   // change made while the member's session is down is not dropped.
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
+  handle("party:outbound-interrupt", async (event, name: string, outboundInterrupt: boolean | null) => controller().setMemberOutboundInterrupt(senderWorkspace(event), name, outboundInterrupt, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));
   // Tab layout is PARTY state, not window state: one writer, broadcast to the
   // other windows on that party (see AppController.setPartyLayout).

@@ -19,6 +19,7 @@ import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
+import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 
@@ -118,6 +119,8 @@ export interface EngineConnection {
    * {@link setCodexAuthentication}: the desktop owns the value, engines are told.
    */
   setIdleSleep(settings: IdleSleepSettings): Promise<void>;
+  /** Pushes the desktop-owned member-message default to this engine host. */
+  setMemberMessaging(settings: MemberMessagingSettings): Promise<void>;
 
   // --- Party (workspace-scoped; `partyId` scopes to the CALLING WINDOW's party) --
   // One engine serves every window of a workspace, so which party is active is a

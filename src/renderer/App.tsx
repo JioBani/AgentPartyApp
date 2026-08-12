@@ -7,6 +7,7 @@ import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
+import type { MemberMessagingSettings } from "../shared/memberMessaging";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
 import { usePublishFavoriteModels } from "./app/favoriteModelPrefs";
 import { toggleFavoriteModel as nextFavoriteModels } from "../shared/favoriteModels";
@@ -848,6 +849,11 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  async function saveMemberMessaging(patch: Partial<MemberMessagingSettings>) {
+    const settings = await window.agentParty.updateSettings({ memberMessaging: { ...state.settings.memberMessaging, ...patch } });
+    setState((current) => ({ ...current, settings }));
+  }
+
   async function saveDiscordSettings(patch: { desktopName?: string; botToken?: string; guildId?: string; allowedUserIds?: string[] }) {
     setDiscord(await window.agentParty.updateDiscordSettings(patch) as DiscordBridgeStatus);
   }
@@ -1177,6 +1183,9 @@ export function App() {
       // new effective gate into every member view + the gate manager.
       void window.agentParty.setMemberGate(name, patch).catch(noticeOnFailure(`'${name}' Message Gate 설정을 저장하지 못했습니다`));
     },
+    setMemberOutboundInterrupt(name, value) {
+      void window.agentParty.setMemberOutboundInterrupt(name, value ?? null).catch(noticeOnFailure(`'${name}' 메시지 인터럽트 기본값을 저장하지 못했습니다`));
+    },
     setPartyGate(partyId, gate) {
       void window.agentParty.setPartyGate(partyId, gate).catch(noticeOnFailure("파티 Message Gate 설정을 저장하지 못했습니다"));
     },
@@ -1497,6 +1506,7 @@ export function App() {
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
                   onSaveComposer={saveComposerSettings}
+                  onSaveMemberMessaging={saveMemberMessaging}
                   discord={discord}
                   onSaveDiscord={saveDiscordSettings}
                   tabRequest={runtimeTabRequest}

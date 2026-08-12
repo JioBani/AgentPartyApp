@@ -80,6 +80,7 @@ export const automationEndpoints = [
   "POST /api/party/members/:name/auto-compact",
   "POST /api/party/members/:name/permission",
   "POST /api/party/members/:name/gate",
+  "POST /api/party/members/:name/outbound-interrupt",
   "POST /api/parties/:id/gate",
   "GET /api/party/status",
   "POST /api/party/interrupt",

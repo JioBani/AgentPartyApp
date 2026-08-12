@@ -23,6 +23,8 @@ export interface ModelCatalogConfig {
   debug?: boolean;
   /** Auto-compact editor (Workbench-only). */
   autoCompact?: boolean;
+  /** Per-member default for its outbound member messages. */
+  outboundInterrupt?: boolean;
 }
 
 /** Selection carried in/out of the catalog. Only config-enabled fields matter. */
@@ -38,6 +40,8 @@ export interface ModelCatalogValue {
   thinkingBudget?: number;
   debug?: boolean;
   autoCompact?: AutoCompactSetting;
+  /** Undefined means inherit the Runtime default. */
+  outboundInterrupt?: boolean;
 }
 
 interface ModelCatalogModalProps {
@@ -237,6 +241,7 @@ export function ModelCatalogModal({
   const [debug, setDebug] = useState(Boolean(value.debug));
   const initialCompact = value.autoCompact ?? DEFAULT_AUTO_COMPACT;
   const [compact, setCompact] = useState<AutoCompactSetting>(initialCompact);
+  const [outboundInterrupt, setOutboundInterrupt] = useState<boolean | undefined>(value.outboundInterrupt);
 
   // Re-stage reasoning when the selected model (and thus its caps) changes.
   useEffect(() => {
@@ -317,7 +322,8 @@ export function ModelCatalogModal({
     (config.serviceTier && serviceTierCap?.supported && serviceTierCap.options.length > 0) ||
     (config.thinking && thinkingCap?.supported && (thinkingCap.modes || []).length > 0) ||
     config.debug ||
-    config.autoCompact,
+    config.autoCompact ||
+    config.outboundInterrupt,
   );
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
@@ -329,7 +335,8 @@ export function ModelCatalogModal({
     (config.serviceTier && serviceTierCap?.supported && serviceTier !== (value.serviceTier || serviceTierCap.defaultValue || "")) ||
     (config.thinking && thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
     (config.debug && debug !== Boolean(value.debug)) ||
-    (config.autoCompact && (compact.on !== initialCompact.on || compact.at !== initialCompact.at));
+    (config.autoCompact && (compact.on !== initialCompact.on || compact.at !== initialCompact.at)) ||
+    (config.outboundInterrupt && outboundInterrupt !== value.outboundInterrupt);
 
   function apply() {
     onApply({
@@ -342,6 +349,7 @@ export function ModelCatalogModal({
       thinkingBudget: config.thinking && showBudget ? budget : undefined,
       debug: config.debug ? debug : undefined,
       autoCompact: config.autoCompact ? compact : undefined,
+      outboundInterrupt: config.outboundInterrupt ? outboundInterrupt : undefined,
     });
     onClose();
   }
@@ -698,6 +706,21 @@ export function ModelCatalogModal({
                     title="Auto-compact · 임계치 초과 시 압축"
                     onChange={setCompact}
                   />
+                )}
+
+                {config.outboundInterrupt && (
+                  <label className="wb-detail-section">
+                    <div className="wb-detail-section-head"><strong>멤버 메시지 인터럽트</strong><span>이 멤버가 보내는 메시지의 기본 동작</span></div>
+                    <select
+                      className="set-select"
+                      value={outboundInterrupt === undefined ? "inherit" : outboundInterrupt ? "interrupt" : "queue"}
+                      onChange={(event) => setOutboundInterrupt(event.target.value === "inherit" ? undefined : event.target.value === "interrupt")}
+                    >
+                      <option value="inherit">Runtime 기본값 따름</option>
+                      <option value="interrupt">항상 인터럽트</option>
+                      <option value="queue">대기열로 전송</option>
+                    </select>
+                  </label>
                 )}
               </>
             )}

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildPartyPrimer, type PartyIdentity } from "./partyBridge";
+import { partyMcpRuntimeEnv, spawnablePartyMcpCommand } from "./partyMcpRuntime";
 
 export interface CursorPartyRuntime {
   pluginDir: string;
@@ -39,12 +40,13 @@ export function prepareCursorPartyRuntime(input: {
   fs.writeFileSync(path.join(pluginDir, "mcp.json"), JSON.stringify({
     mcpServers: {
       "agentparty-app": {
-        command: process.env.AGENTPARTY_NODE_BIN || process.env.npm_node_execpath || "node",
+        command: spawnablePartyMcpCommand(),
         args: [resolvePartyMcpServerScript()],
         env: {
           AGENTPARTY_AUTOMATION_BASE_URL: input.automationBaseUrl,
           AGENTPARTY_MEMBER: input.identity.member,
           AGENTPARTY_PARTY: input.identity.party,
+          ...partyMcpRuntimeEnv(),
         },
       },
     },

@@ -10,6 +10,7 @@ import type { MemberQueueState } from "./messageQueue";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { ComposerSettings } from "./composerSettings";
 import type { FavoriteModels } from "./favoriteModels";
+import type { MemberMessagingSettings } from "./memberMessaging";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -98,6 +99,8 @@ export interface AppSettings {
    * Settings → Runtime. See `shared/composerSettings.ts`.
    */
   composer: ComposerSettings;
+  /** Default routing for member-to-member sends that omit `interrupt`. */
+  memberMessaging: MemberMessagingSettings;
   /**
    * Catalog model ids the user has starred, pinned above the provider groups in
    * the model catalog. A user choice, so it lives here rather than in the
@@ -253,6 +256,8 @@ export interface PartyMember {
    * context crosses `at`% of the window. See `shared/autoCompact.ts`.
    */
   autoCompact?: AutoCompactSetting;
+  /** Per-sender interrupt default. Undefined inherits AppSettings.memberMessaging. */
+  outboundInterrupt?: boolean;
   /**
    * Never release this member's harness process, however long it stays quiet.
    * For a member doing work the app cannot see — watching something, waiting on

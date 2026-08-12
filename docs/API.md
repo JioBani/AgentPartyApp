@@ -235,6 +235,12 @@ queued messages, running on Cursor, or marked `keepAwake` (see
 `/api/party/members/:name/sleep`). A sleeping member keeps its conversation and
 wakes on the next message.
 
+`memberMessaging.interruptOnSend` is the Runtime default for member-to-member
+messages that omit `interrupt`, for example
+`{"memberMessaging":{"interruptOnSend":true}}`. It does not affect human
+composer sends. A sender's `outboundInterrupt` override takes precedence; an
+explicit boolean on the individual send takes precedence over both.
+
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
 permission config (`permissionMode` for Claude Code, `codexPolicy` for Codex,
@@ -1235,6 +1241,14 @@ the gate for one message (surfaced as a "forced" badge). A reviewer error is
 fail-open: the message is delivered unreviewed with a visible notice. A human
 `from: "user"` turn is never gated.
 
+For a **member-originated** message, omitting `interrupt` uses the sender's
+per-member `outboundInterrupt` override, then the Runtime
+`memberMessaging.interruptOnSend` default. An explicit `true` or `false` always
+wins. This applies equally to the lower-level member `send` endpoint and the
+agent-facing `send`/`broadcast` tools. Interrupt is conditional on the recipient
+having an active turn when the message arrives: an idle, sleeping, or unstarted
+recipient is sent to, woken, or started normally and is never immediately stopped.
+
 The reviewer's `effort` reaches the model differently per provider — `thinking`
 for Anthropic (which rejects `effort` outright), `effort` for router-backed
 models — and reasoning is never disabled, because a classifier that cannot
@@ -1307,12 +1321,9 @@ waste the work and leave context partial, so the message still parks at the
 front and waits. The Discord bridge always sends with `interrupt`, because a
 person typed it and is waiting.
 
-**Every caller states `interrupt` for itself; omitting it means `false`.** The
-app's own Send button fills its value in from the `composer.interruptOnSend`
-setting — and that setting is named for the composer because it applies to the
-composer ALONE. An HTTP caller is a program: letting a human's input preference
-silently redirect an API would have it tear down another member's turn without
-ever asking for it. The boundary is explicit, not an oversight.
+This endpoint is a **human/user turn**, so omitting `interrupt` means `false`.
+The app's own Send button remains independent and fills its value from
+`composer.interruptOnSend`; a caller may explicitly pass either boolean.
 
 ### `POST /api/party/members/:name/send`
 
@@ -1464,6 +1475,24 @@ session auto-compacts once occupancy crosses `at`%. Backs the toolbar compact
 pill, the threshold modal, the runtime modal's auto-compact block, and the
 sidebar `⇲ NN%` badge. The global default is set via `POST /api/settings`
 `{ "compactDefault": { "on": true, "at": 80 } }`.
+
+### `POST /api/party/members/:name/outbound-interrupt`
+
+Sets the named member's default for messages it sends to other members. This is
+a sender setting and works without a live session.
+
+```json
+{ "outboundInterrupt": true }
+```
+
+- `true`: interrupt a busy recipient and put the message at the front.
+- `false`: keep a busy recipient's current turn and queue behind it.
+- `null`: inherit `memberMessaging.interruptOnSend` from Runtime settings.
+
+Calls that explicitly include `interrupt: true` or `interrupt: false` override
+both this value and the Runtime default. Even an explicit `true` only interrupts
+a turn that was already active when the message arrived; it does not stop idle,
+sleeping, or newly started recipients.
 
 ### `POST /api/party/members/:name/permission`
 

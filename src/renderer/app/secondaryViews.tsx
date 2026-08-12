@@ -546,7 +546,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveDiscord, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -561,6 +561,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
+  onSaveMemberMessaging: (patch: { interruptOnSend: boolean }) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
   /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
   tabRequest?: { tab: RuntimeTabId; seq: number };
@@ -668,6 +669,18 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             <section className="set-card">
               <div className="set-card-label">입력창</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
+            </section>
+
+            <section className="set-card">
+              <div className="set-card-label">멤버 간 메시지</div>
+              <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
+                <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
+                <span className="set-toggle-label">기본으로 진행 중인 턴 인터럽트</span>
+              </button>
+              <div className="set-inline-note">
+                <InfoIcon size={14} />
+                <span>멤버가 다른 멤버에게 보낼 때 <code>interrupt</code>를 생략하면 적용됩니다. 멤버별 설정과 호출에 직접 지정한 값이 이 기본값보다 우선합니다.</span>
+              </div>
             </section>
         </SubtreeVisibility>
         </div>
