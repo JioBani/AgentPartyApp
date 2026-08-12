@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X, Zap } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView } from "./modelCatalog";
@@ -220,6 +220,27 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     });
   }
 
+  /**
+   * Creates the member from the SAVED defaults, skipping the remaining steps.
+   *
+   * It deliberately sends nothing but the identity: omitted fields are filled by
+   * `buildPartyMember` from `settings.harnessDefaults`, which is the same place
+   * this wizard seeds its own fields from. Sending the staged values instead
+   * would put a second copy of "what the defaults are" in the renderer, and the
+   * two would disagree the moment either side changed — a member created by this
+   * button would then differ from one created by pressing 다음 twice.
+   *
+   * Offered on the identity step only. Past that point the user has been shown
+   * the runtime and permission controls, and a button that silently discarded a
+   * choice they just made would be worse than no button at all.
+   */
+  function createWithDefaults() {
+    if (!canCreate) {
+      return;
+    }
+    onCreate({ name: name.trim(), requirement: role.trim(), runtime: defaultProfile.harness });
+  }
+
   /** Takes the whole runtime choice back from the catalog in one go. */
   function applyRuntime(next: ModelCatalogValue) {
     if (next.harness) {
@@ -239,6 +260,17 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   }
 
   const selectedMeta = selected?.meta;
+
+  // What "기본 설정" actually is, spelled out. A shortcut that creates something
+  // the user cannot see beforehand is a guess, so the button says what it makes.
+  const defaultSummary = useMemo(() => {
+    const route = routes.find(
+      (item) => item.model === defaultProfile.model && (item.harnessId || "claude-code") === defaultProfile.harness,
+    );
+    const model = route?.label || defaultProfile.model || "모델 미지정";
+    const reasoning = reasoningSummary(defaultProfile.effort || "", defaultProfile.reasoning || "", defaultProfile.reasoningBudget);
+    return `${harnessLabel(defaultProfile.harness)} · ${model} · ${reasoning}`;
+  }, [routes, defaultProfile]);
 
   // The scrim does not dismiss: a stray click outside would throw away a
   // half-filled form. Closing is explicit (취소 / ✕) — the same contract as
@@ -303,6 +335,14 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               />
               <p className="wb-wizard-hint">멤버가 자기 역할로 전달받습니다. 비워 두면 역할이 지정되지 않았다고 알려줍니다.</p>
             </section>
+
+            {/* Names the defaults rather than just promising them: "기본 설정으로
+                만들기" is only a shortcut if the user can tell what it will make
+                without walking the steps to find out. */}
+            <p className="wb-wizard-default-note">
+              <Zap size={12} />
+              <span>기본 설정: <span className="wb-mono">{defaultSummary}</span> · 권한은 하네스 기본값</span>
+            </p>
             </>
             )}
 
@@ -367,6 +407,17 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             {stepIndex > 0 && (
               <button type="button" className="wb-btn wb-btn-ghost wb-wizard-back" onClick={() => setStepIndex((current) => current - 1)}>
                 <ChevronLeft size={14} /> 이전
+              </button>
+            )}
+            {step === "identity" && (
+              <button
+                type="button"
+                className="wb-btn wb-btn-ghost"
+                disabled={!canCreate}
+                title={`${defaultSummary} 로 바로 만듭니다`}
+                onClick={createWithDefaults}
+              >
+                <Zap size={14} /> 기본 설정으로 만들기
               </button>
             )}
             {isLastStep ? (
