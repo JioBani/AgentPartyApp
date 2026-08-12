@@ -1276,6 +1276,16 @@ a Claude Code harness, the complete `codexPolicy` object for Codex, or
 The example runs the Claude Code harness itself and routes its GPT model calls
 through the embedded router to the local Codex/ChatGPT subscription proxy.
 
+**Only `name` is required.** Every omitted field is filled from
+`harnessDefaults` for the resolved harness (and `runtime` itself falls back to
+`selectedHarnessId`), so `{"name": "impl"}` creates a member on the saved
+defaults. That is the same request the wizard's **기본 설정으로 만들기** button
+sends: the shortcut adds no defaults of its own, it just leaves the fields out.
+
+```json
+{ "name": "impl" }
+```
+
 ### `POST /api/party/members/:name/message`
 
 **The primary user-send path** — the exact same `AppController.sendMemberMessage` the UI's Send button (Enter / click) calls, so an agent drives an identical route to a user. Idempotently ensures the member has a live session (starting it with the member's own config if none is active — never a duplicate), then delivers the turn as a raw user message. Optional `attachments` (images) ride along, matching how the composer bundles a pasted/dropped image with the send. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
