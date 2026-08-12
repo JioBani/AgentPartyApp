@@ -235,6 +235,31 @@ sessionManager.compacting.delete(memberSession("worker2"));
 snapshots.get(memberSession("worker2")).status = "idle";
 svc.clearMemberQueue("worker2", partyId);
 
+// Omitted interrupt inherits: explicit call > sender override > Runtime default.
+console.log("\nMember message interrupt defaults:");
+snapshots.get(memberSession("worker2")).status = "responding";
+svc.setMemberMessaging({ interruptOnSend: true });
+svc.setMemberOutboundInterrupt("main", null, partyId);
+const beforeDefaultInterrupt = interrupted.length;
+await bridge.send("main", "worker2", "runtime-default-cut-in");
+let inheritedQueue = svc.getMemberQueue("worker2", partyId);
+assert(interrupted.length === beforeDefaultInterrupt + 1 && inheritedQueue.items[0]?.cutIn === true, "omitted interrupt inherits the Runtime true default");
+
+svc.setMemberOutboundInterrupt("main", false, partyId);
+const beforeMemberQueue = interrupted.length;
+await bridge.send("main", "worker2", "member-override-queue");
+inheritedQueue = svc.getMemberQueue("worker2", partyId);
+assert(interrupted.length === beforeMemberQueue && inheritedQueue.items.at(-1)?.text === "member-override-queue", "sender false override queues behind and beats Runtime true");
+
+const beforeExplicit = interrupted.length;
+await bridge.send("main", "worker2", "explicit-cut-in", true);
+inheritedQueue = svc.getMemberQueue("worker2", partyId);
+assert(interrupted.length === beforeExplicit + 1 && inheritedQueue.items.find((item) => item.text === "explicit-cut-in")?.cutIn === true, "explicit true beats the sender false override");
+svc.setMemberOutboundInterrupt("main", null, partyId);
+svc.setMemberMessaging({ interruptOnSend: false });
+snapshots.get(memberSession("worker2")).status = "idle";
+svc.clearMemberQueue("worker2", partyId);
+
 // broadcast: every other member gets the channel-wrapped message; self excluded.
 // A BUSY recipient's copy goes to its QUEUE instead of being injected — worker1
 // is still mid-turn from the interrupt leg above. That is a third outcome,

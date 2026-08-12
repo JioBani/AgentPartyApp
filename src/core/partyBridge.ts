@@ -129,7 +129,7 @@ export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "memb
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
-  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Delivery is QUEUED, not instant: if the recipient is mid-turn, your message waits in the visible app queue and is only handed over AFTER their current turn finishes (for a Codex member, at its next tool call), so do not expect an immediate reply — a delayed response means they are still finishing earlier work, not that the message was lost. Set interrupt=true ONLY when the message cannot wait: it stops the recipient's current turn and parks your message at the FRONT of that queue so it is handled next.",
+  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. If interrupt is omitted, your member override and then the Runtime default decide whether a busy recipient is stopped. Set interrupt=true to cut in, or interrupt=false to explicitly queue behind the current turn.",
   "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
@@ -144,7 +144,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
-  broadcast: "Send a message to EVERY other member of your party at once. Like send, each delivery is QUEUED: a member that is mid-turn only picks it up after its current turn finishes (for a Codex member, at its next tool call). Set interrupt=true to stop their current turns so the message is handled right away.",
+  broadcast: "Send a message to EVERY other member of your party at once. If interrupt is omitted, your member override and then the Runtime default apply. Set true to cut in or false to explicitly queue behind busy recipients.",
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
@@ -153,7 +153,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     properties: {
       to: { type: "string", description: "Recipient member name in your party." },
       content: { type: "string", description: "Message body." },
-      interrupt: { type: "boolean", description: "Stop the recipient's in-flight turn first so the message is handled immediately. Default false: the message QUEUES and is only seen after the recipient finishes its current turn (a Codex member picks it up at its next tool call). Set true only when the message cannot wait for the current turn to end." },
+      interrupt: { type: "boolean", description: "Explicit true cuts in; explicit false queues behind the current turn. Omit to use your member override, then the Runtime default." },
       force: { type: "boolean", description: "Bypass the Message Gate review and deliver even if your gate would reject. Use ONLY when the message genuinely must go through; it is surfaced as a 'forced' badge. Default false." },
       forceReason: { type: "string", description: "Why you forced past the gate (recorded and shown). Provide when force=true." },
     },
@@ -325,7 +325,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       content: { type: "string", description: "Message body sent to every other member." },
-      interrupt: { type: "boolean", description: "Stop each recipient's in-flight turn first so the message is handled immediately. Default false: the message QUEUES behind each recipient's current turn and is only seen once that turn finishes (a Codex member picks it up at its next tool call)." },
+      interrupt: { type: "boolean", description: "Explicit true cuts in; explicit false queues. Omit to use your member override, then the Runtime default." },
     },
     required: ["content"],
     additionalProperties: false,
@@ -380,7 +380,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         identity.member,
         to,
         content,
-        input.interrupt === true,
+        typeof input.interrupt === "boolean" ? input.interrupt : undefined,
         input.force === true,
         typeof input.forceReason === "string" ? input.forceReason : undefined,
       );
@@ -481,7 +481,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!content) {
         return { ok: false, error: "broadcast requires string argument: content." };
       }
-      return bridge.broadcast(content, input.interrupt === true);
+      return bridge.broadcast(content, typeof input.interrupt === "boolean" ? input.interrupt : undefined);
     }
     case "discord-connect":
       return bridge.discordConnect(typeof input.channelName === "string" && input.channelName ? input.channelName : undefined);
@@ -539,7 +539,7 @@ export function buildPartyPrimer(identity: PartyIdentity): string {
     "",
     "## Party tools — use ONLY this surface",
     "All party actions go through the `agentparty-app` server. These are the only party tools you may call:",
-    `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. **Delivery is QUEUED, not instant**: if the recipient is mid-turn, your message is only picked up AFTER their current turn finishes (a Codex member at its next tool call), so do not expect an immediate reply. Pass \`interrupt: true\` ONLY when it cannot wait — that stops their current turn so the message is handled right away.`,
+    `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. When \`interrupt\` is omitted, your saved member override and then the Runtime default apply. Pass \`true\` to cut in or \`false\` to be explicitly QUEUED behind the recipient's current turn (a Codex member receives it at its next tool call).`,
     `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same QUEUE-then-current-turn timing, and the same optional \`interrupt\`).`,
     `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
     `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
@@ -606,16 +606,16 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
   return [
     tool(
       "send",
-      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING (its process was released after a quiet spell) is started or woken for you and keeps its existing conversation — do not create a duplicate member for one of those. Errors only if the recipient does not exist or was explicitly closed. Set interrupt=true to stop the recipient's current turn so your message is handled immediately.",
+      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING is started or woken and keeps its conversation. Errors only if it does not exist or was explicitly closed. Omit interrupt to use your member override then Runtime default; true cuts in, false queues.",
       {
         to: z.string().describe("Recipient member name in your party."),
         content: z.string().describe("Message body."),
-        interrupt: z.boolean().optional().describe("Stop the recipient's in-flight turn first (default false: the message queues behind it)."),
+        interrupt: z.boolean().optional().describe("Explicitly stop (true) or queue behind (false) the recipient's in-flight turn. Omit to use your member override, then the Runtime default."),
         force: z.boolean().optional().describe("Bypass the Message Gate review and deliver even if your gate would reject (surfaced as a 'forced' badge). Use only when the message must go through. Default false."),
         forceReason: z.string().optional().describe("Why you forced past the gate (recorded and shown). Provide when force=true."),
       },
       async (args: { to: string; content: string; interrupt?: boolean; force?: boolean; forceReason?: string }) =>
-        envelope(await bridge.send(identity.member, args.to, args.content, args.interrupt === true, args.force === true, args.forceReason)),
+        envelope(await bridge.send(identity.member, args.to, args.content, typeof args.interrupt === "boolean" ? args.interrupt : undefined, args.force === true, args.forceReason)),
     ),
     tool(
       "member-create",
@@ -714,12 +714,12 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "broadcast",
-      "Send a message to EVERY other member of your party at once. Set interrupt=true to stop their current turns so the message is handled immediately.",
+      "Send a message to EVERY other member of your party at once. Omit interrupt to use your member override then Runtime default; true cuts in, false queues.",
       {
         content: z.string().describe("Message body sent to every other member."),
-        interrupt: z.boolean().optional().describe("Stop each recipient's in-flight turn first (default false)."),
+        interrupt: z.boolean().optional().describe("Explicitly interrupt (true) or queue (false). Omit to use your member override, then the Runtime default."),
       },
-      async (args: { content: string; interrupt?: boolean }) => envelope(await bridge.broadcast(args.content, args.interrupt === true)),
+      async (args: { content: string; interrupt?: boolean }) => envelope(await bridge.broadcast(args.content, typeof args.interrupt === "boolean" ? args.interrupt : undefined)),
     ),
     tool(
       "discord-connect",
