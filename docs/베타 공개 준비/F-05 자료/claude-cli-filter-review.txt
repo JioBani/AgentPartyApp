@@ -1,0 +1,25 @@
+ ▐▛███▜▌   Claude Code v2.1.226
+▝▜█████▛▘  Opus 5 (1M context) with high effort · Claude Max
+  ▘▘ ▝▝    C:\Project\AgentPartyApp
+
+   Tackle your toughest work with Opus 5. Switch anytime with /model.
+
+
+> 3
+
+●Just "3" — I don't have context for what that refers to. What would you like
+  me to do?
+
+✻ Cooked for 3s
+
+
+
+  /code-review (review)           Review the current diff, or a PR
+                                  number/branch/path target, for correctness …
+  /claude-party:party-send        (claude-party) Send a message to another
+t                                 Claude Party member session via the channel…
+────────────────────────────────────────────────────────────────────────────────
+> /review
+────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · res
+…⏵⏵ auto mode on (shift+tab to cycle)

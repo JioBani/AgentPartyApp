@@ -1,0 +1,35 @@
+
+╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.145.0 -> 0.147.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────╮
+  breakdown.
+
+⚠ MCP client for `unityMCP` failed to start: MCP startup failed: handshaking
+  with MCP server failed: Send message error Transport
+  [rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_cli
+  ent::StreamableHttpClientWorker<codex_rmcp_client::http_client_adapter::Stream
+  ableHttpClientAdapter>>] error: Client error: HTTP request failed:
+  http/request failed: error sending request for url
+  (http://localhost:8080/mcp), when send initialize request
+
+⚠ MCP startup incomplete (failed: unityMCP)
+
+
+› @
+
+> Browser            Control the in-app browser with ChatGPT              Plugin
+  Default templates  Default templates for documents, spreadsheets, and…  Plugi
+n Documents          Create and edit document artifacts                   Plugin
+  PDF                Read, create, and verify PDF files                   Plugin
+  Presentations      Create and edit presentations                        Plugin
+  Spreadsheets       Create and edit spreadsheet files                    Plugin
+  Template Creator   Create or update templates for documents, spreadsh…  Plugi
+n claude-party       local-claude-party                                   Plugin
+
+  enter insert · esc close · ←/→ [All Results]   Filesystem Only    Plugins
