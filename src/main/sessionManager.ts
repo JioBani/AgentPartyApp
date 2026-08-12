@@ -1,5 +1,6 @@
 import type { GateFailureLayer } from "../shared/messageGate";
 import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from "../core/codexAdapter";
@@ -19,7 +20,7 @@ import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
-import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
+import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot, USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { UsageLedger } from "./usageLedger";
@@ -177,6 +178,7 @@ export class SessionManager extends EventEmitter {
     private readonly runtimeScope = "host",
   ) {
     super();
+    this.usageLimits = this.loadUsageLimits();
     this.codexAuthenticationStore = new CodexAuthenticationStore(
       userDataDir,
       process.env.AGENTPARTY_NATIVE_CODEX_HOME || undefined,
@@ -352,7 +354,38 @@ export class SessionManager extends EventEmitter {
         updatedAt: Date.parse(event.at) || Date.now(),
       }),
     };
+    this.persistUsageLimits();
     this.emit("usage", this.usageLimits);
+  }
+
+  /**
+   * Restores only still-valid account windows. Claude can return no proactive
+   * windows until its first turn, so preserving the last provider-confirmed
+   * reading prevents an app restart from regressing to permanent unknown.
+   */
+  private loadUsageLimits(): UsageLimitsSnapshot {
+    try {
+      return restoreUsageSnapshot(JSON.parse(fs.readFileSync(this.usageCachePath(), "utf8")), Date.now());
+    } catch {
+      return {};
+    }
+  }
+
+  private persistUsageLimits(): void {
+    const file = this.usageCachePath();
+    const temp = `${file}.${process.pid}.tmp`;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(temp, JSON.stringify(this.usageLimits), "utf8");
+      fs.renameSync(temp, file);
+    } catch (error) {
+      try { fs.rmSync(temp, { force: true }); } catch {}
+      log("warn", "usage", "failed to persist usage snapshot", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private usageCachePath(): string {
+    return path.join(this.userDataDir, "usage-limits.json");
   }
 
   /**
@@ -369,14 +402,14 @@ export class SessionManager extends EventEmitter {
     const next: UsageLimitsSnapshot = { ...this.usageLimits };
     delete next[provider];
     this.usageLimits = next;
+    this.persistUsageLimits();
     this.emit("usage", this.usageLimits);
   }
 
   // --- Background usage poller ---------------------------------------------
 
   /**
-   * Declares which providers the user actually uses (their party members'
-   * providers), so their account usage stays fresh even with no open session.
+   * Declares which titlebar providers should stay fresh even with no open session.
    * Idempotent: reconciles the background adapters and (re)arms the periodic
    * reconcile that revives a poller after its provider's last session closes.
    */
@@ -413,7 +446,7 @@ export class SessionManager extends EventEmitter {
       backoffUntil[provider] = until;
     }
     const liveProviders: UsageProviderId[] = [];
-    for (const p of ["claude", "codex", "cursor"] as UsageProviderId[]) {
+    for (const p of ["claude", "codex", "cursor", "grok"] as UsageProviderId[]) {
       if (this.hasLiveSessionForProvider(p)) {
         liveProviders.push(p);
       }
@@ -451,7 +484,10 @@ export class SessionManager extends EventEmitter {
       // strings, so they must agree. The adapter's runtime id (`usage-…-${ts}`)
       // stays for logs/diagnostics only.
       adapter = this.createAdapter(id, cwd, undefined, {
-        selectedHarnessId: provider === "codex" ? "codex" : provider === "cursor" ? "cursor" : "claude-code",
+        selectedHarnessId:
+          provider === "codex" ? "codex" :
+          provider === "cursor" ? "cursor" :
+          provider === "grok" ? "grok" : "claude-code",
       }, undefined, SessionManager.USAGE_SOURCE_BG(provider));
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
@@ -491,12 +527,10 @@ export class SessionManager extends EventEmitter {
       return;
     }
     this.usageAdapters.delete(provider);
-    // The adapter we're tearing down may have been this provider's active
-    // source. If so, drop its snapshot — keeping it would mean showing the
-    // dead background poller's last value forever.
+    // Release source ownership but preserve its last valid account snapshot
+    // while the foreground session performs its immediate replacement read.
     if (this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_BG(provider)) {
       this.activeUsageSource.delete(provider);
-      this.clearUsageForProvider(provider);
     }
     try {
       adapter.dispose();
@@ -521,6 +555,7 @@ export class SessionManager extends EventEmitter {
         ...this.usageLimits,
         [provider]: { provider, windows: [], updatedAt: Date.now() },
       };
+      this.persistUsageLimits();
       this.emit("usage", this.usageLimits);
     }
     // Surfaced, not swallowed: the pill honestly shows "데이터 없음" (never fake
@@ -560,7 +595,7 @@ export class SessionManager extends EventEmitter {
    */
   mergeRemoteUsage(snapshot: UsageLimitsSnapshot): void {
     let changed = false;
-    for (const provider of ["claude", "codex", "cursor"] as const) {
+    for (const provider of USAGE_PROVIDER_ORDER) {
       const incoming = snapshot?.[provider];
       if (incoming && (incoming.windows?.length || incoming.available !== undefined)) {
         // A live LOCAL foreground session outranks the remote reader: both
@@ -589,6 +624,7 @@ export class SessionManager extends EventEmitter {
             updatedAt: incoming.updatedAt,
           }),
         };
+        this.persistUsageLimits();
         changed = true;
       } else if (!incoming && this.activeUsageSource.get(provider) === SessionManager.USAGE_SOURCE_REMOTE(provider)) {
         // Remote used to be the active source and now has nothing — treat as
@@ -1022,12 +1058,19 @@ export class SessionManager extends EventEmitter {
     session.adapter.dispose();
     this.sessions.delete(id);
     this.emit("sessions", this.listSessions());
-    // The closed session may have been a provider's only live usage source.
-    // Drop its snapshot (the dead-source stale-data bug) and let the
-    // background poller that reconcileUsageAdapters spawns take over.
+    // Release source ownership but preserve the account-global value while
+    // another live session or the background poller takes over immediately.
     if (session.provider && this.activeUsageSource.get(session.provider) === id) {
       this.activeUsageSource.delete(session.provider);
-      this.clearUsageForProvider(session.provider);
+      // If another member for the same account remains open, hand ownership to
+      // it now instead of waiting up to 60s for its next polling tick.
+      const replacement = Array.from(this.sessions.values()).find(
+        (candidate) => !candidate.closed && candidate.provider === session.provider,
+      );
+      if (replacement) {
+        this.activeUsageSource.set(session.provider, replacement.id);
+        void replacement.adapter.refreshUsageLimits?.();
+      }
     }
     if (session.provider) {
       this.reconcileUsageAdapters();
@@ -1230,9 +1273,11 @@ export class SessionManager extends EventEmitter {
         sessionId: id,
         cwd,
         executablePath: settings.grokExecutablePath,
+        resumeSessionId,
         model: selectedModel,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         mcpServers: partyServers,
+        usageSourceId,
       }) as unknown as HarnessSession;
     }
     if (selectedHarness === "codex") {

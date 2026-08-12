@@ -16,8 +16,8 @@ export type UsageProviderId = "claude" | "codex" | "cursor" | "grok";
 
 /**
  * The rolling windows the indicator can show. Claude/Codex report 5-hour +
- * weekly account windows; Cursor reports one billing-cycle plan meter
- * (`monthly`). See {@link PROVIDER_WINDOW_KINDS} for which provider shows what.
+ * weekly account windows; Cursor reports one billing-cycle plan meter and Grok
+ * reports its subscription-credit period. See {@link PROVIDER_WINDOW_KINDS}.
  */
 export type UsageWindowKind = "five_hour" | "weekly" | "monthly";
 
@@ -50,6 +50,42 @@ export type UsageLimitsSnapshot = {
   grok?: ProviderUsage;
 };
 
+/** Maximum age for a persisted no-window status (e.g. a transient login failure). */
+const EMPTY_USAGE_CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/**
+ * Validates a disk-restored usage snapshot and removes expired provider windows.
+ * Valid windows survive app restart; malformed values and expired reset periods
+ * never reach the UI as plausible-looking account data.
+ */
+export function restoreUsageSnapshot(raw: unknown, nowMs: number): UsageLimitsSnapshot {
+  if (!raw || typeof raw !== "object") return {};
+  const source = raw as Partial<Record<UsageProviderId, unknown>>;
+  const restored: UsageLimitsSnapshot = {};
+  for (const provider of USAGE_PROVIDER_ORDER) {
+    const candidate = source[provider];
+    if (!candidate || typeof candidate !== "object") continue;
+    const value = candidate as Partial<ProviderUsage>;
+    if (value.provider !== provider || !Number.isFinite(value.updatedAt)) continue;
+    const windows = (Array.isArray(value.windows) ? value.windows : []).filter((window): window is UsageWindow =>
+      Boolean(window)
+      && PROVIDER_WINDOW_KINDS[provider].includes(window.kind)
+      && Number.isFinite(window.utilization)
+      && window.utilization >= 0
+      && window.utilization <= 100
+      && (window.resetsAt == null || (Number.isFinite(window.resetsAt) && window.resetsAt > nowMs)),
+    );
+    if (!windows.length && nowMs - (value.updatedAt as number) > EMPTY_USAGE_CACHE_MAX_AGE_MS) continue;
+    restored[provider] = {
+      provider,
+      windows,
+      updatedAt: value.updatedAt as number,
+      ...(typeof value.available === "boolean" ? { available: value.available } : {}),
+    };
+  }
+  return restored;
+}
+
 /** Provider display metadata. Brand colors are design literals, not theme tokens. */
 export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: string }> = {
   claude: { label: "Claude", brand: "#c5835f" },
@@ -70,12 +106,9 @@ export const PROVIDER_WINDOW_KINDS: Record<UsageProviderId, UsageWindowKind[]> =
   claude: ["five_hour", "weekly"],
   codex: ["five_hour", "weekly"],
   cursor: ["monthly"],
-  // xAI publishes no plan-quota surface: the ACP stream carries per-turn tokens
-  // only, and api.x.ai answers 404 for every usage/billing path and rejects the
-  // subscription token on /v1/me (measured 2026-08-10). An empty list is the
-  // honest answer — the alternative is a permanently blank 5-hour/weekly row
-  // that reads as "0% used" on a plan that is actually being consumed.
-  grok: [],
+  // Grok Build's authenticated billing extension reports the current
+  // subscription credit period; SuperGrok currently identifies it as weekly.
+  grok: ["weekly"],
 };
 
 /** The usage provider a party member's runtime draws its account quota from. */
@@ -85,6 +118,9 @@ export function providerOfRuntime(runtime: string | undefined): UsageProviderId 
   }
   if (runtime === "cursor") {
     return "cursor";
+  }
+  if (runtime === "grok") {
+    return "grok";
   }
   if (runtime === "claude-code" || runtime === "claude") {
     return "claude";

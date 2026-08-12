@@ -16,6 +16,7 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import * as readline from "node:readline";
 import { grokAgentStdioArgs } from "./grokAgentCli";
+import type { GrokBillingResult } from "./grokUsage";
 
 export interface GrokAcpMcpServer {
   name: string;
@@ -28,6 +29,8 @@ export interface GrokAcpOptions {
   /** Resolved `grok` executable (see resolveGrokCli). */
   command: string;
   cwd: string;
+  /** Existing Grok thread to load instead of creating a context-empty session. */
+  resumeSessionId?: string;
   mcpServers?: GrokAcpMcpServer[];
   /** Extra environment for the child (isolation knobs, GROK_HOME, …). */
   env?: NodeJS.ProcessEnv;
@@ -45,12 +48,33 @@ export interface GrokAcpModel {
 export interface GrokAcpToolCall {
   toolCallId: string;
   title: string;
+  /** Stable vendor tool id from xAI metadata (the title may be rewritten into a full human-readable command). */
+  name?: string;
   kind?: string;
   status?: string;
   readOnly?: boolean;
   locations?: Array<{ path: string }>;
   rawInput?: unknown;
+  rawOutput?: unknown;
+  content?: unknown;
 }
+
+export interface GrokAcpPermissionOption {
+  optionId: string;
+  name: string;
+  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+}
+
+export interface GrokAcpPermissionRequest {
+  requestId: string;
+  sessionId: string;
+  toolCall: GrokAcpToolCall;
+  options: GrokAcpPermissionOption[];
+}
+
+export type GrokAcpPermissionOutcome =
+  | { outcome: "selected"; optionId: string }
+  | { outcome: "cancelled" };
 
 export interface GrokAcpHandlers {
   onText?: (text: string) => void;
@@ -61,6 +85,7 @@ export interface GrokAcpHandlers {
   onCommands?: (commands: Array<{ name: string; description?: string }>) => void;
   /** Running context occupancy, carried on every update's `_meta.totalTokens`. */
   onContextTokens?: (tokens: number) => void;
+  onPermissionRequest?: (request: GrokAcpPermissionRequest) => Promise<GrokAcpPermissionOutcome> | GrokAcpPermissionOutcome;
 }
 
 export interface GrokAcpTurnResult {
@@ -68,6 +93,51 @@ export interface GrokAcpTurnResult {
   text: string;
   thought: string;
   usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number };
+  costUsd?: number;
+}
+
+type GrokTurnUsage = NonNullable<GrokAcpTurnResult["usage"]>;
+
+/**
+ * Normalizes the vendor `turn_completed` usage shape.
+ *
+ * Grok's ACP extension reports `inputTokens` as prompt tokens INCLUDING both
+ * cache buckets (`totalTokens === inputTokens + outputTokens`). AgentParty's
+ * ledger keeps those buckets disjoint, so subtract them here. The alternate
+ * branch also accepts the headless snake_case shape, whose input bucket is
+ * already uncached.
+ */
+export function grokAcpTurnUsage(raw: any): GrokTurnUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const finite = (...values: unknown[]): number | undefined => {
+    for (const value of values) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+    return undefined;
+  };
+  const inputReported = finite(raw.inputTokens, raw.input_tokens);
+  const output = finite(raw.outputTokens, raw.output_tokens) ?? 0;
+  const cacheRead = finite(raw.cachedReadTokens, raw.cacheReadInputTokens, raw.cache_read_input_tokens) ?? 0;
+  const cacheWrite = finite(raw.cacheCreationTokens, raw.cacheWriteInputTokens, raw.cache_creation_input_tokens) ?? 0;
+  const reasoning = finite(raw.reasoningTokens, raw.reasoning_tokens) ?? 0;
+  const total = finite(raw.totalTokens, raw.total_tokens);
+  if (inputReported == null && total == null) return undefined;
+
+  const inputIncludesCache = inputReported != null
+    && total != null
+    && Math.abs(total - (inputReported + output)) < 0.5;
+  const input = inputReported == null
+    ? Math.max(0, (total ?? 0) - output - cacheRead - cacheWrite)
+    : Math.max(0, inputReported - (inputIncludesCache ? cacheRead + cacheWrite : 0));
+  return { input, output, cacheRead, cacheWrite, reasoning };
+}
+
+export function grokAcpTurnCostUsd(raw: any): number | undefined {
+  const direct = Number(raw?.costUsd ?? raw?.cost_usd);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const ticks = Number(raw?.costUsdTicks ?? raw?.cost_usd_ticks);
+  return Number.isFinite(ticks) && ticks >= 0 ? ticks / 10_000_000_000 : undefined;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
@@ -76,6 +146,21 @@ interface Pending {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
   timer?: NodeJS.Timeout;
+}
+
+export function grokAcpOpenRequest(options: Pick<GrokAcpOptions, "cwd" | "mcpServers" | "resumeSessionId">): {
+  method: "session/new" | "session/load";
+  params: { cwd: string; mcpServers: GrokAcpMcpServer[]; sessionId?: string };
+} {
+  const resumeSessionId = options.resumeSessionId;
+  return {
+    method: resumeSessionId ? "session/load" : "session/new",
+    params: {
+      ...(resumeSessionId ? { sessionId: resumeSessionId } : {}),
+      cwd: options.cwd,
+      mcpServers: options.mcpServers ?? [],
+    },
+  };
 }
 
 export class GrokAcpSession {
@@ -87,7 +172,7 @@ export class GrokAcpSession {
   private currentModelId = "";
   private stderrTail = "";
   private brokenReason: string | undefined;
-  private active: { handlers: GrokAcpHandlers; text: string[]; thought: string[] } | undefined;
+  private active: { handlers: GrokAcpHandlers; text: string[]; thought: string[]; usage?: GrokTurnUsage; costUsd?: number } | undefined;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: GrokAcpOptions) {}
@@ -108,7 +193,13 @@ export class GrokAcpSession {
     return this.sessionId;
   }
 
-  /** initialize → authenticate → session/new. */
+  /** Account credit usage, fetched by the official CLI with its own login. */
+  async billingUsage(): Promise<GrokBillingResult> {
+    this.assertUsable();
+    return await this.request("_x.ai/billing", {}) as GrokBillingResult;
+  }
+
+  /** initialize → authenticate → session/load (resume) or session/new. */
   async start(): Promise<void> {
     const child = spawn(this.options.command, grokAgentStdioArgs(), {
       cwd: this.options.cwd,
@@ -143,14 +234,20 @@ export class GrokAcpSession {
     }
     await this.request("authenticate", { methodId, _meta: { headless: true } });
 
-    const session: any = await this.request("session/new", {
-      cwd: this.options.cwd,
-      mcpServers: this.options.mcpServers ?? [],
-    });
-    if (!session?.sessionId) {
-      throw new Error("Grok Build ACP session/new returned no sessionId.");
+    const resumeSessionId = this.options.resumeSessionId;
+    if (resumeSessionId && init?.agentCapabilities?.loadSession !== true) {
+      throw new Error(
+        `Grok Build does not advertise ACP session loading, so thread '${resumeSessionId}' cannot be resumed. ` +
+        "The existing conversation was left intact; no empty replacement session was created.",
+      );
     }
-    this.sessionId = session.sessionId;
+    const { method, params } = grokAcpOpenRequest(this.options);
+    const session: any = await this.request(method, params);
+    const sessionId = session?.sessionId || resumeSessionId;
+    if (!sessionId) {
+      throw new Error(`Grok Build ACP ${method} returned no sessionId.`);
+    }
+    this.sessionId = sessionId;
     this.readModelState(session?.models);
   }
 
@@ -158,7 +255,7 @@ export class GrokAcpSession {
   prompt(text: string, handlers: GrokAcpHandlers = {}): Promise<GrokAcpTurnResult> {
     const run = this.queue.then(async () => {
       this.assertUsable();
-      const active = { handlers, text: [] as string[], thought: [] as string[] };
+      const active: NonNullable<typeof this.active> = { handlers, text: [], thought: [] };
       this.active = active;
       try {
         const result: any = await this.request(
@@ -166,20 +263,13 @@ export class GrokAcpSession {
           { sessionId: this.sessionId, prompt: [{ type: "text", text }] },
           0,
         );
-        const usage = result?._meta?.usage;
+        const rawUsage = result?._meta?.usage;
         return {
           stopReason: result?.stopReason || "end_turn",
           text: active.text.join(""),
           thought: active.thought.join(""),
-          usage: usage
-            ? {
-                input: Number(usage.inputTokens) || 0,
-                output: Number(usage.outputTokens) || 0,
-                cacheRead: Number(usage.cachedReadTokens) || 0,
-                cacheWrite: Number(usage.cacheCreationTokens) || 0,
-                reasoning: Number(usage.reasoningTokens) || 0,
-              }
-            : undefined,
+          usage: active.usage ?? grokAcpTurnUsage(rawUsage),
+          costUsd: active.costUsd ?? grokAcpTurnCostUsd(rawUsage),
         };
       } finally {
         this.active = undefined;
@@ -302,12 +392,41 @@ export class GrokAcpSession {
   }
 
   private onServerMessage(message: any): void {
-    if (message.method === "session/update") {
+    if (message.method === "session/update" || message.method === "_x.ai/session/update") {
       this.onSessionUpdate(message.params);
       return;
     }
     if (message.method === "_x.ai/models/update") {
       this.readModelState(message.params);
+      return;
+    }
+    if (message.method === "session/request_permission" && message.id != null) {
+      const handler = this.active?.handlers.onPermissionRequest;
+      if (!handler) {
+        // An empty object is not a valid ACP permission response; Grok treats
+        // it as a client failure and aborts the entire turn.
+        this.respond(message.id, { outcome: { outcome: "cancelled" } });
+        return;
+      }
+      const params = message.params || {};
+      const tool = params.toolCall || {};
+      const request: GrokAcpPermissionRequest = {
+        requestId: String(message.id),
+        sessionId: String(params.sessionId || this.sessionId),
+        toolCall: {
+          toolCallId: String(tool.toolCallId || `permission-${message.id}`),
+          title: String(tool.title || tool.kind || "tool"),
+          name: tool?._meta?.["x.ai/tool"]?.name,
+          kind: tool.kind || tool?._meta?.["x.ai/tool"]?.kind,
+          status: tool.status,
+          rawInput: tool.rawInput,
+        },
+        options: Array.isArray(params.options) ? params.options : [],
+      };
+      Promise.resolve().then(() => handler(request)).then(
+        (outcome) => this.respond(message.id, { outcome }),
+        () => this.respond(message.id, { outcome: { outcome: "cancelled" } }),
+      );
       return;
     }
     // Every other server->client request gets an empty result so a turn can
@@ -345,11 +464,14 @@ export class GrokAcpSession {
         const call: GrokAcpToolCall = {
           toolCallId: update.toolCallId,
           title: update.title || update.kind || "tool",
+          name: update?._meta?.["x.ai/tool"]?.name,
           kind: update.kind || update?._meta?.["x.ai/tool"]?.kind,
           status: update.status || params?._meta?.updateParams?.status,
           readOnly: update?._meta?.["x.ai/tool"]?.read_only,
           locations: Array.isArray(update.locations) ? update.locations : undefined,
           rawInput: update.rawInput,
+          rawOutput: update.rawOutput,
+          content: update.content,
         };
         if (update.sessionUpdate === "tool_call") {
           this.active?.handlers.onToolCall?.(call);
@@ -363,6 +485,12 @@ export class GrokAcpSession {
         return;
       case "available_commands_update":
         this.active?.handlers.onCommands?.(update.availableCommands || []);
+        return;
+      case "turn_completed":
+        if (this.active) {
+          this.active.usage = grokAcpTurnUsage(update.usage);
+          this.active.costUsd = grokAcpTurnCostUsd(update.usage);
+        }
         return;
       default:
     }

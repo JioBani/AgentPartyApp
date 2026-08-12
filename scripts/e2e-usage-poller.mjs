@@ -50,9 +50,9 @@ async function main() {
     const winWs = windows.windows?.[0]?.workspacePath || windows.windows?.[0]?.workspace;
     assert(String(winWs).toLowerCase() === ws.toLowerCase(), `spawned app serves the e2e workspace (${winWs})`);
 
-    // Usage must be empty before any Claude member exists — nothing to poll.
-    const before = (await getJson("/api/usage")).usage;
-    assert(!before.claude, "no claude member yet → no background poll (empty usage)");
+    // The titlebar always renders every provider, so meters must resolve even
+    // before a party member exists (never permanent "loading").
+    assert(Boolean(await waitForUsage("claude")), "claude usage resolves before any member exists");
 
     // Create a Claude member. The workbench may opportunistically PREWARM a live
     // session; close it so ONLY the background poller can source usage — the whole

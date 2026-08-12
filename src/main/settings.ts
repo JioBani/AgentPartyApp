@@ -37,7 +37,8 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { ...DEFAULT_CODEX_POLICY } },
   cursor: { model: "Grok 4.5", effort: "high", serviceTier: "standard", cursorPolicy: { ...DEFAULT_CURSOR_POLICY } },
   // Grok Build serves exactly one model and ignores effort, so the default is
-  // the only real choice; permissionMode is carried for plan mode alone.
+  // Grok owns only normal/plan modes; its adapter enforces the finer permission
+  // choices when ACP session/request_permission requests arrive.
   grok: { model: "grok-4.5", effort: "high", permissionMode: "default" },
 };
 

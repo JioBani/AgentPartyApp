@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
-import { harnessDefaultsOf, harnessForRuntime } from "../../shared/types";
+import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
@@ -14,7 +14,7 @@ import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
-import { providerOfHarness, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
+import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
 import { clearDeepseekKey, clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
@@ -187,22 +187,10 @@ export class AppController {
    * failure for one window must not stop the others from counting.
    */
   private async reconcileUsageProviders(): Promise<void> {
-    const providers = new Set<UsageProviderId>();
-    for (const entry of this.deps.windowRegistry.all()) {
-      try {
-        const party = await this.engineFor(entry.workspacePath).listParty(this.activePartyByWindow.get(entry.id));
-        for (const member of party.members || []) {
-          const harnessId = harnessForRuntime(member.runtime);
-          const provider = providerOfHarness(harnessId);
-          if (provider) {
-            providers.add(provider);
-          }
-        }
-      } catch {
-        // A single window's party read failing must not blank the whole set.
-      }
-    }
-    this.deps.sessionManager.setUsageProviders([...providers]);
+    // The titlebar always renders every provider. Restricting reads to providers
+    // with party members left empty workspaces permanently stuck at "loading".
+    // SessionManager still reuses live sessions, so this creates no duplicates.
+    this.deps.sessionManager.setUsageProviders(USAGE_PROVIDER_ORDER);
   }
 
   /**

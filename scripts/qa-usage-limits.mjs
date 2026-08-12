@@ -30,7 +30,7 @@ async function loadModule(entry, name) {
 
 // --- 1) pure logic --------------------------------------------------------
 const U = await loadModule("src/shared/usageLimits.ts", "usage-limits.mjs");
-const { mergeWindows, mergeProviderUsage, usageLevelColor, formatResetCountdown, toEpochMs, buildUsageView, providerOfRuntime, providerOfHarness, reconcileUsageTargets } = U;
+const { mergeWindows, mergeProviderUsage, usageLevelColor, formatResetCountdown, toEpochMs, buildUsageView, providerOfRuntime, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot } = U;
 
 console.log("\nUsage-limit pure logic:");
 
@@ -61,12 +61,23 @@ assert(merged.windows.find((w) => w.kind === "five_hour").utilization === 63, "m
 assert(merged.windows.find((w) => w.kind === "weekly").utilization === 40, "merge preserves the unreported weekly window");
 assert(mergeWindows(undefined, [{ kind: "weekly", utilization: 5 }]).length === 1, "mergeWindows tolerates no prior state");
 
+const restored = restoreUsageSnapshot({
+  claude: { provider: "claude", available: true, updatedAt: 900, windows: [
+    { kind: "five_hour", utilization: 13, resetsAt: 2000 },
+    { kind: "weekly", utilization: 48, resetsAt: 500 },
+  ] },
+  codex: { provider: "wrong-provider", updatedAt: 900, windows: [{ kind: "weekly", utilization: 23 }] },
+}, 1000);
+assert(restored.claude?.windows.length === 1 && restored.claude.windows[0].utilization === 13, "restart cache keeps valid windows and removes expired periods");
+assert(!restored.codex, "restart cache rejects a provider-mismatched snapshot");
+
 // provider mapping (runtime + harness → usage provider)
 console.log("\nBackground usage poller — provider mapping:");
 assert(providerOfRuntime("codex") === "codex", "codex runtime → codex");
 assert(providerOfRuntime("claude-code") === "claude", "claude-code runtime → claude");
 assert(providerOfRuntime("claude") === "claude", "claude runtime → claude");
 assert(providerOfRuntime("cursor") === "cursor", "cursor runtime → cursor");
+assert(providerOfRuntime("grok") === "grok", "grok runtime → grok");
 assert(providerOfRuntime("mock") === undefined, "unknown runtime → no provider");
 assert(providerOfHarness("codex") === "codex" && providerOfHarness("claude-code") === "claude" && providerOfHarness("cursor") === "cursor", "harness id → provider");
 
@@ -80,6 +91,16 @@ const derived = CU.cursorUsageWindow({ planUsage: { limit: 1000, remaining: 250 
 assert(derived?.utilization === 75, "no server percent → derived from limit-remaining (75%)");
 assert(CU.cursorUsageWindow({ planUsage: {} }) === undefined, "no usable numbers → no window (never faked)");
 assert(CU.cursorUsageWindow({}) === undefined, "missing planUsage → no window");
+
+const GU = await loadModule("src/core/grokUsage.ts", "grok-usage.mjs");
+console.log("\nGrok subscription usage mapping:");
+const grokWin = GU.grokUsageWindow({ config: {
+  creditUsagePercent: 14,
+  currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY", start: "2026-08-09T16:10:35Z", end: "2026-08-16T16:10:35Z" },
+} });
+assert(grokWin?.kind === "weekly" && grokWin.utilization === 14, "Grok credit percent becomes a weekly meter");
+assert(grokWin?.resetsAt === Date.parse("2026-08-16T16:10:35Z"), "Grok period end becomes resetsAt");
+assert(GU.grokUsageWindow({ config: { creditUsagePercent: 5 } }) === undefined, "Grok response without a known period is not fabricated");
 
 // reconcileUsageTargets — the pure background-poller decision
 console.log("\nBackground usage poller — reconcile decision:");
@@ -96,8 +117,8 @@ d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { code
 assert(d.start.length === 0, "a backed-off provider is not restarted before its retry time");
 d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { codex: 5000 }, now: 6000 });
 assert(d.start.join() === "codex", "past the backoff window → restart is allowed");
-d = R({ desired: [], liveProviders: [], running: [] });
-assert(d.start.length === 0 && d.dispose.length === 0, "no members anywhere → nothing spawned (idle app stays quiet)");
+d = R({ desired: ["claude", "codex", "cursor", "grok"], liveProviders: [], running: [] });
+assert(d.start.join() === "claude,codex,cursor,grok", "all titlebar providers resolve even with no party members");
 
 // available derivation: reported windows are ground truth. Claude's proactive
 // usage read can answer "not available for this auth mode" on the very account
@@ -129,7 +150,7 @@ const snapshot = {
   ] },
 };
 const view = buildUsageView(snapshot, { claude: 3, codex: 2 }, now);
-assert(view.pills.length === 3, "one pill per provider (claude · codex · cursor)");
+assert(view.pills.length === 4, "one pill per provider (claude · codex · cursor · grok)");
 assert(view.pills[0].pctLabel === "63%" && view.pills[0].pctCol === "#c5835f", "claude pill shows 63% in brand color");
 assert(view.pills[0].ring.includes("63%"), "claude ring conic-gradient reflects 63%");
 assert(view.rows[0].sub === "3명 사용" && view.rows[1].sub === "2명 사용", "member counts shown per provider");
@@ -143,7 +164,7 @@ assert(high.pills[0].pctCol === "var(--live)", "82% pill percent uses warning co
 
 // buildUsageView — unknown (no data yet)
 const unknown = buildUsageView({}, { claude: 1 }, now);
-assert(unknown.pills.length === 3 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
+assert(unknown.pills.length === 4 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
 assert(unknown.pills[0].ring === "var(--bg-4)", "unknown ring is a muted track, no fabricated fill");
 assert(unknown.rows[0].meters[0].known === false && unknown.rows[0].meters[0].right === "불러오는 중…", "unknown meter reads loading, not a number");
 assert(unknown.empty === true, "no window data anywhere → empty");
@@ -174,7 +195,7 @@ assert(cursorView.pills.find((pill) => pill.key === "cursor").pctLabel === "42%"
 
 // buildUsageView — fully empty still shows every provider as loading
 const empty = buildUsageView({}, {}, now);
-assert(empty.pills.length === 3 && empty.rows.length === 3, "no data + no members → every provider still visible");
+assert(empty.pills.length === 4 && empty.rows.length === 4, "no data + no members → every provider still visible");
 
 // --- 2) jsdom render of <UsageLimitPill> ----------------------------------
 const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
@@ -236,7 +257,7 @@ try {
 assert(!crashed, `render did not throw${crashed ? `: ${crashed.stack || crashed}` : ""}`);
 
 const root = window.document.getElementById("root");
-assert(root.querySelectorAll(".usage-seg").length === 3, "pill renders one segment per provider");
+assert(root.querySelectorAll(".usage-seg").length === 4, "pill renders one segment per provider");
 assert((root.textContent || "").includes("63%"), "pill shows the 5-hour percent");
 assert(root.querySelector(".usage-pop") === null, "popover closed until clicked");
 
@@ -245,7 +266,7 @@ window.document.querySelector(".usage-pill").dispatchEvent(new window.MouseEvent
 await new Promise((r) => setTimeout(r, 60));
 const pop = root.querySelector(".usage-pop");
 assert(Boolean(pop), "clicking the pill opens the popover");
-assert(root.querySelectorAll(".usage-meter").length === 5, "popover shows 5h+weekly for Claude/Codex and the plan meter for Cursor (2+2+1)");
+assert(root.querySelectorAll(".usage-meter").length === 6, "popover shows Claude/Codex windows plus Cursor and Grok meters (2+2+1+1)");
 assert((pop?.textContent || "").includes("5시간 한도") && (pop?.textContent || "").includes("주간 한도"), "both window labels rendered");
 assert((pop?.textContent || "").includes("2시간 12분 후 리셋"), "reset countdown rendered in the meter");
 const refreshBtn = [...root.querySelectorAll(".usage-settings-btn")].find((button) => /새로고침/.test(button.textContent || ""));

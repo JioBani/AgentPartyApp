@@ -262,12 +262,13 @@ provider that separates "not installed" from "installed but not signed in".
   "grok"`), which runs the official `grok` CLI over ACP. Party tools reach it
   through `session/new`'s `mcpServers`, so nothing is written to disk.
 
-Three xAI-side limits are reported rather than hidden, measured 2026-08-10:
+One xAI-side limit is reported rather than hidden, measured 2026-08-10:
 reasoning **effort is ignored** on both paths (it is pinned in the catalog and
-refused by the harness instead of offered); the Grok Build harness **never asks
-for tool approval**, so its permission capability is declared unsupported; and
-`GET /api/usage` reports the `grok` provider as `available: false` because xAI
-publishes no plan-quota surface. Per-turn tokens ARE recorded — the gateway
+refused by the harness instead of offered). Grok Build ACP permission requests
+are bridged into AgentParty's normal approval flow.
+`GET /api/usage` reports Grok's authenticated subscription-credit period from
+the official CLI's `_x.ai/billing` extension (the same source as `/usage`).
+Per-turn tokens ARE recorded separately — the gateway
 measures them from the upstream response, because Claude Code reports zeros for
 router-backed models.
 
@@ -713,14 +714,21 @@ constrained** variant for the same reason.
 **Fresh even with no open session.** Because those event streams only exist while
 a session runs, the indicator used to go stale once every member was closed (e.g.
 right after reopening the app). To fix this at the source, the SessionManager
-keeps a lightweight **background usage connection** alive for every provider the
-user actually has members for — a turn-less harness connection that self-polls
+keeps a lightweight **background usage connection** alive for every provider
+shown in the titlebar — a turn-less harness connection that self-polls
 usage every 60s. It is reused, not duplicated: when a provider already has a live
 member session, that session feeds usage and the background connection for it is
 dropped; when the last session closes, the background poller revives within 60s.
-A provider with no members spawns nothing. A background connection that fails to
-connect (e.g. the provider's CLI is not logged in) backs off and the pill honestly
+A provider with no live member uses one lightweight background connection. A
+background connection that fails to connect (e.g. the provider's CLI is not
+logged in) backs off and the pill honestly
 stays at "no data" — never a fabricated number.
+
+Usage is account-global, not party-scoped: switching parties or opening/closing
+member tabs does not change the selected account's snapshot. The last validated
+snapshot is persisted under the app's user-data directory so an app restart does
+not blank Claude while its proactive SDK read is waiting for the first live
+rate-limit event. Expired reset windows and malformed cache entries are discarded.
 
 ```json
 {
@@ -741,7 +749,8 @@ stays at "no data" — never a fabricated number.
       "available": true,
       "updatedAt": 1751900000000,
       "windows": [ { "kind": "monthly", "utilization": 42, "resetsAt": 1753900000000 } ]
-    }
+    },
+    "grok": { "provider": "grok", "available": true, "updatedAt": 1786550000000, "windows": [ { "kind": "weekly", "utilization": 14, "resetsAt": 1786896635397 } ] }
   }
 }
 ```
@@ -749,12 +758,13 @@ stays at "no data" — never a fabricated number.
 `utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
 didn't report a reset). Claude/Codex report `five_hour` + `weekly` windows;
 Cursor reports one `monthly` window — the signed-in account's billing-cycle plan
-meter (reset at `billingCycleEnd`). `available:false` means the provider
-reported limits are not applicable (Claude API key / Bedrock / Vertex) — render
-"해당 없음", not 0%. The titlebar indicator always shows Claude, Codex, and
-Cursor; missing provider data is rendered as loading/unknown until a read or
-push update arrives. Windows update live over the `usage:update` IPC push to
-every window.
+meter (reset at `billingCycleEnd`). Grok Build reports a `weekly` subscription
+credit window and reset from `_x.ai/billing`; its completed-turn tokens/cost
+remain separately available in `/api/token-usage`.
+`available:false` means the provider-reported limit is not applicable or not
+exposed — render "해당 없음", not 0%. Missing provider data is rendered as
+loading/unknown until a read or push update arrives. Windows update live over
+the `usage:update` IPC push to every window.
 
 AgentParty refreshes live harness usage once per minute while a session is
 running. Users or automation can request an immediate refresh:
@@ -802,6 +812,11 @@ split, `input`/`cacheRead`/`cacheWrite`/`output` are the turn's **billed totals*
 same meter as the snapshot's `contextTokens`, dropping after `/compact`). It is
 NOT the sum of the split — deriving it that way ballooned with tool-call count
 and misread as context held. Absent when no live occupancy was reported.
+
+Grok's vendor ACP completion reports prompt input with cache tokens included;
+the ledger normalizes it into disjoint `input`, `cacheRead`, and `cacheWrite`
+buckets and records the exact vendor cost when supplied. Account quota remains
+separate and comes from Grok Build's authenticated `_x.ai/billing` extension.
 
 Each rollup row carries the design's derived metrics, computed from the raw
 records so the dashboard and any agent read the same numbers:
@@ -1096,6 +1111,11 @@ extras:
   deny. When omitted, `behavior` maps to `once`/`decline`.
 - **AskUserQuestion / Codex request-user-input** — `{ "answers": { "<question>": "<label>" } }`
   folds the chosen answers back into the tool input.
+- **Grok ACP permissions** — `behavior: "allow" | "deny"` selects the exact
+  allow/reject option Grok offered. `{ "__approvalScope": "always" }` requests
+  Grok's `allow_always`/`reject_always` option when available. AgentParty party
+  tools are auto-approved, matching the Claude member contract; other Grok
+  tools follow the member's persisted permission mode.
 
 ### `GET /api/sessions/:id/mcp`
 

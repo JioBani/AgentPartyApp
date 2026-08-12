@@ -25,17 +25,26 @@ export interface CursorUsageResult {
 
 /** The CLI's stored OAuth access token, or undefined when not logged in. */
 export function readCursorAccessToken(): string | undefined {
-  try {
-    // Mirrors the CLI's own credential path: `$XDG_CONFIG_HOME || ~/.config`
-    // + `cursor/auth.json`, on every platform (the Windows CLI uses it too).
-    const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-    const raw = fs.readFileSync(path.join(configDir, "cursor", "auth.json"), "utf8");
-    const parsed = JSON.parse(raw) as { accessToken?: unknown };
-    const token = typeof parsed.accessToken === "string" ? parsed.accessToken.trim() : "";
-    return token || undefined;
-  } catch {
-    return undefined;
+  // Cursor Agent follows the desktop credential on Windows (`%APPDATA%/Cursor`)
+  // and XDG on Unix. Earlier code assumed XDG on every platform, while
+  // `cursor-agent status` correctly said logged in — leaving the meter empty.
+  const candidates = process.platform === "win32"
+    ? [
+        process.env.APPDATA ? path.join(process.env.APPDATA, "Cursor", "auth.json") : undefined,
+        path.join(os.homedir(), ".config", "cursor", "auth.json"),
+      ]
+    : [path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "cursor", "auth.json")];
+  for (const file of candidates) {
+    if (!file) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { accessToken?: unknown };
+      const token = typeof parsed.accessToken === "string" ? parsed.accessToken.trim() : "";
+      if (token) return token;
+    } catch {
+      // Try the next official location; absence is reported by the caller.
+    }
   }
+  return undefined;
 }
 
 export async function fetchCursorUsage(token: string, endpoint: string = CURSOR_USAGE_ENDPOINT): Promise<CursorUsageResult> {
