@@ -39,6 +39,7 @@ export type Backend =
   | { kind: "claude-router"; alias: string } // claude-* alias translated by the AgentParty router backend
   | { kind: "codex-account"; slug: string } // Codex built-in account model
   | { kind: "codex-claude-subscription"; model: string } // Codex app-server through local Claude OAuth
+  | { kind: "codex-deepseek"; slug: string } // Codex routed through DeepSeek's own Responses API
   | { kind: "codex-openrouter"; orModelId: string } // Codex routed through the OpenRouter custom provider
   | { kind: "cursor-agent"; slug: string }; // Cursor Agent named model
 
@@ -101,6 +102,12 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
   }
   if (entry.claudeSubscriptionModel) {
     return { kind: "codex-claude-subscription", model: entry.claudeSubscriptionModel };
+  }
+  if (entry.deepseekResponsesApi === true && entry.deepseekModel) {
+    // Without this branch a catalog LABEL (e.g. "DeepSeek V4 Pro") passed
+    // straight through to the Codex account backend and 400'd there; only the
+    // raw slug happened to work because codexProviderForModel matches slugs.
+    return { kind: "codex-deepseek", slug: entry.deepseekModel };
   }
   if (entry.provider === "openrouter" && entry.orModelId) {
     return { kind: "codex-openrouter", orModelId: entry.orModelId };
@@ -188,6 +195,8 @@ export function backendSlug(backend: Backend): string {
       return backend.slug;
     case "codex-claude-subscription":
       return backend.model;
+    case "codex-deepseek":
+      return backend.slug;
     case "codex-openrouter":
       return backend.orModelId;
     case "cursor-agent":

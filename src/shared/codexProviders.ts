@@ -43,9 +43,9 @@ export const CODEX_CLAUDE_SUBSCRIPTION_PROVIDER: CodexCustomProvider = {
 
 /**
  * DeepSeek's own API. It serves the OpenAI Responses wire — the only one codex
- * speaks — but as of 2026-07-31 only for `deepseek-v4-flash`; `deepseek-v4-pro`
- * is documented as "planned for early August 2026". Models are opted in one at a
- * time by the catalog's `deepseekResponsesApi` flag rather than assumed, so a
+ * speaks — for `deepseek-v4-flash` and, since the 0813 GA, `deepseek-v4-pro`
+ * (verified 2026-08-13 with a real /responses call). Models are opted in one at
+ * a time by the catalog's `deepseekResponsesApi` flag rather than assumed, so a
  * model that is not actually served never reaches a spawn.
  * https://api-docs.deepseek.com/guides/responses_api/
  */
