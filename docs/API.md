@@ -266,12 +266,17 @@ provider that separates "not installed" from "installed but not signed in".
   `api.x.ai/v1/messages`, xAI's Anthropic-compatible surface.
 - **The Grok Build harness** — `selectedHarnessId: "grok"` (member `runtime:
   "grok"`), which runs the official `grok` CLI over ACP. Party tools reach it
-  through `session/new`'s `mcpServers`, so nothing is written to disk.
+  through `session/new`'s `mcpServers`, so nothing is written to disk. As
+  measured from the authenticated CLI on 2026-08-13, it exposes `grok-4.6`
+  (the default) and retains `grok-4.5`; both report a 500K context window.
 
-One xAI-side limit is reported rather than hidden, measured 2026-08-10:
-reasoning **effort is ignored** on both paths (it is pinned in the catalog and
-refused by the harness instead of offered). Grok Build ACP permission requests
-are bridged into AgentParty's normal approval flow.
+Grok Build reasoning settings were re-measured against the official CLI on
+2026-08-13. `grok-4.6` accepts `low`, `medium`, `high`, and `xhigh` effort;
+`grok-4.5` accepts `low`, `medium`, and `high`. Both default to `high`. The CLI
+consumes `--reasoning-effort` when the ACP agent starts, so a saved live change
+takes effect after the member is reopened/restarted. Neither model exposes a
+separate reasoning on/off toggle (`none` and `minimal` are rejected). Grok Build
+ACP permission requests are bridged into AgentParty's normal approval flow.
 `GET /api/usage` reports Grok's authenticated subscription-credit period from
 the official CLI's `_x.ai/billing` extension (the same source as `/usage`).
 Per-turn tokens ARE recorded separately — the gateway
@@ -643,6 +648,13 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
   model id. They use the local Claude OAuth credential rather than OpenRouter.
 
 Cross-routing keeps the chosen harness process intact:
+
+- **Grok Build** exposes `grok-4.6` and `grok-4.5` with
+  `"harnessId":"grok"`. New installs default to 4.6; an existing saved 4.5
+  preference remains selectable and is not silently rewritten. The 4.6 route
+  advertises `low/medium/high/xhigh` effort and the 4.5 route advertises
+  `low/medium/high`; effort is applied at ACP process start and is therefore
+  marked `mutableDuringSession:false`.
 
 - **Claude Code + GPT** uses the Claude Code SDK with its `claude-gpt-*` alias;
   the embedded gateway keeps the request as Anthropic Messages and maps only the

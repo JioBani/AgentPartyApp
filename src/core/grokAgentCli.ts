@@ -106,6 +106,32 @@ export function grokCliInstalledPath(explicit?: string): string | undefined {
  * `--no-auto-update` is a GLOBAL flag and must precede the subcommand, which is
  * why argument order is fixed here rather than left to callers.
  */
-export function grokAgentStdioArgs(): string[] {
-  return ["--no-auto-update", "agent", "stdio"];
+export const GROK_REASONING_EFFORTS = {
+  "grok-4.6": ["low", "medium", "high", "xhigh"],
+  "grok-4.5": ["low", "medium", "high"],
+} as const;
+
+export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORTS)[keyof typeof GROK_REASONING_EFFORTS][number];
+
+export function grokReasoningEfforts(model: string): readonly GrokReasoningEffort[] {
+  return model === "grok-4.5" ? GROK_REASONING_EFFORTS["grok-4.5"] : GROK_REASONING_EFFORTS["grok-4.6"];
+}
+
+export function validateGrokReasoningEffort(model: string, effort: string): GrokReasoningEffort {
+  const supported = grokReasoningEfforts(model);
+  if ((supported as readonly string[]).includes(effort)) {
+    return effort as GrokReasoningEffort;
+  }
+  throw new Error(
+    `Grok Build model '${model}' does not support reasoning effort '${effort}'. Supported values: ${supported.join(", ")}.`,
+  );
+}
+
+export function grokAgentStdioArgs(reasoningEffort?: GrokReasoningEffort): string[] {
+  return [
+    "--no-auto-update",
+    ...(reasoningEffort ? ["--reasoning-effort", reasoningEffort] : []),
+    "agent",
+    "stdio",
+  ];
 }

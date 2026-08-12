@@ -1313,6 +1313,7 @@ export class SessionManager extends EventEmitter {
         executablePath: settings.grokExecutablePath,
         resumeSessionId,
         model: selectedModel,
+        effort: request.effort || harnessDefaults.effort,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         mcpServers: partyServers,
         usageSourceId,

@@ -13,6 +13,7 @@ import {
 import type { CodexModelInfo } from "../shared/codexModels";
 import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
+import { grokReasoningEfforts } from "./grokAgentCli";
 
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "custom";
@@ -477,35 +478,57 @@ export function cursorRouteFromCatalog(model: CatalogModel): ModelRoute {
 
 /**
  * What the Grok Build CLI itself serves. It owns its model list — the catalog
- * does not route it — so the entry here mirrors what `session/new` reports
- * (measured: exactly grok-4.5, 500k context).
+ * does not route it — so these entries mirror what `session/new` reports.
+ * Measured 2026-08-13: grok-4.6 is the default and both 4.6 / 4.5 expose a
+ * 500k context window.
  *
- * Effort and permission are declared UNSUPPORTED rather than copied from the
- * catalog: this harness ignores every effort route the binary offers and never
- * asks the client to approve a tool call, so offering either control would put
- * a knob in the UI that does nothing. Plan mode is the one real setting, and it
- * rides the permission mode the member already carries.
+ * Measured against the official CLI: 4.6 accepts low/medium/high/xhigh and 4.5
+ * accepts low/medium/high. Effort is immutable within an ACP process because
+ * the CLI consumes it as a startup flag. There is no separate reasoning-off
+ * toggle. AgentParty bridges ACP permission requests into its approval flow.
  */
 export function grokHarnessRoutes(): ModelRoute[] {
-  return [{
+  const route = (
+    model: "grok-4.6" | "grok-4.5",
+    label: string,
+    description: string,
+    meta?: ModelRoute["meta"],
+  ): ModelRoute => ({
     harnessId: "grok",
     providerId: "xai",
-    model: "grok-4.5",
-    runtimeModel: "grok-4.5",
-    label: "Grok 4.5 (Grok Build)",
-    description:
-      "xAI's Grok Build CLI on your Grok subscription. It approves its own tool calls and ignores reasoning effort, " +
-      "and it loads your ~/.claude hooks and permission rules.",
+    model,
+    runtimeModel: model,
+    label,
+    description,
     pricing: { billing: "subscription", directPrice: "Grok subscription", context: "500K" },
     capabilities: {
-      effort: { supported: false, mutableDuringSession: false, options: [] },
+      effort: {
+        supported: true,
+        mutableDuringSession: false,
+        defaultValue: "high",
+        options: grokReasoningEfforts(model).map((level) => ({ id: level, label: effortLabel(level) })),
+      },
       thinking: { supported: false, mutableDuringSession: false },
       permission: { supported: false, mutableDuringSession: false, options: [] },
       vision: { image: false },
     },
-    meta: { perf: 3, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
+    meta,
     enabled: true,
-  }];
+  });
+  return [
+    route(
+      "grok-4.6",
+      "Grok 4.6 (Grok Build)",
+      "SpaceXAI's latest frontier model through the Grok Build CLI and your Grok subscription. " +
+        "It approves its own tool calls and loads your ~/.claude hooks and permission rules.",
+    ),
+    route(
+      "grok-4.5",
+      "Grok 4.5 (Grok Build)",
+      "xAI's previous Grok Build model on your Grok subscription. It remains selectable for compatibility.",
+      { perf: 3, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
+    ),
+  ];
 }
 
 function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {

@@ -1207,10 +1207,12 @@ export function App() {
       // when this was written, so a Grok route read as claude-code).
       const selectedHarness = (runtime.route?.harnessId as HarnessId | undefined) || "claude-code";
       const currentHarness = harnessForRuntime(member?.runtime);
-      if (runtime.route && (selectedHarness !== currentHarness || runtime.serviceTier !== member?.serviceTier)) {
+      const grokEffortNeedsRestart = selectedHarness === "grok" && Boolean(runtime.effort) && runtime.effort !== member?.effort;
+      if (runtime.route && (selectedHarness !== currentHarness || runtime.serviceTier !== member?.serviceTier || grokEffortNeedsRestart)) {
         // A harness is the adapter PROCESS, not model metadata. Recreate the
-        // prewarmed session only when the actual selected harness changes.
-        // Cross-routed models stay inside that harness process.
+        // prewarmed session when the actual selected harness changes or when a
+        // process-start setting changes. Grok Build consumes reasoning effort
+        // as a CLI flag and has no ACP method for mutating it live.
         const result = await window.agentParty.respawnPartyMember(name, {
           selectedHarnessId: selectedHarness,
           selectedProviderId: runtime.route.providerId,

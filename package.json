@@ -19,6 +19,7 @@
     "test:e2e:live-cursor-auto": "npm run build && node scripts/e2e-live-cursor.mjs --auto",
     "test:e2e:live-cursor-grok": "npm run build && node scripts/e2e-live-cursor.mjs --grok",
     "test:e2e:live-grok-usage": "npm run build && node scripts/e2e-live-grok-usage.mjs",
+    "test:e2e:live-grok-46": "npm run build && node scripts/e2e-live-grok-46.mjs",
     "test:e2e:live-codex-party-tools": "npm run build && node scripts/e2e-live-codex-party-tools.mjs",
     "test:e2e:live-wsl-codex-party-tools": "npm run build && node scripts/e2e-live-wsl-codex-party-tools.mjs",
     "test:e2e:wsl-workspace-open": "npm run build && node scripts/e2e-wsl-workspace-open.mjs",

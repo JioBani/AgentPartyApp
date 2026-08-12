@@ -31,7 +31,7 @@ export const initialState: InitialAppState = {
       "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },
       codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } },
       cursor: { model: "Grok 4.5", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
-      grok: { model: "grok-4.5", effort: "high", permissionMode: "default" },
+      grok: { model: "grok-4.6", effort: "high", permissionMode: "default" },
     },
     debugEnabled: false,
     routerBaseUrl: "http://127.0.0.1:3455",

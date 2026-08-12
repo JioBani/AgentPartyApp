@@ -1,22 +1,21 @@
 /**
  * Grok Build harness adapter — runs the official `grok` CLI as a member.
  *
- * The turn surface maps cleanly onto ACP, but three things this harness cannot
- * do are surfaced as diagnostics at session start instead of being quietly
- * absent. All three were measured against grok 1.0.0 (3cd0d0cbce) on
- * 2026-08-10 and are xAI-side, so the app cannot fix them:
+ * The turn surface maps cleanly onto ACP, while important harness boundaries
+ * are surfaced as diagnostics instead of being quietly absent. They were
+ * measured against the official CLI and are xAI-side, so the app cannot fix them:
  *
  *  - Its native execution modes are only normal/plan. ACP permission requests
  *    are therefore resolved here according to the app's permission setting.
- *  - Reasoning effort cannot be set. `--reasoning-effort` is ignored (the
- *    session keeps reporting `high`), `session/set_config_option` answers
- *    -32601 for every configId, and `/effort` is TUI-only.
+ *  - Reasoning effort is a process-start setting. Grok 4.6 accepts
+ *    low/medium/high/xhigh and Grok 4.5 accepts low/medium/high; ACP does not
+ *    expose a live mutation method.
  *  - It loads the user's Claude Code hooks and permission rules from ~/.claude
  *    regardless of every documented opt-out (env vars, `[compat.claude]`, an
  *    isolated GROK_HOME, even a redirected USERPROFILE).
  */
 import { EventEmitter } from "node:events";
-import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "./events";
+import { ClaudeNormalizedEvent, ClaudeSessionSnapshot, type ClaudeEffort } from "./events";
 import {
   GrokAcpSession,
   type GrokAcpMcpServer,
@@ -25,7 +24,7 @@ import {
   type GrokAcpPermissionRequest,
   type GrokAcpToolCall,
 } from "./grokAcp";
-import { resolveGrokCli } from "./grokAgentCli";
+import { resolveGrokCli, validateGrokReasoningEffort, type GrokReasoningEffort } from "./grokAgentCli";
 import { grokUsageWindow, type GrokBillingResult } from "./grokUsage";
 
 export interface GrokAdapterOptions {
@@ -36,6 +35,7 @@ export interface GrokAdapterOptions {
   /** Persisted Grok ACP thread id supplied by party restore. */
   resumeSessionId?: string;
   model?: string;
+  effort?: ClaudeEffort;
   permissionMode?: string;
   /** Party tool relay and any other MCP servers this member should see. */
   mcpServers?: GrokAcpMcpServer[];
@@ -75,7 +75,8 @@ export class GrokAdapter extends EventEmitter {
       id: options.sessionId,
       harnessAlive: false,
       cwd: options.cwd,
-      model: options.model || "grok-4.5",
+      model: options.model || "grok-4.6",
+      effort: options.effort || "high",
       permissionMode: options.permissionMode || "default",
       status: "starting",
       turnState: "idle",
@@ -105,6 +106,7 @@ export class GrokAdapter extends EventEmitter {
       command: cli!.command,
       cwd: this.options.cwd,
       resumeSessionId: this.options.resumeSessionId,
+      reasoningEffort: this.reasoningEffort(this.options.effort || "high"),
       mcpServers: this.options.mcpServers,
       // Turns off the vendor scanners that DO respond to configuration, so a
       // member does not silently inherit the user's Claude/Cursor instructions.
@@ -410,21 +412,18 @@ export class GrokAdapter extends EventEmitter {
       .catch((error) => this.emitEvent({ type: "error", message: error.message, at: now() }));
   }
 
-  /**
-   * Refused rather than accepted-and-ignored. Every route into Grok Build's
-   * effort setting is a no-op on this build, so pretending otherwise would put
-   * a dead knob in the UI.
-   */
   setEffort(effort: string): void {
+    const validated = this.reasoningEffort(effort);
+    this.patch({ effort: validated });
     this.emitEvent({
       type: "diagnostic",
-      severity: "warning",
+      severity: "info",
       category: "harness",
-      title: `Grok Build ignores reasoning effort (${effort})`,
+      title: `Grok Build effort saved for restart (${effort})`,
       detail:
-        "Measured on grok 1.0.0: --reasoning-effort leaves the session reporting `high`, session/set_config_option answers " +
-        "-32601 for every configId, and /effort is TUI-only. The setting was not applied.",
-      recovery: "Run Grok through a Claude Code or Codex member if you need effort control.",
+        "The official CLI applies --reasoning-effort when its ACP agent process starts. " +
+        "The running turn keeps its current effort; reopen or restart this member to apply the saved value.",
+      recovery: "Restart the member before the next turn when the new effort must take effect immediately.",
       at: now(),
     });
   }
@@ -435,9 +434,16 @@ export class GrokAdapter extends EventEmitter {
       severity: "warning",
       category: "harness",
       title: `Grok Build does not expose a thinking toggle (${mode})`,
-      detail: "xAI documents grok-4.5 reasoning as always on and not disableable. The setting was not applied.",
+      detail:
+        "Grok reasoning has no separate on/off switch: 4.6 uses low/medium/high/xhigh effort and 4.5 uses " +
+        "low/medium/high. `none` and `minimal` are rejected by the official CLI, so the toggle was not applied.",
       at: now(),
     });
+  }
+
+  private reasoningEffort(effort: string): GrokReasoningEffort {
+    const model = this.session ? this.snapshot.model : this.options.model || "grok-4.6";
+    return validateGrokReasoningEffort(model, effort);
   }
 
   setPermissionMode(permissionMode: string): void {

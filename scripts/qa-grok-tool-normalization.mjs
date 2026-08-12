@@ -34,7 +34,33 @@ const acpBuilt = await build({
 const acpOutput = path.join(qaTempDir(), "grok-acp-open-request.mjs");
 writeFileSync(acpOutput, acpBuilt.outputFiles[0].text);
 const { GrokAcpSession, grokAcpOpenRequest, grokAcpTurnCostUsd, grokAcpTurnUsage } = await import(pathToFileURL(acpOutput).href);
+const cliBuilt = await build({
+  entryPoints: [path.join(root, "src/core/grokAgentCli.ts")],
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  write: false,
+});
+const cliOutput = path.join(qaTempDir(), "grok-agent-cli.mjs");
+writeFileSync(cliOutput, cliBuilt.outputFiles[0].text);
+const { grokAgentStdioArgs } = await import(pathToFileURL(cliOutput).href);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+console.log("Grok reasoning effort startup flags:");
+assert.deepEqual(grokAgentStdioArgs(), ["--no-auto-update", "agent", "stdio"], "default ACP launch leaves effort to the CLI");
+assert.deepEqual(grokAgentStdioArgs("xhigh"), ["--no-auto-update", "--reasoning-effort", "xhigh", "agent", "stdio"], "effort is passed as a global flag before the ACP subcommand");
+
+const effortSession = {
+  availableModels: [{ modelId: "grok-4.5" }], model: "grok-4.5", acpSessionId: "effort-thread",
+  async start() {}, async setModel() {}, async setMode() {}, dispose() {}, cancel() {},
+  async prompt() { return { stopReason: "end_turn", text: "", thought: "" }; },
+};
+const effortAdapter = new GrokAdapter({ sessionId: "effort", cwd: "C:\\work", model: "grok-4.5", effort: "high", sessionFactory: () => effortSession });
+effortAdapter.start();
+await delay(10);
+assert.equal(effortAdapter.getSnapshot().effort, "high", "adapter snapshot exposes the start-time effort");
+assert.throws(() => effortAdapter.setEffort("xhigh"), /does not support reasoning effort/, "Grok 4.5 rejects xhigh instead of silently falling back");
+effortAdapter.dispose();
 
 const command = "Write-Output GROK_TOOL_OK";
 const start = { toolCallId: "call-1", title: "run_terminal_command", name: "run_terminal_command", rawInput: { command } };

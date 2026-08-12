@@ -15,7 +15,7 @@
  */
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import { grokAgentStdioArgs } from "./grokAgentCli";
+import { grokAgentStdioArgs, type GrokReasoningEffort } from "./grokAgentCli";
 import type { GrokBillingResult } from "./grokUsage";
 
 export interface GrokAcpMcpServer {
@@ -31,6 +31,8 @@ export interface GrokAcpOptions {
   cwd: string;
   /** Existing Grok thread to load instead of creating a context-empty session. */
   resumeSessionId?: string;
+  /** Applied by the CLI when the ACP agent starts; ACP cannot mutate it live. */
+  reasoningEffort?: GrokReasoningEffort;
   mcpServers?: GrokAcpMcpServer[];
   /** Extra environment for the child (isolation knobs, GROK_HOME, …). */
   env?: NodeJS.ProcessEnv;
@@ -201,7 +203,7 @@ export class GrokAcpSession {
 
   /** initialize → authenticate → session/load (resume) or session/new. */
   async start(): Promise<void> {
-    const child = spawn(this.options.command, grokAgentStdioArgs(), {
+    const child = spawn(this.options.command, grokAgentStdioArgs(this.options.reasoningEffort), {
       cwd: this.options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...this.options.env },
