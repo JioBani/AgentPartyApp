@@ -756,10 +756,10 @@
       "provider": "deepseek",
       "runtimeModel": "claude-deepseek-pro",
       "deepseekModel": "deepseek-v4-pro",
-      "deepseekResponsesApi": false,
+      "deepseekResponsesApi": true,
       "orModelId": "deepseek/deepseek-v4-pro",
       "subscription": false,
-      "description": "DeepSeek-V4-Pro (1.6T total / 49B active) on DeepSeek's own API. 384K max output, cache-hit input $0.003625/M. Verified 2026-07-31.",
+      "description": "DeepSeek-V4-Pro-0813 GA (1.6T total / 49B active) on DeepSeek's own API; the undated id now serves the 0813 snapshot, which also added Responses API support. 384K max output, cache-hit input $0.003625/M; DeepSeek has announced a significant price increase 'in the near future'. OpenRouter routing stays on the undated id: deepseek/deepseek-v4-pro-0813 has only DeepSeek's first-party endpoint, which strict data policies block. Verified 2026-08-13 with real calls (chat+thinking low, Responses, OR route).",
       "context": "1M",
       "perf": 2,
       "costTier": 1,
@@ -769,6 +769,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "low",
             "high",
             "max"
           ],
@@ -794,7 +795,7 @@
       "deepseekModel": "deepseek-v4-flash",
       "deepseekResponsesApi": true,
       "subscription": false,
-      "description": "DeepSeek-V4-Flash-0731 (284B total / 13B active) on DeepSeek's own API. 384K max output, cache-hit input $0.0028/M. The only DeepSeek model on the Responses API today, so the only one the codex harness can reach directly. Verified 2026-07-31.",
+      "description": "DeepSeek-V4-Flash-0731 (284B total / 13B active) on DeepSeek's own API. 384K max output, cache-hit input $0.0028/M. Verified 2026-08-13 (Responses API now also serves v4-pro, so this is no longer the only codex-reachable DeepSeek model).",
       "context": "1M",
       "perf": 1,
       "costTier": 1,

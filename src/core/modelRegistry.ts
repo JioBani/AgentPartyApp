@@ -363,8 +363,8 @@ export function codexOpenRouterRoute(model: CatalogModel): ModelRoute {
  * A DeepSeek model on the codex harness, talking to DeepSeek's own API.
  *
  * Codex only speaks the OpenAI Responses wire, and DeepSeek serves that wire for
- * some models but not all (verified 2026-07-31: flash yes, pro "early August
- * 2026"). A model DeepSeek does not serve there stays VISIBLE with the reason
+ * some models but not all (verified 2026-08-13: flash and pro both served, pro
+ * since the 0813 GA). A model DeepSeek does not serve there stays VISIBLE with the reason
  * spelled out rather than disappearing or being quietly rerouted — the same
  * contract the Cursor placeholder routes use.
  */
