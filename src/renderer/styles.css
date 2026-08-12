@@ -3539,6 +3539,79 @@ body.wb-resizing {
   font-weight: 700;
 }
 
+/* An `:a` token — a model, harness, effort, thinking mode or service tier.
+   Deliberately quieter than a mention chip: a mention points at a person and
+   carries their identity colour, while this is a literal string being spelled
+   correctly on the user's behalf. It reads as text that has been tidied, not as
+   an entity. The value it will send is in the `title`. */
+.wb-token-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  margin: 0 1px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border-subtle);
+  color: var(--text-1);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  vertical-align: -3px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* The stages after the model are settings, not names: dimmer still, so a glance
+   at the sentence reads "model, then its options" rather than four equal chips. */
+.wb-token-chip[data-token-kind="effort"],
+.wb-token-chip[data-token-kind="thinking"],
+.wb-token-chip[data-token-kind="serviceTier"] {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* Section labels inside the completion popover (models vs harnesses). Same
+   weight as the popover heading so the list has one visual rhythm. */
+.wb-comp-section-label {
+  padding: 5px var(--space-3) 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+  margin-top: 3px;
+}
+
+/* The first section sits directly under the heading, which already separates it. */
+.wb-comp-section-label.is-first {
+  border-top: 0;
+  margin-top: 0;
+}
+
+/* The filter typed inside the popover, beside the heading. Bright enough to read
+   as live input rather than as part of the (deliberately dim) heading. */
+.wb-comp-query {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: var(--radius-badge);
+  background: var(--accent-dim);
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Brand marks sit at the same optical weight as the member dot they replace. */
+.wb-mention-row .wb-harness-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wb-mention-row.is-active .wb-harness-icon {
+  color: var(--text-0);
+}
+
 /* In the transcript the chips are read-only. */
 .wb-ref-chip.is-static {
   cursor: default;
@@ -3595,7 +3668,12 @@ body.wb-resizing {
   min-width: 0;
   font-size: 12px;
   font-weight: 700;
-  color: var(--member);
+  /* Members and providers set `--member` to their identity/brand colour. Model,
+     effort and thinking rows have none, so the fallback is explicit: without it
+     the declaration is invalid at computed-value time and the colour lands on
+     `inherit` by accident, which happens to look right and would break the day
+     an ancestor's colour changed. */
+  color: var(--member, var(--text-1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

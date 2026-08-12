@@ -27,8 +27,19 @@ const PATH_ATTR = "data-path";
 const KIND_ATTR = "data-ref-kind";
 /** Marks a mention chip and carries the member name it stands for. */
 const MENTION_ATTR = "data-mention";
+/**
+ * Marks an `a:` completion chip and carries the EXACT text it writes.
+ *
+ * Separate from the mention attribute because the two serialize differently: a
+ * mention is written back with its `@`, a model id bare. That fork is the whole
+ * reason this attribute exists — `@claude-haiku-4-5-20251001` is not something
+ * anyone would type, and prefixing it would corrupt the id it stands for.
+ */
+const TOKEN_ATTR = "data-token";
+/** Which kind of value the token holds. Styling and tooltip only. */
+const TOKEN_KIND_ATTR = "data-token-kind";
 /** Any chip — the atoms the caret must never land inside. */
-const CHIP_SELECTOR = `[${PATH_ATTR}],[${MENTION_ATTR}]`;
+const CHIP_SELECTOR = `[${PATH_ATTR}],[${MENTION_ATTR}],[${TOKEN_ATTR}]`;
 
 /* Two clearly different silhouettes — a document versus a folder tab — because
    "is this a folder?" has to be answerable at a glance, not by reading. */
@@ -43,7 +54,7 @@ export function chipAncestor(node: Node | null): HTMLElement | null {
   while (current) {
     if (current.nodeType === Node.ELEMENT_NODE) {
       const el = current as HTMLElement;
-      if (el.hasAttribute?.(PATH_ATTR) || el.hasAttribute?.(MENTION_ATTR)) {
+      if (el.hasAttribute?.(PATH_ATTR) || el.hasAttribute?.(MENTION_ATTR) || el.hasAttribute?.(TOKEN_ATTR)) {
         return el;
       }
     }
@@ -93,9 +104,31 @@ export function createMentionChip(doc: Document, name: string, color: string): H
 
   const at = doc.createElement("span");
   at.className = "wb-mention-chip-at";
+  // The chip is unchanged by F-14: `m:` is only how the picker is OPENED. What a
+  // mention looks like and what it serializes to stay `@name`, so sent messages
+  // and `tokenizeMessage()` need no migration.
   at.textContent = "@";
   chip.appendChild(at);
   chip.appendChild(doc.createTextNode(name));
+  return chip;
+}
+
+/**
+ * Builds a `//` completion chip.
+ *
+ * `label` is what the user reads (`Haiku 4.5`); `value` is what the message
+ * carries (`claude-haiku-4-5-20251001`). The tooltip shows the value, because
+ * the point of the chip is that an exact string is going out and the user should
+ * be able to check which one without sending first.
+ */
+export function createTokenChip(doc: Document, kind: string, label: string, value: string): HTMLElement {
+  const chip = doc.createElement("span");
+  chip.className = "wb-token-chip";
+  chip.setAttribute("contenteditable", "false");
+  chip.setAttribute(TOKEN_ATTR, value);
+  chip.setAttribute(TOKEN_KIND_ATTR, kind);
+  chip.title = value;
+  chip.textContent = label;
   return chip;
 }
 
@@ -125,6 +158,15 @@ export function serializeDraft(root: HTMLElement): string {
       const mention = el.getAttribute(MENTION_ATTR);
       if (mention) {
         out += `@${mention}`;
+        continue;
+      }
+      // An `a:` token writes its value bare — no prefix. This is the one place
+      // the two chip kinds part ways: `@alice` addresses somebody, while
+      // `claude-haiku-4-5-20251001` IS the string, and decorating it would
+      // break the id it stands for.
+      const token = el.getAttribute(TOKEN_ATTR);
+      if (token) {
+        out += token;
         continue;
       }
       if (el.tagName === "BR") {

@@ -1,5 +1,5 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, AtSign, CircleStop, FileText, ImageOff, Maximize2, Send, X } from "lucide-react";
+import { ArrowDownToLine, AtSign, CircleStop, FileText, ImageOff, Maximize2, Send, Users, X } from "lucide-react";
 import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -20,6 +20,7 @@ import { fileReference, type FileReference, type ReferenceKind } from "../../sha
 import {
   clampOutOfChip,
   createMentionChip,
+  createTokenChip,
   draftReferences,
   endOfDraft,
   insertChipAt,
@@ -30,8 +31,22 @@ import {
 import { sendsOnEnter } from "../../shared/composerSettings";
 import { useComposerPrefs } from "../app/composerPrefs";
 import { usePartyMembers } from "../app/partyMemberPrefs";
-import { MentionPalette } from "./MentionPalette";
-import { applyMention, detectMention, mentionCandidates, type MentionCandidate } from "./mentionModel";
+import { useModelRoutes } from "../app/modelRoutePrefs";
+import { CompletionPopover, type PopoverSection } from "./CompletionPopover";
+import { mentionCandidates, EVERYONE } from "./mentionModel";
+import {
+  detectCompletion,
+  flattenRows,
+  memberSections,
+  sectionsForStage,
+  stagesAfterModel,
+  STAGE_LABELS,
+  type ChainStage,
+  type CompletionRow,
+  type CompletionSection,
+} from "./completionModel";
+import { HarnessIcon } from "./HarnessIcon";
+import { queryVariants } from "./hangulKeys";
 
 interface ComposerProps {
   view: MemberView;
@@ -122,26 +137,102 @@ export function Composer({ view, density, actions }: ComposerProps) {
     },
   });
 
-  // --- `@` member mention -------------------------------------------------
+  // --- `:m` members / `:a` models -----------------------------------------
   // Deliberately not part of the `/` palette: that one fires only when the whole
-  // draft is the command, while a mention happens mid-sentence and replaces just
-  // the token under the caret. Keeping them apart leaves `/` untouched.
+  // draft is the command, while these happen mid-sentence and replace just the
+  // token under the caret. Keeping them apart leaves `/` untouched.
+  //
+  // `:a` is a CHAIN — model, then whatever that model supports (effort, then
+  // thinking, then service tier). Stage 1 is driven by the text under the caret;
+  // every stage after it is driven by `chain` below, because by then the model
+  // is already a chip and there is no trigger text left to detect.
   const partyMembers = usePartyMembers();
-  const [mentionDismissed, setMentionDismissed] = useState(false);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  /** The caret's own text node and offset — a mention never spans nodes. */
+  const modelRoutes = useModelRoutes();
+  const [completionDismissed, setCompletionDismissed] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  /**
+   * The `:a` chain in progress.
+   *
+   * `stages`/`at` is the walk; `provider`/`model` are what has been chosen so far
+   * and decide what the remaining stages offer; `chips` lets Backspace take a
+   * step back out rather than leaving an orphan token in the sentence; `query`
+   * is the filter typed INSIDE the popover (the model stage can hold twenty
+   * rows, and by then there is no trigger text left in the draft to type into).
+   */
+  const [chain, setChain] = useState<
+    { stages: ChainStage[]; at: number; chips: HTMLElement[]; provider?: string; model?: CompletionRow; query: string } | null
+  >(null);
+  /** The caret's own text node and offset — a trigger never spans nodes. */
   const [caretText, setCaretText] = useState("");
   /** Viewport position of the caret, so the popover can sit against it. */
   const [caretAnchor, setCaretAnchor] = useState<{ left: number; top: number } | null>(null);
-  const mention = useMemo(() => detectMention(caretText, caretText.length), [caretText]);
-  const mentionMatches = useMemo(
-    () => (mention ? mentionCandidates(partyMembers, view.name, mention.query) : []),
-    [mention, partyMembers, view.name],
-  );
-  const mentionOpen = Boolean(mention) && !mentionDismissed && mentionMatches.length > 0;
 
-  useEffect(() => { setMentionIndex(0); }, [mention?.query]);
-  useEffect(() => { if (!mention) { setMentionDismissed(false); } }, [mention]);
+  const trigger = useMemo(() => detectCompletion(caretText, caretText.length), [caretText]);
+  /**
+   * The stage being shown: a live chain wins, otherwise the text trigger. `:a`
+   * with no chain yet is stage 1, which is the provider list.
+   */
+  const stage: ChainStage | null = chain ? chain.stages[chain.at] ?? null : trigger?.kind === "model" ? "provider" : null;
+
+  /**
+   * The one list. Everything else is derived from it, so what the popover shows
+   * and what the keys select can never disagree.
+   */
+  const resolved: CompletionSection[] = useMemo(() => {
+    if (chain) {
+      // The in-popover filter gets the same IME treatment as the trigger text:
+      // `햐` typed with the IME on is the keys `gi`, and both spellings are tried.
+      const queries = queryVariants(chain.query);
+      return stage ? sectionsForStage(stage, modelRoutes, { provider: chain.provider, model: chain.model?.route }, queries) : [];
+    }
+    if (!trigger) {
+      return [];
+    }
+    return trigger.kind === "member"
+      ? memberSections(mentionCandidates(partyMembers, view.name, trigger.queries))
+      : sectionsForStage("provider", modelRoutes, {}, trigger.queries);
+  }, [chain, stage, trigger, partyMembers, view.name, modelRoutes]);
+
+  const rows: CompletionRow[] = useMemo(() => flattenRows(resolved), [resolved]);
+  const sections: PopoverSection[] = useMemo(
+    () => resolved.map((section) => ({
+      key: section.key,
+      label: section.label,
+      rows: section.rows.map((row) => ({
+        key: row.key,
+        label: row.label,
+        secondary: row.secondary,
+        accent: row.accent,
+        className: row.className,
+        // Icons are attached here because the row models are pure data modules
+        // and must stay free of JSX: `everyone` is a group rather than a person
+        // so it gets the group glyph, and a provider/harness gets the app's
+        // existing brand mark — the same one the wizard and sidebar draw, not a
+        // second icon set that could drift from them.
+        icon: row.key === EVERYONE
+          ? <Users size={11} className="wb-mention-everyone-icon" />
+          : row.iconKey
+            ? <HarnessIcon harness={row.iconKey} size={13} />
+            : undefined,
+      })),
+    })),
+    [resolved],
+  );
+
+  const completionOpen = (Boolean(chain) || Boolean(trigger)) && !completionDismissed && rows.length > 0;
+  /**
+   * The heading names what is actually on screen.
+   *
+   * Stage 1 can hold providers, harnesses and models at once, and a query often
+   * filters it down to just one of them — a "프로바이더" heading over a list of
+   * models would be a plain lie, so a surviving single section names itself.
+   */
+  const completionTitle = trigger?.kind === "member" && !chain
+    ? "멤버"
+    : resolved.length === 1 ? resolved[0].label : stage ? STAGE_LABELS[stage] : "모델";
+
+  useEffect(() => { setActiveIndex(0); }, [trigger?.queries.join(" "), trigger?.kind, chain?.at]);
+  useEffect(() => { if (!trigger && !chain) { setCompletionDismissed(false); } }, [trigger, chain]);
 
   /** The caret's text node and offset, when the caret is inside the editor. */
   function caretPoint(): { node: Text; offset: number } | null {
@@ -204,23 +295,35 @@ export function Composer({ view, density, actions }: ComposerProps) {
     syncCaret();
   }
 
-  function applyMentionChoice(member: MentionCandidate) {
+  /**
+   * Writes the chosen row into the editor as a chip and reports where it landed.
+   *
+   * Stage 1 replaces the `:a…` / `:m…` text under the caret. Later stages have no
+   * trigger text to replace — the model is already a chip — so they append at the
+   * caret instead. Either way only the token is touched: the rest of the
+   * sentence, and every chip in it, is left alone.
+   */
+  function insertRowChip(row: CompletionRow, replaceTrigger: boolean): HTMLElement | null {
     const point = caretPoint();
     const root = editorRef.current;
-    if (!mention || !point || !root) {
-      return;
+    if (!point || !root) {
+      return null;
     }
-    // Replace only the `@query` under the caret — the rest of the sentence, and
-    // every chip in it, is left alone. The `@name` becomes a chip so a mention
-    // reads the same here as it will in the sent message.
     const doc = root.ownerDocument;
-    const start = point.offset - mention.query.length - 1;
     const range = doc.createRange();
-    range.setStart(point.node, Math.max(0, start));
-    range.setEnd(point.node, point.offset);
-    range.deleteContents();
+    if (replaceTrigger && trigger) {
+      const start = point.offset - (trigger.end - trigger.start);
+      range.setStart(point.node, Math.max(0, start));
+      range.setEnd(point.node, point.offset);
+      range.deleteContents();
+    } else {
+      range.setStart(point.node, point.offset);
+      range.collapse(true);
+    }
 
-    const chip = createMentionChip(doc, member.name, member.color);
+    const chip = row.kind === "member"
+      ? createMentionChip(doc, row.value, row.accent || "var(--text-2)")
+      : createTokenChip(doc, row.kind, row.label, row.value);
     const trailing = doc.createTextNode(" ");
     const fragment = doc.createDocumentFragment();
     fragment.appendChild(chip);
@@ -231,14 +334,62 @@ export function Composer({ view, density, actions }: ComposerProps) {
     after.setStart(trailing, trailing.length);
     after.collapse(true);
     setCaret(root, after);
-    setMentionDismissed(true);
+    return chip;
+  }
+
+  /** Removes a chip and the separator space that was inserted with it. */
+  function removeChip(chip: HTMLElement) {
+    const next = chip.nextSibling;
+    if (next && next.nodeType === Node.TEXT_NODE && (next.nodeValue || "") === " ") {
+      next.parentNode?.removeChild(next);
+    }
+    chip.parentNode?.removeChild(chip);
+  }
+
+  /**
+   * Accepts a row. `advance` is the difference between Enter/Tab and `→`: both
+   * commit, only the first walks on to the next stage of an `:a` chain.
+   */
+  function applyCompletionChoice(row: CompletionRow, advance: boolean) {
+    const first = !chain;
+    const chip = insertRowChip(row, first);
+    if (!chip) {
+      return;
+    }
+    const chips = first ? [chip] : [...chain!.chips, chip];
+    // What follows depends on WHAT was chosen, not on how far along we are:
+    // a provider opens the model list, a model opens whatever that model
+    // supports, and a harness or a member has nothing after it at all.
+    const nextStages: ChainStage[] =
+      row.kind === "provider" ? ["model"]
+        : row.kind === "model" ? stagesAfterModel(row.route)
+        : [];
+    const continuing = row.kind === "provider" || row.kind === "model";
+    if (advance && continuing && nextStages.length) {
+      setChain({
+        stages: nextStages,
+        at: 0,
+        chips,
+        provider: row.kind === "provider" ? row.provider : chain?.provider,
+        model: row.kind === "model" ? row : chain?.model,
+        query: "",
+      });
+      setCompletionDismissed(false);
+    } else if (advance && !continuing && chain && chain.at + 1 < chain.stages.length) {
+      // A capability stage: walk to the next one the model unlocked.
+      setChain({ ...chain, at: chain.at + 1, chips, query: "" });
+      setCompletionDismissed(false);
+    } else {
+      setChain(null);
+      setCompletionDismissed(true);
+    }
     syncDraft();
   }
 
   /**
-   * Types `@` at the caret for the toolbar button, adding a leading space when
-   * needed so the trigger starts a word (mid-word it is an email address, and
-   * the popover correctly refuses to open).
+   * Types `:m` at the caret for the toolbar button, adding a leading space when
+   * needed so the trigger starts a word (mid-word the popover correctly refuses
+   * to open).
    */
   function insertMentionTrigger() {
     const root = editorRef.current;
@@ -251,44 +402,106 @@ export function Composer({ view, density, actions }: ComposerProps) {
     const range = doc.createRange();
     if (point) {
       const before = (point.node.nodeValue || "").slice(0, point.offset);
-      const inserted = before.length > 0 && !/[\s(\[{"']$/.test(before) ? " @" : "@";
+      const inserted = before.length > 0 && !/[\s(\[{"']$/.test(before) ? " :m" : ":m";
       point.node.nodeValue = before + inserted + (point.node.nodeValue || "").slice(point.offset);
       range.setStart(point.node, before.length + inserted.length);
     } else {
-      const node = doc.createTextNode(root.textContent ? " @" : "@");
+      const node = doc.createTextNode(root.textContent ? " :m" : ":m");
       root.appendChild(node);
       range.setStart(node, node.nodeValue!.length);
     }
     range.collapse(true);
     setCaret(root, range);
-    setMentionDismissed(false);
+    setCompletionDismissed(false);
     syncDraft();
   }
 
-  /** Returns true when the mention popover consumed the key. */
-  function handleMentionKey(event: KeyboardEvent): boolean {
-    if (!mentionOpen) {
+  /**
+   * Returns true when the completion popover consumed the key.
+   *
+   * `Space` deliberately does NOT commit. Everywhere else — VS Code, Slack,
+   * GitHub — space closes a completion, because it is the key pressed to keep
+   * writing the sentence. In this chain that convention and the user's intent
+   * agree: reaching a later stage means the model is already a chip, so closing
+   * on space leaves exactly "the model, and nothing after it".
+   */
+  function handleCompletionKey(event: KeyboardEvent): boolean {
+    if (!completionOpen) {
       return false;
     }
+    const current = () => rows[Math.min(activeIndex, rows.length - 1)];
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setMentionIndex((i) => (i + 1) % mentionMatches.length);
+        setActiveIndex((i) => (i + 1) % rows.length);
         return true;
       case "ArrowUp":
         event.preventDefault();
-        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+        setActiveIndex((i) => (i - 1 + rows.length) % rows.length);
         return true;
       case "Enter":
       case "Tab":
         event.preventDefault();
-        applyMentionChoice(mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)]);
+        applyCompletionChoice(current(), true);
+        return true;
+      case "ArrowRight":
+        // Commit, but stop here. The one key this feature adds to what the user
+        // already knows.
+        event.preventDefault();
+        applyCompletionChoice(current(), false);
         return true;
       case "Escape":
         event.preventDefault();
-        setMentionDismissed(true);
+        setChain(null);
+        setCompletionDismissed(true);
         return true;
+      case " ":
+        // Not preventDefault: the space is still typed. The list just closes.
+        setChain(null);
+        setCompletionDismissed(true);
+        return false;
+      case "Backspace":
+        // Inside the model stage, Backspace edits the filter first — the query
+        // is the thing the user was last typing, so it is the thing to undo.
+        if (chain && stage === "model" && chain.query) {
+          event.preventDefault();
+          setChain({ ...chain, query: chain.query.slice(0, -1) });
+          return true;
+        }
+        // Otherwise step back a stage, taking the chip that stage wrote with it
+        // — otherwise re-choosing would leave two `effort=` tokens in the
+        // sentence. At the chain's first stage there is nothing earlier to
+        // return to, so the chain ends and Backspace means Backspace again.
+        if (chain && chain.at > 0) {
+          event.preventDefault();
+          const last = chain.chips[chain.at];
+          if (last) {
+            removeChip(last);
+          }
+          setChain({ ...chain, at: chain.at - 1, chips: chain.chips.slice(0, chain.at), query: "" });
+          syncDraft();
+          return true;
+        }
+        return false;
       default:
+        if (!chain || event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) {
+          return false;
+        }
+        // The model stage can hold twenty rows and there is no trigger text left
+        // in the draft to narrow them with, so typing filters INSIDE the popover
+        // instead of reaching the message. The query is drawn in the heading, so
+        // the keystrokes are never invisible.
+        if (stage === "model") {
+          event.preventDefault();
+          setChain({ ...chain, query: chain.query + event.key });
+          setActiveIndex(0);
+          return true;
+        }
+        // Every other stage is a short list. Typing there means the user has
+        // moved on to writing the sentence, so the chain closes — otherwise the
+        // next Enter would silently insert `effort=…` instead of sending.
+        setChain(null);
+        setCompletionDismissed(true);
         return false;
     }
   }
@@ -518,9 +731,9 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (palette.handleKeyDown(event)) {
       return;
     }
-    // …and so does the mention popover, so Enter picks a member instead of
-    // sending a half-typed `@nam`.
-    if (handleMentionKey(event)) {
+    // …and so does the completion popover, so Enter picks a member or a model
+    // instead of sending a half-typed `:mnam`.
+    if (handleCompletionKey(event)) {
       return;
     }
     // ArrowUp in an EMPTY composer takes the last queued message back for
@@ -592,14 +805,22 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const palettePopover = palette.open ? (
     <CommandPalette commands={palette.matches} activeIndex={palette.activeIndex} onHover={palette.setActiveIndex} onSelect={palette.apply} />
   ) : null;
-  const mentionPopover = mentionOpen ? (
-    <MentionPalette
-      members={mentionMatches}
-      activeIndex={mentionIndex}
-      onHover={setMentionIndex}
-      onSelect={applyMentionChoice}
+  const mentionPopover = completionOpen ? (
+    <CompletionPopover
+      title={completionTitle}
+      // What was typed inside the popover. Shown so the filter is never a
+      // hidden state the user has to guess at from a shrinking list.
+      query={chain?.query}
+      // The heading and this hint are the whole discovery story for `:a`: the
+      // list explains itself at the one moment the user is looking at it.
+      hint={chain ? "↑↓ · Enter 다음 · → 끝" : "↑↓ · Enter"}
+      sections={sections}
+      activeIndex={activeIndex}
+      onHover={setActiveIndex}
+      onSelect={(index) => applyCompletionChoice(rows[index], true)}
       compact={density === "narrow"}
       anchor={caretAnchor}
+      ariaLabel={completionTitle}
     />
   ) : null;
 
