@@ -149,7 +149,7 @@ export class CursorAdapter extends EventEmitter {
     }
     const token = readCursorAccessToken();
     if (!token) {
-      this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], at: now(), sourceId: this.options.usageSourceId });
+      this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], loggedOut: true, at: now(), sourceId: this.options.usageSourceId });
       this.emitUsageStatus("Cursor CLI is not logged in on this host. Run `cursor-agent login`.");
       return;
     }
@@ -162,7 +162,9 @@ export class CursorAdapter extends EventEmitter {
       this.lastUsageStatus = "";
       return;
     }
-    this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], at: now(), sourceId: this.options.usageSourceId });
+    // A rejected token (401/403) is the same user-facing state as no token:
+    // the account needs `cursor-agent login` before usage is readable.
+    this.emitEvent({ type: "usage_limit", provider: "cursor", windows: [], loggedOut: result.unauthorized === true || undefined, at: now(), sourceId: this.options.usageSourceId });
     this.emitUsageStatus(result.error || "Cursor usage read returned no usable plan meter.");
   }
 

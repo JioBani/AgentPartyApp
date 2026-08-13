@@ -136,7 +136,11 @@ export type ClaudeNormalizedEvent =
   // (foreground session > background poller > remote engine) drives the merge,
   // instead of every live session racing to overwrite each other's values.
   // QA injection stamps a reserved `qa` id that always passes the filter.
-  | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; at: string; sourceId?: string }
+  //
+  // `loggedOut` marks a read that failed because the provider's CLI has no
+  // credential on this host — the UI renders "로그아웃 상태" instead of the
+  // ambiguous "데이터 없음". See ProviderUsage.loggedOut.
+  | { type: "usage_limit"; provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; loggedOut?: boolean; at: string; sourceId?: string }
   // `blockedPath`/`agentID` are Claude Code's — the path that triggered the
   // prompt and the subagent that asked. Both arrive populated from the SDK and
   // used to be dropped here, so the card could not show either.

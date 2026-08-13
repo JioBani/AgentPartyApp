@@ -14,7 +14,9 @@ interface HarnessIconProps extends Omit<SVGProps<SVGSVGElement>, "children"> {
  * five vendor shades to two theme-aware tones for legibility at 14–16px.
  */
 export function HarnessIcon({ harness, size = 14, className = "", ...props }: HarnessIconProps) {
-  const cursorMaskId = `cursor-harness-${useId().replace(/:/g, "")}`;
+  const maskSeed = useId().replace(/:/g, "");
+  const cursorMaskId = `cursor-harness-${maskSeed}`;
+  const grokMaskId = `grok-harness-${maskSeed}`;
   const common = {
     ...props,
     className: `wb-harness-icon ${className}`.trim(),
@@ -33,14 +35,20 @@ export function HarnessIcon({ harness, size = 14, className = "", ...props }: Ha
     );
   }
 
-  // xAI's mark: crossing strokes, drawn as strokes rather than a filled path so
-  // it stays legible at the 14-16px the sidebar and wizard render it at.
+  // Grok's mark: a bold ring pierced by a diagonal slash with pointed tips.
+  // Redrawn (not traced) at this simplified geometry so the break in the ring
+  // and both spike tips survive the 12–16px sizes the app renders it at.
   if (harness === "grok") {
     return (
-      <svg {...common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d="M4.5 19.5 19.5 4.5" />
-        <path d="M10 14 19.5 19.5" />
-        <path d="M4.5 10 9 4.5" />
+      <svg {...common} viewBox="0 0 24 24">
+        <defs>
+          <mask id={grokMaskId} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+            <rect width="24" height="24" fill="#fff" />
+            <rect x="-4" y="9.9" width="32" height="4.2" fill="#000" transform="rotate(-45 12 12)" />
+          </mask>
+        </defs>
+        <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="3.4" mask={`url(#${grokMaskId})`} />
+        <path fill="currentColor" d="M22 2 L12.9 12.9 L2 22 L11.1 11.1 Z" />
       </svg>
     );
   }

@@ -137,6 +137,21 @@ const windowsWin = mergeProviderUsage(
 );
 assert(windowsWin.available === true, "real windows arriving later flip available back to true");
 
+// logged-out CLI (e.g. Cursor without `cursor-agent login`)
+const outFirst = mergeProviderUsage(undefined, { provider: "cursor", windows: [], loggedOut: true, updatedAt: 1 });
+assert(outFirst.loggedOut === true, "a logged-out empty report marks the provider loggedOut");
+const outOverStale = mergeProviderUsage(
+  { provider: "cursor", available: true, windows: [{ kind: "monthly", utilization: 40 }], updatedAt: 1 },
+  { provider: "cursor", windows: [], loggedOut: true, updatedAt: 2 },
+);
+assert(outOverStale.loggedOut === true, "a mid-session logout overrides the stale meter kept by mergeWindows");
+const backIn = mergeProviderUsage(outFirst, { provider: "cursor", windows: [{ kind: "monthly", utilization: 12 }], updatedAt: 3 });
+assert(backIn.loggedOut === undefined, "real windows clear loggedOut (login happened)");
+const outKept = mergeProviderUsage(outFirst, { provider: "cursor", windows: [], updatedAt: 4 });
+assert(outKept.loggedOut === true, "an empty report without the flag (e.g. network error) keeps loggedOut");
+const outRestored = restoreUsageSnapshot({ cursor: { provider: "cursor", windows: [], loggedOut: true, updatedAt: Date.now() } }, Date.now());
+assert(outRestored.cursor?.loggedOut === true, "restart cache keeps the loggedOut state");
+
 // buildUsageView — normal
 const now = 1_000_000_000_000;
 const snapshot = {
@@ -173,6 +188,18 @@ assert(unknown.empty === true, "no window data anywhere → empty");
 const na = buildUsageView({ claude: { provider: "claude", available: false, updatedAt: now, windows: [] } }, { claude: 1 }, now);
 assert(na.pills[0].pctLabel === "N/A", "available:false → N/A pill");
 assert(na.rows[0].meters[0].right === "해당 없음 (API 키)", "available:false meter says 해당 없음");
+
+// buildUsageView — logged-out CLI
+const loggedOutView = buildUsageView(
+  { cursor: { provider: "cursor", loggedOut: true, updatedAt: now, windows: [{ kind: "monthly", utilization: 40 }] } },
+  { cursor: 1 },
+  now,
+);
+const loggedOutPill = loggedOutView.pills.find((p) => p.key === "cursor");
+const loggedOutRow = loggedOutView.rows.find((r) => r.key === "cursor");
+assert(loggedOutPill.pctLabel === "로그아웃", "loggedOut → 로그아웃 pill (not — or a stale %)");
+assert(loggedOutRow.meters[0].right === "로그아웃 상태 — CLI 로그인 필요", "loggedOut meter says 로그아웃 상태");
+assert(loggedOutRow.meters[0].known === false && loggedOutRow.meters[0].pctWidth === "0%", "loggedOut hides the stale meter fill");
 
 // buildUsageView — a provider reporting ONLY its weekly window must not pill "—"
 const weeklyOnly = buildUsageView(
@@ -258,6 +285,7 @@ assert(!crashed, `render did not throw${crashed ? `: ${crashed.stack || crashed}
 
 const root = window.document.getElementById("root");
 assert(root.querySelectorAll(".usage-seg").length === 4, "pill renders one segment per provider");
+assert(root.querySelectorAll(".usage-seg .wb-harness-icon").length === 4, "each pill segment carries its harness icon");
 assert((root.textContent || "").includes("63%"), "pill shows the 5-hour percent");
 assert(root.querySelector(".usage-pop") === null, "popover closed until clicked");
 
@@ -267,6 +295,7 @@ await new Promise((r) => setTimeout(r, 60));
 const pop = root.querySelector(".usage-pop");
 assert(Boolean(pop), "clicking the pill opens the popover");
 assert(root.querySelectorAll(".usage-meter").length === 6, "popover shows Claude/Codex windows plus Cursor and Grok meters (2+2+1+1)");
+assert(root.querySelectorAll(".usage-row-header .wb-harness-icon").length === 4, "each popover row leads with its harness icon");
 assert((pop?.textContent || "").includes("5시간 한도") && (pop?.textContent || "").includes("주간 한도"), "both window labels rendered");
 assert((pop?.textContent || "").includes("2시간 12분 후 리셋"), "reset countdown rendered in the meter");
 const refreshBtn = [...root.querySelectorAll(".usage-settings-btn")].find((button) => /새로고침/.test(button.textContent || ""));

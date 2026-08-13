@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, RefreshCw, Settings } from "lucide-react";
 import { buildUsageView, type UsageLimitsSnapshot, type UsageProviderId } from "../../shared/usageLimits";
+import { HarnessIcon } from "./HarnessIcon";
+
+/** The harness whose official mark represents each usage provider. */
+const PROVIDER_HARNESS: Record<UsageProviderId, string> = {
+  claude: "claude-code",
+  codex: "codex",
+  cursor: "cursor",
+  grok: "grok",
+};
 
 interface UsageLimitPillProps {
   usage: UsageLimitsSnapshot;
@@ -73,6 +82,7 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
       >
         {view.pills.map((p) => (
           <span key={p.key} className="usage-seg">
+            <HarnessIcon harness={PROVIDER_HARNESS[p.key]} size={12} style={{ color: p.brand }} />
             <span className="usage-ring" style={{ background: p.ring }}>
               <span className="usage-ring-hole" style={{ background: p.holeBg }} />
             </span>
@@ -92,7 +102,7 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
           {view.rows.map((row, index) => (
             <div key={row.key} className={"usage-row" + (index > 0 ? " divided" : "")}>
               <div className="usage-row-header">
-                <span className="usage-swatch" style={{ background: row.brand }} />
+                <HarnessIcon harness={PROVIDER_HARNESS[row.key]} size={13} style={{ color: row.brand }} />
                 <span className="usage-row-name">{row.label}</span>
                 <span className="usage-row-sub wb-mono">{row.sub}</span>
               </div>

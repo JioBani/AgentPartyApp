@@ -28,6 +28,7 @@ import { UsageLedger } from "./usageLedger";
 import type { TokenTrigger, TurnUsageRecord } from "../shared/tokenUsage";
 import { isE2E } from "./runtimeMode";
 import { getSettings } from "./settings";
+import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../shared/codexAuthentication";
@@ -350,6 +351,7 @@ export class SessionManager extends EventEmitter {
         provider,
         windows: event.windows,
         available: event.available,
+        loggedOut: event.loggedOut,
         // Use the event's own timestamp (ISO `at`) — `Date.now()` would be the
         // receive time, which lags real provider time and breaks staleness math.
         updatedAt: Date.parse(event.at) || Date.now(),
@@ -477,7 +479,7 @@ export class SessionManager extends EventEmitter {
   private startUsageAdapter(provider: UsageProviderId): void {
     const settings = getSettings();
     const id = `usage-${provider}-${Date.now()}`;
-    const cwd = settings.workspacePath || process.cwd();
+    const cwd = this.usageAdapterCwd(settings.workspacePath);
     let adapter: HarnessSession;
     try {
       // Both the active-source tracking and the per-event `sourceId` stamp use
@@ -520,6 +522,26 @@ export class SessionManager extends EventEmitter {
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
     }
+  }
+
+  /**
+   * A guaranteed-spawnable LOCAL cwd for a background usage adapter. The
+   * account-usage read only needs the provider's user-level CLI credentials,
+   * never the workspace — but `settings.workspacePath` can be a REMOTE
+   * location string (`wsl+<distro>:/...`), and passing that to spawn as cwd
+   * makes every child fail with ENOENT ("spawn cmd.exe ENOENT") and the whole
+   * usage pill go dark whenever the last-used workspace lives in WSL. A
+   * missing local directory (deleted workspace) fails the same way, so both
+   * fall back to the app's own userData dir, which always exists.
+   */
+  private usageAdapterCwd(workspacePath: string | undefined): string {
+    if (workspacePath) {
+      const loc = parseWorkspaceLocation(workspacePath);
+      if (loc.host.kind === "local" && fs.existsSync(loc.path)) {
+        return loc.path;
+      }
+    }
+    return this.userDataDir;
   }
 
   private disposeUsageAdapter(provider: UsageProviderId): void {
@@ -622,6 +644,7 @@ export class SessionManager extends EventEmitter {
             provider,
             windows: incoming.windows,
             available: incoming.available,
+            loggedOut: incoming.loggedOut,
             updatedAt: incoming.updatedAt,
           }),
         };

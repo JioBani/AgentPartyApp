@@ -38,6 +38,14 @@ export interface ProviderUsage {
    * fabricated 0%.
    */
   available?: boolean;
+  /**
+   * `true` when the provider's CLI has no credential on this host (e.g. Cursor
+   * without `cursor-agent login`). Distinct from {@link available}: the account
+   * HAS limits, we just cannot read them until the user logs in — so the UI
+   * says "로그아웃 상태" instead of the ambiguous "데이터 없음". Cleared by any
+   * report that carries real windows.
+   */
+  loggedOut?: boolean;
   windows: UsageWindow[];
   /** Epoch ms of the last update, for staleness / debugging. */
   updatedAt: number;
@@ -81,17 +89,23 @@ export function restoreUsageSnapshot(raw: unknown, nowMs: number): UsageLimitsSn
       windows,
       updatedAt: value.updatedAt as number,
       ...(typeof value.available === "boolean" ? { available: value.available } : {}),
+      ...(value.loggedOut === true ? { loggedOut: true } : {}),
     };
   }
   return restored;
 }
 
-/** Provider display metadata. Brand colors are design literals, not theme tokens. */
+/**
+ * Provider display metadata. Brand colors are design literals, not theme
+ * tokens — except Grok, whose brand is monochrome (black on light): a literal
+ * would be invisible on one theme, so it rides the strongest text token. All
+ * consumers are CSS color strings, where a var() resolves like any literal.
+ */
 export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: string }> = {
   claude: { label: "Claude", brand: "#c5835f" },
   codex: { label: "Codex", brand: "#2bb67e" },
   cursor: { label: "Cursor", brand: "#8e92a3" },
-  grok: { label: "Grok", brand: "#c8cdd4" },
+  grok: { label: "Grok", brand: "var(--text-1)" },
 };
 
 /** Fixed display order (matches the design). */
@@ -244,10 +258,16 @@ export function mergeWindows(prev: UsageWindow[] | undefined, incoming: UsageWin
  */
 export function mergeProviderUsage(
   prev: ProviderUsage | undefined,
-  incoming: { provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; updatedAt: number },
+  incoming: { provider: UsageProviderId; windows: UsageWindow[]; available?: boolean; loggedOut?: boolean; updatedAt: number },
 ): ProviderUsage {
   const windows = mergeWindows(prev?.windows, incoming.windows);
+  // Judged on the INCOMING report, not the merged windows: mergeWindows keeps
+  // the previous read's meters, and a mid-session logout must override that
+  // stale data rather than hide behind it. Any report with real windows proves
+  // a live credential and clears the flag.
+  const loggedOut = incoming.windows.length > 0 ? undefined : incoming.loggedOut ?? prev?.loggedOut;
   return {
+    ...(loggedOut === true ? { loggedOut: true } : {}),
     provider: incoming.provider,
     // Reported windows are ground truth that limits ARE observable. Claude's
     // proactive usage read can answer "not available for this auth mode" on the
@@ -271,6 +291,8 @@ export function mergeProviderUsage(
 export interface UsagePillSegment {
   key: UsageProviderId;
   label: string;
+  /** Provider brand color — tints the harness icon next to the label. */
+  brand: string;
   /** "63%" or "—" when the 5-hour window is unknown. */
   pctLabel: string;
   /** conic-gradient donut background. */
@@ -335,10 +357,15 @@ export function buildUsageView(
     const { label, brand } = USAGE_PROVIDERS[provider];
     const kinds = PROVIDER_WINDOW_KINDS[provider];
     const notApplicable = usage?.available === false;
+    // Logged out hides any windows still merged in from before the logout —
+    // rendering a stale meter next to "로그아웃 상태" would contradict itself.
+    const loggedOut = !notApplicable && usage?.loggedOut === true;
 
-    const providerWindows = kinds
-      .map((kind) => windowOf(usage, kind))
-      .filter((w): w is UsageWindow => Boolean(w));
+    const providerWindows = loggedOut
+      ? []
+      : kinds
+        .map((kind) => windowOf(usage, kind))
+        .filter((w): w is UsageWindow => Boolean(w));
     if (providerWindows.length) {
       anyData = true;
     }
@@ -356,7 +383,8 @@ export function buildUsageView(
     pills.push({
       key: provider,
       label,
-      pctLabel: notApplicable ? "N/A" : primaryPct == null ? "—" : `${Math.round(primaryPct)}%`,
+      brand,
+      pctLabel: notApplicable ? "N/A" : loggedOut ? "로그아웃" : primaryPct == null ? "—" : `${Math.round(primaryPct)}%`,
       ring:
         primaryPct == null
           ? "var(--bg-4)"
@@ -367,14 +395,20 @@ export function buildUsageView(
     });
 
     const meters: UsageMeterView[] = kinds.map((kind) => {
-      const w = notApplicable ? undefined : windowOf(usage, kind);
+      const w = notApplicable || loggedOut ? undefined : windowOf(usage, kind);
       if (!w) {
         return {
           kind,
           name: WINDOW_LABELS[kind],
           pctWidth: "0%",
           col: "var(--text-3)",
-          right: notApplicable ? "해당 없음 (API 키)" : usage ? "데이터 없음" : "불러오는 중…",
+          right: notApplicable
+            ? "해당 없음 (API 키)"
+            : loggedOut
+              ? "로그아웃 상태 — CLI 로그인 필요"
+              : usage
+                ? "데이터 없음"
+                : "불러오는 중…",
           known: false,
         };
       }
