@@ -208,8 +208,14 @@ export class PartyApplicationService {
       this.busySessions.delete(payload.sessionId);
       // Only on the busy → idle EDGE. Every idle snapshot would otherwise
       // re-enter the drain for a queue that is simply waiting to be sent by hand.
-      if (wasBusy) {
-        this.drainQueueForSession(payload.sessionId);
+      //
+      // A deferred drain RE-ARMS the edge: an adapter can emit an idle-status
+      // snapshot a beat before the event that ends the app-side turn lifecycle
+      // (codex did, across its cost await), and a one-shot edge consumed in that
+      // beat stranded the queued message forever. Keeping the session marked
+      // busy makes the NEXT idle snapshot retry instead.
+      if (wasBusy && this.drainQueueForSession(payload.sessionId) === "deferred") {
+        this.busySessions.add(payload.sessionId);
       }
     });
     this.startIdleSweep();
@@ -996,28 +1002,35 @@ export class PartyApplicationService {
   /**
    * Drains the front of a member's queue now that its turn finished. Re-checks
    * busy first: a member that has already picked up new work must not be handed
-   * another turn on top of it.
+   * another turn on top of it. Returns `"deferred"` when there IS something to
+   * deliver but the turn lifecycle still reads active — the caller re-arms the
+   * busy→idle edge so the next idle snapshot retries instead of stranding it.
    */
-  private drainQueueForSession(sessionId: string): void {
+  private drainQueueForSession(sessionId: string): "delivered" | "deferred" | "none" {
     const state = this.readState();
     const member = state.members.find((item) => item.sessionId === sessionId);
-    if (!member || this.isSessionBusy(sessionId)) {
-      return;
+    if (!member) {
+      return "none";
     }
     const queue = this.queueOf(member);
     if (!queue.items.length) {
-      return;
+      return "none";
+    }
+    if (this.isSessionBusy(sessionId)) {
+      return "deferred";
     }
     const take = takeNext(queue);
     if (!take.ok) {
-      return;
+      return "none";
     }
     try {
       this.deliverFromQueue(member, take.value, "queue auto-drained");
+      return "delivered";
     } catch (error) {
       // Never silent: a queue that stopped draining looks identical to a member
       // that is merely slow, and the user would wait forever for a reply.
       log("error", "party", "queue auto-drain failed", { member: member.name, error: String(error) });
+      return "deferred";
     }
   }
 

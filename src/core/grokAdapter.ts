@@ -26,6 +26,7 @@ import {
 } from "./grokAcp";
 import { resolveGrokCli, validateGrokReasoningEffort, type GrokReasoningEffort } from "./grokAgentCli";
 import { grokUsageWindow, type GrokBillingResult } from "./grokUsage";
+import { errorEventPayload } from "./environmentError";
 
 export interface GrokAdapterOptions {
   sessionId: string;
@@ -94,7 +95,7 @@ export class GrokAdapter extends EventEmitter {
       return;
     }
     this.starting = this.launch().catch((error) => {
-      this.emitEvent({ type: "error", message: error instanceof Error ? error.message : String(error), at: now() });
+      this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
       this.patch({ status: "error", harnessAlive: false });
     });
   }
@@ -301,15 +302,14 @@ export class GrokAdapter extends EventEmitter {
       .then((result) => {
         const interrupted = this.interruptRequested || /cancel/i.test(String(result.stopReason || ""));
         this.interruptRequested = false;
-        this.patch({
-          status: "idle",
-          turnState: "complete",
-          turnCount: (this.snapshot.turnCount || 0) + 1,
-          lastAssistantMessageAt: now(),
-        });
         if (interrupted) {
           this.emitInterruptedNotice(result.stopReason);
         }
+        // `turn_complete` must go out BEFORE the idle snapshot: the party queue
+        // delivers on the busy→idle snapshot edge, and an idle snapshot emitted
+        // while the app-side turn lifecycle still reads active consumes that
+        // edge with nothing to retry it — an interrupt-queued message then sat
+        // undelivered although the turn was visibly over.
         this.emitEvent({
           type: "turn_complete",
           result: result.text,
@@ -327,17 +327,25 @@ export class GrokAdapter extends EventEmitter {
           costUsd: result.costUsd,
           at: now(),
         });
+        this.patch({
+          status: "idle",
+          turnState: "complete",
+          turnCount: (this.snapshot.turnCount || 0) + 1,
+          lastAssistantMessageAt: now(),
+        });
       })
       .catch((error) => {
+        // Same ordering rule as the success path: the event that ends the turn
+        // lifecycle first, the idle snapshot second.
         if (this.interruptRequested && /cancel|interrupt/i.test(error instanceof Error ? error.message : String(error))) {
           this.interruptRequested = false;
-          this.patch({ status: "idle", turnState: "complete" });
           this.emitInterruptedNotice(error instanceof Error ? error.message : String(error));
+          this.patch({ status: "idle", turnState: "complete" });
           return;
         }
         this.interruptRequested = false;
+        this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
         this.patch({ status: "idle", turnState: "complete" });
-        this.emitEvent({ type: "error", message: error instanceof Error ? error.message : String(error), at: now() });
       })
       .finally(() => {
         this.turnActive = false;
@@ -409,7 +417,7 @@ export class GrokAdapter extends EventEmitter {
     void this.session
       ?.setModel(model)
       .then(() => this.patch({ model }))
-      .catch((error) => this.emitEvent({ type: "error", message: error.message, at: now() }));
+      .catch((error) => this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() }));
   }
 
   setEffort(effort: string): void {
@@ -457,7 +465,7 @@ export class GrokAdapter extends EventEmitter {
       await this.session?.setMode(plan ? "plan" : "normal");
       this.patch({ permissionMode });
     } catch (error) {
-      this.emitEvent({ type: "error", message: error instanceof Error ? error.message : String(error), at: now() });
+      this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
     }
   }
 

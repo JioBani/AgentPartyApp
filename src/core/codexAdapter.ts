@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { RawLogger } from "./rawLogger";
+import { EnvironmentBlockedError, errorEventPayload, isSpawnFailure } from "./environmentError";
 import { CodexSubagentTracker, codexWebSearchQuery, type SubagentEmit } from "./subagentTracker";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
@@ -1440,15 +1441,19 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private async emitTurnComplete(turn: any): Promise<void> {
-    this.status = turn?.status === "failed" ? "error" : "idle";
-    this.turnState = turn?.status === "failed" ? "error" : "complete";
+    // The terminal status is COMPUTED here but not published until the
+    // `turn_complete` event below. Flipping `this.status` to idle before the
+    // cost await let any snapshot in that window (tokenUsage/updated arrives
+    // right at turn end) show "idle" while the app-side turn lifecycle still
+    // read active — which consumed the party queue's busy→idle drain edge and
+    // stranded an interrupt-queued message without delivery.
+    const failed = turn?.status === "failed";
     if (turn?.error) {
       this.lastError = String(turn.error.message || JSON.stringify(turn.error));
     }
-    if (this.status !== "error") {
+    if (!failed) {
       this.turnCount += 1;
     }
-    this.activeTurn = false;
     // Account-catalog turns are subscription-billed; OpenRouter-routed turns
     // (Phase 2) bill per token against the OpenRouter key, so cost is estimated
     // from the model's catalog pricing + reported token usage.
@@ -1478,7 +1483,10 @@ export class CodexAdapter extends EventEmitter {
             usage: this.lastUsage,
             },
     );
-    this.emitEvent({ type: "turn_complete", result: this.status === "error" ? "error" : "ok", cost, usage: codexTokenBreakdown(this.lastUsage, this.contextTokens), at: now() });
+    this.status = failed ? "error" : "idle";
+    this.turnState = failed ? "error" : "complete";
+    this.activeTurn = false;
+    this.emitEvent({ type: "turn_complete", result: failed ? "error" : "ok", cost, usage: codexTokenBreakdown(this.lastUsage, this.contextTokens), at: now() });
     if (this.pendingAuthenticationGeneration) {
       this.pendingAuthenticationGeneration = undefined;
       void this.reloadAuthentication();
@@ -1488,12 +1496,22 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private finishWithError(error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
+    // A spawn that cannot find `codex` is a setup problem, not a session
+    // failure: reported as an environment blocker so the transcript offers the
+    // install once instead of repeating ENOENT on every turn.
+    const blocked = isSpawnFailure(error)
+      ? new EnvironmentBlockedError(
+          "Codex CLI를 실행하지 못했습니다.",
+          "harness.codex",
+          error instanceof Error ? error.message : String(error),
+        )
+      : error;
+    const message = blocked instanceof Error ? blocked.message : String(blocked);
     this.lastError = message;
     this.status = "error";
     this.turnState = "error";
     this.activeTurn = false;
-    this.emitEvent({ type: "error", message, at: now() });
+    this.emitEvent({ type: "error", ...errorEventPayload(blocked), at: now() });
     this.drainQueuedTurn();
   }
 
