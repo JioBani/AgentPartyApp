@@ -13,7 +13,7 @@ import type {
   TranscriptSave,
   TranscriptSaveResult,
 } from "../../shared/types";
-import { harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
+import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
@@ -2609,9 +2609,11 @@ export class PartyApplicationService {
         }
       },
       createMember: async (request) => {
-        const harness = String(request.harness || "claude-code").toLowerCase();
-        if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
-          return { ok: false, error: `Unknown harness '${request.harness}'. Use 'claude-code', 'codex', or 'cursor'.` };
+        const harness = String(request.harness || "claude-code").toLowerCase() as HarnessId;
+        // Validate against the canonical harness list — a hardcoded copy here
+        // silently rejected 'grok' for weeks after the harness shipped.
+        if (!HARNESS_IDS.includes(harness)) {
+          return { ok: false, error: `Unknown harness '${request.harness}'. Use ${HARNESS_IDS.map((id) => `'${id}'`).join(", ")}.` };
         }
         if (request.permissionMode !== undefined && !isPermissionModeSetting(request.permissionMode)) {
           return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
