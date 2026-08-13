@@ -45,6 +45,7 @@ import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from ".
 import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import { invokePartyTool, type PartyBridge, type PartyToolResult } from "../../core/partyBridge";
+import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
@@ -2978,34 +2979,3 @@ function sessionOwnerMayBeAlive(bootId: string | undefined): boolean {
   }
 }
 
-/** Image types Discord renders inline and every vision model accepts. */
-const IMAGE_MEDIA_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
-
-/**
- * Reads an image file for `discord-send-image`, in the process the member runs
- * in. Every rejection states what is wrong so the agent can fix it instead of
- * retrying blindly: a missing file, a directory, an unsupported extension.
- */
-function readImageFile(filePath: string): { dataBase64: string; filename: string; mediaType: string } {
-  const resolved = path.resolve(filePath);
-  const mediaType = IMAGE_MEDIA_TYPES[path.extname(resolved).toLowerCase()];
-  if (!mediaType) {
-    throw new Error(`'${filePath}' is not a supported image (png, jpg, gif, webp). Nothing was sent.`);
-  }
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(resolved);
-  } catch {
-    throw new Error(`No such file: '${resolved}'. Note the path must exist on the machine YOU run on.`);
-  }
-  if (!stat.isFile()) {
-    throw new Error(`'${resolved}' is not a file.`);
-  }
-  return { dataBase64: fs.readFileSync(resolved).toString("base64"), filename: path.basename(resolved), mediaType };
-}

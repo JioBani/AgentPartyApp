@@ -100,7 +100,9 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       // SENDER's transcript (never part of any model context).
       next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "gate", gate: event.gate, to: event.to, from: event.from, reason: event.reason, rule: event.rule, errcode: event.errcode, at: nowTime() });
     } else if (event.type === "error") {
-      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
+      next = event.environment
+        ? upsertEnvironmentBlock(next, sessionId, event.environment.checkId, event.message, event.environment.raw)
+        : appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
     }
   }
   // The card never came (a harness that does not echo the turn, or a batch that
@@ -201,6 +203,27 @@ function upsertToolBlock(current: Record<string, TranscriptBlock[]>, sessionId: 
   const next = items.slice();
   next[index] = merged;
   return { ...current, [sessionId]: next };
+}
+
+/**
+ * One card per environment problem, always at the bottom.
+ *
+ * A machine missing a harness CLI fails EVERY turn with the identical error, so
+ * appending would bury the conversation under copies of one wall of text (the
+ * behaviour this replaces). Re-firing therefore removes the previous card and
+ * re-appends it: the user's messages stay where they are, and the card stays
+ * next to the attempt that just failed instead of scrolling out of reach.
+ */
+function upsertEnvironmentBlock(
+  current: Record<string, TranscriptBlock[]>,
+  sessionId: string,
+  checkId: string,
+  text: string,
+  raw: string | undefined,
+): Record<string, TranscriptBlock[]> {
+  const id = `env:${checkId}`;
+  const items = (current[sessionId] || []).filter((item) => item.id !== id);
+  return { ...current, [sessionId]: [...items, { id, kind: "environment", checkId, text, raw, at: nowTime() }] };
 }
 
 /** A single evolving plan card per session: the latest plan event replaces it. */

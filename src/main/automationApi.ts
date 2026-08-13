@@ -120,6 +120,20 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.openLogFolder());
         return;
       }
+      // Readiness, not build facts — the environment tab and an agent driving
+      // QA read the same report. `includeWsl` is opt-in because it boots distros.
+      if (method === "GET" && url.pathname === "/api/environment") {
+        sendJson(res, 200, await c.getEnvironment({
+          refresh: url.searchParams.get("refresh") === "1",
+          includeWsl: url.searchParams.get("wsl") === "1",
+        }));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/environment/repair") {
+        const body = await readJson(req) as { repairId?: string };
+        sendJson(res, 200, await c.repairEnvironment(String(body.repairId || "")));
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/windows") {
         sendJson(res, 200, { windows: c.listWindows() });
         return;
@@ -153,6 +167,15 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/settings") {
         sendJson(res, 200, c.updateSettings(await readJson(req)));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/shell/open-path") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.openLocalPath(windowId, String(body?.path || ""), { reveal: body?.reveal === true }));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/appearance/fonts") {
+        sendJson(res, 200, await c.getFontCatalog(windowId, url.searchParams.get("q") || undefined));
         return;
       }
       if (method === "GET" && url.pathname === "/api/auth") {

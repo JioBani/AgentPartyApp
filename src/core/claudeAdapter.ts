@@ -12,6 +12,8 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { claudeCliMissingMessage, isInstalledApp, resolveClaudeCli } from "./claudeCli";
+import { EnvironmentBlockedError, errorEventPayload } from "./environmentError";
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
@@ -1532,7 +1534,10 @@ export class ClaudeAdapter extends EventEmitter {
     }
     this.lastError = message;
     this.currentStatus = "error";
-    this.emitEvent({ type: "error", message, at: now() });
+    // A missing Claude Code install travels with its environment check so the
+    // transcript shows one card with an install button instead of the same
+    // failure text on every turn.
+    this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
     this.log("error", message);
   }
 
@@ -1680,59 +1685,23 @@ async function loadSdk(): Promise<SdkModule> {
   return await dynamicImport("@anthropic-ai/claude-agent-sdk");
 }
 
+/**
+ * Resolution lives in {@link ../core/claudeCli} so the environment screen and
+ * this spawn can never disagree about which binary is in play.
+ *
+ * `undefined` lets the Agent SDK resolve its own copy — correct in a dev tree
+ * and inside a WSL distro, where one sits next to the SDK. An INSTALLED app
+ * ships none, so there the same `undefined` would send the SDK hunting for a
+ * file that does not exist and fail far from the cause; it is turned into an
+ * environment blocker instead, which the transcript renders with an install
+ * button.
+ */
 function resolveClaudeExecutable(configured: string | undefined): string | undefined {
-  if (configured && configured.trim()) {
-    return configured.trim();
+  const resolved = resolveClaudeCli(configured)?.command;
+  if (!resolved && isInstalledApp()) {
+    throw new EnvironmentBlockedError(claudeCliMissingMessage(), "harness.claude-code");
   }
-
-  const packagedExecutable = resolvePackagedClaudeExecutable();
-  if (packagedExecutable) {
-    return packagedExecutable;
-  }
-
-  // Let @anthropic-ai/claude-agent-sdk resolve its matching bundled native binary.
-  // This mirrors the official extension's "SDK + matching Claude binary" boundary.
-  return undefined;
-}
-
-function resolvePackagedClaudeExecutable(): string | undefined {
-  const resourcesPath = process.resourcesPath;
-  if (!resourcesPath || !fs.existsSync(resourcesPath)) {
-    return undefined;
-  }
-  const packageName = claudeNativePackageName();
-  if (!packageName) {
-    return undefined;
-  }
-  const executableName = process.platform === "win32" ? "claude.exe" : "claude";
-  const executablePath = path.join(
-    resourcesPath,
-    "app.asar.unpacked",
-    "node_modules",
-    "@anthropic-ai",
-    "claude-agent-sdk",
-    "node_modules",
-    packageName,
-    executableName,
-  );
-  return fs.existsSync(executablePath) ? executablePath : undefined;
-}
-
-function claudeNativePackageName(): string | undefined {
-  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : "";
-  if (!arch) {
-    return undefined;
-  }
-  if (process.platform === "win32") {
-    return `@anthropic-ai/claude-agent-sdk-win32-${arch}`;
-  }
-  if (process.platform === "darwin") {
-    return `@anthropic-ai/claude-agent-sdk-darwin-${arch}`;
-  }
-  if (process.platform === "linux") {
-    return `@anthropic-ai/claude-agent-sdk-linux-${arch}`;
-  }
-  return undefined;
+  return resolved;
 }
 
 function now(): string {

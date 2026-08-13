@@ -1359,6 +1359,9 @@ export class SessionManager extends EventEmitter {
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         policy: request.codexPolicy || harnessDefaults.codexPolicy,
         debugEnabled: settings.debugEnabled,
+        // Empty = PATH lookup, the same contract as the other three harnesses'
+        // executable overrides (settings → 환경 tab).
+        executablePath: settings.codexExecutablePath || undefined,
         storageDir: path.join(this.userDataDir, "logs"),
         sqliteHome: agentPartyCodexSqliteHome(this.userDataDir, sqliteScope),
         resumeSessionId,

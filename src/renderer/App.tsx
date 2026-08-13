@@ -7,6 +7,9 @@ import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { ComposerSettings } from "../shared/composerSettings";
+import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
+import { publishFontProbe } from "./app/fontProbe";
+import { useNoticeSink } from "./app/appNotice";
 import type { MemberMessagingSettings } from "../shared/memberMessaging";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
 import { usePublishFavoriteModels } from "./app/favoriteModelPrefs";
@@ -138,6 +141,24 @@ export function App() {
   // screens, so publishing beats threading a prop (and its callback) through
   // each of them. App still owns the state and performs the write.
   usePublishFavoriteModels(state.settings.favoriteModels, toggleFavoriteModel);
+
+  // --- Font family (설정 → 글꼴) --------------------------------------------
+  // Every surface already draws through `--font-sans` / `--font-mono` (see
+  // design-system.css), so overriding the two variables on <html> is the whole
+  // application step — no component needs to know a font setting exists.
+  const fonts = state.settings.fonts;
+  useEffect(() => {
+    const selection = normalizeFontSettings(fonts);
+    document.documentElement.style.setProperty("--font-sans", fontStackFor(selection.sans, "sans"));
+    document.documentElement.style.setProperty("--font-mono", fontStackFor(selection.mono, "mono"));
+  }, [fonts?.sans, fonts?.mono]);
+
+  // Lets `GET /api/appearance/fonts` ask Chromium which families are installed.
+  useEffect(() => { publishFontProbe(); }, []);
+
+  // Lets a component too deep to hold notice state report one — today, a
+  // transcript file link that could not be opened. See app/appNotice.ts.
+  useNoticeSink(setPartyNotice);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
   const fontScale = state.settings.transcriptFontScale ?? 1;
@@ -819,6 +840,16 @@ export function App() {
   }
 
   /**
+   * Executable overrides from the environment tab. An EMPTY value is saved as
+   * empty rather than skipped — that is how a user undoes a wrong path and
+   * returns the harness to auto-discovery.
+   */
+  async function saveExecutablePaths(patch: Partial<InitialAppState["settings"]>) {
+    const settings = await window.agentParty.updateSettings(patch);
+    setState((current) => ({ ...current, settings }));
+  }
+
+  /**
    * Persisting this also pushes the new policy to every engine (local and WSL),
    * so turning sleep off stops the sweep on members this window is not showing.
    */
@@ -846,6 +877,11 @@ export function App() {
   /** Persists a message-input preference (send key). */
   async function saveComposerSettings(patch: Partial<ComposerSettings>) {
     const settings = await window.agentParty.updateSettings({ composer: { ...state.settings.composer, ...patch } });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  async function saveFonts(patch: Partial<FontSettings>) {
+    const settings = await window.agentParty.updateSettings({ fonts: { ...normalizeFontSettings(state.settings.fonts), ...patch } });
     setState((current) => ({ ...current, settings }));
   }
 
@@ -1034,6 +1070,12 @@ export function App() {
   }
 
   const actions: WorkbenchActions = {
+    openEnvironmentSettings() {
+      setCurrentView("runtime");
+      // A counter, not the id alone — same reason as the navigation IPC above:
+      // asking for a tab you are already on must still move the screen there.
+      setRuntimeTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
+    },
     async sendMessage(name, text, attachments) {
       // Optimistic echo when the member already has a live session (instant feel);
       // for a not-yet-started member the echo is appended once the shared send
@@ -1504,6 +1546,7 @@ export function App() {
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
+                  onSaveExecutablePaths={saveExecutablePaths}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
@@ -1526,7 +1569,7 @@ export function App() {
                 />
               )}
               {currentView === "automation" && (
-                <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} onToggleDebug={toggleDebug} />
+                <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} fonts={state.settings.fonts} onToggleDebug={toggleDebug} onSaveFonts={saveFonts} />
               )}
               </div>
             </>

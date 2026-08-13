@@ -198,6 +198,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   reconcileDiscovery();
 
   const rendererUrl = process.env.AGENTPARTY_RENDERER_URL;
+  guardNavigation(window, rendererUrl);
   if (rendererUrl) {
     await window.loadURL(rendererUrl);
     window.webContents.openDevTools({ mode: "detach" });
@@ -206,6 +207,73 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   }
   log("info", "window", "window created", { id: entry.id, workspacePath: entry.workspacePath });
   return { id: entry.id, workspacePath: entry.workspacePath, focused: true };
+}
+
+/**
+ * Keeps every link OUT of the app window.
+ *
+ * The renderer already hands `http(s)` markdown links to `shell.openExternal`,
+ * but that check is `^https?://` and a model writes plenty that miss it —
+ * `[docs](example.com)`, `[readme](./docs/API.md)`, a `mailto:`. Those reach
+ * Electron as an ordinary anchor with `target="_blank"`, and Electron's DEFAULT
+ * for an unhandled `window.open` is to create a real BrowserWindow: the link
+ * opens inside the app, in a frameless chrome-less window, with no way back.
+ * A link without the blank target is worse — it navigates the workbench itself
+ * away and takes the running party's UI with it.
+ *
+ * So the boundary is closed here, in main, rather than by widening the renderer
+ * check. The renderer cannot be the only guard: it only sees clicks on the
+ * anchors IT renders, while this covers every route into a navigation (a
+ * dropped URL, a middle-click, a page script) including ones no component
+ * knows about.
+ *
+ * `http(s)` and `mailto:` go to the OS. Everything else is refused and LOGGED —
+ * a link that silently does nothing is its own bug report, and the log is what
+ * tells the next person which scheme to add.
+ */
+function guardNavigation(window: BrowserWindow, rendererUrl: string | undefined): void {
+  const openExternally = (target: string, via: string): boolean => {
+    if (/^(https?|mailto):/i.test(target)) {
+      void shell.openExternal(target).catch((error) => {
+        log("error", "window", "could not hand a link to the OS", { target, via, error: error instanceof Error ? error.message : String(error) });
+      });
+      log("info", "window", "link opened in the default app", { target, via });
+      return true;
+    }
+    log("warn", "window", "link refused: unsupported scheme", { target, via });
+    return false;
+  };
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openExternally(url, "window-open");
+    // Always deny. Even an http(s) target has already been handed to the OS, and
+    // letting Electron ALSO open it would produce the very window this prevents.
+    return { action: "deny" };
+  });
+
+  window.webContents.on("will-navigate", (event, url) => {
+    // The app loading (or hot-reloading) itself is not a link click. Compare
+    // origins so a dev server's HMR navigation is allowed while any other host
+    // — including a `file://` the app bundle happens to resolve — is not.
+    if (sameOrigin(url, rendererUrl || window.webContents.getURL())) {
+      return;
+    }
+    event.preventDefault();
+    openExternally(url, "will-navigate");
+  });
+}
+
+/** Whether two URLs share an origin; unparseable input is never "same". */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    // `file://` URLs all report origin "null", so compare the protocol instead:
+    // a packaged app loads its renderer from file:// and must keep working.
+    return left.protocol === "file:" && right.protocol === "file:" ? true : left.origin === right.origin;
+  } catch {
+    return false;
+  }
 }
 
 async function bootstrap(): Promise<void> {
@@ -739,6 +807,10 @@ function registerIpc(): void {
   // POST /api/diagnostics/open-logs.
   handle("diagnostics:get", async (event) => controller().getDiagnostics(senderWorkspace(event)));
   handle("diagnostics:openLogFolder", async () => controller().openLogFolder());
+  // Environment readiness — the same controller methods as GET /api/environment
+  // and POST /api/environment/repair.
+  handle("environment:get", async (_event, options: { refresh?: boolean; includeWsl?: boolean } = {}) => controller().getEnvironment(options));
+  handle("environment:repair", async (_event, repairId: string) => controller().repairEnvironment(String(repairId || "")));
   handle("shell:openExternal", async (_event, target: string) => {
     if (/^https?:\/\//i.test(String(target || ""))) {
       await shell.openExternal(String(target));
@@ -746,6 +818,9 @@ function registerIpc(): void {
     }
     return { ok: false, error: "Only http(s) URLs can be opened." };
   });
+  // A clicked file link. Same AppController method as POST /api/shell/open-path.
+  handle("shell:openPath", async (event, target: string, options?: { reveal?: boolean }) =>
+    controller().openLocalPath(senderWindowId(event), String(target || ""), { reveal: options?.reveal === true }));
   // Same AppController method as POST /api/clipboard/image — one route for the
   // thumbnail's copy button and for an agent driving it.
   handle("clipboard:writeImage", async (_event, image: unknown) => controller().writeImageToClipboard((image || {}) as { dataBase64?: string; mediaType?: string }));

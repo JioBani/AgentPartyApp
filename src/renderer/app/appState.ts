@@ -2,6 +2,7 @@ import type { InitialAppState } from "../../shared/types";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { DEFAULT_COMPOSER_SETTINGS } from "../../shared/composerSettings";
+import { DEFAULT_FONT_SETTINGS } from "../../shared/appFonts";
 import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 
@@ -40,6 +41,7 @@ export const initialState: InitialAppState = {
     deepseekApiKey: "",
     automationApiPort: 47831,
     transcriptFontScale: 1,
+    fonts: { ...DEFAULT_FONT_SETTINGS },
     compactDefault: { on: false, at: 80 },
     idleSleep: { ...DEFAULT_IDLE_SLEEP },
     gateDefaults: { model: "haiku", effort: "low" },

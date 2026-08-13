@@ -8,6 +8,7 @@ import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } fro
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
 import { harnessShort } from "./harnessLabel";
+import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
 import { isTranscriptAtCap } from "../../shared/transcriptCap";
@@ -206,6 +207,8 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
           <span className="wb-mono">{block.text}</span>
         </div>
       );
+    case "environment":
+      return <EnvironmentBlock block={block} view={view} actions={actions} />;
     case "plan":
       return <PlanBlock block={block} />;
     case "fileChange":
@@ -485,6 +488,19 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
   );
 }
 
+/**
+ * Tools whose entire point is to put a picture in front of the user. Codex's
+ * built-in image viewer is one: the model reads the file into its own context,
+ * but what lands in the conversation is a picture, exactly like the party's
+ * `attach-image`.
+ *
+ * Named here rather than inferred from "the result happens to contain an image",
+ * because that also matches a `Read` of a .png or an MCP screenshot — cases
+ * where the tool box (name, arguments, the fact that a tool ran) is the point
+ * and the image is supporting evidence.
+ */
+const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
+
 function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {
   const [full, setFull] = useState(false);
   const arg = summarizeArg(block.input);
@@ -503,8 +519,29 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   // Anything long enough that the inline view is only a preview → offer the popup.
   const hasMore = needsClip(fullInput) || needsClip(result);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
+  // A result that IS a picture opens by default at every density. Collapsed, the
+  // summary shows only a file path — indistinguishable from the image not being
+  // rendered at all, which was the reported bug for Codex's `image_view`. Text
+  // results keep the old rule: they read fine from the summary and would
+  // otherwise flood the transcript.
+  const openByDefault = images.length > 0 || (density === "wide" && Boolean(result));
+
+  // A display tool that produced its picture renders as the same card as an
+  // attached image — no disclosure box, no `{"path": …}` dump. The tool ran to
+  // SHOW something; the mechanics are noise around it. The path stays as the
+  // caption so it is still clear what was opened.
+  if (IMAGE_DISPLAY_TOOLS.has(block.name) && images.length > 0) {
+    const shown = summarizeArg(block.input) || block.name;
+    return (
+      <div className="wb-block wb-attached-image">
+        {images.map((image) => <ToolImage key={image.key} image={image} />)}
+        <span className="wb-attached-image-caption wb-mono">{shown}</span>
+      </div>
+    );
+  }
+
   return (
-    <details className={"wb-block wb-tool density-" + density} open={density === "wide" && Boolean(result)}>
+    <details className={"wb-block wb-tool density-" + density} open={openByDefault}>
       <summary>
         <ChevronRight size={13} className="wb-caret" />
         <span className={"wb-tool-check" + (failed ? " failed" : "")}><Check size={11} /></span>

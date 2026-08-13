@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { EnvironmentBlockedError, isEnvironmentBlockedError } from "./environmentError";
 
 /** Where `grok` keeps its state; GROK_HOME overrides, matching the CLI. */
 export function grokHomeDir(): string {
@@ -84,7 +85,13 @@ export function grokSubscriptionToken(): GrokSubscriptionCredential {
   try {
     stat = fs.statSync(file);
   } catch {
-    throw new GrokSubscriptionAuthError(
+    // Not signed in is the ONE Grok failure the user fixes with a single
+    // command, so it travels as an environment blocker (card + `grok login`
+    // button) rather than as prose. Expiry below stays a plain auth error: the
+    // CLI refreshes it on its own next run.
+    throw new EnvironmentBlockedError(
+      "Grok에 로그인되어 있지 않습니다.",
+      "harness.grok",
       `Grok is not signed in on this machine (${file} not found). Install the official CLI ` +
         "from https://x.ai/cli/install.ps1 and run `grok login`. No fallback was attempted.",
     );
@@ -130,12 +137,22 @@ function assertFresh(credential: GrokSubscriptionCredential): GrokSubscriptionCr
   return credential;
 }
 
-/** Whether a Grok subscription credential is usable right now (for UI/status). */
-export function grokSubscriptionAvailable(): { ok: true; email?: string } | { ok: false; reason: string } {
+/**
+ * Whether a Grok subscription credential is usable right now (for UI/status).
+ *
+ * `reason` is the sentence to show; `raw` is the untranslated original (paths,
+ * expiry timestamps) when there is one. Both are returned because collapsing
+ * them loses exactly the detail a bug report needs.
+ */
+export function grokSubscriptionAvailable(): { ok: true; email?: string } | { ok: false; reason: string; raw?: string } {
   try {
     const credential = grokSubscriptionToken();
     return { ok: true, email: credential.email };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(isEnvironmentBlockedError(error) && error.raw ? { raw: error.raw } : {}),
+    };
   }
 }

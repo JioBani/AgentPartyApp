@@ -2309,6 +2309,35 @@ body.wb-resizing {
 }
 
 /*
+ * Environment blocker card — "this member cannot start, here is the button".
+ *
+ * Deliberately NOT `.wb-error`'s monospace band: this is the one failure in the
+ * transcript the user is expected to ACT on, so it reads as a sentence with
+ * controls rather than as pasted CLI output (which is still there, folded away
+ * under 자세히). Turns green once the check passes so the state change after an
+ * install is visible without re-reading the text.
+ */
+.wb-env {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--danger-bd);
+  border-radius: var(--radius-card);
+  background: var(--danger-dim);
+}
+.wb-env[data-resolved="1"] { border-color: var(--success-bd); background: var(--success-dim); }
+.wb-env-head { display: flex; align-items: center; gap: var(--space-2); }
+.wb-env-head svg { flex: none; color: var(--danger); }
+.wb-env[data-resolved="1"] .wb-env-head svg { color: var(--success); }
+.wb-env-title { font-size: 12.5px; font-weight: 600; color: var(--text-0); }
+.wb-env-detail { font-size: 12px; line-height: 1.55; color: var(--text-1); }
+.wb-env-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+/* These blocks carry the settings screen's own 20px gutter, which would indent
+   them out of alignment inside a transcript card that already has padding. */
+.wb-env .set-inline-note, .wb-env .set-diag-report { margin-left: 0; margin-right: 0; }
+
+/*
  * Approval card — four layers (머리 / 본문 / 바닥), per the confirmed design in
  * the Claude Design project ("승인 카드 — 유형별 설계", Approval Cards.dc.html).
  *
@@ -7268,8 +7297,92 @@ body.wb-resizing {
    silently blocking every inbound instruction) — not an error that happened. */
 .set-inline-note.is-warn { border-color: var(--danger-bd); background: var(--danger-dim); }
 .set-inline-note.is-warn svg { color: var(--danger); }
+/* A repair that finished. Distinct from `.is-warn`/`.is-error` because "완료"
+   after a two-minute install is the one moment this screen has good news. */
+.set-inline-note.is-success { color: var(--success); border-color: var(--success); background: var(--success-dim); flex-wrap: wrap; align-items: center; }
+.set-inline-note.is-success svg { color: var(--success); }
+
+/* Font picker (설정 → 글꼴). The sample line is the control that matters — it is
+   the only way to judge a font — so it gets the room, at a size close to the
+   app's own body text rather than a specimen poster. */
+.set-font-field { padding: 14px 20px 0; position: relative; }
+/* The 설정 screen stacks plain `.card`s, which bring their own padding. Drop the
+   settings-page gutters so the controls do not sit double-indented (same
+   adjustment `.wb-env` already makes for the notes it reuses). */
+.legacy-view .set-font-field { padding: 10px 0 0; }
+.legacy-view .set-inline-note { margin-left: 0; margin-right: 0; }
+/* `.legacy-view` is plain flow, so stacked cards would touch. */
+.set-stack { display: flex; flex-direction: column; gap: var(--space-6); }
+
+.set-font-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; height: 34px; margin-top: 6px; padding: 0 11px; background: var(--bg-input); border: var(--border-width) solid var(--border); border-radius: 9px; font-size: 13px; color: var(--text-0); text-align: left; }
+.set-font-trigger:hover { border-color: var(--accent-bd); }
+.set-font-trigger-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-font-trigger svg { flex: none; color: var(--text-3); }
+
+/* The popover overlays the preview below it, so the list opens without the card
+   growing and pushing the second picker down the screen mid-interaction. */
+.set-font-pop { position: absolute; z-index: 40; left: 0; right: 0; margin-top: 4px; background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 11px; box-shadow: var(--shadow-pop); overflow: hidden; }
+.legacy-view .set-font-pop { left: 0; right: 0; }
+.set-font-search { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: var(--border-width) solid var(--border-subtle); }
+.set-font-search svg { flex: none; color: var(--text-3); }
+.set-font-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-size: 12.5px; color: var(--text-0); }
+.set-font-list { max-height: 320px; overflow-y: auto; padding: 5px; }
+.set-font-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; background: transparent; border: none; border-radius: 8px; text-align: left; }
+.set-font-row:hover { background: var(--bg-3); }
+.set-font-row.is-active { background: var(--accent-dim); }
+.set-font-row-check { flex: none; width: 14px; color: var(--accent); }
+.set-font-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.set-font-row-name { font-size: 13px; color: var(--text-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-font-row-sample { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-font-row-tags { flex: none; display: flex; align-items: center; gap: 6px; }
+.set-font-row-note { font-size: 10.5px; color: var(--text-3); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-font-tag { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--bg-3); font-size: 10px; font-weight: 600; color: var(--text-2); }
+.set-font-tag.is-reco { background: var(--accent-dim); color: var(--accent); }
+.set-font-tag.is-missing { background: var(--danger-dim); color: var(--danger); }
+.set-font-status { display: flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 11.5px; color: var(--text-3); }
+.set-font-status.is-error { color: var(--danger); }
+.set-font-status svg { flex: none; }
+.set-font-preview { margin-top: 9px; padding: 11px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; font-size: 14px; line-height: 1.6; color: var(--text-0); overflow-x: auto; white-space: nowrap; }
+.set-font-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 7px; font-size: 11.5px; color: var(--text-3); }
+.set-font-warn { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); }
+.set-font-warn svg { flex: none; }
 .set-save-hint { font-size: 11.5px; color: var(--text-3); }
 .set-btn-accent.is-saved { background: var(--success-dim); color: var(--success); }
+
+/* environment tab — one row per check: state, what was found, and the ways out.
+   A block rather than a `.set-diag-row` line because a check that FAILS grows:
+   it gains a reason, a path, action buttons and a raw-output disclosure, and a
+   single-line row would push all of that off the edge. */
+.set-env-row { display: flex; flex-direction: column; gap: 6px; margin: 13px 20px 0; padding: 12px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 9px; }
+.set-env-row[data-status="missing"], .set-env-row[data-status="error"] { border-color: var(--danger-bd); background: var(--danger-dim); }
+/* The card's closing gutter. Rows and fields carry only a TOP margin, so the
+   run of them is evenly spaced — which leaves the LAST one sitting on the
+   card's border (measured: 1px). 18px is what every other settings card, and
+   the `.set-diag-actions` row inside this same tab, closes with. */
+.set-env-row:last-child, .set-env-field:last-child { margin-bottom: 18px; }
+.set-env-head { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.set-env-label { font-size: 12.5px; font-weight: 600; color: var(--text-0); }
+.set-env-version { font-size: 11px; color: var(--text-3); overflow-wrap: anywhere; }
+.set-env-chip { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; }
+.set-env-chip.is-ok { color: var(--success); background: var(--success-dim); }
+.set-env-chip.is-warn { color: var(--warning); background: var(--warning-dim); }
+.set-env-chip.is-missing, .set-env-chip.is-error { color: var(--danger); background: var(--danger-dim); }
+.set-env-chip.is-unknown { color: var(--text-3); background: var(--bg-2); }
+.set-env-detail { font-size: 12px; line-height: 1.5; color: var(--text-1); }
+/* The one string a user retypes by hand, so it wraps instead of truncating. */
+.set-env-path { font-size: 11px; color: var(--text-3); overflow-wrap: anywhere; }
+/* Buttons sit slightly further from the text than the text lines sit from each
+   other (6px gap + 4px = 10px), so a row reads as "facts, then what to do"
+   rather than as four evenly spaced lines one of which happens to be clickable. */
+.set-env-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.set-env-raw .set-diag-report { margin: 8px 0 0; }
+.set-env-field { margin: 13px 20px 0; }
+/* The tab's own footer row, NOT a row inside a card: `.set-diag-actions` carries
+   a 20px gutter for sitting inside one, which left this button indented 20px
+   past every card edge above it (measured: cards at 72, button at 92). */
+.set-env-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 13px 0 18px; }
+.set-env-field-row { display: flex; align-items: center; gap: 9px; }
+.set-env-field-row .set-input { flex: 1; min-width: 0; }
 
 /* member → channel bindings on the Discord tab */
 .set-link-list { display: flex; flex-direction: column; gap: 7px; margin: 13px 20px 18px; }
@@ -8062,6 +8175,10 @@ body.wb-resizing {
    hiding it buys a gap in the sentence and costs discoverability. */
 .wb-md-link { white-space: nowrap; }
 .wb-md-link-copy { padding: 1px 2px; margin-left: 1px; }
+/* Reveal-in-file-manager, next to the copy control on a file link. Sized and
+   toned to match it so the pair reads as one affordance on the link. */
+.wb-md-link-reveal { display: inline-flex; align-items: center; padding: 1px 2px; margin-left: 1px; background: transparent; border: none; color: var(--text-3); vertical-align: middle; }
+.wb-md-link-reveal:hover { color: var(--accent); }
 
 /* Code-block copy control. `position: relative` is added here as a NEW rule (the
    base `.wb-md pre` block above is untouched) so the button can pin to the block's

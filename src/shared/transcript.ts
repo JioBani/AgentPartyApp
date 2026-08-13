@@ -25,6 +25,14 @@ export type TranscriptBlock =
   | { id: string; kind: "plan"; steps: import("./codexItems").CodexPlanStep[]; explanation?: string; at?: string }
   // A Codex fileChange item: per-file diff with +/- stats.
   | { id: string; kind: "fileChange"; changes: import("./codexItems").CodexFileEdit[]; status?: string; at?: string }
+  // The machine is not set up to run this member (harness CLI missing, or not
+  // signed in). A SINGLETON per `checkId`: a permanently broken environment
+  // fails on every turn, and stacking one identical red wall per attempt is the
+  // behaviour this block replaces. Re-firing moves the card back to the bottom
+  // instead of adding one, so it stays next to the message that just failed.
+  // Carries only the check id — the card resolves label/detail/remedies from
+  // the live environment report, so it can never disagree with the 환경 tab.
+  | { id: string; kind: "environment"; checkId: string; text: string; raw?: string; at?: string }
   // A surfaced Codex diagnostic (reroute / rate-limit / warning); never silently dropped.
   // `repeat` counts consecutive identical occurrences folded into one block
   // (≥2 renders a ×N badge) — a re-firing diagnostic ticks a counter, never stacks.

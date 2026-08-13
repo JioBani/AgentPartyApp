@@ -9,6 +9,7 @@ import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate"
 import type { MemberQueueState } from "./messageQueue";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { ComposerSettings } from "./composerSettings";
+import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
 
@@ -63,6 +64,8 @@ export interface AppSettings {
   cursorExecutablePath: string;
   /** Optional override for the official `grok` binary; resolved automatically when empty. */
   grokExecutablePath?: string;
+  /** Optional override for the `codex` binary; empty = PATH lookup (a `.cmd` shim on Windows). */
+  codexExecutablePath?: string;
   claudeSafeMode: boolean;
   /** The harness a brand-new member defaults to. */
   selectedHarnessId: HarnessId;
@@ -77,6 +80,12 @@ export interface AppSettings {
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
+  /**
+   * The UI and code fonts, as catalog ids. Applied by writing the selected
+   * stacks into `--font-sans` / `--font-mono`, which every surface already
+   * reads. Edited in Settings → Runtime. See `shared/appFonts.ts`.
+   */
+  fonts: FontSettings;
   /**
    * Global auto-compaction default inherited by any member without its own
    * {@link PartyMember.autoCompact}. Edited in Settings → Runtime. See

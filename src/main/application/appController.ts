@@ -1,12 +1,17 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { isLaunchable } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
+import type { EnvironmentReport } from "../../shared/environment";
+import { probeEnvironment, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
+import { GALLERY_ENVIRONMENT_REPORT } from "../../shared/environmentGallery";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -22,6 +27,7 @@ import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
+import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
@@ -319,6 +325,28 @@ export class AppController {
       logs: { filePath: logFilePath, folderPath: path.dirname(logFilePath) },
       auth: (await this.listAuthProviders()).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
     };
+  }
+
+  /**
+   * Whether this machine can actually run a member, and what to do when it
+   * cannot. Sibling of {@link getDiagnostics} and deliberately separate: that
+   * one describes a build for a bug report, this one is a to-do list.
+   *
+   * `includeWsl` is opt-in because probing a distro starts it.
+   */
+  async getEnvironment(options: { refresh?: boolean; includeWsl?: boolean } = {}): Promise<EnvironmentReport> {
+    return probeEnvironment(options);
+  }
+
+  /**
+   * Applies one of the fixes {@link getEnvironment} offered. The caller passes
+   * an id, never a command — see `runEnvironmentRepair`.
+   */
+  async repairEnvironment(repairId: string): Promise<EnvironmentRepairResult> {
+    if (!repairId) {
+      throw new Error("repairId가 필요합니다.");
+    }
+    return runEnvironmentRepair(repairId);
   }
 
   /**
@@ -1204,6 +1232,165 @@ export class AppController {
   }
 
   /**
+   * Opens a local file the way the desktop would: with its default application,
+   * or — when nothing is registered for that type, or the type is one that would
+   * be EXECUTED rather than displayed — by revealing it in the file manager.
+   *
+   * The one route behind a clicked file link in the transcript and
+   * `POST /api/shell/open-path`.
+   *
+   * Three deliberate refusals, because each would otherwise be a silent wrong
+   * action rather than an error:
+   * - A path that does not exist is an error naming the resolved path. A
+   *   relative link resolves against the WINDOW'S WORKSPACE (the folder the user
+   *   is looking at), not the app bundle, and stating the resolved path is what
+   *   makes a wrong resolution visible instead of just "nothing happened".
+   * - An executable or script is never launched, only revealed — a link written
+   *   by a model must not be able to run something. See shared/localFiles.ts.
+   * - `shell.openPath` reporting a failure (no association) falls back to
+   *   revealing, and says which happened in `action`.
+   *
+   * Electron is imported lazily for the same reason as `writeImageToClipboard`:
+   * this controller also runs headless inside a WSL distro, where `electron`
+   * does not exist.
+   */
+  async openLocalPath(windowId: string | undefined, target: string, options?: { reveal?: boolean }): Promise<{ ok: true; action: "opened" | "revealed"; path: string; reason?: string }> {
+    const { shell } = await import("electron");
+    const raw = String(target || "").trim();
+    if (!raw) {
+      throw new Error("open-path requires a 'path'.");
+    }
+    const resolved = this.resolveLocalPath(windowId, raw);
+    try {
+      await fs.stat(resolved);
+    } catch {
+      throw new Error(`No such file: '${resolved}'. A relative link resolves against the window's workspace.`);
+    }
+    // `reveal` is the caller asking for the file manager outright — the folder
+    // icon next to a file link. It shares this method (rather than getting its
+    // own) so path resolution and the missing-file error stay identical; a
+    // "reveal" that resolved differently from "open" would be its own bug.
+    if (options?.reveal) {
+      shell.showItemInFolder(resolved);
+      log("info", "window", "local file revealed on request", { path: resolved });
+      return { ok: true, action: "revealed", path: resolved };
+    }
+    if (!isLaunchable(resolved)) {
+      shell.showItemInFolder(resolved);
+      const reason = "실행 파일·스크립트는 열지 않고 파일 위치만 표시합니다.";
+      log("info", "window", "local file revealed instead of launched", { path: resolved });
+      return { ok: true, action: "revealed", path: resolved, reason };
+    }
+    // Returns "" on success and a message otherwise — the only way to learn that
+    // the OS had no handler for this type.
+    const failure = await shell.openPath(resolved);
+    if (failure) {
+      shell.showItemInFolder(resolved);
+      log("info", "window", "no default app; revealed instead", { path: resolved, failure });
+      return { ok: true, action: "revealed", path: resolved, reason: `기본 앱으로 열지 못해 파일 위치를 표시했습니다: ${failure}` };
+    }
+    log("info", "window", "local file opened in its default app", { path: resolved });
+    return { ok: true, action: "opened", path: resolved };
+  }
+
+  /** `file://` URL or plain path → an absolute path, relative ones against the window's workspace. */
+  private resolveLocalPath(windowId: string | undefined, raw: string): string {
+    let value = raw;
+    if (/^file:\/\//i.test(value)) {
+      try {
+        value = fileURLToPath(value);
+      } catch {
+        throw new Error(`Not a readable file URL: '${raw}'.`);
+      }
+    } else {
+      // A link may be percent-encoded even without a scheme (spaces, Hangul).
+      try { value = decodeURI(value); } catch { /* keep the literal text */ }
+    }
+    if (path.isAbsolute(value)) {
+      return path.normalize(value);
+    }
+    const workspace = this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined;
+    return path.resolve(workspace || getSettings().workspacePath || process.cwd(), value);
+  }
+
+  /**
+   * The fonts installed on this machine, the current selection, and the short
+   * recommended list the picker floats to the top. `query` filters by family
+   * name, the same substring match the picker's search box applies.
+   *
+   * This is an endpoint rather than a constant because the answer is the
+   * MACHINE's, not the app's: the list is enumerated from the OS, and CSS
+   * substitutes a missing family without a word. A caller that sets
+   * `fonts.mono` to "D2Coding" on a machine without it would otherwise see a
+   * successful write and a screen that never changed.
+   *
+   * Chromium is the only thing that can enumerate or classify, so the work runs
+   * in the renderer — through the ONE implementation the picker itself uses
+   * (renderer/app/fontProbe.ts), never a copy that could drift from it. When the
+   * window cannot answer, `families` is empty and `error` says why, and
+   * `installed` on a recommended entry is `null` rather than a made-up `false`.
+   */
+  async getFontCatalog(windowId?: string, query?: string): Promise<{
+    ok: true;
+    selected: FontSettings;
+    recommended: (RecommendedFont & { installed: boolean | null })[];
+    families: LocalFontFamily[];
+    /** Families before `query` was applied — so a filtered call still reports scale. */
+    totalFamilies: number;
+    error?: string;
+  }> {
+    const selected = normalizeFontSettings(getSettings().fonts);
+    const probeFamilies = RECOMMENDED_FONTS.map((font) => font.family);
+    let probed: Record<string, boolean | null> = {};
+    let listing: LocalFontListing = { families: [] };
+    let error: string | undefined;
+
+    const win = this.windowFor(windowId);
+    if (!win) {
+      error = "글꼴을 조회할 창이 없습니다.";
+    } else {
+      try {
+        // `userGesture: true` — the Local Font Access API is gated on user
+        // activation, which an automation call does not otherwise carry.
+        const answer = await win.webContents.executeJavaScript(
+          `window.agentPartyFonts
+            ? window.agentPartyFonts.list().then((listing) => ({ listing, probed: window.agentPartyFonts.probe(${JSON.stringify(probeFamilies)}) }))
+            : null`,
+          true,
+        );
+        if (!answer) {
+          error = "렌더러가 아직 글꼴 프로브를 게시하지 않았습니다 (창 로딩 중).";
+        } else {
+          listing = answer.listing || { families: [] };
+          probed = answer.probed || {};
+          error = listing.error;
+        }
+      } catch (caught) {
+        error = `글꼴 조회 실패: ${caught instanceof Error ? caught.message : String(caught)}`;
+      }
+    }
+
+    const installedFamilies = new Set(listing.families.map((entry) => entry.family));
+    const recommended = RECOMMENDED_FONTS.map((font) => ({
+      ...font,
+      // Bundled is installed by definition; the enumeration is authoritative
+      // for the rest, and the width probe is the only answer left when
+      // enumeration was refused.
+      installed: font.bundled || installedFamilies.has(font.family) ? true : (probed[font.family] ?? null),
+    }));
+
+    const families = query ? listing.families.filter((entry) => matchesFontQuery(entry.family, query)) : listing.families;
+    return {
+      ok: true,
+      selected,
+      recommended,
+      families,
+      totalFamilies: listing.families.length,
+      ...(error ? { error } : {}),
+    };
+  }
+
+  /**
    * Reads measurements off the LIVE screen — the numbers behind a design review.
    *
    * A capture answers "what does it look like"; this answers "what is it". The
@@ -1442,9 +1629,24 @@ export class AppController {
    */
   async qaDesignGallery(workspacePath: string): Promise<{ ok: true; party: string; members: string[] }> {
     this.requireQa();
+    // The environment cards resolve their content from the report by id, so the
+    // fixture goes in FIRST — otherwise they would render this machine's real
+    // state and the states worth reviewing would never appear.
+    setMockEnvironmentReport(GALLERY_ENVIRONMENT_REPORT);
     const built = await this.engineFor(workspacePath).qaDesignGallery();
     await this.broadcastParty(workspacePath);
     return { ok: true, ...built };
+  }
+
+  /**
+   * Installs the fixed environment fixture (or `{reset:true}` to go back to the
+   * real probe). QA only — a normal run can never report anything but the
+   * machine it is on.
+   */
+  qaEnvironment(body: { reset?: boolean } = {}): { ok: true; mocked: boolean } {
+    this.requireQa();
+    setMockEnvironmentReport(body.reset ? undefined : GALLERY_ENVIRONMENT_REPORT);
+    return { ok: true, mocked: !body.reset };
   }
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {

@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { log } from "../../logger";
 import type { RemoteTransport } from "./remoteEngineClient";
 import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
+import { claudeAgentSdkSpec } from "../../claudeSdkVersion";
 
 export interface WslEngineOptions {
   distro: string;
@@ -118,21 +119,23 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
   };
 }
 
-/** Keep in sync with the app's @anthropic-ai/claude-agent-sdk dependency. */
-const SDK_SPEC = "@anthropic-ai/claude-agent-sdk@^0.3.186";
 
 /**
  * Provisions the Claude Agent SDK (incl. the linux native binary) into the
  * distro server dir so real sessions resolve it — VS Code's "server install on
- * connect". Guarded, so it only installs once. Best-effort: if it fails (e.g.
- * no network), we log and continue — mock/QA sessions don't need it, and a real
- * session then fails with the SDK's own explicit error (no silent fallback).
+ * connect". Guarded, so it only installs once.
+ *
+ * Best-effort: if it fails (e.g. no network), we log and continue — mock/QA
+ * sessions don't need it, and a real session then fails with the SDK's own
+ * explicit error (no silent fallback). The failure is ALSO reported by the
+ * environment screen's `wsl.<distro>.sdk` check, so it does not live only in a
+ * log line nobody reads.
  */
 async function ensureSdk(distro: string, serverDir: string): Promise<void> {
   try {
     await runBash(
       distro,
-      `cd "${serverDir}" && [ -d node_modules/@anthropic-ai/claude-agent-sdk ] || { npm init -y >/dev/null 2>&1; npm install ${SDK_SPEC} >/dev/null 2>&1; }`,
+      `cd "${serverDir}" && [ -d node_modules/@anthropic-ai/claude-agent-sdk ] || { npm init -y >/dev/null 2>&1; npm install ${claudeAgentSdkSpec()} >/dev/null 2>&1; }`,
     );
   } catch (error) {
     log("warn", "wsl-engine", "could not provision the Claude Agent SDK in the distro (real sessions will fail until installed)", {

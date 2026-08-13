@@ -12,6 +12,7 @@ import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codex
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
+import { imageContentResult } from "./imageFile";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
@@ -1396,7 +1397,25 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     if (item.type === "imageView") {
-      this.emitEvent({ type: "tool_call", id, name: "image_view", input: { path: item.path }, status, source: "image", at: now() });
+      // Carry the PICTURE, not just the path. A tool block already renders any
+      // image content block in its `result` (that is how screenshots show up),
+      // and the persist path externalises those bytes into the image store — so
+      // attaching the file here is the whole fix, with no new block kind.
+      //
+      // Read only on completion: the started event fires before the file is
+      // necessarily written, and reading twice would double the work for a
+      // picture that cannot have changed. Done HERE because this code runs in
+      // the member's process — a WSL member's path exists only inside the distro.
+      this.emitEvent({
+        type: "tool_call",
+        id,
+        name: "image_view",
+        input: { path: item.path },
+        status,
+        result: status === "completed" ? imageContentResult(item.path) : undefined,
+        source: "image",
+        at: now(),
+      });
       return;
     }
     if (item.type === "subAgentActivity") {
@@ -1707,6 +1726,7 @@ function codexRateLimitWindows(snapshot: any): UsageWindow[] {
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
+
 
 /**
  * The node executable codex should spawn for the party MCP server. On Windows,

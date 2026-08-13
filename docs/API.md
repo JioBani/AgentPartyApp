@@ -113,6 +113,65 @@ Opens the log folder in the OS file manager. No body. Returns
 folder could not be opened — it never reports success for a window that did not
 appear.
 
+### `GET /api/environment`
+
+Whether this machine can actually run a member, and what to do when it cannot —
+the same report the settings **런타임 → 환경** tab renders. Sibling of
+`/api/diagnostics` and deliberately separate: that one describes a build for a
+bug report, this one is a to-do list. No secrets: paths and versions only.
+
+Query: `?refresh=1` bypasses the 30s cache, `?wsl=1` also probes WSL distros
+(off by default because probing **starts** a distro).
+
+```json
+{
+  "checkedAt": "2026-08-13T04:12:00.000Z",
+  "expectedClaudeCli": "2.1.191",
+  "checks": [
+    {
+      "id": "harness.cursor",
+      "group": "harness",
+      "label": "Cursor",
+      "status": "missing",
+      "detail": "설치되어 있지만 로그인되어 있지 않습니다.",
+      "path": "C:\\Users\\me\\AppData\\Local\\cursor-agent\\versions\\2026.07.23-e383d2b",
+      "remedies": [
+        { "kind": "command", "label": "로그인 명령 복사", "command": "cursor-agent login" },
+        { "kind": "repair", "label": "로그인", "repairId": "harness.cursor.login", "confirm": "…" }
+      ]
+    }
+  ]
+}
+```
+
+`status` is `ok` | `warn` | `missing` | `error` | `unknown`; `missing` and
+`error` are what block work. `raw` carries the untranslated probe failure (CLI
+output, paths tried) when there is one — surfaced, never swallowed.
+
+`expectedClaudeCli` is the Claude Code version this build's Agent SDK is paired
+with; a host CLI that differs is reported as `warn` rather than hidden.
+
+### `POST /api/environment/repair`
+
+Applies one of the fixes the report offered.
+
+```json
+{ "repairId": "wsl.sdk.reinstall:Ubuntu-20.04" }
+```
+
+The body carries an **id, never a command**: the command is looked up in a
+freshly built report, so this endpoint can only run a string the app itself
+authored. An unknown id is a **500** with the reason.
+
+Returns `{ "ok": true, "detail": "완료했습니다.", "output": "…", "report": { … } }`,
+where `report` is the post-repair environment so the caller re-renders from one
+source. A failed repair returns `ok: false` **with** the command output rather
+than a bare error.
+
+A remedy whose `confirm` field is set changes the user's own system (installing
+a CLI); the UI confirms before calling. One without it touches only app-owned
+state (the SDK copy inside a distro's `~/.agent_party_app`).
+
 ### `POST /api/capture`
 
 Captures the current Electron window and stores it as a PNG. If `path` is omitted, the file is written next to the current log file.
@@ -224,6 +283,117 @@ Updates app settings.
 0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
+
+`fonts` picks the app's UI and code font families by **family name as the OS
+reports it** — `{"fonts": {"sans": "Malgun Gothic", "mono": "D2Coding"}}`. Both
+keys are optional; `""` selects the platform default stack. In the UI this is
+설정 → 글꼴 (`view: "automation"`). Font **size** is a separate setting — see
+`transcriptFontScale` above. Call `GET /api/appearance/fonts` for the names this
+machine has.
+
+The selection applies live in every open window: the renderer writes the chosen
+stacks into the `--font-sans` / `--font-mono` CSS variables that every surface
+already draws through.
+
+A family this machine does **not** have is stored, not rejected. The app cannot
+tell "gone for good" from "absent on this PC" — erasing it would silently delete
+the choice of someone syncing settings between two machines — so the missing font
+is reported by `GET /api/appearance/fonts` and flagged in the picker instead.
+Characters that could break out of the CSS declaration (quotes, backslash,
+semicolon, braces, parens, angle brackets, control chars) are stripped, and the
+value is capped at 100 characters.
+
+The ids the first version of this setting used (`maplestory`, `geist-mono`,
+`system-sans`, …) are still accepted and migrate to the equivalent family name on
+read, so an upgrading user keeps the font they chose.
+
+### `POST /api/shell/open-path`
+
+Opens a local file the way the desktop would. The same controller method as a
+clicked file link in the transcript.
+
+```json
+{ "path": "./docs/API.md" }
+```
+
+A relative path resolves against the **calling window's workspace** — not the
+app bundle — so the same string a member wrote in a message resolves the way the
+user reads it. `file://` URLs and absolute paths are taken as given.
+
+The response says what actually happened, because "opened" and "the file manager
+came up instead" are different outcomes:
+
+```json
+{ "ok": true, "action": "opened", "path": "C:\\work\\docs\\API.md" }
+```
+
+`action` is `opened` (handed to the default application) or `revealed` (shown in
+the file manager), with `reason` explaining any fall back to `revealed`. Two
+cases produce `revealed`:
+
+- The OS has no application registered for that type.
+- The file is an executable or script (`.exe`, `.bat`, `.ps1`, `.vbs`, `.lnk`, …
+  — see `shared/localFiles.ts`). Those are **never launched**: the link that
+  named the file was written by a model into a chat message, and running it is
+  not a decision the app may take. Revealing puts the choice back with the user.
+
+A path that does not exist is an **error** naming the resolved path, not a
+silent no-op — a dead click is indistinguishable from a broken feature.
+
+### `GET /api/appearance/fonts`
+
+Every font family installed on this machine, the current selection, and the short
+recommended list the picker floats to the top.
+
+Query parameters:
+
+| name | meaning |
+|---|---|
+| `q` | Case-insensitive substring filter on the family name — the same match the picker's search box applies. |
+
+```json
+{
+  "ok": true,
+  "selected": { "sans": "Maplestory", "mono": "Geist Mono" },
+  "recommended": [
+    { "family": "Maplestory", "label": "Maplestory", "role": "sans",
+      "note": "앱에 포함됨 · 넥슨 메이플스토리체", "bundled": true, "installed": true }
+  ],
+  "families": [
+    { "family": "Cascadia Mono", "monospace": true },
+    { "family": "Malgun Gothic", "monospace": false }
+  ],
+  "totalFamilies": 224
+}
+```
+
+`families` is the OS enumeration (`queryLocalFonts`), deduplicated to one entry
+per family and sorted. `totalFamilies` is the count **before** `q` was applied,
+so a filtered call still reports the real scale.
+
+`monospace` is measured, not read off the name: the app compares the advance of
+`i` against `W` within the family. That matters because several fixed-width
+Korean fonts (`DotumChe`, `GulimChe`, `BatangChe`) are not named "Mono", and some
+fonts that are named "Mono" are not fixed-width. The 코드 글꼴 picker offers only
+families that pass this test.
+
+There is deliberately **no Hangul-coverage flag**. A family missing the glyph
+falls back to the system's Hangul font, which makes it indistinguishable from a
+family that *is* that system font — measurement confirmed 맑은 고딕 reporting as
+"no Hangul". The picker renders a Hangul sample in each family instead.
+
+`recommended[].installed` is `true` for the bundled face and for anything the
+enumeration returned; otherwise it comes from a width measurement, and it is
+`null` — never a made-up `false` — when nothing could be measured.
+
+CSS substitutes a missing family without a word, so a `POST /api/settings` that
+names an uninstalled font succeeds and changes nothing on screen. Confirm what
+the screen actually uses with `POST /api/measure`
+(`{"selector":"body","styles":["font-family"]}`).
+
+Enumeration needs a live window and the renderer's Local Font Access permission.
+When it could not run, `families` is empty and `error` states why — the list is
+never quietly truncated to the recommended entries without saying so.
 
 `idleSleep` controls when a quiet member's harness process is released to reclaim
 its memory — `{"idleSleep": {"enabled": true, "timeoutMinutes": 5}}`, the default.

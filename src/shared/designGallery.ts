@@ -120,4 +120,41 @@ export const GALLERY_CASES: GalleryCase[] = [
   { member: "19-압축-완료", runtime: "claude-code", caption: "대화 압축됨 — 수치가 모두 도착한 경우", events: [{ type: "compact_state", state: "done", trigger: "manual", preTokens: 823598, postTokens: 6883, durationMs: 197155, keptCount: 3 }] },
   { member: "20-압축-수치없음", runtime: "codex", caption: "대화 압축됨 — Codex(수치를 보내지 않음)", events: [{ type: "compact_state", state: "done" }] },
   { member: "21-압축-실패", runtime: "claude-code", caption: "압축 실패 — 다시 시도", events: [{ type: "compact_state", state: "failed", reason: "context too short to compact" }] },
+
+  // --- 환경 문제 ---------------------------------------------------------
+  // These read their label/detail/fixes from the environment report by id, so
+  // the gallery installs GALLERY_ENVIRONMENT_REPORT first (qaDesignGallery).
+  // Without it they would render THIS machine's state — green, on a healthy
+  // one, which is the one thing the cards are not for.
+  {
+    member: "22-환경-미설치", runtime: "claude-code", caption: "환경 — 하네스 미설치(설치 버튼 + 접힌 원본 오류)",
+    events: [{ type: "error", message: "Grok Build CLI가 설치되어 있지 않습니다.", environment: { checkId: "harness.grok", raw: "The official Grok Build CLI was not found. Tried: grok: spawn grok ENOENT. No fallback was attempted." } }],
+  },
+  {
+    member: "23-환경-미로그인", runtime: "claude-code", caption: "환경 — 설치됐지만 미로그인(로그인 버튼)",
+    events: [{ type: "error", message: "Cursor에 로그인되어 있지 않습니다.", environment: { checkId: "harness.cursor" } }],
+  },
+  {
+    member: "24-환경-버전차이", runtime: "claude-code", caption: "환경 — 버전 스큐 경고(주의, 막지는 않음)",
+    events: [{ type: "error", message: "Claude Code 버전이 이 빌드와 다릅니다.", environment: { checkId: "harness.claude-code" } }],
+  },
+  {
+    // The state after a fix: the same card, green, offering to resend the
+    // message that failed. `다시 시도` only appears once the check passes.
+    member: "25-환경-해결됨", runtime: "claude-code", caption: "환경 — 해결됨(다시 시도)",
+    // The user turn is part of the case: `다시 시도` resends the message that
+    // failed, so a card with no message before it cannot show that button.
+    events: [
+      { type: "queue_dequeued", text: "이 코드 리뷰해줘", count: 1 },
+      { type: "error", message: "Codex CLI를 실행하지 못했습니다.", environment: { checkId: "harness.codex" } },
+    ],
+  },
+  {
+    member: "26-환경-반복실패", runtime: "claude-code", caption: "환경 — 같은 실패 3회(카드는 1개로 유지)",
+    events: [
+      { type: "error", message: "Grok Build CLI가 설치되어 있지 않습니다.", environment: { checkId: "harness.grok", raw: "attempt 1" } },
+      { type: "error", message: "Grok Build CLI가 설치되어 있지 않습니다.", environment: { checkId: "harness.grok", raw: "attempt 2" } },
+      { type: "error", message: "Grok Build CLI가 설치되어 있지 않습니다.", environment: { checkId: "harness.grok", raw: "attempt 3" } },
+    ],
+  },
 ];

@@ -187,7 +187,13 @@ export type ClaudeNormalizedEvent =
   // inline badge in the SENDER's transcript (reject/forced/failed). UI-only — it
   // is never injected into any model's context. See the Message Gate design §8.
   | { type: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at: string }
-  | { type: "error"; message: string; at: string };
+  /**
+   * `environment` marks a failure the USER can fix (a harness CLI that is not
+   * installed or not signed in), carrying the id of the environment check that
+   * explains it. It is what turns a red wall of English CLI text into a card
+   * with buttons — see EnvironmentBlockedError.
+   */
+  | { type: "error"; message: string; at: string; environment?: { checkId: string; raw?: string } };
 
 export type NormalizedCommand =
   | { type: "sendUserTurn"; text: string }

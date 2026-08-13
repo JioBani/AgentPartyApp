@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
+import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
+import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
 import { ipcErrorMessage } from "./ipcError";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
@@ -23,6 +25,9 @@ import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
+import { normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily } from "../../shared/appFonts";
+import { enumerateLocalFonts, probeFonts } from "./fontProbe";
+import { FontPicker } from "../workbench/FontPicker";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
@@ -541,12 +546,13 @@ function DiscordGlyph({ size = 14 }: { size?: number }) {
 const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> = [
   { id: "general", label: "일반", icon: <Settings2 size={14} /> },
   { id: "harness", label: "하네스 기본값", icon: <SquareTerminal size={14} /> },
+  { id: "environment", label: "환경", icon: <ShieldCheck size={14} /> },
   { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -563,6 +569,8 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveMemberMessaging: (patch: { interruptOnSend: boolean }) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
+  /** Executable overrides for the environment tab — one patch per field. */
+  onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
   /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
   tabRequest?: { tab: RuntimeTabId; seq: number };
 }) {
@@ -744,6 +752,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </SubtreeVisibility>
         </div>
 
+        {/* Environment — readiness, not build facts: what still needs doing. */}
+        <div className="set-tab-panel" hidden={tab !== "environment"}>
+        <SubtreeVisibility visible={tab === "environment"}>
+          <EnvironmentCard active={tab === "environment"} settings={settings} onSaveExecutablePaths={onSaveExecutablePaths} />
+        </SubtreeVisibility>
+        </div>
+
         {/* Diagnostics — what a bug report needs: build, host, log folder. */}
         <div className="set-tab-panel" hidden={tab !== "diagnostics"}>
         <SubtreeVisibility visible={tab === "diagnostics"}>
@@ -752,6 +767,217 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </div>
       </div>
     </>
+  );
+}
+
+const ENVIRONMENT_STATUS_LABEL: Record<EnvironmentStatus, string> = {
+  ok: "준비됨",
+  warn: "주의",
+  missing: "필요",
+  error: "오류",
+  unknown: "미확인",
+};
+
+/** The executable overrides the environment tab exposes, in harness order. */
+type ExecutableField = "claudeExecutablePath" | "codexExecutablePath" | "cursorExecutablePath" | "grokExecutablePath";
+const EXECUTABLE_FIELDS: Array<{ field: ExecutableField; label: string }> = [
+  { field: "claudeExecutablePath", label: "Claude Code 실행 파일" },
+  { field: "codexExecutablePath", label: "Codex 실행 파일" },
+  { field: "cursorExecutablePath", label: "Cursor Agent 실행 파일" },
+  { field: "grokExecutablePath", label: "Grok Build 실행 파일" },
+];
+
+/**
+ * "Can this machine run a member, and if not, what do I press?"
+ *
+ * Sibling of {@link DiagnosticsCard} and deliberately a different screen: that
+ * one is a snapshot to paste into a bug report, this one is a to-do list with
+ * buttons. Loaded on FIRST reveal for the same reason — probing spawns CLIs.
+ *
+ * WSL is behind its own button because probing a distro STARTS it, which is far
+ * too rude to do just because someone opened a settings tab.
+ */
+function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
+  active: boolean;
+  settings: InitialAppState["settings"];
+  onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
+}) {
+  const [report, setReport] = useState<EnvironmentReport | undefined>();
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [wslLoading, setWslLoading] = useState(false);
+  const [repairNote, setRepairNote] = useState<{ ok: boolean; detail: string; output?: string } | undefined>();
+
+  const load = useCallback(async (options: { refresh?: boolean; includeWsl?: boolean } = {}) => {
+    const wsl = Boolean(options.includeWsl);
+    if (wsl) setWslLoading(true); else setLoading(true);
+    setLoadError("");
+    try {
+      setReport(await window.agentParty.getEnvironment(options));
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error));
+    } finally {
+      if (wsl) setWslLoading(false); else setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active && !report && !loading && !loadError) void load();
+  }, [active, report, loading, loadError, load]);
+
+  const groups: Array<{ id: EnvironmentCheck["group"]; label: string; hint: string }> = [
+    { id: "harness", label: "하네스", hint: "멤버를 실행하는 CLI" },
+    { id: "runtime", label: "기본 도구", hint: "하네스가 함께 쓰는 도구" },
+    { id: "wsl", label: "WSL", hint: "배포판 안에서 실행할 때만 필요" },
+  ];
+  const wslChecked = (report?.checks || []).some((check) => check.group === "wsl");
+
+  return (
+    <>
+      <div className="set-tab-note">
+        <InfoIcon size={14} />
+        <span>멤버를 만들기 전에 <b>이 PC가 준비됐는지</b> 확인합니다. 문제가 있으면 그 자리에서 해결할 수 있습니다.</span>
+      </div>
+
+      {loadError && (
+        <div className="set-inline-note is-error">
+          <AlertTriangle size={14} />
+          <span>환경을 점검하지 못했습니다: {loadError}</span>
+          <button type="button" className="set-link-btn" onClick={() => void load({ refresh: true })}><RefreshCw size={12} /> 다시 시도</button>
+        </div>
+      )}
+
+      {repairNote && <EnvironmentRepairNote note={repairNote} />}
+
+      {groups.map((group) => {
+        const checks = (report?.checks || []).filter((check) => check.group === group.id);
+        if (group.id === "wsl" && !checks.length && !wslChecked) {
+          return (
+            <section className="set-card" key={group.id}>
+              <div className="set-card-label">{group.label}<span className="set-card-sub wb-mono">{group.hint}</span></div>
+              <div className="set-inline-note">
+                <InfoIcon size={14} />
+                <span>배포판을 점검하면 <b>해당 배포판이 시작됩니다</b>. 그래서 자동으로 하지 않습니다.</span>
+              </div>
+              <div className="set-diag-actions">
+                <button type="button" className="set-btn-soft" data-env="check-wsl" disabled={wslLoading} onClick={() => void load({ refresh: true, includeWsl: true })}>
+                  <RefreshCw size={14} /> {wslLoading ? "점검 중…" : "WSL 점검"}
+                </button>
+              </div>
+            </section>
+          );
+        }
+        if (!checks.length) {
+          return null;
+        }
+        return (
+          <section className="set-card" key={group.id}>
+            <div className="set-card-label">{group.label}<span className="set-card-sub wb-mono">{group.hint}</span></div>
+            {checks.map((check) => (
+              <EnvironmentCheckRow
+                key={check.id}
+                check={check}
+                onRepaired={(result) => { setRepairNote(result); void load({ refresh: true, includeWsl: wslChecked }); }}
+              />
+            ))}
+            {group.id === "wsl" && (
+              <div className="set-diag-actions">
+                <button type="button" className="set-btn-soft" data-env="check-wsl" disabled={wslLoading} onClick={() => void load({ refresh: true, includeWsl: true })}>
+                  <RefreshCw size={14} /> {wslLoading ? "점검 중…" : "WSL 다시 점검"}
+                </button>
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      <section className="set-card">
+        <div className="set-card-label">실행 파일 경로<span className="set-card-sub wb-mono">비워두면 자동으로 찾습니다</span></div>
+        <div className="set-inline-note">
+          <InfoIcon size={14} />
+          <span>이미 설치했는데 위에서 <b>찾지 못했다고</b> 나오면, 실행 파일 경로를 직접 지정하세요.</span>
+        </div>
+        {EXECUTABLE_FIELDS.map((entry) => (
+          <ExecutablePathField
+            key={entry.field}
+            field={entry.field}
+            label={entry.label}
+            value={settings[entry.field] || ""}
+            onSave={(value) => {
+              onSaveExecutablePaths({ [entry.field]: value });
+              void load({ refresh: true });
+            }}
+          />
+        ))}
+      </section>
+
+      <div className="set-env-footer">
+        <button type="button" className="set-btn-accent" data-env="refresh" disabled={loading} onClick={() => void load({ refresh: true })}>
+          <RefreshCw size={14} /> {loading ? "점검 중…" : "다시 점검"}
+        </button>
+        {report?.expectedClaudeCli && <span className="set-save-hint">이 빌드가 기대하는 Claude Code: {report.expectedClaudeCli}</span>}
+      </div>
+    </>
+  );
+}
+
+/** One check: status, what was found, why, and the ways out. */
+function EnvironmentCheckRow({ check, onRepaired }: {
+  check: EnvironmentCheck;
+  onRepaired: (result: { ok: boolean; detail: string; output?: string }) => void;
+}) {
+  return (
+    <div className="set-env-row" data-env-check={check.id} data-status={check.status}>
+      <div className="set-env-head">
+        <span className={"set-env-chip is-" + check.status}>{ENVIRONMENT_STATUS_LABEL[check.status]}</span>
+        <span className="set-env-label">{check.label}</span>
+        {check.version && <span className="set-env-version wb-mono">{check.version}</span>}
+      </div>
+      <div className="set-env-detail">{check.detail}</div>
+      {check.path && <div className="set-env-path wb-mono">{check.path}</div>}
+      {Boolean(check.remedies?.length) && (
+        <div className="set-env-actions">
+          {/* Same component the in-transcript blocker card uses, so a fix
+              offered in one place behaves identically in the other. */}
+          <EnvironmentRemedyButtons remedies={check.remedies || []} onRepaired={onRepaired} />
+        </div>
+      )}
+      {check.raw && <EnvironmentRawDetail raw={check.raw} />}
+    </div>
+  );
+}
+
+/**
+ * Staged rather than applied-on-keystroke: a half-typed path would otherwise be
+ * saved and immediately re-probed as "not found" on every character.
+ */
+function ExecutablePathField({ field, label, value, onSave }: {
+  field: string;
+  label: string;
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  const dirty = draft.trim() !== value.trim();
+  return (
+    <label className="set-field set-env-field">
+      <span className="set-field-label">{label}</span>
+      <span className="set-env-field-row">
+        <span className="set-input">
+          <input
+            data-env-field={field}
+            value={draft}
+            placeholder="자동으로 찾기"
+            spellCheck={false}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </span>
+        <button type="button" className="set-btn-soft" disabled={!dirty} onClick={() => onSave(draft.trim())}>
+          <Check size={14} /> 적용
+        </button>
+      </span>
+    </label>
   );
 }
 
@@ -893,6 +1119,75 @@ function DiagnosticsRow({ label, value, loading, copyId, copiedId, onCopy }: {
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * UI/code font family pickers (설정 → 글꼴).
+ *
+ * Applies on change rather than behind a save button — the whole window
+ * repaints in the chosen font, so staging the change would hide the only thing
+ * worth previewing.
+ *
+ * Owns the two things both pickers share: the enumerated font list, and the
+ * width-probe fallback for recommended families that enumeration did not cover.
+ * Enumerating once here rather than per picker halves the work and guarantees
+ * the two lists cannot disagree.
+ */
+function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undefined; onSave: (patch: Partial<FontSettings>) => void }) {
+  const selection = normalizeFontSettings(settings);
+  const [families, setFamilies] = useState<LocalFontFamily[]>([]);
+  const [available, setAvailable] = useState<Record<string, boolean | null>>({});
+  const [enumerationError, setEnumerationError] = useState<string>();
+  const [loading, setLoading] = useState(true);
+
+  // Wait for the bundled webfonts before measuring — probing earlier reports
+  // Maplestory itself as missing, because it has not been applied yet.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const listing = await enumerateLocalFonts();
+      if (cancelled) {
+        return;
+      }
+      setFamilies(listing.families);
+      setEnumerationError(listing.error);
+      // Only the recommended families need the width probe; everything else
+      // came from the enumeration and is installed by definition.
+      setAvailable(probeFonts(RECOMMENDED_FONTS.map((font) => font.family)));
+      setLoading(false);
+    };
+    void (document.fonts?.ready ? document.fonts.ready.then(run) : run());
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <>
+      <div className="set-inline-note">
+        <InfoIcon size={14} />
+        <span>앱 전체에 즉시 적용됩니다. <b>UI 글꼴</b>은 화면 텍스트에, <b>코드 글꼴</b>은 코드·도구 출력·모노스페이스 표기에 쓰입니다. 글씨 <b>크기</b>는 대화 위에서 Ctrl+휠로 조절합니다.</span>
+      </div>
+      <FontPicker
+        role="sans"
+        label="UI 글꼴"
+        value={selection.sans}
+        families={families}
+        available={available}
+        enumerationError={enumerationError}
+        loading={loading}
+        onChange={(family) => onSave({ sans: family })}
+      />
+      <FontPicker
+        role="mono"
+        label="코드 글꼴"
+        value={selection.mono}
+        families={families}
+        available={available}
+        enumerationError={enumerationError}
+        loading={loading}
+        onChange={(family) => onSave({ mono: family })}
+      />
+    </>
   );
 }
 
@@ -1125,14 +1420,27 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   );
 }
 
-export function AutomationView({ automationApi, logs, debugEnabled, onToggleDebug }: {
+/**
+ * The 설정 screen — app-shell preferences plus the automation API/log handles.
+ *
+ * The font pickers live HERE rather than under 런타임 on purpose: 런타임 owns the
+ * defaults a new MEMBER inherits (harness, model, send key), while a font is a
+ * property of the app window itself and applies no matter which members exist.
+ */
+export function AutomationView({ automationApi, logs, debugEnabled, fonts, onToggleDebug, onSaveFonts }: {
   automationApi: InitialAppState["automationApi"];
   logs: InitialAppState["logs"];
   debugEnabled: boolean;
+  fonts: FontSettings | undefined;
   onToggleDebug: (enabled: boolean) => void;
+  onSaveFonts: (patch: Partial<FontSettings>) => void;
 }) {
   return (
-    <section className="legacy-view narrow">
+    <section className="legacy-view narrow set-stack">
+      <section className="card">
+        <div className="card-title">글꼴</div>
+        <FontSettingsCard settings={fonts} onSave={onSaveFonts} />
+      </section>
       <section className="card">
         <div className="card-title">자동화 API</div>
         <Info label="API" value={automationApi?.baseUrl || ""} />

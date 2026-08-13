@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DiagnosticsReport } from "../shared/diagnostics";
+import type { EnvironmentReport } from "../shared/environment";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -55,9 +56,22 @@ const api = {
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
   authenticateMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpAuthenticate", sessionId, server),
   getDiagnostics: (): Promise<DiagnosticsReport> => ipcRenderer.invoke("diagnostics:get"),
+  /** Readiness of this machine's harnesses. `includeWsl` boots distros, so it is opt-in. */
+  getEnvironment: (options?: { refresh?: boolean; includeWsl?: boolean }): Promise<EnvironmentReport> =>
+    ipcRenderer.invoke("environment:get", options || {}),
+  /**
+   * Applies a fix the report offered, by id — never a command string. Resolves
+   * with the post-repair report so the caller re-renders from one source.
+   */
+  repairEnvironment: (repairId: string): Promise<{ ok: boolean; detail: string; output?: string; report: EnvironmentReport }> =>
+    ipcRenderer.invoke("environment:repair", repairId),
   /** Reveals the log folder. Rejects with the OS reason when it cannot open. */
   openLogFolder: (): Promise<{ ok: true; path: string }> => ipcRenderer.invoke("diagnostics:openLogFolder"),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
+  /** Opens a local file with its default app, or reveals it when there is none. */
+  openPath: (target: string) => ipcRenderer.invoke("shell:openPath", target),
+  /** Shows a local file in the OS file manager without opening it. */
+  revealPath: (target: string) => ipcRenderer.invoke("shell:openPath", target, { reveal: true }),
   // `mediaType` is optional because the main process sniffs the real format off
   // the bytes — an image copied from a remote URL may not declare one.
   copyImageToClipboard: (image: { dataBase64: string; mediaType?: string }) => ipcRenderer.invoke("clipboard:writeImage", image),

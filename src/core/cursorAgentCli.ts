@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
+import { EnvironmentBlockedError } from "./environmentError";
 
 export interface CursorAgentCommand {
   command: string;
@@ -126,7 +127,11 @@ export function resolveCursorAgentCommand(explicitPath?: string): CursorAgentCom
         return bundle;
       }
     }
-    throw new Error(
+    // Structured so a Cursor member that cannot start offers the install
+    // instead of printing this sentence on every turn.
+    throw new EnvironmentBlockedError(
+      "Cursor Agent CLI가 설치되어 있지 않습니다.",
+      "harness.cursor",
       "Cursor Agent CLI was not found. Install it with the official Windows installer " +
       "(`irm 'https://cursor.com/install?win32=true' | iex`) or set AGENTPARTY_CURSOR_BIN.",
     );
@@ -147,7 +152,13 @@ export function resolveCursorAgentCommand(explicitPath?: string): CursorAgentCom
 function commandFromConfiguredPath(configured: string): CursorAgentCommand {
   const resolved = path.resolve(configured);
   if (!isFile(resolved)) {
-    throw new Error(`Configured Cursor Agent executable does not exist: ${resolved}`);
+    // A path the user typed themselves — structured so the card can offer the
+    // settings field back instead of making them hunt for where they set it.
+    throw new EnvironmentBlockedError(
+      "설정한 Cursor 실행 파일 경로에 파일이 없습니다.",
+      "harness.cursor",
+      `Configured Cursor Agent executable does not exist: ${resolved}`,
+    );
   }
   if (resolved.toLowerCase().endsWith(".js")) {
     return { command: process.execPath, argsPrefix: [resolved, ...cursorExtraArgs()], source: resolved };

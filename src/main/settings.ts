@@ -11,6 +11,7 @@ import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog"
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
 import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/composerSettings";
+import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 
@@ -61,6 +62,7 @@ const defaults: AppSettings = {
   deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
+  fonts: { ...DEFAULT_FONT_SETTINGS },
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   idleSleep: { ...DEFAULT_IDLE_SLEEP },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
@@ -179,7 +181,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // when it renders, so an unknown id draws nothing and returns on its own.
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

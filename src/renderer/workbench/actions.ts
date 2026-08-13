@@ -97,6 +97,12 @@ export interface WorkbenchActions {
    * sending a message starts a fresh session. Bound to the tab's close (×).
    */
   closeSession(memberName: string): void;
+  /**
+   * Opens 설정 → 런타임 → 환경. Used by the in-transcript blocker card, whose
+   * whole purpose is that a user never has to go LOOKING for the screen that
+   * explains why their member will not start.
+   */
+  openEnvironmentSettings(): void;
   applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; serviceTier?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
   setEffort(memberName: string, effort: string): void;
   setThinking(memberName: string, mode: string, budget?: number): void;

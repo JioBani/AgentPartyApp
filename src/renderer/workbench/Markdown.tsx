@@ -1,7 +1,10 @@
 import { memo, type ReactNode } from "react";
+import { FolderOpen } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "./copy";
+import { reportNotice } from "../app/appNotice";
+import { ipcErrorMessage } from "../app/ipcError";
 
 /**
  * Renders model-authored text as GitHub-flavored markdown (headings, lists,
@@ -76,18 +79,66 @@ function textOf(node: ReactNode): string {
 }
 
 /**
+ * File-ish endings that make a dotted token a PATH, not a host. Without this
+ * `[readme](API.md)` would be "opened" as https://API.md. The list is short on
+ * purpose: it only has to cover what a model actually writes as a bare relative
+ * link in this app's conversations.
+ */
+const FILE_ENDINGS = /\.(md|markdown|txt|json|ya?ml|log|csv|png|jpe?g|gif|webp|svg|pdf|zip|tar|gz|[jt]sx?|mjs|cjs|css|html?|py|rs|go|java|sh|ps1)$/i;
+
+/**
+ * The address to hand the OS for a markdown href, or "" when there is none.
+ *
+ * Models write plenty of links that are plainly meant for the web but carry no
+ * scheme — `[docs](example.com)`, `[site](www.example.com/pricing)`. Left alone
+ * those resolve against the app's own URL, so the main-process guard sees a
+ * `file://…/dist-renderer/example.com` and refuses it: the link does nothing.
+ * Recovering the intent has to happen HERE, because only the renderer still has
+ * the href as it was written.
+ *
+ * `mailto:` is deliberately NOT returned: the anchor is left to the main guard,
+ * which already hands it to the OS. Anything else — a real relative path, an
+ * in-page anchor — returns "" and keeps the browser's own behaviour.
+ */
+function externalTarget(href: string | undefined): string {
+  const value = (href || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  // A scheme other than http(s) (mailto:, vscode:, …) is not ours to rewrite.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+    return "";
+  }
+  // Explicitly relative or absolute paths are paths, not hosts.
+  if (/^[./\\#?]/.test(value)) {
+    return "";
+  }
+  const host = value.split(/[/?#]/)[0];
+  const looksLikeHost = /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host) && !FILE_ENDINGS.test(host);
+  return looksLikeHost ? `https://${value}` : "";
+}
+
+/**
  * A link in model-authored markdown. Clicking hands the URL to the OS default
  * browser through the main process (`shell.openExternal`) instead of letting
- * Electron navigate the app window away from the workbench. A copy control sits
- * next to it so the target can be taken without opening it.
+ * Electron open it in an app window. A copy control sits next to it so the
+ * target can be taken without opening it.
  *
- * Only http(s) is routed out: the main handler rejects anything else, so there is
- * no point intercepting it here. Any other href (an anchor, a mailto) is left
- * exactly as this app already handled it — this component neither improves nor
- * worsens that case, and it is NOT inert.
+ * This is the FIRST of two guards, not the only one. `guardNavigation` in main
+ * closes the same boundary for everything this component never sees — a
+ * middle-click, a dropped URL, a link some other view renders. This one exists
+ * because it is the only place that still knows the href as authored, which is
+ * what makes a scheme-less `example.com` recoverable.
  */
 function MarkdownLink({ href, children, ...props }: { href?: string; children?: ReactNode } & Record<string, unknown>) {
-  const external = Boolean(href && /^https?:\/\//i.test(href));
+  const target = externalTarget(href);
+  // Anything left over that is not an in-page anchor or a foreign scheme is a
+  // path — a file the member wrote or read. Those open in their default app.
+  const file = !target && href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#") ? href : "";
+  const copyable = target || file;
   return (
     <span className="wb-md-link">
       <a
@@ -96,16 +147,51 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
         target="_blank"
         rel="noreferrer"
         onClick={(event) => {
-          if (!external) {
+          if (!target && !file) {
             return;
           }
           event.preventDefault();
-          void window.agentParty.openExternal(href!);
+          if (target) {
+            void window.agentParty.openExternal(target);
+            return;
+          }
+          // The reply matters: it says whether the file opened or was only
+          // revealed (no handler / not launchable), and a missing file is an
+          // error the user has to see rather than a click that did nothing.
+          void window.agentParty
+            .openPath(file)
+            .then((result: { action?: string; path?: string; reason?: string }) => {
+              if (result?.reason) {
+                reportNotice(result.reason);
+              }
+            })
+            .catch((error: unknown) => reportNotice(`파일을 열지 못했습니다: ${ipcErrorMessage(error)}`));
         }}
       >
         {children}
       </a>
-      {external && <CopyButton text={href!} title="링크 복사" className="wb-md-link-copy" />}
+      {copyable && <CopyButton text={copyable} title={target ? "링크 복사" : "경로 복사"} className="wb-md-link-copy" />}
+      {/* A file has a second thing you may want: the folder it sits in. Opening
+          and revealing are different intents — "read this" vs "where is it" —
+          so revealing gets its own control rather than being the fallback you
+          reach by having no default app. */}
+      {file && (
+        <button
+          type="button"
+          className="wb-md-link-reveal"
+          title="파일 탐색기에서 보기"
+          aria-label="파일 탐색기에서 보기"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void window.agentParty
+              .revealPath(file)
+              .catch((error: unknown) => reportNotice(`파일 위치를 열지 못했습니다: ${ipcErrorMessage(error)}`));
+          }}
+        >
+          <FolderOpen size={12} />
+        </button>
+      )}
     </span>
   );
 }

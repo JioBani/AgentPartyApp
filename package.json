@@ -21,6 +21,7 @@
     "test:e2e:live-grok-usage": "npm run build && node scripts/e2e-live-grok-usage.mjs",
     "test:e2e:live-grok-46": "npm run build && node scripts/e2e-live-grok-46.mjs",
     "test:e2e:live-codex-party-tools": "npm run build && node scripts/e2e-live-codex-party-tools.mjs",
+    "test:e2e:live-claude-party-tools": "npm run build && node scripts/e2e-live-claude-channel-folding.mjs",
     "test:e2e:live-wsl-codex-party-tools": "npm run build && node scripts/e2e-live-wsl-codex-party-tools.mjs",
     "test:e2e:wsl-workspace-open": "npm run build && node scripts/e2e-wsl-workspace-open.mjs",
     "test:e2e:idle-sleep": "node scripts/e2e-idle-sleep.mjs",
@@ -52,6 +53,9 @@
     "test:e2e:live-opus5": "npm run build && node scripts/e2e-live-opus5.mjs",
     "test:e2e:live-claude-opus-routing": "npm run build && node scripts/e2e-live-claude-opus-routing.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
+    "test:e2e:font-family": "npm run build && node scripts/e2e-font-family.mjs",
+    "test:e2e:codex-image-view": "npm run build && node scripts/e2e-codex-image-view.mjs",
+    "test:e2e:external-links": "npm run build && node scripts/e2e-external-links.mjs",
     "test:e2e:composer-input": "npm run build && node scripts/e2e-composer-input.mjs",
     "test:e2e:two-window": "npm run build && node scripts/e2e-two-window-party.mjs",
     "test:party-window-routing": "npm run build && node scripts/qa-party-window-routing.mjs",
@@ -84,6 +88,7 @@
     "test:subscription-install": "node scripts/qa-subscription-proxy-install.mjs",
     "test:wsl-codex-bridge": "node scripts/qa-wsl-codex-bridge.mjs",
     "test:party-bridge": "node scripts/qa-party-bridge.mjs",
+    "test:claude-party-tools": "node scripts/qa-claude-party-tools.mjs",
     "test:party-mock": "node scripts/qa-party-mock.mjs",
     "test:member-wizard": "node scripts/qa-member-wizard.mjs",
     "test:member-remove": "node scripts/qa-member-remove.mjs",
@@ -134,7 +139,7 @@
     "test:wsl-session": "node scripts/qa-wsl-session.mjs",
     "test:wsl-subagents": "node scripts/qa-wsl-subagents.mjs",
     "test:compact-dialog": "node scripts/qa-compact-dialog.mjs",
-    "test:ui": "npm run test:temp-isolation && npm run test:workspace && npm run test:layout && npm run test:render && npm run test:askq && npm run test:interaction && npm run test:catalog && npm run test:backend && npm run test:subscription-auth && npm run test:subscription-auth-url && npm run test:subscription-disconnect-ui && npm run test:party-bridge && npm run test:party-mock && npm run test:member-wizard && npm run test:member-remove && npm run test:channel-render && npm run test:markdown && npm run test:tool-output && npm run test:subagents && npm run test:subagent-tracker && npm run test:approval-shapes && npm run test:background-tasks && npm run test:party-store && npm run test:transcript-append && npm run test:message-queue && npm run test:harness-badge && npm run test:default-profile && npm run test:harness-defaults && npm run test:reasoning-unify && npm run test:codex-policy && npm run test:codex-approval && npm run test:codex-items && npm run test:codex-discovery && npm run test:codex-diagnostics && npm run test:codex-models && npm run test:codex-dedup && npm run test:codex-party-tools && npm run test:stall-status && npm run test:interrupt-recovery && npm run test:interrupt-notice && npm run test:context-meter && npm run test:message-preview && npm run test:session-history && npm run test:vision && npm run test:composer-copy-image && npm run test:transcript-image && npm run test:esc-interrupt && npm run test:user-message && npm run test:mcp && npm run test:mcp-modal && npm run test:usage-limits && npm run test:auto-compact && npm run test:compact-dialog && npm run test:gate-reviewer-reasoning && npm run test:engine-host-channel && npm run test:engine-transport-loss && npm run test:session-list-routing && npm run test:workbench-layout && npm run test:raw-logger && npm run test:gate-fail-open && npm run test:party-gate-scope && npm run test:openrouter-clear && npm run test:open-tab-deliver && npm run test:catalog-list && npm run test:router-diagnostics && npm run test:resume-target && npm run test:codex-authentication-store",
+    "test:ui": "npm run test:temp-isolation && npm run test:workspace && npm run test:layout && npm run test:render && npm run test:askq && npm run test:interaction && npm run test:catalog && npm run test:backend && npm run test:subscription-auth && npm run test:subscription-auth-url && npm run test:subscription-disconnect-ui && npm run test:party-bridge && npm run test:claude-party-tools && npm run test:party-mock && npm run test:member-wizard && npm run test:member-remove && npm run test:channel-render && npm run test:markdown && npm run test:tool-output && npm run test:subagents && npm run test:subagent-tracker && npm run test:approval-shapes && npm run test:background-tasks && npm run test:party-store && npm run test:transcript-append && npm run test:message-queue && npm run test:harness-badge && npm run test:default-profile && npm run test:harness-defaults && npm run test:reasoning-unify && npm run test:codex-policy && npm run test:codex-approval && npm run test:codex-items && npm run test:codex-discovery && npm run test:codex-diagnostics && npm run test:codex-models && npm run test:codex-dedup && npm run test:codex-party-tools && npm run test:stall-status && npm run test:interrupt-recovery && npm run test:interrupt-notice && npm run test:context-meter && npm run test:message-preview && npm run test:session-history && npm run test:vision && npm run test:composer-copy-image && npm run test:transcript-image && npm run test:esc-interrupt && npm run test:user-message && npm run test:mcp && npm run test:mcp-modal && npm run test:usage-limits && npm run test:auto-compact && npm run test:compact-dialog && npm run test:gate-reviewer-reasoning && npm run test:engine-host-channel && npm run test:engine-transport-loss && npm run test:session-list-routing && npm run test:workbench-layout && npm run test:raw-logger && npm run test:gate-fail-open && npm run test:party-gate-scope && npm run test:openrouter-clear && npm run test:open-tab-deliver && npm run test:catalog-list && npm run test:router-diagnostics && npm run test:resume-target && npm run test:codex-authentication-store",
     "design:gallery": "node scripts/design-gallery.mjs",
     "start": "node scripts/launch-electron.mjs",
     "start:qa": "cross-env AGENTPARTY_QA=1 node scripts/launch-electron.mjs",
@@ -181,7 +186,9 @@
       "dist-renderer/**",
       "docs/**",
       "package.json",
-      "README.md"
+      "README.md",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/@anthropic-ai/claude-agent-sdk/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "asarUnpack": [
       "dist/engine-server.mjs"

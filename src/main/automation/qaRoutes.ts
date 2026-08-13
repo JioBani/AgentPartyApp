@@ -40,6 +40,13 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
     sendJson(res, 200, await c.qaDesignGallery(workspace));
     return;
   }
+  // Stands a fixed environment report in for the real probe, so the 환경 screen
+  // and the blocker cards can be reviewed without breaking the reviewer's
+  // machine. `{"reset":true}` puts the real probe back.
+  if (method === "POST" && url.pathname === "/api/qa/environment") {
+    sendJson(res, 200, c.qaEnvironment(await readJson(req)));
+    return;
+  }
   if (method === "POST" && url.pathname === "/api/qa/reset") {
     sendJson(res, 200, await c.qaReset(workspace));
     return;

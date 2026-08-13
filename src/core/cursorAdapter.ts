@@ -7,6 +7,7 @@ import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import type { ImageAttachment } from "../shared/attachments";
 import { RawLogger } from "./rawLogger";
 import { resolveCursorAgentCommand } from "./cursorAgentCli";
+import { errorEventPayload, isEnvironmentBlockedError } from "./environmentError";
 import { fetchCursorUsage, readCursorAccessToken } from "./cursorUsage";
 import type { McpServerSnapshot } from "../shared/mcp";
 import {
@@ -772,18 +773,27 @@ export class CursorAdapter extends EventEmitter {
     this.status = "error";
     this.turnState = undefined;
     this.rememberUncommittedTurn("this turn failed before it finished");
-    this.emitEvent({
-      type: "diagnostic",
-      severity: "error",
-      category: "cursor-cli",
-      title: "Cursor Agent turn failed",
-      detail: message,
-      recovery: message.includes("Named models unavailable")
-        ? "Upgrade the signed-in Cursor plan or sign in with an account that can use named models. AgentParty will not fall back to Auto."
-        : "Run `agent status` and `agent --list-models`, then retry.",
-      at: now(),
-    });
-    this.emitEvent({ type: "error", message, at: now() });
+    // A setup problem gets ONE card (below) instead of this diagnostic: the
+    // environment card already states the cause and carries the fix, and the
+    // generic "run `agent status`" recovery is wrong advice for a CLI that is
+    // not installed. Everything else still gets its diagnostic.
+    if (!isEnvironmentBlockedError(error)) {
+      this.emitEvent({
+        type: "diagnostic",
+        severity: "error",
+        category: "cursor-cli",
+        title: "Cursor Agent turn failed",
+        detail: message,
+        recovery: message.includes("Named models unavailable")
+          ? "Upgrade the signed-in Cursor plan or sign in with an account that can use named models. AgentParty will not fall back to Auto."
+          : "Run `agent status` and `agent --list-models`, then retry.",
+        at: now(),
+      });
+    }
+    // Setup failures (CLI not installed, wrong configured path) travel with the
+    // environment check that explains them, so the transcript shows a card with
+    // a fix instead of the same paragraph once per turn.
+    this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
     if (!this.process) {
       this.lineReader?.close();
       this.lineReader = undefined;

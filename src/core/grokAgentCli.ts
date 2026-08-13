@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
+import { EnvironmentBlockedError } from "./environmentError";
 
 const execFileAsync = promisify(execFile);
 
@@ -75,7 +76,13 @@ export async function resolveGrokCli(explicit?: string): Promise<GrokCliInfo> {
       tried.push(`${command}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
     }
   }
-  throw new Error(
+  // Raised as an EnvironmentBlockedError so the transcript can offer the install
+  // instead of printing this paragraph once per attempt. The English text is
+  // kept verbatim as `raw` — it names every path tried, which is what a bug
+  // report needs.
+  throw new EnvironmentBlockedError(
+    "Grok Build CLI가 설치되어 있지 않습니다.",
+    "harness.grok",
     "The official Grok Build CLI was not found. Install it with `irm https://x.ai/cli/install.ps1 | iex` " +
       "(Windows) or `curl -fsSL https://x.ai/cli/install.sh | bash`, then run `grok login`. " +
       `Tried: ${tried.join("; ") || "no candidates"}. No fallback was attempted.`,

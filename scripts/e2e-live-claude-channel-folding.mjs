@@ -1,10 +1,11 @@
 /*
  * Billed product E2E for Claude's party-send event lifecycle.
  *
- * Starts the real Electron app and real Claude Code harness, asks Opus 5 for one
- * party send, then verifies the renderer-persisted transcript contains one
- * complete channel card and no transport-level tool_result/empty card. Finally
- * it restarts the app and verifies the same cleaned transcript is restored.
+ * Starts the real Electron app and real Claude Code harness, sleeps and wakes
+ * the sender, then asks Opus 5 for one party send. This proves a newly recreated
+ * member can see the party tools on its first turn. It also verifies the
+ * renderer-persisted transcript contains one complete channel card and no
+ * transport-level tool_result/empty card, including after an app restart.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -57,9 +58,15 @@ async function main() {
       requirement: "Send exactly the requested party message, then stop.",
       runtime: "claude-code",
       model: "claude-opus-5[1m]",
-      permissionMode: "bypassPermissions",
+      effort: "high",
+      permissionMode: "auto",
     });
-    await post(`/api/party/members/${sender}/start`, { model: "claude-opus-5[1m]", permissionMode: "bypassPermissions" });
+    await post(`/api/party/members/${sender}/start`, { model: "claude-opus-5[1m]", effort: "high", permissionMode: "auto" });
+    const slept = await post(`/api/party/members/${sender}/sleep`, {});
+    assert(memberOf(slept, sender)?.status === "sleeping", "sender harness was released before its tool turn");
+    const woke = await post(`/api/party/members/${sender}/wake`, {});
+    const wokenSender = memberOf(woke, sender);
+    assert(Boolean(wokenSender?.sessionId) && wokenSender.status !== "sleeping", "sender harness was recreated before its tool turn");
     await post("/api/navigation", { view: "workbench" });
     await post("/api/qa/open", { panels: [[sender], [receiver]] });
 
@@ -183,6 +190,10 @@ function remove(target) {
 function assert(value, message) {
   if (!value) throw new Error(`Assertion failed: ${message}`);
   console.log(`  ok: ${message}`);
+}
+
+function memberOf(result, name) {
+  return (result.members || result.party?.members || []).find((member) => member.name === name);
 }
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
