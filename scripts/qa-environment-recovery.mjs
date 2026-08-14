@@ -1,7 +1,9 @@
 /*
  * Regression coverage for Windows harness discovery. Run after `npm run build`.
  * These are the exact launcher shapes produced by the installers exposed in
- * the environment UI, rather than invented adapter stubs.
+ * the environment UI, rather than invented adapter stubs. Where
+ * qa-claude-cli-detection.mjs proves shim resolution against fixtures, this
+ * asserts against whatever is really installed on the machine, and covers Grok.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -23,14 +25,21 @@ if (process.platform === "win32") {
   const npmClaudeShim = path.join(process.env.APPDATA || "", "npm", "claude.cmd");
   if (fs.existsSync(npmClaudeShim)) {
     const claude = resolveHostClaudeCli(npmClaudeShim);
-    assert(claude?.command.toLowerCase().endsWith("claude-code\\bin\\claude.exe"), "npm claude.cmd resolves to the SDK-spawnable native binary");
-    assert(fs.existsSync(claude?.command || ""), "resolved Claude native binary exists");
+    // Which entrypoint is correct depends on the installed release (2.1.x ships
+    // bin/claude.exe, older ones cli.js), so assert what the package declares
+    // rather than pinning one layout.
+    const declared = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, "npm", "node_modules", "@anthropic-ai", "claude-code", "package.json"), "utf8")).bin;
+    const expected = path.join(process.env.APPDATA, "npm", "node_modules", "@anthropic-ai", "claude-code", typeof declared === "string" ? declared : declared.claude);
+    assert(claude?.command === expected, `the installed npm claude.cmd resolves to the entrypoint its package declares (${expected})`);
+    assert(fs.existsSync(claude?.command || ""), "the resolved Claude entrypoint exists on this machine");
   } else {
     console.log("  - npm Claude shim is not installed on this machine; real-install assertion skipped");
   }
 
-  const explicitCodexShim = path.join("C:\\tools", "codex.cmd");
-  assert(resolveCodexExecutable(explicitCodexShim).shell === true, "an explicit Codex .cmd path is launched through the Windows shell");
+  // No npm package sits beside this path, so there is no entrypoint to hand to
+  // Node — the shell is the remaining way to run a .cmd shim.
+  const orphanCodexShim = path.join("C:\\tools", "codex.cmd");
+  assert(resolveCodexExecutable(orphanCodexShim).shell === true, "a Codex .cmd shim with no resolvable entrypoint still goes through the shell");
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-env-qa-"));
   const oldPath = process.env.PATH;

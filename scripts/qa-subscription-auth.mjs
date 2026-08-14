@@ -14,7 +14,7 @@ await build({
   logLevel: "silent",
 });
 
-const { withSubscriptionProxyAuth } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
+const { codexCliAuthenticatedFrom, withCodexCliAuth, withSubscriptionProxyAuth } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
 const base = [{
   id: "claude",
   label: "Claude",
@@ -45,13 +45,21 @@ const status = (overrides = {}) => ({
 });
 
 const ready = withSubscriptionProxyAuth(base, status());
-assert(ready.length === 3, "Authentication exposes exactly Claude, Codex, and OpenRouter providers");
-assert(ready.filter((item) => item.kind === "subscription").length === 2, "Claude and Codex use subscription authentication");
+assert(ready.length === 4, "Authentication exposes Claude bridge, native Codex, Codex bridge, and OpenRouter providers");
+assert(ready.filter((item) => item.kind === "subscription").length === 3, "native and bridge authentication are visible as separate accounts");
 assert(ready.find((item) => item.id === "openrouter")?.kind === "apiKey", "OpenRouter uses API-key authentication");
 assert(!ready.some((item) => item.id.startsWith("cross-")), "internal cross-route accounts are not exposed as extra rows");
-assert(ready.find((item) => item.id === "codex")?.status === "available", "Codex row reflects persisted OAuth for both harnesses");
-assert(!ready.find((item) => item.id === "codex")?.action, "connected account has no redundant login action");
+assert(ready.find((item) => item.id === "codex")?.description === "native", "native Codex card is preserved instead of replaced by bridge state");
+assert(ready.find((item) => item.id === "codex-bridge")?.status === "available", "Codex bridge has its own status row");
+assert(!ready.find((item) => item.id === "codex-bridge")?.action, "connected bridge has no redundant login action");
 assert(ready.find((item) => item.id === "claude")?.action?.provider === "claude", "Claude row owns the shared Claude login action");
+
+const nativeSignedOut = withCodexCliAuth(base, { authenticated: false });
+assert(nativeSignedOut.find((item) => item.id === "codex")?.status === "invalid", "native Codex signed-out state is visible");
+const nativeSignedIn = withCodexCliAuth(nativeSignedOut, { authenticated: true });
+assert(nativeSignedIn.find((item) => item.id === "codex")?.status === "available", "native Codex signed-in state is restored independently");
+assert(codexCliAuthenticatedFrom("Not authenticated") === false, "negative login status is not mistaken for the word authenticated");
+assert(codexCliAuthenticatedFrom("Logged in using ChatGPT") === true, "ChatGPT CLI login status is recognized");
 
 const pending = withSubscriptionProxyAuth(base, status({
   authentication: { claude: { status: "pending", detail: "approve" } },
@@ -64,7 +72,9 @@ const failed = withSubscriptionProxyAuth(base, status({
   codex: provider(false),
   claude: provider(false),
 }));
-assert(failed.filter((item) => item.kind === "subscription").every((item) => item.status === "network_error"), "bridge failures are surfaced on both subscription rows without fallback");
+assert(failed.find((item) => item.id === "claude")?.status === "network_error", "Claude bridge failure is visible");
+assert(failed.find((item) => item.id === "codex-bridge")?.status === "network_error", "Codex bridge failure is visible");
+assert(failed.find((item) => item.id === "codex")?.status === "available", "bridge failure does not falsify native Codex login state");
 
 console.log("SUBSCRIPTION AUTH QA PASSED");
 

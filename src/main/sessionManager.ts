@@ -31,8 +31,6 @@ import { getSettings } from "./settings";
 import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
-import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../shared/codexAuthentication";
-import { CodexAuthenticationStore } from "./codexAuthenticationStore";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 
 /**
@@ -152,9 +150,6 @@ export class SessionManager extends EventEmitter {
   private automationBaseUrlProvider?: () => string | undefined;
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
-  private readonly codexAuthenticationStore: CodexAuthenticationStore;
-  private codexAuthenticationGeneration = "";
-  private codexAuthenticationApply: Promise<unknown> = Promise.resolve();
   /**
    * Stall watchdog: a turn that goes silent for this long (no event of any kind
    * from the harness, and not waiting on the user for an approval) is flagged so
@@ -181,55 +176,6 @@ export class SessionManager extends EventEmitter {
   ) {
     super();
     this.usageLimits = this.loadUsageLimits();
-    this.codexAuthenticationStore = new CodexAuthenticationStore(
-      userDataDir,
-      process.env.AGENTPARTY_NATIVE_CODEX_HOME || undefined,
-    );
-  }
-
-  /**
-   * Applies the desktop-selected Codex account on this engine host, then
-   * reconnects live account-catalog sessions without discarding their threads.
-   * The same method runs natively inside WSL through EngineConnection RPC.
-   */
-  setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult> {
-    const task = this.codexAuthenticationApply.then(() => this.applyCodexAuthentication(update));
-    this.codexAuthenticationApply = task.catch(() => undefined);
-    return task;
-  }
-
-  private async applyCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult> {
-    const changed = await this.codexAuthenticationStore.apply(update);
-    if (!changed) {
-      return {
-        changed: false,
-        generation: update.generation,
-        connected: Boolean(update.credential),
-        restartedSessions: 0,
-        deferredSessions: 0,
-      };
-    }
-    this.codexAuthenticationGeneration = update.generation;
-    let restartedSessions = 0;
-    let deferredSessions = 0;
-    for (const session of this.sessions.values()) {
-      const outcome = session.adapter.authenticationChanged?.(update.generation);
-      if (outcome === "restarted") restartedSessions += 1;
-      if (outcome === "deferred") deferredSessions += 1;
-    }
-    for (const adapter of this.usageAdapters.values()) {
-      adapter.authenticationChanged?.(update.generation);
-    }
-    this.codexModels = CODEX_MODELS_PENDING;
-    this.codexDiscovery = undefined;
-    void this.refreshCodexModels();
-    return {
-      changed: true,
-      generation: update.generation,
-      connected: Boolean(update.credential),
-      restartedSessions,
-      deferredSessions,
-    };
   }
 
   createSession(input?: string | CreateSessionInput, resumeSessionId?: string, binding?: SessionPartyBinding): SessionView {
@@ -1372,7 +1318,6 @@ export class SessionManager extends EventEmitter {
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,
         deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || undefined,
-        authenticationGeneration: this.codexAuthenticationGeneration,
         usageSourceId,
       });
     }

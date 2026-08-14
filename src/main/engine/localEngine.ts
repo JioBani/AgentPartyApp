@@ -16,7 +16,6 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, PartyListing, PartyMutationResult, QaEmitInput, QaInteractionInput, QaMemberSpec, QaQuestion } from "./engineConnection";
 import { runPartyAction } from "./partyActions";
-import type { CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
@@ -55,10 +54,6 @@ export class LocalEngine implements EngineConnection {
 
   async setMemberMessaging(settings: MemberMessagingSettings) {
     this.party.setMemberMessaging(settings);
-  }
-
-  async setCodexAuthentication(update: CodexAuthenticationUpdate) {
-    return this.deps.sessionManager.setCodexAuthentication(update);
   }
 
   // --- Party --------------------------------------------------------------

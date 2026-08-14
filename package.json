@@ -87,6 +87,8 @@
     "test:harness-protocol": "node scripts/qa-harness-protocol.mjs",
     "test:subscription-auth": "node scripts/qa-subscription-auth.mjs",
     "test:subscription-install": "node scripts/qa-subscription-proxy-install.mjs",
+    "test:claude-cli-detection": "node scripts/qa-claude-cli-detection.mjs",
+    "test:e2e:claude-cli-detection": "npm run build && node scripts/e2e-claude-cli-detection.mjs",
     "test:wsl-codex-bridge": "node scripts/qa-wsl-codex-bridge.mjs",
     "test:party-bridge": "node scripts/qa-party-bridge.mjs",
     "test:claude-party-tools": "node scripts/qa-claude-party-tools.mjs",

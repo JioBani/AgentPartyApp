@@ -14,7 +14,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | Script | Covers |
 |---|---|
 | `qa-temp-isolation` | the jsdom suite's own bundles stay **inside this worktree**, never in the shared install — see below |
-| `qa-codex-authentication-store` | managed Codex `auth.json`: apply/idempotent repair/account switch/disconnect, plus disconnect leaving an externally changed credential untouched |
+| `qa-codex-authentication-store` | Codex credential ownership boundary: no AgentParty native auth store, OAuth-token DTO, bridge token export, or desktop↔WSL credential-copy RPC |
 | `qa-resume-target` | ClaudeAdapter restart resume target ([#17]): before the first turn a setting change must not resume an uncommitted harness session; after a turn a soft restart continues the live conversation |
 | `qa-router-diagnostics` | GPT-on-Claude-Code startup errors name the CLIProxyAPI chain (router down vs proxy unconfigured); a direct Anthropic model stays free of those diagnostics |
 | `qa-workspace-location` | workspace = cwd / storage location rules |

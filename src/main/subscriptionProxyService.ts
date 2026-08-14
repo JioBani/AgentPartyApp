@@ -13,7 +13,6 @@ import {
   type SubscriptionProxyStatus,
 } from "../core/subscriptionProxy";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL } from "../shared/subscriptionProxyDefaults";
-import type { CodexAuthenticationUpdate } from "../shared/codexAuthentication";
 import { log } from "./logger";
 
 export interface SubscriptionProxyLoginResult {
@@ -38,8 +37,6 @@ export interface SubscriptionProxyController {
   getStatus(): Promise<SubscriptionProxyStatus>;
   login(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyLoginResult>;
   disconnect(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyDisconnectResult>;
-  /** Internal only: never expose the returned OAuth tokens through UI/HTTP. */
-  getCodexAuthentication(): Promise<CodexAuthenticationUpdate | undefined>;
 }
 
 interface LoginState extends SubscriptionProxyAuthenticationStatus {
@@ -109,60 +106,6 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
   /** Current state for Authentication/API. Also heals a stopped bridge. */
   async getStatus(): Promise<SubscriptionProxyStatus> {
     return this.ensureRunning();
-  }
-
-  /**
-   * Normalizes CLIProxyAPI's selected Codex OAuth file for native Codex CLI
-   * engines. The newest active credential is the account a just-completed
-   * single-account connection selected.
-   */
-  async getCodexAuthentication(): Promise<CodexAuthenticationUpdate | undefined> {
-    const status = await this.ensureRunning();
-    if (!status.codex.available) {
-      log("info", "codex-auth", "Codex bridge authentication is not available; native engines were not synchronized");
-      return undefined;
-    }
-    const configPath = await this.ensureConfig();
-    const authDir = await authDirectoryFromConfig(configPath);
-    const files = await findProviderCredentialFiles(authDir, "codex");
-    const candidates = await Promise.all(files.map(async (file) => ({
-      file,
-      modifiedAt: (await fsp.stat(file)).mtimeMs,
-    })));
-    candidates.sort((left, right) => right.modifiedAt - left.modifiedAt);
-    for (const candidate of candidates) {
-      try {
-        const value = JSON.parse(await fsp.readFile(candidate.file, "utf8")) as Record<string, unknown>;
-        const accessToken = String(value.access_token || "");
-        const refreshToken = String(value.refresh_token || "");
-        const idToken = String(value.id_token || "");
-        const accountId = String(value.account_id || "");
-        if (!accessToken || !refreshToken || !idToken || !accountId || value.disabled === true) {
-          continue;
-        }
-        const generation = createHash("sha256")
-          .update(`${accountId}\0${accessToken}\0${refreshToken}\0${idToken}`)
-          .digest("hex");
-        return {
-          generation,
-          credential: {
-            authMode: "chatgpt",
-            lastRefresh: String(value.last_refresh || new Date(candidate.modifiedAt).toISOString()),
-            tokens: { accessToken, refreshToken, idToken, accountId },
-          },
-        };
-      } catch (error) {
-        log("warn", "codex-auth", "could not read a Codex bridge credential", {
-          file: candidate.file,
-          error: messageOf(error),
-        });
-      }
-    }
-    log("warn", "codex-auth", "Codex bridge reports available models but has no complete active OAuth credential", {
-      authDir,
-      credentialFiles: candidates.length,
-    });
-    return undefined;
   }
 
   /**

@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { qaTempFile } from "./lib/qaTemp.mjs";
 
 /**
- * Subscription disconnect confirmation (Codex row) through the real AuthView.
+ * Subscription disconnect confirmation (Codex bridge row) through AuthView.
  *
  * AuthView's key drafts became per-provider (`drafts` + `onClear`) when clearing
  * a stored OpenRouter key landed (R-25). This script still exercised the
@@ -37,7 +37,8 @@ const { act } = await import("react");
 const { AuthView } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
 let disconnected = 0;
 const auth = [
-  { id: "codex", label: "Codex", kind: "subscription", status: "available", description: "connected" },
+  { id: "codex", label: "Codex", kind: "subscription", status: "available", description: "native" },
+  { id: "codex-bridge", label: "Codex bridge", kind: "subscription", status: "available", description: "connected" },
   { id: "openrouter", label: "OpenRouter", kind: "apiKey", status: "missing", description: "optional" },
 ];
 const rootNode = createRoot(document.getElementById("root"));
@@ -57,13 +58,15 @@ await act(async () => {
   }));
 });
 const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "연결 끊기");
-assert(button, "connected Codex row exposes the disconnect button");
+assert(button, "connected Codex bridge row exposes the disconnect button");
+const nativeRow = [...document.querySelectorAll(".set-row-stack")].find((row) => row.querySelector(".set-row-name")?.textContent === "Codex");
+assert(nativeRow && !nativeRow.querySelector(".set-btn-disconnect"), "native Codex row has no bridge disconnect action");
 
 await act(async () => button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
 assert(disconnected === 0 && button.textContent?.includes("정말 연결 끊기"), "first click arms an explicit confirmation");
 
 await act(async () => button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
-assert(disconnected === 1, "confirmed second click invokes Codex disconnect");
+assert(disconnected === 1, "confirmed second click invokes Codex bridge disconnect");
 
 await act(async () => rootNode.unmount());
 console.log("SUBSCRIPTION DISCONNECT UI QA PASSED");

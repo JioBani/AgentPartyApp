@@ -27,7 +27,7 @@ const DEFAULT_TIMEOUT_MS = 20000;
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
   const requested = codexExecutable(options.executablePath);
   const resolved = resolveCodexExecutable(requested);
-  const args = [...codexExtraArgs(options.executableArgs), "-c", 'cli_auth_credentials_store="file"', "app-server"];
+  const args = [...resolved.argsPrefix, ...codexExtraArgs(options.executableArgs), "-c", 'cli_auth_credentials_store="file"', "app-server"];
   if (options.sqliteHome) {
     fs.mkdirSync(options.sqliteHome, { recursive: true });
   }

@@ -6,9 +6,58 @@ import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "../shared/deepseekDefau
 import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
+import { codexExecutable, resolveCodexExecutable } from "../core/codexExec";
+import { probeCommand } from "../core/commandProbe";
 
 const CURSOR_AUTH_TTL_MS = 30_000;
 let cursorAuthCache: { at: number; value: CursorAgentAuthStatus } | undefined;
+let codexAuthCache: { at: number; value: CodexCliAuthStatus } | undefined;
+
+export interface CodexCliAuthStatus {
+  /** Undefined when the CLI could not provide a recognizable login status. */
+  authenticated?: boolean;
+  detail?: string;
+}
+
+/** Parses the stable human-readable output emitted by `codex login status`. */
+export function codexCliAuthenticatedFrom(output: string): boolean | undefined {
+  if (/not logged in|not authenticated|login required/i.test(output)) return false;
+  if (/logged in using|authenticated/i.test(output)) return true;
+  return undefined;
+}
+
+/** Read-only status from the native Codex CLI; Codex remains the token owner. */
+export async function codexCliAuthState(force = false): Promise<CodexCliAuthStatus> {
+  if (isE2E()) return {};
+  if (!force && codexAuthCache && Date.now() - codexAuthCache.at < CURSOR_AUTH_TTL_MS) {
+    return codexAuthCache.value;
+  }
+  const executable = codexExecutable(getSettings().codexExecutablePath);
+  const resolved = resolveCodexExecutable(executable);
+  const result = await probeCommand(
+    resolved.command,
+    [...resolved.argsPrefix, "login", "status"],
+    { shell: resolved.shell, timeoutMs: 30_000 },
+  );
+  const output = [result.stdout, result.stderr, result.error].filter(Boolean).join("\n").trim();
+  const authenticated = codexCliAuthenticatedFrom(output);
+  const value: CodexCliAuthStatus = {
+    authenticated,
+    ...(authenticated === undefined && output ? { detail: output } : {}),
+  };
+  codexAuthCache = { at: Date.now(), value };
+  return value;
+}
+
+/** Overlays the native CLI login without reading or copying its OAuth tokens. */
+export function withCodexCliAuth(states: AuthProviderState[], auth: CodexCliAuthStatus): AuthProviderState[] {
+  return states.map((state) => {
+    if (state.id !== "codex" || auth.authenticated === undefined) return state;
+    return auth.authenticated
+      ? { ...state, status: "available", detail: "The native Codex CLI is signed in. Codex owns and refreshes this credential on this execution host." }
+      : { ...state, status: "invalid", detail: "The native Codex CLI is signed out on this execution host. Run `codex login` there; AgentParty does not copy bridge refresh tokens into Codex." };
+  });
+}
 
 /**
  * The desktop host's Cursor CLI login state, cached briefly — the read spawns
@@ -140,9 +189,9 @@ export function getAuthState(): AuthProviderState[] {
 }
 
 /**
- * Presents one user-facing account per subscription. The local bridge and its
- * cross-harness OAuth are implementation details: connecting Claude Code makes
- * Claude usable from both harnesses; connecting Codex does the same for GPT.
+ * Presents bridge accounts separately from native CLI accounts. OAuth refresh
+ * tokens rotate and have a single owner, so a bridge Codex login must never be
+ * copied into the native Codex CLI's auth.json (or into another WSL host).
  */
 export function withSubscriptionProxyAuth(
   states: AuthProviderState[],
@@ -153,13 +202,13 @@ export function withSubscriptionProxyAuth(
       provider: "claude",
       id: "claude",
       label: "Claude",
-      description: "Connect once to use Claude models from both Claude Code and Codex harnesses.",
+      description: "Connect Claude for Claude models routed through the local subscription bridge.",
     },
     {
       provider: "codex",
-      id: "codex",
-      label: "Codex",
-      description: "Connect once to use GPT models from both Codex and Claude Code harnesses.",
+      id: "codex-bridge",
+      label: "Codex bridge",
+      description: "Connect Codex for GPT models used from the Claude Code harness. Native Codex login stays separate.",
     },
   ];
   return [
@@ -176,10 +225,14 @@ export function withSubscriptionProxyAuth(
               ? "network_error"
               : "missing";
       const detail = providerStatus.available
-        ? `${provider === "codex" ? "Codex" : "Claude Code"} subscription is connected for both harnesses.`
+        ? provider === "codex"
+          ? "Codex bridge is connected for GPT models on the Claude Code harness. It does not modify native Codex login."
+          : "Claude Code subscription bridge is connected."
         : authentication?.detail
           || ((subscriptions.service?.status === "error" || !subscriptions.ok) ? subscriptions.service?.detail || subscriptions.detail : undefined)
-          || `Connect ${provider === "codex" ? "Codex" : "Claude Code"} once to enable it in both harnesses.`;
+          || (provider === "codex"
+            ? "Connect the Codex bridge only when using GPT models from the Claude Code harness."
+            : "Connect the Claude Code subscription bridge.");
       return {
         id,
         label,
@@ -198,7 +251,7 @@ export function withSubscriptionProxyAuth(
         }),
       };
     }),
-    ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && state.id !== "codex" && !state.id.startsWith("cross-")),
+    ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && !state.id.startsWith("cross-")),
   ];
 }
 

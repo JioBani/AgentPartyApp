@@ -48,11 +48,10 @@ export function probeCommand(
 
     // Under `shell: true` Node concatenates argv into the command line anyway
     // and warns (DEP0190) about doing it for you. Building the line ourselves
-    // silences that and keeps the escaping decision visible: `shell` is only
-    // used for bare command names (Windows `.cmd`/`.ps1` shims), so there is
-    // nothing here that needs quoting.
+    // silences that and keeps the escaping decision visible. Quote every token
+    // that needs it because npm shims can also arrive as absolute paths.
     const child = options.shell
-      ? spawn([command, ...args].join(" "), { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], shell: true, env: options.env, cwd: options.cwd })
+      ? spawn([command, ...args].map(shellToken).join(" "), { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], shell: true, env: options.env, cwd: options.cwd })
       : spawn(command, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: options.env, cwd: options.cwd });
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -80,6 +79,14 @@ export function probeCommand(
       });
     });
   });
+}
+
+/** Keep an absolute shim path with spaces/metacharacters one shell token. */
+function shellToken(value: string): string {
+  if (/^[A-Za-z0-9_./:\\-]+$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -119,6 +126,21 @@ export function resolveOnPath(name: string): string | undefined {
       if (isFile(candidate)) {
         return candidate;
       }
+    }
+  }
+  return undefined;
+}
+
+/** Standard per-user destination used by `npm install -g` on Windows. */
+export function resolveWindowsNpmCommand(name: string): string | undefined {
+  if (process.platform !== "win32" || !process.env.APPDATA) {
+    return undefined;
+  }
+  const directory = path.join(process.env.APPDATA, "npm");
+  for (const extension of [".exe", ".cmd", ".bat"]) {
+    const candidate = path.join(directory, name + extension);
+    if (isFile(candidate)) {
+      return candidate;
     }
   }
   return undefined;

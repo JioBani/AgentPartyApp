@@ -150,6 +150,11 @@ output, paths tried) when there is one — surfaced, never swallowed.
 
 `expectedClaudeCli` is the Claude Code version this build's Agent SDK is paired
 with; a host CLI that differs is reported as `warn` rather than hidden.
+On Windows, Claude and Codex discovery recognize both native `.exe` installs
+and npm's `.cmd` launchers, including the standard `%APPDATA%\npm` location
+when the running desktop app inherited an older `PATH`. Claude's npm launcher
+is resolved to its package `cli.js`, because the Agent SDK requires a directly
+spawnable executable or JavaScript entrypoint.
 
 ### `POST /api/environment/repair`
 
@@ -523,6 +528,13 @@ Cursor `cursorPolicy` mirrors Cursor CLI's separate controls:
 Lists every credential provider (subscriptions and API keys) with its status,
 masked value, and where the credential came from.
 
+Native Codex (`id: "codex"`) and the local subscription bridge
+(`id: "codex-bridge"`) are deliberately separate. The native card is read from
+`codex login status` on the desktop execution host. The bridge card is only for
+GPT models routed through the Claude Code harness. AgentParty never reads or
+copies the bridge's rotating OAuth refresh token into native Codex
+`auth.json`; each native Windows/WSL host must own its own `codex login`.
+
 ### `POST /api/auth/deepseek`
 
 Stores a DeepSeek API key (DeepSeek's own API, used by the DeepSeek V4 models).
@@ -594,7 +606,7 @@ While approval is pending, poll `GET /api/auth/subscriptions` or `GET /api/state
   "status": "started",
   "detail": "Complete the Claude approval in the browser.",
   "subscriptions": { "authentication": { "claude": { "status": "pending" } } },
-  "auth": [{ "id": "claude", "status": "pending" }, { "id": "codex", "status": "available" }, { "id": "openrouter", "status": "configured" }]
+  "auth": [{ "id": "claude", "status": "pending" }, { "id": "codex-bridge", "status": "available" }, { "id": "codex", "status": "available" }, { "id": "openrouter", "status": "configured" }]
 }
 ```
 
@@ -621,15 +633,11 @@ verifies that the provider is no longer available. The response includes
 `removedCredentials`, updated `subscriptions`, and the same `auth` provider list
 rendered by the Authentication screen. A visible error is returned if no
 matching credential exists or another credential source still exposes models.
-For Codex, `runtimeAuthentication` reports the native-engine propagation result
-for every active local/WSL engine (`changed`, `connected`,
-`restartedSessions`, `deferredSessions`). AgentParty writes the selected bridge
-OAuth account to each engine host's native Codex credential store. Idle live
-sessions restart Codex app-server and resume the same thread immediately;
-sessions with an active turn defer that restart until the turn completes. Each
-affected session records one visible authentication-change diagnostic for that
-credential generation. OAuth tokens are internal and are never returned by the
-HTTP API.
+Disconnecting the Codex bridge does not log native Codex out and never modifies
+native `auth.json`. This ownership boundary prevents one bridge/desktop/WSL
+process from replaying a rotated, revoked refresh token over a credential that
+the native Codex CLI has already refreshed. OAuth tokens are internal and are
+never returned by the HTTP API.
 
 Override the local deployment with `AGENTPARTY_SUBSCRIPTION_PROXY_URL` and
 `AGENTPARTY_SUBSCRIPTION_PROXY_KEY`. `AGENTPARTY_SUBSCRIPTION_PROXY_BIN` and
