@@ -31,6 +31,30 @@ export const NEVER_LAUNCH_EXTENSIONS = [
 
 const NEVER_LAUNCH = new Set(NEVER_LAUNCH_EXTENSIONS);
 
+/**
+ * Whether a string is a Windows drive-absolute path, including the slash that
+ * markdown/URL handling can place before the drive (`/C:/work/file.html`).
+ * Kept separate from Node's platform-dependent `path.isAbsolute`: on Windows
+ * that API accepts `/C:/...` as the quite different `\C:\...` rooted path.
+ */
+export function isWindowsDrivePath(value: string): boolean {
+  return /^[\\/]?[a-z]:[\\/]/i.test(String(value || ""));
+}
+
+/**
+ * Restores the URL-shaped spelling of a Windows drive path before filesystem
+ * resolution. Only Windows callers opt into this conversion: `/home/a` must
+ * remain a normal POSIX absolute path in WSL/Linux, and UNC paths do not match
+ * the drive-letter grammar.
+ */
+export function normalizeLocalFileTarget(value: string, platform: string): string {
+  const input = String(value || "");
+  if (platform !== "win32" || !/^[\\/][a-z]:[\\/]/i.test(input)) {
+    return input;
+  }
+  return input.slice(1);
+}
+
 /** The lowercase extension of a path, without the dot ("" when there is none). */
 export function extensionOf(filePath: string): string {
   const name = filePath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";

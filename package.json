@@ -129,6 +129,7 @@
     "test:auto-compact": "node scripts/qa-auto-compact.mjs",
     "test:layout": "node scripts/qa-layout.mjs",
     "test:workspace": "node scripts/qa-workspace-location.mjs",
+    "test:local-file-paths": "node scripts/qa-local-file-paths.mjs",
     "test:wsl-engine": "node scripts/qa-wsl-engine.mjs",
     "test:engine-rpc": "node scripts/qa-engine-rpc.mjs",
     "test:engine-transport-loss": "node scripts/qa-engine-transport-loss.mjs",

@@ -52,6 +52,10 @@ const md = [
   "| auth.ts | 42 |",
   "",
   "[링크](https://example.com)",
+  "",
+  "[Windows URL 경로](/C:/Project/AgentPartyApp/docs/발표/demo.html)",
+  "",
+  "[Windows 드라이브 경로](C:/Project/AgentPartyApp/docs/발표/demo.html)",
 ].join("\n");
 
 const view = {
@@ -81,18 +85,29 @@ const table = body?.querySelector("table");
 assert(Boolean(table), "GFM table -> <table>");
 assert([...(table?.querySelectorAll("th") || [])].some((th) => th.textContent === "파일"), "table header rendered");
 assert([...(table?.querySelectorAll("td") || [])].some((td) => td.textContent === "auth.ts"), "table cell rendered");
-const link = body?.querySelector("a");
+const link = body?.querySelector('a[href="https://example.com"]');
 assert(link?.getAttribute("href") === "https://example.com" && link?.getAttribute("target") === "_blank" && link?.getAttribute("rel") === "noreferrer", "link opens externally (target=_blank, rel=noreferrer)");
 
 console.log("\nLinks open in the OS browser (P-3.5):");
 const opened = [];
-window.agentParty = { openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); } };
+const openedPaths = [];
+window.agentParty = {
+  openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); },
+  openPath: (file) => { openedPaths.push(file); return Promise.resolve({ ok: true, action: "opened", path: file }); },
+};
 globalThis.window.agentParty = window.agentParty;
 const clickEvent = new window.MouseEvent("click", { bubbles: true, cancelable: true });
 link?.dispatchEvent(clickEvent);
 await new Promise((res) => setTimeout(res, 20));
 assert(opened[0] === "https://example.com", "clicking a link hands the URL to shell.openExternal");
 assert(clickEvent.defaultPrevented, "the in-app navigation is prevented (no Electron window navigation)");
+const windowsUrlLink = body?.querySelector('a[href="/C:/Project/AgentPartyApp/docs/%EB%B0%9C%ED%91%9C/demo.html"], a[href="/C:/Project/AgentPartyApp/docs/발표/demo.html"]');
+const windowsDriveLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows 드라이브 경로");
+windowsUrlLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+windowsDriveLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(openedPaths.some((value) => /^\/C:\/Project/.test(value)), "URL-shaped /C:/ markdown link is handed to the local-file controller");
+assert(openedPaths.some((value) => /^C:\/Project/i.test(value)), `bare C:/ markdown link is not mistaken for a foreign URI scheme (href=${windowsDriveLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 const linkCopy = body?.querySelector(".wb-md-link .wb-copy-btn");
 assert(Boolean(linkCopy), "a copy control sits next to the link");
 const copied = [];

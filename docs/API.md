@@ -322,7 +322,10 @@ clicked file link in the transcript.
 
 A relative path resolves against the **calling window's workspace** — not the
 app bundle — so the same string a member wrote in a message resolves the way the
-user reads it. `file://` URLs and absolute paths are taken as given.
+user reads it. `file://` URLs and absolute paths are taken as given. On Windows,
+markdown/URL-shaped drive paths such as `/C:/work/report.html` are restored to
+`C:\work\report.html` before resolution; POSIX/WSL absolute paths and UNC paths
+are left unchanged.
 
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:

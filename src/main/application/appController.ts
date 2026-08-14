@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isLaunchable } from "../../shared/localFiles";
+import { isLaunchable, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -1306,6 +1306,11 @@ export class AppController {
       // A link may be percent-encoded even without a scheme (spaces, Hangul).
       try { value = decodeURI(value); } catch { /* keep the literal text */ }
     }
+    // Markdown and URL parsers commonly serialize a Windows drive path as
+    // `/C:/...`. Node considers that absolute on Windows but normalizes it to
+    // `\C:\...`, which can never exist. Restore the drive spelling before the
+    // generic absolute/relative decision. POSIX/WSL paths are left untouched.
+    value = normalizeLocalFileTarget(value, process.platform);
     if (path.isAbsolute(value)) {
       return path.normalize(value);
     }

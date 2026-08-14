@@ -1,10 +1,11 @@
 import { memo, type ReactNode } from "react";
 import { FolderOpen } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "./copy";
 import { reportNotice } from "../app/appNotice";
 import { ipcErrorMessage } from "../app/ipcError";
+import { isWindowsDrivePath } from "../../shared/localFiles";
 
 /**
  * Renders model-authored text as GitHub-flavored markdown (headings, lists,
@@ -24,6 +25,11 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     <div className="wb-md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        // react-markdown treats `C:` as an unsafe URI scheme and erases the
+        // href before our link component can classify it. Preserve only the
+        // narrow drive-absolute grammar; every other URL keeps the library's
+        // default sanitisation.
+        urlTransform={(url) => isWindowsDrivePath(url) ? url : defaultUrlTransform(url)}
         components={{
           a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} {...props}>{children}</MarkdownLink>,
           pre: ({ node: _node, children, ...props }) => <MarkdownPre {...props}>{children}</MarkdownPre>,
@@ -136,8 +142,9 @@ function externalTarget(href: string | undefined): string {
 function MarkdownLink({ href, children, ...props }: { href?: string; children?: ReactNode } & Record<string, unknown>) {
   const target = externalTarget(href);
   // Anything left over that is not an in-page anchor or a foreign scheme is a
-  // path — a file the member wrote or read. Those open in their default app.
-  const file = !target && href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#") ? href : "";
+  // path — a file the member wrote or read. A bare `C:/...` superficially
+  // matches the URI-scheme grammar (`C:`), so recognise drive paths first.
+  const file = !target && href && (isWindowsDrivePath(href) || (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#"))) ? href : "";
   const copyable = target || file;
   return (
     <span className="wb-md-link">
