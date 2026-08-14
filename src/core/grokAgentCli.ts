@@ -19,6 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { EnvironmentBlockedError } from "./environmentError";
+import { resolveOnPath } from "./commandProbe";
 
 const execFileAsync = promisify(execFile);
 
@@ -33,9 +34,15 @@ function candidatePaths(explicit?: string): string[] {
   const exe = process.platform === "win32" ? "grok.exe" : "grok";
   const home = os.homedir();
   const local = process.env.LOCALAPPDATA;
+  const configured = String(explicit || "").trim();
+  if (configured) {
+    return [configured];
+  }
+  const fromEnv = String(process.env.AGENTPARTY_GROK_BIN || "").trim();
+  if (fromEnv) {
+    return [fromEnv];
+  }
   return [
-    explicit,
-    process.env.AGENTPARTY_GROK_BIN,
     path.join(home, ".grok", "bin", exe),
     local ? path.join(local, "grok", "bin", exe) : undefined,
     local ? path.join(local, "Programs", "grok", exe) : undefined,
@@ -100,7 +107,10 @@ export async function resolveGrokCli(explicit?: string): Promise<GrokCliInfo> {
  */
 export function grokCliInstalledPath(explicit?: string): string | undefined {
   for (const candidate of candidatePaths(explicit)) {
-    if (candidate !== "grok" && fs.existsSync(candidate)) {
+    if (candidate === "grok") {
+      const resolved = resolveOnPath(candidate);
+      if (resolved) return resolved;
+    } else if (fs.existsSync(candidate)) {
       return candidate;
     }
   }

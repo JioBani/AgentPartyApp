@@ -10,10 +10,14 @@ import * as path from "node:path";
  * Resolves how to spawn the codex executable. A bare command name on Windows
  * (e.g. `codex` installed by npm) is a `.cmd` shim: `spawn` can't find the bare
  * name (ENOENT) and Node refuses to run a `.cmd` directly (EINVAL) — so let the
- * shell resolve it via PATHEXT. An explicit path or already-extensioned name
- * (e.g. `AGENTPARTY_CODEX_BIN`) is spawned directly.
+ * shell resolve it via PATHEXT. Explicit native executables are spawned
+ * directly; explicit `.cmd`/`.bat` shims still require the shell.
  */
 export function resolveCodexExecutable(executable: string): { command: string; shell: boolean } {
+  const extension = path.extname(executable).toLowerCase();
+  if (process.platform === "win32" && (extension === ".cmd" || extension === ".bat")) {
+    return { command: executable, shell: true };
+  }
   if (executable.includes("/") || executable.includes("\\") || path.extname(executable)) {
     return { command: executable, shell: false };
   }

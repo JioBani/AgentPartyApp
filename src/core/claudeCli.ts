@@ -33,15 +33,19 @@ const EXECUTABLE = process.platform === "win32" ? "claude.exe" : "claude";
 export function resolveHostClaudeCli(explicitPath?: string): ClaudeCliLocation | undefined {
   const configured = String(explicitPath || "").trim();
   if (configured && isFile(configured)) {
-    return { command: configured, source: "settings" };
+    return { command: spawnableClaudePath(configured), source: "settings" };
   }
   const fromEnv = String(process.env.AGENTPARTY_CLAUDE_BIN || "").trim();
   if (fromEnv && isFile(fromEnv)) {
-    return { command: fromEnv, source: "env" };
+    return { command: spawnableClaudePath(fromEnv), source: "env" };
   }
-  const onPath = resolveOnPath(EXECUTABLE);
+  // Ask PATHEXT to find every supported Windows launcher. npm installs
+  // `claude.cmd`, not `claude.exe`, in its prefix; looking up the latter made
+  // a successful install invisible until the user entered the nested native
+  // binary by hand.
+  const onPath = resolveOnPath(process.platform === "win32" ? "claude" : EXECUTABLE);
   if (onPath) {
-    return { command: onPath, source: "path" };
+    return { command: spawnableClaudePath(onPath), source: "path" };
   }
   for (const candidate of wellKnownPaths()) {
     if (isFile(candidate)) {
@@ -108,7 +112,7 @@ function platformPackageName(): string | undefined {
 export function resolveClaudeCli(explicitPath?: string): ClaudeCliLocation | undefined {
   const configured = String(explicitPath || "").trim();
   if (configured) {
-    return { command: configured, source: "settings" };
+    return { command: isFile(configured) ? spawnableClaudePath(configured) : configured, source: "settings" };
   }
   const packaged = packagedClaudeCli();
   if (packaged) {
@@ -120,10 +124,40 @@ export function resolveClaudeCli(explicitPath?: string): ClaudeCliLocation | und
 /** Where the official installer puts `claude` when PATH has not caught up. */
 function wellKnownPaths(): string[] {
   const home = os.homedir();
+  const npmPrefix = process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : undefined;
   return [
     path.join(home, ".local", "bin", EXECUTABLE),
     path.join(home, ".claude", "local", EXECUTABLE),
+    npmPrefix
+      ? path.join(npmPrefix, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+      : "",
   ];
+}
+
+/**
+ * The Agent SDK spawns this path without a shell, so a Windows npm `.cmd` shim
+ * is not itself usable. npm's generated shim always sits beside node_modules;
+ * resolve it to the package's real native executable before handing it to the
+ * SDK. Unknown launchers are left intact so the version probe surfaces a
+ * concrete error instead of silently selecting a different installation.
+ */
+function spawnableClaudePath(candidate: string): string {
+  if (process.platform !== "win32") {
+    return candidate;
+  }
+  const extension = path.extname(candidate).toLowerCase();
+  if (extension !== ".cmd" && extension !== ".ps1" && extension !== "") {
+    return candidate;
+  }
+  const native = path.join(
+    path.dirname(candidate),
+    "node_modules",
+    "@anthropic-ai",
+    "claude-code",
+    "bin",
+    "claude.exe",
+  );
+  return isFile(native) ? native : candidate;
 }
 
 /**
