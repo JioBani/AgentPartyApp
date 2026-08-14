@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentParty 사내 발표</title>
+  <style>
+    :root { --ink:#111318; --muted:#616977; --line:#cbd0d8; --panel:#f2f4f7; --blue:#4f7df3; --blue-soft:#eaf0ff; --orange:#ca7c10; --orange-soft:#fff0d8; --stage:#111318; }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { color:var(--ink); background:var(--stage); font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif; word-break:keep-all; }
+    .deck { position:fixed; inset:0; display:grid; place-items:center; }
+    .viewport { position:relative; width:min(100vw,calc(100vh * 16 / 9)); height:min(100vh,calc(100vw * 9 / 16)); overflow:hidden; background:#fff; box-shadow:0 20px 80px #0008; }
+    .slide { position:absolute; inset:0; display:none; padding:5% 5.4%; overflow:hidden; background:#fff; }
+    .slide:first-child,.slide:target,.slide.active { display:block; }
+    .slide:target { z-index:4; }
+    .slide > :not(.click-next):not(.nav) { pointer-events:none; }
+    .click-next { position:absolute; z-index:1; inset:0; cursor:pointer; }
+    .eyebrow { margin:0 0 1.4%; color:var(--blue); font-size:clamp(12px,1.08vw,20px); font-weight:800; letter-spacing:.07em; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { font-size:clamp(42px,5.2vw,94px); line-height:1.1; letter-spacing:-.045em; }
+    h2 { margin-bottom:2.8%; font-size:clamp(30px,3.25vw,58px); line-height:1.18; letter-spacing:-.04em; }
+    h3 { margin-bottom:1.2%; font-size:clamp(19px,1.8vw,32px); line-height:1.3; }
+    p,li { font-size:clamp(14px,1.33vw,24px); line-height:1.52; }
+    .lead { font-size:clamp(18px,1.75vw,31px); line-height:1.5; }
+    .big { font-size:clamp(30px,4vw,72px); line-height:1.18; letter-spacing:-.04em; }
+    .muted { color:var(--muted); }
+    .blue { color:var(--blue); }
+    .orange { color:var(--orange); }
+    .mono { font-family:"D2Coding","Cascadia Mono",Consolas,monospace; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:3%; }
+    .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:2.5%; }
+    .split { display:grid; grid-template-columns:.72fr 1.28fr; gap:4%; align-items:center; }
+    .split.equal { grid-template-columns:1fr 1fr; }
+    .card { padding:4.5%; border-radius:1vw; background:var(--panel); }
+    .card.blue-card { background:var(--blue-soft); }
+    .card.orange-card { background:var(--orange-soft); }
+    .bullets { margin:0; padding:0; list-style:none; }
+    .bullets li { position:relative; margin:0 0 3.2%; padding-left:1.3em; }
+    .bullets li::before { content:""; position:absolute; left:0; top:.62em; width:.4em; height:.4em; border-radius:50%; background:var(--blue); }
+    .shot { display:block; width:100%; max-height:59vh; object-fit:contain; border:1px solid var(--line); border-radius:.9vw; background:#fafbfc; box-shadow:0 12px 30px #2631431a; }
+    .shot.cover { object-fit:cover; }
+    .callout { padding:2.4% 3%; border-radius:.8vw; color:#294fba; background:var(--blue-soft); font-size:clamp(16px,1.55vw,28px); font-weight:800; }
+    .callout.warn { color:#8d570a; background:var(--orange-soft); }
+    .steps { position:relative; display:grid; grid-template-columns:repeat(4,1fr); gap:3%; margin-top:7%; }
+    .steps::before { content:""; position:absolute; top:12px; left:1%; right:1%; height:2px; background:var(--line); }
+    .step { position:relative; padding-top:4rem; }
+    .step::before { content:""; position:absolute; top:0; left:0; width:24px; height:24px; border-radius:50%; background:var(--blue); }
+    .step.warn::before { background:var(--orange); }
+    .arrow-line { display:flex; align-items:center; justify-content:center; gap:2%; margin:5% 0; }
+    .arrow-line > div { flex:1; padding:3%; border-radius:.8vw; background:var(--panel); text-align:center; font-size:clamp(16px,1.55vw,28px); font-weight:800; }
+    .arrow-line > span { color:var(--line); font-size:3vw; }
+    .section-cover { display:flex; flex-direction:column; justify-content:center; }
+    .section-cover .eyebrow { margin-bottom:3%; }
+    .section-cover h2 { max-width:90%; font-size:clamp(40px,5vw,90px); }
+    .cover { display:flex; flex-direction:column; justify-content:center; }
+    .cover .brand { position:absolute; top:6%; left:5.4%; color:var(--blue); font-size:1.5vw; font-weight:800; }
+    .cover .rule { width:12%; height:8px; margin:2.2% 0; background:var(--blue); }
+    .caption { margin-top:1%; color:var(--muted); font-size:clamp(11px,.95vw,17px); }
+    .page { position:absolute; right:3%; bottom:2.2%; color:#8a919c; font-size:.9vw; }
+    .nav { position:absolute; z-index:10; left:50%; bottom:1.2%; display:flex; gap:10px; transform:translateX(-50%); pointer-events:auto; }
+    .nav a,.nav span { display:grid; place-items:center; width:38px; height:38px; border:1px solid var(--line); border-radius:50%; color:var(--ink); background:#fff; font-size:24px; line-height:1; text-decoration:none; box-shadow:0 5px 15px #26314316; }
+    .nav a:hover { color:#fff; border-color:var(--blue); background:var(--blue); }
+    .nav span { color:#b7bcc4; background:#f2f3f5; }
+    .speaker-notes { display:none; position:absolute; z-index:40; left:3%; right:3%; bottom:7%; max-height:43%; padding:2.4% 3%; overflow:auto; border:2px solid var(--blue); border-radius:1vw; color:#fff; background:#111318f2; box-shadow:0 15px 40px #0006; pointer-events:auto !important; }
+    .speaker-notes.open { display:block; }
+    .speaker-notes h3 { margin-bottom:1%; color:#8fb0ff; font-size:clamp(16px,1.4vw,25px); }
+    .speaker-notes p,.speaker-notes li { font-size:clamp(13px,1.08vw,20px); line-height:1.45; }
+    .speaker-notes li { margin-bottom:.45em; }
+    .speaker-notes .transition { margin-bottom:0; color:#ffc96b; font-weight:700; }
+    .controls { position:fixed; z-index:30; right:16px; bottom:16px; display:flex; gap:8px; opacity:.22; transition:opacity .2s; }
+    .controls:hover { opacity:1; }
+    .controls button { width:42px; height:42px; border:1px solid #ffffff40; border-radius:50%; color:#fff; background:#15181dcc; cursor:pointer; }
+    .controls button:hover { background:var(--blue); }
+    .progress { position:fixed; z-index:25; left:0; bottom:0; height:4px; background:var(--blue); }
+    @media print { html,body{overflow:visible;background:#fff}.deck,.viewport{position:static;display:block;width:auto;height:auto;box-shadow:none}.slide{position:relative;display:block!important;width:1600px;height:900px;break-after:page}.speaker-notes,.controls,.progress{display:none!important} }
+  </style>
+</head>
+<body>
+<main class="deck"><div class="viewport">
+
+  <section class="slide cover active" id="slide-1" data-title="AgentParty">
+    <a class="click-next" href="#slide-2"></a>
+    <div class="brand">AgentParty</div>
+    <h1>AI 세션들이 서로<br />대화할 수 있는 데스크톱 앱</h1>
+    <div class="rule"></div>
+    <p class="lead muted">왜 만들었고, 어떤 식으로 사용하고 있는가</p>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>이 앱을 한 문장으로 설명하면, 여러 AI 세션을 만들고 세션끼리 직접 통신하게 하는 데스크톱 앱입니다.</li><li>처음부터 거창한 멀티 에이전트 플랫폼을 만들려던 것은 아니었습니다.</li><li>제가 실제 개발 과정에서 겪은 컨텍스트 문제를 해결하려고 만들기 시작했습니다.</li></ul><p class="transition">다음: 왜 세션 간 통신이 필요했는지부터 설명하겠습니다.</p></aside>
+    <span class="page">01</span><nav class="nav"><span>‹</span><a href="#slide-2">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-2" data-title="필요했던 두 가지">
+    <a class="click-next" href="#slide-3"></a>
+    <p class="eyebrow">만들게 된 목적</p><h2>필요했던 것은 두 가지였다</h2>
+    <div class="grid2" style="margin-top:6%">
+      <article class="card blue-card"><p class="big blue"><strong>01</strong></p><h3>서로 다른 AI 세션 간 통신</h3><p class="muted">여러 프로바이더와 모델을 섞어서<br />하나의 작업을 진행하고 싶었다.</p></article>
+      <article class="card"><p class="big blue"><strong>02</strong></p><h3>CLI가 아닌 데스크톱 화면</h3><p class="muted">여러 세션의 대화와 상태를<br />한눈에 보고 싶었다.</p></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>첫 번째 요구는 멀티 프로바이더 모델의 세션 간 통신이었습니다.</li><li>예를 들면 오케스트레이션과 요구사항 분석은 Claude, 설계와 구현은 Codex처럼 모델마다 일을 나누고 싶었습니다.</li><li>두 번째로, 여러 터미널을 띄우는 CLI 방식보다는 한 화면에서 보고 싶었습니다.</li></ul><p class="transition">다음: 그런데 왜 굳이 세션을 여러 개로 나눌 필요가 있었는가?</p></aside>
+    <span class="page">02</span><nav class="nav"><a href="#slide-1">‹</a><a href="#slide-3">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-3" data-title="목적은 컨텍스트 분리">
+    <a class="click-next" href="#slide-4"></a>
+    <p class="eyebrow">만들게 된 목적</p><h2>결국 목적은 하나, 컨텍스트 분리</h2>
+    <div class="steps">
+      <article class="step"><h3>요구사항 분석</h3><p class="muted">무엇을 만들어야 하는가</p></article>
+      <article class="step"><h3>설계</h3><p class="muted">어떤 구조와 정책으로 만들 것인가</p></article>
+      <article class="step warn"><h3>구현</h3><p class="muted">실제 코드와 예외를 다룬다</p></article>
+      <article class="step"><h3>테스트</h3><p class="muted">의도대로 동작하는지 검증한다</p></article>
+    </div>
+    <div class="callout warn" style="margin-top:7%">문제는 정보가 많아지는 것보다, 서로 다른 단계의 정보가 같은 대화에서 동시에 ‘현재 맥락’이 되는 것이었다.</div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>우리 작업은 보통 요구사항 분석, 설계, 구현, 테스트 순으로 진행합니다.</li><li>각 단계에서는 필요한 정보의 종류가 다릅니다. 요구사항 단계에서는 사용자 의도와 미결 사항을 보고, 구현 단계에서는 함수 호출과 데이터 흐름을 봅니다.</li><li>이상적으로는 요구사항을 확정한 뒤 설계와 구현으로 넘어가고 싶지만, 실제로는 구현 중에 누락된 조건을 발견합니다.</li><li>그러면 구현을 진행하던 같은 대화 안에 과거 요구사항, 새로 발견한 코드 사실, 다시 열린 질문, 이미 작성한 설계와 코드가 동시에 남습니다.</li><li>제가 말하는 컨텍스트 오염은 단순히 대화가 길어진다는 뜻이 아니라, 어떤 정보가 현재 유효한 기준인지 구분하기 어려워지는 상태입니다.</li></ul><p class="transition">다음: 상품명 매칭 사례를 시간 순서대로 보겠습니다.</p></aside>
+    <span class="page">03</span><nav class="nav"><a href="#slide-2">‹</a><a href="#slide-4">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-4" data-title="상품명 매칭 사례">
+    <a class="click-next" href="#slide-5"></a>
+    <p class="eyebrow">실제 예시</p><h2>“상품명 매칭 시 작업 기록을 남겨주세요”</h2>
+    <div class="grid2">
+      <article class="card blue-card"><h3>이때 확정됐다고 생각한 요구사항</h3><p class="lead"><strong>상품명 매칭이 발생하면<br />작업 기록을 남긴다.</strong></p></article>
+      <article class="card"><h3>이 전제로 시작한 설계·구현</h3><ul class="bullets"><li>상품명 매칭 흐름을 찾는다</li><li>매칭 완료 지점에 기록 로직을 붙인다</li><li>기존 매칭 결과와 함께 저장한다</li></ul></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>실제 예시는 상품명 매칭 시 작업 기록을 남기는 작업이었습니다.</li><li>요구사항 분석을 다 했다고 생각하고 설계와 구현에 들어갔습니다.</li><li>처음에는 상품명 매칭이 완료되는 코드 위치를 찾아 그 지점에 기록 로직을 붙이면 된다고 생각했습니다.</li></ul><p class="transition">다음: 그런데 구현을 하다가 상품명 매칭 기능 안에 코드 매칭 기능이 같이 있다는 사실을 발견했습니다.</p></aside>
+    <span class="page">04</span><nav class="nav"><a href="#slide-3">‹</a><a href="#slide-5">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-5" data-title="구현 중 새로운 흐름 발견">
+    <a class="click-next" href="#slide-6"></a>
+    <p class="eyebrow">실제 예시</p><h2>구현을 하다가 보니, 상품명 매칭 기능에 코드 매칭 기능이 같이 있었다</h2>
+    <div class="grid2">
+      <article><p class="big orange"><strong>구현 중단</strong></p><p class="lead muted">기존에 분석한 상품명 매칭 요구사항만으로는<br />바로 구현을 계속할 수 없었다.</p></article>
+      <article class="card orange-card"><h3>코드를 다시 분석해야 했다</h3><ul class="bullets"><li>코드 매칭은 어떻게 이루어지는가</li><li>재고 매칭까지 같이 하는가</li><li>매칭 키워드는 어떻게 등록하는가</li><li>상품명 매칭과 코드 매칭은 어떻게 연결되는가</li></ul></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>구현을 하다가 보니 상품명 매칭 기능 안에 코드 매칭 기능이 같이 있다는 사실을 발견했습니다.</li><li>그러면 여기서 구현을 계속할 수 없고, 일단 멈춰야 합니다.</li><li>코드 매칭이 어떤 순서로 이루어지는지, 재고 매칭까지 같이 하는지, 매칭 키워드는 어떻게 등록하는지 다시 코드를 분석해야 합니다.</li><li>처음 요구사항을 분석할 때 몰랐던 기능이기 때문에, 코드 분석 결과를 확인하기 전에는 작업 기록을 어디에 어떻게 남길지도 결정할 수 없습니다.</li></ul><p class="transition">다음: 코드 분석이 끝나도 바로 구현으로 돌아갈 수 있는 것이 아니라, 요구사항 분석부터 다시 해야 합니다.</p></aside>
+    <span class="page">05</span><nav class="nav"><a href="#slide-4">‹</a><a href="#slide-6">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-6" data-title="다시 요구사항 분석을 거쳐 구현으로 돌아오기">
+    <a class="click-next" href="#slide-7"></a>
+    <p class="eyebrow">컨텍스트 오염이 발생하는 과정</p><h2>코드 분석이 끝나면, 요구사항 분석부터 다시 해야 했다</h2>
+    <div class="arrow-line" style="margin:4% 0"><div>구현 중단</div><span>→</span><div class="orange">코드 재분석</div><span>→</span><div class="orange">요구사항 재분석</div><span>→</span><div>설계·구현 복귀</div></div>
+    <div class="grid2">
+      <article class="card"><h3>다시 요구사항을 정리</h3><p class="muted">코드 매칭까지 포함해서 작업 기록을<br />언제, 어떤 조건으로 남길지 다시 작성한다.</p></article>
+      <article class="card orange-card"><h3>다시 구현으로 돌아가기</h3><p class="muted">앞에서 하던 구현 내용과 새 요구사항을<br />다시 연결하고 작업을 재개한다.</p></article>
+    </div>
+    <div class="callout warn" style="margin-top:3%">이렇게 코드 분석과 요구사항 분석을 거쳐 다시 구현으로 돌아오는 과정에서 컨텍스트 오염이 많이 발생했고, 현재 어디까지 진행했는지도 놓치게 됐다.</div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>코드 매칭 분석이 끝났다고 바로 구현으로 돌아갈 수 있는 것은 아닙니다.</li><li>새로 파악한 코드 동작을 바탕으로 요구사항 분석부터 다시 해야 합니다.</li><li>코드 매칭까지 작업 기록을 남길 것인지, 재고 매칭은 어떻게 다룰 것인지, 기록 시점과 조건을 다시 정리해야 합니다.</li><li>요구사항을 다시 작성하고 나면, 이전에 진행하던 설계와 구현으로 돌아가 새 요구사항을 연결해야 합니다.</li><li>한 세션에서 구현을 하다가 코드 분석으로 넘어가고, 다시 요구사항 분석을 한 뒤, 다시 설계와 구현으로 돌아오는 과정이 반복됩니다.</li><li>이 과정에서 코드 분석 내용, 수정 전 요구사항, 새로 작성한 요구사항, 중간에 진행했던 구현 내용이 계속 쌓입니다.</li><li>결국 지금 코드 분석이 끝난 것인지, 요구사항이 확정된 것인지, 설계를 다시 해야 하는지, 구현을 재개해도 되는지 놓치기 쉬워집니다.</li><li>제가 말하는 컨텍스트 오염은 바로 이처럼 작업 단계를 여러 번 오가면서 이전 단계의 내용과 새 내용이 한 세션에 계속 쌓이는 문제입니다.</li></ul><p class="transition">다음: 이 컨텍스트를 분리하기 위해 가장 먼저 서브에이전트를 시도했습니다.</p></aside>
+    <span class="page">06</span><nav class="nav"><a href="#slide-5">‹</a><a href="#slide-7">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-7" data-title="서브에이전트를 시도했다">
+    <a class="click-next" href="#slide-8"></a>
+    <p class="eyebrow">첫 번째 시도</p><h2>메인 세션은 오케스트레이터, 조사는 서브에이전트</h2>
+    <div class="arrow-line"><div class="blue">메인 세션<br /><small>조율</small></div><span>→</span><div>서브에이전트<br /><small>분석</small></div><span>+</span><div>서브에이전트<br /><small>작업</small></div></div>
+    <p class="lead muted" style="text-align:center">역할과 컨텍스트를 나눌 수 있을 것이라고 생각했다.</p>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>보통 이런 문제는 서브에이전트로 해결합니다.</li><li>메인 세션은 오케스트레이터로 두고, 코드 조사나 실제 작업을 서브에이전트에게 맡기는 방식입니다.</li><li>저도 처음에는 이 방식으로 컨텍스트를 분리하려고 했습니다.</li></ul><p class="transition">다음: 하지만 실제로 써보니 치명적인 단점이 두 가지 있었습니다.</p></aside>
+    <span class="page">07</span><nav class="nav"><a href="#slide-6">‹</a><a href="#slide-8">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-8" data-title="서브에이전트의 두 문제">
+    <a class="click-next" href="#slide-9"></a>
+    <p class="eyebrow">서브에이전트의 한계</p><h2>불안정했고, 직접 대화할 수 없었다</h2>
+    <div class="grid2" style="margin-top:2.5%">
+      <article class="card orange-card"><p class="big orange"><strong>01</strong></p><h3>세션 유지가 불안정</h3><p class="muted">실패하거나 세션 ID를 잃으면<br />추가 조사를 이어가기 어렵다.</p></article>
+      <article class="card"><p class="big blue"><strong>02</strong></p><h3>서브에이전트에게 직접 질문 불가</h3><p class="muted">분석 결과가 궁금해도<br />메인 세션을 통해야 한다.</p></article>
+    </div>
+    <div class="arrow-line" style="margin:2.5% 0 0"><div>서브에이전트에게<br />직접 질문 불가</div><span>→</span><div>메인 세션이<br />질문·답변 중계</div><span>→</span><div class="orange">분석 세부사항까지<br />메인 컨텍스트에 유입</div></div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>첫째, 서브에이전트가 실패하거나 세션 ID를 잃는 경우가 있었습니다.</li><li>추가 조사나 세부 확인이 필요하면 결국 메인 세션이 다시 개입했습니다.</li><li>둘째, 서브에이전트가 조사한 내용에 대해 그 에이전트에게 바로 질문하기 어려웠습니다.</li><li>예를 들어 코드 조사 결과에서 이해되지 않는 부분이 있어도 사용자가 조사 에이전트에게 바로 후속 질문을 할 수 없었습니다.</li><li>질문을 메인 세션에 전달하면, 메인은 질문을 다시 구성하고 서브에이전트의 결과를 읽고 답변을 중계해야 했습니다.</li><li>그러려면 메인이 원래 알 필요가 없던 함수 동작, 예외 조건, 코드 위치 같은 조사 세부사항까지 이해해야 했습니다.</li><li>그 결과 오케스트레이션만 담당해야 할 메인 세션에 코드 조사와 요구사항 분석 컨텍스트가 다시 쌓였습니다.</li><li>즉 직접 질문할 수 없다는 제약은 단순한 불편이 아니라, 메인을 중계자로 만들고 컨텍스트 분리 목적 자체를 무너뜨리는 문제였습니다.</li></ul><p class="transition">다음: 그래서 결국 제가 직접 오케스트레이터가 되었습니다.</p></aside>
+    <span class="page">08</span><nav class="nav"><a href="#slide-7">‹</a><a href="#slide-9">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-9" data-title="사람이 오케스트레이터가 됐다">
+    <a class="click-next" href="#slide-10"></a>
+    <p class="eyebrow">두 번째 시도</p><h2>결국 사람이 세션 사이에서 결과를 전달했다</h2>
+    <div class="arrow-line"><div>코드 조사 세션</div><span>→</span><div class="mono">result.md</div><span>→</span><div>요구사항 분석 세션</div></div>
+    <div class="callout warn">세션은 분리됐지만, 생성 · 전달 · 진행 확인은 전부 사람의 일이었다.</div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>세션을 여러 개 열고 코드 조사 세션에게 결과를 Markdown 파일로 만들게 했습니다.</li><li>그 파일 경로를 다른 세션에 붙여 넣고 읽은 뒤 요구사항을 분석해달라고 했습니다.</li><li>컨텍스트 분리는 되지만, 제가 세션 사이에서 파일과 메시지를 계속 옮겨야 했습니다.</li></ul><p class="transition">다음: 이 작업은 AI 세션끼리 직접 대화할 수 있으면 없어질 일이었습니다.</p></aside>
+    <span class="page">09</span><nav class="nav"><a href="#slide-8">‹</a><a href="#slide-10">›</a></nav>
+  </section>
+
+  <section class="slide section-cover" id="slide-10" data-title="원하는 제품이 없었다">
+    <a class="click-next" href="#slide-11"></a>
+    <p class="eyebrow">제작 시작</p><h2>세션 간 통신 + 데스크톱 UI</h2>
+    <p class="lead muted">두 조건을 만족하는 제품을 찾지 못했다.</p>
+    <p class="big blue"><strong>그래서 직접 만들기 시작했다.</strong></p>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>제가 반복하던 복사·붙여넣기는 세션 간 통신만 되면 해결될 문제였습니다.</li><li>그래서 세션 간 통신을 지원하면서 CLI가 아닌 제품을 찾았습니다.</li><li>제가 원하는 기능까지 붙이려면 결국 직접 만드는 편이 낫겠다고 판단했습니다.</li></ul><p class="transition">다음부터는 실제 앱을 어떻게 사용하는지 보여드리겠습니다.</p></aside>
+    <span class="page">10</span><nav class="nav"><a href="#slide-9">‹</a><a href="#slide-11">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-11" data-title="앱의 핵심은 세션과 통신">
+    <a class="click-next" href="#slide-12"></a>
+    <p class="eyebrow">앱 소개</p><h2>앱 기능의 대부분은 세션을 만들고 서로 통신하게 하는 것</h2>
+    <div class="split">
+      <div><p class="big blue"><strong>세션 생성</strong></p><p class="big"><strong>+</strong></p><p class="big blue"><strong>세션 간 통신</strong></p></div>
+      <figure style="margin:0"><img class="shot cover" src="../design_handoff_workbench/screenshots/01-split2.png" alt="AgentParty 워크벤치" /><figcaption class="caption">한 화면에서 여러 멤버의 대화와 상태를 본다.</figcaption></figure>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>앱의 핵심 기능은 생각보다 단순합니다.</li><li>독립된 세션을 만들고, 그 세션들이 서로 메시지를 보낼 수 있게 하는 것이 대부분입니다.</li><li>뒤에서는 우리가 터미널에서 쓰는 실제 CLI가 동작하고, 앱은 그 출력과 상호작용을 UI로 보여줍니다.</li></ul><p class="transition">다음: 실제로 작업공간을 열고 파티를 만드는 흐름입니다.</p></aside>
+    <span class="page">11</span><nav class="nav"><a href="#slide-10">‹</a><a href="#slide-12">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-12" data-title="작업공간과 파티">
+    <a class="click-next" href="#slide-13"></a>
+    <p class="eyebrow">기본 사용 흐름</p><h2>프로젝트 경로로 워크벤치를 열고 파티를 만든다</h2>
+    <div class="grid3" style="margin-top:5%">
+      <article><p class="big blue"><strong>01</strong></p><h3>작업공간 열기</h3><p class="muted">선택한 프로젝트 경로가<br />세션의 작업 경로가 된다.</p></article>
+      <article><p class="big blue"><strong>02</strong></p><h3>파티 생성</h3><p class="muted">서로 통신할 수 있는<br />하나의 에이전트 그룹</p></article>
+      <article><p class="big blue"><strong>03</strong></p><h3>기본 멤버 생성</h3><p class="muted">환경설정의 기본 하네스와<br />모델 설정을 사용한다.</p></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>프로젝트 폴더에서 AgentParty를 열면 그 경로로 워크벤치가 열립니다.</li><li>작업을 시작하려면 먼저 파티를 만듭니다.</li><li>파티는 서로 통신할 수 있는 에이전트 그룹입니다.</li><li>파티를 만들면 환경설정의 기본값을 따르는 main 멤버가 먼저 생깁니다.</li></ul><p class="transition">다음: 멤버는 어떤 실행 환경과 모델로 만들지 선택할 수 있습니다.</p></aside>
+    <span class="page">12</span><nav class="nav"><a href="#slide-11">‹</a><a href="#slide-13">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-13" data-title="멤버 만들기">
+    <a class="click-next" href="#slide-14"></a>
+    <p class="eyebrow">기본 사용 흐름</p><h2>하네스 · 모델 · 추론 수준을 선택해 멤버를 만든다</h2>
+    <div class="split equal">
+      <img class="shot cover" src="../design_handoff_workbench/screenshots/05-runtime-modal.png" alt="AgentParty 런타임 설정" />
+      <div><ul class="bullets"><li>Claude Code · Codex · Cursor CLI</li><li>연결된 구독과 API의 모델 선택</li><li>모델별 Effort · Thinking 설정</li><li>일반적으로는 main에게 멤버 생성을 요청</li></ul><div class="callout warn">교차 하네스 조합은 구현되어 있으나 현재 베타 잠금</div></div>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>오른쪽의 추가 버튼으로 멤버를 만들 수 있습니다.</li><li>카탈로그에서 하네스, 모델, 추론 수준과 권한을 선택합니다.</li><li>직접 만들 수도 있지만, 보통은 main에게 필요한 역할의 멤버를 만들어달라고 요청합니다.</li><li>Claude Code에서 GPT를 돌리는 식의 교차 하네스는 구현했지만 현재는 버그 때문에 베타에서 닫아두었습니다.</li><li>OpenRouter나 DeepSeek처럼 자체 하네스가 없는 모델은 Claude Code 또는 Codex 경로로 사용할 수 있습니다.</li></ul><p class="transition">다음: CLI에서 보던 도구 호출과 승인도 앱 화면에서 처리합니다.</p></aside>
+    <span class="page">13</span><nav class="nav"><a href="#slide-12">‹</a><a href="#slide-14">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-14" data-title="CLI를 UI로 감쌌다">
+    <a class="click-next" href="#slide-15"></a>
+    <p class="eyebrow">앱 소개</p><h2>터미널의 실제 CLI 출력을 데스크톱 UI로 감쌌다</h2>
+    <div class="split equal">
+      <div><h3>화면에서 처리하는 것</h3><ul class="bullets"><li>스트리밍 응답과 도구 호출</li><li>명령 실행 · 파일 변경 승인</li><li>사용자에게 되묻는 질문</li><li>Compacting · 계획 · 변경 파일</li><li>Markdown · 코드 · 이미지 결과</li></ul></div>
+      <img class="shot cover" src="../베타 공개 준비/승인 카드 캡처/pending-codex-file-change.png" alt="AgentParty 승인 카드" />
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>기본적으로 뒤에서 도는 것은 우리가 터미널에서 쓰는 CLI입니다.</li><li>앱은 CLI에서 나오는 스트리밍 출력, 도구 호출, 승인 요청, compacting 등을 공통 UI로 래핑합니다.</li><li>그래서 여러 하네스를 쓰더라도 비슷한 화면에서 확인하고 개입할 수 있습니다.</li></ul><p class="transition">다음: 세션 간 통신을 운영하면서 필요해진 핵심 기능이 Message Gate입니다.</p></aside>
+    <span class="page">14</span><nav class="nav"><a href="#slide-13">‹</a><a href="#slide-15">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-15" data-title="Message Gate">
+    <a class="click-next" href="#slide-16"></a>
+    <p class="eyebrow">핵심 기능</p><h2>Message Gate는 멤버 간 메시지를 규칙으로 검사한다</h2>
+    <div class="split equal">
+      <div><ul class="bullets"><li>중간 리뷰어 모델과 통신 규칙 설정</li><li>규칙 위반 시 메시지를 전달하지 않고 반려</li><li>필요하면 강제 전송 가능</li><li>AI에게 Gate 설정 자체를 요청할 수도 있음</li></ul><div class="callout warn">AI들이 너무 친절하게 모든 세부사항을 공유하는 문제를 줄이기 위해 만들었다.</div></div>
+      <img class="shot" src="../베타 공개 준비/발표/메세지 게이트.png" alt="Message Gate 반려 화면" />
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>멤버들이 서로 대화하게 하니 AI들이 지나치게 친절하게 많은 정보를 전달했습니다.</li><li>예를 들어 구현 멤버가 오케스트레이터에게 코드 수정 세부사항을 전부 보고하면, 다시 메인의 컨텍스트가 오염됩니다.</li><li>그래서 중간 리뷰어 모델이 통신 규칙을 검사하고, 위반 메시지는 반려하게 만들었습니다.</li><li>꼭 필요하면 강제 전송할 수 있고, Gate 설정도 AI에게 요청할 수 있습니다.</li></ul><p class="transition">다음: 긴 세션의 비용과 컨텍스트를 관리하기 위한 기능입니다.</p></aside>
+    <span class="page">15</span><nav class="nav"><a href="#slide-14">‹</a><a href="#slide-16">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-16" data-title="사용량과 Auto-compact">
+    <a class="click-next" href="#slide-17"></a>
+    <p class="eyebrow">운영 기능</p><h2>사용량을 보고, 컨텍스트가 차면 자동으로 압축한다</h2>
+    <div class="grid2">
+      <article><h3>토큰 사용량</h3><img class="shot cover" src="../design_handoff_token_usage-new/screenshots/03-chart-all.png" alt="토큰 사용량 통계" /><p class="caption">API 가격 기준 추정치라 절대 비용보다 상대적인 사용량을 보는 용도</p></article>
+      <article><h3>Auto-compact</h3><img class="shot cover" src="../디자인 핸드오프/design_handoff_workbench/screenshots/06-auto-compact.png" alt="Auto-compact 설정" /><p class="caption">특정 컨텍스트 사용률에 도달하면 자동으로 압축</p></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>통계 화면에서는 토큰 사용량과 추정 비용을 볼 수 있습니다.</li><li>API 가격표로 계산하기 때문에 절대 금액이 정확하다고 보기는 어렵고, 상대적인 사용 추세를 보려고 만들었습니다.</li><li>컨텍스트가 길어지면 매 턴 다시 읽는 입력량도 크게 늘어납니다.</li><li>Auto-compact는 설정한 사용률에 도달하면 컨텍스트를 자동 압축합니다.</li></ul><p class="transition">다음: 그 외에 여러 세션을 실제로 운영하기 위해 필요한 기능들입니다.</p></aside>
+    <span class="page">16</span><nav class="nav"><a href="#slide-15">‹</a><a href="#slide-17">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-17" data-title="운영 편의 기능">
+    <a class="click-next" href="#slide-18"></a>
+    <p class="eyebrow">운영 기능</p><h2>여러 세션을 계속 켜두고 쓰기 위한 기능</h2>
+    <div class="grid3">
+      <article class="card"><h3>메시지 큐</h3><p class="muted">작업 중인 멤버에게 보낸 메시지를 기다렸다가 전달</p></article>
+      <article class="card"><h3>MCP · 세션 재시작</h3><p class="muted">도구 연결 상태 확인과 문제가 생긴 세션 복구</p></article>
+      <article class="card"><h3>멘션 · 이미지</h3><p class="muted">멤버를 가리키고 이미지와 렌더링 결과를 확인</p></article>
+      <article class="card"><h3>인증</h3><p class="muted">사용 중인 AI 구독과 API 키 연결</p></article>
+      <article class="card orange-card"><h3>유휴 슬립</h3><p class="muted">일정 시간 쓰지 않은 프로세스를 닫아 메모리 절약</p></article>
+      <article class="card"><h3>모델 변경</h3><p class="muted">멤버별 모델과 추론 설정 변경</p></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>메시지 큐는 작업 중인 멤버에게 온 메시지를 보관했다가 턴이 끝난 뒤 전달합니다.</li><li>MCP 상태 확인, 세션 재시작, 멤버 멘션, 모델 변경, 이미지 렌더링 같은 기능도 지원합니다.</li><li>인증 화면에서는 사용하는 AI 구독과 API 키를 연결합니다.</li><li>유휴 슬립은 여러 WSL 세션을 켜두었을 때 메모리가 부족해지는 문제 때문에 만들었고, 일정 시간 안 쓴 프로세스를 닫습니다.</li></ul><p class="transition">다음: 실제로 멀티 에이전트를 사용해보고 느낀 장단점입니다.</p></aside>
+    <span class="page">17</span><nav class="nav"><a href="#slide-16">‹</a><a href="#slide-18">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-18" data-title="멀티 에이전트는 좋은가">
+    <a class="click-next" href="#slide-19"></a>
+    <p class="eyebrow">느낀 점</p><h2>멀티 에이전트 오케스트레이팅이 과연 좋은가?</h2>
+    <div class="grid2">
+      <article class="card blue-card"><h3 class="blue">장점</h3><ul class="bullets"><li>단계별 누락과 미결 사항이 줄어든다</li><li>특히 요구사항 분석의 정확도가 올라간다</li><li>현재 어느 단계인지 파악하기 쉽다</li></ul></article>
+      <article class="card orange-card"><h3 class="orange">단점</h3><ul class="bullets"><li>시간이 오래 걸린다</li><li>토큰을 많이 사용한다</li><li>서로 문제를 과장하고 딴길로 샐 수 있다</li></ul></article>
+    </div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>장점은 단계별 누락이 줄어든다는 점입니다.</li><li>특히 요구사항 분석에서 놓친 조건이나 미결 사항을 더 잘 찾았습니다.</li><li>각 단계가 분리되어 현재 어디까지 진행했는지도 파악하기 쉬웠습니다.</li><li>반면 시간이 오래 걸리고 토큰을 많이 씁니다.</li><li>여러 AI가 같은 문제를 주고받으며 문제를 과장하거나 딴길로 새는 경우도 있었습니다.</li></ul><p class="transition">다음: 그래서 제 결론은 무조건 멀티 에이전트가 좋다는 것이 아닙니다.</p></aside>
+    <span class="page">18</span><nav class="nav"><a href="#slide-17">‹</a><a href="#slide-19">›</a></nav>
+  </section>
+
+  <section class="slide section-cover" id="slide-19" data-title="멀티 에이전트에 대한 결론">
+    <a class="click-next" href="#slide-20"></a>
+    <p class="eyebrow">결론</p><h2>작업 품질 향상은 분명했다</h2>
+    <p class="big orange"><strong>하지만 시간과 토큰도 많이 들었다</strong></p>
+    <p class="lead muted">모델이 더 좋아지면 하나의 세션이 더 나은 작업도 늘어날 수 있다.</p>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>작업 품질이 좋아지는 효과는 분명히 있었습니다.</li><li>하지만 모든 작업에 적용할 만큼 싸고 빠른 방식은 아니었습니다.</li><li>모델이 계속 좋아지면 하나의 세션에서 작업하는 편이 더 나은 경우도 늘어날 것이라고 생각합니다.</li><li>따라서 이 앱을 무조건 멀티 에이전트를 써야 한다는 주장으로 만든 것은 아닙니다.</li></ul><p class="transition">마지막으로 이 앱을 만들며 생각하게 된 AI 시대의 소프트웨어 구조를 이야기하겠습니다.</p></aside>
+    <span class="page">19</span><nav class="nav"><a href="#slide-18">‹</a><a href="#slide-20">›</a></nav>
+  </section>
+
+  <section class="slide" id="slide-20" data-title="AI가 앱을 통제할 수 있다">
+    <a class="click-next" href="#slide-21"></a>
+    <p class="eyebrow">AI 시대의 소프트웨어</p><h2>앱의 기능과 상태를 API로 AI에게 열어두었다</h2>
+    <div class="grid3" style="margin-top:5%">
+      <article><p class="big blue"><strong>01</strong></p><h3>자동화</h3><p class="muted">AI가 파티와 세션을 직접 제어</p></article>
+      <article><p class="big blue"><strong>02</strong></p><h3>디버깅</h3><p class="muted">앱 상태와 로그를 읽고 문제 조사</p></article>
+      <article><p class="big blue"><strong>03</strong></p><h3>QA</h3><p class="muted">실제 앱을 조작하고 결과를 판단</p></article>
+    </div>
+    <div class="callout" style="margin-top:6%">모든 사용자 기능을 로컬 HTTP API로도 호출할 수 있게 구성했다.</div>
+    <aside class="speaker-notes"><h3>이 장에서 말할 내용</h3><ul><li>이 앱의 기능은 대부분 로컬 API로 노출되어 외부 LLM이 앱을 제어할 수 있습니다.</li><li>앱 상태와 로그에도 접근할 수 있어서 문제가 생겼을 때 AI에게 직접 상태를 확인시키고 디버깅할 수 있습니다.</li><li>E2E 테스트도 정해진 스크립트만 실행하는 것이 아니라, AI가 화면과 상태를 보고 논리적으로 다음 행동을 판단하게 할 수 있습니다.</li><li>스크립트 E2E를 모든 경우에 작성하는 비용을 줄여보려는 시도이기도 합니다.</li></ul><p class="transition">마무리하겠습니다.</p></aside>
+    <span class="page">20</span><nav class="nav"><a href="#slide-19">‹</a><a href="#slide-21">›</a></nav>
+  </section>
+
+  <section class="slide section-cover" id="slide-21" data-title="마무리">
+    <p class="eyebrow">AgentParty</p><h2>컨텍스트를 분리하기 위해<br />세션들이 직접 대화하게 만들었다</h2>
+    <p class="lead muted">그 과정에서 멀티 에이전트의 가능성과 비용을 함께 경험했다.</p>
+    <aside class="speaker-notes"><h3>마무리</h3><ul><li>AgentParty는 제가 개발 과정에서 겪은 컨텍스트 오염과 수동 중계 문제를 해결하려고 만든 앱입니다.</li><li>핵심은 세션 생성과 세션 간 통신입니다.</li><li>실제로 써보니 품질 향상은 있었지만 시간과 토큰 비용도 분명했습니다.</li><li>그리고 AI가 앱 자체를 운영하고 진단할 수 있는 구조를 함께 실험하고 있습니다.</li></ul></aside>
+    <span class="page">21</span><nav class="nav"><a href="#slide-20">‹</a><span>›</span></nav>
+  </section>
+
+</div></main>
+<div class="progress" id="progress"></div>
+<div class="controls"><button id="prev" title="이전">‹</button><button id="notes" title="발표자 노트 (N)">N</button><button id="full" title="전체 화면 (F)">⛶</button><button id="next" title="다음">›</button></div>
+<script>
+(() => {
+  const slides=[...document.querySelectorAll('.slide')];
+  const hashIndex=()=>slides.findIndex(s=>`#${s.id}`===location.hash);
+  let index=Math.max(0,hashIndex());
+  const progress=document.getElementById('progress');
+  function show(n){index=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===index));const h=`#${slides[index].id}`;if(location.hash!==h)location.hash=h;progress.style.width=`${(index+1)/slides.length*100}%`;document.title=`${index+1}/${slides.length} · ${slides[index].dataset.title}`;}
+  function toggleNotes(){slides[index].querySelector('.speaker-notes')?.classList.toggle('open');}
+  document.getElementById('prev').onclick=()=>show(index-1);document.getElementById('next').onclick=()=>show(index+1);document.getElementById('notes').onclick=toggleNotes;document.getElementById('full').onclick=()=>document.fullscreenElement?document.exitFullscreen?.():document.documentElement.requestFullscreen?.();
+  document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();show(index+1)}else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();show(index-1)}else if(e.key.toLowerCase()==='n')toggleNotes();else if(e.key.toLowerCase()==='f')document.getElementById('full').click();else if(e.key==='Home')show(0);else if(e.key==='End')show(slides.length-1);else if(e.key==='Escape')slides[index].querySelector('.speaker-notes')?.classList.remove('open')});
+  window.addEventListener('hashchange',()=>{const n=hashIndex();if(n>=0&&n!==index)show(n)});show(index);
+})();
+</script>
+</body>
+</html>
