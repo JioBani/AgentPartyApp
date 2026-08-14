@@ -878,6 +878,11 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
                 key={check.id}
                 check={check}
                 onRepaired={(result) => { setRepairNote(result); void load({ refresh: true, includeWsl: wslChecked }); }}
+                onOpenExecutable={(field) => {
+                  const input = document.querySelector<HTMLInputElement>(`[data-env-field="${field}"]`);
+                  input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  input?.focus({ preventScroll: true });
+                }}
               />
             ))}
             {group.id === "wsl" && (
@@ -922,9 +927,10 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
 }
 
 /** One check: status, what was found, why, and the ways out. */
-function EnvironmentCheckRow({ check, onRepaired }: {
+function EnvironmentCheckRow({ check, onRepaired, onOpenExecutable }: {
   check: EnvironmentCheck;
   onRepaired: (result: { ok: boolean; detail: string; output?: string }) => void;
+  onOpenExecutable: (settingsField: string) => void;
 }) {
   return (
     <div className="set-env-row" data-env-check={check.id} data-status={check.status}>
@@ -939,7 +945,11 @@ function EnvironmentCheckRow({ check, onRepaired }: {
         <div className="set-env-actions">
           {/* Same component the in-transcript blocker card uses, so a fix
               offered in one place behaves identically in the other. */}
-          <EnvironmentRemedyButtons remedies={check.remedies || []} onRepaired={onRepaired} />
+          <EnvironmentRemedyButtons
+            remedies={check.remedies || []}
+            onRepaired={onRepaired}
+            onOpenEnvironment={(field) => { if (field) onOpenExecutable(field); }}
+          />
         </div>
       )}
       {check.raw && <EnvironmentRawDetail raw={check.raw} />}

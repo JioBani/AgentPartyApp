@@ -195,7 +195,8 @@ const CLAUDE_ORIGIN_LABEL = {
 async function claudeCheck(sdkVersion: string | undefined): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const expected = claudeCliVersionForSdk(sdkVersion);
-  const chosen = chooseClaudeCli(String(settings.claudeExecutablePath || "").trim());
+  const configured = String(settings.claudeExecutablePath || "").trim();
+  const chosen = chooseClaudeCli(configured);
 
   const remedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CLAUDE_INSTALL_COMMAND },
@@ -234,14 +235,20 @@ async function claudeCheck(sdkVersion: string | undefined): Promise<EnvironmentC
     // because the origins end in different syllables and would need different
     // Korean particles.
     detail: !probe.ok
-      ? "실행 파일은 찾았지만 버전을 확인하지 못했습니다."
+      ? configured
+        ? `설정된 경로에서 Claude Code를 실행하지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
+        : "실행 파일은 찾았지만 버전을 확인하지 못했습니다."
       : skewed
         ? `사용 중: ${chosen.origin}. 이 빌드의 Agent SDK는 ${expected}과 짝을 이루는데 설치된 버전은 ${actual}입니다. 대부분 동작하지만 문제가 생기면 이 차이를 먼저 의심하세요.`
         : `사용 중: ${chosen.origin}.`,
     version,
     path: chosen.command,
     raw: probe.ok ? undefined : probe.error,
-    ...(probe.ok && !skewed ? {} : { remedies }),
+    ...(probe.ok && !skewed ? {} : {
+      remedies: configured && !probe.ok
+        ? [...pathRemedies("claudeExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
+        : remedies,
+    }),
   };
 }
 
@@ -249,6 +256,7 @@ const CODEX_INSTALL_COMMAND = "npm install -g @openai/codex";
 
 async function codexCheck(): Promise<EnvironmentCheck> {
   const settings = getSettings();
+  const configured = String(settings.codexExecutablePath || "").trim();
   const executable = codexExecutable(settings.codexExecutablePath);
   const resolved = resolveCodexExecutable(executable);
   const remedies: EnvironmentRemedy[] = [
@@ -271,10 +279,14 @@ async function codexCheck(): Promise<EnvironmentCheck> {
       group: "harness",
       label: "Codex",
       status: "missing",
-      detail: "Codex CLI를 실행하지 못했습니다. Codex 하네스 멤버를 실행할 수 없습니다.",
+      detail: configured
+        ? `설정된 경로에서 Codex CLI를 실행하지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
+        : "Codex CLI를 실행하지 못했습니다. Codex 하네스 멤버를 실행할 수 없습니다.",
       path: resolved.command,
       raw: probe.error,
-      remedies,
+      remedies: configured
+        ? [...pathRemedies("codexExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
+        : remedies,
     };
   }
 
@@ -389,6 +401,7 @@ const GROK_INSTALL_COMMAND = process.platform === "win32"
 
 async function grokCheck(): Promise<EnvironmentCheck> {
   const settings = getSettings();
+  const configured = String(settings.grokExecutablePath || "").trim();
   const installed = grokCliInstalledPath(settings.grokExecutablePath);
   if (!installed) {
     return {
@@ -396,8 +409,11 @@ async function grokCheck(): Promise<EnvironmentCheck> {
       group: "harness",
       label: "Grok Build",
       status: "missing",
-      detail: "Grok Build CLI가 설치되어 있지 않습니다. Grok 하네스 멤버를 실행할 수 없습니다.",
+      detail: configured
+        ? `설정된 경로에서 Grok Build CLI를 찾지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
+        : "Grok Build CLI가 설치되어 있지 않습니다. Grok 하네스 멤버를 실행할 수 없습니다.",
       remedies: [
+        ...(configured ? pathRemedies("grokExecutablePath") : []),
         { kind: "command", label: "설치 명령 복사", command: GROK_INSTALL_COMMAND },
         {
           kind: "repair",
@@ -407,7 +423,7 @@ async function grokCheck(): Promise<EnvironmentCheck> {
           confirm: `이 PC에 Grok Build CLI를 설치합니다.\n\n${GROK_INSTALL_COMMAND}`,
         },
         { kind: "docs", label: "설치 안내", url: "https://x.ai/cli" },
-        { kind: "settings", label: "실행 파일 경로 지정", settingsField: "grokExecutablePath" },
+        ...(!configured ? [{ kind: "settings" as const, label: "실행 파일 경로 지정", settingsField: "grokExecutablePath" }] : []),
       ],
     };
   }
@@ -501,10 +517,36 @@ export async function runEnvironmentRepair(repairId: string): Promise<Environmen
   if (!result.ok) {
     log("warn", "environment", "repair failed", { repairId, error: result.error });
   }
+  const repairedCheckId = wslDistro
+    ? `wsl.${wslDistro}.sdk`
+    : repairId.replace(/\.(install|login)$/, "");
+  const repairedCheck = report.checks.find((check) => check.id === repairedCheckId);
+  const verified = Boolean(repairedCheck && (
+    repairedCheck.status === "ok"
+    || repairedCheck.status === "warn"
+    // Reinstalling the WSL SDK intentionally removes it; the next workspace
+    // connection performs the fresh install. `unknown` is expected here.
+    || (Boolean(wslDistro) && repairedCheck.status === "unknown")
+  ));
+  const ok = result.ok && verified;
+  if (result.ok && !verified) {
+    log("warn", "environment", "repair command completed but verification failed", {
+      repairId,
+      checkId: repairedCheckId,
+      status: repairedCheck?.status,
+      detail: repairedCheck?.detail,
+    });
+  }
   return {
-    ok: result.ok,
-    detail: result.ok ? "완료했습니다." : "실패했습니다. 아래 출력을 확인하거나 명령을 직접 실행해 보세요.",
-    output: tail(result.ok ? result.stdout : (result.error || result.stderr)),
+    ok,
+    detail: !result.ok
+      ? "실패했습니다. 아래 출력을 확인하거나 명령을 직접 실행해 보세요."
+      : verified
+        ? `${repairedCheck?.label || "환경"} 준비를 확인했습니다.`
+        : `명령은 완료됐지만 ${repairedCheck?.label || "환경"}을 아직 사용할 수 없습니다. ${repairedCheck?.detail || "다시 점검해 주세요."}`,
+    output: tail(result.ok
+      ? [result.stdout, verified ? "" : repairedCheck?.raw].filter(Boolean).join("\n")
+      : (result.error || result.stderr)),
     report,
   };
 }

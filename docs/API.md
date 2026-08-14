@@ -163,10 +163,14 @@ The body carries an **id, never a command**: the command is looked up in a
 freshly built report, so this endpoint can only run a string the app itself
 authored. An unknown id is a **500** with the reason.
 
-Returns `{ "ok": true, "detail": "완료했습니다.", "output": "…", "report": { … } }`,
+Returns `{ "ok": true, "detail": "Claude Code 준비를 확인했습니다.", "output": "…", "report": { … } }`,
 where `report` is the post-repair environment so the caller re-renders from one
-source. A failed repair returns `ok: false` **with** the command output rather
-than a bare error.
+source. `ok` is true only when both the repair command and the matching
+post-repair check succeed (`ok` or non-blocking `warn`). A command that exits 0
+but still leaves the harness missing or broken returns `ok: false` with the
+verification reason and command output; it is never presented as a completed
+installation. A failed command likewise returns `ok: false` **with** its output
+rather than a bare error.
 
 A remedy whose `confirm` field is set changes the user's own system (installing
 a CLI); the UI confirms before calling. One without it touches only app-owned

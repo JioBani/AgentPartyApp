@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, RefreshCw, Settings2 } from "lucide-react";
 import type { EnvironmentRemedy } from "../../shared/environment";
 import { ipcErrorMessage } from "../app/ipcError";
 
@@ -15,7 +15,7 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
   remedies: EnvironmentRemedy[];
   /** Called after a repair finishes, so the host can re-render from the fresh report. */
   onRepaired?: (result: { ok: boolean; detail: string; output?: string }) => void;
-  onOpenEnvironment?: () => void;
+  onOpenEnvironment?: (settingsField?: string) => void;
 }) {
   const [busy, setBusy] = useState("");
   const [copied, setCopied] = useState("");
@@ -32,7 +32,7 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
       return;
     }
     if (remedy.kind === "settings") {
-      onOpenEnvironment?.();
+      onOpenEnvironment?.(remedy.settingsField);
       return;
     }
     if (remedy.kind !== "repair" || !remedy.repairId) {
@@ -54,9 +54,7 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
     }
   }
 
-  return (
-    <>
-      {remedies.map((remedy) => {
+  function button(remedy: EnvironmentRemedy) {
         const running = remedy.kind === "repair" && busy === remedy.repairId;
         const justCopied = remedy.kind === "command" && copied === remedy.command;
         return (
@@ -68,11 +66,39 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
             disabled={Boolean(busy)}
             onClick={() => void run(remedy)}
           >
-            {justCopied ? <Check size={14} /> : remedy.kind === "command" ? <Copy size={14} /> : remedy.kind === "docs" ? <ArrowRight size={14} /> : <RefreshCw size={14} />}
+            {justCopied
+              ? <Check size={14} />
+              : remedy.kind === "command"
+                ? <Copy size={14} />
+                : remedy.kind === "docs"
+                  ? <ArrowRight size={14} />
+                  : remedy.kind === "settings"
+                    ? <Settings2 size={14} />
+                    : <RefreshCw size={14} />}
             {running ? "진행 중…" : justCopied ? "복사됨" : remedy.label}
           </button>
         );
-      })}
+  }
+
+  // A blocker is a small decision, not a toolbar. Keep the most likely fix in
+  // front, retain direct path selection as the escape hatch, and fold the
+  // command/docs variants away until the user asks for them.
+  const primary = remedies[0]?.kind === "settings"
+    ? remedies[0]
+    : remedies.find((remedy) => remedy.kind === "repair") || remedies[0];
+  const settings = remedies.find((remedy) => remedy.kind === "settings" && remedy !== primary);
+  const more = remedies.filter((remedy) => remedy !== primary && remedy !== settings);
+
+  return (
+    <>
+      {primary && button(primary)}
+      {settings && button(settings)}
+      {more.length > 0 && (
+        <details className="set-env-more">
+          <summary>다른 방법</summary>
+          <div className="set-env-more-actions">{more.map(button)}</div>
+        </details>
+      )}
     </>
   );
 }
@@ -93,10 +119,12 @@ export function EnvironmentRawDetail({ raw }: { raw: string }) {
 /** Outcome of a repair, shown next to the buttons that ran it. */
 export function EnvironmentRepairNote({ note }: { note: { ok: boolean; detail: string; output?: string } }) {
   return (
-    <div className={"set-inline-note " + (note.ok ? "is-success" : "is-error")}>
-      {note.ok ? <Check size={14} /> : <AlertTriangle size={14} />}
-      <span>{note.detail}</span>
-      {note.output && <pre className="set-diag-report wb-mono">{note.output}</pre>}
+    <div className={"set-repair-note " + (note.ok ? "is-success" : "is-error")} role="status">
+      <span className="set-repair-note-main">
+        {note.ok ? <Check size={14} /> : <AlertTriangle size={14} />}
+        <span>{note.detail}</span>
+      </span>
+      {note.output && <EnvironmentRawDetail raw={note.output} />}
     </div>
   );
 }

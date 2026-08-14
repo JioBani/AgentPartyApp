@@ -63,11 +63,12 @@ export function EnvironmentBlock({ block, view, actions }: {
     <div className="wb-block wb-env" data-env-check={block.checkId} data-resolved={resolved ? "1" : "0"}>
       <div className="wb-env-head">
         {resolved ? <ShieldCheck size={15} /> : <AlertTriangle size={15} />}
-        <span className="wb-env-title">{resolved ? `${check?.label} 준비가 끝났습니다.` : block.text}</span>
+        <span className="wb-env-title">{resolved ? `${check?.label} 준비가 끝났습니다. 이제 대화할 수 있습니다.` : block.text}</span>
       </div>
       {/* The heading is the thrown message and the detail comes from the live
           check; when a check phrases it the same way, one line is enough. */}
       {!resolved && detail !== block.text && <div className="wb-env-detail">{detail}</div>}
+      {resolved && lastUserText && <div className="wb-env-detail">보내지 못한 메시지는 자동 전송하지 않았습니다. 아래 버튼으로 다시 보내세요.</div>}
 
       <div className="wb-env-actions">
         {!resolved && (
@@ -84,7 +85,7 @@ export function EnvironmentBlock({ block, view, actions }: {
             data-env-remedy="retry"
             onClick={() => void actions.sendMessage(view.name, lastUserText)}
           >
-            <RefreshCw size={14} /> 다시 시도
+            <RefreshCw size={14} /> 메시지 다시 보내기
           </button>
         )}
         {showOpenEnvironment && (
@@ -92,12 +93,12 @@ export function EnvironmentBlock({ block, view, actions }: {
             <ShieldCheck size={14} /> 환경 탭 열기
           </button>
         )}
-        <button type="button" className="set-btn-soft" data-env-remedy="recheck" disabled={loading} onClick={() => void load(true)}>
+        <button type="button" className="set-link-btn wb-env-recheck" data-env-remedy="recheck" disabled={loading} onClick={() => void load(true)}>
           <RefreshCw size={14} /> {loading ? "확인 중…" : "다시 확인"}
         </button>
       </div>
 
-      {note && <EnvironmentRepairNote note={note} />}
+      {note && !resolved && <EnvironmentRepairNote note={note} />}
       {block.raw && <EnvironmentRawDetail raw={block.raw} />}
     </div>
   );

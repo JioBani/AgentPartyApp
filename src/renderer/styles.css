@@ -7375,6 +7375,18 @@ body.wb-resizing {
    other (6px gap + 4px = 10px), so a row reads as "facts, then what to do"
    rather than as four evenly spaced lines one of which happens to be clickable. */
 .set-env-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.set-env-more { position: relative; align-self: center; }
+.set-env-more > summary { cursor: pointer; list-style: none; padding: 6px 4px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.set-env-more > summary::-webkit-details-marker { display: none; }
+.set-env-more > summary::after { content: "⌄"; margin-left: 5px; color: var(--text-3); }
+.set-env-more[open] > summary::after { content: "⌃"; }
+.set-env-more-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 6px; }
+.set-repair-note { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--border-strong); color: var(--text-1); font-size: 11.5px; line-height: 1.45; }
+.set-repair-note.is-success { border-color: var(--success); }
+.set-repair-note.is-error { border-color: var(--danger); color: var(--danger); }
+.set-repair-note-main { display: flex; align-items: flex-start; gap: 7px; }
+.set-repair-note-main svg { flex: none; margin-top: 1px; }
+.set-repair-note .set-env-raw { color: var(--text-2); }
 .set-env-raw .set-diag-report { margin: 8px 0 0; }
 .set-env-field { margin: 13px 20px 0; }
 /* The tab's own footer row, NOT a row inside a card: `.set-diag-actions` carries
