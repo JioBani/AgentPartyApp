@@ -16,17 +16,22 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
 const npmCmd = isWin ? "npm.cmd" : "npm";
-const npxCmd = isWin ? "npx.cmd" : "npx";
+const localTool = (name) =>
+  path.join(projectRoot, "node_modules", ".bin", isWin ? `${name}.cmd` : name);
+
+const requiredBuildTools = ["tsc", "vite", "electron-builder"];
+const missingBuildTools = () =>
+  requiredBuildTools.filter((name) => !existsSync(localTool(name)));
 
 // Each step is a discrete command. Weights approximate relative duration so the
 // bar advances at a believable pace.
 const steps = [
-  { name: "타입 체크 (renderer)", weight: 2, cmd: npxCmd, args: ["tsc", "-p", "tsconfig.json", "--noEmit"] },
-  { name: "타입 체크 (main)", weight: 1, cmd: npxCmd, args: ["tsc", "-p", "tsconfig.main.json", "--noEmit"] },
-  { name: "렌더러 빌드 (vite)", weight: 3, cmd: npxCmd, args: ["vite", "build"] },
-  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: npxCmd, args: ["tsc", "-p", "tsconfig.main.json"] },
+  { name: "타입 체크 (renderer)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.json", "--noEmit"] },
+  { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json", "--noEmit"] },
+  { name: "렌더러 빌드 (vite)", weight: 3, cmd: localTool("vite"), args: ["build"] },
+  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json"] },
   { name: "엔진 서버 번들", weight: 1, cmd: process.execPath, args: ["scripts/build-engine-server.mjs"] },
-  { name: "Windows 패키징 (electron-builder)", weight: 6, cmd: npxCmd, args: ["electron-builder", "--win", "--x64"] },
+  { name: "Windows 패키징 (electron-builder)", weight: 6, cmd: localTool("electron-builder"), args: ["--win", "--x64"] },
 ];
 
 // ---- Terminal helpers -------------------------------------------------------
@@ -92,11 +97,18 @@ function runStep(step, baseFraction, stepFraction) {
 async function main() {
   console.log(bold("\n  AgentParty · Windows 패키징\n"));
 
-  // Install deps if missing.
-  if (!existsSync(path.join(projectRoot, "node_modules"))) {
-    console.log(dim("  node_modules 없음 → npm install 실행 중...\n"));
+  // node_modules can exist while empty or only partially installed. Verify the
+  // actual local build tools instead of treating the directory as sufficient.
+  const missingTools = missingBuildTools();
+  if (missingTools.length > 0) {
+    console.log(dim(`  빌드 도구 누락 (${missingTools.join(", ")}) → npm install 실행 중...\n`));
     await runStep({ name: "의존성 설치", cmd: npmCmd, args: ["install"] }, 0, 0);
     process.stdout.write("\n");
+
+    const stillMissing = missingBuildTools();
+    if (stillMissing.length > 0) {
+      throw new Error(`npm install 후에도 빌드 도구를 찾을 수 없습니다: ${stillMissing.join(", ")}`);
+    }
   }
 
   const totalWeight = steps.reduce((a, s) => a + s.weight, 0);
