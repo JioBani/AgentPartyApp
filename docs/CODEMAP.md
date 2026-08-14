@@ -49,7 +49,7 @@ Automation client
 | Named actions | `src/main/application/sessionActions.ts`, `src/main/engine/partyActions.ts` | Extensible session/member action dispatch |
 | Session runtime | `src/main/sessionManager.ts`, `src/main/harness/*` | Live sessions, snapshots, events, approvals, and harness factories |
 | Engine topology | `src/main/engine/*`, `src/main/engine/transport/*` | Local/remote engine selection, RPC, WSL transport, and engine server |
-| Persistence | `src/main/partyRepository.ts`, `settings.ts`, `usageLedger.ts`, `codexAuthenticationStore.ts` | On-disk party, settings, usage, and auth state |
+| Persistence | `src/main/partyRepository.ts`, `settings.ts`, `usageLedger.ts` | On-disk party, settings, and usage state; harness CLIs own their credentials |
 | External surfaces | `src/main/automationApi.ts`, `src/main/automation/*`, `discordBridgeService.ts`, `discordControl.ts` | HTTP request coordination, feature route adapters, and Discord integration into `AppController` |
 | Electron wiring | `src/main/main.ts`, `windowRegistry.ts`, `preload/preload.ts` | Process lifecycle, windows, IPC registration, and renderer bridge |
 | Renderer shell | `src/renderer/App.tsx`, `src/renderer/app/*` | App state, event reduction, navigation, and secondary views |

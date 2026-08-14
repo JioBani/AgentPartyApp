@@ -24,6 +24,9 @@ const claudeCredential = path.join(authDir, "claude-account.json");
 fs.mkdirSync(workspace, { recursive: true });
 fs.mkdirSync(userData, { recursive: true });
 fs.mkdirSync(authDir, { recursive: true });
+fs.mkdirSync(nativeCodexHome, { recursive: true });
+const nativeCredential = JSON.stringify({ auth_mode: "chatgpt", tokens: { account_id: "native-owner" } });
+fs.writeFileSync(path.join(nativeCodexHome, "auth.json"), nativeCredential);
 fs.writeFileSync(codexCredential, JSON.stringify({
   type: "codex",
   account_id: "disconnect-e2e",
@@ -71,7 +74,8 @@ child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 try {
   const baseUrl = await waitForApi();
   const initial = await getJson(`${baseUrl}/api/state`);
-  assert(initial.auth.find((item) => item.id === "codex")?.status === "available", "real app sees the isolated Codex account");
+  assert(initial.auth.find((item) => item.id === "codex-bridge")?.status === "available", "real app sees the isolated Codex bridge account");
+  assert(initial.auth.find((item) => item.id === "codex"), "native Codex remains a separate Authentication card");
 
   await postJson(`${baseUrl}/api/navigation`, { view: "auth" });
   const capture = await postJson(`${baseUrl}/api/capture`, { path: path.join(temp, "auth-before-disconnect.png") });
@@ -85,10 +89,10 @@ try {
   const result = await response.json();
   assert(result.ok && result.status === "disconnected", "AppController reports Codex disconnected");
   assert(result.removedCredentials === 1, "exactly one Codex credential was disconnected");
-  assert(result.auth.find((item) => item.id === "codex")?.status === "missing", "UI auth state now offers a new Codex connection");
-  assert(result.auth.find((item) => item.id === "codex")?.action?.provider === "codex", "Codex can immediately connect a different account");
+  assert(result.auth.find((item) => item.id === "codex-bridge")?.status === "missing", "UI auth state now offers a new Codex bridge connection");
+  assert(result.auth.find((item) => item.id === "codex-bridge")?.action?.provider === "codex", "Codex bridge can immediately connect a different account");
   assert(!fs.existsSync(codexCredential), "Codex credential left the active bridge directory");
-  assert(!fs.existsSync(path.join(nativeCodexHome, "auth.json")), "managed native Codex credential was disconnected too");
+  assert(fs.readFileSync(path.join(nativeCodexHome, "auth.json"), "utf8") === nativeCredential, "bridge disconnect leaves the native Codex credential byte-identical");
   assert(fs.existsSync(claudeCredential), "unrelated Claude credential was untouched");
   const backups = findFiles(path.join(userData, "disconnected-subscription-auth", "codex"));
   assert(backups.length === 1, "disconnected credential is retained in recoverable app-data backup");

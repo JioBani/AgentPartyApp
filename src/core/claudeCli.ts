@@ -15,7 +15,7 @@
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { isFile, resolveOnPath } from "./commandProbe";
+import { isFile, resolveOnPath, resolveWindowsNpmCommand } from "./commandProbe";
 
 export interface ClaudeCliLocation {
   command: string;
@@ -23,7 +23,7 @@ export interface ClaudeCliLocation {
   source: "settings" | "env" | "path" | "wellKnown" | "bundled";
 }
 
-const EXECUTABLE = process.platform === "win32" ? "claude.exe" : "claude";
+const NATIVE_EXECUTABLE = process.platform === "win32" ? "claude.exe" : "claude";
 
 /**
  * The user's own Claude Code install, in the order a user would expect it to
@@ -33,19 +33,27 @@ const EXECUTABLE = process.platform === "win32" ? "claude.exe" : "claude";
 export function resolveHostClaudeCli(explicitPath?: string): ClaudeCliLocation | undefined {
   const configured = String(explicitPath || "").trim();
   if (configured && isFile(configured)) {
-    return { command: configured, source: "settings" };
+    const command = spawnableClaudePath(configured);
+    if (command) return { command, source: "settings" };
   }
   const fromEnv = String(process.env.AGENTPARTY_CLAUDE_BIN || "").trim();
   if (fromEnv && isFile(fromEnv)) {
-    return { command: fromEnv, source: "env" };
+    const command = spawnableClaudePath(fromEnv);
+    if (command) return { command, source: "env" };
   }
-  const onPath = resolveOnPath(EXECUTABLE);
+  // Do not ask for `claude.exe` here. The install command shown by AgentParty
+  // is npm-based and npm exposes Claude Code as `claude.cmd` on Windows. Asking
+  // for the extensionless command lets PATHEXT find both the native installer
+  // (`.exe`) and the npm shim (`.cmd`).
+  const onPath = resolveOnPath("claude");
   if (onPath) {
-    return { command: onPath, source: "path" };
+    const command = spawnableClaudePath(onPath);
+    if (command) return { command, source: "path" };
   }
   for (const candidate of wellKnownPaths()) {
     if (isFile(candidate)) {
-      return { command: candidate, source: "wellKnown" };
+      const command = spawnableClaudePath(candidate);
+      if (command) return { command, source: "wellKnown" };
     }
   }
   return undefined;
@@ -74,7 +82,7 @@ export function packagedClaudeCli(): string | undefined {
     "claude-agent-sdk",
     "node_modules",
     platformPackage,
-    EXECUTABLE,
+    NATIVE_EXECUTABLE,
   );
   return isFile(candidate) ? candidate : undefined;
 }
@@ -108,7 +116,7 @@ function platformPackageName(): string | undefined {
 export function resolveClaudeCli(explicitPath?: string): ClaudeCliLocation | undefined {
   const configured = String(explicitPath || "").trim();
   if (configured) {
-    return { command: configured, source: "settings" };
+    return { command: isFile(configured) ? (spawnableClaudePath(configured) || configured) : configured, source: "settings" };
   }
   const packaged = packagedClaudeCli();
   if (packaged) {
@@ -120,10 +128,37 @@ export function resolveClaudeCli(explicitPath?: string): ClaudeCliLocation | und
 /** Where the official installer puts `claude` when PATH has not caught up. */
 function wellKnownPaths(): string[] {
   const home = os.homedir();
-  return [
-    path.join(home, ".local", "bin", EXECUTABLE),
-    path.join(home, ".claude", "local", EXECUTABLE),
+  const directories = [
+    path.join(home, ".local", "bin"),
+    path.join(home, ".claude", "local"),
   ];
+
+  // A GUI-launched Electron process can retain an old PATH after Node/npm was
+  // installed. The Windows npm prefix is stable even in that case, so inspect
+  // it directly. This is also the exact destination used by the install remedy
+  // (`npm install -g @anthropic-ai/claude-code`).
+  const names = process.platform === "win32"
+    ? ["claude.exe", "claude.cmd", "claude.bat"]
+    : ["claude"];
+  return [
+    ...directories.flatMap((directory) => names.map((name) => path.join(directory, name))),
+    resolveWindowsNpmCommand("claude"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+}
+
+/**
+ * The Agent SDK spawns native paths directly, so it cannot execute a Windows
+ * `.cmd` shim (Node reports EINVAL). npm's shim is only a launcher for the
+ * package's JavaScript entrypoint; passing that entrypoint makes the SDK invoke
+ * it with Node, which is exactly how its documented executable option handles
+ * `.js` files.
+ */
+function spawnableClaudePath(candidate: string): string | undefined {
+  if (!/\.(?:cmd|bat)$/i.test(candidate)) {
+    return candidate;
+  }
+  const cliJs = path.join(path.dirname(candidate), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+  return isFile(cliJs) ? cliJs : undefined;
 }
 
 /**

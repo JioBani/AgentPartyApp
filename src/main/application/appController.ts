@@ -22,7 +22,7 @@ import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
-import { clearDeepseekKey, clearOpenRouterKey, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -38,7 +38,6 @@ import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
-import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
@@ -122,8 +121,6 @@ export class AppController {
    * window's entry and passes it to the engine, so windows stay independent.
    */
   private readonly activePartyByWindow = new Map<string, string>();
-  private codexAuthenticationGeneration = "";
-  private codexAuthenticationApply: Promise<unknown> = Promise.resolve();
 
   private partyForWindow(windowId?: string): string | undefined {
     return windowId ? this.activePartyByWindow.get(windowId) : undefined;
@@ -270,7 +267,6 @@ export class AppController {
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
-    await this.synchronizeCodexAuthentication(engine);
     const codexModels = await engine.listCodexModels();
     const state: InitialAppState = {
       ok: true,
@@ -449,16 +445,14 @@ export class AppController {
     return settings;
   }
 
-  /** The desktop auth cards with the Cursor CLI's REAL (cached) login state overlaid. */
+  /** Desktop auth cards with each native CLI's real, cached login state. */
   private async authStateWithCursor(base?: ReturnType<typeof getAuthState>): Promise<ReturnType<typeof getAuthState>> {
-    return withCursorCliAuth(base || getAuthState(), await cursorCliAuthState());
+    const [cursor, codex] = await Promise.all([cursorCliAuthState(), codexCliAuthState()]);
+    return withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex);
   }
 
   async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
     const subscriptions = await this.getSubscriptionStatus();
-    if (subscriptions.codex.available) {
-      await this.synchronizeCodexAuthentication();
-    }
     return withSubscriptionProxyAuth(await this.authStateWithCursor(), subscriptions);
   }
 
@@ -526,13 +520,9 @@ export class AppController {
       throw new Error("Subscription OAuth must be managed from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.disconnect(provider);
-    const runtimeAuthentication = provider === "codex" && result.removedCredentials > 0
-      ? await this.applyCodexAuthentication({ generation: "disconnected" })
-      : [];
     const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
     return {
       ...result,
-      runtimeAuthentication,
       auth,
     };
   }
@@ -553,41 +543,6 @@ export class AppController {
       detail: result.detail,
       auth,
     };
-  }
-
-  /**
-   * Reconciles CLIProxyAPI's selected Codex account into every native engine.
-   * A target is supplied during initial state load so a just-created WSL engine
-   * is synchronized before it can discover models or prewarm a member.
-   */
-  private async synchronizeCodexAuthentication(target?: EngineConnection): Promise<CodexAuthenticationApplyResult[]> {
-    const update = await this.deps.subscriptionProxy?.getCodexAuthentication();
-    if (!update) {
-      return [];
-    }
-    // A new generation must reach every already-live engine, not only the
-    // workspace whose state request happened to detect it.
-    if (update.generation !== this.codexAuthenticationGeneration) {
-      return this.applyCodexAuthentication(update);
-    }
-    if (target) {
-      const result = await target.setCodexAuthentication(update);
-      return [result];
-    }
-    return [];
-  }
-
-  private applyCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
-    const task = this.codexAuthenticationApply.then(async () => {
-      if (update.generation === this.codexAuthenticationGeneration) {
-        return [];
-      }
-      const result = await this.deps.engineRegistry.setCodexAuthentication(update);
-      this.codexAuthenticationGeneration = update.generation;
-      return result;
-    });
-    this.codexAuthenticationApply = task.catch(() => undefined);
-    return task;
   }
 
   private getSubscriptionStatus(): ReturnType<SubscriptionProxyController["getStatus"]> {

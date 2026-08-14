@@ -618,7 +618,7 @@ export class CodexAdapter extends EventEmitter {
     const providerArgs = codexProviderConfigArgs(provider);
     const partyArgs = this.partyMcpConfigArgs();
     const credentialArgs = this.currentProvider() ? [] : ["-c", 'cli_auth_credentials_store="file"'];
-    const spawnArgs = [...codexExtraArgs(this.options.executableArgs), ...credentialArgs, ...providerArgs, ...partyArgs, "app-server"];
+    const spawnArgs = [...resolved.argsPrefix, ...codexExtraArgs(this.options.executableArgs), ...credentialArgs, ...providerArgs, ...partyArgs, "app-server"];
     if (this.options.sqliteHome) {
       // Fail here with the concrete filesystem path instead of letting Codex
       // collapse it into the generic "failed to initialize state runtime".

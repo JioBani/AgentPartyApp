@@ -221,7 +221,16 @@ async function claudeCheck(sdkVersion: string | undefined): Promise<EnvironmentC
     };
   }
 
-  const probe = await probeCommand(chosen.command, ["--version"]);
+  // npm installs Claude Code as a .cmd shim on Windows. The shared resolver
+  // turns that shim into the package's cli.js because the Agent SDK cannot
+  // spawn .cmd directly; probe the same resolved entrypoint used by a member.
+  const isScript = /\.(?:[cm]?js)$/i.test(chosen.command);
+  const shell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(chosen.command);
+  const probe = isScript
+    // Match the Agent SDK, which invokes a configured JavaScript entrypoint
+    // with `node` (not Electron's process.execPath).
+    ? await probeCommand(resolveOnPath(process.platform === "win32" ? "node.exe" : "node") || "node", [chosen.command, "--version"])
+    : await probeCommand(chosen.command, ["--version"], { shell });
   const version = probe.ok ? firstLine(probe.stdout) : undefined;
   const actual = version?.match(/\d+\.\d+\.\d+/)?.[0];
   const skewed = Boolean(expected && actual && expected !== actual);
@@ -264,7 +273,7 @@ async function codexCheck(): Promise<EnvironmentCheck> {
     { kind: "settings", label: "실행 파일 경로 지정", settingsField: "codexExecutablePath" },
   ];
 
-  const probe = await probeCommand(resolved.command, ["--version"], { shell: resolved.shell });
+  const probe = await probeCommand(resolved.command, [...resolved.argsPrefix, "--version"], { shell: resolved.shell });
   if (!probe.ok) {
     return {
       id: "harness.codex",
@@ -272,7 +281,7 @@ async function codexCheck(): Promise<EnvironmentCheck> {
       label: "Codex",
       status: "missing",
       detail: "Codex CLI를 실행하지 못했습니다. Codex 하네스 멤버를 실행할 수 없습니다.",
-      path: resolved.command,
+      path: resolveOnPath(executable) || executable,
       raw: probe.error,
       remedies,
     };
@@ -289,7 +298,7 @@ async function codexCheck(): Promise<EnvironmentCheck> {
       ? "설치되어 있고 로그인되어 있습니다."
       : `설치되어 있지만 로그인되어 있지 않습니다 (${authFile} 없음).`,
     version: firstLine(probe.stdout),
-    path: resolveOnPath(resolved.command) || resolved.command,
+    path: resolveOnPath(executable) || executable,
     ...(signedIn ? {} : {
       remedies: [
         { kind: "command", label: "로그인 명령 복사", command: "codex login" },

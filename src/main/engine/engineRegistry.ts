@@ -3,7 +3,6 @@ import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
 import { LocalEngine } from "./localEngine";
-import type { CodexAuthenticationApplyResult, CodexAuthenticationUpdate } from "../../shared/codexAuthentication";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 
@@ -27,7 +26,6 @@ export interface EngineRegistryDeps {
  */
 export class EngineRegistry {
   private readonly engines = new Map<string, EngineConnection>();
-  private codexAuthentication: CodexAuthenticationUpdate | undefined;
   /** Latest idle-sleep policy, replayed onto engines built later (see setIdleSleep). */
   private idleSleep: IdleSleepSettings | undefined;
   private memberMessaging: MemberMessagingSettings | undefined;
@@ -40,9 +38,6 @@ export class EngineRegistry {
     if (!engine) {
       engine = this.create(workspacePath);
       this.engines.set(key, engine);
-      if (this.codexAuthentication) {
-        void engine.setCodexAuthentication(this.codexAuthentication).catch(() => undefined);
-      }
       // Replayed rather than fetched: an engine built later (a workspace opened
       // after startup) would otherwise run on its own host's settings file,
       // which for a distro is a different file entirely.
@@ -93,12 +88,6 @@ export class EngineRegistry {
       }
     }
     return undefined;
-  }
-
-  /** Applies one account generation to every currently hosted engine. */
-  async setCodexAuthentication(update: CodexAuthenticationUpdate): Promise<CodexAuthenticationApplyResult[]> {
-    this.codexAuthentication = update;
-    return Promise.all([...this.engines.values()].map((engine) => engine.setCodexAuthentication(update)));
   }
 
   /** Applies the desktop's idle-sleep policy to every currently hosted engine. */

@@ -267,7 +267,8 @@ function SettingsIdleSleep({ setting, onChange }: { setting: IdleSleepSettings; 
 type DisconnectableProvider = "codex" | "claude" | "cursor";
 
 function disconnectableProviderOf(id: string): DisconnectableProvider | undefined {
-  return id === "codex" || id === "claude" || id === "cursor" ? id : undefined;
+  if (id === "codex-bridge") return "codex";
+  return id === "claude" || id === "cursor" ? id : undefined;
 }
 
 /** Key-shape hints; an unlisted provider falls back to a generic label. */
