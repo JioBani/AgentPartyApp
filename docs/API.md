@@ -1164,6 +1164,28 @@ range), `ratePerHour`, and `overheadRatio`. Every derived field is `undefined`
 metrics require the per-turn `atStart` timestamp**, recorded from the ledger's
 phase-2 alignment onward — older records have no active time and contribute 0.
 
+### `GET /api/token-usage/turns`
+
+The **raw per-turn records** behind the aggregate above, chronological — the
+drill-in when a rollup row raises a question the buckets cannot answer ("which
+turn cost that?"). Same ledger, no separate instrumentation.
+
+Query params share the time-range contract with `GET /api/token-usage`
+(`range` / `from` / `to`), plus:
+
+```text
+party    restrict to a single party id (#id identity)
+member   restrict to one member name
+limit    cap the number of records (newest kept); omit for all
+```
+
+Returns a `TurnUsageRecord[]`. Each record carries `at` (turn END, ISO — usage is
+reported then), `atStart` when known, `partyId`, `member`, `sessionId`,
+`appSessionId`, `provider`, `model`, `effort`, `trigger`, the token split, and
+cost. As above, a **missing token field means "not reported", not zero**, and
+`atStart` is absent on records written before the ledger's phase-2 alignment —
+those contribute 0 active time rather than a fabricated span.
+
 ## Sessions
 
 ### `POST /api/sessions`
@@ -1653,6 +1675,56 @@ person typed it and is waiting.
 This endpoint is a **human/user turn**, so omitting `interrupt` means `false`.
 The app's own Send button remains independent and fills its value from
 `composer.interruptOnSend`; a caller may explicitly pass either boolean.
+
+### `GET /api/party/members/:name/queue`
+
+What a **busy** member has been sent but has not yet been handed. A message to a
+member mid-turn parks here rather than being pushed at the harness, and drains
+when the member goes idle — so a queued message is neither lost nor delivered
+out of turn.
+
+```json
+{
+  "ok": true,
+  "queue": {
+    "items": [
+      { "id": "q-1", "text": "이것도 봐줘", "from": null, "at": "2026-08-15T08:00:00.000Z", "cutIn": false }
+    ],
+    "merge": true,
+    "collapsed": false
+  }
+}
+```
+
+`from` is the sending member's name, or `null` for the user — it drives the
+sender chip and the merge boundary. `cutIn` marks a row that jumped ahead via
+`interrupt`; cut-in rows sit before ordinary ones and keep arrival order among
+themselves, so a later interrupt cannot leapfrog an earlier one. `merge` and
+`collapsed` are per-member preferences; absent means "inherit the default"
+(merge defaults **on**). A member's queue holds at most 20 rows — past that
+`enqueue` refuses visibly rather than dropping silently.
+
+### `POST /api/party/members/:name/queue`
+
+Mutates that queue. **One endpoint carrying a discriminated `action`**, so the
+API surface and the UI's buttons provably run the same code path:
+
+```text
+send                          deliver the leading run now ("합쳐서 지금 보내기")
+clear                         drop everything waiting
+sendItem   {itemId}           deliver exactly one row now
+cancel     {itemId}           remove one row
+edit       {itemId}           remove one row and hand its text back for the composer
+move       {itemId, toIndex}  put one row at an absolute position (the drop half of a drag)
+mergeUp    {itemId}           fold one row into the row above it
+mergeInto  {itemId, targetId} fold one row into another
+preference {merge?, collapsed?}  persist a per-member preference
+```
+
+An unknown or malformed action is **rejected**, not coerced into a default —
+a misspelled action that fell through would be a mutation the caller never
+asked for. `preference` requires at least one of `merge`/`collapsed`, and the
+`itemId` actions require one.
 
 ### `POST /api/party/members/:name/send`
 
@@ -2710,6 +2782,49 @@ read by both this route and the scripts, so there is no second copy to drift.
 
 Returns `{ ok, party, members }`. `npm run design:gallery` launches the app on an
 isolated userData + workspace and opens it.
+
+### `POST /api/qa/members/:name/kill-harness`
+
+**Kills a member's harness process, leaving the session behind** — the state a
+crashed harness actually leaves. The adapter then reports whatever it really
+reports, which is the only way an e2e can discover that different harnesses
+signal death differently. Deliberately not an injected `status: "closed"`: that
+fabricated the tidy value the app wants to see instead of the mess it must cope
+with.
+
+### `POST /api/qa/gate/open`
+
+Opens a Message Gate editor in the renderer, so the modal can be reviewed
+without hand-clicking to it. Body `{ "kind": "member" | "party", "member": "<name>" }`.
+
+### `POST /api/qa/environment`
+
+Stands a **fixed environment report** in for the real probe, so the 환경 screen
+and its blocker cards can be reviewed without breaking the reviewer's machine.
+Body is a partial report; `{ "reset": true }` puts the real probe back.
+
+### `POST /api/qa/mobile/:action`
+
+Drives the **phone side** of the mock mobile gateway — the only way an HTTP
+caller can act as the phone. Fails loudly on the real gateway rather than
+no-opping, so a QA run cannot pass while having exercised nothing.
+
+```text
+scan         {deviceName?, deviceId?}              the phone scans the open QR
+fail-pairing {error}                               fail it the way a bad code would
+connect      {deviceId?, transport?, workspaces?}  a trusted phone dials in → {sessionId}
+subscribe    {sessionId, workspaces[]}             the phone's ctl.subscribe
+request      {method, params?, sessionId?}         dispatch an RPC as the phone would
+delivered    {sessionId}                           events that session actually received
+emitted      {}                                    every event emitted, pre-filter
+snapshot     {sessionId?}                          invoke the resume snapshot provider
+diagnostics  {reason, patch?}                      set what a diagnostics run reports
+reset        {}                                    clear sessions, devices, events, pairing
+```
+
+`request` runs the **registered handler**, so an e2e can prove a phone's
+`party.list` and a local `GET /api/party` answer identically. See
+`scripts/e2e-mobile-link.mjs`.
 
 ### `POST /api/qa/reset`
 

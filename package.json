@@ -181,7 +181,8 @@
     "test:interrupt-notice": "node scripts/qa-interrupt-notice.mjs",
     "test:e2e:interrupt-notice": "npm run build && node scripts/e2e-interrupt-notice.mjs",
     "test:e2e:catalog-list": "npm run build && node scripts/e2e-model-catalog-list.mjs",
-    "test:catalog-list": "node scripts/qa-model-catalog-list.mjs"
+    "test:catalog-list": "node scripts/qa-model-catalog-list.mjs",
+    "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs"
   },
   "build": {
     "appId": "party.agentparty.desktop",
