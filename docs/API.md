@@ -1186,10 +1186,18 @@ believing it stopped a message the agent is already answering. Merging across
 senders is refused for the same reason (it would forge attribution), as is
 enqueueing past the 20-item limit.
 
-**Merging.** With `merge` on (the default), a send folds the **leading run** —
-the consecutive items at the front that share one sender — into a single turn,
-joined by a blank line, verbatim and in order. A different sender ends the run
-and stays queued. With `merge` off, exactly one item goes per turn.
+**Merging.** With `merge` on (the default), a send delivers the **whole queue as
+one turn**: nothing is held back for a second turn, and the recipient answers
+once having read everything that was waiting. Inside that turn the items are
+folded per author — consecutive same-sender rows become one block, joined by a
+blank line, verbatim and in order — and each member's block travels in its own
+`<channel>` envelope. So a different sender ends a merge BLOCK, never the
+delivery: merging across senders is the one thing never done, because a member's
+words folded into the user's would not be merged but misattributed. With `merge`
+off, exactly one item goes per turn.
+
+A cut-in row (`interrupt`) sets the ORDER — it is parked at the front — and
+nothing else; it no longer splits the delivery.
 
 ### `POST /api/sessions/:id/close`
 

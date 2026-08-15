@@ -12,7 +12,7 @@
  */
 
 import type { MemberQueueState, QueuedMessage } from "../../shared/messageQueue";
-import { hasMixedSenders, leadRun, mergeOn } from "../../shared/messageQueue";
+import { hasMixedSenders, mergeOn, senderRuns } from "../../shared/messageQueue";
 import type { PanelDensity } from "./types";
 
 export interface QueueRowView {
@@ -136,9 +136,10 @@ export function buildQueueView(input: QueueViewInput): QueueView {
   // transcript it exists to protect. Wider ones start open, because the whole
   // point is that waiting messages are visible without being hunted for.
   const collapsed = queue.collapsed === undefined ? narrow : queue.collapsed;
-  const run = leadRun(items);
+  // With merging on the WHOLE queue leaves in one turn, so the count the UI
+  // promises is the queue's own — not a leading run's.
+  const runs = senderRuns(items);
   const mixed = hasMixedSenders(items);
-  const mergedCount = merge ? run.length : 1;
   const cutInCount = items.filter((item) => item.cutIn).length;
 
   return {
@@ -154,15 +155,13 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     title: `대기열 ${items.length}`,
     chipLabel: `대기열 ${items.length}건`,
     note: headerNote({ memberName, working, detached, merge, count: items.length, cutInCount }),
-    // The run, not the queue: with a cut-in at the front the merge unit is just
-    // that row, and saying "3건을 합쳐서" would name a send that cannot happen.
-    mergeNote: mergeNote({ merge, mixed, count: run.length, total: items.length }),
+    mergeNote: mergeNote({ merge, mixed, count: items.length }),
     // Naming a count that is not actually a merge would overstate what the
     // button does, so a single-item send is just "지금 보내기". While the member
     // is working, sending sooner means stopping the turn — see
     // `sendQueuedNow` — and a button that hides that would be asking for a
     // stop the user never agreed to.
-    sendAllLabel: sendLabel({ working, merge, runLength: run.length }),
+    sendAllLabel: sendLabel({ working, merge, count: items.length }),
     sendNowLabel: working ? "중단하고 보내기" : "지금 보내기",
     sendNowHint: working
       ? "이 멤버의 작업을 중단하고 대기열을 바로 전달합니다"
@@ -171,38 +170,51 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     collapsedPreview: collapsedPreview(items),
     mergePillLabel: merge ? "합침" : "개별",
     senderDots: senderDots(items),
-    rows: items.map((item, index) => buildRow({ item, index, items, run, merge, density, openRows, mergedCount })),
+    rows: items.map((item, index) => buildRow({ item, index, items, runs, merge, density, openRows })),
   };
+}
+
+/** The same-sender run an index falls in, as [start, end] row indexes. */
+function runBoundsAt(runs: QueuedMessage[][], index: number): { start: number; end: number } {
+  let start = 0;
+  for (const run of runs) {
+    if (index < start + run.length) {
+      return { start, end: start + run.length - 1 };
+    }
+    start += run.length;
+  }
+  return { start: index, end: index };
 }
 
 function buildRow(args: {
   item: QueuedMessage;
   index: number;
   items: QueuedMessage[];
-  run: QueuedMessage[];
+  runs: QueuedMessage[][];
   merge: boolean;
   density: PanelDensity;
   openRows: ReadonlySet<string>;
-  mergedCount: number;
 }): QueueRowView {
-  const { item, index, items, run, merge, density, openRows } = args;
+  const { item, index, items, runs, merge, density, openRows } = args;
   const narrow = density === "narrow";
   const previous = index > 0 ? items[index - 1] : undefined;
   const sameSenderAsPrevious = Boolean(previous && (previous.from ?? null) === (item.from ?? null));
   /*
    * Who goes next.
    *
-   * With merging OFF exactly one row leaves, so only the first is next. With it
-   * ON the whole LEADING RUN leaves together as one message — so every row in
-   * that run is next, and marking only the first understated it.
+   * With merging ON the WHOLE queue leaves in one turn, so "다음 차례" would be
+   * true of every row — which says nothing. It marks the HEAD of that delivery
+   * instead: one badge, on row 1. With merging OFF only row 1 actually leaves,
+   * and the badge means what it always did.
    *
-   * Deliberately the run and not the whole queue: a row behind a different
-   * sender does NOT go with this turn, and badging it would promise a delivery
-   * that is not about to happen.
+   * The rail is a different question and keeps its own answer: it draws the
+   * MERGE unit, which is still a same-sender run, so it spans each run rather
+   * than the whole queue.
    */
-  const inLeadingRun = index < run.length;
-  const highlighted = merge ? inLeadingRun : index === 0;
-  const onRail = merge && run.length > 1 && index < run.length;
+  const bounds = runBoundsAt(runs, index);
+  const runLength = bounds.end - bounds.start + 1;
+  const highlighted = merge ? true : index === 0;
+  const onRail = merge && runLength > 1;
 
   return {
     id: item.id,
@@ -219,13 +231,10 @@ function buildRow(args: {
     // resize, the same rule that keeps 삭제 on the narrow row.
     showExpand: true,
     expandLabel: openRows.has(item.id) ? "접기" : "펼쳐서 전체 보기",
-    // Two rules, both kept. With merge on, every row that will go out in this
-    // turn says so — not just the first. And a cut-in row says 지금 처리
+    // One badge, on the head of the delivery. A cut-in row says 지금 처리
     // instead, which already explains why it is ahead; two chips on one row
     // would compete to answer the same question.
-    // `run` respects the cut-in boundary (see leadRun), so a cut-in row at the
-    // front forms its own run and the ordinary rows behind it stay unbadged.
-    showNextBadge: density === "wide" && !item.cutIn && (merge ? inLeadingRun : index === 0),
+    showNextBadge: density === "wide" && !item.cutIn && index === 0,
     showSendNowText: index === 0 && !narrow && !merge,
     showSendNowIcon: index === 0 && narrow,
     // Narrow drops reordering and editing entirely rather than shrinking five
@@ -236,19 +245,19 @@ function buildRow(args: {
     // over an impossible action.
     showGrip: !narrow && items.length > 1,
     index,
-    showMergeUp: index > 0 && sameSenderAsPrevious && Boolean(previous?.cutIn) === Boolean(item.cutIn) && !narrow,
+    showMergeUp: index > 0 && sameSenderAsPrevious && !narrow,
     onRail,
-    railTop: index === 0 ? "50%" : "0",
-    railBottom: index === run.length - 1 ? "50%" : "0",
+    railTop: index === bounds.start ? "50%" : "0",
+    railBottom: index === bounds.end ? "50%" : "0",
   };
 }
 
-function sendLabel(args: { working: boolean; merge: boolean; runLength: number }): string {
-  const merged = args.merge && args.runLength > 1;
+function sendLabel(args: { working: boolean; merge: boolean; count: number }): string {
+  const merged = args.merge && args.count > 1;
   if (args.working) {
-    return merged ? `중단하고 합쳐서 보내기 · ${args.runLength}건` : "중단하고 보내기";
+    return merged ? `중단하고 합쳐서 보내기 · ${args.count}건` : "중단하고 보내기";
   }
-  return merged ? `합쳐서 지금 보내기 · ${args.runLength}건` : "지금 보내기";
+  return merged ? `합쳐서 지금 보내기 · ${args.count}건` : "지금 보내기";
 }
 
 function headerNote(args: {
@@ -265,13 +274,14 @@ function headerNote(args: {
     return "세션 재시작 대기 중 — 시작하면 전송됩니다";
   }
   if (args.cutInCount > 0) {
-    // Interrupt / send-now cut ahead of ordinary waiting rows. Name that so the
+    // Interrupt / send-now moved rows ahead of the others. Name that so the
     // jumped order is never a silent reshuffle of the list the user is watching.
-    const head = args.cutInCount === 1 ? "지금 처리할 1건이 맨 앞에 있습니다" : `지금 처리할 ${args.cutInCount}건이 맨 앞에 있습니다`;
+    // It is an ORDER, not a smaller delivery: everything still goes together.
+    const head = `지금 처리할 ${args.cutInCount}건이 맨 앞에 있습니다`;
     if (args.working) {
-      return `${head} — 턴이 끝나면 그것부터 전송됩니다`;
+      return `${head} — 턴이 끝나면 그 순서로 전송됩니다`;
     }
-    return `${head} — 지금 보내기를 누르면 그것부터 전송됩니다`;
+    return `${head} — 지금 보내기를 누르면 그 순서로 전송됩니다`;
   }
   if (!args.working) {
     return "지금 보내기를 누르면 전송됩니다";
@@ -280,20 +290,15 @@ function headerNote(args: {
   return `${args.memberName} 응답이 끝나면 ${how} 전송됩니다`;
 }
 
-function mergeNote(args: { merge: boolean; mixed: boolean; count: number; total: number }): string {
+function mergeNote(args: { merge: boolean; mixed: boolean; count: number }): string {
   if (!args.merge) {
     return "한 건씩 순서대로 보냅니다";
   }
-  // Only the LEADING RUN merges, so this must never promise the whole queue.
-  // Two things end a run, and each needs its own explanation:
-  //   - a different sender (merging those would forge attribution)
-  //   - a cut-in row (merging it into the waiting pile would send the pile too,
-  //     which is the opposite of what 지금 처리 asked for)
+  // The whole queue goes in ONE turn. A different sender does not hold anything
+  // back — it only ends a merge block, because a member's words folded into the
+  // user's would not be merged but misattributed.
   if (args.mixed) {
-    return "보낸 사람이 같은 것끼리만 합쳐집니다";
-  }
-  if (args.count < args.total) {
-    return `지금 처리할 ${args.count}건만 먼저 나가고, 나머지는 다음 차례에 합쳐집니다`;
+    return `전송 시 ${args.count}건이 한 턴에 나갑니다 — 합쳐지는 건 보낸 사람이 같은 것끼리`;
   }
   return `전송 시 ${args.count}건을 한 메시지로 합쳐서 보냅니다`;
 }

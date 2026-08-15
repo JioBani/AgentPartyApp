@@ -11,15 +11,6 @@ const PARTY_ATTACH_IMAGE_TOOL = "mcp__agentparty-app__attach-image";
 
 export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionId: string, events: any[]): Record<string, TranscriptBlock[]> {
   let next = current;
-  // Provenance for a queued MEMBER message, waiting to be attached to the
-  // channel card that follows it in this same batch. The app publishes
-  // `queue_dequeued` immediately before handing the turn over, so the harness's
-  // echo of that turn — which is what becomes the card — arrives right after.
-  // Without this the message would render TWICE: once as a user bubble from the
-  // dequeue event and again as the inbound card. The card wins because it is the
-  // app's established, richer rendering for member-to-member traffic; the
-  // dequeue event only lends it the "came through the queue" mark.
-  let pendingQueued: { count: number; text: string; from: string } | null = null;
   for (const event of events) {
     if (event.type === "assistant_text_delta") {
       next = appendText(next, sessionId, "assistant", event.text || "");
@@ -29,33 +20,70 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       // An inbound inter-member message arrives as a "sent" turn carrying the
       // <channel> envelope; render it as a clean message card, not raw XML.
       const channel = event.status === "sent" ? parseChannel(event.detail) : null;
-      if (channel) {
-        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime(), fromQueue: pendingQueued ? true : undefined, queuedN: pendingQueued?.count });
-        pendingQueued = null;
+      if (channel && drawnFromQueue(next[sessionId], channel)) {
+        // The app already drew this, block by block, from `queue_dequeued` right
+        // before handing the turn over. Drawing the echo too would render the
+        // member's message twice — and the echo cannot be split back into its
+        // author blocks, so the dequeue's rendering is the one that survives.
+      } else if (channel) {
+        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "channel", direction: "in", source: channel.source, from: channel.from, to: channel.to, text: channel.text, at: nowTime() });
       } else {
         // A plain "sent" status is the harness echoing back the turn the app just
         // submitted — the user's own message, tagged so it does not cut a reply
         // that is still streaming ([#14]).
-        next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "status", text: [event.status, event.detail].filter(Boolean).join(": "), sent: event.status === "sent", at: nowTime() });
-      }
-    } else if (event.type === "queue_dequeued") {
-      // A message that had been waiting in the queue was just handed over. THIS
-      // is when it enters the conversation — not when it was typed — so the
-      // transcript order matches what the agent actually read.
-      if (event.from) {
-        // A member's message: the inbound channel card that follows is its
-        // rendering. Only lend it the provenance.
-        pendingQueued = { count: event.count || 1, text: event.text || "", from: event.from };
-      } else {
+        //
+        // The echo of a QUEUE delivery keeps the tag but drops the body: the
+        // queue already drew every block of that turn just above, so repeating
+        // it here says the same thing twice — and for a turn carrying a member's
+        // block it repeats it as the raw <channel> XML the card exists to hide.
+        const echoed = event.status === "sent" && echoOfQueuedTurn(next[sessionId], event.detail);
         next = appendBlock(next, sessionId, {
           id: crypto.randomUUID(),
-          kind: "user",
-          text: event.text || "",
-          fromQueue: true,
-          queuedN: event.count || 1,
-          from: null,
+          kind: "status",
+          text: echoed ? String(event.status) : [event.status, event.detail].filter(Boolean).join(": "),
+          sent: event.status === "sent",
           at: nowTime(),
         });
+      }
+    } else if (event.type === "queue_dequeued") {
+      // The queue was just handed over. THIS is when it enters the conversation
+      // — not when it was typed — so the transcript order matches what the agent
+      // actually read.
+      //
+      // One delivery, several author blocks: the whole queue leaves as ONE turn
+      // and each same-sender run keeps its own author, so each run is drawn as
+      // what it is (the user's bubble, a member's inbound card). The harness
+      // then echoes that turn as a single "sent" line carrying every block at
+      // once, which can no longer be split back apart — so the blocks are drawn
+      // from THIS event, and `drawnFromQueue` keeps the echo from drawing them
+      // again.
+      const blocks: Array<{ from?: string | null; text?: string; count?: number }> = Array.isArray(event.blocks) ? event.blocks : [];
+      for (const block of blocks) {
+        const count = block.count || 1;
+        if (block.from) {
+          next = appendBlock(next, sessionId, {
+            id: crypto.randomUUID(),
+            kind: "channel",
+            direction: "in",
+            source: "agentparty",
+            from: block.from,
+            to: event.to || "",
+            text: block.text || "",
+            at: nowTime(),
+            fromQueue: true,
+            queuedN: count,
+          });
+        } else {
+          next = appendBlock(next, sessionId, {
+            id: crypto.randomUUID(),
+            kind: "user",
+            text: block.text || "",
+            fromQueue: true,
+            queuedN: count,
+            from: null,
+            at: nowTime(),
+          });
+        }
       }
     } else if (event.type === "tool_call") {
       // Party write-tools render as purpose-built cards instead of raw tool boxes.
@@ -105,22 +133,36 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         : appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
     }
   }
-  // The card never came (a harness that does not echo the turn, or a batch that
-  // split between the two events). Fall back to a plain block rather than let a
-  // delivered message leave no trace at all — a message the user can see nowhere
-  // is the exact failure this feature exists to remove.
-  if (pendingQueued) {
-    next = appendBlock(next, sessionId, {
-      id: crypto.randomUUID(),
-      kind: "user",
-      text: pendingQueued.text,
-      fromQueue: true,
-      queuedN: pendingQueued.count,
-      from: pendingQueued.from,
-      at: nowTime(),
-    });
-  }
   return next;
+}
+
+/**
+ * Whether this inbound channel message is already on screen because the queue
+ * drew it. Matched on CONTENT, not on a flag carried between the two events:
+ * the dequeue and the harness's echo of the same turn routinely land in
+ * different batches, and a per-batch flag let the echo draw a second card
+ * whenever they did. Only the tail is scanned — the echo follows immediately.
+ */
+/**
+ * Whether this "sent" echo is the harness repeating a turn the queue just drew.
+ * Matched by containment because one delivery is several blocks joined into one
+ * payload, and a member's block is wrapped in its envelope on the way out.
+ */
+function echoOfQueuedTurn(blocks: TranscriptBlock[] | undefined, detail: unknown): boolean {
+  const body = typeof detail === "string" ? detail : "";
+  if (!body) {
+    return false;
+  }
+  return (blocks || []).slice(-8).some((block) => "fromQueue" in block && block.fromQueue && block.text && body.includes(block.text));
+}
+
+function drawnFromQueue(blocks: TranscriptBlock[] | undefined, channel: { from?: string; text: string }): boolean {
+  for (const block of (blocks || []).slice(-8)) {
+    if (block.kind === "channel" && block.direction === "in" && block.fromQueue && block.from === channel.from && block.text === channel.text) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function appendBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, item: TranscriptBlock): Record<string, TranscriptBlock[]> {

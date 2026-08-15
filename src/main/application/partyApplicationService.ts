@@ -26,6 +26,7 @@ import {
   mergeUp,
   moveItemTo,
   moveItemToFront,
+  MERGE_SEPARATOR,
   readQueue,
   removeItem,
   takeItem,
@@ -984,19 +985,24 @@ export class PartyApplicationService {
     }
     this.deps.sessionManager.emitAppEvent(sessionId, {
       type: "queue_dequeued",
-      text: take.turn.text,
-      from: take.turn.from,
+      to: member.name,
+      blocks: take.turn.blocks.map((block) => ({ from: block.from, text: block.text, count: block.count })),
       count: take.turn.count,
       at: new Date().toISOString(),
     });
-    // A member's message is queued as its RAW body (so the queue row shows prose,
-    // not XML) and only wrapped in the channel envelope here, at delivery — which
-    // is also the first moment the envelope's contents are actually true.
-    // Attribution survives the wait too: it still bills as a party message.
-    const payload = take.turn.from
-      ? buildChannelPayload(createPartyMessage(member, take.turn.text, take.turn.from), member)
-      : take.turn.text;
-    this.deps.sessionManager.sendUserTurn(sessionId, payload, take.turn.attachments, take.turn.from ? "party-message" : "user");
+    // One turn, one author block at a time. A member's message is queued as its
+    // RAW body (so the queue row shows prose, not XML) and only wrapped in the
+    // channel envelope here, at delivery — which is also the first moment the
+    // envelope's contents are actually true. Wrapping per BLOCK is what lets the
+    // whole queue leave together without any block claiming another's author.
+    const payload = take.turn.blocks
+      .map((block) => (block.from ? buildChannelPayload(createPartyMessage(member, block.text, block.from), member) : block.text))
+      .join(MERGE_SEPARATOR);
+    // Billing follows who caused the turn. A turn the user's own words are in is
+    // not party overhead, so any user block makes it a user turn; only an
+    // all-member turn is attributed to the party-message trigger.
+    const initiator = take.turn.blocks.some((block) => !block.from) ? "user" : "party-message";
+    this.deps.sessionManager.sendUserTurn(sessionId, payload, take.turn.attachments, initiator);
     const written = this.writeQueue(member.name, this.partyIdOf(member), take.state, logMessage);
     return {
       ...this.result(`Delivered ${take.turn.count} queued message(s) to '${member.name}'.`, written.state, written.member),

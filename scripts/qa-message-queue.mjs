@@ -40,9 +40,14 @@ console.log("\nleadRun (merge boundary):");
   assert(Q.leadRun([]).length === 0, "an empty queue has an empty run");
   assert(Q.leadRun(queueOf(item("a", "1", "reviewer"), item("b", "2", "reviewer")).items).length === 2, "a member's own consecutive items form one run");
 
+  // A cut-in row orders the queue and nothing else. It used to end the merge
+  // unit too, back when only the leading run left; now the whole queue goes in
+  // one turn, so splitting one person's words at it would show the reader a
+  // boundary that means nothing.
   const cutInThenWaiting = queueOf({ ...item("u", "urgent"), cutIn: true }, item("a", "1"), item("b", "2"));
-  assert(Q.leadRun(cutInThenWaiting.items).length === 1, "a cut-in row does not merge with ordinary waiting rows behind it");
-  assert(Q.leadRun([{ ...item("u1", "a"), cutIn: true }, { ...item("u2", "b"), cutIn: true }]).length === 2, "consecutive cut-in rows from the same sender still form one run");
+  assert(Q.leadRun(cutInThenWaiting.items).length === 3, "a cut-in row merges with the same sender's rows behind it — it only sets the ORDER");
+  assert(Q.senderRuns(mine.items).map((run) => run.length).join(",") === "2,1", "senderRuns splits the queue into author blocks, in order");
+  assert(Q.senderRuns([]).length === 0, "an empty queue has no blocks");
 
   const alternating = queueOf(item("a", "1"), item("b", "2", "reviewer"), item("c", "3"));
   assert(Q.leadRun(alternating.items).length === 1, "a single leading item is a run of one");
@@ -159,13 +164,15 @@ console.log("\ntakeNext (what actually leaves):");
   const three = queueOf(item("a", "1"), item("b", "2"), item("c", "3", "reviewer"));
 
   const mergedTake = Q.takeNext({ ...three, merge: true });
-  assert(mergedTake.ok && mergedTake.value.turn.text === "1\n\n2", "merge ON sends the whole leading run as one turn");
-  assert(mergedTake.ok && mergedTake.value.turn.count === 2, "the turn reports how many items it folded");
-  assert(mergedTake.ok && mergedTake.value.state.items.length === 1, "the other sender's item stays queued");
-  assert(mergedTake.ok && mergedTake.value.turn.from === null, "the turn carries the sender of its run");
+  assert(mergedTake.ok && mergedTake.value.turn.count === 3, "merge ON sends the WHOLE queue as one turn");
+  assert(mergedTake.ok && mergedTake.value.state.items.length === 0, "…so nothing is left waiting for a second turn");
+  assert(mergedTake.ok && mergedTake.value.turn.blocks.length === 2, "the turn is split into author blocks, not one forged string");
+  assert(mergedTake.ok && mergedTake.value.turn.blocks[0].from === null && mergedTake.value.turn.blocks[0].text === "1\n\n2", "the user's consecutive rows merge into one block");
+  assert(mergedTake.ok && mergedTake.value.turn.blocks[1].from === "reviewer" && mergedTake.value.turn.blocks[1].text === "3", "the member's row keeps its own author");
+  assert(mergedTake.ok && mergedTake.value.turn.blocks[0].count === 2, "each block reports how many items it folded");
 
   const singleTake = Q.takeNext({ ...three, merge: false });
-  assert(singleTake.ok && singleTake.value.turn.text === "1" && singleTake.value.turn.count === 1, "merge OFF sends exactly one item");
+  assert(singleTake.ok && singleTake.value.turn.blocks[0].text === "1" && singleTake.value.turn.count === 1, "merge OFF sends exactly one item");
   assert(singleTake.ok && singleTake.value.state.items.length === 2, "merge OFF leaves the rest queued");
 
   assert(Q.mergeOn({ items: [] }) === Q.DEFAULT_QUEUE_MERGE, "an unset preference inherits the global default");
@@ -175,7 +182,7 @@ console.log("\ntakeNext (what actually leaves):");
   assert(!empty.ok && empty.reason === "empty_queue", "draining an empty queue reports it instead of sending an empty turn");
 
   const one = Q.takeItem(three, "c");
-  assert(one.ok && one.value.turn.text === "3" && one.value.turn.from === "reviewer", "takeItem pulls one specific row out of the middle");
+  assert(one.ok && one.value.turn.blocks.length === 1 && one.value.turn.blocks[0].text === "3" && one.value.turn.blocks[0].from === "reviewer", "takeItem pulls one specific row out of the middle");
   assert(one.ok && one.value.state.items.length === 2, "the rest of the queue survives a single-item send");
   const missing = Q.takeItem(three, "zzz");
   assert(!missing.ok && missing.reason === "not_found", "send-now on a vanished row fails loudly");

@@ -158,13 +158,18 @@ export type ClaudeNormalizedEvent =
    */
   | { type: "compact_state"; state: "running" | "done" | "failed"; trigger?: "manual" | "auto"; preTokens?: number; postTokens?: number; durationMs?: number; keptCount?: number; reason?: string; at: string }
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
-  // A message that waited in the app-level queue has just been handed to the
-  // harness. Authored by the app, not by any harness — it is the only record
-  // that a queued message became a real turn, so the renderer can place the user
-  // bubble in the transcript at the moment of DELIVERY rather than the moment of
-  // typing. `count` > 1 means several queued items merged into this one turn.
+  // The app-level queue has just been handed to the harness. Authored by the
+  // app, not by any harness — it is the only record that queued messages became
+  // a real turn, so the renderer can place them in the transcript at the moment
+  // of DELIVERY rather than the moment of typing.
+  //
+  // `blocks` is the turn as its ordered author runs: the whole queue leaves
+  // together, and each same-sender run keeps its own author so the renderer can
+  // draw the user's as a bubble and a member's as an inbound card. It is also
+  // the only place that split still exists — the harness echoes the turn as one
+  // line. `count` > 1 means several queued items merged into this one turn.
   // See src/shared/messageQueue.ts.
-  | { type: "queue_dequeued"; text: string; from: string | null; count: number; at: string }
+  | { type: "queue_dequeued"; to: string; blocks: Array<{ from: string | null; text: string; count: number }>; count: number; at: string }
   | { type: "file_change"; filePath?: string; toolName?: string; input?: unknown; result?: unknown; changes?: import("../shared/codexItems").CodexFileEdit[]; status?: string; at: string }
   // `usage` carries the per-turn token split (fresh/cacheRead/cacheWrite/output +
   // context occupancy) as far as the harness reports it — the raw accounting the
