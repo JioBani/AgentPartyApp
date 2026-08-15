@@ -28,10 +28,18 @@ import { waitForLiveBaseUrl } from "./lib/discovery.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-mobile-e2e-workspace");
 const userData = path.join(os.tmpdir(), "agentparty-mobile-e2e-user-data");
+const shotDir = path.join(os.tmpdir(), "agentparty-mobile-e2e-shots");
 
 let base = "";
 /** The mock phone's session id, set once it dials in. */
 let phoneSession = "";
+/**
+ * Run-scoped member name. The workspace is deleted at startup, but a previous
+ * run's app can still hold its files on Windows, and a leftover member would
+ * fail this run with "already exists" — a stale-state failure that reads as a
+ * product bug.
+ */
+const watcher = `mobile-watcher-${process.pid}`;
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
 
@@ -40,6 +48,7 @@ async function main() {
   await removePath(userData);
   fs.mkdirSync(ws, { recursive: true });
   fs.mkdirSync(userData, { recursive: true });
+  fs.mkdirSync(shotDir, { recursive: true });
   fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: ws }, null, 2));
 
   const launchedAt = Date.now();
@@ -75,6 +84,7 @@ async function main() {
     await revokingForgetsTheDevice();
     await settingsPersistThroughTheGateway();
     await diagnosticsReportAReason();
+    await theTabRendersWhatTheApiReports();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -180,18 +190,18 @@ async function eventsFollowTheWorkspaceSubscription() {
     "no workspace events before the phone subscribes");
 
   await post("/api/qa/mobile/subscribe", { sessionId, workspaces: [ws] });
-  await post("/api/party/members", { name: "mobile-watcher", requirement: "이벤트 전달 확인", role: "관찰" });
+  await post("/api/party/members", { name: watcher, requirement: "이벤트 전달 확인", role: "관찰" });
   await delay(400);
   const delivered = (await post("/api/qa/mobile/delivered", { sessionId })).result.events;
   const partyEvents = delivered.filter((event) => event.type === "party:update");
   assert(partyEvents.length > 0, `party:update reaches the subscribed session (${partyEvents.length})`);
   assert(partyEvents.every((event) => typeof event.seq === "number"), "the pipe stamped a sequence number on each");
-  assert(namesOf(partyEvents.at(-1).d).includes("mobile-watcher"), "the payload is the renderer's, unaltered");
+  assert(namesOf(partyEvents.at(-1).d).includes(watcher), "the payload is the renderer's, unaltered");
 
   const other = path.join(os.tmpdir(), "agentparty-mobile-e2e-other");
   await post("/api/qa/mobile/subscribe", { sessionId, workspaces: [other] });
   const countBefore = (await post("/api/qa/mobile/delivered", { sessionId })).result.events.length;
-  await post("/api/party/members/mobile-watcher/status", {});
+  await post(`/api/party/members/${watcher}/status`, {});
   await delay(300);
   const countAfter = (await post("/api/qa/mobile/delivered", { sessionId })).result.events.length;
   assert(countAfter === countBefore, "events for an unsubscribed workspace are not delivered");
@@ -251,6 +261,65 @@ async function diagnosticsReportAReason() {
   assert(Array.isArray(diagnostics.probes), "with per-probe detail for a bug report");
   assert(Array.isArray(diagnostics.errors), "and a place failures are surfaced rather than swallowed");
   assert((await get("/api/mobile/status")).status.lastDiagnostics?.reason === "cgnat_100_64", "the status remembers the last run");
+}
+
+/**
+ * The 설정 → 모바일 연결 tab, measured in the running renderer. The point is not
+ * that pixels exist but that the screen shows the SAME facts the API reports —
+ * a QR that failed to draw, or a confirmation code that disagreed with the one
+ * the phone sees, would make the pairing unusable while every API assertion
+ * above still passed.
+ */
+async function theTabRendersWhatTheApiReports() {
+  console.log("\n[ui] 설정 → 모바일 연결 renders the live state");
+  await post("/api/navigation", { view: "runtime", tab: "mobile" });
+  await delay(500);
+  const active = await measure(".set-tab.is-active");
+  assert(active?.text === "모바일 연결", `the tab is open (${active?.text})`);
+
+  await post("/api/mobile/pair/open");
+  await delay(400);
+  const canvas = await measure(".mob-qr canvas");
+  // A QR is only useful at a size a camera resolves, and a zero box means the
+  // encoder silently produced nothing.
+  assert(canvas?.box?.width >= 200 && canvas?.box?.height >= 200,
+    `the QR is drawn at a scannable size (${canvas?.box?.width}×${canvas?.box?.height})`);
+
+  await post("/api/qa/mobile/scan", { deviceName: "Galaxy S25" });
+  await delay(400);
+  // A record for review, not an assertion — nothing above depends on a human
+  // looking at it, but a pairing screen is worth being able to look at.
+  await post("/api/capture", { path: path.join(shotDir, "pairing.png") }).catch(() => undefined);
+  const shown = await measure(".mob-code");
+  const reported = (await get("/api/mobile/status")).status.pairing.code;
+  assert(shown?.text === reported, `the confirmation code on screen matches the one the API reports (${shown?.text})`);
+
+  await post("/api/mobile/pair/confirm");
+  await delay(400);
+  // The status push carries a device COUNT, not the list. A screenshot caught
+  // the 연결된 폰 card still reading "no phones" while the row above said 1 —
+  // the two halves of one screen disagreeing about the same fact.
+  assert(Boolean(await measure(".mob-device-row")), "the paired phone appears in the 연결된 폰 list without a reload");
+  assert(!(await measure(".mob-empty")), "…and the empty-state note is gone");
+
+  await post("/api/qa/mobile/connect", { workspaces: [ws] });
+  await delay(400);
+  await post("/api/capture", { path: path.join(shotDir, "connected.png") }).catch(() => undefined);
+  const pill = await measure(".wb-mobile-pill");
+  assert(String(pill?.text || "").includes("Galaxy S25"), `the titlebar names the connected phone (${pill?.text})`);
+
+  // …and it is gone again once nothing is connected, rather than lingering as a
+  // badge claiming a phone is attached.
+  const sessionId = (await get("/api/mobile/status")).status.sessions[0].sessionId;
+  await post(`/api/mobile/sessions/${encodeURIComponent(sessionId)}/disconnect`, {});
+  await delay(400);
+  assert(!(await measure(".wb-mobile-pill")), "the titlebar pill disappears when the phone disconnects");
+}
+
+/** One element's measurement, or undefined when the selector matched nothing. */
+async function measure(selector, extra) {
+  const result = await post("/api/measure", { selector, limit: 1, ...(extra || {}) }).catch(() => undefined);
+  return result?.elements?.[0];
 }
 
 function namesOf(listing) {

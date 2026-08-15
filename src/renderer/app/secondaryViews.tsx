@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
@@ -18,6 +18,7 @@ import type { GateReviewer } from "../../shared/messageGate";
 import type { RuntimeTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
+import { MobileLinkCard } from "./MobileLinkTab";
 import { HarnessIcon } from "../workbench/HarnessIcon";
 import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
@@ -553,6 +554,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "environment", label: "환경", icon: <ShieldCheck size={14} /> },
   { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
+  { id: "mobile", label: "모바일 연결", icon: <Smartphone size={14} /> },
   { id: "versions", label: "버전", icon: <PackageCheck size={14} /> },
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
@@ -783,6 +785,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 </div>
               </section>
             )}
+        </SubtreeVisibility>
+        </div>
+
+        {/* Mobile link — pairing a phone to this desktop, and why it may not connect. */}
+        <div className="set-tab-panel" hidden={tab !== "mobile"}>
+        <SubtreeVisibility visible={tab === "mobile"}>
+          <MobileLinkCard active={tab === "mobile"} />
         </SubtreeVisibility>
         </div>
 

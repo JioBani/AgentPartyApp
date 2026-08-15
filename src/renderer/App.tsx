@@ -21,6 +21,7 @@ import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } fro
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import type { UpdateStatus } from "../shared/appUpdate";
 import { UpdatePill } from "./workbench/UpdatePill";
+import { MobileDrivingPill } from "./workbench/MobileDrivingPill";
 import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
@@ -1451,6 +1452,8 @@ export function App() {
           </button>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
+          {/* Renders only while a phone is connected — see MobileDrivingPill. */}
+          <span className="no-drag"><MobileDrivingPill /></span>
         </div>
         <div className="window-controls">
           <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
