@@ -2251,7 +2251,7 @@ defaulted — defaulting would answer a security prompt on the user's behalf.
 | `delivered` | The harness took the answer; the turn is proceeding. |
 | `already_resolved` | Someone answered it first — at the desk or on another device. `decision` and `resolvedAt` say how and when. |
 | `expired` | The request is gone: its turn ended, or its session was closed/respawned. Nothing can consume the answer. |
-| `unknown` | No such approval was ever seen on this desktop. |
+| `unknown` | This desktop is not holding that approval. Usually an aged-out notification rather than a bad id — see the retention note below — so present it as "too old", not as a fault. |
 
 The ordinary case is a notification tapped ten minutes late, on a request that
 has since expired or been answered — so a phone that showed "approved" for any
@@ -2260,6 +2260,11 @@ WSL distro that is down) is **not** an outcome: it surfaces as an error, so the
 caller retries instead of telling the user the request is gone.
 
 Approvals are remembered for 24 hours or 1,000 requests, whichever comes first.
+Past that the record is gone and the answer is `unknown` — which is why that
+outcome is normally a stale notification, not a malformed id. The two are
+genuinely indistinguishable here: an approval id carries no timestamp, so once
+the record is evicted there is nothing left to date it by. Treat `unknown` the
+same as `expired` for the user (nothing was approved); only the wording differs.
 
 ## Mobile link
 
