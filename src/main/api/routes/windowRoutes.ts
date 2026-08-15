@@ -18,6 +18,8 @@ export const windowRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.listWorkspaces(),
   },
   {
+    // Read-only, so a phone may ask. The two routes BELOW move what the person
+    // at the desktop is looking at, which a phone must not do behind their back.
     name: "window.list",
     http: "GET /api/windows",
     handler: (_p, ctx) => ({ windows: ctx.controller.listWindows() }),
@@ -29,11 +31,13 @@ export const windowRoutes: MethodRoute[] = [
     // exist — and it then silently showed that workspace's own party.
     name: "window.open",
     http: "POST /api/windows",
+    remote: false,
     handler: (p, ctx) => ctx.controller.openWindow(text(p.workspacePath, ctx.workspace), optText(p.partyId)),
   },
   {
     name: "window.setWorkspace",
     http: "POST /api/windows/:id/workspace",
+    remote: false,
     handler: (p, ctx) => ctx.controller.setWindowWorkspace(text(p.id), text(p.workspacePath)),
   },
   {

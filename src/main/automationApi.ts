@@ -100,6 +100,8 @@ export class AutomationApiServer {
     for (const [key, value] of url.searchParams) {
       params[key] = value;
     }
+    // POST only: GET and DELETE routes take no body here, and reading one would
+    // turn a client that sends a stray non-JSON payload into a 500.
     if (req.method === "POST") {
       Object.assign(params, await readJson(req));
     }

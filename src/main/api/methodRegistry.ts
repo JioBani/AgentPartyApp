@@ -70,6 +70,14 @@ export function optText(value: unknown): string | undefined {
 }
 
 /**
+ * `force-stop` → `forceStop`. Action tables are keyed by their kebab-case URL
+ * segment, while an RPC name must stay `<domain>.<verb>`.
+ */
+export function camelAction(action: string): string {
+  return action.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
+/**
  * A parameter the capability cannot run without. Reported as a 400 naming the
  * field, rather than letting `undefined` travel into the domain and fail later
  * as an unexplained 500.

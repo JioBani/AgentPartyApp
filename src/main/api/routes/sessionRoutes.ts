@@ -1,11 +1,6 @@
 import { SESSION_ACTION_NAMES } from "../../application/sessionActions";
 import type { MethodRoute } from "../methodRegistry";
-import { text } from "../methodRegistry";
-
-/** `force-stop` → `forceStop`, so an RPC name stays `<domain>.<verb>`. */
-function camel(action: string): string {
-  return action.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
-}
+import { camelAction, text } from "../methodRegistry";
 
 /** The MCP sub-actions `sessionMcpAction` dispatches. */
 const MCP_ACTIONS = ["reconnect", "toggle", "authenticate"] as const;
@@ -42,7 +37,7 @@ export const sessionRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.sessionMcpAction(ctx.workspace, text(p.id), action, p),
   })),
   ...SESSION_ACTION_NAMES.map((action): MethodRoute => ({
-    name: `session.${camel(action)}`,
+    name: `session.${camelAction(action)}`,
     http: `POST /api/sessions/:id/${action}`,
     handler: (p, ctx) => ctx.controller.handleSessionAction(ctx.workspace, text(p.id), action, p),
   })),

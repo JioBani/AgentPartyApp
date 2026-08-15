@@ -1,12 +1,7 @@
 import { sanitizeAttachments } from "../../../shared/attachments";
 import { parseQueueCommand } from "../../../shared/messageQueue";
 import { PARTY_ACTION_NAMES } from "../../engine/partyActions";
-import { ApiError, optText, required, text, type MethodRoute } from "../methodRegistry";
-
-/** `force-stop` → `forceStop`, so an RPC name stays `<domain>.<verb>`. */
-function camel(action: string): string {
-  return action.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
-}
+import { ApiError, camelAction, optText, required, text, type MethodRoute } from "../methodRegistry";
 
 /**
  * Member actions that do NOT get a generated `/:action` endpoint:
@@ -199,7 +194,7 @@ export const partyRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.openPartyMember(ctx.workspace, text(p.name), ctx.windowId),
   },
   ...PARTY_ACTION_NAMES.filter((action) => !NON_MEMBER_ACTIONS.has(action)).map((action): MethodRoute => ({
-    name: `member.${camel(action)}`,
+    name: `member.${camelAction(action)}`,
     http: `POST /api/party/members/:name/${action}`,
     handler: (p, ctx) => ctx.controller.handlePartyAction(ctx.workspace, text(p.name), action, p, ctx.windowId, ctx.partyId),
   })),
