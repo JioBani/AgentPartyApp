@@ -1,6 +1,6 @@
 import type { MobileSettings } from "../../shared/mobileProtocol";
 import type { MobileGateway } from "./mobileGateway";
-import { createMockMobileGateway, type MockMobileGateway } from "./mockMobileGateway";
+import { createMockMobileGateway, type MockMobileGateway, type MockMobileGatewayOptions } from "./mockMobileGateway";
 
 export type { MobileGateway } from "./mobileGateway";
 export type {
@@ -66,6 +66,13 @@ export interface CreateMobileGatewayOptions {
    */
   implementation: "real" | "mock";
   deps?: MobileGatewayDeps;
+  /**
+   * Seeds the mock's settings and fixtures at construction, so the caller does
+   * not have to follow `createMobileGateway` with an `updateSettings()` call
+   * that the real gateway would not need (it reads {@link
+   * MobileGatewayDeps.readSettings} itself). Ignored by the real gateway.
+   */
+  mock?: MockMobileGatewayOptions;
 }
 
 /**
@@ -76,7 +83,7 @@ export interface CreateMobileGatewayOptions {
  */
 export function createMobileGateway(options: CreateMobileGatewayOptions): MobileGateway | MockMobileGateway {
   if (options.implementation === "mock") {
-    return createMockMobileGateway();
+    return createMockMobileGateway(options.mock);
   }
   if (!options.deps) {
     throw new Error("createMobileGateway: the real gateway requires MobileGatewayDeps");
