@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { AlignLeft, ChevronDown, SquareSplitHorizontal, X } from "lucide-react";
+import { AlignLeft, ChevronDown, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
@@ -13,11 +13,12 @@ interface TabStripProps {
   /** The panel's measured width; what the strip budgets tabs against. */
   width: number;
   draggingMember: string | null;
+  /** The tab a drop would land on, and on which side — drawn as the marker line. */
+  dropAt: { tab: string; after: boolean } | null;
   onSelect: (member: string) => void;
   onClose: (member: string) => void;
   /** Bring a hidden tab to the front and activate it. */
   onPromote: (member: string) => void;
-  onSplit: () => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
 }
 
@@ -46,7 +47,7 @@ function TabMarkers({ view }: { view: MemberView }) {
   );
 }
 
-export function TabStrip({ panel, views, density, width, draggingMember, onSelect, onClose, onPromote, onSplit, onTabPointerDown }: TabStripProps) {
+export function TabStrip({ panel, views, density, width, draggingMember, dropAt, onSelect, onClose, onPromote, onTabPointerDown }: TabStripProps) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const { visible, hidden } = useMemo(
     () => splitTabs(panel.tabs, panel.active, width),
@@ -73,6 +74,12 @@ export function TabStrip({ panel, views, density, width, draggingMember, onSelec
             return null;
           }
           const active = member === panel.active;
+          // The insertion marker rides the tab the cursor is over, on the side
+          // the drop would land — without it a reorder is invisible until it has
+          // already happened.
+          const marker = dropAt?.tab === member && draggingMember !== member
+            ? (dropAt.after ? " is-drop-after" : " is-drop-before")
+            : "";
           return (
             <div
               key={member}
@@ -81,7 +88,8 @@ export function TabStrip({ panel, views, density, width, draggingMember, onSelec
                 "wb-tab" +
                 (active ? " is-active" : "") +
                 (view.busy ? " is-working" : "") +
-                (draggingMember === member ? " is-dragging" : "")
+                (draggingMember === member ? " is-dragging" : "") +
+                marker
               }
               style={memberColorVars(member)}
               onPointerDown={(event) => onTabPointerDown(member, event)}
@@ -177,11 +185,10 @@ export function TabStrip({ panel, views, density, width, draggingMember, onSelec
         </div>
       )}
 
-      <div className="wb-tab-actions">
-        {/* No "add tab" button: members are opened from the party sidebar, which
-            is the list that knows which ones exist. */}
-        <button type="button" className="wb-icon-btn" title="Split into new panel" onClick={onSplit}><SquareSplitHorizontal size={15} /></button>
-      </div>
+      {/* No buttons on the strip. Members are opened from the party sidebar, which
+          is the list that knows which ones exist, and a panel is split by dragging
+          a tab into the work area — the same gesture that moves one between
+          panels, so there is nothing a button would say that the drag does not. */}
     </div>
   );
 }

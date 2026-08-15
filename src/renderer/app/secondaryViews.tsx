@@ -577,11 +577,17 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   /** Executable overrides for the environment tab — one patch per field. */
   onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
   /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
-  tabRequest?: { tab: RuntimeTabId; seq: number };
+  tabRequest?: { tab: RuntimeTabId; harness?: HarnessId; seq: number };
 }) {
   const [tab, setTab] = useState<RuntimeTabId>("general");
+  // Which harness the 하네스 기본값 tab is showing. Starts on the harness new
+  // members are created with, since that is the one whose defaults matter.
+  const [harnessTab, setHarnessTab] = useState<HarnessId>(settings.selectedHarnessId);
   useEffect(() => {
-    if (tabRequest && tabRequest.seq > 0) setTab(tabRequest.tab);
+    if (tabRequest && tabRequest.seq > 0) {
+      setTab(tabRequest.tab);
+      if (tabRequest.harness) setHarnessTab(tabRequest.harness);
+    }
   }, [tabRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
   const [copied, setCopied] = useState(false);
   // Which staged-save cards currently hold edits the user has not committed. Only
@@ -629,10 +635,10 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         )}
       </div>
 
-      {/* Only the harness tab needs the wide measure — it lays three cards side by
-          side. The single-column tabs read better at the standard settings width
-          than as one 1180px-wide band of controls. */}
-      <div className={"set-page set-page-tabbed" + (tab === "harness" ? " set-page-wide" : "")}>
+      {/* Every tab is one column now — the harness tab picks a harness rather than
+          laying its cards out side by side — so they all read at the standard
+          settings measure. */}
+      <div className="set-page set-page-tabbed">
         {/* Every panel stays MOUNTED and is hidden instead: unmounting would throw
             away a staged (unsaved) edit the moment the user checked another tab —
             silently, right after the strip told them there were unsaved changes. */}
@@ -704,21 +710,44 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
               <InfoIcon size={14} />
               <span>여기서 정한 값은 해당 하네스로 만드는 새 멤버의 시작값입니다. 멤버별로 언제든 덮어쓸 수 있습니다.</span>
             </div>
-            <div className="set-harness-grid is-three">
+            {/* One harness at a time. Side by side, the cards were a wall of
+                controls whose rows never lined up — each harness has different
+                axes (Codex sandbox × approval, Cursor mode × approval), so the
+                columns were the same width but never the same shape. */}
+            <div className="set-subtabs" role="tablist" aria-label="하네스">
               {HARNESS_IDS.map((id) => (
-                <HarnessDefaultsCard
+                <button
+                  type="button"
                   key={id}
-                  harnessId={id}
-                  label={HARNESS_LABELS[id]}
-                  defaults={settings.harnessDefaults[id]}
-                  routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
-                  codexModels={id === "codex" ? codexModels : undefined}
-                  onRefreshCodexModels={onRefreshCodexModels}
-                  onSave={(patch) => onSaveHarnessDefaults(id, patch)}
-                  onDirtyChange={(value) => markDirty(id, value)}
-                />
+                  role="tab"
+                  aria-selected={id === harnessTab}
+                  className={"set-subtab" + (id === harnessTab ? " is-active" : "")}
+                  onClick={() => setHarnessTab(id)}
+                >
+                  <span className={"set-harness-icon is-" + id}><HarnessIcon harness={id} size={14} /></span>
+                  {HARNESS_LABELS[id]}
+                  {dirtyCards[id] && <span className="set-subtab-dot" title="저장되지 않은 변경" />}
+                </button>
               ))}
             </div>
+            {/* Mounted, not remounted per selection: the card stages its edits and
+                switching harness must not throw an unsaved one away. */}
+            {HARNESS_IDS.map((id) => (
+              <div className="set-subtab-panel" key={id} hidden={id !== harnessTab}>
+                <SubtreeVisibility visible={tab === "harness" && id === harnessTab}>
+                  <HarnessDefaultsCard
+                    harnessId={id}
+                    label={HARNESS_LABELS[id]}
+                    defaults={settings.harnessDefaults[id]}
+                    routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
+                    codexModels={id === "codex" ? codexModels : undefined}
+                    onRefreshCodexModels={onRefreshCodexModels}
+                    onSave={(patch) => onSaveHarnessDefaults(id, patch)}
+                    onDirtyChange={(value) => markDirty(id, value)}
+                  />
+                </SubtreeVisibility>
+              </div>
+            ))}
         </SubtreeVisibility>
         </div>
 

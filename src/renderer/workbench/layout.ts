@@ -124,13 +124,22 @@ export function splitPanel(state: LayoutState, panelId: string): LayoutState {
   return { panels: normalizeWeights(panels), focusedPanelId: panel.id };
 }
 
-/** Moves a tab to another existing panel (cross-panel drag). */
-export function moveTab(state: LayoutState, memberName: string, toPanelId: string, beforeMember?: string): LayoutState {
+/**
+ * Moves a tab into a panel — another one (cross-panel drag) or its own
+ * (reorder).
+ *
+ * `atMember` is the tab the cursor was over and `after` which half of it, so a
+ * drop lands on the side the user aimed at. Insertion was once always BEFORE the
+ * hovered tab, which made every rightward reorder land one slot short: dragging
+ * `A` in `[A,B,C]` onto `B` removed `A`, then re-inserted it before `B` — back
+ * where it started, so short drags looked like reordering did not work at all.
+ */
+export function moveTab(state: LayoutState, memberName: string, toPanelId: string, atMember?: string, after = false): LayoutState {
   const from = panelOf(state, memberName);
   if (!from) {
     return state;
   }
-  if (from.id === toPanelId && !beforeMember) {
+  if (from.id === toPanelId && !atMember) {
     return setActiveTab(state, toPanelId, memberName);
   }
   let panels = state.panels.map((panel) => (
@@ -143,9 +152,9 @@ export function moveTab(state: LayoutState, memberName: string, toPanelId: strin
       return panel;
     }
     const tabs = panel.tabs.filter((name) => name !== memberName);
-    const at = beforeMember ? tabs.indexOf(beforeMember) : -1;
+    const at = atMember ? tabs.indexOf(atMember) : -1;
     if (at >= 0) {
-      tabs.splice(at, 0, memberName);
+      tabs.splice(after ? at + 1 : at, 0, memberName);
     } else {
       tabs.push(memberName);
     }

@@ -501,6 +501,15 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
  */
 const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
 
+/**
+ * The mirror case: tools that read a file INTO the model's context. When the
+ * file happens to be a .png the harness returns the bytes, but the user did not
+ * ask to look at anything — the agent did. Showing the picture there fills the
+ * transcript with images nobody asked for, so these tools render as an ordinary
+ * tool box and the bytes stay out of the view.
+ */
+const IMAGE_HIDDEN_TOOLS = new Set(["Read", "read_file"]);
+
 function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {
   const [full, setFull] = useState(false);
   const arg = summarizeArg(block.input);
@@ -512,7 +521,7 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   const result = block.output || formatResult(block.result);
   // Screenshots render as images. They used to fall through to JSON.stringify
   // and print a wall of base64 that showed the user nothing.
-  const images = collectDisplayImages(block.result);
+  const images = IMAGE_HIDDEN_TOOLS.has(block.name) ? [] : collectDisplayImages(block.result);
   const failed = block.status === "failed";
   // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
   const meta = toolMeta(block);

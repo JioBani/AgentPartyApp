@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
@@ -84,8 +85,9 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
-  /** A tab the automation API asked the runtime screen to land on. */
-  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; seq: number }>({ tab: "general", seq: 0 });
+  /** A tab (and, on the harness tab, a harness) the automation API asked the
+   *  runtime screen to land on. */
+  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
@@ -391,12 +393,15 @@ export function App() {
     // fetched once at load so Settings shows the stored credentials immediately.
     const offDiscordUpdate = window.agentParty.onDiscordUpdate?.((payload) => setDiscord(payload as DiscordBridgeStatus));
     void window.agentParty.getDiscordStatus?.().then((status) => setDiscord(status as DiscordBridgeStatus));
-    const offNavigate = window.agentParty.onNavigate(({ view, tab }) => {
+    const offNavigate = window.agentParty.onNavigate(({ view, tab, harness }) => {
       if (!isViewId(view)) return;
       setCurrentView(view);
       // A counter, not the id alone: asking for the tab you are already on must
       // still move the screen there after the user clicked elsewhere.
-      if (tab && isRuntimeTabId(tab)) setRuntimeTabRequest((current) => ({ tab, seq: current.seq + 1 }));
+      if (tab && isRuntimeTabId(tab)) {
+        const picked = harness && (HARNESS_IDS as readonly string[]).includes(harness) ? (harness as HarnessId) : undefined;
+        setRuntimeTabRequest((current) => ({ tab, harness: picked, seq: current.seq + 1 }));
+      }
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });

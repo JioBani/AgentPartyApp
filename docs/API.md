@@ -2087,7 +2087,7 @@ directly instead of leaving the caller to click the strip:
 
 ```text
 general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
-harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
+harness (하네스별 생성 기본값 — 하네스 하나씩, 아래 `harness` 로 선택)
 environment (하네스 준비 상태와 해결 방법 — GET /api/environment 와 같은 값)
 gate    (Message Gate 리뷰어 기본값)
 discord (Discord 브리지 자격증명 + 연결된 멤버)
@@ -2095,9 +2095,21 @@ versions (설치된 버전 · 최신 릴리스와 변경 내역 · 이전 버전
 diagnostics (빌드 정보 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
 ```
 
-A `tab` on a screen that has none, or an unknown tab id, is an **error** — never
-a navigation that reports success and leaves the screen where it was. The
-response echoes what was applied (`{ok, view, tab}`).
+The **하네스 기본값** tab shows one harness at a time, picked by its own sub-tab
+strip. An optional `harness` lands on one of them:
+
+```json
+{ "view": "runtime", "tab": "harness", "harness": "codex" }
+```
+
+```text
+claude-code, codex, cursor, grok
+```
+
+A `tab` on a screen that has none, an unknown tab id, a `harness` outside the
+`harness` tab, or an unknown harness id is an **error** — never a navigation that
+reports success and leaves the screen where it was. The response echoes what was
+applied (`{ok, view, tab, harness}`).
 
 ## Windows & workspaces
 

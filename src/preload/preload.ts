@@ -197,9 +197,10 @@ const api = {
     ipcRenderer.on("qa:open-gate", listener);
     return () => ipcRenderer.off("qa:open-gate", listener);
   },
-  /** `{view, tab?}` — `tab` lands the runtime screen on one of its tabs. */
-  onNavigate: (callback: (payload: { view: string; tab?: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: { view: string; tab?: string }) => callback(payload);
+  /** `{view, tab?, harness?}` — `tab` lands the runtime screen on one of its
+   *  tabs, `harness` on one harness inside the 하네스 기본값 tab. */
+  onNavigate: (callback: (payload: { view: string; tab?: string; harness?: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { view: string; tab?: string; harness?: string }) => callback(payload);
     ipcRenderer.on("nav:set", listener);
     return () => ipcRenderer.off("nav:set", listener);
   },

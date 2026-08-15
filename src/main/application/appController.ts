@@ -6,7 +6,7 @@ import { isLaunchable, normalizeLocalFileTarget } from "../../shared/localFiles"
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
+import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
@@ -1149,7 +1149,7 @@ export class AppController {
    * A tab that the target view does not have is an ERROR: forwarding it would
    * report a navigation that never happened.
    */
-  navigate(windowId: string | undefined, view: string, tab?: string): { ok: true; view: string; tab?: string } {
+  navigate(windowId: string | undefined, view: string, tab?: string, harness?: string): { ok: true; view: string; tab?: string; harness?: string } {
     if (tab) {
       if (view !== "runtime") {
         throw new Error(`The '${view}' screen has no tabs.`);
@@ -1158,12 +1158,23 @@ export class AppController {
         throw new Error(`Unknown runtime tab '${tab}'. Known: ${RUNTIME_TAB_IDS.join(", ")}.`);
       }
     }
+    // The 하네스 기본값 tab shows ONE harness at a time, so driving it needs to
+    // name which — same rule as the tab itself: an unknown one is an error, not a
+    // navigation that silently lands somewhere else.
+    if (harness) {
+      if (tab !== "harness") {
+        throw new Error("A harness can only be selected on the 'harness' runtime tab.");
+      }
+      if (!(HARNESS_IDS as readonly string[]).includes(harness)) {
+        throw new Error(`Unknown harness '${harness}'. Known: ${HARNESS_IDS.join(", ")}.`);
+      }
+    }
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
     }
-    win.webContents.send("nav:set", { view, tab });
-    return { ok: true, view, ...(tab ? { tab } : {}) };
+    win.webContents.send("nav:set", { view, tab, harness });
+    return { ok: true, view, ...(tab ? { tab } : {}), ...(harness ? { harness } : {}) };
   }
 
   async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true; applied?: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } }> {
