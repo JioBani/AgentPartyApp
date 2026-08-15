@@ -200,7 +200,8 @@
       "!node_modules/@anthropic-ai/claude-agent-sdk/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "asarUnpack": [
-      "dist/engine-server.mjs"
+      "dist/engine-server.mjs",
+      "node_modules/node-datachannel/**"
     ],
     "extraResources": [
       {
@@ -264,5 +265,8 @@
     "jsdom": "^29.1.1",
     "typescript": "^5.8.3",
     "vite": "^6.0.7"
+  },
+  "optionalDependencies": {
+    "node-datachannel": "^0.32.3"
   }
 }
