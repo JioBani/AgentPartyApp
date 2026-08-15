@@ -19,6 +19,8 @@ listed here.
 - [CODEMAP.md](CODEMAP.md): source ownership and runtime flows.
 - [API.md](API.md): local automation API reference.
 - [E2E_TESTING.md](E2E_TESTING.md): full-process verification guidance.
+- [RELEASE.md](RELEASE.md): exe packaging, GitHub release procedure, and the
+  self-update / rollback runbook.
 
 ## Plans and research
 

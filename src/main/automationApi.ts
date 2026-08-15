@@ -134,6 +134,31 @@ export class AutomationApiServer {
         sendJson(res, 200, await c.repairEnvironment(String(body.repairId || "")));
         return;
       }
+      // App self-update. Account-global like usage, so no window/workspace scope.
+      // `check` and `download` report failure inside the status; `install` quits
+      // the app, so it answers only if the installer could NOT be started.
+      if (method === "GET" && url.pathname === "/api/update") {
+        sendJson(res, 200, c.getUpdateStatus());
+        return;
+      }
+      // Release history for the 버전 tab. `?refresh=1` bypasses the 10-minute
+      // cache that keeps us inside GitHub's anonymous rate limit.
+      if (method === "GET" && url.pathname === "/api/update/versions") {
+        sendJson(res, 200, await c.listReleaseVersions({ refresh: url.searchParams.get("refresh") === "1" }));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/update/check") {
+        sendJson(res, 200, await c.checkForUpdate());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/update/download") {
+        sendJson(res, 200, await c.downloadUpdate());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/update/install") {
+        sendJson(res, 200, c.installUpdate());
+        return;
+      }
       if (method === "GET" && url.pathname === "/api/windows") {
         sendJson(res, 200, { windows: c.listWindows() });
         return;

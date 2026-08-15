@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
 import { ipcErrorMessage } from "./ipcError";
+import { openUpdateDialog } from "./updateDialog";
+import { UPDATE_FEED, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -17,6 +19,7 @@ import type { RuntimeTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { HarnessIcon } from "../workbench/HarnessIcon";
+import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
 import { GateReviewerControl } from "../workbench/GateReviewerControl";
 import { Segmented } from "../workbench/Segmented";
@@ -550,6 +553,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "environment", label: "환경", icon: <ShieldCheck size={14} /> },
   { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
+  { id: "versions", label: "버전", icon: <PackageCheck size={14} /> },
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
@@ -757,6 +761,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         <div className="set-tab-panel" hidden={tab !== "environment"}>
         <SubtreeVisibility visible={tab === "environment"}>
           <EnvironmentCard active={tab === "environment"} settings={settings} onSaveExecutablePaths={onSaveExecutablePaths} />
+        </SubtreeVisibility>
+        </div>
+
+        {/* Versions — what is installed, what is newest, and what shipped before. */}
+        <div className="set-tab-panel" hidden={tab !== "versions"}>
+        <SubtreeVisibility visible={tab === "versions"}>
+          <VersionsCard active={tab === "versions"} />
         </SubtreeVisibility>
         </div>
 
@@ -1105,6 +1116,190 @@ function DiagnosticsCard({ active }: { active: boolean }) {
           </button>
           <button type="button" className="set-btn-soft" data-diag="refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={14} /> 새로고침</button>
         </div>
+      </section>
+    </>
+  );
+}
+
+/**
+ * 설정 → 버전 탭.
+ *
+ * Three questions, in the order a user asks them: what am I running, what is
+ * the newest release and what changed in it, and — folded away until asked —
+ * what shipped before that.
+ *
+ * The history comes from the public releases API (updateService.listReleases),
+ * so it renders even on a build where self-update is unavailable: knowing what
+ * exists is useful precisely when the app cannot fetch it for you.
+ */
+/** The release title, unless it just repeats the tag (`v0.2.0` for 0.2.0). */
+function releaseTitle(release: ReleaseSummary): string {
+  const name = release.name.trim();
+  return name === release.version || name === `v${release.version}` ? "" : name;
+}
+
+function VersionsCard({ active }: { active: boolean }) {
+  const [status, setStatus] = useState<UpdateStatus | undefined>();
+  const [releases, setReleases] = useState<ReleaseSummary[] | undefined>();
+  const [listError, setListError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  /** Versions whose notes are expanded, by version string. */
+  const [openNotes, setOpenNotes] = useState<Set<string>>(new Set());
+
+  const loadReleases = useCallback(async (refresh: boolean) => {
+    setLoading(true);
+    setListError("");
+    try {
+      const res = await window.agentParty.listUpdateVersions({ refresh });
+      setReleases(res.releases);
+    } catch (error) {
+      setReleases(undefined);
+      setListError(ipcErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    void window.agentParty.getUpdateStatus?.().then((res) => setStatus(res?.update)).catch(() => undefined);
+    void loadReleases(false);
+    // Same push the titlebar listens to, so this tab cannot go stale while open.
+    const off = window.agentParty.onUpdateStatus?.((payload) => setStatus(payload));
+    return () => { off?.(); };
+  }, [active, loadReleases]);
+
+  async function check() {
+    setChecking(true);
+    try {
+      const res = await window.agentParty.checkForUpdate();
+      setStatus(res.update);
+      // A check that found something new means the list is stale too.
+      await loadReleases(true);
+    } catch (error) {
+      setListError(ipcErrorMessage(error));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  function toggleNotes(version: string) {
+    setOpenNotes((current) => {
+      const next = new Set(current);
+      if (next.has(version)) {
+        next.delete(version);
+      } else {
+        next.add(version);
+      }
+      return next;
+    });
+  }
+
+  const current = status?.currentVersion || "";
+  // "설치됨" is derived from the version this window reports, not only from the
+  // flag the list carries — the two cards must never disagree on screen.
+  const isCurrent = (release: ReleaseSummary) => (current ? release.version === current : Boolean(release.current));
+  const latest = releases?.[0];
+  const history = (releases || []).slice(1);
+  const upToDate = Boolean(latest && current && latest.version === current);
+
+  return (
+    <>
+      <div className="set-tab-note">
+        <InfoIcon size={14} />
+        <span>설치된 버전과 <b>배포된 모든 버전의 변경 내역</b>을 봅니다. 새 버전 설치는 제목 표시줄의 업데이트 배지에서도 할 수 있습니다.</span>
+      </div>
+
+      <section className="set-card">
+        <div className="set-card-label">설치된 버전<span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>
+        <div className="set-ver-current">
+          <span className="wb-mono set-ver-badge">v{current || "?"}</span>
+          {upToDate && <span className="set-ver-tag is-ok">최신</span>}
+          {status?.state === "available" && (
+            <span className={status.downgrade ? "set-ver-tag is-warn" : "set-ver-tag is-new"}>
+              v{status.latestVersion} {status.downgrade ? "로 되돌리기 가능" : "사용 가능"}
+            </span>
+          )}
+          {status?.state === "downloaded" && <span className="set-ver-tag is-new">v{status.latestVersion} 설치 준비됨</span>}
+          {status?.state === "disabled" && <span className="set-ver-note">{status.disabledReason}</span>}
+          {status?.state === "error" && <span className="set-ver-note is-error">{status.error}</span>}
+        </div>
+        <div className="set-diag-actions">
+          <button type="button" className="set-btn-soft" data-ver="check" disabled={checking} onClick={() => void check()}>
+            <RefreshCw size={14} className={checking ? "wb-spin" : undefined} /> 업데이트 확인
+          </button>
+          <button type="button" className="set-btn-soft" data-ver="open-dialog" onClick={openUpdateDialog}>업데이트 창 열기</button>
+        </div>
+      </section>
+
+      {listError && (
+        <div className="set-inline-note is-error">
+          <AlertTriangle size={14} />
+          <span>{listError}</span>
+          <button type="button" className="set-link-btn" onClick={() => void loadReleases(true)}><RefreshCw size={12} /> 다시 시도</button>
+        </div>
+      )}
+
+      <section className="set-card">
+        <div className="set-card-label">최신 버전<span className="set-card-sub wb-mono">{latest?.publishedAt ? new Date(latest.publishedAt).toLocaleDateString() : ""}</span></div>
+        {!latest ? (
+          <div className="set-ver-empty">{loading ? "불러오는 중…" : listError ? "목록을 불러오지 못했습니다." : "게시된 릴리스가 없습니다."}</div>
+        ) : (
+          <div className="set-ver-latest">
+            <div className="set-ver-head">
+              <span className="wb-mono set-ver-badge is-latest">v{latest.version}</span>
+              {releaseTitle(latest) && <span className="set-ver-name">{releaseTitle(latest)}</span>}
+              {latest.prerelease && <span className="set-ver-tag">프리릴리스</span>}
+              {isCurrent(latest) && <span className="set-ver-tag is-ok">설치됨</span>}
+              <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(latest.url)}>
+                <ArrowRight size={12} /> 릴리스 페이지
+              </button>
+            </div>
+            <div className="set-ver-notes">
+              {latest.notes ? <Markdown text={latest.notes} /> : <span className="set-ver-empty">변경 내역이 작성되지 않았습니다.</span>}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="set-card">
+        <button type="button" className="set-ver-toggle" data-ver="history-toggle" onClick={() => setShowHistory((v) => !v)}>
+          <ChevronDown size={14} className={showHistory ? "set-ver-chev is-open" : "set-ver-chev"} />
+          <span>이전 버전 보기</span>
+          <span className="set-card-sub wb-mono">{history.length}개</span>
+        </button>
+        {showHistory && (
+          history.length === 0 ? (
+            <div className="set-ver-empty">이전 버전이 없습니다. 지금이 첫 릴리스입니다.</div>
+          ) : (
+            <ul className="set-ver-list">
+              {history.map((release) => (
+                <li key={release.version} className="set-ver-item">
+                  <button type="button" className="set-ver-item-head" data-ver={`item-${release.version}`} onClick={() => toggleNotes(release.version)}>
+                    <ChevronDown size={13} className={openNotes.has(release.version) ? "set-ver-chev is-open" : "set-ver-chev"} />
+                    <span className="wb-mono set-ver-badge">v{release.version}</span>
+                    {releaseTitle(release) && <span className="set-ver-name">{releaseTitle(release)}</span>}
+                    {release.prerelease && <span className="set-ver-tag">프리릴리스</span>}
+                    {isCurrent(release) && <span className="set-ver-tag is-ok">설치됨</span>}
+                    <span className="set-ver-date wb-mono">{release.publishedAt ? new Date(release.publishedAt).toLocaleDateString() : ""}</span>
+                  </button>
+                  {openNotes.has(release.version) && (
+                    <div className="set-ver-notes">
+                      {release.notes ? <Markdown text={release.notes} /> : <span className="set-ver-empty">변경 내역이 작성되지 않았습니다.</span>}
+                      <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(release.url)}>
+                        <ArrowRight size={12} /> 릴리스 페이지
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )
+        )}
       </section>
     </>
   );

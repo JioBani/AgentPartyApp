@@ -28,6 +28,7 @@ import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
 import type { GateReviewer } from "../shared/messageGate";
 import { DiscordBridgeService } from "./discordBridgeService";
+import { UpdateService } from "./updateService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
@@ -93,6 +94,7 @@ let appController: AppController | undefined;
 let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
+let updateService: UpdateService | undefined;
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -517,6 +519,18 @@ ${body}
     }
   });
 
+  // The installed build is ONE per machine, so update status — like provider
+  // usage — is account-global and pushed to every window.
+  updateService = new UpdateService({
+    getVersion: () => app.getVersion(),
+    isPackaged: () => app.isPackaged,
+  });
+  updateService.on("status", (status: unknown) => {
+    for (const entry of registry().all()) {
+      entry.window.webContents.send("update:status", status);
+    }
+  });
+
   appController = new AppController({
     sessionManager,
     engineRegistry: host.engineRegistry,
@@ -529,6 +543,7 @@ ${body}
     onSettingsChanged: () => applyRuntimeSettings(),
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
+    updater: updateService,
   });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
@@ -555,6 +570,9 @@ ${body}
   // Re-open the Discord gateway for members bridged in an earlier run, so a
   // restart does not silently stop delivering what the user types there.
   discordBridge.resume();
+  // Only now — the first check pushes a status, and before a window exists it
+  // would have nowhere to land.
+  updateService.start();
 }
 
 /** Stamp identifying this process run, written into each discovery file. */
@@ -776,6 +794,13 @@ function registerIpc(): void {
   handle("discord:update", async (_event, patch) => controller().updateDiscordSettings(patch as any));
   handle("usage:get", async () => controller().getUsageLimits());
   handle("usage:refresh", async () => controller().refreshUsageLimits());
+  // App self-update — the same controller methods as GET /api/update and
+  // POST /api/update/{check,download,install}.
+  handle("update:get", async () => controller().getUpdateStatus());
+  handle("update:versions", async (_event, options: { refresh?: boolean } = {}) => controller().listReleaseVersions(options || {}));
+  handle("update:check", async () => controller().checkForUpdate());
+  handle("update:download", async () => controller().downloadUpdate());
+  handle("update:install", async () => controller().installUpdate());
   handle("tokenUsage:get", async (event, query: unknown) => controller().getTokenUsage(senderWorkspace(event), query as any));
   handle("tokenUsage:turns", async (event, query: unknown) => controller().getTokenUsageTurns(senderWorkspace(event), query as any));
 

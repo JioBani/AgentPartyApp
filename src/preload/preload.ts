@@ -4,6 +4,7 @@ import type { EnvironmentReport } from "../shared/environment";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
+import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
 
 const api = {
   /**
@@ -33,6 +34,17 @@ const api = {
   updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
   refreshUsageLimits: () => ipcRenderer.invoke("usage:refresh"),
+  /** Where the app update stands. Kept live by `onUpdateStatus`. */
+  getUpdateStatus: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:get"),
+  /** Published release history, newest first — the 설정 → 버전 tab's list. */
+  listUpdateVersions: (options?: { refresh?: boolean }): Promise<{ ok: true; releases: ReleaseSummary[] }> =>
+    ipcRenderer.invoke("update:versions", options || {}),
+  /** Re-asks the release feed. Failures come back inside the status, not as a rejection. */
+  checkForUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:check"),
+  /** Downloads the pending installer; progress arrives on the status channel. */
+  downloadUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:download"),
+  /** Quits the app and runs the downloaded installer. Rejects if it could not start. */
+  installUpdate: (): Promise<{ ok: true }> => ipcRenderer.invoke("update:install"),
   getTokenUsage: (query: unknown) => ipcRenderer.invoke("tokenUsage:get", query),
   getTokenUsageTurns: (query: unknown) => ipcRenderer.invoke("tokenUsage:turns", query),
   createSession: (input?: unknown) => ipcRenderer.invoke("session:create", input),
@@ -164,6 +176,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("usage:update", listener);
     return () => ipcRenderer.off("usage:update", listener);
+  },
+  onUpdateStatus: (callback: (payload: UpdateStatus) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: UpdateStatus) => callback(payload);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.off("update:status", listener);
   },
   onQaLayout: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

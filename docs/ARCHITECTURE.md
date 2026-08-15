@@ -11,6 +11,7 @@ For the current module index and end-to-end call flows, see
 
 - `src/shared/types.ts`: renderer, IPC, and HTTP payload shapes.
 - `src/shared/apiSpec.ts`: single source for the automation API endpoint list.
+- `src/shared/appUpdate.ts`: release feed address and the update status/release contract.
 
 Change this layer when a public contract changes.
 
@@ -38,6 +39,7 @@ IPC and HTTP both call this controller. If a feature can be triggered from the U
 - `src/main/sessionManager.ts`: live harness process/session ownership.
 - `src/main/settings.ts`, `src/main/authService.ts`, `src/main/partyRepository.ts`, `src/main/logger.ts`: local persistence and app infrastructure.
 - `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates `main` and immediately init-starts its session so slash commands and skills can be discovered for the palette. Opening non-main members does not start a harness; their first chat message starts the member session at the project root before sending input.
+- `src/main/updateService.ts`: app self-update against the public releases repo — check/download/install state and the published release list.
 - `src/main/runtimeMode.ts`: process mode checks such as E2E.
 - `src/main/engine/partyActions.ts`: named member action dispatch for `/api/party/members/:name/:action`.
 
@@ -58,8 +60,9 @@ Renderer code should not duplicate business behavior. It requests state or comma
 2. Expose the capability through IPC in `main.ts` if the renderer needs it.
 3. Expose the same capability through HTTP in `automationApi.ts` if it is user-visible or automation-relevant.
 4. Add the endpoint to `src/shared/apiSpec.ts` and document it in `docs/API.md`.
-5. Add focused E2E coverage in `scripts/e2e-smoke.js` or a more specific test.
-6. After implementation, review the changed code against these rules:
+5. If the capability pushes state to the renderer, register the push channel in `main.ts` and subscribe in `preload.ts` + `App.tsx` (see `update:status`).
+6. Add focused E2E coverage in `scripts/e2e-smoke.js` or a more specific test.
+7. After implementation, review the changed code against these rules:
    - AI-readable names and small responsibility boundaries.
    - A future behavior change should touch as few files and repeated lines as possible.
    - Extension points should use explicit contracts or maps instead of scattered string conditionals.
