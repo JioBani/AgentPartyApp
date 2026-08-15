@@ -8,11 +8,12 @@
  * renderer, and the automation API, so it must stay free of Node and Electron
  * imports.
  *
- * Cryptography does NOT live here. Key derivation, sealing, framing and the
- * test vectors come from the shared `packages/protocol` package (owned by the
- * server member); `src/main/mobile/protocolAdapter.ts` is the only place that
- * binds to it. Re-implementing any of it here would create a second source of
- * truth for wire bytes.
+ * Wire-format definitions do NOT live here. Envelopes, reserved method names,
+ * key derivation, sealing, framing and every byte-level constant come from
+ * `@agentparty/protocol`, which the phone's Dart pipe is held to by the same
+ * test vectors. Restating any of it here would create a second source of truth
+ * that drifts silently. This file holds only what that package does not own:
+ * the desktop's own status, settings and diagnostics shapes.
  */
 
 /** Protocol version carried in `v` fields. Bumping it requires updating 01. */
@@ -22,23 +23,11 @@ export const MOBILE_PROTOCOL_VERSION = 1;
 export const MOBILE_PAIRING_URI_SCHEME = "agentparty";
 
 /**
- * Numeric limits fixed by 01. They are shared rather than inlined because the
- * phone asserts several of them (ring buffer window, frame size) and QA drives
- * the rest through the automation API.
+ * Limits this repository owns. Anything the wire format fixes — frame size,
+ * RPC timeout, ring-buffer bounds, pairing TTL, signaling keepalive — lives in
+ * `@agentparty/protocol` and must be read from there, not restated here.
  */
 export const MOBILE_LIMITS = {
-  /** 01 §2.1 — QR/token lifetime. */
-  pairingTokenTtlMs: 120_000,
-  /** 01 §5.2 / 04 — resume ring buffer: whichever bound is hit first. */
-  eventBufferMaxCount: 5_000,
-  eventBufferMaxAgeMs: 10 * 60_000,
-  /** 01 §4.2 — plaintext payload ceiling for one secure frame. */
-  framePayloadMaxBytes: 64 * 1024,
-  /** 01 §5.1 — phone-side response timeout; the desktop uses it for handlers. */
-  requestTimeoutMs: 15_000,
-  /** 01 §3.1 — signaling keepalive. */
-  signalingPingIntervalMs: 30_000,
-  signalingIdleTimeoutMs: 90_000,
   /** 04 §성능·안전 — per-session send backpressure ceiling. */
   sessionSendQueueMaxBytes: 2 * 1024 * 1024,
   /** 01 §6 — ICE restart grace before a brand new session is started. */
@@ -226,112 +215,6 @@ export const MOBILE_SETTINGS_DEFAULTS: MobileSettings = {
   deviceName: "",
   natMappingEnabled: true,
 };
-
-// ---------------------------------------------------------------------------
-// RPC / event envelopes (01 §5.1)
-// ---------------------------------------------------------------------------
-
-export interface RpcRequestEnvelope {
-  k: "req";
-  id: string;
-  m: string;
-  p?: unknown;
-}
-
-export interface RpcOkEnvelope {
-  k: "res";
-  id: string;
-  ok: true;
-  r: unknown;
-}
-
-export interface RpcErrorEnvelope {
-  k: "res";
-  id: string;
-  ok: false;
-  e: { code: MobileErrorCode | string; message: string };
-}
-
-export type RpcResponseEnvelope = RpcOkEnvelope | RpcErrorEnvelope;
-
-export interface EventEnvelope {
-  k: "evt";
-  seq: number;
-  type: string;
-  d: unknown;
-  ts: number;
-}
-
-/** 01 §5.1 — control commands carried on the same channel as RPC. */
-export const CTL_COMMANDS = [
-  "subscribe",
-  "subscribed",
-  "resume",
-  "resumed",
-  "snapshot",
-  "ping",
-  "pong",
-  "chunk",
-] as const;
-export type CtlCommand = (typeof CTL_COMMANDS)[number];
-
-export interface CtlEnvelope {
-  k: "ctl";
-  c: CtlCommand;
-  [field: string]: unknown;
-}
-
-/** 01 §5.2 — phone→desktop workspace subscription. Replaces the set, never merges. */
-export interface CtlSubscribeEnvelope extends CtlEnvelope {
-  c: "subscribe";
-  workspaces: string[];
-}
-
-/** 01 §5.3 — phone→desktop rewind request. */
-export interface CtlResumeEnvelope extends CtlEnvelope {
-  c: "resume";
-  bootId: string;
-  lastSeq: number;
-}
-
-export type MobileEnvelope = RpcRequestEnvelope | RpcResponseEnvelope | EventEnvelope | CtlEnvelope;
-
-/**
- * Error codes the pipe itself produces. Handler-specific codes are the app
- * member's to define; the pipe passes them through untouched.
- */
-export const MOBILE_ERROR_CODES = [
-  "method_not_found",
-  "invalid_envelope",
-  "invalid_params",
-  "handler_failed",
-  "handler_timeout",
-  "payload_too_large",
-  "not_running",
-  "unauthorized",
-  "internal",
-] as const;
-export type MobileErrorCode = (typeof MOBILE_ERROR_CODES)[number];
-
-/**
- * Methods the pipe answers itself (01 §5.3). Registering a handler for one of
- * these is rejected rather than silently ignored, so an app-side collision is
- * a startup error instead of a runtime mystery.
- */
-export const RESERVED_RPC_METHODS = ["sys.ping", "sys.info", "push.register"] as const;
-export type ReservedRpcMethod = (typeof RESERVED_RPC_METHODS)[number];
-
-export function isReservedRpcMethod(method: string): method is ReservedRpcMethod {
-  return (RESERVED_RPC_METHODS as readonly string[]).includes(method);
-}
-
-/**
- * Convention (NOT part of the wire envelope): a request whose `p` carries a
- * string `workspacePath` is routed by the app to that workspace's engine
- * (04 §3). The pipe only lifts the field into `RequestContext`; it never
- * interprets the value.
- */
-export const WORKSPACE_PARAM_FIELD = "workspacePath";
 
 // ---------------------------------------------------------------------------
 // Streams

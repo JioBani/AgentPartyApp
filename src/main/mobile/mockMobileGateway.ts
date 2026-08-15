@@ -1,10 +1,8 @@
+import { EVENT_BUFFER_MAX_COUNT, PAIR_TTL_MS, RESERVED_METHODS, isReservedMethod, type RpcEvent } from "@agentparty/protocol";
 import {
   DIAGNOSTIC_REASONS,
-  MOBILE_LIMITS,
   MOBILE_SETTINGS_DEFAULTS,
-  isReservedRpcMethod,
   type DiagnosticReason,
-  type EventEnvelope,
   type GatewayStatus,
   type MobilePlatform,
   type MobileSettings,
@@ -13,7 +11,6 @@ import {
   type TransportKind,
   type TrustedDevice,
   type ValueStream,
-  WORKSPACE_PARAM_FIELD,
 } from "../../shared/mobileProtocol";
 import type {
   MobileEventScope,
@@ -58,9 +55,9 @@ export interface MockControls {
   /** Invokes the registered snapshot provider, as an out-of-window `resume` would. */
   snapshot(sessionId?: string): Promise<unknown>;
   /** Events the app has emitted, in order, after workspace filtering is applied. */
-  deliveredTo(sessionId: string): EventEnvelope[];
+  deliveredTo(sessionId: string): RpcEvent[];
   /** Every event emitted, regardless of subscription. */
-  emitted(): EventEnvelope[];
+  emitted(): RpcEvent[];
   /** Sets what {@link MobileGateway.diagnostics} will report. */
   setDiagnostics(reason: DiagnosticReason, patch?: Partial<NatDiagnostics>): void;
   /** Clears sessions, devices, events and pairing without restarting. */
@@ -86,7 +83,7 @@ interface MockSession {
   inFlightRequests: number;
   lastRequestAt: number | undefined;
   lastRequestMethod: string | undefined;
-  delivered: EventEnvelope[];
+  delivered: RpcEvent[];
 }
 
 const MOCK_BOOT_ID = "mock-boot";
@@ -100,7 +97,7 @@ class MockGateway implements MockMobileGateway {
   private readonly handlers = new Map<string, MobileRequestHandler>();
   private readonly devicesById = new Map<string, TrustedDevice>();
   private readonly sessions = new Map<string, MockSession>();
-  private readonly events: EventEnvelope[] = [];
+  private readonly events: RpcEvent[] = [];
   private readonly statusStream: MutableValueStream<GatewayStatus>;
   private readonly pairingStream: MutableValueStream<PairingState>;
   private readonly codeStream = new MutableValueStream<string>("");
@@ -147,7 +144,7 @@ class MockGateway implements MockMobileGateway {
   // -- RPC ------------------------------------------------------------------
 
   onRequest(method: string, handler: MobileRequestHandler): () => void {
-    if (isReservedRpcMethod(method)) {
+    if (isReservedMethod(method)) {
       throw new Error(`mobile gateway: "${method}" is answered by the pipe and cannot be overridden`);
     }
     if (this.handlers.has(method)) {
@@ -162,7 +159,7 @@ class MockGateway implements MockMobileGateway {
   }
 
   registeredMethods(): string[] {
-    return [...this.handlers.keys(), "sys.ping", "sys.info", "push.register"].sort();
+    return [...this.handlers.keys(), ...RESERVED_METHODS].sort();
   }
 
   // -- events ---------------------------------------------------------------
@@ -171,9 +168,9 @@ class MockGateway implements MockMobileGateway {
     if (this.sessions.size === 0) {
       return;
     }
-    const event: EventEnvelope = { k: "evt", seq: ++this.seq, type, d: payload, ts: Date.now() };
+    const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: Date.now() };
     this.events.push(event);
-    if (this.events.length > MOBILE_LIMITS.eventBufferMaxCount) {
+    if (this.events.length > EVENT_BUFFER_MAX_COUNT) {
       this.events.shift();
     }
     for (const session of this.sessions.values()) {
@@ -195,7 +192,7 @@ class MockGateway implements MockMobileGateway {
   pairing: MobilePairingApi = {
     openQr: async (): Promise<PairingSession> => {
       this.pendingPairing?.reject(new Error("페어링이 새 QR 발행으로 취소되었습니다."));
-      const expiresAt = Date.now() + MOBILE_LIMITS.pairingTokenTtlMs;
+      const expiresAt = Date.now() + PAIR_TTL_MS;
       const qr = mockQr(expiresAt);
       this.codeStream.set("");
       this.pairingStream.set({ ...idlePairing(), phase: "awaitingScan", qr, expiresAt });
@@ -411,9 +408,9 @@ class MockGateway implements MockMobileGateway {
       });
     },
 
-    deliveredTo: (sessionId): EventEnvelope[] => [...this.requireSession(sessionId).delivered],
+    deliveredTo: (sessionId): RpcEvent[] => [...this.requireSession(sessionId).delivered],
 
-    emitted: (): EventEnvelope[] => [...this.events],
+    emitted: (): RpcEvent[] => [...this.events],
 
     setDiagnostics: (reason, patch): void => {
       this.diagnosticsResult = { ...mockDiagnostics(reason), ...patch };
@@ -568,6 +565,3 @@ function mockDiagnostics(reason: DiagnosticReason): NatDiagnostics {
     errors: direct ? [] : [`mock diagnostics reporting ${reason}`],
   };
 }
-
-/** Re-exported so route code can lift the same field the real pipe lifts. */
-export { WORKSPACE_PARAM_FIELD };

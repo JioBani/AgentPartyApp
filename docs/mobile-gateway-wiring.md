@@ -9,6 +9,19 @@
 
 인터페이스에 없는 것이 필요하면 파이프 내부를 고치지 말고 develop에게 요청한다.
 
+## 의존성
+
+`@agentparty/protocol`(`file:../AgentPartyServer/packages/protocol`)을 씁니다. `dist/`는 git에 없으므로 한 번 빌드해야 합니다:
+
+```
+cd C:\Project\AgentPartyServer && npm install && npm -w @agentparty/protocol run build
+```
+
+봉투 타입·예약 메서드 이름·프레임/링버퍼 한도·암호는 **전부 이 패키지가 정본**입니다.
+`src/shared/mobileProtocol.ts`에는 패키지가 갖지 않는 것(게이트웨이 상태·설정·진단 shape)만 둡니다.
+esbuild로 파이프 모듈을 번들할 때는 이 패키지를 **`external`로 두세요** — libsodium이 WASM이라 번들되면
+난수원을 잃고 `No secure random number generator found`로 죽습니다.
+
 ## 현재 상태
 
 | 산출물 | 상태 |
@@ -205,7 +218,6 @@ gateway.mock.reset();
 
 | 항목 | 마일스톤 |
 |---|---|
-| `@agentparty/protocol` 바인딩(암호·벡터) | M0 — server 멤버 산출물 대기 중 |
 | identityStore / pairingService / signalingClient | M1 |
 | webrtcTransport (node-datachannel, STUN only, fp 서명) / secureSession | M1 |
 | rpcServer / eventBridge (실물 링버퍼·resume·chunk) | M1 |
