@@ -14,6 +14,7 @@ import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/
 import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
+import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -70,7 +71,23 @@ const defaults: AppSettings = {
   memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
   favoriteModels: [...DEFAULT_FAVORITE_MODELS],
   discord: { ...DEFAULT_DISCORD_SETTINGS },
+  mobile: { ...MOBILE_SETTINGS_DEFAULTS },
 };
+
+/**
+ * Shape-only normalization for the mobile link's settings. The URLs are not
+ * validated here: an unreachable signaling server must fail visibly in the
+ * 모바일 연결 screen's status, not be silently replaced by the default.
+ */
+function normalizeMobileSettings(value: Partial<MobileSettings> | undefined): MobileSettings {
+  return {
+    enabled: value?.enabled === true,
+    signalingUrl: typeof value?.signalingUrl === "string" && value.signalingUrl ? value.signalingUrl : MOBILE_SETTINGS_DEFAULTS.signalingUrl,
+    pushUrl: typeof value?.pushUrl === "string" && value.pushUrl ? value.pushUrl : MOBILE_SETTINGS_DEFAULTS.pushUrl,
+    deviceName: typeof value?.deviceName === "string" ? value.deviceName : MOBILE_SETTINGS_DEFAULTS.deviceName,
+    natMappingEnabled: value?.natMappingEnabled !== false,
+  };
+}
 
 /** Transcript zoom bounds — keep in sync with the renderer's Ctrl+wheel step. */
 export const TRANSCRIPT_FONT_SCALE_MIN = 0.6;
@@ -182,7 +199,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
   const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const mobile = normalizeMobileSettings(withRuntimeOverrides.mobile);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

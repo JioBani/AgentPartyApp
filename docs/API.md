@@ -2204,6 +2204,142 @@ silently substitutes that workspace's currently selected party.
 Points an existing window at a different workspace. Body
 `{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
 
+## Mobile link
+
+Pairing and health for the phone connection (AgentPartyMobile). The phone talks
+to this desktop over an end-to-end encrypted P2P channel and calls the **same**
+capabilities listed elsewhere in this document by their `<domain>.<verb>` names
+— `GET /api/spec` → `methods` is the authoritative list for this build, and
+`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
+
+The endpoints below manage the link itself. Until the real pipe ships
+(desktop-pipe M1) the app runs the in-memory **mock** gateway: pairing, status
+and events behave exactly as specified, but no socket is opened. `GET
+/api/mobile/status` → `running` and `signaling` report which is live.
+
+In a headless engine process (a WSL distro's engine server) these endpoints
+fail with an explicit message rather than reporting an empty device list —
+there is no user there to compare a pairing code.
+
+### `GET /api/mobile/status`
+
+Everything the pairing screen and a QA run need, readable at any time:
+
+```json
+{
+  "ok": true,
+  "status": {
+    "running": true,
+    "bootId": "…",
+    "deviceId": "…",
+    "deviceName": "DESKTOP-01",
+    "signaling": "connected",
+    "signalingUrl": "wss://sig.agentparty.app",
+    "signalingError": null,
+    "sessions": [
+      {
+        "sessionId": "sess-1",
+        "deviceId": "…",
+        "deviceName": "Galaxy S25",
+        "transport": "directViaRendezvous",
+        "state": "connected",
+        "subscribedWorkspaces": ["C:/Project/AgentPartyApp"],
+        "inFlightRequests": 0,
+        "lastRequestMethod": "party.list",
+        "queuedBytes": 0
+      }
+    ],
+    "trustedDeviceCount": 1,
+    "pairing": { "phase": "idle", "qr": null, "code": null },
+    "events": { "seq": 42, "minSeq": 1, "maxSeq": 42, "count": 42 },
+    "lastDiagnostics": null
+  }
+}
+```
+
+`sessions[].inFlightRequests > 0` is what the desktop shows as
+"모바일에서 조작 중"; `lastRequestMethod` names what the phone just ran.
+
+### `POST /api/mobile/pair/open`
+
+Opens a single-use pairing QR, valid for two minutes. Returns the string to
+render: `{ "ok": true, "qr": "agentparty://pair?v=1&…", "expiresAt": 1786800000000 }`.
+
+Opening a second QR cancels the first. The 4-digit confirmation code is **not**
+returned here — it only exists after the phone has scanned and proved itself.
+Poll `GET /api/mobile/status` → `pairing.code` for it.
+
+### `POST /api/mobile/pair/confirm`
+
+The user pressed "the codes match". Completes the handshake and returns the
+fresh status. Errors when nothing is awaiting confirmation.
+
+### `POST /api/mobile/pair/cancel`
+
+Aborts the pairing in progress and invalidates its token. Idempotent.
+
+### `GET /api/mobile/devices`
+
+`{ "ok": true, "devices": [{ "deviceId", "name", "pairedAt", "lastSeenAt", "epoch", "push" }] }`.
+
+### `POST /api/mobile/devices/:id/revoke`
+
+Forgets a phone, bumps its trust epoch so an old handshake is rejected, and
+drops any session it holds. Returns the remaining `devices`.
+
+### `POST /api/mobile/devices/:id/rename`
+
+Body `{ "name": "거실 폰" }`. Display name only — identity is unchanged.
+
+### `POST /api/mobile/sessions/:id/disconnect`
+
+Cuts one live phone session immediately; the pairing survives and the phone may
+re-dial. Body `{ "reason": "…" }` is optional. Use `revoke` to end the trust.
+
+### `GET /api/mobile/diagnostics`
+
+Runs STUN probes and a port-mapping attempt, then reports whether a direct
+connection is expected to work:
+
+```json
+{
+  "ok": true,
+  "diagnostics": {
+    "reason": "cgnat_100_64",
+    "wanAddress": "100.72.1.4",
+    "wanIsPrivate": true,
+    "behindNat": true,
+    "mappingKind": "endpointIndependent",
+    "ipv6Available": false,
+    "portMapping": null,
+    "probes": [{ "name": "stun:cloudflare", "ok": true, "detail": "…", "elapsedMs": 41 }],
+    "errors": []
+  }
+}
+```
+
+`reason` is one of `ok_direct`, `no_upnp`, `double_nat`, `cgnat_100_64`,
+`private_wan`, `symmetric_nat`, `ipv6_only`, `unknown`. The Korean explanation
+for each is rendered by the 모바일 연결 tab. Concurrent calls share one run.
+
+### `GET` / `POST /api/mobile/settings`
+
+`{ "ok": true, "settings": { "enabled", "signalingUrl", "pushUrl", "deviceName", "natMappingEnabled" } }`.
+
+POST takes a partial patch and returns the accepted settings, which are
+persisted to `settings.json`. Changing `enabled` or `signalingUrl` reconnects.
+The URLs are **not** validated on write — an unreachable server must show up as
+a visible connection failure in `status.signaling`, not be silently replaced.
+
+### QA flow
+
+```js
+const { qr } = await post("/api/mobile/pair/open");   // hand `qr` to the phone/emulator
+// phone scans → poll until the code appears
+const { status } = await get("/api/mobile/status");   // status.pairing.code === "4213"
+await post("/api/mobile/pair/confirm");
+```
+
 ## QA Endpoints (test-only)
 
 These drive the renderer with **mock members and sessions** so the entire

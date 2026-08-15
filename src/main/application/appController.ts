@@ -43,6 +43,8 @@ import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
+import type { MobileLinkService } from "../mobileLink";
+import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -71,6 +73,13 @@ export interface AppControllerDeps {
    * replace, so the update endpoints report that plainly instead of pretending.
    */
   updater?: UpdateController;
+  /**
+   * Mobile link (pairing, phone sessions, diagnostics). Desktop-owned and
+   * absent in a headless remote engine, which has no user to confirm a pairing
+   * code — the mobile endpoints report that plainly instead of answering with
+   * an empty device list.
+   */
+  mobileLink?: MobileLinkService;
 }
 
 /**
@@ -201,6 +210,12 @@ export class AppController {
       const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
+    // A phone pins no window, so it gets the workspace's own current party —
+    // the same listing `party.list` answers with. Skipped entirely when no
+    // phone is connected, since it costs an extra engine call.
+    if (this.deps.mobileLink?.hasSessions()) {
+      this.deps.mobileLink.publish("party:update", await engine.listParty(undefined), workspacePath);
+    }
     void this.reconcileUsageProviders();
   }
 
@@ -262,6 +277,7 @@ export class AppController {
       }
       entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
     }
+    this.deps.mobileLink?.publish("party:layout", { partyId: result.partyId, layout: result.layout }, workspacePath);
     return result;
   }
 
@@ -424,6 +440,7 @@ export class AppController {
     for (const entry of this.deps.windowRegistry.all()) {
       const payload = await this.listModels(entry.workspacePath);
       entry.window.webContents.send("models:update", payload);
+      this.deps.mobileLink?.publish("models:update", payload, entry.workspacePath);
     }
   }
 
@@ -506,6 +523,85 @@ export class AppController {
     return updater;
   }
 
+  // --- Mobile link (설정 → 모바일 연결) -----------------------------------
+  // Pairing, trusted phones, live phone sessions, and NAT diagnostics. The
+  // capabilities a phone CALLS are not here — those are the same methods the
+  // desktop UI and HTTP use, dispatched from the shared capability table.
+
+  getMobileStatus(): { ok: true; status: GatewayStatus } {
+    return { ok: true, status: this.mobile().status() };
+  }
+
+  getMobileSettings(): { ok: true; settings: MobileSettings } {
+    return { ok: true, settings: this.mobile().settings() };
+  }
+
+  async updateMobileSettings(patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> {
+    return { ok: true, settings: await this.mobile().updateSettings(patch) };
+  }
+
+  listMobileDevices(): { ok: true; devices: TrustedDevice[] } {
+    return { ok: true, devices: this.mobile().devices() };
+  }
+
+  /**
+   * Opens a single-use pairing QR. The 4-digit confirmation code appears in
+   * `getMobileStatus().pairing.code` once the phone has scanned — the caller
+   * (UI or QA) polls that rather than holding a session object.
+   */
+  async openMobilePairing(): Promise<{ ok: true; qr: string; expiresAt: number }> {
+    return { ok: true, ...(await this.mobile().openPairing()) };
+  }
+
+  async confirmMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.confirmPairing();
+    return { ok: true, status: link.status() };
+  }
+
+  async cancelMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.cancelPairing();
+    return { ok: true, status: link.status() };
+  }
+
+  /** Forgets a phone and drops any session it holds. Returns the list that remains. */
+  async revokeMobileDevice(deviceId: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
+    const link = this.mobile();
+    await link.revokeDevice(deviceId);
+    return { ok: true, devices: link.devices() };
+  }
+
+  async renameMobileDevice(deviceId: string, name: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
+    const link = this.mobile();
+    await link.renameDevice(deviceId, name);
+    return { ok: true, devices: link.devices() };
+  }
+
+  /** Cuts one live phone session now; the trust record survives (04 §즉시 끊기). */
+  async disconnectMobileSession(sessionId: string, reason?: string): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.disconnectSession(sessionId, reason);
+    return { ok: true, status: link.status() };
+  }
+
+  async getMobileDiagnostics(): Promise<{ ok: true; diagnostics: NatDiagnostics }> {
+    return { ok: true, diagnostics: await this.mobile().diagnostics() };
+  }
+
+  /**
+   * The mobile link, or a hard error. Absent in the headless WSL engine, which
+   * has no identity store and no user to confirm a pairing code — saying so is
+   * better than answering with an empty device list that reads as "not paired".
+   */
+  private mobile(): MobileLinkService {
+    const link = this.deps.mobileLink;
+    if (!link) {
+      throw new Error("이 프로세스는 모바일 연결을 제공하지 않습니다 (데스크톱 앱에서만 사용할 수 있습니다).");
+    }
+    return link;
+  }
+
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     const previous = getSettings();
     updateSettings(patch || {});
@@ -526,6 +622,7 @@ export class AppController {
     // Settings are global — push to EVERY window so a change made over HTTP or in
     // another window reflects live (e.g. transcript zoom), not only on next load.
     // (The renderer preserves each window's own workspacePath on merge.)
+    this.deps.mobileLink?.publish("settings:update", settings);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("settings:update", settings);
     }
@@ -638,6 +735,7 @@ export class AppController {
 
   /** Keeps every window in sync when Authentication is driven over HTTP. */
   private broadcastAuth(auth: ReturnType<typeof getAuthState>): ReturnType<typeof getAuthState> {
+    this.deps.mobileLink?.publish("auth:update", auth);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("auth:update", auth);
     }
@@ -1664,6 +1762,52 @@ export class AppController {
   }
 
   /** Opens a Message Gate modal (member editor or party manager) — QA of the modal UI. */
+  /**
+   * Test-only: drives the mock gateway's PHONE side, which no HTTP caller can
+   * otherwise reach — scanning a QR, dialling in, subscribing, sending an RPC.
+   * This is what lets an E2E prove that a phone's `party.list` and the local
+   * `GET /api/party` run the same handler.
+   *
+   * It fails loudly on the real gateway: a QA run that believes it paired a
+   * phone must not pass while having exercised nothing.
+   */
+  async qaMobileSimulate(action: string, body: any): Promise<{ ok: true; action: string; result: unknown }> {
+    this.requireQa();
+    const mock = this.mobile().mockControls();
+    const result = await (async (): Promise<unknown> => {
+      switch (action) {
+        case "scan":
+          mock.scanQr({ deviceName: body?.deviceName, deviceId: body?.deviceId });
+          return this.mobile().status().pairing;
+        case "fail-pairing":
+          mock.failPairing(String(body?.error || "QA induced pairing failure"));
+          return this.mobile().status().pairing;
+        case "connect":
+          return { sessionId: mock.connect({ deviceId: body?.deviceId, transport: body?.transport, workspaces: body?.workspaces }) };
+        case "subscribe":
+          mock.subscribe(String(body?.sessionId || ""), Array.isArray(body?.workspaces) ? body.workspaces : []);
+          return { sessionId: body?.sessionId, workspaces: body?.workspaces };
+        case "request":
+          return mock.request(String(body?.method || ""), body?.params, body?.sessionId ? { sessionId: String(body.sessionId) } : undefined);
+        case "delivered":
+          return { events: mock.deliveredTo(String(body?.sessionId || "")) };
+        case "emitted":
+          return { events: mock.emitted() };
+        case "snapshot":
+          return mock.snapshot(body?.sessionId ? String(body.sessionId) : undefined);
+        case "diagnostics":
+          mock.setDiagnostics(body?.reason, body?.patch);
+          return { reason: body?.reason };
+        case "reset":
+          mock.reset();
+          return { reset: true };
+        default:
+          throw new Error(`Unknown mobile simulator action '${action}'.`);
+      }
+    })();
+    return { ok: true, action, result };
+  }
+
   qaOpenGate(windowId: string | undefined, kind: "member" | "party", member: string): { ok: true; kind: string; member: string } {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:open-gate", { kind, member });

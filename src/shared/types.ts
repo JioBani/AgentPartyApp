@@ -8,6 +8,7 @@ import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { MemberQueueState } from "./messageQueue";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
@@ -122,6 +123,12 @@ export interface AppSettings {
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
    */
   discord?: DiscordBridgeSettings;
+  /**
+   * Mobile link: master switch, signaling/push server URLs, and the name this
+   * desktop shows on a paired phone. Edited in Settings → 모바일 연결. See
+   * `shared/mobileProtocol.ts`.
+   */
+  mobile?: MobileSettings;
 }
 
 /** All harnesses that have defaults, in a stable order. */

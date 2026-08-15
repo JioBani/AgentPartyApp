@@ -71,6 +71,7 @@
     "test:e2e:usage-unpriced": "npm run build && node scripts/e2e-usage-unpriced.mjs",
     "test:e2e:transcript-render": "npm run build && node scripts/e2e-transcript-render.mjs",
     "test:e2e:message-queue": "npm run build && node scripts/e2e-message-queue.mjs",
+    "test:e2e:mobile-link": "npm run build && node scripts/e2e-mobile-link.mjs",
     "test:e2e:member-interrupt-default": "npm run build && node scripts/e2e-member-interrupt-default.mjs",
     "qa:queue-design": "npm run build && node scripts/qa-queue-design.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
