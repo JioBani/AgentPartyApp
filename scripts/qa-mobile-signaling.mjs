@@ -185,6 +185,45 @@ console.log("SignalingClient assertions:");
   assert(iceSent.map((m) => m.box).join(",") === "cand-0,cand-1,cand-2,cand-3,cand-4", "candidate order is preserved");
 }
 
+// --- stale ICE is dropped when the socket dies (server requirement) --------
+{
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  const socket = h.socket();
+
+  // One batch still inside the 100ms window, plus a queue that pacing has not
+  // drained yet: both belong to the negotiation that is about to die.
+  for (let n = 0; n < 15; n += 1) { h.client.relay("phone-1", "ice", `queued-${n}`); }
+  h.time.advance(100);
+  for (let n = 0; n < 3; n += 1) { h.client.relay("phone-1", "ice", `batched-${n}`); }
+  const sentBeforeClose = socket.sent.length;
+
+  socket.close_("1006 abnormal");
+  h.time.advance(1_000);
+  completeHandshake(h, identity);
+  h.time.advance(5_000);
+
+  const afterReconnect = h.socket().sent.filter((m) => m.kind === "ice");
+  assert(afterReconnect.length === 0, "no stale candidate is replayed into the new connection");
+  assert(sentBeforeClose > 0, "candidates sent before the drop had already gone out");
+}
+
+// --- a pairing step in flight survives the reconnect -----------------------
+{
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  const socket = h.socket();
+  for (let n = 0; n < 15; n += 1) { h.client.relay("phone-1", "hello", `box-${n}`); }
+  socket.close_("1006 abnormal");
+  h.time.advance(1_000);
+  completeHandshake(h, identity);
+  h.time.advance(5_000);
+
+  const delivered = h.socket().sent.filter((m) => m.kind === "hello");
+  assert(delivered.length === 5, "non-ICE envelopes queued during the outage are still delivered");
+  assert(delivered[0].box === "box-10", "they resume from where pacing left off, in order");
+}
+
 // --- inbound routing -------------------------------------------------------
 {
   const h = harness({ identity });

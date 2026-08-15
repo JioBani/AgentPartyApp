@@ -128,8 +128,12 @@ export class SignalingClient {
 
   /**
    * Queues a sealed envelope for `to`. `ice` is batched; everything else goes
-   * out on the next flush. Nothing is dropped silently — if the socket is down
-   * the queue drains once it is back.
+   * out on the next flush and survives a reconnect, so a pairing step in flight
+   * is not lost.
+   *
+   * ICE is the exception: candidates belong to the ICE session that died with
+   * the socket, so {@link teardown} drops them rather than replaying stale
+   * candidates into a new negotiation.
    */
   relay(to: string, kind: RelayKind, box: string, id?: string): void {
     if (kind === "ice") {
@@ -316,12 +320,35 @@ export class SignalingClient {
       this.clearTimer(this.flushTimer);
       this.flushTimer = undefined;
     }
+    this.dropPendingIce();
     try {
       this.socket?.close();
     } catch {
       // Already closing; the close handler has run or will not run.
     }
     this.socket = undefined;
+  }
+
+  /**
+   * Discards candidates for the negotiation that just died — both the ones
+   * still inside the batch window and the ones already queued for sending.
+   * Replaying them after a reconnect would feed a new PeerConnection candidates
+   * from an old one, which is worse than having none.
+   */
+  private dropPendingIce(): void {
+    const batched = [...this.iceBatch.values()].reduce((total, boxes) => total + boxes.length, 0);
+    this.iceBatch.clear();
+    let queued = 0;
+    for (let index = this.outbox.length - 1; index >= 0; index -= 1) {
+      const message = this.outbox[index];
+      if (message.t === "relay" && message.kind === "ice") {
+        this.outbox.splice(index, 1);
+        queued += 1;
+      }
+    }
+    if (batched + queued > 0) {
+      this.deps.log("info", "mobile signaling dropped stale ICE candidates", { batched, queued });
+    }
   }
 
   private setPhase(phase: SignalingPhase, detail: { error?: string } = {}): void {
