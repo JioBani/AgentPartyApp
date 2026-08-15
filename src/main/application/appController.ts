@@ -952,7 +952,14 @@ export class AppController {
    */
   async respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
     const approvals = this.deps.approvals;
-    const known = approvals?.find(requestId);
+    if (!approvals) {
+      // The headless engine server keeps no index — the desktop that owns the
+      // window does. Answering `unknown` here would be a confident lie: it
+      // looks identical to "that approval aged out", and the caller would stop
+      // retrying against the process that CAN answer.
+      throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
+    }
+    const known = approvals.find(requestId);
     if (!known) {
       return { ok: true, outcome: "unknown", requestId };
     }
@@ -965,7 +972,7 @@ export class AppController {
     // telling the user the request is gone.
     const delivery = await this.engineFor(known.workspacePath).approveSession(known.sessionId, requestId, behavior, updatedInput, message);
     if (delivery === "delivered") {
-      approvals?.markResolved(requestId, behavior);
+      approvals.markResolved(requestId, behavior);
       return { ok: true, outcome: "delivered", ...where, resolvedAt: Date.now(), decision: behavior };
     }
     // The session is gone, or it is alive but no longer holds the request: the

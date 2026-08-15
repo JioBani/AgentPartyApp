@@ -22,13 +22,6 @@ export interface MobileLinkDeps {
    * disappear on restart.
    */
   persistSettings: (settings: MobileSettings) => void;
-  /**
-   * The persisted settings to start from. `settings.json` is the app's store,
-   * not the pipe's, so the link seeds the gateway from it before starting —
-   * otherwise the mock (which holds settings in memory) would silently come up
-   * on defaults after every restart and quietly ignore the user's server URL.
-   */
-  initialSettings: () => MobileSettings;
   /** Per-run overrides — QA points the link at a local signaling server. */
   startOptions?: () => MobileGatewayStartOptions | undefined;
 }
@@ -59,7 +52,6 @@ export class MobileLinkService {
   }
 
   async start(): Promise<void> {
-    await this.deps.gateway.updateSettings(this.deps.initialSettings());
     this.registerMethods();
     this.deps.gateway.setSnapshotProvider((context) => this.snapshot(context));
     this.unsubscribeStatus = this.deps.gateway.status$.subscribe(this.deps.onStatus);

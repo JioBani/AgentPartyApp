@@ -17,6 +17,13 @@
  * separate run that lands with the real gateway.
  *
  * Run: node scripts/e2e-mobile-link.mjs   (after `npm run build`)
+ *
+ * For the M1 real-pipe run: point the desktop at a local signaling server with
+ * AGENTPARTY_MOBILE_SIGNALING_URL=ws://127.0.0.1:8080/v1/ws (a per-run override
+ * that is NOT written to settings). Plain `ws://` is only accepted for
+ * localhost/127.0.0.1/::1/10.0.2.2 — production must be `wss://`. Do NOT give
+ * the phone the same string: an Android emulator reaches the host as 10.0.2.2,
+ * so the two ends name the same server by different addresses.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -167,16 +174,16 @@ async function phoneAndHttpShareOneHandler() {
   await post("/api/qa/seed", { party: "mobile e2e", members: [{ name: "backend", model: "claude-sonnet-4.5", role: "모바일 e2e" }] });
 
   const overHttp = await get("/api/party");
-  const overLink = (await post("/api/qa/mobile/request", { method: "party.list", params: { workspacePath: ws } })).result;
+  const overLink = await phoneCalls("party.list", { workspacePath: ws });
   assert(JSON.stringify(namesOf(overLink)) === JSON.stringify(namesOf(overHttp)),
     `party.list over the link matches GET /api/party (${namesOf(overHttp).join(", ")})`);
 
-  const state = (await post("/api/qa/mobile/request", { method: "state.get", params: { workspacePath: ws } })).result;
+  const state = await phoneCalls("state.get", { workspacePath: ws });
   assert(state?.settings !== undefined, "state.get answers over the link too");
 
   // A method the table marks desktop-only must not be reachable from a phone,
   // and the pipe must say so rather than quietly doing nothing.
-  const refused = await post("/api/qa/mobile/request", { method: "window.minimize", params: {} }).catch((error) => String(error.message));
+  const refused = await phoneCalls("window.minimize", {}).catch((error) => String(error.message));
   assert(typeof refused === "string" && /method_not_found/.test(refused), "a desktop-only method answers method_not_found");
 }
 
@@ -222,7 +229,7 @@ async function snapshotAnswersARewind() {
 
 async function liveSessionIsVisibleAndCuttable() {
   console.log("\n[sessions] the desktop can see and cut a phone session");
-  await post("/api/qa/mobile/request", { method: "party.status", params: { workspacePath: ws } });
+  await phoneCalls("party.status", { workspacePath: ws });
   const session = (await get("/api/mobile/status")).status.sessions[0];
   assert(session?.deviceName === "Galaxy S25", "the live session names the phone");
   assert(session?.lastRequestMethod === "party.status", `the desktop knows what the phone just ran (${session?.lastRequestMethod})`);
@@ -282,25 +289,16 @@ async function approvalsAnswerByIdAlone() {
   assert(Boolean(requestId), `an approval request is pending (${requestId})`);
 
   // Nothing in the params names a session — that is the whole point.
-  const answered = (await post("/api/qa/mobile/request", {
-    method: "approval.respond",
-    params: { id: requestId, behavior: "allow" },
-  })).result;
+  const answered = await phoneCalls("approval.respond", { id: requestId, behavior: "allow" });
   assert(answered.outcome === "delivered", `the phone answers with the id alone (${answered.outcome})`);
   assert(Boolean(answered.sessionId), "…and the desktop reports which session it belonged to");
 
   // Tapping the same notification twice is the ordinary case, not an edge case.
-  const again = (await post("/api/qa/mobile/request", {
-    method: "approval.respond",
-    params: { id: requestId, behavior: "allow" },
-  })).result;
+  const again = await phoneCalls("approval.respond", { id: requestId, behavior: "allow" });
   assert(again.outcome === "already_resolved", `a second answer says it was already handled (${again.outcome})`);
   assert(again.decision === "allow", "…and reports which way it went");
 
-  const never = (await post("/api/qa/mobile/request", {
-    method: "approval.respond",
-    params: { id: "no-such-approval", behavior: "allow" },
-  })).result;
+  const never = await phoneCalls("approval.respond", { id: "no-such-approval", behavior: "allow" });
   assert(never.outcome === "unknown", `an id this desktop never saw is 'unknown', not a false success (${never.outcome})`);
 
   // A request whose session is gone: the answer can never be consumed, and the
@@ -308,18 +306,12 @@ async function approvalsAnswerByIdAlone() {
   const second = await post(`/api/qa/members/${member}/interaction`, { type: "approval", scenario: "claude-bash" });
   await post(`/api/party/members/${member}/close`, {});
   await delay(500);
-  const dead = (await post("/api/qa/mobile/request", {
-    method: "approval.respond",
-    params: { id: second.requestId, behavior: "allow" },
-  })).result;
+  const dead = await phoneCalls("approval.respond", { id: second.requestId, behavior: "allow" });
   assert(dead.outcome === "expired", `an approval whose session is gone is 'expired' (${dead.outcome})`);
 
   // A malformed decision must not be coerced — that would answer a security
   // prompt on the user's behalf.
-  const refused = await post("/api/qa/mobile/request", {
-    method: "approval.respond",
-    params: { id: requestId, behavior: "maybe" },
-  }).catch((error) => String(error.message));
+  const refused = await phoneCalls("approval.respond", { id: requestId, behavior: "maybe" }).catch((error) => String(error.message));
   assert(typeof refused === "string" && /behavior/.test(refused), "a decision that is neither allow nor deny is rejected");
 }
 
@@ -374,6 +366,17 @@ async function theTabRendersWhatTheApiReports() {
   await post(`/api/mobile/sessions/${encodeURIComponent(sessionId)}/disconnect`, {});
   await delay(400);
   assert(!(await measure(".wb-mobile-pill")), "the titlebar pill disappears when the phone disconnects");
+}
+
+/**
+ * The phone calls a method. THE swap point for M1: today it drives the mock
+ * gateway's simulator through `/api/qa/mobile/request`; with the real pipe it
+ * becomes a call on the phone-role interop client. Every assertion above goes
+ * through here so that swap touches one function, not nine call sites.
+ */
+async function phoneCalls(method, params) {
+  const answer = await post("/api/qa/mobile/request", { method, params: params || {} });
+  return answer.result;
 }
 
 /** One element's measurement, or undefined when the selector matched nothing. */

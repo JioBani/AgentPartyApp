@@ -560,7 +560,19 @@ ${body}
   // factory THROWS for `"real"` rather than handing back a mock that would make
   // a dead link look connected.
   mobileLink = new MobileLinkService({
-    gateway: createMobileGateway({ implementation: "mock" }),
+    // The mock is seeded at construction; the real gateway reads the same
+    // `settings.json` block through its own `readSettings` dep, so the app stays
+    // the single source either way. Swapping to the real pipe is this one
+    // argument plus its `deps`.
+    gateway: createMobileGateway({
+      implementation: "mock",
+      mock: { settings: getSettings().mobile || MOBILE_SETTINGS_DEFAULTS },
+    }),
+    // QA points the link at a locally running signaling server without editing
+    // code. A per-run override: the pipe does not write it back to settings.
+    startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
+      ? { signalingUrl: process.env.AGENTPARTY_MOBILE_SIGNALING_URL }
+      : undefined),
     defaultWorkspace: () => registry().resolve()?.workspacePath || defaultWorkspace(),
     automationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     onStatus: (status) => {
@@ -568,7 +580,6 @@ ${body}
         entry.window.webContents.send("mobile:status", status);
       }
     },
-    initialSettings: () => getSettings().mobile || MOBILE_SETTINGS_DEFAULTS,
     persistSettings: (mobile) => { updateSettings({ mobile }); },
   });
 
