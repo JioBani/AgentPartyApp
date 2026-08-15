@@ -16,6 +16,14 @@ If the port is already in use, the app binds to a free local port. The current U
 - Request and response bodies are JSON.
 - Every new UI or app capability must add an API endpoint here.
 - Every endpoint call is logged to the app log file.
+- Parameters may arrive as path segments, query string, or JSON body; a handler
+  reads one merged object, and a path segment always wins over a body field of
+  the same name.
+- A path that exists but was called with the wrong verb answers `405` with
+  `{ "error": "method_not_allowed", "allow": ["POST"] }`. An unknown path
+  answers `404 { "error": "not_found" }`. A rejected request answers `4xx` with
+  `{ "ok": false, "error": "<reason>" }`; an unhandled failure answers `500` in
+  the same shape.
 
 ## Discovery
 
@@ -26,7 +34,24 @@ Returns current app state, router URL, automation URL, log file path, and
 
 ### `GET /api/spec`
 
-Returns a machine-readable list of supported endpoints.
+Returns a machine-readable description of this build's surface:
+
+```json
+{
+  "version": 1,
+  "baseUrl": "http://127.0.0.1:47831",
+  "endpoints": ["GET /api/state", "POST /api/party/members/:name/send"],
+  "methods": ["state.get", "member.send"]
+}
+```
+
+`endpoints` is every HTTP route this build serves. `methods` is the subset of
+capabilities a **paired phone** may call by name over the mobile link (see
+`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md`); desktop-local surfaces
+such as window chrome and screen capture are excluded from it.
+
+Both lists are derived from one capability table (`src/main/api/routes/`), so
+HTTP and the mobile link cannot expose different behavior for the same action.
 
 ### `GET /api/state`
 
@@ -2129,6 +2154,29 @@ list, message, status, interrupt, broadcast, and member-action requests. This
 pins a member session to the party that spawned it even if a user later selects
 another party in the desktop window. Ordinary UI and automation clients can
 omit the header and retain the active-window behavior above.
+
+### `GET /api/workspaces`
+
+Lists the workspaces this desktop is currently serving — one entry per workspace
+an open window is viewing, plus the default a new window would use:
+
+```json
+{
+  "workspaces": [
+    {
+      "uri": "C:/Project/AgentPartyApp",
+      "kind": "local",
+      "path": "C:/Project/AgentPartyApp",
+      "windowIds": ["win-1"],
+      "isDefault": true
+    }
+  ]
+}
+```
+
+`kind` is `local` or `wsl` (a WSL entry also carries `distro`). A caller that
+must act on a specific workspace lists these and then addresses it per request —
+`?window=<id>` for HTTP, `workspacePath` for the mobile link.
 
 ### `GET /api/windows`
 

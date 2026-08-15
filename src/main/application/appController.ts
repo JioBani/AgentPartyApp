@@ -21,7 +21,7 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
-import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
+import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -647,6 +647,37 @@ export class AppController {
   // --- Windows + workspace ------------------------------------------------
   listWindows(): WindowInfo[] {
     return this.deps.windowRegistry.list();
+  }
+
+  /**
+   * The workspaces this desktop is currently serving: one entry per workspace an
+   * open window is viewing, plus the default a new window would use.
+   *
+   * A paired phone reaches every workspace of the PC it paired with (문서 04 §3),
+   * so it lists these once and then stamps `workspacePath` on each later call
+   * rather than being pinned to one workspace for the life of its session.
+   */
+  listWorkspaces(): { workspaces: Array<WorkspaceDisplay & { windowIds: string[]; isDefault: boolean }> } {
+    const byKey = new Map<string, { path: string; windowIds: string[] }>();
+    const remember = (workspacePath: string, windowId?: string) => {
+      const key = workspaceKey(workspacePath);
+      const entry = byKey.get(key) || { path: workspacePath, windowIds: [] };
+      if (windowId) entry.windowIds.push(windowId);
+      byKey.set(key, entry);
+    };
+    for (const window of this.deps.windowRegistry.list()) {
+      remember(window.workspacePath, window.id);
+    }
+    const fallback = getSettings().workspacePath || process.cwd();
+    remember(fallback);
+    const defaultKey = workspaceKey(fallback);
+    return {
+      workspaces: [...byKey].map(([key, entry]) => ({
+        ...this.workspaceDisplay(entry.path),
+        windowIds: entry.windowIds,
+        isDefault: key === defaultKey,
+      })),
+    };
   }
 
   /**

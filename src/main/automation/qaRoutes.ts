@@ -1,6 +1,30 @@
 import { readJson, sendJson } from "./http";
 import type { AutomationRouteContext } from "./routeContext";
 
+/**
+ * QA scaffolding is deliberately NOT in the capability table: it fakes state
+ * instead of performing it, and it is unreachable over the mobile link. It still
+ * belongs in `GET /api/spec` so a QA agent can discover it, hence this list.
+ */
+export const QA_ENDPOINTS = [
+  "POST /api/qa/seed",
+  "POST /api/qa/members",
+  "POST /api/qa/members/:name/kill-harness",
+  "POST /api/qa/members/:name/emit",
+  "POST /api/qa/members/:name/subagents",
+  "POST /api/qa/members/:name/subagents/open",
+  "POST /api/qa/members/:name/interaction",
+  "POST /api/qa/gate/open",
+  "POST /api/qa/open",
+  "POST /api/qa/input",
+  "POST /api/qa/window/bounds",
+  "POST /api/qa/usage",
+  "POST /api/qa/design-gallery",
+  "POST /api/qa/environment",
+  "POST /api/qa/update",
+  "POST /api/qa/reset",
+] as const;
+
 /** Handles the QA-only automation surface. Call only for `/api/qa/*` paths. */
 export async function handleQaRoute(context: AutomationRouteContext): Promise<void> {
   const { method, url, req, res, controller: c, workspace, windowId } = context;

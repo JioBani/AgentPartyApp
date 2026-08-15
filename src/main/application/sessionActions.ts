@@ -36,6 +36,13 @@ const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
   approve: (engine, sessionId, body) => engine.approveSession(sessionId, String(body.requestId || ""), body.behavior, body.updatedInput, body.message),
 };
 
+/**
+ * The complete action list, in declaration order. The API route table expands
+ * this into one endpoint + one RPC method per action, so adding an action here
+ * publishes it everywhere instead of needing a matching route edit.
+ */
+export const SESSION_ACTION_NAMES = Object.keys(SESSION_ACTIONS) as SessionActionName[];
+
 export async function runSessionAction(engine: EngineConnection, sessionId: string, action: string, body: any): Promise<void> {
   const handler = SESSION_ACTIONS[action as SessionActionName];
   if (!handler) {
