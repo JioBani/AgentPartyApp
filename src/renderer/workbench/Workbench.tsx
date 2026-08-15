@@ -23,7 +23,6 @@ import {
   pruneLayout,
   resizeAt,
   setActiveTab,
-  splitPanel,
 } from "./layout";
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
@@ -92,6 +91,8 @@ interface DragState {
   y: number;
   overPanelId?: string;
   overTab?: string;
+  /** Drop lands after `overTab` rather than before it (cursor past its middle). */
+  overAfter?: boolean;
   overNew: boolean;
 }
 
@@ -462,7 +463,7 @@ export function Workbench(props: WorkbenchProps) {
       start.active = true;
     }
     const hit = hitTest(event.clientX, event.clientY);
-    setDrag({ member: start.member, x: event.clientX, y: event.clientY, overPanelId: hit.panelId, overTab: hit.tab, overNew: hit.newPanel });
+    setDrag({ member: start.member, x: event.clientX, y: event.clientY, overPanelId: hit.panelId, overTab: hit.tab, overAfter: hit.after, overNew: hit.newPanel });
   }
 
   function onPointerUp() {
@@ -475,21 +476,25 @@ export function Workbench(props: WorkbenchProps) {
     }
     setDrag((current) => {
       if (current) {
-        const { member, overPanelId, overTab, overNew } = current;
+        const { member, overPanelId, overTab, overAfter, overNew } = current;
         if (overNew) {
           setLayout((state) => moveTabToNewPanel(state, member, overPanelId));
         } else if (overPanelId) {
-          setLayout((state) => moveTab(state, member, overPanelId, overTab));
+          setLayout((state) => moveTab(state, member, overPanelId, overTab, overAfter));
         }
       }
       return null;
     });
   }
 
-  function hitTest(x: number, y: number): { panelId?: string; tab?: string; newPanel: boolean } {
+  function hitTest(x: number, y: number): { panelId?: string; tab?: string; after: boolean; newPanel: boolean } {
     const stack = document.elementsFromPoint(x, y);
     let panelId: string | undefined;
     let tab: string | undefined;
+    // Which side of the hovered tab the drop lands on. Taken from the cursor
+    // against the tab's own midpoint, so pushing a tab rightwards past its
+    // neighbour actually moves it past that neighbour.
+    let after = false;
     let newPanel = false;
     for (const element of stack) {
       if (!(element instanceof HTMLElement)) {
@@ -500,12 +505,14 @@ export function Workbench(props: WorkbenchProps) {
       }
       if (!tab && element.dataset.dropTab) {
         tab = element.dataset.dropTab;
+        const rect = element.getBoundingClientRect();
+        after = x > rect.left + rect.width / 2;
       }
       if (!panelId && element.dataset.panelId) {
         panelId = element.dataset.panelId;
       }
     }
-    return { panelId, tab, newPanel };
+    return { panelId, tab, after, newPanel };
   }
 
   // --- Panel resize -------------------------------------------------------
@@ -624,6 +631,9 @@ export function Workbench(props: WorkbenchProps) {
               focused={panel.id === layout.focusedPanelId}
               draggingMember={drag?.member ?? null}
               dropTarget={Boolean(drag && !drag.overNew && drag.overPanelId === panel.id)}
+              dropAt={drag && !drag.overNew && drag.overPanelId === panel.id && drag.overTab
+                ? { tab: drag.overTab, after: Boolean(drag.overAfter) }
+                : null}
               actions={actions}
               onFocus={() => setLayout((current) => focusPanel(current, panel.id))}
               onSelectTab={(member) => setLayout((current) => setActiveTab(current, panel.id, member))}
@@ -634,7 +644,6 @@ export function Workbench(props: WorkbenchProps) {
                 setLayout((current) => closeTab(current, panel.id, member));
               }}
               onPromoteTab={(member) => setLayout((current) => promoteTab(current, panel.id, member))}
-              onSplit={() => setLayout((current) => splitPanel(current, panel.id))}
               onOpenRuntime={setRuntimeTarget}
               onOpenMcp={setMcpTarget}
               onOpenCompact={setCompactTarget}

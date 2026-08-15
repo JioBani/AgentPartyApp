@@ -181,6 +181,104 @@ A remedy whose `confirm` field is set changes the user's own system (installing
 a CLI); the UI confirms before calling. One without it touches only app-owned
 state (the SDK copy inside a distro's `~/.agent_party_app`).
 
+### `GET /api/update`
+
+Where the app self-update stands. Account/machine-global (one installed build
+serves every window), so it takes no window or workspace scope. The same status
+the titlebar update pill and its dialog render; live changes are pushed to the
+renderer on the `update:status` channel.
+
+```json
+{
+  "ok": true,
+  "update": {
+    "state": "available",
+    "currentVersion": "0.1.0",
+    "latestVersion": "0.2.0",
+    "releaseNotes": "- 업데이트 알림 추가\n",
+    "releaseDate": "2026-08-15T02:00:00.000Z",
+    "releaseUrl": "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.0",
+    "checkedAt": "2026-08-15T02:04:00.000Z"
+  }
+}
+```
+
+`state` is one of `idle`, `checking`, `available`, `downloading`, `downloaded`,
+`up-to-date`, `error`, `disabled`. `downloading` additionally carries
+`progress: { percent, transferred, total, bytesPerSecond }`.
+
+`downgrade: true` on an `available` state means the offered version is **older**
+than the running one — the publisher recalled a release (see the rollback runbook
+in docs/RELEASE.md). The UI says "되돌리기", not "새 버전": a rollback presented as
+an upgrade is a claim the user acts on. Downloading and installing are otherwise
+the same path.
+
+Installing never happens on its own: `autoInstallOnAppQuit` is off, so a
+downloaded update waits until the user asks for it.
+
+`disabled` is **not** an error — it means this build genuinely cannot replace
+itself (a dev run, or the portable `.exe`), and `disabledReason` says which. A
+failed check is `error` with the reason in `error`; it is never reported as
+`up-to-date`.
+
+Releases are read from the **public** repo `JioBani/AgentParty-releases`
+(`src/shared/appUpdate.ts` is the single source for that address, and matches
+`build.publish` in package.json), so no token ships in the app.
+
+### `GET /api/update/versions`
+
+Every published release, newest first — what 설정 → **버전** tab lists. Read from
+the public GitHub releases API with no token, and cached for 10 minutes because
+unauthenticated GitHub allows 60 requests/hour per IP. `?refresh=1` bypasses the
+cache.
+
+```json
+{
+  "ok": true,
+  "releases": [
+    {
+      "version": "0.2.0",
+      "name": "v0.2.0",
+      "notes": "## 앱 내 자동 업데이트\n\n- …",
+      "publishedAt": "2026-08-14T17:43:13Z",
+      "url": "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.0",
+      "prerelease": false,
+      "current": true
+    }
+  ]
+}
+```
+
+`notes` is the **raw markdown** the author published (GitHub's REST `body`) —
+unlike `GET /api/update`, whose notes come from the updater as rendered HTML and
+are converted back to markdown before they reach the UI. `current` marks the
+version this build is running. Drafts are never listed.
+
+Separate from `GET /api/update` on purpose: that one answers "what should I do
+now", this one answers "what has ever shipped", and the tab shows the history
+even on a build where self-update is unavailable. **500** with the reason when
+the list cannot be fetched (rate limit, network) — it never returns an empty
+list to mean failure.
+
+### `POST /api/update/check`
+
+Re-asks the release feed. No body. Returns the same `{ ok, update }` envelope
+with the settled status — a network or feed failure comes back as
+`state: "error"` rather than a rejection, so a caller always learns the outcome.
+
+### `POST /api/update/download`
+
+Downloads the pending installer. No body. Auto-download is off by design: the
+user is told first and decides. **500** when there is nothing to download (the
+state is not `available`). Progress arrives via `GET /api/update` polling or the
+`update:status` push; the response resolves when the download settles.
+
+### `POST /api/update/install`
+
+Quits the app and runs the downloaded installer, relaunching afterwards. No
+body. Every running member is stopped by the quit, so the UI confirms first.
+**500** when no update has been downloaded — it never silently no-ops.
+
 ### `POST /api/capture`
 
 Captures the current Electron window and stores it as a PNG. If `path` is omitted, the file is written next to the current log file.
@@ -2002,15 +2100,29 @@ directly instead of leaving the caller to click the strip:
 
 ```text
 general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
-harness (하네스별 생성 기본값 — Claude Code / Codex / Cursor CLI)
+harness (하네스별 생성 기본값 — 하네스 하나씩, 아래 `harness` 로 선택)
+environment (하네스 준비 상태와 해결 방법 — GET /api/environment 와 같은 값)
 gate    (Message Gate 리뷰어 기본값)
 discord (Discord 브리지 자격증명 + 연결된 멤버)
-diagnostics (버전 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
+versions (설치된 버전 · 최신 릴리스와 변경 내역 · 이전 버전 이력 — GET /api/update, GET /api/update/versions)
+diagnostics (빌드 정보 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
 ```
 
-A `tab` on a screen that has none, or an unknown tab id, is an **error** — never
-a navigation that reports success and leaves the screen where it was. The
-response echoes what was applied (`{ok, view, tab}`).
+The **하네스 기본값** tab shows one harness at a time, picked by its own sub-tab
+strip. An optional `harness` lands on one of them:
+
+```json
+{ "view": "runtime", "tab": "harness", "harness": "codex" }
+```
+
+```text
+claude-code, codex, cursor, grok
+```
+
+A `tab` on a screen that has none, an unknown tab id, a `harness` outside the
+`harness` tab, or an unknown harness id is an **error** — never a navigation that
+reports success and leaves the screen where it was. The response echoes what was
+applied (`{ok, view, tab, harness}`).
 
 ## Windows & workspaces
 
@@ -2261,6 +2373,31 @@ consuming a real quota. Returns the merged snapshot (same shape as
 (`"five_hour"` | `"weekly"` | `"monthly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
+
+### `POST /api/qa/update`
+
+Pins an app-update status so the update pill and dialog can be reviewed without
+publishing a release — a dev run cannot self-update at all, so this is the only
+way to see those surfaces before shipping. The body is a partial `UpdateStatus`
+(see `GET /api/update`); it is merged over the current one and broadcast on the
+`update:status` channel exactly like a real change. Once pinned, real checks and
+the background timer stop, so nothing overwrites what the test is looking at.
+
+```json
+{ "state": "available", "latestVersion": "0.2.0", "releaseNotes": "- 첫 자동 업데이트\n" }
+```
+
+A `releases` array in the same body stands a fixed **release history** in for
+the GitHub fetch, so the 버전 tab's list and its folded "이전 버전" section can be
+reviewed without publishing throwaway releases to a public repo. Entries take
+the `GET /api/update/versions` shape.
+
+```json
+{ "state": "up-to-date", "releases": [{ "version": "0.3.1", "name": "핫픽스", "notes": "- …", "publishedAt": "2026-08-10T02:30:00.000Z", "url": "https://…", "prerelease": false }] }
+```
+
+`{"reset": true}` drops both mocks and restores the real updater. Returns
+`{ "ok": true, "update": { … }, "releases": [ … ] }`.
 
 ### `POST /api/qa/input`
 

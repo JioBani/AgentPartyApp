@@ -7,6 +7,11 @@ export const automationEndpoints = [
   "POST /api/diagnostics/open-logs",
   "GET /api/environment",
   "POST /api/environment/repair",
+  "GET /api/update",
+  "GET /api/update/versions",
+  "POST /api/update/check",
+  "POST /api/update/download",
+  "POST /api/update/install",
   "POST /api/capture",
   "POST /api/measure",
   "POST /api/settings",
@@ -117,6 +122,7 @@ export const automationEndpoints = [
   "POST /api/qa/usage",
   "POST /api/qa/design-gallery",
   "POST /api/qa/environment",
+  "POST /api/qa/update",
   "POST /api/qa/reset",
 ] as const;
 

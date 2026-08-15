@@ -9,6 +9,18 @@ The app currently ports the AgentParty Native VS Code extension core into a desk
 - Auth panel for subscription and API-key based providers
 - AgentParty member list/create/send/start/resume/close/remove controls
 - Streaming-safe renderer updates for long model output
+- In-app self-update from GitHub Releases (titlebar badge, 설정 → 버전 tab)
+
+## Install (Windows)
+
+Grab the latest `AgentParty-Setup-<version>.exe` from
+[Releases](https://github.com/JioBani/AgentParty-releases/releases) and run it.
+The build is unsigned, so SmartScreen warns once (추가 정보 → 실행).
+
+Installed builds update themselves: the app checks GitHub Releases on start and
+every 6 hours, shows a titlebar badge, and downloads only when you ask. The
+portable `AgentParty-<version>.exe` runs without installing but cannot
+self-update. See [docs/RELEASE.md](docs/RELEASE.md) for how releases are cut.
 
 ## Development
 
@@ -16,6 +28,13 @@ The app currently ports the AgentParty Native VS Code extension core into a desk
 npm install
 npm run build
 npm run start
+```
+
+Packaging:
+
+```powershell
+npm run dist:win      # build installer + portable into release/, no upload
+npm run release:win   # same, then publish a draft GitHub release (needs GH_TOKEN)
 ```
 
 For renderer hot reload:

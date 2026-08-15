@@ -869,6 +869,11 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* Panels are sized by the layout (flex-basis 0 + weight), never by their
+     content, so they can be queried as containers. Opening a tenth member must
+     stay possible — the arrangement is the user's to make — so the panel does
+     not refuse to get narrow; what is inside re-flows instead (below). */
+  container-type: inline-size;
   background: var(--bg-1);
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-panel);
@@ -986,6 +991,24 @@ body.wb-resizing {
 .wb-tab.is-dragging {
   opacity: .4;
 }
+
+/* Where the dragged tab will land. A line on ONE edge of the hovered tab, the
+   edge the cursor is nearest — the drop itself follows the same midpoint rule,
+   so what the line promises is what happens. */
+.wb-tab.is-drop-before::after,
+.wb-tab.is-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.wb-tab.is-drop-before::after { left: -1px; }
+.wb-tab.is-drop-after::after { right: -1px; }
 
 .wb-tab-name {
   font-size: 12px;
@@ -1139,26 +1162,6 @@ body.wb-resizing {
   color: var(--text-3);
 }
 
-.wb-tab-actions {
-  display: flex;
-  align-items: stretch;
-  flex: none;
-}
-
-.wb-tab-actions .wb-icon-btn {
-  width: 30px;
-  height: auto;
-  border-radius: 0;
-  border: none;
-  border-left: var(--border-width) solid var(--border-subtle);
-  color: var(--text-3);
-}
-
-.wb-tab-actions .wb-icon-btn:hover {
-  background: var(--bg-2);
-  color: var(--text-0);
-}
-
 /* ---------- Panel toolbar ---------- */
 .wb-toolbar {
   position: relative;
@@ -1185,12 +1188,30 @@ body.wb-resizing {
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-0);
+  /* Squeezed to a few pixels the name was being cut mid-glyph with no sign that
+     anything was missing. It gives up its width first, but as an ellipsis. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wb-toolbar-controls {
   display: flex;
   align-items: center;
   gap: 7px;
+  /* Shrinkable, like the id beside it. Without this the controls kept their full
+     content width and pushed the id — dot and all — down to a 3px sliver, since
+     only one side of the row could give. */
+  min-width: 0;
+}
+
+.wb-model-pill {
+  min-width: 0;
+}
+
+.wb-toolbar-id .wb-dot {
+  flex: none;
 }
 
 .wb-model-pill .wb-mono {
@@ -3602,6 +3623,18 @@ body.wb-resizing {
   color: var(--text-0);
 }
 
+/* Chips that sit INSIDE a line of text — a mention, an `:a` token, a dropped
+   path. They share one alignment rule: `vertical-align: middle` centres the chip
+   on the surrounding text's midline, which tracks the text's font size. The old
+   rule was a flat `-3px` nudge off the baseline — correct at exactly one font
+   size and visibly off at every other, which is how the chips ended up sitting
+   low against the message body. */
+.wb-mention-chip,
+.wb-token-chip,
+.wb-ref-chip {
+  vertical-align: middle;
+}
+
 /* A mention, in the composer and in a sent message. Same shape in both, so the
    message reads as what was typed. */
 .wb-mention-chip {
@@ -3618,7 +3651,6 @@ body.wb-resizing {
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: -.1px;
-  vertical-align: -3px;
   white-space: nowrap;
   user-select: none;
 }
@@ -3646,7 +3678,6 @@ body.wb-resizing {
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: -.1px;
-  vertical-align: -3px;
   white-space: nowrap;
   user-select: none;
 }
@@ -3704,7 +3735,6 @@ body.wb-resizing {
 /* In the transcript the chips are read-only. */
 .wb-ref-chip.is-static {
   cursor: default;
-  vertical-align: -3px;
 }
 
 .wb-mention-head {
@@ -3946,6 +3976,36 @@ body.wb-resizing {
   flex-wrap: wrap;
 }
 
+/* Many members open at once → each panel can end up near 160px, where the
+   composer's single row could not hold the editor AND its buttons. The editor
+   was the flexible one, so it collapsed to a couple of pixels and rendered its
+   placeholder one character per line.
+ *
+ * The row wraps instead: the editor takes a line of its own and the controls sit
+ * on the next one. Nothing is dropped — the permission control here is the ONLY
+ * place a running member's permission can be changed, and the Stop button the
+ * only way to end its turn, so neither may be hidden to save space. */
+@container (max-width: 340px) {
+  .wb-composer-bar {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 4px;
+  }
+
+  .wb-composer-bar .wb-composer-input {
+    flex: 1 0 100%;
+  }
+
+  /* The toolbar's copy of the member name is the one thing here that IS
+     duplicated — the tab directly above it says the same name. Squeezed to a few
+     pixels it was neither readable nor informative, so at this width it gives
+     the row back to the controls, which have no second home. The status dot
+     stays: it is the only live-state mark in the header. */
+  .wb-toolbar-id strong {
+    display: none;
+  }
+}
+
 /* A dropped file or folder, inline where it was dropped. It is an ATOM: not
    editable from the inside, and one backspace removes the whole thing — a chip
    edited character by character would keep its label while its path drifted out
@@ -3963,7 +4023,6 @@ body.wb-resizing {
   box-shadow: inset 0 0 0 var(--border-width) var(--border);
   color: var(--text-0);
   font-size: 11px;
-  vertical-align: -3px;
   white-space: nowrap;
   user-select: none;
   cursor: default;
@@ -7500,19 +7559,39 @@ body.wb-resizing {
 .set-switch.is-on .set-switch-knob { left: 18.5px; }
 .set-toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text-1); }
 
-/* per-harness defaults grid */
-.set-harness-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-/* One column per harness. Below ~1000px three cards would squeeze the segmented
-   controls into unreadable slivers, so it steps down rather than overflowing. */
-.set-harness-grid.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 1180px) { .set-harness-grid.is-three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 820px) { .set-harness-grid, .set-harness-grid.is-three { grid-template-columns: minmax(0, 1fr); } }
+/* Harness picker inside the 하네스 기본값 tab. A second, quieter tab row: it
+   selects WITHIN the tab the top strip already chose, so it reads as pills on the
+   page rather than as folder tabs cut into the header. */
+.set-subtabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.set-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px 0 8px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-subtab:hover { color: var(--text-0); border-color: var(--border); }
+.set-subtab.is-active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); font-weight: 600; }
+/* The harness mark keeps its own colour box in both states — it is the thing
+   being picked, and recolouring it to the accent would erase which harness. */
+.set-subtab .set-harness-icon { width: 24px; height: 24px; border-radius: 7px; }
+.set-subtab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.set-subtab-panel[hidden] { display: none; }
 .set-harness-card { background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 13px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .set-harness-head { display: flex; align-items: center; gap: 10px; }
 .set-harness-icon { width: 28px; height: 28px; flex: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 .set-harness-icon.is-claude-code { background: var(--accent-dim); border: var(--border-width) solid var(--accent-bd); color: var(--accent); }
 .set-harness-icon.is-codex { background: var(--success-dim); border: var(--border-width) solid var(--success-bd); color: var(--success); }
 .set-harness-icon.is-cursor { background: var(--live-dim); border: var(--border-width) solid var(--live-bd); color: var(--live); }
+.set-harness-icon.is-grok { background: var(--bg-3); border: var(--border-width) solid var(--border); color: var(--text-1); }
 .set-harness-title { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-2); }
 /* Full-width inside its card: at three columns a left-hugging button reads as
    floating loose rather than as the card's own commit action. */
@@ -7521,8 +7600,6 @@ body.wb-resizing {
 .set-harness-save.is-saved { background: var(--success-dim); color: var(--success); }
 .set-link-btn { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; color: var(--accent); font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .set-link-btn:hover { text-decoration: underline; }
-
-@media (max-width: 900px) { .set-harness-grid { grid-template-columns: 1fr; } }
 
 /* ============================================================
    Subagent dock (persistent list) + detail (drill-in overlay)
@@ -8330,3 +8407,230 @@ body.wb-resizing {
   font-weight: 700;
   box-shadow: 0 12px 32px -10px var(--shadow);
 }
+
+/* --- App update: titlebar pill + dialog -----------------------------------
+   The pill is rendered ONLY when an update is pending (see UpdatePill), so
+   these rules never affect the idle titlebar. */
+.wb-update-pill {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  margin: auto var(--space-3) auto 0;
+  padding: 0 10px;
+  border: var(--border-width) solid var(--accent-bd);
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wb-update-pill:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* Downloaded = the one state that asks for a restart, so it reads as "ready"
+   rather than "new", and is not the same blue as "there is something to fetch". */
+.wb-update-pill.is-downloaded {
+  border-color: var(--success-bd);
+  background: var(--success-dim);
+  color: var(--success);
+}
+.wb-update-pill.is-downloaded:hover { background: var(--success); color: var(--accent-fg); border-color: var(--success); }
+
+.wb-update-pill-track {
+  width: 42px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-4);
+  overflow: hidden;
+}
+.wb-update-pill-fill { display: block; height: 100%; background: currentColor; }
+.wb-update-pill-hint { opacity: .7; }
+
+/* Its own width rather than the 430px `wb-modal-sm`: the footer carries up to
+   four actions, and at 430px their labels wrapped mid-word ("다시 확 인").
+   The footer still wraps to a second row rather than squeezing them again on a
+   narrow window. */
+.wb-update-modal { width: min(560px, 92vw); }
+.wb-update-modal .wb-modal-body-col { display: flex; flex-direction: column; gap: var(--space-4); }
+.wb-update-modal .wb-modal-foot { flex-wrap: wrap; gap: var(--space-2); }
+.wb-update-modal .wb-btn { white-space: nowrap; }
+.wb-update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+
+.wb-update-versions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.wb-update-arrow { color: var(--text-3); }
+.wb-update-next { color: var(--accent); font-weight: 700; }
+
+.wb-update-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 9px 11px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-button);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.wb-update-note.is-error { border-color: var(--danger-bd); background: var(--danger-dim); color: var(--danger); }
+.wb-update-note.is-warn { border-color: var(--warning-bd); background: var(--warning-dim); color: var(--warning); }
+.wb-update-note.is-ready { border-color: var(--success-bd); background: var(--success-dim); color: var(--text-1); }
+
+.wb-update-progress { display: flex; flex-direction: column; gap: var(--space-2); }
+.wb-update-progress-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-4);
+  overflow: hidden;
+}
+.wb-update-progress-fill { display: block; height: 100%; background: var(--accent); }
+.wb-update-progress-text { font-size: 11px; color: var(--text-3); }
+
+.wb-update-notes {
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-button);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.wb-update-notes-head {
+  padding: 7px 11px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+/* Release notes are arbitrary length — scroll them here so the dialog's own
+   height stays put and the action buttons never leave the screen. */
+.wb-update-notes-body {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 11px;
+  font-size: 12px;
+}
+
+.wb-update-checked { font-size: 11px; color: var(--text-3); }
+
+/* --- 설정 → 버전 탭 -------------------------------------------------------
+   Installed version, the newest release with its notes, and a folded history.
+   Reuses the settings card/button rules; only the version-specific bits live
+   here. */
+.set-ver-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 20px 0;
+}
+
+.set-ver-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+.set-ver-badge.is-latest { border-color: var(--accent-bd); background: var(--accent-dim); color: var(--accent); }
+
+.set-ver-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.set-ver-tag.is-ok { background: var(--success-dim); color: var(--success); }
+.set-ver-tag.is-new { background: var(--accent-dim); color: var(--accent); }
+
+.set-ver-note { font-size: 11.5px; color: var(--text-3); }
+.set-ver-note.is-error { color: var(--danger); }
+.set-ver-empty { padding: 2px 20px 14px; font-size: 12px; color: var(--text-3); }
+
+.set-ver-latest { padding: 2px 20px 16px; }
+.set-ver-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.set-ver-name { font-size: 12.5px; font-weight: 600; color: var(--text-0); }
+.set-ver-date { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.set-ver-link { margin-left: auto; }
+
+/* Notes are author-written and can run long — scroll them here so the card
+   keeps its shape and the history below stays reachable. */
+.set-ver-notes {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 11px 13px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-button);
+  background: var(--bg-1);
+  font-size: 12px;
+}
+
+.set-ver-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 20px;
+  background: none;
+  border: none;
+  color: var(--text-1);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.set-ver-toggle:hover { color: var(--text-0); }
+.set-ver-toggle .set-card-sub { margin-left: auto; }
+
+.set-ver-chev { transition: transform .15s ease; color: var(--text-3); }
+.set-ver-chev.is-open { transform: rotate(180deg); }
+
+.set-ver-list { list-style: none; margin: 0; padding: 0 20px 14px; display: flex; flex-direction: column; gap: 6px; }
+.set-ver-item { border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-button); overflow: hidden; }
+.set-ver-item-head {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  background: none;
+  border: none;
+  color: var(--text-1);
+  cursor: pointer;
+  text-align: left;
+}
+.set-ver-item-head:hover { background: var(--bg-2); }
+.set-ver-item .set-ver-notes { margin: 0 11px 11px; }
+
+/* A rollback is not an upgrade — the pill and the 버전 tag say so in caution
+   colour, so "되돌리기" is never read as "새 버전". */
+.wb-update-pill.is-downgrade {
+  border-color: var(--warning-bd);
+  background: var(--warning-dim);
+  color: var(--warning);
+}
+.wb-update-pill.is-downgrade:hover { background: var(--warning); color: var(--accent-fg); border-color: var(--warning); }
+.set-ver-tag.is-warn { background: var(--warning-dim); color: var(--warning); }

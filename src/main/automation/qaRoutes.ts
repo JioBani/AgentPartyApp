@@ -47,6 +47,14 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
     sendJson(res, 200, c.qaEnvironment(await readJson(req)));
     return;
   }
+  // Pins an app-update status so the update pill/modal can be reviewed without
+  // publishing a release (a dev run cannot self-update at all). Body is a
+  // partial UpdateStatus; `{"reset":true}` restores the real updater.
+  if (method === "POST" && url.pathname === "/api/qa/update") {
+    const body = await readJson(req);
+    sendJson(res, 200, c.setMockUpdateStatus(body?.reset ? undefined : body));
+    return;
+  }
   if (method === "POST" && url.pathname === "/api/qa/reset") {
     sendJson(res, 200, await c.qaReset(workspace));
     return;

@@ -22,13 +22,14 @@ interface PanelProps {
   focused: boolean;
   draggingMember: string | null;
   dropTarget: boolean;
+  /** Where a drop would insert the dragged tab, for the strip's marker. */
+  dropAt: { tab: string; after: boolean } | null;
   actions: WorkbenchActions;
   onFocus: () => void;
   onSelectTab: (member: string) => void;
   onCloseTab: (member: string) => void;
   /** Move a tab to the front of this panel and activate it (overflow list). */
   onPromoteTab: (member: string) => void;
-  onSplit: () => void;
   onOpenRuntime: (member: string) => void;
   onOpenMcp: (member: string) => void;
   onOpenCompact: (member: string) => void;
@@ -43,7 +44,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onSplit, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
@@ -114,10 +115,10 @@ export function Panel(props: PanelProps) {
         density={density}
         width={width}
         draggingMember={draggingMember}
+        dropAt={dropAt}
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onPromote={onPromoteTab}
-        onSplit={onSplit}
         onTabPointerDown={onTabPointerDown}
       />
 

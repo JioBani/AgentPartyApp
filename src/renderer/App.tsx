@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
@@ -10,6 +11,7 @@ import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import { publishFontProbe } from "./app/fontProbe";
 import { useNoticeSink } from "./app/appNotice";
+import { useUpdateDialogSink } from "./app/updateDialog";
 import type { MemberMessagingSettings } from "../shared/memberMessaging";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
 import { usePublishFavoriteModels } from "./app/favoriteModelPrefs";
@@ -17,6 +19,9 @@ import { toggleFavoriteModel as nextFavoriteModels } from "../shared/favoriteMod
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
+import type { UpdateStatus } from "../shared/appUpdate";
+import { UpdatePill } from "./workbench/UpdatePill";
+import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
@@ -71,13 +76,18 @@ export function App() {
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
   const [usageLimits, setUsageLimits] = useState<UsageLimitsSnapshot>({});
+  // App self-update. Global like usage — one installed build per machine — so it
+  // is fetched once and kept live via the "update:status" channel.
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | undefined>();
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [discord, setDiscord] = useState<DiscordBridgeStatus | undefined>();
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
-  /** A tab the automation API asked the runtime screen to land on. */
-  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; seq: number }>({ tab: "general", seq: 0 });
+  /** A tab (and, on the harness tab, a harness) the automation API asked the
+   *  runtime screen to land on. */
+  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
@@ -159,6 +169,24 @@ export function App() {
   // Lets a component too deep to hold notice state report one — today, a
   // transcript file link that could not be opened. See app/appNotice.ts.
   useNoticeSink(setPartyNotice);
+  // The settings 진단 tab's "자세히" opens the same dialog the titlebar pill does.
+  useUpdateDialogSink(useCallback(() => setUpdateModalOpen(true), []));
+
+  // Announce a newly-found version ONCE. The titlebar pill is the durable
+  // indicator; this toast exists so the user notices without watching it, and
+  // re-announcing the same version on every re-check would be nagging.
+  const announcedUpdate = useRef("");
+  useEffect(() => {
+    const version = updateStatus?.state === "available" ? updateStatus.latestVersion || "" : "";
+    if (version && announcedUpdate.current !== version) {
+      announcedUpdate.current = version;
+      setPartyNotice(updateStatus?.downgrade
+        // A recalled release is not an upgrade, and saying "새 버전" about a
+        // rollback would have the user install it expecting the opposite.
+        ? `배포자가 최신 릴리스를 회수했습니다. 이전 버전 ${version} 으로 되돌릴 수 있습니다 — 제목 표시줄의 배지에서 진행하세요.`
+        : `새 버전 ${version} 이(가) 있습니다. 제목 표시줄의 업데이트 배지에서 받을 수 있습니다.`);
+    }
+  }, [updateStatus?.state, updateStatus?.latestVersion, updateStatus?.downgrade]);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
   const fontScale = state.settings.transcriptFontScale ?? 1;
@@ -358,16 +386,22 @@ export function App() {
     // The push sends the raw snapshot; the initial fetch wraps it in `{ usage }`.
     const offUsageUpdate = window.agentParty.onUsageUpdate?.((payload) => setUsageLimits((payload as UsageLimitsSnapshot) || {}));
     void window.agentParty.getUsageLimits?.().then((res) => { if (res?.usage) setUsageLimits(res.usage); });
+    // App update: the push sends the bare status, the fetch wraps it in `{ update }`.
+    const offUpdateStatus = window.agentParty.onUpdateStatus?.((payload) => setUpdateStatus(payload));
+    void window.agentParty.getUpdateStatus?.().then((res) => { if (res?.update) setUpdateStatus(res.update); });
     // Discord bridge status: pushed on every state change (connect/error), and
     // fetched once at load so Settings shows the stored credentials immediately.
     const offDiscordUpdate = window.agentParty.onDiscordUpdate?.((payload) => setDiscord(payload as DiscordBridgeStatus));
     void window.agentParty.getDiscordStatus?.().then((status) => setDiscord(status as DiscordBridgeStatus));
-    const offNavigate = window.agentParty.onNavigate(({ view, tab }) => {
+    const offNavigate = window.agentParty.onNavigate(({ view, tab, harness }) => {
       if (!isViewId(view)) return;
       setCurrentView(view);
       // A counter, not the id alone: asking for the tab you are already on must
       // still move the screen there after the user clicked elsewhere.
-      if (tab && isRuntimeTabId(tab)) setRuntimeTabRequest((current) => ({ tab, seq: current.seq + 1 }));
+      if (tab && isRuntimeTabId(tab)) {
+        const picked = harness && (HARNESS_IDS as readonly string[]).includes(harness) ? (harness as HarnessId) : undefined;
+        setRuntimeTabRequest((current) => ({ tab, harness: picked, seq: current.seq + 1 }));
+      }
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });
@@ -383,6 +417,7 @@ export function App() {
       offDiscordUpdate?.();
       offAuthUpdate?.();
       offUsageUpdate?.();
+      offUpdateStatus?.();
       offQaLayout();
       offQaOpenSub();
       offQaOpenGate?.();
@@ -1416,6 +1451,8 @@ export function App() {
           <button type="button" className="titlebar-action no-drag" title="테마 전환" onClick={theme.cycleTheme}>
             {isDark ? <Moon size={14} /> : <Sun size={14} />}
           </button>
+          {/* Renders only when an update is actually pending — see UpdatePill. */}
+          <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
         </div>
         <div className="window-controls">
           <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
@@ -1578,6 +1615,19 @@ export function App() {
           )}
         </main>
       </div>
+
+      {/* Opens even when the status fetch has not landed (or failed): the dialog
+          can re-check from inside, and a button that does nothing would be the
+          silent no-op this project forbids. */}
+      {updateModalOpen && (
+        <UpdateModal
+          status={updateStatus || { state: "idle", currentVersion: "" }}
+          onCheck={async () => { const res = await window.agentParty.checkForUpdate(); setUpdateStatus(res.update); }}
+          onDownload={async () => { const res = await window.agentParty.downloadUpdate(); setUpdateStatus(res.update); }}
+          onInstall={async () => { await window.agentParty.installUpdate(); }}
+          onClose={() => setUpdateModalOpen(false)}
+        />
+      )}
 
       {partyNotice && (
         <div className="app-toast" role="status">

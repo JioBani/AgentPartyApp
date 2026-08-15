@@ -6,7 +6,7 @@ import { isLaunchable, normalizeLocalFileTarget } from "../../shared/localFiles"
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
-import { harnessDefaultsOf } from "../../shared/types";
+import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
@@ -42,6 +42,7 @@ import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
+import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -64,6 +65,27 @@ export interface AppControllerDeps {
   onWorkspacesChanged: () => void;
   /** Discord bridge. Desktop-owned; absent in a headless remote engine. */
   discord?: DiscordBridgeService;
+  /**
+   * App self-update against the public releases repo. Desktop-owned and absent
+   * in a headless remote engine — a distro-side engine has no installer to
+   * replace, so the update endpoints report that plainly instead of pretending.
+   */
+  updater?: UpdateController;
+}
+
+/**
+ * The update surface this controller drives. Declared here (rather than
+ * importing the class) so the controller keeps loading headless, where
+ * `electron-updater` does not exist.
+ */
+export interface UpdateController {
+  getStatus(): UpdateStatus;
+  listReleases(refresh?: boolean): Promise<ReleaseSummary[]>;
+  check(): Promise<UpdateStatus>;
+  download(): Promise<UpdateStatus>;
+  install(): { ok: true };
+  setMockStatus(patch: Partial<UpdateStatus> | undefined): UpdateStatus;
+  setMockReleases(releases: ReleaseSummary[] | undefined): ReleaseSummary[] | undefined;
 }
 
 /** Public model discovery shared by the UI and automation/member-tool clients. */
@@ -417,6 +439,71 @@ export class AppController {
 
   async refreshUsageLimits(): Promise<{ ok: true; usage: UsageLimitsSnapshot }> {
     return { ok: true, usage: await this.deps.sessionManager.refreshUsageLimits() };
+  }
+
+  // --- App self-update ------------------------------------------------------
+  /**
+   * Where the app update stands. Global, like usage limits — one installed build
+   * serves every window — so the status is fetched once per window and kept live
+   * by the "update:status" push wired in main.ts.
+   */
+  getUpdateStatus(): { ok: true; update: UpdateStatus } {
+    return { ok: true, update: this.updater().getStatus() };
+  }
+
+  /**
+   * Published release history, newest first — the 설정 → 버전 tab's list. Kept
+   * separate from {@link getUpdateStatus}: that one is "what should I do now",
+   * this one is "what has ever shipped", and the tab shows the history even
+   * when self-update is unavailable.
+   */
+  async listReleaseVersions(options: { refresh?: boolean } = {}): Promise<{ ok: true; releases: ReleaseSummary[] }> {
+    return { ok: true, releases: await this.updater().listReleases(Boolean(options.refresh)) };
+  }
+
+  /** Asks the release feed for the latest version. Reports failures in the status, not by throwing. */
+  async checkForUpdate(): Promise<{ ok: true; update: UpdateStatus }> {
+    return { ok: true, update: await this.updater().check() };
+  }
+
+  /** Starts downloading the pending installer; progress arrives on the push channel. */
+  async downloadUpdate(): Promise<{ ok: true; update: UpdateStatus }> {
+    return { ok: true, update: await this.updater().download() };
+  }
+
+  /**
+   * Quits and installs the downloaded build. Every running member is stopped by
+   * the quit — the UI confirms before calling this.
+   */
+  installUpdate(): { ok: true } {
+    return this.updater().install();
+  }
+
+  /**
+   * QA-only: pins an update status (and optionally a release history) so the
+   * banner and the 버전 tab can be driven without publishing a release.
+   */
+  setMockUpdateStatus(patch: (Partial<UpdateStatus> & { releases?: ReleaseSummary[] }) | undefined): { ok: true; update: UpdateStatus; releases?: ReleaseSummary[] } {
+    const updater = this.updater();
+    if (!patch) {
+      return { ok: true, update: updater.setMockStatus(undefined), releases: updater.setMockReleases(undefined) };
+    }
+    const { releases, ...status } = patch;
+    return {
+      ok: true,
+      update: updater.setMockStatus(status),
+      releases: releases ? updater.setMockReleases(releases) : undefined,
+    };
+  }
+
+  /** The updater, or a hard error — a missing one must not read as "up to date". */
+  private updater(): UpdateController {
+    const updater = this.deps.updater;
+    if (!updater) {
+      const status = initialUpdateStatus(this.deps.getAppBuild?.().version || "0.0.0");
+      throw new Error(`이 프로세스는 앱 자동 업데이트를 제공하지 않습니다 (현재 버전 ${status.currentVersion}).`);
+    }
+    return updater;
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
@@ -1062,7 +1149,7 @@ export class AppController {
    * A tab that the target view does not have is an ERROR: forwarding it would
    * report a navigation that never happened.
    */
-  navigate(windowId: string | undefined, view: string, tab?: string): { ok: true; view: string; tab?: string } {
+  navigate(windowId: string | undefined, view: string, tab?: string, harness?: string): { ok: true; view: string; tab?: string; harness?: string } {
     if (tab) {
       if (view !== "runtime") {
         throw new Error(`The '${view}' screen has no tabs.`);
@@ -1071,12 +1158,23 @@ export class AppController {
         throw new Error(`Unknown runtime tab '${tab}'. Known: ${RUNTIME_TAB_IDS.join(", ")}.`);
       }
     }
+    // The 하네스 기본값 tab shows ONE harness at a time, so driving it needs to
+    // name which — same rule as the tab itself: an unknown one is an error, not a
+    // navigation that silently lands somewhere else.
+    if (harness) {
+      if (tab !== "harness") {
+        throw new Error("A harness can only be selected on the 'harness' runtime tab.");
+      }
+      if (!(HARNESS_IDS as readonly string[]).includes(harness)) {
+        throw new Error(`Unknown harness '${harness}'. Known: ${HARNESS_IDS.join(", ")}.`);
+      }
+    }
     const win = this.windowFor(windowId);
     if (!win) {
       throw new Error("Target window is not available.");
     }
-    win.webContents.send("nav:set", { view, tab });
-    return { ok: true, view, ...(tab ? { tab } : {}) };
+    win.webContents.send("nav:set", { view, tab, harness });
+    return { ok: true, view, ...(tab ? { tab } : {}), ...(harness ? { harness } : {}) };
   }
 
   async captureWindow(windowId: string | undefined, body: any): Promise<{ ok: true; path: string; width: number; height: number; bytes: number; clicked?: true; applied?: { theme?: string; clicked?: boolean; scrollY?: number; scrollX?: number } }> {
