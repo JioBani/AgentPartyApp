@@ -29,6 +29,9 @@ async function load(entry, name) {
     bundle: true,
     format: "esm",
     platform: "node",
+    // libsodium is a WASM module: bundling it detaches its crypto binding
+    // ("No secure random number generator found"). Resolve it at runtime.
+    external: ["@agentparty/protocol"],
     write: false,
   });
   const bundlePath = path.join(outDir, name);

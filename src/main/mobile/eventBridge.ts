@@ -1,4 +1,4 @@
-import { MOBILE_LIMITS, type EventEnvelope } from "../../shared/mobileProtocol";
+import { EVENT_BUFFER_MAX_AGE_MS, EVENT_BUFFER_MAX_COUNT, type RpcEvent } from "@agentparty/protocol";
 
 /**
  * Desktop→phone event fan-out with the rewind ring buffer (01 §5.2–5.3, 04).
@@ -16,12 +16,12 @@ import { MOBILE_LIMITS, type EventEnvelope } from "../../shared/mobileProtocol";
 export interface EventSession {
   sessionId: string;
   /** Called for each event this session should receive, in `seq` order. */
-  deliver(event: EventEnvelope): void;
+  deliver(event: RpcEvent): void;
 }
 
 /** What a `resume` request resolved to. The caller performs the transfer. */
 export type ResumeOutcome =
-  | { kind: "replay"; events: EventEnvelope[]; throughSeq: number }
+  | { kind: "replay"; events: RpcEvent[]; throughSeq: number }
   | { kind: "snapshot"; reason: "boot_changed" | "out_of_window"; fromSeq: number };
 
 export interface EventBridgeOptions {
@@ -45,7 +45,7 @@ interface Subscriber {
  * impossible without knowing which workspace each buffered event belonged to.
  */
 interface BufferedEvent {
-  event: EventEnvelope;
+  event: RpcEvent;
   workspacePath: string | undefined;
 }
 
@@ -61,8 +61,8 @@ export class EventBridge {
 
   constructor(options: EventBridgeOptions) {
     this.bootId = options.bootId;
-    this.maxCount = options.maxCount ?? MOBILE_LIMITS.eventBufferMaxCount;
-    this.maxAgeMs = options.maxAgeMs ?? MOBILE_LIMITS.eventBufferMaxAgeMs;
+    this.maxCount = options.maxCount ?? EVENT_BUFFER_MAX_COUNT;
+    this.maxAgeMs = options.maxAgeMs ?? EVENT_BUFFER_MAX_AGE_MS;
     this.now = options.now ?? Date.now;
   }
 
@@ -102,11 +102,11 @@ export class EventBridge {
    * Returns before allocating anything when no session is attached — this sits
    * on `broadcastToWorkspace`, which fires on every session event (04 §성능).
    */
-  publish(type: string, payload: unknown, workspacePath?: string): EventEnvelope | undefined {
+  publish(type: string, payload: unknown, workspacePath?: string): RpcEvent | undefined {
     if (this.subscribers.size === 0) {
       return undefined;
     }
-    const event: EventEnvelope = { k: "evt", seq: ++this.seq, type, d: payload, ts: this.now() };
+    const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: this.now() };
     this.buffer.push({ event, workspacePath });
     this.prune();
 
