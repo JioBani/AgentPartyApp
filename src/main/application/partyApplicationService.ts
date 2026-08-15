@@ -919,6 +919,10 @@ export class PartyApplicationService {
     return {
       ...this.result(`Queued for '${member.name}' (${result.value.items.length} waiting) — from ${sender}.`, written.state, written.member),
       queued: true,
+      // WHICH row this call parked. A cut-in lands at the front, so a caller
+      // that wants to act on its own message (the composer's Ctrl+Enter) cannot
+      // find it by position — it would act on a different sender's message.
+      queuedItemId: item.id,
       queue: result.value,
     };
   }
@@ -1958,15 +1962,31 @@ export class PartyApplicationService {
           usage: verdict.usage,
         });
         if (verdict.verdict === "reject") {
-          const message = createPartyMessage(target, content, from);
+          // RE-READ. `state` was parsed BEFORE the review, and a review is a
+          // model call measured in seconds — the party moved on while it ran.
+          // `persistParty` writes every member of the party from the state it is
+          // given, so recording the rejection on the pre-review copy silently
+          // reverts everything that happened during it. The queue is where that
+          // hurts: a message queued meanwhile disappears (#22's save-conflict
+          // class, fixed in `sendMessage` and missed here), and one DELIVERED
+          // meanwhile comes back — the member answered it AND still shows it
+          // waiting, then answers it a second time on the next idle edge. The
+          // same write also undid session bindings and statuses.
+          const fresh = this.ensureMigrated(this.repository.read(workspace));
+          const freshTarget = this.requireMember(fresh, to, targetPartyId);
+          const message = createPartyMessage(freshTarget, content, from);
           message.delivered = false;
           message.error = verdict.reason || "Message rejected by the message gate.";
-          target.updatedAt = message.createdAt;
-          state.messages.push(message);
-          this.persistParty(workspace, state, targetPartyId);
-          this.emitGateBadge(sender, { gate: "rejected", to: target.name, from: sender.name, reason: verdict.reason, rule: gate.rule });
-          log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: target.name });
-          return { ...this.result(`Message to '${target.name}' was rejected by the message gate.`, state, target), partyMessage: message };
+          freshTarget.updatedAt = message.createdAt;
+          fresh.messages.push(message);
+          this.persistParty(workspace, fresh, targetPartyId);
+          // The badge needs the sender's CURRENT session too: a sender that was
+          // (re)started during the review has a different one, and the stale
+          // record's id would drop the rejection notice on the floor.
+          const freshSender = fresh.members.find((member) => member.partyId === targetPartyId && member.name === sender.name) || sender;
+          this.emitGateBadge(freshSender, { gate: "rejected", to: freshTarget.name, from: freshSender.name, reason: verdict.reason, rule: gate.rule });
+          log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: freshTarget.name });
+          return { ...this.result(`Message to '${freshTarget.name}' was rejected by the message gate.`, fresh, freshTarget), partyMessage: message };
         }
         // allow → fall through to delivery.
       } else if (gate.active && options?.force) {

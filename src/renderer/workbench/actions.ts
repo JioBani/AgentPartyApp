@@ -19,11 +19,21 @@ export interface WorkbenchActions {
   /**
    * Sends a turn to the member (starting its session first if needed), with
    * optional image attachments (provider-neutral). Resolves
-   * with `queued: true` and the new queue when the member was busy, so the
-   * caller can act on the item that was just parked — Ctrl/Cmd+Enter uses this
-   * to park and immediately deliver, bypassing the wait.
+   * with `queued: true`, the new queue, and `queuedItemId` — the row this call
+   * parked — when the member was busy, so the caller can act on the item it just
+   * parked without having to find it by position (an interrupt parks at the
+   * FRONT, so "the last row" is somebody else's message).
+   *
+   * `interrupt` overrides the composer's setting for this one send: Ctrl/Cmd+
+   * Enter passes `true`, which parks at the front AND stops the turn in a single
+   * backend call. Omit it to follow the setting.
    */
-  sendMessage(memberName: string, text: string, attachments?: ImageAttachment[]): Promise<{ queued?: boolean; queue?: MemberQueueState } | undefined>;
+  sendMessage(
+    memberName: string,
+    text: string,
+    attachments?: ImageAttachment[],
+    options?: { interrupt?: boolean },
+  ): Promise<{ queued?: boolean; queuedItemId?: string; queue?: MemberQueueState } | undefined>;
   /**
    * Runs one message-queue mutation (send / sendItem / cancel / edit / move /
    * mergeUp / clear / preference) — the same controller path the HTTP API takes.

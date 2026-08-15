@@ -341,6 +341,15 @@ export interface PartyCommandResult {
    * `shared/messageQueue.ts`.
    */
   queued?: boolean;
+  /**
+   * Id of the row this send parked, set whenever {@link queued} is true.
+   *
+   * The caller must never re-derive it from {@link queue}: an interrupt / "지금
+   * 바로 처리" send parks at the FRONT, so "the last item" is somebody else's
+   * waiting message — Ctrl+Enter used to pick that one and send it instead,
+   * leaving the message the user just typed sitting in the queue.
+   */
+  queuedItemId?: string;
   /** Queue snapshot after the command, so a queue mutation needs no follow-up read. */
   queue?: MemberQueueState;
 }

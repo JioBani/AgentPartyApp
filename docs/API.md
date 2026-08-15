@@ -1097,9 +1097,14 @@ Sends a user turn. `attachments` is an optional array of provider-neutral images
 ```
 
 If the member is **busy**, the message is not delivered — it is parked on that
-member's message queue and the response carries `"queued": true` plus the
-resulting `queue`. It is handed over when the member next goes idle. Callers must
-honour the flag: a queued message has NOT been seen by the agent yet.
+member's message queue and the response carries `"queued": true`, the resulting
+`queue`, and `"queuedItemId"` — the id of the row this call parked. It is handed
+over when the member next goes idle. Callers must honour the flag: a queued
+message has NOT been seen by the agent yet.
+
+Address that row by `queuedItemId`, never by position: with `interrupt` the row
+is parked at the **front**, so "the last item" is a different sender's waiting
+message (the composer's Ctrl+Enter used to deliver that one instead).
 
 Optional `interrupt: true` stops the member's in-flight turn and parks the
 message at the **front** of the app queue so the idle drain handles it next
