@@ -80,6 +80,8 @@ async function main() {
     await phoneAndHttpShareOneHandler();
     await eventsFollowTheWorkspaceSubscription();
     await snapshotAnswersARewind();
+    // Before the session is cut below: this one answers over the LIVE phone link.
+    await approvalsAnswerByIdAlone();
     await liveSessionIsVisibleAndCuttable();
     await revokingForgetsTheDevice();
     await settingsPersistThroughTheGateway();
@@ -261,6 +263,64 @@ async function diagnosticsReportAReason() {
   assert(Array.isArray(diagnostics.probes), "with per-probe detail for a bug report");
   assert(Array.isArray(diagnostics.errors), "and a place failures are surfaced rather than swallowed");
   assert((await get("/api/mobile/status")).status.lastDiagnostics?.reason === "cgnat_100_64", "the status remembers the last run");
+}
+
+/**
+ * `approval.respond` — the push path. A phone woken by a notification holds only
+ * the approval id, so it must be answerable without a session, and the four
+ * outcomes must be distinguishable: a phone that showed "approved" for a request
+ * that had already expired would be lying to its user.
+ */
+async function approvalsAnswerByIdAlone() {
+  console.log("\n[approvals] answering by id, with a truthful outcome");
+  const member = `approver-${process.pid}`;
+  await post("/api/qa/members", { name: member, model: "claude-sonnet-4.5", role: "승인 e2e" });
+  const { requestId } = await post(`/api/qa/members/${member}/interaction`, {
+    type: "approval",
+    scenario: "claude-bash",
+  });
+  assert(Boolean(requestId), `an approval request is pending (${requestId})`);
+
+  // Nothing in the params names a session — that is the whole point.
+  const answered = (await post("/api/qa/mobile/request", {
+    method: "approval.respond",
+    params: { id: requestId, behavior: "allow" },
+  })).result;
+  assert(answered.outcome === "delivered", `the phone answers with the id alone (${answered.outcome})`);
+  assert(Boolean(answered.sessionId), "…and the desktop reports which session it belonged to");
+
+  // Tapping the same notification twice is the ordinary case, not an edge case.
+  const again = (await post("/api/qa/mobile/request", {
+    method: "approval.respond",
+    params: { id: requestId, behavior: "allow" },
+  })).result;
+  assert(again.outcome === "already_resolved", `a second answer says it was already handled (${again.outcome})`);
+  assert(again.decision === "allow", "…and reports which way it went");
+
+  const never = (await post("/api/qa/mobile/request", {
+    method: "approval.respond",
+    params: { id: "no-such-approval", behavior: "allow" },
+  })).result;
+  assert(never.outcome === "unknown", `an id this desktop never saw is 'unknown', not a false success (${never.outcome})`);
+
+  // A request whose session is gone: the answer can never be consumed, and the
+  // phone must be told that rather than shown a tick.
+  const second = await post(`/api/qa/members/${member}/interaction`, { type: "approval", scenario: "claude-bash" });
+  await post(`/api/party/members/${member}/close`, {});
+  await delay(500);
+  const dead = (await post("/api/qa/mobile/request", {
+    method: "approval.respond",
+    params: { id: second.requestId, behavior: "allow" },
+  })).result;
+  assert(dead.outcome === "expired", `an approval whose session is gone is 'expired' (${dead.outcome})`);
+
+  // A malformed decision must not be coerced — that would answer a security
+  // prompt on the user's behalf.
+  const refused = await post("/api/qa/mobile/request", {
+    method: "approval.respond",
+    params: { id: requestId, behavior: "maybe" },
+  }).catch((error) => String(error.message));
+  assert(typeof refused === "string" && /behavior/.test(refused), "a decision that is neither allow nor deny is rejected");
 }
 
 /**

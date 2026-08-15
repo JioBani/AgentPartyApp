@@ -35,6 +35,7 @@ import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
 import { createMobileGateway } from "./mobile";
 import { MobileLinkService } from "./mobileLink";
+import { ApprovalIndex } from "./approvalIndex";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -99,6 +100,12 @@ let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
 let mobileLink: MobileLinkService | undefined;
+/**
+ * Which session raised each approval. Built here because this is where BOTH
+ * local and WSL engine events pass, which is what lets a phone answer an
+ * approval raised inside a distro without knowing that is where it lives.
+ */
+const approvals = new ApprovalIndex();
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -579,6 +586,7 @@ ${body}
     discord: discordBridge,
     updater: updateService,
     mobileLink,
+    approvals,
   });
   mobileLink.setController(appController);
   automationApi = new AutomationApiServer({
@@ -693,6 +701,9 @@ function broadcastToWorkspace(workspacePath: string, channel: string, payload: u
   // so local and remote engines reach the phone through one tap. The gateway
   // returns immediately when no phone is connected.
   mobileLink?.publish(channel, payload, workspacePath);
+  // Same stream, second reader. The index knows which channel carries approvals,
+  // so this stays one unconditional line rather than a channel test here.
+  approvals.note(workspacePath, channel, payload);
 }
 
 /**
@@ -872,6 +883,10 @@ function registerIpc(): void {
   handle("session:listResumable", async (event, workspacePath?: string) => controller().listResumableSessions(workspacePath || senderWorkspace(event)));
   handle("session:resume", async (event, sessionId: string, workspacePath?: string) => controller().resumeSession(workspacePath || senderWorkspace(event), sessionId));
   handle("session:close", async (event, sessionId: string) => controller().closeSession(senderWorkspace(event), sessionId));
+  // Answers an approval by its own id, no session needed — the same controller
+  // method a phone reaches through `approval.respond`.
+  handle("approval:respond", async (_event, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) =>
+    controller().respondToApproval(String(requestId || ""), behavior === "deny" ? "deny" : "allow", updatedInput, message));
   handle("session:send", async (event, sessionId: string, text: string, attachments?: unknown) => controller().sendSessionMessage(senderWorkspace(event), sessionId, text, sanitizeAttachments(attachments)));
   handle("session:interrupt", async (event, sessionId: string) => controller().interruptSession(senderWorkspace(event), sessionId));
   handle("session:forceStop", async (event, sessionId: string) => controller().forceStopSession(senderWorkspace(event), sessionId));

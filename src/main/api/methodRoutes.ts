@@ -2,6 +2,7 @@ import { automationApiSpec } from "../../shared/apiSpec";
 import { QA_ENDPOINTS } from "../automation/qaRoutes";
 import { MethodRouteTable, type MethodRoute } from "./methodRegistry";
 import { appRoutes } from "./routes/appRoutes";
+import { approvalRoutes } from "./routes/approvalRoutes";
 import { authRoutes } from "./routes/authRoutes";
 import { discordRoutes } from "./routes/discordRoutes";
 import { mobileRoutes } from "./routes/mobileRoutes";
@@ -28,6 +29,7 @@ const routes: MethodRoute[] = [
     handler: (_p, ctx) => automationApiSpec(ctx.apiBaseUrl, [...methodRoutes.endpoints(), ...QA_ENDPOINTS], methodRoutes.remoteRoutes().map((route) => route.name)),
   },
   ...appRoutes,
+  ...approvalRoutes,
   ...authRoutes,
   ...discordRoutes,
   ...mobileRoutes,

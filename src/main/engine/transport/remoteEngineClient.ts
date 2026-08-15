@@ -11,6 +11,7 @@ import { log } from "../../logger";
 import type { IdleSleepSettings } from "../../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../../shared/memberMessaging";
 import type { TokenUsageQuery, TokenUsageTurnsQuery } from "../../../shared/tokenUsage";
+import type { ApprovalDelivery } from "../../../shared/approvals";
 
 /** Awaited return type of an EngineConnection method. */
 type Result<K extends keyof EngineConnection> = EngineConnection[K] extends (...args: any[]) => infer Ret ? Awaited<Ret> : never;
@@ -247,7 +248,7 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy) { return this.call<void>("setSessionCursorPolicy", sessionId, policy); }
-  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<void>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
+  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<ApprovalDelivery>("approveSession", sessionId, requestId, behavior, updatedInput, message); }
   closeSession(sessionId: string) { return this.call<boolean>("closeSession", sessionId); }
   listSessionMcpServers(sessionId: string) { return this.call<McpServerSnapshot>("listSessionMcpServers", sessionId); }
   reconnectSessionMcpServer(sessionId: string, server: string) { return this.call<void>("reconnectSessionMcpServer", sessionId, server); }

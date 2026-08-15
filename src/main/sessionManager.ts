@@ -32,6 +32,7 @@ import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import type { ApprovalDelivery } from "../shared/approvals";
 
 /**
  * Status strings that begin or end a turn. Used only by idle sleep's
@@ -1170,8 +1171,19 @@ export class SessionManager extends EventEmitter {
     this.emit("sessions", this.listSessions());
   }
 
-  approve(id: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void {
-    this.sessions.get(id)?.adapter.respondApproval(requestId, behavior, updatedInput, message);
+  /**
+   * Answers a pending approval, reporting what became of it.
+   *
+   * This used to be `sessions.get(id)?.…` — an unknown session silently did
+   * nothing while the caller's HTTP request returned 200, so an answer sent to
+   * a respawned member looked accepted and the turn sat waiting forever.
+   */
+  approve(id: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): ApprovalDelivery {
+    const session = this.sessions.get(id);
+    if (!session) {
+      return "no_such_session";
+    }
+    return session.adapter.respondApproval(requestId, behavior, updatedInput, message) ? "delivered" : "not_pending";
   }
 
   listSessions(): SessionView[] {

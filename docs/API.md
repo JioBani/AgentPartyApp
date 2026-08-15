@@ -1415,7 +1415,16 @@ When the session belongs to a party member, the policy is persisted.
 
 ### `POST /api/sessions/:id/approve`
 
-Responds to a pending approval request.
+Responds to a pending approval request. Use this when you have the session in
+hand (the desktop UI does); to answer by the approval's own id, see
+[`POST /api/approvals/:id/respond`](#post-apiapprovalsidrespond).
+
+Answers `{ "ok": true, "result": "delivered" | "not_pending" | "no_such_session" }`.
+**`ok` only means the call was handled** — `result` is whether the harness
+actually took the answer. It is `not_pending` when the request was already
+answered or its turn moved on, and `no_such_session` when the session is gone
+(closed, respawned). Reporting either as success leaves a turn waiting forever
+while the caller believes it approved something.
 
 ```json
 {
@@ -2203,6 +2212,54 @@ silently substitutes that workspace's currently selected party.
 
 Points an existing window at a different workspace. Body
 `{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
+
+## Approvals
+
+### `POST /api/approvals/:id/respond`
+
+Answers an approval knowing only **its own id** — no session, no workspace.
+
+This exists for the push path. A phone woken by a notification holds the
+approval id and nothing else: it has no session list, a cold start has no store,
+and iOS gives it roughly 30 seconds from the tap to reconnect and answer, so a
+lookup round trip does not fit. A session id remembered from an earlier run is
+already stale once the member has respawned. The desktop resolves the id itself
+against every workspace it serves, WSL engines included.
+
+Body is the same as `POST /api/sessions/:id/approve` minus the session:
+`{ "behavior": "allow" | "deny", "updatedInput": …, "message": "" }`. A
+`behavior` that is neither `allow` nor `deny` is rejected with `400` rather than
+defaulted — defaulting would answer a security prompt on the user's behalf.
+
+```json
+{
+  "ok": true,
+  "outcome": "already_resolved",
+  "requestId": "request-id",
+  "workspacePath": "C:/Project/AgentPartyApp",
+  "sessionId": "session-1",
+  "requestedAt": 1786800000000,
+  "resolvedAt": 1786800060000,
+  "decision": "allow"
+}
+```
+
+`outcome` is the point of this endpoint, and callers must branch on it:
+
+| `outcome` | Meaning |
+| --- | --- |
+| `delivered` | The harness took the answer; the turn is proceeding. |
+| `already_resolved` | Someone answered it first — at the desk or on another device. `decision` and `resolvedAt` say how and when. |
+| `expired` | The request is gone: its turn ended, or its session was closed/respawned. Nothing can consume the answer. |
+| `unknown` | No such approval was ever seen on this desktop. |
+
+The ordinary case is a notification tapped ten minutes late, on a request that
+has since expired or been answered — so a phone that showed "approved" for any
+of the last three would be lying to its user. A failure to *reach* the engine (a
+WSL distro that is down) is **not** an outcome: it surfaces as an error, so the
+caller retries instead of telling the user the request is gone.
+
+Approvals are remembered for 24 hours or 1,000 requests, whichever comes first.
 
 ## Mobile link
 

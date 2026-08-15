@@ -245,10 +245,11 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     this.pushSnapshot();
   }
 
-  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): void {
+  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): boolean {
     // Carries the answers like the real adapters do, so a QA-driven answer
     // produces the same resolved card a user's click would.
     this.inject({ type: "approval_resolved", requestId, decision: behavior, answers: approvalAnswers(updatedInput), at: now() });
+    return true;
   }
 
   // MCP: deterministic in-memory servers so the status + action path (and the

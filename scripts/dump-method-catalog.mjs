@@ -20,6 +20,7 @@ const { methodRoutes } = require(path.join(root, "dist", "main", "api", "methodR
 const DOMAIN_TITLES = {
   app: "앱 · 상태",
   state: "앱 · 상태",
+  approval: "승인",
   environment: "환경",
   update: "앱 업데이트",
   settings: "설정",

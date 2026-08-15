@@ -43,10 +43,15 @@ const SESSION_ACTIONS: Record<SessionActionName, SessionActionHandler> = {
  */
 export const SESSION_ACTION_NAMES = Object.keys(SESSION_ACTIONS) as SessionActionName[];
 
-export async function runSessionAction(engine: EngineConnection, sessionId: string, action: string, body: any): Promise<void> {
+/**
+ * Runs one named session action and returns whatever it produced. Most produce
+ * nothing; `approve` returns whether the harness actually took the answer, which
+ * the caller must not discard — see `src/shared/approvals.ts`.
+ */
+export async function runSessionAction(engine: EngineConnection, sessionId: string, action: string, body: any): Promise<unknown> {
   const handler = SESSION_ACTIONS[action as SessionActionName];
   if (!handler) {
     throw new Error(`Unknown session action '${action}'.`);
   }
-  await handler(engine, sessionId, body || {});
+  return handler(engine, sessionId, body || {});
 }

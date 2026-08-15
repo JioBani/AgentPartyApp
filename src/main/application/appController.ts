@@ -44,6 +44,8 @@ import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/di
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
+import type { ApprovalIndex } from "../approvalIndex";
+import type { ApprovalDelivery, ApprovalResponseResult } from "../../shared/approvals";
 import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
 export interface AppControllerDeps {
@@ -80,6 +82,13 @@ export interface AppControllerDeps {
    * an empty device list.
    */
   mobileLink?: MobileLinkService;
+  /**
+   * Where each approval request was seen, so one can be answered by its id
+   * alone. Fed from the workspace event stream in main.ts; absent in the
+   * headless engine server, whose approvals are answered by session id over
+   * RPC by the desktop that owns the window.
+   */
+  approvals?: ApprovalIndex;
 }
 
 /**
@@ -864,9 +873,19 @@ export class AppController {
     return this.engineFor(workspacePath).sendUserTurn(sessionId, text, attachments);
   }
 
-  async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true }> {
-    await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
-    return { ok: true };
+  async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true; result?: unknown }> {
+    const result = await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
+    // `approve` answers with a delivery verdict; a caller that reported a bare
+    // `{ok:true}` would tell the user an expired request had been approved.
+    if (action !== "approve") {
+      // Every other action answered a bare `{ok:true}` before and still does —
+      // whatever they happen to return is internal, not a contract.
+      return { ok: true };
+    }
+    if (result === "delivered") {
+      this.deps.approvals?.markResolved(String(body?.requestId || ""), body?.behavior === "deny" ? "deny" : "allow");
+    }
+    return { ok: true, result };
   }
 
   interruptSession(workspacePath: string, sessionId: string): Promise<void> {
@@ -910,8 +929,49 @@ export class AppController {
     return this.engineFor(workspacePath).setSessionCursorPolicy(sessionId, policy);
   }
 
-  approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {
-    return this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
+  async approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> {
+    const delivery = await this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
+    if (delivery === "delivered") {
+      this.deps.approvals?.markResolved(requestId, behavior);
+    }
+    return delivery;
+  }
+
+  /**
+   * Answers an approval knowing only its OWN id.
+   *
+   * This is the path a phone takes out of a push notification: it holds the
+   * approval id and nothing else, and iOS gives it seconds, so it cannot first
+   * ask which session owns the request — and a session id it remembered from an
+   * earlier run is stale the moment the member respawns.
+   *
+   * The outcome is reported as a distinct value rather than success/failure,
+   * because the ordinary case is a notification tapped long after the request
+   * expired or was answered at the desk. Reporting those as success would have
+   * the phone tell its user it approved something that never happened.
+   */
+  async respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
+    const approvals = this.deps.approvals;
+    const known = approvals?.find(requestId);
+    if (!known) {
+      return { ok: true, outcome: "unknown", requestId };
+    }
+    const where = { requestId, workspacePath: known.workspacePath, sessionId: known.sessionId, requestedAt: known.requestedAt };
+    if (known.resolvedAt) {
+      return { ok: true, outcome: "already_resolved", ...where, resolvedAt: known.resolvedAt, decision: known.decision };
+    }
+    // A failure to REACH the engine (a WSL distro that is down) is not one of
+    // the four outcomes — it propagates, so the phone retries rather than
+    // telling the user the request is gone.
+    const delivery = await this.engineFor(known.workspacePath).approveSession(known.sessionId, requestId, behavior, updatedInput, message);
+    if (delivery === "delivered") {
+      approvals?.markResolved(requestId, behavior);
+      return { ok: true, outcome: "delivered", ...where, resolvedAt: Date.now(), decision: behavior };
+    }
+    // The session is gone, or it is alive but no longer holds the request: the
+    // turn moved on. Either way nothing can consume this answer.
+    log("info", "api", "approval could not be delivered", { requestId, delivery, workspace: known.workspacePath });
+    return { ok: true, outcome: "expired", ...where };
   }
 
   // --- MCP (external servers a member connects to; by session id) ---------

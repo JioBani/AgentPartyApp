@@ -6,6 +6,7 @@ import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
 import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
+import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
 
 const api = {
   /**
@@ -82,7 +83,16 @@ const api = {
   setPermissionMode: (sessionId: string, permissionMode: string) => ipcRenderer.invoke("session:setPermissionMode", sessionId, permissionMode),
   setCodexPolicy: (sessionId: string, policy: unknown) => ipcRenderer.invoke("session:setCodexPolicy", sessionId, policy),
   setCursorPolicy: (sessionId: string, policy: unknown) => ipcRenderer.invoke("session:setCursorPolicy", sessionId, policy),
-  approve: (sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => ipcRenderer.invoke("session:approve", sessionId, requestId, behavior, updatedInput, message),
+  /**
+   * Answers an approval. Resolves with what became of it — `delivered` only when
+   * the harness took it, so a click on a card whose turn has already moved on is
+   * reported instead of silently doing nothing.
+   */
+  approve: (sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> =>
+    ipcRenderer.invoke("session:approve", sessionId, requestId, behavior, updatedInput, message),
+  /** Answers an approval by its id alone, for a caller with no session in hand. */
+  respondToApproval: (requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> =>
+    ipcRenderer.invoke("approval:respond", requestId, behavior, updatedInput, message),
   listMcpServers: (sessionId: string) => ipcRenderer.invoke("session:mcpList", sessionId),
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
