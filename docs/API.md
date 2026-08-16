@@ -1549,6 +1549,54 @@ a fallback). Member role files are stored under
 cwd set to the workspace root. The result is scoped to the targeted window's
 workspace (`?window=<id>`; focused window when omitted).
 
+```json
+{
+  "parties": [
+    { "id": "party-1786723850678-…", "name": "deploy",
+      "createdAt": "2026-08-14T16:10:50.678Z", "updatedAt": "2026-08-14T16:10:50.678Z" }
+  ],
+  "currentPartyId": "party-1786723850678-…",
+  "members": [
+    {
+      "partyId": "party-1786723850678-…",
+      "name": "ui",
+      "role": "",
+      "runtime": "claude-code",
+      "status": "running",
+      "model": "claude-opus-5[1m]",
+      "effort": "medium",
+      "reasoning": "adaptive",
+      "permissionMode": "bypassPermissions",
+      "createdAt": "2026-08-15T04:23:08.235Z",
+      "updatedAt": "2026-08-16T14:23:40.161Z",
+      "sessionId": "resume-1786886853245",
+      "sessionBootId": "boot-39520-…",
+      "harnessSessionId": "2f637945-…",
+      "lastContextTokens": 842796,
+      "sleptAt": "2026-08-16T13:21:06.989Z",
+      "queue": { "items": [] }
+    }
+  ],
+  "messages": [
+    { "partyId": "party-…", "id": "m-1", "from": "main", "to": "ui",
+      "content": "…", "createdAt": "2026-08-16T14:00:00.000Z", "delivered": true }
+  ]
+}
+```
+
+Optional per member: `harnessSessionId`, `sessionId`, `sessionBootId`,
+`lastContextTokens`, `lastContextWindow`, `sleptAt`, `codexPolicy`, `cursorPolicy`,
+`autoCompact`, `gate`. A party carries `gate` only when one is configured.
+
+**`status` is not the value the member list displays.** The wire carries
+`idle | opened | running | closed | missing_session | sleeping`; the eight labels
+in the UI (`working`, `idle`, `approval`, `not-started`, `stalled`,
+`disconnected`, `sleeping`, `closed`) are derived in the renderer from the member,
+its session, and its transcript — see `src/renderer/workbench/memberStatus.ts`.
+A caller without the transcript can derive every one of them except `approval` and
+`stalled`, and must not substitute `idle` for those two: a stalled member shown as
+merely waiting states something false.
+
 ### `POST /api/parties`
 
 Creates a party, creates its `main` member, and attempts to init-start `main` so skills and slash commands can populate the palette before the first chat. Init failures are returned in the command message and logged instead of being hidden.
