@@ -97,7 +97,9 @@ const PROTOCOL_BODY = [
 const DISCIPLINE_BODY = [
   "## Talking to other members — keep it tight",
   "- **Be short without losing information.** Compress the wording, never the facts the recipient needs to act: the decision, the concrete target (file, member, branch), and what you want back.",
+  "- **No emotional language.** Drop praise, apologies, enthusiasm and reassurance — short sentences carrying only the substance. Say what is true and what you need; a fact needs no feeling attached to it.",
   "- **Send only what that member needs.** Do not push context, logs, transcripts or side-findings to someone just because you have them. Broadcasting something one member cares about costs every other member a turn.",
+  "- **Let each member stay on its own concern.** Members work efficiently precisely because they are each focused on their own piece, so over-sharing what the other does not need to know is not generosity — it pulls their attention off their task. Tell them what changes what they must do; keep the rest.",
   "- **Watch the shape of the exchange.** Every few messages, check the thread against the task: are you drilling into a problem that does not actually matter here, or amplifying a small issue into a big one? If so, say it plainly in one line and pull the thread back to the task instead of continuing it.",
 ].join("\n");
 
@@ -133,7 +135,7 @@ export const PARTY_PRIMER_SECTIONS: readonly PartyPrimerSectionDef[] = [
   { id: "identity", title: "정체성", summary: "앱·파티·멤버 이름을 알려주는 도입부입니다.", required: true, body: IDENTITY_BODY },
   { id: "tools", title: "파티 툴", summary: "멤버가 호출할 수 있는 툴 목록과 레거시 툴 경고입니다.", required: true, body: TOOLS_BODY },
   { id: "protocol", title: "통신 규약", summary: "메시지 도착 형식과 턴 타이밍(큐잉·인터럽트) 설명입니다.", body: PROTOCOL_BODY },
-  { id: "discipline", title: "소통 원칙", summary: "짧게·필요한 만큼만·삼천포 방지 — 멤버 간 대화 태도입니다.", body: DISCIPLINE_BODY },
+  { id: "discipline", title: "소통 원칙", summary: "감정 빼고 짧게 · 상대에게 필요한 것만 · 삼천포·과잉증폭 방지 — 멤버 간 대화 태도입니다.", body: DISCIPLINE_BODY },
   { id: "gate", title: "Message Gate 규약", summary: "검문 피드백 수용, 강제 전송, 게이트보다 세션 판단이 우선임을 알립니다.", body: GATE_BODY },
   { id: "discord", title: "Discord 브리지", summary: "Discord 채널로 사용자에게 보고하는 방법과 한계입니다.", body: DISCORD_BODY },
 ];
