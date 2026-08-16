@@ -15,6 +15,7 @@ import type {
 } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
+import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
 import type { ImageAttachment } from "../../shared/attachments";
 import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
 import {
@@ -2520,12 +2521,44 @@ export class PartyApplicationService {
    */
   private withLiveStatus(member: PartyMember): PartyMember {
     if (!member.sessionId) {
-      return member;
+      return this.withDisplayStatus(member, false);
     }
     if (this.deps.sessionManager.hasSession(member.sessionId) && !this.harnessIsGone(member.sessionId)) {
-      return { ...member, status: "running" };
+      return this.withDisplayStatus({ ...member, status: "running" }, true);
     }
-    return { ...member, status: "missing_session" };
+    return this.withDisplayStatus({ ...member, status: "missing_session" }, true);
+  }
+
+  /**
+   * Attaches the status the member LIST shows, derived here rather than by each
+   * client (09 §4).
+   *
+   * The desktop renderer has always derived it from the member, its session and
+   * its transcript. A phone holds no transcript, so it could only ever compute
+   * six of the eight — and filling the other two with `idle` would show a
+   * stalled member as merely waiting, which states something false rather than
+   * omitting something. Both facts it was missing are available here without a
+   * transcript: the approval count comes off the live session, and the stall
+   * comes off the watchdog's own flag.
+   *
+   * Derived per read and never persisted — `withLiveStatus` runs on the view,
+   * not on the write path.
+   */
+  private withDisplayStatus(member: PartyMember, hasLiveSession: boolean): PartyMember {
+    const snapshot = this.sessionViewOf(member.sessionId)?.snapshot;
+    return {
+      ...member,
+      displayStatus: deriveMemberStatus({
+        stored: member.status,
+        hasLiveSession,
+        busy: this.isSessionBusy(member.sessionId),
+        pendingApproval: Number(snapshot?.pendingApprovalCount || 0) > 0,
+        // Optional for the same reason as `isTurnActive` above: older test
+        // doubles predate it. A double that cannot answer reports "not
+        // stalled", which is the state the watchdog itself starts in.
+        stalled: Boolean(member.sessionId && this.deps.sessionManager.isStalled?.(member.sessionId)),
+      }),
+    };
   }
 
   /**

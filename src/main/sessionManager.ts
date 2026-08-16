@@ -1053,6 +1053,20 @@ export class SessionManager extends EventEmitter {
     return Boolean(session && !session.closed && session.turnActive);
   }
 
+  /**
+   * Whether the stall watchdog has fired on this session and nothing has
+   * happened since — the same fact the renderer reads off the transcript tail,
+   * from the flag itself rather than from what it appended.
+   *
+   * Exists so a caller WITHOUT a transcript (the party list a phone receives)
+   * can still tell `stalled` from `working`. Cleared by any real event, so it
+   * means "silent right now", not "was silent once this turn".
+   */
+  isStalled(id: string): boolean {
+    const session = this.sessions.get(id);
+    return Boolean(session && !session.closed && session.turnActive && session.stallNotified);
+  }
+
   closeSession(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) {

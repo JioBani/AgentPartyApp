@@ -7,6 +7,7 @@ import type { IdleSleepSettings } from "./idleSleep";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { MemberQueueState } from "./messageQueue";
+import type { MemberStatus } from "./memberDisplayStatus";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
@@ -224,6 +225,15 @@ export interface PartyMember {
    * `missing_session` (something died unexpectedly) cannot promise.
    */
   status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
+  /**
+   * The status the member LIST shows, derived from {@link status} plus the live
+   * session (`shared/memberDisplayStatus`). View-only: attached on read and
+   * never persisted, so it is absent from anything loaded off disk.
+   *
+   * Present so a client without a transcript — a paired phone — is told the
+   * answer rather than guessing at `approval` and `stalled`.
+   */
+  displayStatus?: MemberStatus;
   runtime?: MemberRuntime;
   role?: string;
   sessionId?: string;
