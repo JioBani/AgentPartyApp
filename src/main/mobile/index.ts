@@ -17,6 +17,12 @@ export type {
   SnapshotContext,
 } from "./mobileGateway";
 export { createMockMobileGateway } from "./mockMobileGateway";
+/**
+ * Lets an app handler answer with its own protocol error code instead of the
+ * generic `handler_failed`. A plain Error carries no code, so anything the
+ * phone needs to branch on must be thrown as this.
+ */
+export { RpcError } from "./rpcServer";
 export { RealMobileGateway } from "./realMobileGateway";
 export type { MockControls, MockMobileGateway, MockMobileGatewayOptions } from "./mockMobileGateway";
 

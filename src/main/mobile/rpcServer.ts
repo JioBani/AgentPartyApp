@@ -393,7 +393,18 @@ export class RpcServer {
   }
 }
 
-/** An error carrying a protocol error code back to the phone. */
+/**
+ * An error carrying a protocol error code back to the phone.
+ *
+ * App handlers throw this when the phone needs to branch on the reason rather
+ * than read a message — `already_resolved` for an approval that was answered
+ * already, for instance. A plain Error becomes `handler_failed`, which is
+ * right for a genuine fault but useless to branch on.
+ *
+ * The check is `instanceof` rather than "has a code property" on purpose: many
+ * Node errors carry an unrelated `code` (`ENOENT`, `ECONNREFUSED`), and those
+ * must not leak to the phone as protocol codes.
+ */
 export class RpcError extends Error {
   constructor(
     readonly code: string,

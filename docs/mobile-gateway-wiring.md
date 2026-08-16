@@ -183,6 +183,23 @@ gateway.onRequest("party.list", async (params, ctx) => {
 `onRequest`는 해제 함수를 돌려준다. 등록되지 않은 메서드는 파이프가
 `{"ok":false,"e":{"code":"method_not_found"}}`로 답한다.
 
+**핸들러가 폰에 오류 코드를 주려면 `RpcError`를 던져야 한다.**
+
+```ts
+import { RpcError } from "./mobile";
+
+gateway.onRequest("approval.respond", async (params) => {
+  if (alreadyAnswered(params.requestId)) {
+    throw new RpcError("already_resolved", "이미 응답된 요청입니다");
+  }
+  …
+});
+```
+
+평범한 `Error`는 `handler_failed`가 된다 — 진짜 결함에는 맞지만 폰이 분기할 수는 없다.
+판정은 `instanceof`로 한다. Node 오류 상당수가 무관한 `code`(`ENOENT`, `ECONNREFUSED`)를
+갖고 있어서, 그것들이 프로토콜 코드로 폰에 새어 나가면 안 되기 때문이다.
+
 > AGENTS.md 규칙상 폰에 노출하는 메서드는 대응하는 HTTP 엔드포인트가 있어야 한다.
 > `automationApi.ts`의 라우팅은 현재 라우트 **테이블이 아니라 if 체인**이므로
 > "apiSpec에 한 번 등록하면 HTTP·모바일 둘 다"는 지금 구조에서 공짜가 아니다.

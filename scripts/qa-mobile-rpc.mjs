@@ -31,7 +31,8 @@ async function load(entry, name) {
   return import(pathToFileURL(bundlePath).href);
 }
 
-const { RpcServer } = await load("src/main/mobile/rpcServer.ts", "rpcServer.mjs");
+const M = await load("src/main/mobile/rpcServer.ts", "rpcServer.mjs");
+const { RpcServer } = M;
 const { EventBridge } = await load("src/main/mobile/eventBridge.ts", "eventBridgeForRpc.mjs");
 const C = await load("src/main/mobile/chunking.ts", "chunkingForRpc.mjs");
 const P = await import("@agentparty/protocol");
@@ -149,6 +150,20 @@ console.log("RpcServer assertions:");
   const failed = h.last();
   assert(failed.ok === false && failed.e.code === "handler_failed", "a throwing handler still produces a response");
   assert(failed.e.message.includes("핸들러 폭발"), "the handler's message reaches the phone");
+
+  // An app handler that wants the phone to branch throws RpcError.
+  handlers.set("approval.respond", async () => { throw new M.RpcError("already_resolved", "이미 응답된 요청입니다"); });
+  h.server.handle(req("approval.respond"));
+  await tick();
+  const resolved = h.last();
+  assert(resolved.e.code === "already_resolved", "a handler's own RpcError code reaches the phone verbatim");
+  assert(resolved.e.message.includes("이미 응답"), "along with its message");
+
+  // A stray Node error carries an unrelated `code`; it must not become one.
+  handlers.set("reads.file", async () => { const error = new Error("no such file"); error.code = "ENOENT"; throw error; });
+  h.server.handle(req("reads.file"));
+  await tick();
+  assert(h.last().e.code === "handler_failed", "a Node error's own code does NOT leak to the phone as a protocol code");
 }
 
 // --- 01 §5.2 subscribe -----------------------------------------------------
