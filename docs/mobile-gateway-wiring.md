@@ -418,7 +418,9 @@ CLI의 `safeStorage` 대역은 **암호화하지 않는다**. 그래서 뜰 때 
 | `npm run test:mobile-portability` | `src/main/mobile/**`에 플랫폼 분기·OS 명령·Electron 의존이 없음 (06 §검증) |
 | `npm run test:mobile-event-rpc` | 링버퍼·구독 필터·되감기 판정, 01 §5.6 청크 분할/조립 |
 | `npm run test:mobile-identity` | 신원 저장·복호 실패·키체인 부재·신뢰 레코드·trustEpoch |
-| `npm run test:mobile-signaling` | 01 §3 핸드셰이크(실제 서명 검증), 송신 페이싱, 백오프, 종료성 오류 |
+| `npm run test:mobile-signaling` | 01 §3 핸드셰이크(실제 서명 검증), 송신 페이싱, 백오프, 종료성 오류, 수신 strict 거부, bare host → `wss://host/v1/ws` |
+| `npm run test:mobile-sender-audit` | 01 §3 송신 감사: 소켓에 넘어가는 **원문** 기준으로 클라이언트 8종 규격 외 0건, 주입 필드가 실제로 잡히는지, 방향 표를 옳게 조회하는지 |
+| `npm run test:mobile-strict-table` | 01 §3.1~3.4 허용 필드 표(벡터 `signalingFields` 대조): 정상 프레임 **전수 수락**, `err` 13종·relay `kind` 5종 포함 |
 | `npm run test:mobile-pairing` | 01 §2 전 과정(실제 폰 역할), 확인 코드 일치·불일치, 재연결 시 재등록 |
 | `npm run test:mobile-webrtc` | 실제 PeerConnection 2개 루프백, JSEP 후보 형태, 02 §T1 변조 거부, 후보 쌍 보고 |
 | `npm run test:mobile-rpc` | 01 §5 봉투 처리, 예약 메서드, 되감기 순서 보장, strict 스키마 적합성 |
@@ -426,4 +428,10 @@ CLI의 `safeStorage` 대역은 **암호화하지 않는다**. 그래서 뜰 때 
 | `npm run test:mobile-natmapper` | 매핑 수명·재시도·해제, 실제 NAT-PMP/PCP 바이트를 스탠드인 라우터로 검증 |
 | `npm run test:mobile-push` | 01 §7 봉인·서명, 릴레이/폰 역할 왕복, 실패 코드 |
 
-전부 `npm run test:ui` 체인에 들어 있다. **이들은 모듈·상호운용 검증이며 제품 E2E가 아니다.**
+14개 전부 `package.json`에 등록돼 있고 `npm run test:ui` 체인에 들어 있다 — 이 표와
+`package.json`의 `test:mobile-*`는 1:1로 맞춰 유지한다.
+**이들은 모듈·상호운용 검증이며 제품 E2E가 아니다.**
+
+`scripts/qa-mobile-soak.mjs`는 장기 실행 안정성 측정용이라 **`test:ui`에 넣지 않았다**(2시간
+단위로 돌기 때문). 의도적으로 등록하지 않은 것이며, 실행법은 파일 상단 주석에 있다.
+`--baseline`은 파이프를 뺀 같은 루프를 돌려 node-datachannel 자체 증가분과 분리한다.
