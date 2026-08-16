@@ -17,6 +17,17 @@ export function applySubagentEvents(
 ): Record<string, Subagent[]> {
   let next = current;
   for (const event of events) {
+    // The dock describes the current turn, matching the harness task counter.
+    // Keeping terminal rows forever made the badge a session-lifetime total:
+    // two agents in each of three Claude turns displayed as six on the third.
+    // A new user turn cannot overlap the previous one in AgentParty (busy sends
+    // queue), so its `sent` boundary is the safe point to start a fresh list.
+    if (event?.type === "status" && event.status === "sent") {
+      if ((next[sessionId] || []).length) {
+        next = { ...next, [sessionId]: [] };
+      }
+      continue;
+    }
     if (event?.type === "subagent" && typeof event.agentId === "string") {
       next = upsertSubagent(next, sessionId, event);
     }

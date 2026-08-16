@@ -795,6 +795,12 @@ export class CodexAdapter extends EventEmitter {
 
   private applyThreadResult(result: any): void {
     this.sessionId = String(result?.thread?.id || result?.thread?.sessionId || this.sessionId || this.options.id);
+    // The request response is the authoritative root identity. `thread/started`
+    // is a notification and is not guaranteed to arrive before this response
+    // (and a resumed thread may not announce itself again at all). Leaving the
+    // tracker dependent on that notification makes every child thread look like
+    // parent activity, so the subagent dock stays empty on those valid orders.
+    this.subagentTracker.setRoot(this.sessionId);
     this.status = "initialized";
     this.turnState = undefined;
     this.emitEvent({
