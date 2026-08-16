@@ -41,7 +41,15 @@ export const approvalRoutes: MethodRoute[] = [
         // either one answers a security prompt on the user's behalf.
         throw new ApiError(400, "'behavior' must be 'allow' or 'deny'.");
       }
-      return ctx.controller.respondToApproval(required(p.id, "id"), behavior, p.updatedInput, p.message);
+      // `id` is the path segment's name, which the calling convention turns into
+      // a field. But EVERY response — approval.list, approval.respond itself,
+      // and the approval events — calls this same value `requestId`, so a client
+      // that reads a list and answers one naturally sends `requestId` and used to
+      // get "'id' is required" for a request that was entirely well-formed.
+      // Accepted under both names rather than making callers know which surface
+      // they came from.
+      const requestId = p.id === undefined ? p.requestId : p.id;
+      return ctx.controller.respondToApproval(required(requestId, "id"), behavior, p.updatedInput, p.message);
     },
   },
 ];

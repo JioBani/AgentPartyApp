@@ -92,11 +92,14 @@ async function main() {
   console.log(`phone:   ${PHONE}`);
   console.log(`signal:  ${SIGNALING || "(desktop default)"}`);
 
-  // A STABLE user-data dir, so the desktop keeps one identity across runs.
-  // A fresh one each time mints a new desktop and leaves the phone holding a
-  // pile of dead "Sakura" entries — which is test churn, not something a real
-  // user does, and it masks whatever the link is actually doing.
-  const userData = path.join(os.tmpdir(), "agentparty-link-ud-stable");
+  // Stable by default, so the desktop keeps one identity across runs.
+  //
+  // `--fresh-identity` mints a new one instead. That is the path that produced
+  // the `internal` connect failure: the phone ends up holding a trust record
+  // for a desktop that no longer exists, alongside the one it just paired.
+  const userData = process.argv.includes("--fresh-identity")
+    ? mkdtempSync(path.join(os.tmpdir(), "agentparty-link-ud-"))
+    : path.join(os.tmpdir(), "agentparty-link-ud-stable");
   mkdirSync(userData, { recursive: true });
   const workspace = path.join(os.tmpdir(), "agentparty-link-ws");
   mkdirSync(workspace, { recursive: true });
@@ -156,6 +159,17 @@ async function main() {
     console.log("\nsession:");
     const connected = await post(PHONE, "/connect", { deviceId: trust.deviceId });
     assert(connected.status === 200, `the phone opened a session (${connected.status} ${JSON.stringify(unwrap(connected)).slice(0, 140)})`);
+    if (connected.status !== 200) {
+      // `internal` wraps an exception that is not a LinkFailure, so the wrapped
+      // detail is the only thing that names the real cause. Captured at the
+      // moment of failure — a later read shows a recovered client and loses it.
+      const diagnostics = await get(PHONE, "/diagnostics").catch((e) => ({ body: { error: String(e) } }));
+      const state = await get(PHONE, "/status").catch((e) => ({ body: { error: String(e) } }));
+      console.log("\n--- phone /diagnostics at failure ---");
+      console.log(JSON.stringify(diagnostics.body, null, 1));
+      console.log("\n--- phone /status at failure ---");
+      console.log(JSON.stringify(state.body, null, 1));
+    }
 
     console.log("\nmethods over the link:");
     const spaces = await post(PHONE, "/rpc", { method: "workspace.list", params: {} });

@@ -2392,10 +2392,13 @@ it reaches all of them.
       "requestedAt": 1786891902265,
       "toolName": "Bash",
       "title": "rm -rf build/"
+
     }
   ]
 }
 ```
+
+`requestedAt` is epoch **milliseconds as a number**, not a timestamp string.
 
 `member` is resolved per request rather than stored, so a member renamed while
 its approval waited is listed under the name now on screen. It is absent when no
@@ -2426,6 +2429,13 @@ Body is the same as `POST /api/sessions/:id/approve` minus the session:
 `{ "behavior": "allow" | "deny", "updatedInput": …, "message": "" }`. A
 `behavior` that is neither `allow` nor `deny` is rejected with `400` rather than
 defaulted — defaulting would answer a security prompt on the user's behalf.
+
+Over the mobile link the id travels as a field rather than a path segment, and
+it is accepted as either `id` or `requestId`. `id` is the path segment's name,
+but every response and event — `GET /api/approvals`, this endpoint's own reply,
+`approval_request`, `approval_resolved` — calls the same value `requestId`. A
+caller that listed approvals and answered one therefore sends `requestId`, and
+used to be told `'id' is required` for a perfectly well-formed request.
 
 ```json
 {
