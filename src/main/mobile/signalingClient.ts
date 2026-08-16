@@ -33,7 +33,16 @@ import type { MobileGatewayDeps } from "./index";
 export type SignalingPhase = "idle" | "connecting" | "authenticating" | "connected" | "backoff" | "failed";
 
 export interface SignalingClientDeps {
-  url: string;
+  /**
+   * Addresses to try, in order (01 ddc2563). The signaling address is not part
+   * of trust, so a desktop may reach its phones through any of several — the
+   * one from settings, then the built-in operator default.
+   *
+   * Each retry advances to the next entry, so an operator migration or a dead
+   * host costs one backoff step rather than a permanent outage. `onConnected`
+   * reports which one answered, so the caller can put it first next time.
+   */
+  urls: string[];
   identity: Identity;
   log: MobileGatewayDeps["log"];
   /** Injected in tests. */
@@ -105,11 +114,28 @@ export class SignalingClient {
   private readonly clearTimer: (timer: NodeJS.Timeout) => void;
   private readonly openSocket: (url: string) => SignalingSocket;
 
+  /** Completed and de-duplicated at construction, so rotation is over real addresses. */
+  private readonly urls: string[];
+  private urlIndex = 0;
+
   constructor(private readonly deps: SignalingClientDeps) {
     this.now = deps.now ?? Date.now;
     this.setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = deps.clearTimer ?? ((timer) => clearTimeout(timer));
     this.openSocket = deps.openSocket ?? ((url) => new WsSignalingSocket(url));
+    // Completing here means a duplicate written two ways (`host` and
+    // `wss://host/v1/ws`) collapses to one entry, so rotation does not waste a
+    // backoff step redialling the address that just failed.
+    const completed = deps.urls.map((url) => signalingEndpoint(url));
+    this.urls = [...new Set(completed)];
+    if (this.urls.length === 0) {
+      throw new Error("mobile signaling: no signaling address was configured");
+    }
+  }
+
+  /** The address currently being tried. */
+  currentUrl(): string {
+    return this.urls[this.urlIndex];
   }
 
   get currentPhase(): SignalingPhase {
@@ -173,7 +199,7 @@ export class SignalingClient {
     this.setPhase("connecting");
     let socket: SignalingSocket;
     try {
-      socket = this.openSocket(this.deps.url);
+      socket = this.openSocket(this.currentUrl());
     } catch (error) {
       this.failAndRetry(`시그널링 서버에 연결할 수 없습니다: ${String(error)}`);
       return;
@@ -330,6 +356,10 @@ export class SignalingClient {
     }
     const delay = BACKOFF_MS[Math.min(this.attempt, BACKOFF_MS.length - 1)];
     this.attempt += 1;
+    // Advance to the next address on every retry. A host that is simply gone
+    // would otherwise hold the desktop offline forever while another address
+    // in the list was answering the whole time.
+    this.urlIndex = (this.urlIndex + 1) % this.urls.length;
     this.setPhase("backoff", { error: reason });
     this.deps.log("info", "mobile signaling reconnecting", { reason, delay, attempt: this.attempt });
     this.reconnectTimer = this.setTimer(() => this.connect(), delay);
