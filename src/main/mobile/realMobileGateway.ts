@@ -370,7 +370,11 @@ export class RealMobileGateway implements MobileGateway {
           this.deps.log("warn", "mobile gateway: unknown relay kind", { kind });
       }
     } catch (error) {
-      this.deps.log("error", "mobile gateway: relay handling failed", { from, kind, error: String(error) });
+      const reason = error instanceof Error ? error.message : String(error);
+      this.deps.log("error", "mobile gateway: relay handling failed", { from, kind, error: reason });
+      // Tell the peer why. Without this the phone sees only a 45s ICE timeout
+      // with no cause, and a real device has no access to the desktop log.
+      this.sendSetupFailure(device, sessionIdOf(payload), `${kind} 처리 실패: ${reason}`);
     }
   }
 
@@ -416,6 +420,7 @@ export class RealMobileGateway implements MobileGateway {
       identity: store.identity,
       peerSigPk: fromB64(device.sigPk),
       log: this.deps.log,
+      loadNative: this.deps.loadWebrtcModule as never,
       sendSdp: (payload) => this.sendRelay(device, "answer", payload as unknown as Record<string, unknown>),
       sendIce: (payload) => this.sendRelay(device, "ice", payload as unknown as Record<string, unknown>),
     });
@@ -489,6 +494,19 @@ export class RealMobileGateway implements MobileGateway {
 
   private onIce(payload: { sessionId: string }): void {
     this.sessions.get(payload.sessionId)?.transport.addRemoteCandidate(payload as never);
+  }
+
+  /**
+   * Reports a session-setup failure to the peer as a `bye` (01 §3.3). Best
+   * effort: if even this cannot be sent the cause is already logged, and
+   * throwing here would replace one silent failure with another.
+   */
+  private sendSetupFailure(device: TrustedDevice, sessionId: string, reason: string): void {
+    try {
+      this.sendRelay(device, "bye", { sessionId, reason });
+    } catch (error) {
+      this.deps.log("warn", "mobile gateway: could not report the failure to the peer", { error: String(error) });
+    }
   }
 
   private sendRelay(device: TrustedDevice, kind: string, payload: Record<string, unknown>): void {
@@ -589,6 +607,12 @@ function idlePairing(): PairingState {
     peerDeviceId: undefined,
     error: undefined,
   };
+}
+
+/** Best-effort sessionId from a payload whose handling threw before validation. */
+function sessionIdOf(payload: unknown): string {
+  const value = (payload as { sessionId?: unknown } | null)?.sessionId;
+  return typeof value === "string" ? value : "";
 }
 
 /** `wss://host:port/path` → `host:port`, which is what the QR carries. */

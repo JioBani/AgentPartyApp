@@ -47,6 +47,12 @@ const bundlePath = path.join(qaTempDir(), "mobileGatewayCli.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
 const { createMobileGateway } = await import(pathToFileURL(bundlePath).href);
 
+// The pipe is bundled to ESM here, where the external `require("node-datachannel")`
+// esbuild leaves in place fails with "Dynamic require ... is not supported".
+// The module is loaded properly once and injected instead.
+const ndcModule = await import("node-datachannel");
+const loadWebrtcModule = () => ndcModule.default ?? ndcModule;
+
 mkdirSync(dataDir, { recursive: true });
 
 /**
@@ -89,6 +95,7 @@ const gateway = createMobileGateway({
     writeSettings: (next) => { settings = next; },
     defaultDeviceName: deviceName,
     appVersion: "cli",
+    loadWebrtcModule,
   },
 });
 

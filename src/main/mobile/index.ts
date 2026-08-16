@@ -46,6 +46,14 @@ export interface MobileGatewayDeps {
   defaultDeviceName: string;
   /** App version reported in `sys.info`. */
   appVersion: string;
+  /**
+   * Supplies the `node-datachannel` module. Electron main is CommonJS, where
+   * the pipe requires it itself, so this is normally omitted. A host that
+   * bundles the pipe to ESM MUST provide it: an external `require` left in ESM
+   * output fails with "Dynamic require ... is not supported", which looks like
+   * a missing install but is not.
+   */
+  loadWebrtcModule?: () => unknown;
 }
 
 /**

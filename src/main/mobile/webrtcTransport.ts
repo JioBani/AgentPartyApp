@@ -303,18 +303,25 @@ export class WebrtcTransport implements Transport {
 }
 
 /**
- * `node-datachannel` is an optional dependency: it is a native module and only
- * the mobile pipe needs it. A missing module is reported, never worked around —
+ * `node-datachannel` is an optional NATIVE dependency, so it is required at
+ * runtime rather than bundled. A failure here is reported, never worked around —
  * there is no non-WebRTC path that would silently take over (00 §원칙 2).
+ *
+ * The Electron main process is compiled to CommonJS, where this `require` is
+ * the correct call. A consumer that bundles this module to ESM must inject
+ * {@link WebrtcTransportDeps.loadNative} instead: esbuild leaves an external
+ * `require` in place and ESM rejects it with "Dynamic require ... is not
+ * supported", which has nothing to do with the module being installed.
  */
 function loadNodeDataChannel(): NativeModule {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require("node-datachannel") as NativeModule;
   } catch (error) {
-    throw new TransportUnavailableError(
-      "모바일 직결에 필요한 node-datachannel 모듈을 불러올 수 없습니다. " +
-        `'npm install'로 선택 의존성을 설치하세요. (${String(error)})`,
-    );
+    const detail = String(error);
+    const cause = detail.includes("Dynamic require")
+      ? "이 모듈이 ESM으로 번들되어 런타임 require를 쓸 수 없습니다. 호출 측에서 loadNative를 주입하세요."
+      : "선택 의존성이 설치되지 않았을 수 있습니다. npm install로 네이티브 모듈을 설치하세요.";
+    throw new TransportUnavailableError(`모바일 직결에 필요한 node-datachannel을 불러올 수 없습니다. ${cause} (${detail})`);
   }
 }
