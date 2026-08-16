@@ -6,7 +6,8 @@ import { log } from "./logger";
 import type { MobileGateway, MobileGatewayStartOptions, MockControls, MockMobileGateway, RequestContext, SnapshotContext } from "./mobile";
 
 export interface MobileLinkDeps {
-  /** The pipe. Built by `createMobileGateway` in main.ts (mock until M1). */
+  /** The pipe. Built by `createMobileGateway` in main.ts — real unless a QA run
+   *  asks for the mock with `AGENTPARTY_MOBILE_PIPE=mock`. */
   gateway: MobileGateway;
   /** Workspace a phone request falls back to when it names none. */
   defaultWorkspace: () => string;

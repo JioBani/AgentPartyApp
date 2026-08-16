@@ -6,15 +6,16 @@
  * discovers it through the per-workspace instance file, and drives the whole
  * `/api/mobile/*` surface plus the phone side of the link.
  *
- * SCOPE, stated plainly: the pipe underneath is desktop-pipe's MOCK gateway
- * (`createMobileGateway({implementation:"mock"})`), because the real one does
- * not exist yet — the factory throws for `"real"` rather than pretending. So
- * this proves everything desktop-app owns: pairing/device/session/diagnostics
+ * SCOPE, stated plainly: this run asks for the MOCK gateway deliberately — the
+ * real one now ships and is what the app uses by default, but binding it here
+ * would make an offline test depend on a signalling server and a phone.
+ *
+ * So this proves everything desktop-app owns: pairing/device/session/diagnostics
  * endpoints, the capability table being published to the phone, one handler
  * serving both transports, workspace-scoped event delivery, and the resume
- * snapshot. It does NOT prove signaling, WebRTC, or encryption. The M1 product
- * E2E (real phone or the interop client, real `sys.ping` round trip) is a
- * separate run that lands with the real gateway.
+ * snapshot. It does NOT prove signaling, WebRTC, or encryption — for those see
+ * scripts/e2e-mobile-link-device.mjs (real pipe, real phone) and
+ * scripts/e2e-mobile-device.mjs (the product E2E, real AgentPartyMobile app).
  *
  * Run: node scripts/e2e-mobile-link.mjs   (after `npm run build`)
  *

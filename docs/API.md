@@ -2480,10 +2480,21 @@ capabilities listed elsewhere in this document by their `<domain>.<verb>` names
 — `GET /api/spec` → `methods` is the authoritative list for this build, and
 `AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
 
-The endpoints below manage the link itself. Until the real pipe ships
-(desktop-pipe M1) the app runs the in-memory **mock** gateway: pairing, status
-and events behave exactly as specified, but no socket is opened. `GET
-/api/mobile/status` → `running` and `signaling` report which is live.
+The endpoints below manage the link itself. The app runs the **real** gateway by
+default: it opens a signalling socket and speaks WebRTC to a phone. The
+in-memory mock is an explicit QA opt-in, selected only by
+`AGENTPARTY_MOBILE_PIPE=mock`, and it opens no socket.
+
+There is no fallback between them. If the real gateway fails to start, the link
+stays down and the error is reported — it does not quietly become the mock,
+because a QA run that believed it was exercising the real pipe would prove
+nothing.
+
+`GET /api/mobile/status` tells you which state you are in: `running` is whether
+a gateway is up at all, and `signaling` is that gateway's own connection to the
+signalling server (`connected`, `backoff`, `disabled`, …). The mock reports
+`running` without ever reaching a server, so `signaling` is the field that
+distinguishes a real link from a simulated one.
 
 In a headless engine process (a WSL distro's engine server) these endpoints
 fail with an explicit message rather than reporting an empty device list —
