@@ -261,7 +261,31 @@ gateway.status$.subscribe((status) => {
 await gateway.start(pairTtlMinutes > 0 ? { pairingTtlMs: pairTtlMinutes * 60_000 } : {});
 emitEvent({ event: "started", deviceId: gateway.getStatus().deviceId, signalingUrl });
 if (argv.includes("--pair")) {
+  // Wait for signaling before minting the QR. The gateway refuses to issue one
+  // against a host that has never answered, because the phone STORES the `s=`
+  // address in its trust record — pairing against a dead server is permanent,
+  // not retryable. Opening the QR the instant start() returned used to race
+  // that connection.
+  await waitForSignaling();
   await openPairing();
+}
+
+async function waitForSignaling(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { signaling, signalingError } = gateway.getStatus();
+    if (signaling === "connected") {
+      return;
+    }
+    if (signaling === "failed") {
+      throw new Error(`signaling failed before a QR could be issued: ${signalingError ?? "no reason given"}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(
+    `signaling did not connect within ${timeoutMs / 1000}s (${signalingUrl}); ` +
+      "not issuing a QR, because the phone would store this address permanently",
+  );
 }
 
 server.listen(httpPort, "127.0.0.1", () => {

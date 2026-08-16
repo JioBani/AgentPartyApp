@@ -89,6 +89,16 @@ export class RealMobileGateway implements MobileGateway {
   private settings: MobileSettings;
   private signalingPhase: SignalingPhase = "idle";
   private signalingError: string | undefined;
+  /**
+   * True once signaling has authenticated at least once against the CURRENT
+   * url. Distinct from `signalingPhase`, which only says where the connection
+   * is now: a QR opened during a brief drop is fine because `reregister()`
+   * re-registers it on reconnect, whereas one opened against a host that has
+   * never answered cannot be.
+   */
+  private signalingEverConnected = false;
+  /** Retained so a settings-driven restart does not discard the run's overrides. */
+  private startOptions: MobileGatewayStartOptions = {};
   private lastDiagnostics: NatDiagnostics | undefined;
   private startPromise: Promise<void> | undefined;
   private readonly bootId = randomUUID();
@@ -124,6 +134,8 @@ export class RealMobileGateway implements MobileGateway {
   }
 
   private async doStart(options: MobileGatewayStartOptions): Promise<void> {
+    this.startOptions = options;
+    this.signalingEverConnected = false;
     const identityStore = await IdentityStore.open({
       userDataPath: this.deps.userDataPath,
       secretCipher: this.deps.secretCipher,
@@ -191,6 +203,9 @@ export class RealMobileGateway implements MobileGateway {
       onPairClosed: (tokenHash, reason) => this.pairingService?.handlePairClosed(tokenHash, reason),
       onPhaseChange: (phase, detail) => {
         const reconnected = phase === "connected" && this.signalingPhase !== "connected";
+        if (phase === "connected") {
+          this.signalingEverConnected = true;
+        }
         this.signalingPhase = phase;
         this.signalingError = detail.error;
         if (reconnected) {
@@ -273,6 +288,7 @@ export class RealMobileGateway implements MobileGateway {
     return {
     openQr: async (): Promise<PairingSession> => {
       const service = this.requirePairing();
+      this.requireSignalingReachable();
       const opened = service.open();
       const codeStream = new MutableValueStream<string>("");
       const unsubscribe = this.pairingStream.subscribe((state) => codeStream.set(state.code ?? ""));
@@ -382,9 +398,20 @@ export class RealMobileGateway implements MobileGateway {
     const restart =
       previous.enabled !== this.settings.enabled || previous.signalingUrl !== this.settings.signalingUrl;
     if (restart) {
+      // The run's start options must survive a settings-driven restart. Calling
+      // start() bare dropped them, so toggling `enabled` silently moved a QA
+      // run off its `--signaling` target and onto the persisted URL — the phone
+      // then paired with a different server than the one under test.
+      //
+      // An explicit `signalingUrl` patch is the one thing that DOES override
+      // the override: the caller just asked for that URL by name.
+      const next = { ...this.startOptions };
+      if (patch.signalingUrl !== undefined) {
+        delete next.signalingUrl;
+      }
       await this.stop();
       if (this.settings.enabled) {
-        await this.start();
+        await this.start(next);
       }
     }
     this.publish();
@@ -679,6 +706,37 @@ export class RealMobileGateway implements MobileGateway {
     return this.pairingService;
   }
 
+  /**
+   * Refuses to mint a QR against a signaling host that has never answered.
+   *
+   * The QR carries `s=` (01 §2.1) and the phone STORES it in its trust record,
+   * so this is not a retryable failure — a device paired now keeps the dead
+   * address even after the desktop corrects its own setting, and the only cure
+   * is unpairing and starting over. The shipped default resolves to nothing,
+   * so a first-time user would otherwise walk straight into that.
+   *
+   * A momentary drop after a successful connection is deliberately NOT blocked:
+   * `PairingService.reregister()` re-registers an open QR when signaling comes
+   * back, so that window is genuinely recoverable and refusing it would only
+   * make the UI feel broken.
+   */
+  /** The signaling URL this run is actually using: the override, else settings. */
+  private effectiveSignalingUrl(): string {
+    return this.startOptions.signalingUrl ?? this.settings.signalingUrl;
+  }
+
+  private requireSignalingReachable(): void {
+    if (this.signalingEverConnected) {
+      return;
+    }
+    const url = this.effectiveSignalingUrl();
+    throw new Error(
+      `시그널링 서버(${url})에 아직 한 번도 연결되지 않아 QR을 발급할 수 없습니다. ` +
+        "지금 발급하면 폰이 이 주소를 신뢰 기록에 저장해, 나중에 주소를 고쳐도 계속 연결하지 못합니다. " +
+        "서버 주소를 확인한 뒤 다시 시도하세요.",
+    );
+  }
+
   private buildStatus(): GatewayStatus {
     const window = this.eventBridge?.window() ?? { seq: 0, minSeq: 0, maxSeq: 0, count: 0 };
     return {
@@ -687,7 +745,10 @@ export class RealMobileGateway implements MobileGateway {
       deviceId: this.identityStore?.deviceId ?? "",
       deviceName: this.settings.deviceName,
       signaling: this.signalingPhase === "idle" ? "disabled" : this.signalingPhase,
-      signalingUrl: this.settings.signalingUrl,
+      // The URL actually in use, not the persisted one. During a QA override
+      // these differ, and reporting the setting made the status screen name a
+      // server the pipe was not talking to.
+      signalingUrl: this.effectiveSignalingUrl(),
       signalingError: this.signalingError,
       sessions: [...this.sessions.values()].map((session) => this.sessionStatus(session)),
       trustedDeviceCount: this.identityStore?.devices().length ?? 0,

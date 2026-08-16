@@ -251,7 +251,7 @@ gateway.onRequest("member.send", async (params) => {
 
 | 엔드포인트 | 게이트웨이 호출 |
 |---|---|
-| `POST /api/mobile/pair/open` | `pairing.openQr()` → `{ qr, expiresAt }` |
+| `POST /api/mobile/pair/open` | `pairing.openQr()` → `{ qr, expiresAt }`. **시그널링에 한 번도 연결된 적 없으면 throw** — 아래 참고 |
 | `POST /api/mobile/pair/confirm` | `pairing.confirm()` |
 | `POST /api/mobile/pair/cancel` | `pairing.cancel()` |
 | `GET /api/mobile/status` | `getStatus()` — 동기, 페어링 상태(`phase`, `code`)까지 포함 |
@@ -260,6 +260,19 @@ gateway.onRequest("member.send", async (params) => {
 | `POST /api/mobile/devices/:id/rename` | `pairing.rename(id, name)` |
 | `POST /api/mobile/sessions/:id/disconnect` | `disconnect(id)` |
 | `GET /api/mobile/diagnostics` | `diagnostics()` — STUN 프로브라 **수 초 걸린다** |
+
+### QR 발급이 거부되는 경우
+
+`openQr()`은 시그널링에 **한 번도 연결된 적이 없으면** 오류를 던진다. 재시도로 풀리는 실패가
+아니라서다 — QR의 `s=`는 폰의 신뢰 레코드에 **저장**되므로, 지금 페어링한 기기는 데스크톱이
+나중에 주소를 고쳐도 죽은 주소를 계속 들고 있고 해제·재페어링 말고는 방법이 없다. 기본값
+`sig.agentparty.app`은 아직 실제 서버가 아니므로 첫 실행은 반드시 이 경로를 밟는다.
+
+UI는 이 오류를 "서버 주소를 확인하세요"로 그리고, 설정 화면으로 보내면 된다.
+
+**한 번 연결된 뒤의 일시적 끊김은 막지 않는다.** 그 창에서 연 QR은 재연결 시
+`reregister()`가 서버에 다시 등록하므로 실제로 복구되고, 막으면 UI만 고장 난 것처럼 보인다.
+`getStatus().signaling`으로 구분할 수 있다.
 | `GET`/`POST /api/mobile/settings` | `getSettings()` / `updateSettings(patch)` |
 
 QA 흐름: `POST /api/mobile/pair/open`으로 QR 문자열을 얻어 폰(에뮬레이터) 자동화 API에 주입 →

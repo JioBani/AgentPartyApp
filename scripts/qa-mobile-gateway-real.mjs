@@ -171,6 +171,63 @@ console.log("RealMobileGateway assertions:");
   assert(JSON.stringify(g.instance.status$.current) === JSON.stringify(g.instance.getStatus()), "status$ and getStatus agree");
 }
 
+// --- a QR is not minted against a server that has never answered -----------
+{
+  // Reported by desktop-app. The QR carries `s=` and the phone STORES it, so
+  // pairing against an unreachable host is not a retryable failure — the
+  // device keeps the dead address after the desktop fixes its setting. The
+  // shipped default resolves to nothing, so a first run hits this every time.
+  const g = await gateway({ paired: 0 });
+  let threw = "";
+  try { await g.instance.pairing.openQr(); } catch (error) { threw = String(error?.message ?? error); }
+  assert(threw.length > 0, "openQr() is refused while signaling has never connected");
+  assert(
+    threw.includes("신뢰 기록") || threw.includes("연결되지 않"),
+    `and the reason explains the durable consequence, not just "offline" (${threw.slice(0, 50)})`,
+  );
+  assert(
+    g.instance.pairing.state$.current.phase === "idle",
+    "no pairing session is left half-open by the refusal",
+  );
+}
+
+// --- a settings restart keeps the run's start options ----------------------
+{
+  // Reported by desktop-app: updateSettings() restarted with a bare start(),
+  // so toggling `enabled` moved a QA run off its --signaling target onto the
+  // persisted URL, and the phone paired with a different server than the one
+  // under test.
+  const g = await gateway({ paired: 1 });
+  await g.instance.stop();
+  await g.instance.start({ signalingUrl: "wss://override.example/v1/ws", pairingTtlMs: 60_000 });
+  assert(
+    g.instance.getStatus().signalingUrl === "wss://override.example/v1/ws",
+    `the override is in effect (${g.instance.getStatus().signalingUrl})`,
+  );
+
+  // A patch that does not name signalingUrl must not discard it.
+  await g.instance.updateSettings({ deviceName: "Renamed Desktop" });
+  assert(
+    g.instance.getStatus().signalingUrl === "wss://override.example/v1/ws",
+    "an unrelated settings change leaves the override alone",
+  );
+
+  // Toggling `enabled` forces the restart that used to drop it.
+  await g.instance.updateSettings({ enabled: true });
+  assert(
+    g.instance.getStatus().signalingUrl === "wss://override.example/v1/ws",
+    `the override survives the restart that a settings change triggers (${g.instance.getStatus().signalingUrl})`,
+  );
+
+  // But naming the URL explicitly is the caller asking for that one.
+  await g.instance.updateSettings({ signalingUrl: "wss://chosen.example/v1/ws" });
+  assert(
+    g.instance.getStatus().signalingUrl === "wss://chosen.example/v1/ws",
+    `an explicit signalingUrl patch wins over the override (${g.instance.getStatus().signalingUrl})`,
+  );
+  await g.instance.stop();
+}
+
 // --- a QR TTL beyond the protocol default is announced ---------------------
 {
   const g = await gateway({ paired: 1 });

@@ -244,6 +244,27 @@ assert(
       `shared \`${entry.t}\`: junk is caught even in the WRONG direction — shared names cannot hide a field`,
     );
   }
+
+  // Detecting the DIRECTION MISTAKE itself is a different property, and it is
+  // asymmetric (server 0.8.0). Only `relay` is caught both ways. `presence` is
+  // caught only server->client (via `online`); the pair frames only
+  // client->server (via `id`) — and that one depends on the optional `id`
+  // actually being present, since without it the two shapes are identical.
+  //
+  // Pinned because it is the tempting thing to rely on, and it does not hold.
+  // The audit must not lean on a wrong direction announcing itself.
+  const DIRECTION_TELLS = [
+    ["relay", { t: "relay", to: phone.deviceId, kind: "offer", box: P.toB64(new Uint8Array(48).fill(1)) }, true],
+    ["presence", { t: "presence", of: phone.deviceId }, false],
+    ["pair.join", { t: "pair.join", tokenHash: "th-1", blob1: "b1" }, false],
+  ];
+  for (const [name, clientFrame, caughtGoingRight] of DIRECTION_TELLS) {
+    const caught = P.outOfSpecFields(clientFrame, "server").length > 0;
+    assert(
+      caught === caughtGoingRight,
+      `\`${name}\`: a client frame checked as \`server\` is ${caughtGoingRight ? "caught" : "SILENT"} — direction errors do not reliably announce themselves`,
+    );
+  }
 }
 
 // --- the check can fail -----------------------------------------------------
