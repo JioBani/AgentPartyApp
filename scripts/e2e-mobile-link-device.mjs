@@ -171,6 +171,18 @@ async function main() {
       console.log(JSON.stringify(state.body, null, 1));
     }
 
+    // A party.list with nobody in it cannot prove anything about displayStatus —
+    // that is exactly how the assertion below passed on an empty scratch
+    // workspace for several runs.
+    //
+    // Creating a member also STARTS its session, so the status that comes back
+    // is `idle`, off a live session, rather than `not-started`. No turn is sent,
+    // so the harness costs a process and nothing else.
+    console.log("\nfixture:");
+    await post(desktop, "/api/parties", { name: "link-e2e" });
+    const made = await post(desktop, "/api/party/members", { name: "probe", requirement: "displayStatus fixture" });
+    assert(made.status === 200, `a member exists to read a status from (${made.status} ${JSON.stringify(unwrap(made)).slice(0, 120)})`);
+
     console.log("\nmethods over the link:");
     const spaces = await post(PHONE, "/rpc", { method: "workspace.list", params: {} });
     const listed = deepField(spaces.body, "workspaces") || [];
@@ -181,14 +193,32 @@ async function main() {
     const party = await post(PHONE, "/rpc", { method: "party.list", params: { workspacePath: uri } });
     const members = deepField(party.body, "members") || [];
     assert(party.status === 200, `party.list (${party.status})`);
-    assert(members.every((m) => m.displayStatus === undefined || typeof m.displayStatus === "string"),
-      "members carry displayStatus rather than leaving the phone to derive it");
+    // `every` over an empty list is true, so this has to require members first
+    // — otherwise a failed party.list reports the property as satisfied.
+    assert(members.length > 0 && members.every((m) => typeof m.displayStatus === "string"),
+      `members carry displayStatus rather than leaving the phone to derive it (${members.length} members: ${members.map((m) => `${m.name}=${m.displayStatus}`).join(", ")})`);
 
     const approvals = await post(PHONE, "/rpc", { method: "approval.list", params: {} });
     assert(approvals.status === 200, `approval.list is reachable over the link (${approvals.status})`);
     const pending = deepField(approvals.body, "approvals");
     assert(Array.isArray(pending), `…and returns a list (${JSON.stringify(pending)})`);
     assert(typeof deepField(approvals.body, "seq") === "number", `…carrying the baseline seq the phone filters events against (seq=${deepField(approvals.body, "seq")})`);
+
+    // Over HTTP the `:id` path segment fills this field, so the alias cannot be
+    // tested there — only a client coming over the link sends it by name, which
+    // is how a phone reading approval.list and answering one got
+    // "'id' is required" for a request that was entirely well-formed.
+    // The id is deliberately unknown: what is under test is that the parameter
+    // ARRIVES, not that some particular approval resolves.
+    const aliased = await post(PHONE, "/rpc", { method: "approval.respond", params: { requestId: "no-such-approval", behavior: "deny" } });
+    // Asserting the ABSENCE of "'id' is required" would pass on a dead link too
+    // — `rpcTimeout` contains neither string. The echoed id can only come back
+    // from a desktop that actually read the parameter.
+    assert(deepField(aliased.body, "requestId") === "no-such-approval",
+      `approval.respond takes requestId, the name every response gives it (${JSON.stringify(unwrap(aliased)).slice(0, 120)})`);
+
+    const nameless = await post(PHONE, "/rpc", { method: "approval.respond", params: { behavior: "deny" } });
+    assert(/'id' is required/.test(JSON.stringify(unwrap(nameless))), "…while omitting it entirely is still refused");
 
     const bogus = await post(PHONE, "/rpc", { method: "definitely.not.a.method", params: {} });
     const code = unwrap(bogus)?.code || unwrap(bogus)?.error?.code || JSON.stringify(unwrap(bogus));
