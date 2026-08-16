@@ -30,13 +30,13 @@ esbuild로 파이프 모듈을 번들할 때는 이 패키지를 **`external`로
 | `MockMobileGateway` (폰 시뮬레이터 포함) | **사용 가능** (`src/main/mobile/mockMobileGateway.ts`) |
 | 공유 타입·상수·사유 코드 | **사용 가능** (`src/shared/mobileProtocol.ts`) |
 | 실물 게이트웨이 (시그널링·WebRTC·E2E·RPC) | **사용 가능** — `createMobileGateway({implementation:"real", deps})` |
-| 진단(`diagnostics()`) · 푸시(`push.notify()`) | 미구현 — 호출하면 **명시적으로 던진다**(M3/M5) |
+| 진단(`diagnostics()`) | **사용 가능** — 실제 STUN 프로브로 04 사유 코드를 판정 |
+| 푸시(`push.notify()`) | 미구현 — 호출하면 **명시적으로 던진다**(M5) |
 
 목이 실물인 척하는 폴백은 없다. `deps` 없이 `"real"`을 요청하면 예외로 실패한다.
 아직 없는 기능(진단·푸시)도 그럴듯한 값을 지어내지 않고 던진다 (AGENTS.md: 실패 은폐 금지).
 
-`diagnostics()`를 호출하는 UI/라우트를 지금 붙이면 예외를 보게 된다. M3까지는 그 버튼을
-비활성으로 두거나 예외 메시지를 그대로 표시하는 편이 낫다.
+`push.notify()`를 호출하는 경로를 지금 붙이면 예외를 보게 된다. M5까지는 비활성으로 두는 편이 낫다.
 
 ## 붙이는 곳 — 총 4군데
 
@@ -244,6 +244,7 @@ node scripts/mobile-gateway-cli.mjs   --signaling ws://127.0.0.1:8080/v1/ws   --
 |---|---|
 | `GET /status` | 게이트웨이 상태 + 설정 + 보안 경고 |
 | `GET /logs` | 최근 200줄 (연결 실패 원인) |
+| `GET /diagnostics` | STUN 프로브·NAT 판정 실측 |
 | `GET /devices` | 신뢰 기기 목록 |
 | `POST /pair/open` | QR 발행 → `{qr, expiresAt}`. **2분 만료라 스캔 직전에 호출** |
 | `POST /pair/confirm` | 코드 일치 확인 후 blob2 발송 |

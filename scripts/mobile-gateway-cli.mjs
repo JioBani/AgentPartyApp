@@ -155,6 +155,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/logs") {
       return json(res, 200, { lines: logLines.slice(-200) });
     }
+    if (req.method === "GET" && url.pathname === "/diagnostics") {
+      return json(res, 200, await gateway.diagnostics());
+    }
     if (req.method === "GET" && url.pathname === "/devices") {
       return json(res, 200, { devices: gateway.pairing.devices() });
     }
@@ -245,7 +248,7 @@ server.listen(httpPort, "127.0.0.1", () => {
   console.log(`  signaling : ${signalingUrl}`);
   console.log(`  deviceId  : ${status.deviceId}`);
   console.log(`  data dir  : ${dataDir}`);
-  console.log("  routes    : GET /status /logs /devices | POST /pair/open /pair/confirm /pair/cancel /emit");
+  console.log("  routes    : GET /status /logs /devices /diagnostics | POST /pair/open /pair/confirm /pair/cancel /emit");
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

@@ -26,6 +26,7 @@ import {
   type TrustedDevice,
   type ValueStream,
 } from "../../shared/mobileProtocol";
+import { NatDiagnosticsProbe } from "./diagnostics";
 import { EventBridge } from "./eventBridge";
 import { IdentityStore } from "./identityStore";
 import type { MobileGatewayDeps } from "./index";
@@ -85,6 +86,7 @@ export class RealMobileGateway implements MobileGateway {
   private lastDiagnostics: NatDiagnostics | undefined;
   private startPromise: Promise<void> | undefined;
   private readonly bootId = randomUUID();
+  private readonly diagnosticsProbe: NatDiagnosticsProbe;
 
   constructor(private readonly deps: MobileGatewayDeps) {
     this.settings = { ...MOBILE_SETTINGS_DEFAULTS, ...deps.readSettings() };
@@ -93,6 +95,7 @@ export class RealMobileGateway implements MobileGateway {
     }
     this.pairingStream = new MutableValueStream<PairingState>(idlePairing());
     this.statusStream = new MutableValueStream<GatewayStatus>(this.buildStatus());
+    this.diagnosticsProbe = new NatDiagnosticsProbe({ log: deps.log });
     this.pairing = this.buildPairingApi();
     this.push = this.buildPushApi();
   }
@@ -307,9 +310,10 @@ export class RealMobileGateway implements MobileGateway {
   }
 
   async diagnostics(): Promise<NatDiagnostics> {
-    // M3 deliverable. Reporting a fabricated "everything is fine" here would be
-    // worse than admitting the probe does not exist yet.
-    throw new Error("모바일 연결 진단은 아직 구현되지 않았습니다 (desktop-pipe M3).");
+    const result = await this.diagnosticsProbe.run();
+    this.lastDiagnostics = result;
+    this.publish();
+    return result;
   }
 
   // -- signaling inbound ----------------------------------------------------
