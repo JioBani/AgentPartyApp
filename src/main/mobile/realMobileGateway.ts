@@ -157,6 +157,16 @@ export class RealMobileGateway implements MobileGateway {
       },
     });
 
+    this.pushClient = new PushClient({
+      identity: identityStore.identity,
+      pushUrl: () => options.pushUrl ?? this.settings.pushUrl,
+      log: this.deps.log,
+    });
+
+    // Built before the disabled check on purpose: it owns no socket, and a
+    // gateway that loaded fine should not report "start() has not completed"
+    // when the app asks it to push.
+
     if (!this.settings.enabled && options.force !== true) {
       // Loaded and ready, but deliberately not dialling out. `running` stays
       // false so the UI does not claim a connection the user turned off.
@@ -164,12 +174,6 @@ export class RealMobileGateway implements MobileGateway {
       this.publish();
       return;
     }
-
-    this.pushClient = new PushClient({
-      identity: identityStore.identity,
-      pushUrl: () => options.pushUrl ?? this.settings.pushUrl,
-      log: this.deps.log,
-    });
 
     this.natMapper = new NatMapper({
       log: this.deps.log,
@@ -358,7 +362,7 @@ export class RealMobileGateway implements MobileGateway {
   // -- status / settings / diagnostics --------------------------------------
 
   getStatus(): GatewayStatus {
-    return this.statusStream.current;
+    return this.buildStatus();
   }
 
   get status$(): ValueStream<GatewayStatus> {
