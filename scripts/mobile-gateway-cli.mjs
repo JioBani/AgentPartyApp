@@ -198,12 +198,26 @@ function readBody(req) {
 
 // The confirmation code appears only after the phone's blob1 verifies; a QA
 // runner needs it to drive the compare-and-confirm step unattended.
+const autoConfirm = argv.includes("--auto-confirm");
+if (autoConfirm) {
+  // 02 §T4 depends on a HUMAN comparing the two codes: that comparison is what
+  // detects a swapped QR or a man-in-the-middle. Auto-confirming removes that
+  // control, so it is opt-in, announced, and must never reach the product UI.
+  console.log("AUTO-CONFIRM ENABLED — the human code comparison (02 §T4) is bypassed. QA only.");
+}
+
 let announcedCode;
 let announcedSessions = "";
 gateway.status$.subscribe((status) => {
   if (status.pairing.code && status.pairing.code !== announcedCode) {
     announcedCode = status.pairing.code;
     emitEvent({ event: "code", code: status.pairing.code, peerName: status.pairing.peerName ?? null });
+    if (autoConfirm) {
+      void gateway.pairing
+        .confirm()
+        .then(() => emitEvent({ event: "confirmed", code: announcedCode, auto: true }))
+        .catch((error) => emitEvent({ event: "confirm_failed", error: String(error?.message ?? error) }));
+    }
   }
   const shape = status.sessions.map((s) => `${s.sessionId}:${s.state}`).join(",");
   if (shape !== announcedSessions) {
