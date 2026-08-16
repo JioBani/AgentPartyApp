@@ -48,6 +48,31 @@ export interface PartyCreateMemberRequest {
   cursorPolicy?: CursorPolicy;
 }
 
+/**
+ * Narrowing for {@link PartyBridge.listModels}. Every field is optional and
+ * every field is a FILTER — never a page cursor — so a caller can always widen
+ * back to the whole catalog by dropping arguments.
+ *
+ * With no field set the tool answers with a compact INDEX (one row per distinct
+ * model) instead of the full route table: the table is a harness×provider cross
+ * product, so most of its ~120 rows are the same handful of models repeated,
+ * and dumping it costs ~10k tokens to answer "which models exist".
+ *
+ * The index still lists **every** model, and names the harnesses a model cannot
+ * run on rather than dropping them, because the failure mode that matters here
+ * is a caller concluding a model does not exist when it does.
+ */
+export interface PartyModelQuery {
+  /** Harness id (`claude-code` | `codex` | `cursor` | `grok`). */
+  harness?: string;
+  /** Provider id (`anthropic` | `openai` | `openrouter` | `xai` | `cursor` | `deepseek`). */
+  provider?: string;
+  /** Case-insensitive substring matched against both the model id and its label. */
+  query?: string;
+  /** Include routes that cannot currently be used. Off by default; the count is always reported. */
+  includeUnavailable?: boolean;
+}
+
 export interface PartyPermissionRequest {
   permissionMode?: string;
   codexPolicy?: CodexPolicy;
@@ -97,8 +122,10 @@ export interface PartyBridge {
   partyGateSet(patch: PartyGateGlobalPatch): Promise<PartyToolResult>;
   /** List the caller's party members and their status. */
   list(): Promise<PartyToolResult>;
-  /** Discover available harnesses + models + per-model reasoning options. */
-  listModels(): Promise<PartyToolResult>;
+  /** Discover available harnesses + models + per-model reasoning options.
+   *  With no query this answers with a compact index; any filter switches to
+   *  full detail rows for the matches. See {@link PartyModelQuery}. */
+  listModels(query?: PartyModelQuery): Promise<PartyToolResult>;
   /** Turn state of one member (or, with no name, every member) in the caller's party. */
   status(name?: string): Promise<PartyToolResult>;
   /** Stop a member's in-flight turn; target "all" stops every member except the caller. */
@@ -136,7 +163,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
   list: "List your party's members and their current status.",
-  "list-models": "Discover available harnesses, models, and reasoning options for member-create.",
+  "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
   "discord-connect": "Bridge YOURSELF to Discord so the user can read your reports and reply from a phone or another PC. Creates (or reuses) a text channel named after you in the user's server. Call this once, before discord-send. Only affects you — you cannot bridge another member.",
@@ -271,7 +298,16 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     additionalProperties: false,
   },
   list: { type: "object", properties: {}, additionalProperties: false },
-  "list-models": { type: "object", properties: {}, additionalProperties: false },
+  "list-models": {
+    type: "object",
+    properties: {
+      harness: { type: "string", description: "Only models runnable on this harness: claude-code | codex | cursor | grok." },
+      provider: { type: "string", description: "Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek." },
+      query: { type: "string", description: "Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"." },
+      includeUnavailable: { type: "boolean", description: "Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way." },
+    },
+    additionalProperties: false,
+  },
   "member-status": {
     type: "object",
     properties: {
@@ -466,7 +502,12 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
     case "list":
       return bridge.list();
     case "list-models":
-      return bridge.listModels();
+      return bridge.listModels({
+        harness: typeof input.harness === "string" && input.harness ? input.harness : undefined,
+        provider: typeof input.provider === "string" && input.provider ? input.provider : undefined,
+        query: typeof input.query === "string" && input.query ? input.query : undefined,
+        includeUnavailable: input.includeUnavailable === true,
+      });
     case "member-status":
       return bridge.status(typeof input.name === "string" && input.name ? input.name : undefined);
     case "interrupt": {
@@ -696,9 +737,14 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
     tool(
       "list-models",
-      "Discover the harnesses and models available for member-create, including each model's reasoning options, performance, cost, and context window.",
-      {},
-      async () => envelope(await bridge.listModels()),
+      partyDynamicToolDescriptions["list-models"],
+      {
+        harness: z.string().optional().describe("Only models runnable on this harness: claude-code | codex | cursor | grok."),
+        provider: z.string().optional().describe("Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek."),
+        query: z.string().optional().describe("Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"."),
+        includeUnavailable: z.boolean().optional().describe("Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way."),
+      },
+      async (args: PartyModelQuery) => envelope(await bridge.listModels(args)),
     ),
     tool(
       "member-status",

@@ -988,6 +988,47 @@ Cross-routing keeps the chosen harness process intact:
   error — no fallback. Image attachments are forwarded as ACP image blocks
   (verified live).
 
+### Party tool `list-models` (agent-facing)
+
+The in-process party tool that serves the same catalog to a member session. It
+is **not** `GET /api/models` in miniature: that endpoint feeds the UI, which
+renders every route, while an agent only needs enough to fill in
+`member-create`. The route table is a harness×provider cross product — ~120 rows
+covering ~44 distinct models — so returning it whole cost **~9,700 tokens** to
+answer "which models exist".
+
+Two shapes now share the tool, selected by whether any filter is present:
+
+| Call | Shape | Measured |
+|---|---|---|
+| no arguments | **index** — one row per distinct model | ~2,300 tokens |
+| `{harness}` / `{provider}` / `{query}` | **detail** — full rows for the matches | ~400–500 tokens |
+
+```jsonc
+// index row; `ids` appears only for harnesses whose id differs from the label
+{ "label": "Grok 4.5", "harness": ["claude-code", "cursor"],
+  "ids": { "codex": "x-ai/grok-4.5" }, "context": "500K",
+  "unavailableOn": ["codex"] }
+```
+
+⚠️ **The invariant is that an empty answer never means "no such model".** The
+catalog is the thing an agent reasons about when picking a member's model, so a
+response that under-reports it is worse than a large one:
+
+- The index lists **every** model. A model that cannot run on a harness appears
+  under `unavailableOn` rather than being dropped.
+- A filter that matches nothing is an **error naming what does exist**
+  (`No harness "nope". Available harnesses: codex, claude-code, grok, cursor.`),
+  never `{ models: [] }`.
+- When every match is unavailable, the rows come back anyway, each with
+  `unavailableReason` and a `note` saying so — the model exists, it just cannot
+  run right now.
+- `includeUnavailable: true` widens explicitly; otherwise the omitted count is
+  still reported in `hiddenUnavailable`.
+
+Filters narrow, they never paginate, so dropping arguments always widens back to
+the whole catalog.
+
 ### `GET /api/harnesses/cursor/status`
 
 Runs read-only Cursor CLI diagnostics and returns the discovered installation,
