@@ -1,21 +1,30 @@
 # 디자인 미러 — 앱 UI를 claude.ai/design 으로 그대로 올리기
 
-앱의 **실제 화면**을 claude.ai/design 의 design-system 프로젝트에 옮기는 파이프라인이다.
+앱의 **실제 UI** 를 claude.ai/design 으로 옮기는 파이프라인이다.
 핵심 규칙 하나: **다시 그리지 않는다.** 토큰은 `themes.ts` 에서 생성하고, 스타일시트는
 바이트 그대로 복사하고, 마크업은 실행 중인 앱에서 떠온다.
 
-> 이 프로젝트는 **as built**(구현된 결과의 사본)다. 시안 정본이 아니다.
-> 새 화면을 *디자인*할 때는 기존 핸드오프 흐름(`docs/디자인 핸드오프/`)을 쓰고,
-> 여기는 "지금 앱이 실제로 이렇게 생겼다"를 보여주는 용도로만 갱신한다.
+산출물은 **둘**이고 성격이 다르다.
 
-| 대상 | 값 |
-| --- | --- |
-| 프로젝트 | `AgentParty Design System (as built)` |
-| projectId | `18fbdba3-0e2b-4008-9606-4c6b11063246` |
-| 카드 수 | 59 (Foundations 3 · Workbench 8 · Transcript 4 · Cards 26 · Modals 6 · Screens/Settings 12) |
+| 대상 | 무엇 | id |
+| --- | --- | --- |
+| `AgentParty Design System (as built)` | **디자인 시스템** — 파운데이션 3 + 컴포넌트 28 (변형 + `.prompt.md`) | `18fbdba3-0e2b-4008-9606-4c6b11063246` |
+| `AgentParty Desktop` | **프로젝트** — 그 시스템으로 만들어진 화면 56장 | `8082a168-4a3c-4140-a895-f25ad44aa2c2` |
 
-기존 `# AgentParty UI 디자인`(`f0d5d1fe-…`)은 **일반 프로젝트**라 design-system 카드
-인덱스를 못 만든다(타입은 생성 시 고정). 그래서 새 프로젝트를 만들었다.
+디자인 시스템이 문서화하는 단위는 **컴포넌트와 그 변형, 그리고 언제 쓰는지**다.
+화면은 시스템의 산출물이지 시스템이 아니라서 프로젝트로 뺐다(처음 한 번은 화면만
+잔뜩 올렸다가 "디자인 시스템이 아니라 프로젝트 같다"는 지적을 받았다).
+
+프로젝트 쪽 페이지는 자기 CSS 사본을 갖지 않고 `_ds/<시스템>/…` 을 링크한다 — 그래야
+시스템이 움직이면 화면도 같이 움직이고, 토큰 사본이 둘로 갈라지지 않는다.
+
+> 둘 다 **as built**(구현된 결과)다. 시안 정본이 아니다. 새 화면을 *디자인* 할 때는
+> 기존 핸드오프 흐름(`docs/디자인 핸드오프/`)을 쓰고, 여기는 "지금 앱이 실제로 이렇게
+> 생겼다"를 보여주는 용도로만 갱신한다.
+
+일반 프로젝트는 DesignSync 로 **만들 수 없다**(`create_project` 는 design-system 타입만
+만든다). `AgentParty Desktop` 은 사용자가 claude.ai/design 에서 만들고 id 를 넘겨줬다.
+기존 `# AgentParty UI 디자인`(`f0d5d1fe-…`)도 일반 프로젝트라 카드 인덱스를 못 만든다.
 
 ## 왜 생성·캡처인가
 
@@ -24,17 +33,22 @@
 `warning-*`, `compact-zone`, `live-bd`, `shadow-strong` 이 늘었다. 그 사본은 이미
 앱과 다른 것을 설명하고 있었다.
 
-## 세 단계
+## 한 사이클
 
 ```bash
 npm run build                                # dist/ 가 최신이어야 캡처가 현재 UI를 뜬다
 node scripts/build-design-bundle.mjs         # 토큰 생성 + 스타일시트/폰트 복사 + Foundations 카드
-node scripts/capture-design-surfaces.mjs     # 실제 앱을 띄워 화면·컴포넌트 마크업 캡처
-node scripts/verify-design-bundle.mjs        # (electron 으로) 모든 페이지가 단독으로 렌더되는지 실측 + 카드 크기 측정
-node scripts/build-design-manifest.mjs       # _ds_manifest.json 생성 (이게 없으면 창이 비어 보인다)
+node scripts/capture-design-surfaces.mjs     # 화면·모달 (프로젝트 쪽)
+node scripts/capture-design-components.mjs   # 컴포넌트 변형 카드 + prompt.md (시스템 쪽)
+node scripts/split-design-bundle.mjs         # 시스템 / 프로젝트 두 벌로 가른다
+node scripts/verify-design-bundle.mjs                    # 시스템 페이지 실측 + 카드 크기 측정
+node scripts/verify-design-bundle.mjs --dir design-project  # 프로젝트 페이지도 같은 잣대로
+node scripts/build-design-manifest.mjs       # _ds_manifest.json (없으면 창이 비어 보인다)
+node scripts/link-design-project.mjs         # 화면들이 _ds/<시스템>/ 을 링크하게 바꾼다
 ```
 
-산출물은 `build/design-bundle/` (git 에 넣지 않는다 — 언제든 재생성된다).
+산출물은 `build/design-bundle/`(시스템)과 `build/design-project/`(화면). git 에는
+넣지 않는다 — 언제든 재생성되고, 절반이 복사된 폰트다.
 
 ### 1. `build-design-bundle.mjs`
 - `src/renderer/theme/themes.ts` 를 esbuild 로 컴파일해 **import** 한 뒤
@@ -63,6 +77,17 @@ QA 모드로 진짜 앱을 띄우고(모의 하네스 — 모델 호출 없음),
 (토큰 로드), body 폰트가 Maplestory 인지(woff2 로드), 내용이 실제 크기로 그려지는지,
 첫 줄에 `@dsCard` 마커가 있는지. `--shots` 로 PNG 도 남기고, 잰 크기를 `_sizes.json`
 으로 내보낸다(카드 viewport 의 근거).
+
+### 3b. `capture-design-components.mjs` + `design-components.mjs`
+디자인 시스템의 본체. `design-components.mjs` 가 **인벤토리**(컴포넌트 28개와 각각의
+변형·선택자·필요한 상태)이고, 드라이버는 상태(scene)별로 앱을 **한 번씩만** 몰아넣은 뒤
+그 상태에서 필요한 표본을 전부 떠서 카드 한 장으로 합친다.
+
+표본은 `context`(CSS 가 필요로 하는 가장 가까운 조상)까지만 감싼다 — 여기까지가
+`.wb-tabstrip .wb-tab` 같은 후손 선택자를 살리면서도 28px 짜리 필이 900px 카드가 되지
+않게 하는 선이다.
+
+QA 갤러리 26장은 여기서 **컴포넌트 4개(승인·질문·압축·환경)의 변형**으로 접힌다.
 
 ### 4. `build-design-manifest.mjs`
 `_ds_manifest.json` 을 만든다. **Design System 창은 이 파일을 읽는다** — 파일을 다

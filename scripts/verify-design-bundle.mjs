@@ -16,7 +16,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BUNDLE_DIR = path.join(root, "build", "design-bundle");
+// Either bundle: the design system by default, or the screens project with
+// `--dir design-project`. Both are made of the same kind of page and must clear
+// the same bar before anything is uploaded.
+const dirArg = process.argv.indexOf("--dir");
+const BUNDLE_DIR = path.join(root, "build", dirArg > 0 ? process.argv[dirArg + 1] : "design-bundle");
 const SHOT_DIR = path.join(root, "build", "design-shots");
 const wantShots = process.argv.includes("--shots");
 

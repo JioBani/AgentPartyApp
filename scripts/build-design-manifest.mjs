@@ -22,7 +22,7 @@ const BUNDLE_DIR = path.join(root, "build", "design-bundle");
 const PROJECT_ID = process.env.DESIGN_PROJECT_ID || "18fbdba3-0e2b-4008-9606-4c6b11063246";
 
 /** Order the pane shows groups in: foundations first, then the app outward. */
-const GROUP_ORDER = ["Foundations", "Screens", "Settings", "Workbench", "Transcript", "Modals", "Cards"];
+const GROUP_ORDER = ["Foundations", "Primitives", "Navigation", "Surfaces", "Blocks", "Composites"];
 
 function pages(dir = BUNDLE_DIR, prefix = "") {
   const found = [];
@@ -79,8 +79,11 @@ function main() {
   const manifest = {
     namespace: `AgentPartyAsBuilt_${PROJECT_ID.slice(0, 6)}`,
     components: [],
+    // Where someone should start reading: the tab is the unit the whole
+    // workbench is built out of, and the panel is the unit a screen is.
     startingPoints: [
-      { name: "Workbench", path: "workbench/app-window.html", previewPath: "workbench/app-window.html", kind: "screen", section: "Screens", subtitle: "멤버 탭 · 다중 패널 · 트랜스크립트", viewport: sizes["workbench/app-window.html"] || "1440x800" },
+      { name: "Member tab", path: "components/navigation/tab.card.html", previewPath: "components/navigation/tab.card.html", kind: "component", section: "Navigation", subtitle: "활성 · 작업 중 · 표시", viewport: sizes["components/navigation/tab.card.html"] || "900x260" },
+      { name: "Panel", path: "components/composites/panel.card.html", previewPath: "components/composites/panel.card.html", kind: "component", section: "Composites", subtitle: "탭 + 툴바 + 대화 + 입력", viewport: sizes["components/composites/panel.card.html"] || "1200x700" },
     ],
     cards,
     templates: [],

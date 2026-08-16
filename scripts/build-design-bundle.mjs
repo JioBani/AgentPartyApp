@@ -186,6 +186,26 @@ const STAGE_CSS = `/* Stage chrome for the design cards — never component styl
 }
 .ds-type-row { display: flex; align-items: baseline; gap: 14px; padding: 7px 0; border-bottom: var(--border-width) solid var(--border-subtle); }
 .ds-type-row:last-child { border-bottom: 0; }
+/* Component cards: one labelled specimen per variant, stacked. The label is the
+   only thing the stage adds — the specimen itself is the app's own markup. */
+.ds-specimens { display: flex; flex-direction: column; gap: 18px; }
+.ds-specimen { display: flex; flex-direction: column; gap: 7px; }
+.ds-specimen-label {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ds-specimen-body {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 12px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
 .ds-type-meta { flex: none; width: 132px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
 `;
 
