@@ -29,6 +29,7 @@ import {
 import { NatDiagnosticsProbe } from "./diagnostics";
 import { EventBridge } from "./eventBridge";
 import { IdentityStore } from "./identityStore";
+import { NatMapper } from "./natMapper";
 import type { MobileGatewayDeps } from "./index";
 import type {
   MobileEventScope,
@@ -87,6 +88,7 @@ export class RealMobileGateway implements MobileGateway {
   private startPromise: Promise<void> | undefined;
   private readonly bootId = randomUUID();
   private readonly diagnosticsProbe: NatDiagnosticsProbe;
+  private natMapper: NatMapper | undefined;
 
   constructor(private readonly deps: MobileGatewayDeps) {
     this.settings = { ...MOBILE_SETTINGS_DEFAULTS, ...deps.readSettings() };
@@ -95,7 +97,10 @@ export class RealMobileGateway implements MobileGateway {
     }
     this.pairingStream = new MutableValueStream<PairingState>(idlePairing());
     this.statusStream = new MutableValueStream<GatewayStatus>(this.buildStatus());
-    this.diagnosticsProbe = new NatDiagnosticsProbe({ log: deps.log });
+    this.diagnosticsProbe = new NatDiagnosticsProbe({
+      log: deps.log,
+      portMapping: () => this.natMapper?.current(),
+    });
     this.pairing = this.buildPairingApi();
     this.push = this.buildPushApi();
   }
@@ -138,6 +143,10 @@ export class RealMobileGateway implements MobileGateway {
       transport: signaling,
       onStateChange: (state) => {
         this.pairingStream.set(state);
+        if (state.phase === "completed") {
+          // The first paired phone is what makes a mapping worth holding.
+          this.refreshNatMapping();
+        }
         this.publish();
       },
     });
@@ -149,6 +158,14 @@ export class RealMobileGateway implements MobileGateway {
       this.publish();
       return;
     }
+
+    this.natMapper = new NatMapper({
+      log: this.deps.log,
+      // Stable per desktop so renewals reuse one router entry instead of
+      // leaving a trail of stale mappings behind.
+      port: mappingPortFor(identityStore.deviceId),
+    });
+    this.refreshNatMapping();
 
     signaling.start({
       onRelay: (from, kind, box) => this.onRelay(from, kind, box),
@@ -169,6 +186,8 @@ export class RealMobileGateway implements MobileGateway {
       this.endSession(sessionId, "데스크톱이 모바일 연결을 종료했습니다.");
     }
     this.pairingService?.cancel();
+    void this.natMapper?.stop();
+    this.natMapper = undefined;
     this.signaling?.stop();
     this.signaling = undefined;
     this.startPromise = undefined;
@@ -246,6 +265,7 @@ export class RealMobileGateway implements MobileGateway {
     revoke: async (deviceId: string): Promise<void> => {
       const store = this.requireIdentity();
       store.revokeDevice(deviceId);
+      this.refreshNatMapping();
       for (const session of [...this.sessions.values()]) {
         if (session.device.deviceId === deviceId) {
           this.endSession(session.sessionId, "이 기기의 연결 권한이 해제되었습니다.");
@@ -516,6 +536,22 @@ export class RealMobileGateway implements MobileGateway {
     this.publish();
   }
 
+  /**
+   * 02 §T6 — a mapping exists only while at least one phone is paired. An open
+   * port on a desktop nothing can connect to is attack surface for no benefit.
+   */
+  private refreshNatMapping(): void {
+    const mapper = this.natMapper;
+    if (!mapper || !this.settings.natMappingEnabled) {
+      return;
+    }
+    if ((this.identityStore?.devices().length ?? 0) > 0) {
+      void mapper.start();
+    } else {
+      void mapper.stop();
+    }
+  }
+
   // -- internals ------------------------------------------------------------
 
   private requireIdentity(): IdentityStore {
@@ -593,6 +629,19 @@ function idlePairing(): PairingState {
     peerDeviceId: undefined,
     error: undefined,
   };
+}
+
+/**
+ * A stable UDP port per desktop identity, in the ephemeral range. Deriving it
+ * from the deviceId keeps renewals on one router entry instead of leaving a
+ * trail of stale mappings after every restart.
+ */
+function mappingPortFor(deviceId: string): number {
+  let hash = 0;
+  for (const char of deviceId) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 16384;
+  }
+  return 49152 + hash;
 }
 
 /** Best-effort sessionId from a payload whose handling threw before validation. */
