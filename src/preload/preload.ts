@@ -114,6 +114,8 @@ const api = {
   setMemberKeepAwake: (name: string, keepAwake: boolean) => ipcRenderer.invoke("party:keepAwake", name, keepAwake),
   sleepPartyMember: (name: string) => ipcRenderer.invoke("party:sleep", name),
   wakePartyMember: (name: string) => ipcRenderer.invoke("party:wake", name),
+  /** Compacts a member's conversation, waking it first if it is asleep. */
+  compactPartyMember: (name: string) => ipcRenderer.invoke("party:compact", name),
   setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
   setMemberOutboundInterrupt: (name: string, outboundInterrupt: boolean | null) => ipcRenderer.invoke("party:outbound-interrupt", name, outboundInterrupt),

@@ -2,6 +2,9 @@ node_modules/
 dist/
 dist-renderer/
 release/
+# Generated design-system bundle + its verification shots (docs/DESIGN_MIRROR.md).
+# Always reproducible from the app itself, and 1.9 MB of it is copied fonts.
+build/
 *.log
 .env
 .env.*

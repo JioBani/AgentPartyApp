@@ -124,6 +124,17 @@ written and a fresh session IS asked. Also pins the honest limit — a fresh
 session can still be stopped by the DIRECTORY gate, whose only remedy is
 `destination: "session"`, so no choice can promise silence.
 
+`node scripts/capture-design-surfaces.mjs` boots the real app offline (QA mode,
+mock harness), drives it through every screen/component state and lifts the
+RENDERED DOM into `build/design-bundle/` for upload to the claude.ai/design
+design-system project — the app documenting itself rather than being re-drawn.
+`node scripts/verify-design-bundle.mjs [--shots]` then opens every produced page
+in Electron and asserts it renders standalone (tokens resolved, the bundled font
+actually loaded, real size, `@dsCard` marker present). See
+[docs/DESIGN_MIRROR.md](DESIGN_MIRROR.md); it is also where the two traps found
+while building it are written down (a party select that reports ok without moving
+the window, and modals that survive Escape and poison the next capture).
+
 `node scripts/qa-approval-metrics.mjs` (or `npm run qa:approval-metrics`)
 MEASURES the approval card against the confirmed design instead of eyeballing a
 capture: it boots the app with `--remote-debugging-port=0`, injects the recorded

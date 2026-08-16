@@ -1316,7 +1316,11 @@ this explicitly discards the Cursor chat ID so the next turn does not pass
 
 ### `POST /api/sessions/:id/compact`
 
-Runs compaction.
+Runs compaction on a LIVE session. A session id that is not running is an error,
+not an `ok` for work that never happened. To compact a member without caring
+whether its process is up — including one released by idle sleep, which has no
+session id at all — use `POST /api/party/members/:name/compact`, which is what
+the UI drives.
 
 ### `POST /api/sessions/:id/model`
 
@@ -1719,6 +1723,22 @@ anything waiting on its queue. Equivalent to `resume`; it exists as its own verb
 so the intent reads correctly against `sleep`. Sending a message to a sleeping
 member does this automatically — the message is queued, the sender gets an
 immediate `ok`, and the wake runs behind it.
+
+### `POST /api/party/members/:name/compact`
+
+Compacts the member's conversation now, **waking it first if it is asleep** — the
+conversation outlives the process that was holding it, so a sleeping member is
+woken for the compaction rather than told it has nothing to compact. This is the
+route the toolbar control and the composer's `/compact` command take.
+
+While a compaction is in flight the member will not be slept by the idle sweep
+and an interrupt-on-send will not stop it; the protection is released when the
+harness reports the outcome (or, if it never does, after 15 minutes with a
+warning in the log — never silently).
+
+```json
+{ "ok": true, "message": "Compacting 'impl' (woken for it).", "member": { "name": "impl", "status": "idle" } }
+```
 
 ### `POST /api/party/members/:name/keep-awake`
 
