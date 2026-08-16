@@ -170,57 +170,132 @@ console.log("NatMapper behaviour:");
   assert((await mapper.start()) === undefined, "a throwing discovery does not propagate");
   assert(mapper.history().some((a) => a.detail.includes("bind refused")), "its cause is kept");
 }
+console.log("\nWire protocols, driven against stand-in routers:");
 
-console.log("\nWire encoders:");
+/** Answers on a local UDP port and keeps exactly what the protocol sent. */
+async function fakeUdpRouter(reply) {
+  const socket = dgram.createSocket("udp4");
+  const received = [];
+  await new Promise((r) => socket.bind(0, "127.0.0.1", r));
+  socket.on("message", (message, remote) => {
+    received.push(Buffer.from(message));
+    const response = reply(Buffer.from(message));
+    if (response) { socket.send(response, remote.port, remote.address); }
+  });
+  return { port: socket.address().port, received, close: () => socket.close() };
+}
 
-// --- NAT-PMP request bytes (RFC 6886 §3.3) ---------------------------------
+// --- NAT-PMP (RFC 6886 §3.3) -----------------------------------------------
 {
-  const server = dgram.createSocket("udp4");
-  let seen;
-  await new Promise((r) => server.bind(0, "127.0.0.1", r));
-  server.on("message", (message, remote) => {
-    seen = Buffer.from(message);
+  const fake = await fakeUdpRouter((request) => {
+    const response = Buffer.alloc(16);
+    response.writeUInt8(0, 0);
+    response.writeUInt8(129, 1);              // 128 + opcode
+    response.writeUInt16BE(0, 2);             // result code: success
+    response.writeUInt32BE(12345, 4);
+    response.writeUInt16BE(request.readUInt16BE(4), 8);
+    response.writeUInt16BE(41000, 10);        // granted external port
+    response.writeUInt32BE(1800, 12);         // granted lifetime
+    return response;
+  });
+  const endpoint = { address: "127.0.0.1", localAddress: "127.0.0.1", pmpPort: fake.port };
+  const result = await PM.natPmpProtocol.map({ internalPort: 51820, lifetimeSeconds: 3600, description: "x" }, endpoint);
+
+  const sent = fake.received[0];
+  assert(sent.length === 12, "the request this protocol actually sends is 12 bytes");
+  assert(sent.readUInt8(0) === 0 && sent.readUInt8(1) === 1, "version 0, opcode 1 (map UDP)");
+  assert(sent.readUInt16BE(4) === 51820, "the internal port sits at offset 4");
+  assert(sent.readUInt16BE(6) === 51820, "the suggested external port at offset 6");
+  assert(sent.readUInt32BE(8) === 3600, "the requested lifetime at offset 8");
+  assert(result.externalPort === 41000, "the port the ROUTER granted is used, not the one requested");
+  assert(result.lifetimeSeconds === 1800, "and the lifetime it granted, not the one requested");
+  assert(result.via === "nat-pmp", "the result names the protocol");
+  fake.close();
+}
+
+// --- NAT-PMP refusal --------------------------------------------------------
+{
+  const fake = await fakeUdpRouter(() => {
     const response = Buffer.alloc(16);
     response.writeUInt8(0, 0);
     response.writeUInt8(129, 1);
-    response.writeUInt16BE(0, 2);
-    response.writeUInt32BE(12345, 4);
-    response.writeUInt16BE(message.readUInt16BE(4), 8);
-    response.writeUInt16BE(41000, 10);
-    response.writeUInt32BE(1800, 12);
-    server.send(response, remote.port, remote.address);
+    response.writeUInt16BE(2, 2);   // 2 = network failure
+    return response;
   });
-  const port = server.address().port;
-  // The protocol talks to port 5351; point it at the double by overriding the
-  // router address with host:port is not supported, so assert the encoder via a
-  // direct send instead.
-  server.close();
-
-  // Encode by calling the protocol against an unreachable host and catching the
-  // timeout is not useful; instead verify the documented field layout.
-  const message = Buffer.alloc(12);
-  message.writeUInt8(0, 0);
-  message.writeUInt8(1, 1);
-  message.writeUInt16BE(0, 2);
-  message.writeUInt16BE(51820, 4);
-  message.writeUInt16BE(51820, 6);
-  message.writeUInt32BE(3600, 8);
-  assert(message.length === 12, "a NAT-PMP map request is 12 bytes");
-  assert(message.readUInt8(0) === 0 && message.readUInt8(1) === 1, "version 0, opcode 1 (map UDP)");
-  assert(seen === undefined, "the standalone encoder check sends nothing");
+  let message = "";
+  try {
+    await PM.natPmpProtocol.map({ internalPort: 51820, lifetimeSeconds: 60, description: "x" },
+      { address: "127.0.0.1", localAddress: "127.0.0.1", pmpPort: fake.port });
+  } catch (error) { message = error.message; }
+  assert(message.includes("result code 2"), "a refusal carries the router's result code, not a generic failure");
+  fake.close();
 }
 
-// --- PCP MAP request bytes (RFC 6887 §11.1) --------------------------------
+// --- PCP (RFC 6887 §11.1) ---------------------------------------------------
 {
-  const buffer = Buffer.alloc(60);
-  buffer.writeUInt8(2, 0);
-  buffer.writeUInt8(1, 1);
-  buffer.writeUInt32BE(3600, 4);
-  assert(buffer.length === 60, "a PCP MAP request is 60 bytes (24-byte header + 36-byte MAP opcode)");
-  assert(buffer.readUInt8(0) === 2, "PCP is version 2 — version 0 would be read as NAT-PMP");
+  const fake = await fakeUdpRouter((request) => {
+    const response = Buffer.alloc(60);
+    response.writeUInt8(2, 0);
+    response.writeUInt8(0x81, 1);
+    response.writeUInt8(0, 3);                 // result code: success
+    response.writeUInt32BE(1200, 4);           // granted lifetime
+    request.copy(response, 24, 24, 36);        // echo the nonce
+    response.writeUInt16BE(request.readUInt16BE(40), 40);
+    response.writeUInt16BE(42000, 42);         // assigned external port
+    response.writeUInt16BE(0xffff, 54);        // v4-mapped marker at 44+10
+    Buffer.from([203, 0, 113, 9]).copy(response, 56);
+    return response;
+  });
+  const result = await PM.pcpProtocol.map({ internalPort: 51820, lifetimeSeconds: 3600, description: "x" },
+    { address: "127.0.0.1", localAddress: "192.168.1.50", pmpPort: fake.port });
+
+  const sent = fake.received[0];
+  assert(sent.length === 60, "the PCP request this protocol sends is 60 bytes");
+  assert(sent.readUInt8(0) === 2, "version 2 — version 0 would be parsed as NAT-PMP");
+  assert(sent.readUInt8(1) === 1, "opcode 1 (MAP)");
+  assert(sent.readUInt32BE(4) === 3600, "the requested lifetime sits at offset 4");
+  assert(sent.readUInt16BE(18) === 0xffff && [...sent.subarray(20, 24)].join(".") === "192.168.1.50",
+    "the client address is v4-mapped into the header");
+  assert(sent.readUInt8(36) === 17, "the protocol byte is 17 (UDP)");
+  assert(sent.readUInt16BE(40) === 51820, "the internal port sits at offset 40");
+  assert(result.externalPort === 42000, "the external port the router assigned is used");
+  assert(result.externalAddress === "203.0.113.9", "the v4-mapped external address is decoded");
+  assert(result.lifetimeSeconds === 1200, "the granted lifetime is used");
+  fake.close();
 }
 
-// --- address helpers round-trip --------------------------------------------
+// --- truncated answers are rejected, never read past their end -------------
+{
+  const shortPmp = await fakeUdpRouter(() => Buffer.alloc(4));
+  let pmpError = "";
+  try {
+    await PM.natPmpProtocol.map({ internalPort: 1, lifetimeSeconds: 1, description: "x" },
+      { address: "127.0.0.1", localAddress: "127.0.0.1", pmpPort: shortPmp.port });
+  } catch (error) { pmpError = error.message; }
+  assert(pmpError.includes("truncated"), "a short NAT-PMP answer is rejected");
+  shortPmp.close();
+
+  const shortPcp = await fakeUdpRouter(() => Buffer.alloc(8));
+  let pcpError = "";
+  try {
+    await PM.pcpProtocol.map({ internalPort: 1, lifetimeSeconds: 1, description: "x" },
+      { address: "127.0.0.1", localAddress: "127.0.0.1", pmpPort: shortPcp.port });
+  } catch (error) { pcpError = error.message; }
+  assert(pcpError.includes("truncated"), "and so is a short PCP answer");
+  shortPcp.close();
+}
+
+// --- a router that never answers -------------------------------------------
+{
+  let message = "";
+  try {
+    await PM.natPmpProtocol.map({ internalPort: 1, lifetimeSeconds: 1, description: "x" },
+      { address: "127.0.0.1", localAddress: "127.0.0.1", pmpPort: 1 });
+  } catch (error) { message = error.message; }
+  assert(/did not answer within/.test(message), "silence times out with a message naming the endpoint");
+}
+
+// --- exports ----------------------------------------------------------------
 {
   assert(typeof PM.discoverRouter === "function", "discovery is exported for the mapper");
   assert(PM.upnpProtocol.via === "upnp" && PM.natPmpProtocol.via === "nat-pmp" && PM.pcpProtocol.via === "pcp",

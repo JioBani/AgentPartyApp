@@ -52,6 +52,11 @@ export interface RouterEndpoint {
   serviceType?: string;
   /** This machine's address on that network, needed by every protocol. */
   localAddress: string;
+  /**
+   * NAT-PMP/PCP port. Defaults to 5351; overridable so the protocols can be
+   * pointed at a stand-in router, and for the rare deployment that moves it.
+   */
+  pmpPort?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +282,7 @@ export const natPmpProtocol: MappingProtocol = {
     message.writeUInt16BE(request.internalPort, 6);
     message.writeUInt32BE(request.lifetimeSeconds, 8);
 
-    const response = await udpExchange(router.address, NAT_PMP_PORT, message, 2_000);
+    const response = await udpExchange(router.address, router.pmpPort ?? NAT_PMP_PORT, message, 2_000);
     if (response.length < 16) {
       throw new Error("NAT-PMP: truncated answer");
     }
@@ -301,7 +306,7 @@ export const natPmpProtocol: MappingProtocol = {
     message.writeUInt8(0, 0);
     message.writeUInt8(1, 1);
     message.writeUInt16BE(internalPort, 4);
-    await udpExchange(router.address, NAT_PMP_PORT, message, 2_000).catch(() => undefined);
+    await udpExchange(router.address, router.pmpPort ?? NAT_PMP_PORT, message, 2_000).catch(() => undefined);
   },
 };
 
@@ -324,7 +329,7 @@ export const pcpProtocol: MappingProtocol = {
     message.writeUInt16BE(request.internalPort, 40);
     message.writeUInt16BE(request.internalPort, 42);
 
-    const response = await udpExchange(router.address, NAT_PMP_PORT, message, 2_000);
+    const response = await udpExchange(router.address, router.pmpPort ?? NAT_PMP_PORT, message, 2_000);
     if (response.length < 60) {
       throw new Error("PCP: truncated answer");
     }
@@ -349,7 +354,7 @@ export const pcpProtocol: MappingProtocol = {
     message.write("agentparty!!", 24, 12, "ascii");
     message.writeUInt8(17, 36);
     message.writeUInt16BE(internalPort, 40);
-    await udpExchange(router.address, NAT_PMP_PORT, message, 2_000).catch(() => undefined);
+    await udpExchange(router.address, router.pmpPort ?? NAT_PMP_PORT, message, 2_000).catch(() => undefined);
   },
 };
 
