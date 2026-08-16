@@ -10,6 +10,7 @@ import {
   type PushPayload,
 } from "@agentparty/protocol";
 import type { MobileGatewayDeps } from "./index";
+import { PushError } from "./mobileGateway";
 
 /**
  * Sends a sealed notification to the push relay (01 §7).
@@ -54,7 +55,10 @@ export class PushClient {
   async notify(target: PushTarget, payload: PushPayload): Promise<void> {
     const base = this.deps.pushUrl().trim();
     if (!base) {
-      throw new Error("푸시 서버 주소가 설정되지 않아 알림을 보낼 수 없습니다. 모바일 설정에서 pushUrl을 지정하세요.");
+      throw new PushError(
+        "not_configured",
+        "푸시 서버 주소가 설정되지 않아 알림을 보낼 수 없습니다. 모바일 설정에서 pushUrl을 지정하세요.",
+      );
     }
     const endpoint = pushEndpoint(base);
 
@@ -66,15 +70,25 @@ export class PushClient {
     );
 
     const post = this.deps.post ?? ((url, body) => postJson(url, body, this.deps.timeoutMs ?? 10_000));
-    const response = await post(endpoint, JSON.stringify(request));
+    let response: { status: number; text: string };
+    try {
+      response = await post(endpoint, JSON.stringify(request));
+    } catch (error) {
+      // The relay was unreachable — distinct from a relay that answered and
+      // said no, because only one of those is worth retrying soon.
+      throw new PushError("transport_failed", error instanceof Error ? error.message : String(error));
+    }
 
     if (response.status === 429) {
       // 01 §7 — the relay rate-limits per device. Retrying immediately would
       // only deepen the limit, so the caller is told to back off instead.
-      throw new Error("푸시 서버가 요청 빈도 제한을 적용했습니다. 잠시 후 다시 시도하세요.");
+      throw new PushError("rate_limited", "푸시 서버가 요청 빈도 제한을 적용했습니다. 잠시 후 다시 시도하세요.");
     }
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`푸시 서버가 요청을 거부했습니다 (HTTP ${response.status}): ${describe(response.text)}`);
+      throw new PushError(
+        "relay_refused",
+        `푸시 서버가 요청을 거부했습니다 (HTTP ${response.status}): ${describe(response.text)}`,
+      );
     }
 
     this.deps.log("info", "mobile push delivered to the relay", {

@@ -241,6 +241,37 @@ export interface PairingSession {
 // Push
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a push could not be sent. Codes exist so the app can branch without
+ * matching on message text — develop asked specifically for `peer_connected`,
+ * and a single code would have left every other case to string matching.
+ */
+export type PushErrorCode =
+  /** The phone is connected; it already received this over the E2E channel. */
+  | "peer_connected"
+  /** No trust record for that deviceId. */
+  | "not_paired"
+  /** Paired, but the phone has not sent `push.register` yet. */
+  | "no_handle"
+  /** No relay URL in settings. */
+  | "not_configured"
+  /** The relay applied its per-device rate limit (01 §7). */
+  | "rate_limited"
+  /** The relay answered, but refused. */
+  | "relay_refused"
+  /** The relay could not be reached at all. */
+  | "transport_failed";
+
+export class PushError extends Error {
+  constructor(
+    readonly code: PushErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PushError";
+  }
+}
+
 export interface MobilePushApi {
   /**
    * Records a phone's push handle. Normally called by the pipe itself when the
@@ -251,8 +282,11 @@ export interface MobilePushApi {
 
   /**
    * Seals `payload` to the phone's `kx` key, signs the request and POSTs it to
-   * the push relay. Rejects when the device has no handle, is currently
-   * connected (push is for offline phones), or the relay refuses.
+   * the push relay.
+   *
+   * @throws {PushError} with a {@link PushErrorCode}. `peer_connected` is not
+   *   really a failure — the phone already has this over the live channel — so
+   *   the app should treat it as "already delivered" rather than surface it.
    */
   notify(deviceId: string, payload: PushPayload): Promise<void>;
 }

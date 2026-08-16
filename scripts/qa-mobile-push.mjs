@@ -43,6 +43,13 @@ const throws = async (fn, match, msg) => {
   try { await fn(); } catch (error) { message = String(error?.message ?? error); }
   assert(message.includes(match), `${msg} (got: ${message || "no throw"})`);
 };
+/** Asserts the PushErrorCode, which is what the app branches on. */
+const throwsCode = async (fn, code, msg) => {
+  let seen;
+  try { await fn(); } catch (error) { seen = error; }
+  assert(seen?.code === code, `${msg} (got code: ${seen?.code ?? "no throw"})`);
+  assert(typeof seen?.message === "string" && seen.message.length > 0, `${msg} — and carries a message`);
+};
 
 const desktop = P.identityFromSeeds(new Uint8Array(32).fill(61), new Uint8Array(32).fill(62));
 const phone = P.identityFromSeeds(new Uint8Array(32).fill(63), new Uint8Array(32).fill(64));
@@ -126,22 +133,27 @@ console.log("PushClient assertions:");
 
 // --- failures are loud ------------------------------------------------------
 {
-  await throws(
+  await throwsCode(
     () => client({ pushUrl: "" }).instance.notify(target, payload),
-    "푸시 서버 주소가 설정되지 않아",
+    "not_configured",
     "an unconfigured relay is refused before anything is sealed",
   );
 
-  await throws(
+  await throwsCode(
     () => client({ post: async () => ({ status: 429, text: "" }) }).instance.notify(target, payload),
-    "요청 빈도 제한",
-    "a rate-limited push says so instead of retrying into the limit",
+    "rate_limited",
+    "a rate-limited push is distinguishable from a refusal",
   );
 
   await throws(
     () => client({ post: async () => ({ status: 400, text: '{"error":"unknown handle"}' }) }).instance.notify(target, payload),
     "unknown handle",
     "the relay's own reason is surfaced, not a generic failure",
+  );
+  await throwsCode(
+    () => client({ post: async () => ({ status: 400, text: '{"error":"unknown handle"}' }) }).instance.notify(target, payload),
+    "relay_refused",
+    "a relay that answered and said no is its own code",
   );
 
   await throws(
@@ -154,6 +166,11 @@ console.log("PushClient assertions:");
     () => client({ post: async () => { throw new Error("ECONNREFUSED"); } }).instance.notify(target, payload),
     "ECONNREFUSED",
     "a transport failure propagates rather than being swallowed",
+  );
+  await throwsCode(
+    () => client({ post: async () => { throw new Error("ECONNREFUSED"); } }).instance.notify(target, payload),
+    "transport_failed",
+    "an unreachable relay is distinguishable from one that refused — only one is worth retrying soon",
   );
 }
 

@@ -43,6 +43,7 @@ import type {
   PairingSession,
   PushPayload,
 } from "./mobileGateway";
+import { PushError } from "./mobileGateway";
 import { PairingService } from "./pairingService";
 import { RpcServer } from "./rpcServer";
 import { SecureSession, newSessionEphemeral } from "./secureSession";
@@ -303,16 +304,16 @@ export class RealMobileGateway implements MobileGateway {
         }
         const device = this.requireIdentity().find(deviceId);
         if (!device) {
-          throw new Error(`알 수 없는 기기입니다: ${deviceId}`);
+          throw new PushError("not_paired", `알 수 없는 기기입니다: ${deviceId}`);
         }
         if (!device.push) {
-          throw new Error(`${device.name}이(가) 아직 푸시 핸들을 등록하지 않았습니다.`);
+          throw new PushError("no_handle", `${device.name}이(가) 아직 푸시 핸들을 등록하지 않았습니다.`);
         }
         if ([...this.sessions.values()].some((session) => session.device.deviceId === deviceId)) {
           // 01 §7 — push exists for a phone the desktop cannot reach. Sending
           // one to a connected phone would duplicate what the live channel
           // already delivered.
-          throw new Error(`${device.name}은(는) 연결되어 있어 푸시가 필요하지 않습니다.`);
+          throw new PushError("peer_connected", `${device.name}은(는) 연결되어 있어 푸시가 필요하지 않습니다.`);
         }
         await client.notify(
           {
