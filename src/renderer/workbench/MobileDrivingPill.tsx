@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link2Off, Smartphone } from "lucide-react";
+import { AlertTriangle, Link2Off, Smartphone } from "lucide-react";
 import type { GatewayStatus } from "../../shared/mobileProtocol";
+import { ipcErrorMessage } from "../app/ipcError";
 
 /**
  * Titlebar indicator for "a phone is connected to this desktop" (04 §성능·안전).
@@ -16,12 +17,40 @@ import type { GatewayStatus } from "../../shared/mobileProtocol";
 export function MobileDrivingPill() {
   const [status, setStatus] = useState<GatewayStatus | undefined>();
   const [cutting, setCutting] = useState("");
+  const [error, setError] = useState("");
+
+  function probe() {
+    setError("");
+    void window.agentParty.getMobileStatus?.()
+      .then((result) => setStatus(result?.status))
+      // Never swallowed. This pill is a safety indicator — its silence is a
+      // claim that no phone is driving the desktop. If the probe failed we do
+      // not know that, and rendering nothing would state it anyway.
+      .catch((cause) => setError(ipcErrorMessage(cause)));
+  }
 
   useEffect(() => {
-    void window.agentParty.getMobileStatus?.().then((result) => setStatus(result?.status)).catch(() => undefined);
-    const off = window.agentParty.onMobileStatus?.(setStatus);
+    probe();
+    const off = window.agentParty.onMobileStatus?.((next) => {
+      setError("");
+      setStatus(next);
+    });
     return () => { off?.(); };
   }, []);
+
+  if (error) {
+    return (
+      <button
+        type="button"
+        className="wb-mobile-pill is-error"
+        title={`폰 연결 상태를 확인하지 못했습니다 — ${error} · 눌러서 다시 확인`}
+        onClick={probe}
+      >
+        <AlertTriangle size={13} />
+        <span>폰 상태 확인 불가</span>
+      </button>
+    );
+  }
 
   const sessions = status?.sessions || [];
   if (sessions.length === 0) {
@@ -39,6 +68,10 @@ export function MobileDrivingPill() {
     try {
       const result = await window.agentParty.disconnectMobileSession(active.sessionId);
       setStatus(result.status);
+    } catch (cause) {
+      // A cut that failed leaves the phone still attached. Saying nothing here
+      // would let the user believe they had disconnected it.
+      setError(ipcErrorMessage(cause));
     } finally {
       setCutting("");
     }

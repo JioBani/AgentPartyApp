@@ -8684,6 +8684,10 @@ body.wb-resizing {
   cursor: pointer;
 }
 .wb-mobile-pill.is-live { border-color: var(--live-bd); background: var(--live-dim); color: var(--live); }
+/* "We could not tell whether a phone is attached" — warning, not danger:
+   nothing is broken, we just do not know, and the fix is to look again. */
+.wb-mobile-pill.is-error { border-color: var(--warning-bd); background: var(--warning-dim); color: var(--warning); }
+.wb-mobile-pill.is-error:hover:not(:disabled) { border-color: var(--warning-bd); background: var(--warning-dim); color: var(--warning); }
 .wb-mobile-pill:hover:not(:disabled) { border-color: var(--danger-bd); background: var(--danger-dim); color: var(--danger); }
 .wb-mobile-pill:disabled { opacity: 0.6; cursor: default; }
 .wb-mobile-pill-cut { opacity: 0; transition: opacity 0.12s; }

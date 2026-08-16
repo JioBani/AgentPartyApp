@@ -120,7 +120,12 @@ export function MobileLinkCard({ active }: { active: boolean }) {
       // completes (or a revoke from another window) while this screen is open
       // would leave the list below contradicting the count above.
       if (next.trustedDeviceCount !== knownDeviceCount.current) {
-        void window.agentParty.listMobileDevices().then((result) => setDevices(result.devices)).catch(() => undefined);
+        void window.agentParty.listMobileDevices()
+          .then((result) => setDevices(result.devices))
+          // This refetch is the only thing keeping the list and the count in
+          // agreement. Dropping its failure leaves the two contradicting each
+          // other on screen with nothing to explain why.
+          .catch((cause) => setError(ipcErrorMessage(cause)));
       }
     });
     return () => { off?.(); };
