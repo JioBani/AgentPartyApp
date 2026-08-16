@@ -130,6 +130,15 @@ export interface MobileGatewayStartOptions {
    * exercise the pipe without flipping the user's setting.
    */
   force?: boolean;
+  /**
+   * Overrides the QR lifetime for this run. **Development only.**
+   *
+   * The QR is the pairing capability itself, so its validity window is the
+   * window in which a leaked screenshot still works (02 §T3). Two minutes is
+   * the protocol value and the default; anything longer is announced through
+   * `onSecurityWarning` and capped, and must never ship enabled.
+   */
+  pairingTtlMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,17 +172,32 @@ export interface RequestContext {
    */
   signal: AbortSignal;
   /**
-   * The event stream's position right now, for a handler answering with state
-   * the phone also receives as events. The phone applies only events past the
-   * value the answer carries.
+   * The event `seq` at the moment it is called. The phone takes it to mean
+   * "this answer already includes everything up to N" and applies only later
+   * events.
    *
-   * A FUNCTION, not a value, so the handler chooses when to sample it — and it
-   * must sample BEFORE reading. The read lands somewhere inside the await; a
-   * seq taken after the answer is built makes the phone skip events the answer
-   * does not contain, which is loss rather than duplication. 01 §5.3 made the
-   * same choice for the rewind snapshot.
+   * A FUNCTION, not a value, so the CALLER chooses the instant — and which
+   * instant is right depends on what the handler returns.
+   *
+   * A handler that READS STATE (a transcript, a member list) must call it
+   * BEFORE the read. State and seq cannot be captured atomically, so the read
+   * lands at some instant T and one of two errors is unavoidable:
+   *   - seq from before the read: events in (before, T] are in the returned
+   *     state and are replayed as well — DUPLICATES.
+   *   - seq from after the read: events in (T, after] are NOT in the returned
+   *     state, yet the phone skips them — SILENT LOSS.
+   * 01 §5.3 requires zero loss, so the duplicate is chosen. `sendSnapshot`
+   * makes exactly this trade for exactly this reason; a handler that reports
+   * the later seq reintroduces the loss the snapshot path exists to avoid.
+   *
+   * A handler that reads no state has no T and may call it anywhere.
+   *
+   * This is the counter, NOT anything derived from the ring buffer's current
+   * contents. The buffer is trimmed, so what it holds is not the history; a
+   * baseline read from it could move backwards as entries are dropped, and the
+   * phone would re-apply everything it had already merged.
    */
-  currentSeq: () => number;
+  currentSeq(): number;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +277,37 @@ export interface PairingSession {
 // Push
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a push could not be sent. Codes exist so the app can branch without
+ * matching on message text — develop asked specifically for `peer_connected`,
+ * and a single code would have left every other case to string matching.
+ */
+export type PushErrorCode =
+  /** The phone is connected; it already received this over the E2E channel. */
+  | "peer_connected"
+  /** No trust record for that deviceId. */
+  | "not_paired"
+  /** Paired, but the phone has not sent `push.register` yet. */
+  | "no_handle"
+  /** No relay URL in settings. */
+  | "not_configured"
+  /** The relay applied its per-device rate limit (01 §7). */
+  | "rate_limited"
+  /** The relay answered, but refused. */
+  | "relay_refused"
+  /** The relay could not be reached at all. */
+  | "transport_failed";
+
+export class PushError extends Error {
+  constructor(
+    readonly code: PushErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PushError";
+  }
+}
+
 export interface MobilePushApi {
   /**
    * Records a phone's push handle. Normally called by the pipe itself when the
@@ -263,17 +318,27 @@ export interface MobilePushApi {
 
   /**
    * Seals `payload` to the phone's `kx` key, signs the request and POSTs it to
-   * the push relay. Rejects when the device has no handle, is currently
-   * connected (push is for offline phones), or the relay refuses.
+   * the push relay.
+   *
+   * @throws {PushError} with a {@link PushErrorCode}. `peer_connected` is not
+   *   really a failure — the phone already has this over the live channel — so
+   *   the app should treat it as "already delivered" rather than surface it.
    */
   notify(deviceId: string, payload: PushPayload): Promise<void>;
 }
 
+/**
+ * 01 §7 — the only notification the protocol defines. `type` is a literal
+ * rather than a free string because the phone's NSE validates it against the
+ * shared schema: anything else would be sealed, delivered, and then dropped
+ * unopened on the device.
+ */
 export interface PushPayload {
-  type: string;
+  type: "approval";
   title: string;
   body: string;
   /** Correlates the notification with the E2E request the phone will confirm. */
-  requestId?: string;
-  expiresAt?: number;
+  requestId: string;
+  /** Unix ms after which the phone should stop showing it. */
+  expiresAt: number;
 }

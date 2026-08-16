@@ -84,13 +84,21 @@ interface ManagedSession {
   awaitingUser: boolean;
   stallNotified: boolean;
   /**
-   * A compaction is in flight (set when {@link SessionManager.compact} is called,
-   * cleared once the harness reports the outcome). While true, an interrupt-on-send
-   * is suppressed so a member's context compaction is never torn down half-way by
-   * an incoming message — the message queues behind it instead. See
-   * {@link SessionManager.isCompacting}.
+   * A compaction is in flight — set when {@link SessionManager.compact} is called
+   * or when the harness reports one STARTING, and cleared only when that same
+   * compaction reports its outcome. While true, an interrupt-on-send is
+   * suppressed and idle sleep refuses the session, so a compaction is never torn
+   * down half-way. See {@link SessionManager.isCompacting}.
+   *
+   * Deliberately NOT cleared by the end of a turn. A Claude compaction is
+   * submitted as a `/compact` turn but settles AFTER that turn completes (the
+   * boundary rides the next stream), so clearing on `turn_complete` left the
+   * session unprotected for exactly the stretch the flag exists to protect: the
+   * idle sweep could then release the process mid-compaction.
    */
   compacting?: boolean;
+  /** When the in-flight compaction started, for the bound in `sleepBlocker`. */
+  compactStartedAt?: number;
   /** Party/member identity (present for member sessions) — attributes ledger records. */
   identity?: PartyIdentity;
   /** Latest harness snapshot — the source of model/effort/sessionId for the ledger. */
@@ -170,6 +178,15 @@ export class SessionManager extends EventEmitter {
    */
   private static readonly STALL_MS = 120_000;
   private static readonly WATCHDOG_INTERVAL_MS = 20_000;
+  /**
+   * How long an unfinished compaction may hold a session awake.
+   *
+   * Generous on purpose — a compaction of a long conversation is a real model
+   * turn — but finite, because the flag is cleared by the harness reporting an
+   * outcome and a harness that never does would otherwise disable idle sleep for
+   * that member permanently and silently.
+   */
+  private static readonly COMPACT_BLOCK_MAX_MS = 15 * 60_000;
   private watchdog: NodeJS.Timeout | undefined;
 
   /**
@@ -706,7 +723,11 @@ export class SessionManager extends EventEmitter {
     } else if (status === "idle" || status === "interrupted") {
       session.turnActive = false;
       session.awaitingUser = false;
-      session.compacting = false;
+      // Only a STOP ends a compaction; going idle does not (the real lifecycle
+      // above says the same — a Claude compaction settles after its turn ends).
+      if (status === "interrupted") {
+        this.endCompaction(session);
+      }
     }
   }
 
@@ -802,10 +823,14 @@ export class SessionManager extends EventEmitter {
     }
     switch (event.type) {
       case "turn_complete":
+        session.turnActive = false;
+        session.awaitingUser = false;
+        break;
       case "error":
         session.turnActive = false;
         session.awaitingUser = false;
-        session.compacting = false;
+        // An errored turn takes any compaction riding on it down with it.
+        this.endCompaction(session);
         break;
       case "approval_request":
         if (!session.turnActive) this.beginTurn(session);
@@ -829,29 +854,36 @@ export class SessionManager extends EventEmitter {
         if (status === "interrupted") {
           session.turnActive = false;
           session.awaitingUser = false;
-          session.compacting = false;
+          this.endCompaction(session);
         }
         break;
       }
-      // The compaction outcome. This used to ride on a `compacted` STATUS line,
-      // which was also the raw text shown in the transcript; now that the card
-      // replaced it, the flag follows the structured event instead. Both
-      // terminal states clear it — a failed compaction is not still in flight.
+      // The compaction's own lifecycle. This used to ride on a `compacted` STATUS
+      // line, which was also the raw text shown in the transcript; now that the
+      // card replaced it, the flag follows the structured event instead.
+      //
+      // BOTH directions: `running` marks the session as compacting even when the
+      // app did not ask for it (the harness compacts on its own, or the user
+      // typed `/compact` into the composer as text), which is otherwise a
+      // compaction nothing knows about and nothing protects. Both terminal
+      // states clear it — a failed compaction is not still in flight.
       case "compact_state":
-        if (String((event as { state?: unknown }).state || "") !== "running") {
-          session.compacting = false;
+        if (String((event as { state?: unknown }).state || "") === "running") {
+          this.beginCompaction(session);
+        } else {
+          this.endCompaction(session);
         }
         break;
       case "diagnostic":
         if (String((event as { category?: unknown }).category || "") === "compact") {
-          session.compacting = false;
+          this.endCompaction(session);
         }
         // An intentional stop (R-90) ends the turn the same way Cursor's old
         // `status: interrupted` did — without this the member stays mid-turn.
         if (String((event as { category?: unknown }).category || "") === "interrupt") {
           session.turnActive = false;
           session.awaitingUser = false;
-          session.compacting = false;
+          this.endCompaction(session);
         }
         break;
       default:
@@ -919,7 +951,21 @@ export class SessionManager extends EventEmitter {
       return "it is waiting on an approval";
     }
     if (session.compacting) {
-      return "a compaction is in flight";
+      // Bounded, and loudly. The flag now survives the end of the turn that
+      // carried the compaction, so a harness that never reports an outcome would
+      // otherwise pin the member awake forever — a feature quietly not working,
+      // which is the failure mode this project keeps meeting. Past the bound the
+      // session sleeps like any other and SAYS that it gave up waiting.
+      const runningMs = Date.now() - (session.compactStartedAt || 0);
+      if (runningMs <= SessionManager.COMPACT_BLOCK_MAX_MS) {
+        return "a compaction is in flight";
+      }
+      log("warn", "session", "compaction never reported an outcome; no longer blocking idle sleep", {
+        sessionId: session.id,
+        member: session.identity?.member,
+        runningMs,
+      });
+      this.endCompaction(session);
     }
     const snapshot = session.adapter.getSnapshot();
     const background = Number(snapshot.backgroundTaskCount || 0);
@@ -1054,14 +1100,33 @@ export class SessionManager extends EventEmitter {
     existing.adapter.restart();
   }
 
+  /**
+   * Asks the harness to compact.
+   *
+   * A missing session is an ERROR, not a quiet return: the caller asked for work
+   * on a session it believes exists, and answering "done" to a compaction that
+   * never ran is the silent no-op this project keeps having to dig back out. A
+   * SLEEPING member has no session here at all — waking it belongs to the layer
+   * that owns members (see `PartyApplicationService.compactMember`).
+   */
   compact(id: string): void {
     const session = this.sessions.get(id);
     if (!session) {
-      return;
+      throw new Error(`Session '${id}' is not running, so there is nothing to compact.`);
     }
-    session.compacting = true;
+    this.beginCompaction(session);
     if (!session.turnActive) this.beginTurn(session);
     session.adapter.compact();
+  }
+
+  private beginCompaction(session: ManagedSession): void {
+    session.compacting = true;
+    session.compactStartedAt = Date.now();
+  }
+
+  private endCompaction(session: ManagedSession): void {
+    session.compacting = false;
+    session.compactStartedAt = undefined;
   }
 
   /** True while a compaction is in flight (see {@link ManagedSession.compacting}). */

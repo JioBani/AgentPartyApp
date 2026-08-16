@@ -1,6 +1,7 @@
 import type { MobileSettings } from "../../shared/mobileProtocol";
 import type { MobileGateway } from "./mobileGateway";
 import { createMockMobileGateway, type MockMobileGateway, type MockMobileGatewayOptions } from "./mockMobileGateway";
+import { RealMobileGateway } from "./realMobileGateway";
 
 export type { MobileGateway } from "./mobileGateway";
 export type {
@@ -16,6 +17,13 @@ export type {
   SnapshotContext,
 } from "./mobileGateway";
 export { createMockMobileGateway } from "./mockMobileGateway";
+/**
+ * Lets an app handler answer with its own protocol error code instead of the
+ * generic `handler_failed`. A plain Error carries no code, so anything the
+ * phone needs to branch on must be thrown as this.
+ */
+export { RpcError } from "./rpcServer";
+export { RealMobileGateway } from "./realMobileGateway";
 export type { MockControls, MockMobileGateway, MockMobileGatewayOptions } from "./mockMobileGateway";
 
 /**
@@ -44,6 +52,14 @@ export interface MobileGatewayDeps {
   defaultDeviceName: string;
   /** App version reported in `sys.info`. */
   appVersion: string;
+  /**
+   * Supplies the `node-datachannel` module. Electron main is CommonJS, where
+   * the pipe requires it itself, so this is normally omitted. A host that
+   * bundles the pipe to ESM MUST provide it: an external `require` left in ESM
+   * output fails with "Dynamic require ... is not supported", which looks like
+   * a missing install but is not.
+   */
+  loadWebrtcModule?: () => unknown;
 }
 
 /**
@@ -78,8 +94,9 @@ export interface CreateMobileGatewayOptions {
 /**
  * Single construction point for the mobile pipe.
  *
- * @throws when `implementation: "real"` is requested before the real gateway
- *   ships, or when its dependencies are missing.
+ * @throws when `implementation: "real"` is requested without its dependencies.
+ *   There is no fallback to the mock: a UI that looked connected while the pipe
+ *   was absent would be worse than a startup failure.
  */
 export function createMobileGateway(options: CreateMobileGatewayOptions): MobileGateway | MockMobileGateway {
   if (options.implementation === "mock") {
@@ -88,8 +105,5 @@ export function createMobileGateway(options: CreateMobileGatewayOptions): Mobile
   if (!options.deps) {
     throw new Error("createMobileGateway: the real gateway requires MobileGatewayDeps");
   }
-  throw new Error(
-    "createMobileGateway: the real mobile gateway is not implemented yet (desktop-pipe M1). " +
-      'Use implementation: "mock" until it lands.',
-  );
+  return new RealMobileGateway(options.deps);
 }

@@ -77,6 +77,8 @@ export interface ClaudeAdapterOptions {
    * seam, and without it those tests were quietly exercising the real SDK.
    */
   sdkLoader?: () => Promise<SdkModule>;
+  /** QA seam; production warns after 15 seconds without a matching hook response. */
+  hookStallMs?: number;
 }
 
 type SdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -224,6 +226,10 @@ export class ClaudeAdapter extends EventEmitter {
   // known subagent's id as `parent_tool_use_id` is routed to it, keeping subagent
   // output out of the parent transcript.
   private subagentTracker = new ClaudeSubagentTracker();
+  /** Claude hook processes can wedge after `hook_started` (observed with two
+   * concurrent subagent Stop hooks). Track them separately so the user sees the
+   * actual blocker long before the harness-general two-minute stall warning. */
+  private readonly pendingHooks = new Map<string, { name: string; timer: NodeJS.Timeout }>();
   /**
    * Harness tasks still in flight, INCLUDING the ones the subagent dock drops
    * (backgrounded shells, workflows, MCP monitors). Reported on the snapshot so
@@ -694,6 +700,7 @@ export class ClaudeAdapter extends EventEmitter {
     this.query = undefined;
     this.started = false;
     this.currentStatus = "closed";
+    this.clearHookWatchdogs();
     this.logger?.close();
   }
 
@@ -1185,6 +1192,14 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   private normalizeSystem(message: any): void {
+    if (message.subtype === "hook_started") {
+      this.watchHook(message);
+      return;
+    }
+    if (message.subtype === "hook_response") {
+      this.finishHook(message.hook_id);
+      return;
+    }
     if (message.subtype === "init") {
       this.sessionId = message.session_id || this.sessionId;
       this.runtimeModel = message.model || this.runtimeModel;
@@ -1312,6 +1327,51 @@ export class ClaudeAdapter extends EventEmitter {
         at: now(),
       });
     }
+  }
+
+  private watchHook(message: any): void {
+    const hookId = typeof message?.hook_id === "string" ? message.hook_id : "";
+    if (!hookId) {
+      return;
+    }
+    this.finishHook(hookId);
+    const name = typeof message?.hook_name === "string" ? message.hook_name : "Claude";
+    const timer = setTimeout(() => {
+      const pending = this.pendingHooks.get(hookId);
+      if (!pending) {
+        return;
+      }
+      this.pendingHooks.delete(hookId);
+      this.emitEvent({
+        type: "diagnostic",
+        severity: "warning",
+        category: "hook",
+        title: `Claude hook이 끝나지 않았습니다: ${pending.name}`,
+        detail: `${Math.round((this.options.hookStallMs ?? 15_000) / 1000)}초 동안 hook 응답이 없습니다. 외부 Claude hook 프로세스가 멈추면 서브에이전트가 완료되어도 부모 턴이 계속 작업 중으로 남을 수 있습니다.`,
+        recovery: "세션을 다시 시작하세요. 반복되면 Claude 설정의 해당 hook을 비활성화하거나 hook 프로그램을 점검하세요.",
+        at: now(),
+      });
+    }, this.options.hookStallMs ?? 15_000);
+    timer.unref?.();
+    this.pendingHooks.set(hookId, { name, timer });
+  }
+
+  private finishHook(hookId: unknown): void {
+    if (typeof hookId !== "string") {
+      return;
+    }
+    const pending = this.pendingHooks.get(hookId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pendingHooks.delete(hookId);
+    }
+  }
+
+  private clearHookWatchdogs(): void {
+    for (const pending of this.pendingHooks.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingHooks.clear();
   }
 
   private normalizeStreamEvent(event: any, parentToolUseId?: string): void {

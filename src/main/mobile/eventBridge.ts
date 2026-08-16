@@ -22,7 +22,7 @@ export interface EventSession {
 /** What a `resume` request resolved to. The caller performs the transfer. */
 export type ResumeOutcome =
   | { kind: "replay"; events: RpcEvent[]; throughSeq: number }
-  | { kind: "snapshot"; reason: "boot_changed" | "out_of_window"; fromSeq: number };
+  | { kind: "snapshot"; reason: "no_cursor" | "boot_changed" | "out_of_window"; fromSeq: number };
 
 export interface EventBridgeOptions {
   bootId: string;
@@ -99,13 +99,17 @@ export class EventBridge {
    * Assigns `seq`, buffers, and delivers to every session subscribed to
    * `workspacePath` (all sessions when the scope is omitted).
    *
-   * Returns before allocating anything when no session is attached — this sits
-   * on `broadcastToWorkspace`, which fires on every session event (04 §성능).
+   * Recording does NOT depend on anyone being attached (01 §5.3, corrected in
+   * 04 by develop). Skipping the seq while a phone is away is silent loss: the
+   * counter would not advance, so on reconnect the phone's `lastSeq` still
+   * equals the head, it is answered `resumed` with nothing to replay, and it
+   * never learns anything happened. The ring buffer exists precisely for the
+   * window when nobody is connected.
+   *
+   * The caller decides whether recording is worth it at all — see the gateway's
+   * `emit`, which skips when no device is paired.
    */
-  publish(type: string, payload: unknown, workspacePath?: string): RpcEvent | undefined {
-    if (this.subscribers.size === 0) {
-      return undefined;
-    }
+  publish(type: string, payload: unknown, workspacePath?: string): RpcEvent {
     const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: this.now() };
     this.buffer.push({ event, workspacePath });
     this.prune();
@@ -120,13 +124,32 @@ export class EventBridge {
     return event;
   }
 
+  /** How many attached sessions an event with this scope would reach. */
+  audienceFor(workspacePath?: string): number {
+    let count = 0;
+    for (const subscriber of this.subscribers.values()) {
+      if (this.matches(subscriber, workspacePath)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   /**
    * 01 §5.3 — resolves a phone's `resume`. Replay is possible only when the
    * boot matches and `lastSeq` is still inside the buffer; otherwise the caller
    * must send a snapshot. `lastSeq === this.seq` is a valid no-op replay.
+   *
+   * A phone that has never synced sends `bootId: null, lastSeq: null` and always
+   * gets a snapshot. The protocol forbids inventing a cursor there: a random or
+   * zero `lastSeq` could accidentally land inside the buffer and replay a
+   * fragment of history as if it were the whole state.
    */
-  resume(sessionId: string, bootId: string, lastSeq: number): ResumeOutcome {
+  resume(sessionId: string, bootId: string | null, lastSeq: number | null): ResumeOutcome {
     const subscriber = this.require(sessionId);
+    if (bootId === null || lastSeq === null) {
+      return { kind: "snapshot", reason: "no_cursor", fromSeq: this.seq };
+    }
     if (bootId !== this.bootId) {
       return { kind: "snapshot", reason: "boot_changed", fromSeq: this.seq };
     }

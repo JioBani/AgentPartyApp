@@ -1243,6 +1243,17 @@ export class AppController {
   }
 
   /**
+   * Compacts a member's conversation now, waking it first if it is asleep.
+   *
+   * The member-addressed route the UI and agents both use. `compactSession`
+   * below is the session-addressed one, which cannot reach a sleeping member —
+   * it has no session — and so is not what a `/compact` should call.
+   */
+  compactPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["compactMember"]>> {
+    return this.handlePartyAction(workspacePath, name, "compact", {}, windowId) as Promise<ReturnType<PartyApplicationService["compactMember"]>>;
+  }
+
+  /**
    * Persists a member's permission (Claude mode / Codex policy / Cursor policy)
    * and applies it to the live adapter when one is running. This is the member
    * -scoped route the composer's permission control drives, so a change made

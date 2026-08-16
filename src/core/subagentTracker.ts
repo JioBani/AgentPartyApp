@@ -186,9 +186,14 @@ export class CodexSubagentTracker {
   private readonly agents = new Map<string, CodexAgentState>();
 
   setRoot(threadId: string | undefined): void {
-    if (threadId && !this.root) {
-      this.root = threadId;
+    if (!threadId || threadId === this.root) {
+      return;
     }
+    // A Codex adapter can restart onto a fresh root thread. Child ids and their
+    // phases belong to the old root; retaining them also makes the NEW root look
+    // like a child because `isSubagentThread` still compares against the old id.
+    this.root = threadId;
+    this.agents.clear();
   }
 
   /**

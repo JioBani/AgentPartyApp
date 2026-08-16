@@ -1786,6 +1786,34 @@ export class PartyApplicationService {
    * `harnessSessionId`, so there is nothing sleep-specific to undo beyond the
    * status, which starting rewrites anyway.
    */
+  /**
+   * Compacts a member's conversation, waking it first if it is asleep.
+   *
+   * Addressed by MEMBER, not by session id, because a sleeping member has no
+   * session to name — which is exactly why the session-addressed route did
+   * nothing for one. Compacting is a thing you ask of a member's conversation,
+   * and the conversation outlives the process that was holding it.
+   */
+  compactMember(name: string, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
+    let woke = false;
+    if (!sessionId) {
+      sessionId = this.wakeMember(member.name, this.partyIdOf(member)).member?.sessionId;
+      woke = true;
+    }
+    if (!sessionId) {
+      throw new Error(`Could not start a session for member '${member.name}', so its conversation cannot be compacted.`);
+    }
+    this.deps.sessionManager.compact(sessionId);
+    const fresh = this.ensureMigrated(this.repository.read(workspace));
+    const target = this.requireMember(fresh, member.name, this.partyIdOf(member));
+    log("info", "party", "compaction requested", { workspace, partyId: target.partyId, member: target.name, sessionId, woke });
+    return this.result(`Compacting '${target.name}'${woke ? " (woken for it)" : ""}.`, fresh, target);
+  }
+
   wakeMember(name: string, partyId?: string): PartyCommandResult {
     const result = this.startMember(name, {}, {}, partyId);
     // A member woken while messages were waiting must not sit on them until

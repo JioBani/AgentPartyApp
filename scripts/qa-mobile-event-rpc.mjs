@@ -58,11 +58,35 @@ function recorder(sessionId) {
 
 console.log("EventBridge assertions:");
 
-// --- no sessions: the hot path allocates nothing ---------------------------
+// --- 01 §5.3: the buffer records while nobody is attached ------------------
+{
+  // This is the whole point of the ring buffer. Skipping the seq while a phone
+  // is away is silent loss: the counter would not advance, so on reconnect the
+  // phone's lastSeq still equals the head, it is answered `resumed` with
+  // nothing to replay, and it never learns anything happened.
+  const bridge = new EventBridge({ bootId: "boot-1" });
+  const away = bridge.publish("session:events", { a: 1 }, "C:/a");
+  assert(away?.seq === 1, "an event published with nobody attached still gets a seq");
+  assert(bridge.window().count === 1, "and is kept in the buffer");
+
+  // The phone comes back and rewinds from before the gap.
+  const phone = recorder("s-late");
+  bridge.attach(phone);
+  bridge.setSubscription("s-late", ["C:/a"]);
+  const outcome = bridge.resume("s-late", "boot-1", 0);
+  assert(outcome.kind === "replay", "a returning phone can replay from before it connected");
+  assert(outcome.events.length === 1 && outcome.events[0].d.a === 1, "and receives what it missed");
+}
+
+// --- audience reporting ----------------------------------------------------
 {
   const bridge = new EventBridge({ bootId: "boot-1" });
-  assert(bridge.publish("session:events", { a: 1 }, "C:/a") === undefined, "publish with no session is a no-op");
-  assert(bridge.window().seq === 0, "a no-op publish does not consume a seq");
+  assert(bridge.audienceFor("C:/a") === 0, "with nobody attached the audience is zero");
+  bridge.attach(recorder("s-1"));
+  bridge.setSubscription("s-1", ["C:/a"]);
+  assert(bridge.audienceFor("C:/a") === 1, "a subscribed session counts");
+  assert(bridge.audienceFor("C:/other") === 0, "an unsubscribed workspace does not");
+  assert(bridge.audienceFor() === 1, "an unscoped event reaches everyone");
 }
 
 // --- subscription is a replacement set, and filters delivery ---------------
@@ -101,6 +125,11 @@ console.log("EventBridge assertions:");
   const phone = recorder("s-1");
   bridge.attach(phone);
   bridge.setSubscription("s-1", ["C:/a"]);
+
+  // 01 §5.3 — a phone that has never synced sends a null cursor.
+  const first = bridge.resume("s-1", null, null);
+  assert(first.kind === "snapshot" && first.reason === "no_cursor", "a null cursor always yields a snapshot");
+  assert(bridge.resume("s-1", "boot-1", null).reason === "no_cursor", "a null lastSeq alone is enough to force one");
 
   const empty = bridge.resume("s-1", "boot-1", 0);
   assert(empty.kind === "replay" && empty.events.length === 0, "empty buffer at head replays zero events");

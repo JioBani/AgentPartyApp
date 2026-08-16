@@ -165,7 +165,9 @@ class MockGateway implements MockMobileGateway {
   // -- events ---------------------------------------------------------------
 
   emit(type: string, payload: unknown, scope?: MobileEventScope): void {
-    if (this.sessions.size === 0) {
+    // Matches the real gateway: recorded whenever a phone is paired, even if
+    // none is currently connected (01 §5.3). Only an unpaired desktop no-ops.
+    if (this.devicesById.size === 0) {
       return;
     }
     const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: Date.now() };
@@ -273,8 +275,9 @@ class MockGateway implements MockMobileGateway {
 
   // -- status / settings / diagnostics --------------------------------------
 
+  /** Built fresh, matching the real gateway (see its getStatus). */
   getStatus(): GatewayStatus {
-    return this.statusStream.current;
+    return this.buildStatus();
   }
 
   get status$(): ValueStream<GatewayStatus> {
@@ -474,8 +477,9 @@ class MockGateway implements MockMobileGateway {
       transport: session.transport,
       receivedAt: Date.now(),
       signal: new AbortController().signal,
-      // Read at call time, not captured here — the handler decides when to
-      // sample it, and the counter moves while the handler runs.
+      // Live read, matching the real gateway: a handler that emits and then
+      // reads must see its own emit reflected. Sampled at call time rather
+      // than captured here, so the handler chooses when to read it.
       currentSeq: () => this.seq,
     };
   }
@@ -502,7 +506,13 @@ class MockGateway implements MockMobileGateway {
         inFlightRequests: session.inFlightRequests,
         lastRequestAt: session.lastRequestAt,
         lastRequestMethod: session.lastRequestMethod,
+        // The mock has no wire, so there is genuinely nothing queued. This is a
+        // truthful 0, not the placeholder the real gateway used to return
+        // before it reported the transport's actual backlog.
         queuedBytes: 0,
+        // The mock has no ICE; a fabricated pair would let a UI look verified
+        // when nothing was ever negotiated.
+        candidatePair: undefined,
       })),
       trustedDeviceCount: this.devicesById.size,
       pairing: this.pairingStream.current,

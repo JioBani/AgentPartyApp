@@ -16,24 +16,6 @@
  * the desktop's own status, settings and diagnostics shapes.
  */
 
-/** Protocol version carried in `v` fields. Bumping it requires updating 01. */
-export const MOBILE_PROTOCOL_VERSION = 1;
-
-/** QR scheme from 01 §2.1 — `agentparty://pair?v=1&d=…`. */
-export const MOBILE_PAIRING_URI_SCHEME = "agentparty";
-
-/**
- * Limits this repository owns. Anything the wire format fixes — frame size,
- * RPC timeout, ring-buffer bounds, pairing TTL, signaling keepalive — lives in
- * `@agentparty/protocol` and must be read from there, not restated here.
- */
-export const MOBILE_LIMITS = {
-  /** 04 §성능·안전 — per-session send backpressure ceiling. */
-  sessionSendQueueMaxBytes: 2 * 1024 * 1024,
-  /** 01 §6 — ICE restart grace before a brand new session is started. */
-  iceRestartGraceMs: 10_000,
-} as const;
-
 /** 01 §6 — STUN only. There is deliberately no TURN entry. */
 export const MOBILE_STUN_SERVERS = [
   "stun:stun.cloudflare.com:3478",
@@ -146,6 +128,26 @@ export interface MobileSessionStatus {
   lastRequestMethod: string | undefined;
   /** Bytes queued but not yet handed to the transport (backpressure view). */
   queuedBytes: number;
+  /**
+   * The ICE pair actually carrying this session, once one is selected. The
+   * `type` pair is what tells a diagnosis apart: host/host is a LAN, srflx or
+   * prflx means a NAT was traversed, and relay would mean a TURN server —
+   * which this system does not use, so it should never appear.
+   */
+  candidatePair: IceCandidatePair | undefined;
+}
+
+export interface IceCandidateInfo {
+  address: string;
+  port: number;
+  /** `host` | `srflx` | `prflx` | `relay`. */
+  type: string;
+  transportType: string;
+}
+
+export interface IceCandidatePair {
+  local: IceCandidateInfo;
+  remote: IceCandidateInfo;
 }
 
 export type PairingPhase =
@@ -215,6 +217,39 @@ export const MOBILE_SETTINGS_DEFAULTS: MobileSettings = {
   deviceName: "",
   natMappingEnabled: true,
 };
+
+/**
+ * Limits the pipe enforces itself. Everything the WIRE defines (frame size,
+ * chunking, ring-buffer depth) lives in `@agentparty/protocol` instead — these
+ * two are desktop-side policy, and restating wire limits here is how the two
+ * copies drift apart.
+ */
+export const MOBILE_LIMITS = {
+  /**
+   * 04 §성능·안전 — bytes accepted for one phone but not yet on the wire. Past
+   * this the session is dropped rather than buffered further: holding more
+   * would trade bounded memory for an unbounded queue on a link that is
+   * evidently not draining. The phone loses nothing, because it rewinds on
+   * reconnect and the ring buffer replays what it missed (01 §5.3). That
+   * rewind is precisely what makes dropping safe here.
+   */
+  sessionSendQueueMaxBytes: 2 * 1024 * 1024,
+  /**
+   * 01 §6 — how long ICE may sit `disconnected` before the session is given
+   * up. Recovering in place keeps the session keys (01 §4.1: an ICE restart is
+   * the SAME session); past this the phone is expected to build a new session
+   * from §3.3 and rewind, so holding the old one open only delays that.
+   */
+  iceRestartGraceMs: 10_000,
+} as const;
+
+/**
+ * Convention (NOT part of the wire envelope): a request whose params carry a
+ * string `workspacePath` is routed by the app to that workspace's engine
+ * (04 §3). The pipe only lifts the field into `RequestContext`; it never
+ * interprets the value, and the protocol package knows nothing about it.
+ */
+export const WORKSPACE_PARAM_FIELD = "workspacePath";
 
 // ---------------------------------------------------------------------------
 // Streams
