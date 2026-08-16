@@ -30,7 +30,8 @@
 npm run build                                # dist/ 가 최신이어야 캡처가 현재 UI를 뜬다
 node scripts/build-design-bundle.mjs         # 토큰 생성 + 스타일시트/폰트 복사 + Foundations 카드
 node scripts/capture-design-surfaces.mjs     # 실제 앱을 띄워 화면·컴포넌트 마크업 캡처
-node scripts/verify-design-bundle.mjs        # (electron 으로) 모든 페이지가 단독으로 렌더되는지 실측
+node scripts/verify-design-bundle.mjs        # (electron 으로) 모든 페이지가 단독으로 렌더되는지 실측 + 카드 크기 측정
+node scripts/build-design-manifest.mjs       # _ds_manifest.json 생성 (이게 없으면 창이 비어 보인다)
 ```
 
 산출물은 `build/design-bundle/` (git 에 넣지 않는다 — 언제든 재생성된다).
@@ -60,12 +61,19 @@ QA 모드로 진짜 앱을 띄우고(모의 하네스 — 모델 호출 없음),
 ### 3. `verify-design-bundle.mjs`
 업로드 **전에** 모든 페이지를 Electron 으로 열어 실측한다: `--bg-0` 이 비어있지 않은지
 (토큰 로드), body 폰트가 Maplestory 인지(woff2 로드), 내용이 실제 크기로 그려지는지,
-첫 줄에 `@dsCard` 마커가 있는지. `--shots` 로 PNG 도 남긴다.
+첫 줄에 `@dsCard` 마커가 있는지. `--shots` 로 PNG 도 남기고, 잰 크기를 `_sizes.json`
+으로 내보낸다(카드 viewport 의 근거).
+
+### 4. `build-design-manifest.mjs`
+`_ds_manifest.json` 을 만든다. **Design System 창은 이 파일을 읽는다** — 파일을 다
+올려도 매니페스트가 없으면 창이 비어 보인다(첫 업로드에서 실제로 그랬다). 카드 목록은
+각 페이지의 `@dsCard` 마커에서만 만들고, viewport 는 `_sizes.json` 의 실측값을 쓴다.
+`globalCssPaths`·`themes`·`fonts` 도 여기서 앱 값 그대로 채운다.
 
 ## 업로드
 
-카드 인덱스는 각 HTML 첫 줄의 `<!-- @dsCard group="…" name="…" -->` 로 자동 구성되므로
-`register_assets` 는 필요 없다. DesignSync 순서:
+카드 목록의 원천은 각 HTML 첫 줄의 `<!-- @dsCard group="…" name="…" -->` 이고,
+그것을 모아 `_ds_manifest.json` 으로 올린다(`register_assets` 는 불필요). DesignSync 순서:
 
 1. `list_files` (기존 상태 확인)
 2. `finalize_plan` — `writes` 글롭 + `localDir: build/design-bundle`
