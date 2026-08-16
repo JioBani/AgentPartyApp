@@ -20,7 +20,7 @@
  */
 import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { qaTempDir } from "./lib/qaTemp.mjs";
 
@@ -155,6 +155,48 @@ assert(
   offenders.length === 0,
   `zero out-of-spec fields across all outbound messages${offenders.length ? ` — ${JSON.stringify(offenders)}` : ""}`,
 );
+
+// --- the audit is asking the right direction --------------------------------
+{
+  // mobile-pipe raised this: `relay` exists in BOTH directions and is not the
+  // same frame — the client's carries `to`, the server's carries `from`.
+  //
+  // For `relay` a wrong direction is loud: the field is reported as
+  // out-of-spec, so the audit would fail rather than lie. The genuinely silent
+  // case is a DIRECTION-EXCLUSIVE type. `outOfSpecFields` reports nothing when
+  // a message fails to parse for any other reason, and a `t` that does not
+  // exist in the checked direction is exactly that — so an audit pointed at
+  // the wrong table would report a clean zero for every pairing message it
+  // sends, no matter what was in them.
+  const bogus = { t: "pair.open", tokenHash: "th", exp: 1, notAField: "x" };
+  assert(
+    P.outOfSpecFields(bogus, "client").join() === "notAField",
+    "a client-only message audited as `client` reports its junk field",
+  );
+  assert(
+    P.outOfSpecFields(bogus, "server").length === 0,
+    "and audited as `server` reports NOTHING — the silent failure this audit must not have",
+  );
+
+  // So every type observed above must actually exist in the client table.
+  // Without this, "zero out-of-spec fields" could mean "checked against a
+  // table that has never heard of these messages".
+  const vectorPath = path.resolve(projectRoot, "../AgentPartyMobile/docs/아키텍처/vectors/protocol-v1.json");
+  let clientTable;
+  try {
+    clientTable = JSON.parse(readFileSync(vectorPath, "utf8"))?.signalingFields?.client;
+  } catch (error) {
+    assert(false, `the protocol vectors could not be read to confirm the direction (${String(error?.message ?? error)})`);
+  }
+  if (clientTable) {
+    for (const type of seen.keys()) {
+      assert(
+        Object.prototype.hasOwnProperty.call(clientTable, type),
+        `\`${type}\` exists in the CLIENT table, so auditing it as \`client\` was a real check`,
+      );
+    }
+  }
+}
 
 // --- the check can fail -----------------------------------------------------
 {
