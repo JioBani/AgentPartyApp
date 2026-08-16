@@ -51,7 +51,10 @@ interface NativeDataChannel {
 }
 
 interface NativeModule {
-  PeerConnection: new (name: string, config: { iceServers: string[] }) => NativePeerConnection;
+  PeerConnection: new (
+    name: string,
+    config: { iceServers: string[]; portRangeBegin?: number; portRangeEnd?: number },
+  ) => NativePeerConnection;
 }
 
 export interface WebrtcTransportDeps {
@@ -67,6 +70,13 @@ export interface WebrtcTransportDeps {
   /** Injected in tests so the native module is not required. */
   loadNative?: () => NativeModule;
   iceServers?: string[];
+  /**
+   * A router port mapping to advertise (01 §3.3, develop 1ccfadf). ICE is then
+   * pinned to `internalPort` and the external `address:port` is offered as an
+   * extra server-reflexive candidate, so a peer can reach this machine through
+   * the mapping without any change to the hello schema.
+   */
+  mappedCandidate?: { internalPort: number; address: string; externalPort: number };
 }
 
 /**
@@ -82,6 +92,14 @@ const DATA_CHANNEL_M_LINE_INDEX = 0;
 /** 01 §3.3 — the end-of-candidates marker. */
 const END_OF_CANDIDATES = "";
 
+/**
+ * RFC 8445 priority for a server-reflexive candidate:
+ * (2^24)·type-preference + (2^8)·local-preference + (256 − component).
+ * Type preference 100 is the conventional srflx value, which keeps this
+ * candidate below host and above relay in the peer's checklist.
+ */
+const SRFLX_PRIORITY = 100 * 2 ** 24 + 65535 * 2 ** 8 + 255;
+
 export class WebrtcTransport implements Transport {
   readonly kind: TransportKind = "directViaRendezvous";
 
@@ -93,11 +111,19 @@ export class WebrtcTransport implements Transport {
   private closed = false;
   /** Frames handed to `send()` before the channel opened. */
   private readonly pending: Uint8Array[] = [];
+  private announcedMapping = false;
+  /** Mid libdatachannel used for the data channel; candidates must match it. */
+  private dataChannelMid = "0";
 
   constructor(private readonly deps: WebrtcTransportDeps) {
     const native = (deps.loadNative ?? loadNodeDataChannel)();
+    const mapped = deps.mappedCandidate;
     this.pc = new native.PeerConnection(`agentparty-${deps.sessionId}`, {
       iceServers: deps.iceServers ?? [...MOBILE_STUN_SERVERS],
+      // Pinning ICE to the mapped local port is what makes the advertised
+      // external port actually reach this socket; a random port would make the
+      // extra candidate point at nothing.
+      ...(mapped ? { portRangeBegin: mapped.internalPort, portRangeEnd: mapped.internalPort } : {}),
     });
     this.wire(this.pc);
   }
@@ -211,6 +237,9 @@ export class WebrtcTransport implements Transport {
     });
 
     pc.onLocalCandidate((candidate, mid) => {
+      // Remember the mid the stack actually used, so the mapped candidate is
+      // attached to the same m-section rather than an assumed "0".
+      this.dataChannelMid = mid;
       this.deps.sendIce({
         sessionId: this.deps.sessionId,
         candidate: { candidate, sdpMid: mid, sdpMLineIndex: DATA_CHANNEL_M_LINE_INDEX },
@@ -221,6 +250,11 @@ export class WebrtcTransport implements Transport {
       if (state !== "complete") {
         return;
       }
+      // The router mapping is not something ICE can discover on its own, so it
+      // is announced as an ordinary srflx candidate (develop 1ccfadf). No schema
+      // change: the peer treats it like any other remote candidate, and a check
+      // arriving through it shows up on this side as peer-reflexive.
+      this.announceMappedCandidate();
       // 01 §3.3 — tell the peer no more candidates are coming, so it can stop
       // waiting instead of sitting out the full ICE timeout.
       this.deps.sendIce({
@@ -254,6 +288,29 @@ export class WebrtcTransport implements Transport {
     });
 
     pc.onDataChannel((channel) => this.adoptChannel(channel));
+  }
+
+  /**
+   * Offers the router mapping as a server-reflexive candidate. Sent once, after
+   * gathering completes, so it cannot be mistaken for something ICE found.
+   */
+  private announceMappedCandidate(): void {
+    const mapped = this.deps.mappedCandidate;
+    if (!mapped || this.announcedMapping) {
+      return;
+    }
+    this.announcedMapping = true;
+    const candidate =
+      `candidate:ap${mapped.externalPort} 1 udp ${SRFLX_PRIORITY} ` +
+      `${mapped.address} ${mapped.externalPort} typ srflx raddr 0.0.0.0 rport 0`;
+    this.deps.sendIce({
+      sessionId: this.deps.sessionId,
+      candidate: { candidate, sdpMid: this.dataChannelMid, sdpMLineIndex: DATA_CHANNEL_M_LINE_INDEX },
+    });
+    this.deps.log("info", "mobile webrtc advertised the router mapping", {
+      address: mapped.address,
+      port: mapped.externalPort,
+    });
   }
 
   /** The phone creates the channel; the desktop adopts whichever one arrives. */

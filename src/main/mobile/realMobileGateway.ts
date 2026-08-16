@@ -428,6 +428,7 @@ export class RealMobileGateway implements MobileGateway {
       peerSigPk: fromB64(device.sigPk),
       log: this.deps.log,
       loadNative: this.deps.loadWebrtcModule as never,
+      mappedCandidate: this.mappedCandidateForTransport(),
       sendSdp: (payload) => this.sendRelay(device, "answer", payload as unknown as Record<string, unknown>),
       sendIce: (payload) => this.sendRelay(device, "ice", payload as unknown as Record<string, unknown>),
     });
@@ -534,6 +535,24 @@ export class RealMobileGateway implements MobileGateway {
     session.ownEph.privateKey.fill(0);
     this.deps.log("info", "mobile session ended", { sessionId, reason });
     this.publish();
+  }
+
+  /**
+   * The router mapping, in the shape the transport advertises (01 §3.3). Absent
+   * until a mapping exists, and absent for good when none can be obtained —
+   * announcing a port that is not mapped would just add a candidate that never
+   * answers, slowing every connection attempt down.
+   */
+  private mappedCandidateForTransport(): { internalPort: number; address: string; externalPort: number } | undefined {
+    const mapping = this.natMapper?.current();
+    if (!mapping?.externalAddress) {
+      return undefined;
+    }
+    return {
+      internalPort: mapping.internalPort,
+      address: mapping.externalAddress,
+      externalPort: mapping.externalPort,
+    };
   }
 
   /**

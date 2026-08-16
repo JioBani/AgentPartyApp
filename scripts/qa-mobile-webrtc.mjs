@@ -239,6 +239,70 @@ console.log("WebrtcTransport assertions (real node-datachannel loopback):");
   phonePc.close();
 }
 
+// --- 01 §3.3: the router mapping travels as a standard srflx candidate ----
+
+/**
+ * Drives a real negotiation far enough for ICE gathering to complete, which is
+ * when the mapped candidate is announced. A transport with no remote offer
+ * never gathers, so it would never announce either.
+ */
+async function gatherWith(mappedCandidate) {
+  const emitted = [];
+  const phonePc = new ndc.PeerConnection(`phone-map-${Math.random()}`, { iceServers: [] });
+  let desktop;
+  desktop = new WebrtcTransport({
+    sessionId: SESSION,
+    identity: desktopIdentity,
+    peerSigPk: phoneIdentity.sigPk,
+    iceServers: [],
+    log: () => {},
+    loadNative: () => ndc,
+    ...(mappedCandidate ? { mappedCandidate } : {}),
+    sendSdp: () => {},
+    sendIce: (payload) => emitted.push(payload),
+  });
+  phonePc.onLocalDescription((sdp, type) => {
+    if (type === 'offer') {
+      desktop.acceptOffer(P.buildSdpPayload({ sessionId: SESSION, sdp }, phoneIdentity.sigSk));
+    }
+  });
+  phonePc.createDataChannel('agentparty');
+  await until(() => emitted.some((e) => e.candidate.candidate === ''), 15_000, 'gathering to complete');
+  return { emitted, close: () => { desktop.close(); phonePc.close(); } };
+}
+
+{
+  const run = await gatherWith({ internalPort: 51820, address: '203.0.113.7', externalPort: 51820 });
+  const mapped = run.emitted.find((e) => e.candidate.candidate.includes('typ srflx'));
+
+  assert(mapped !== undefined, 'the router mapping is advertised as an ICE candidate');
+  if (mapped) {
+    assert(P.IcePayloadSchema.safeParse(mapped).success, 'it validates against the UNCHANGED IcePayloadSchema — no protocol change needed');
+    const parts = mapped.candidate.candidate.split(' ');
+    assert(parts[0].startsWith('candidate:'), 'it is a standard candidate line the phone can pass straight to addRemoteCandidate');
+    assert(parts[1] === '1' && parts[2] === 'udp', 'component 1, transport udp');
+    assert(parts[4] === '203.0.113.7' && parts[5] === '51820', 'it carries the EXTERNAL address and port from the mapping');
+    assert(parts[6] === 'typ' && parts[7] === 'srflx', 'typed srflx, so the peer ranks it below its own host candidates');
+    assert(Number(parts[3]) > 0 && Number(parts[3]) < 2 ** 31, 'the priority is a plausible RFC 8445 value');
+    assert(mapped.candidate.sdpMLineIndex === 0, 'it targets the single data-channel m-section');
+    assert(typeof mapped.candidate.sdpMid === 'string', 'and carries the mid the stack actually used');
+  }
+  assert(
+    run.emitted.filter((e) => e.candidate.candidate.includes('typ srflx')).length === 1,
+    'it is announced exactly once',
+  );
+  run.close();
+}
+
+// --- without a mapping, nothing extra is advertised ------------------------
+{
+  const run = await gatherWith(undefined);
+  assert(
+    !run.emitted.some((e) => e.candidate.candidate.includes('typ srflx')),
+    'no mapping means no invented candidate — advertising an unmapped port only slows every attempt down',
+  );
+  run.close();
+}
 // --- a missing native module is reported, never worked around --------------
 {
   throws(
