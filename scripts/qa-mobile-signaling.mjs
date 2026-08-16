@@ -84,13 +84,13 @@ function fakeSocket() {
   return socket;
 }
 
-function harness({ identity, url = "ws://127.0.0.1:8080/v1/ws" } = {}) {
+function harness({ identity, url = "ws://127.0.0.1:8080/v1/ws", urls } = {}) {
   const time = clock();
   const sockets = [];
   const phases = [];
   const received = { relay: [], pairJoin: [], pairDone: [], pairClosed: [] };
   const client = new SignalingClient({
-    url,
+    urls: urls ?? [url],
     identity,
     log: () => {},
     now: time.now,
@@ -390,6 +390,54 @@ console.log("SignalingClient assertions:");
 
   const closingPhase = h.phases.find((p) => p.phase === "failed");
   assert(closingPhase === undefined, "a recoverable outage never reports `failed` — that would tell the app to give up");
+}
+
+// --- 01 ddc2563: failover across the address list --------------------------
+{
+  // The signaling address is not part of trust, so a desktop may reach its
+  // phones through any of several. A host that is simply gone must cost one
+  // backoff step, not a permanent outage — which is what a single fixed URL
+  // gave.
+  const h = harness({
+    identity,
+    urls: ["wss://dead.example/v1/ws", "wss://alive.example/v1/ws"],
+  });
+  assert(h.client.currentUrl() === "wss://dead.example/v1/ws", "the configured address is tried first");
+
+  h.socket().close_("1006 abnormal");
+  h.time.advance(1_000);
+  assert(
+    h.client.currentUrl() === "wss://alive.example/v1/ws",
+    `a failed attempt advances to the next address (${h.client.currentUrl()})`,
+  );
+
+  completeHandshake(h, identity);
+  assert(h.client.currentPhase === "connected", "the second address connects");
+  assert(h.client.currentUrl() === "wss://alive.example/v1/ws", "and stays the current address once it answers");
+}
+
+// --- duplicates do not waste a backoff step --------------------------------
+{
+  // A user setting written as a bare host and a built-in default written in
+  // full are the same server. Rotating between them would redial the address
+  // that just failed and look like a hang.
+  const h = harness({ identity, urls: ["sig.example.com", "wss://sig.example.com/v1/ws"] });
+  assert(h.client.currentUrl() === "wss://sig.example.com/v1/ws", "both spellings complete to one address");
+  h.socket().close_("1006 abnormal");
+  h.time.advance(1_000);
+  assert(
+    h.client.currentUrl() === "wss://sig.example.com/v1/ws",
+    "the list collapsed to a single entry, so there is nothing to rotate to",
+  );
+}
+
+// --- an empty list is refused rather than silently idling ------------------
+{
+  let threw = "";
+  try {
+    new SignalingClient({ urls: [], identity, log: () => {} });
+  } catch (error) { threw = String(error?.message ?? error); }
+  assert(threw.includes("no signaling address"), `an empty address list is an explicit error (${threw.slice(0, 45)})`);
 }
 
 // --- terminal errors are NOT retried ---------------------------------------

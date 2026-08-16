@@ -100,7 +100,7 @@ function run() {
   const wire = [];
   const sockets = [];
   const client = new SignalingClient({
-    url: "ws://127.0.0.1:8080/v1/ws",
+    urls: ["ws://127.0.0.1:8080/v1/ws"],
     identity,
     log: () => {},
     now: time.now,

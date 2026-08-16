@@ -22,6 +22,17 @@ export const MOBILE_STUN_SERVERS = [
   "stun:stun.l.google.com:19302",
 ] as const;
 
+/**
+ * Built-in operator signaling addresses, tried after the user's own setting
+ * (01 ddc2563).
+ *
+ * The signaling address is NOT part of trust: a desktop may move between
+ * these without any phone re-pairing. The list exists so an operator
+ * migration, or a host that simply stops answering, costs one backoff step
+ * instead of a permanent outage.
+ */
+export const MOBILE_SIGNALING_FALLBACKS = ["wss://sig.agentparty.app/v1/ws"] as const;
+
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
