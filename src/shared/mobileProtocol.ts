@@ -194,6 +194,27 @@ export interface GatewayStatus {
   events: { seq: number; minSeq: number; maxSeq: number; count: number };
   /** Last completed diagnostics run; `undefined` until one has run. */
   lastDiagnostics: NatDiagnostics | undefined;
+  /**
+   * The most recent relay the pipe refused to act on, or `undefined` if none.
+   *
+   * These refusals cannot be answered: a relay from a device the desktop does
+   * not trust cannot be replied to, because sealing a `bye` needs that
+   * device's `kxPk` and there is no trust record to take it from. So the phone
+   * sees no response at all and reports a bare "internal" failure. Without
+   * this field the only trace is a desktop log line a QA run cannot read, and
+   * the two ends disagree about whether anything happened.
+   */
+  lastRelayRejection: RelayRejection | undefined;
+}
+
+export interface RelayRejection {
+  /** Sender deviceId as the server reported it. */
+  from: string;
+  /** Relay kind (`hello`, `offer`, …) — never the sealed contents. */
+  kind: string;
+  reason: "unpaired_device" | "undecryptable" | "handler_failed";
+  detail: string;
+  at: number;
 }
 
 /** User-editable gateway settings (04 §5 `POST /api/mobile/settings`). */

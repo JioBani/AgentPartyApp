@@ -24,6 +24,7 @@ import {
   type MobileSessionStatus,
   type MobileSettings,
   type NatDiagnostics,
+  type RelayRejection,
   type PairingState,
   type TrustedDevice,
   type ValueStream,
@@ -100,6 +101,7 @@ export class RealMobileGateway implements MobileGateway {
   /** Retained so a settings-driven restart does not discard the run's overrides. */
   private startOptions: MobileGatewayStartOptions = {};
   private lastDiagnostics: NatDiagnostics | undefined;
+  private lastRelayRejection: RelayRejection | undefined;
   private startPromise: Promise<void> | undefined;
   private readonly bootId = randomUUID();
   private readonly diagnosticsProbe: NatDiagnosticsProbe;
@@ -441,7 +443,11 @@ export class RealMobileGateway implements MobileGateway {
     }
     const device = store.find(from);
     if (!device) {
-      this.deps.log("warn", "mobile gateway: relay from an unpaired device ignored", { from });
+      // Cannot be answered: sealing a `bye` needs this device's kxPk and there
+      // is no trust record holding one. The phone therefore sees nothing at
+      // all, so the refusal is recorded in status instead — otherwise the only
+      // trace is a log line a QA run cannot read.
+      this.rejectRelay(from, kind, "unpaired_device", "이 데스크톱에 페어링된 기기가 아닙니다.");
       return;
     }
 
@@ -449,7 +455,7 @@ export class RealMobileGateway implements MobileGateway {
     try {
       payload = decodeRelayPayload(openRelayBox(fromB64(box), fromB64(device.kxPk), store.identity.kxSk));
     } catch (error) {
-      this.deps.log("warn", "mobile gateway: relay could not be opened", { from, error: String(error) });
+      this.rejectRelay(from, kind, "undecryptable", String(error));
       return;
     }
 
@@ -476,11 +482,31 @@ export class RealMobileGateway implements MobileGateway {
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      this.deps.log("error", "mobile gateway: relay handling failed", { from, kind, error: reason });
-      // Tell the peer why. Without this the phone sees only a 45s ICE timeout
-      // with no cause, and a real device has no access to the desktop log.
+      this.rejectRelay(from, kind, "handler_failed", reason);
+      // This one CAN be answered — the device is trusted, so a `bye` can be
+      // sealed to it. Without it the phone sees only a 45s ICE timeout with no
+      // cause, and a real device has no access to the desktop log.
       this.sendSetupFailure(device, sessionIdOf(payload), `${kind} 처리 실패: ${reason}`);
     }
+  }
+
+  /**
+   * Records a relay the pipe would not act on, and logs it.
+   *
+   * Kept in status because two of the three reasons cannot be answered on the
+   * wire, so the phone's only symptom is silence. A QA run reading
+   * `GET /status` can see which branch was taken instead of guessing from a
+   * bare "internal" on the phone.
+   */
+  private rejectRelay(
+    from: string,
+    kind: string,
+    reason: RelayRejection["reason"],
+    detail: string,
+  ): void {
+    this.lastRelayRejection = { from, kind, reason, detail, at: Date.now() };
+    this.deps.log("warn", "mobile gateway: relay refused", { from, kind, reason, detail });
+    this.publish();
   }
 
   /** 01 §3.3 — the phone opens a session; the desktop answers with its own hello. */
@@ -761,6 +787,7 @@ export class RealMobileGateway implements MobileGateway {
       pairing: this.pairingStream.current,
       events: window,
       lastDiagnostics: this.lastDiagnostics,
+      lastRelayRejection: this.lastRelayRejection,
     };
   }
 
