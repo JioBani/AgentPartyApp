@@ -130,6 +130,15 @@ export interface MobileGatewayStartOptions {
    * exercise the pipe without flipping the user's setting.
    */
   force?: boolean;
+  /**
+   * Overrides the QR lifetime for this run. **Development only.**
+   *
+   * The QR is the pairing capability itself, so its validity window is the
+   * window in which a leaked screenshot still works (02 §T3). Two minutes is
+   * the protocol value and the default; anything longer is announced through
+   * `onSecurityWarning` and capped, and must never ship enabled.
+   */
+  pairingTtlMs?: number;
 }
 
 // ---------------------------------------------------------------------------

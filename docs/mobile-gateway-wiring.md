@@ -314,6 +314,7 @@ node scripts/mobile-gateway-cli.mjs   --signaling ws://127.0.0.1:8080/v1/ws   --
 | `--data` | 신원·신뢰 저장소 위치. 지우면 페어링이 초기화된다 |
 | `--pair` | 뜨자마자 QR 발행 |
 | `--auto-confirm` | **QA 전용.** 확인 코드 대조(02 §T4)를 건너뛴다. 실기기 검증에는 쓰지 말 것 |
+| `--pair-ttl <분>` | **개발 전용.** QR 유효시간을 늘린다(기본 2분, 상한 30분). QR은 페어링 권한 그 자체라 유출된 창이 그만큼 길어진다(02 §T3). 켜면 `pairing_ttl_extended` 보안 경고가 뜬다 |
 
 ### stdout 이벤트 (JSON 한 줄씩)
 

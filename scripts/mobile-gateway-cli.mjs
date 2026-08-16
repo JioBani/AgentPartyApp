@@ -33,6 +33,7 @@ const signalingUrl = arg("signaling", "ws://127.0.0.1:8080/v1/ws");
 const httpPort = Number(arg("port", "7100"));
 const dataDir = arg("data", path.join(qaTempDir(), "gateway-cli"));
 const deviceName = arg("name", `${os.hostname()} (CLI)`);
+const pairTtlMinutes = Number(arg("pair-ttl", "0"));
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const result = await build({
@@ -236,7 +237,7 @@ gateway.status$.subscribe((status) => {
   }
 });
 
-await gateway.start();
+await gateway.start(pairTtlMinutes > 0 ? { pairingTtlMs: pairTtlMinutes * 60_000 } : {});
 emitEvent({ event: "started", deviceId: gateway.getStatus().deviceId, signalingUrl });
 if (argv.includes("--pair")) {
   await openPairing();

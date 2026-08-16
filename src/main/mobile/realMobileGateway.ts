@@ -3,6 +3,7 @@ import {
   ConnHelloSchema,
   IcePayloadSchema,
   SdpPayloadSchema,
+  PAIR_TTL_MS,
   buildConnHello,
   decodeRelayPayload,
   encodeRelayPayload,
@@ -145,6 +146,7 @@ export class RealMobileGateway implements MobileGateway {
       signalingHost: () => hostOf(signalingUrl),
       desktopName: () => this.settings.deviceName,
       transport: signaling,
+      pairingTtlMs: this.resolvePairingTtl(options.pairingTtlMs),
       onStateChange: (state) => {
         this.pairingStream.set(state);
         if (state.phase === "completed") {
@@ -582,6 +584,26 @@ export class RealMobileGateway implements MobileGateway {
   }
 
   /**
+   * Validates a development QR lifetime. Anything above the protocol default
+   * is capped and surfaced: the QR is the pairing capability, so a long window
+   * is a real weakening (02 §T3), not a convenience setting.
+   */
+  private resolvePairingTtl(requested: number | undefined): number | undefined {
+    if (requested === undefined || requested <= PAIR_TTL_MS) {
+      return undefined;
+    }
+    const capped = Math.min(requested, MAX_DEV_PAIRING_TTL_MS);
+    this.deps.onSecurityWarning({
+      code: "pairing_ttl_extended",
+      message:
+        `페어링 QR 유효시간이 ${Math.round(capped / 60_000)}분으로 늘어나 있습니다(기본 2분). ` +
+        "QR은 페어링 권한 그 자체라 유출 시 그 시간 동안 누구나 페어링할 수 있습니다. 개발 중에만 쓰세요.",
+    });
+    this.deps.log("warn", "mobile pairing TTL extended for development", { requested, capped });
+    return capped;
+  }
+
+  /**
    * The router mapping, in the shape the transport advertises (01 §3.3). Absent
    * until a mapping exists, and absent for good when none can be obtained —
    * announcing a port that is not mapped would just add a candidate that never
@@ -693,6 +715,12 @@ function idlePairing(): PairingState {
     error: undefined,
   };
 }
+
+/**
+ * 30 minutes — long enough for a device to be re-flashed mid-test, short enough
+ * that a forgotten flag is not an open door for a whole working day.
+ */
+const MAX_DEV_PAIRING_TTL_MS = 30 * 60_000;
 
 /**
  * A stable UDP port per desktop identity, in the ephemeral range. Deriving it

@@ -46,6 +46,12 @@ export interface PairingServiceDeps {
   /** Registers and releases the token with the signaling server. */
   transport: PairingTransport;
   onStateChange: (state: PairingState) => void;
+  /**
+   * QR lifetime. Defaults to the protocol's {@link PAIR_TTL_MS}. A longer one
+   * is a DEVELOPMENT affordance only: the QR is the pairing capability itself,
+   * so the window it is valid for is the window an attacker has (02 §T3).
+   */
+  pairingTtlMs?: number;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
@@ -109,6 +115,7 @@ export class PairingService {
 
     const offer = createPairingOffer(this.deps.identityStore.identity, this.deps.signalingHost(), {
       now: this.now(),
+      ttlMs: this.deps.pairingTtlMs ?? PAIR_TTL_MS,
     });
     let resolve!: (device: TrustedDevice) => void;
     let reject!: (error: Error) => void;
