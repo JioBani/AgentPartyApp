@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Info as InfoIcon, Languages, RotateCcw } from "lucide-react";
+import { AlertTriangle, Languages, RotateCcw } from "lucide-react";
 import {
   partyPrimerTotals,
   partyPrimerView,
@@ -90,56 +90,58 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
 
   return (
     <div className="set-primer">
-      <div className="set-inline-note">
-        <InfoIcon size={14} />
-        <span>
-          모든 멤버 세션이 시작할 때 시스템 프롬프트로 받는 내용입니다. 섹션별로 켜고 끄거나 문구를 바꿀 수 있고,
-          바꾸지 않은 섹션은 앱이 갱신될 때 함께 최신 내용을 따라갑니다. <b>이미 실행 중인 멤버는 시작할 때 받은 프롬프트를 유지</b>하므로,
-          변경 내용은 다음에 시작·재개하는 세션부터 적용됩니다.
-        </span>
-      </div>
-
-      {/* 총량: what the assembled prompt costs a member, and what is switched off. */}
-      <div className="set-primer-total">
-        <div className="set-primer-total-main">
-          <span className="set-primer-total-num wb-mono">{totals.tokens.toLocaleString()}</span>
-          <span className="set-primer-total-unit">토큰 (추정)</span>
-        </div>
-        <div className="set-primer-total-meta">
-          <span>켜진 섹션 {totals.enabledSections}/{totals.totalSections}</span>
-          <span>{totals.characters.toLocaleString()}자</span>
-          {totals.disabledTokens > 0 && <span>꺼둔 섹션 −{totals.disabledTokens.toLocaleString()} 토큰</span>}
-        </div>
-      </div>
-      <div className="set-inline-note is-soft">
-        <InfoIcon size={14} />
-        <span>
-          토큰 수는 <b>추정치</b>입니다(한글 1.6자·그 외 3.8자 ≈ 1토큰). 앱에는 각 모델의 토크나이저가 없고 제공자마다 계산이 달라 실제 청구값과는 차이가 납니다.
-          섹션 간 비교와 “이걸 줄이면 얼마나 주는가”를 보는 용도로 쓰세요. 프롬프트는 세션당 한 번 설치되고 이후 턴에서는 대체로 캐시로 재사용됩니다.
-        </span>
-      </div>
-
-      {/* 주입 시점: the answer to "턴마다 들어가나?" — stated per harness. */}
-      <div className="set-primer-delivery">
-        <div className="set-primer-delivery-label">프롬프트가 들어가는 시점</div>
-        {PARTY_PRIMER_DELIVERY.map((entry) => (
-          <div className={"set-primer-delivery-row" + (entry.delivered ? "" : " is-none")} key={entry.harness}>
-            <span className="set-primer-delivery-harness">{entry.label}</span>
-            <span className={"set-primer-delivery-when" + (entry.delivered ? "" : " is-none")}>{entry.when}</span>
-            <span className="set-primer-delivery-detail">{entry.detail}</span>
+      {/* One summary block, not three islands: what it costs, when it is
+          installed, and the two caveats that change how those numbers read. */}
+      <section className="set-primer-brief">
+        <div className="set-primer-brief-top">
+          <div className="set-primer-total">
+            <span className="set-primer-total-num wb-mono">{totals.tokens.toLocaleString()}</span>
+            <span className="set-primer-total-unit">토큰<small>추정</small></span>
           </div>
-        ))}
-      </div>
+          <dl className="set-primer-facts">
+            <div className="set-primer-fact">
+              <dt>켜진 섹션</dt>
+              <dd className="wb-mono">{totals.enabledSections}/{totals.totalSections}</dd>
+            </div>
+            <div className="set-primer-fact">
+              <dt>길이</dt>
+              <dd className="wb-mono">{totals.characters.toLocaleString()}자</dd>
+            </div>
+            <div className="set-primer-fact">
+              <dt>꺼둔 섹션</dt>
+              <dd className="wb-mono">{totals.disabledTokens > 0 ? `−${totals.disabledTokens.toLocaleString()} 토큰` : "없음"}</dd>
+            </div>
+          </dl>
+        </div>
 
-      <div className="set-inline-note is-soft">
-        <InfoIcon size={14} />
-        <span>
-          문구 안에서 <code className="wb-mono">{PARTY_PRIMER_VARIABLES.join(" ")}</code> 는 세션이 시작될 때 그 멤버의 파티·이름·역할로 치환됩니다.
-        </span>
-      </div>
+        <div className="set-primer-delivery">
+          <div className="set-primer-delivery-label">프롬프트가 들어가는 시점</div>
+          {PARTY_PRIMER_DELIVERY.map((entry) => (
+            <div className="set-primer-delivery-row" key={entry.harness}>
+              <span className="set-primer-delivery-harness">{entry.label}</span>
+              <span className={"set-primer-delivery-when" + (entry.delivered ? "" : " is-none")}>{entry.when}</span>
+              <span className="set-primer-delivery-detail">{entry.detail}</span>
+            </div>
+          ))}
+        </div>
 
-      {/* One section at a time. The strip carries each section's token weight. */}
-      <div className="set-subtabs" role="tablist" aria-label="프롬프트 섹션">
+        <ul className="set-primer-notes">
+          <li>
+            <b>이미 실행 중인 멤버는 시작할 때 받은 프롬프트를 유지</b>합니다. 여기서 바꾼 내용은 다음에 시작·재개하는 세션부터 적용됩니다.
+            바꾸지 않은 섹션은 앱이 갱신될 때 함께 최신 내용을 따라갑니다.
+          </li>
+          <li>
+            토큰 수는 <b>추정치</b>입니다(한글 1.6자·그 외 3.8자 ≈ 1토큰). 앱에 각 모델의 토크나이저가 없고 제공자마다 계산이 달라 실제 청구값과는 차이가 납니다.
+          </li>
+          <li>
+            문구 안의 <code className="wb-mono">{PARTY_PRIMER_VARIABLES.join(" ")}</code> 는 세션이 시작될 때 그 멤버의 파티·이름·역할로 치환됩니다.
+          </li>
+        </ul>
+      </section>
+
+      {/* Section tabs attached to their panel — one tabbed surface, not a strip
+          of pills floating above a separate card. */}
+      <div className="set-primer-tabs" role="tablist" aria-label="프롬프트 섹션">
         {sections.map((section) => {
           const draft = drafts[section.id];
           const changed = typeof draft === "string" && draft !== section.text;
@@ -149,13 +151,13 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
               key={section.id}
               role="tab"
               aria-selected={section.id === active}
-              className={"set-subtab" + (section.id === active ? " is-active" : "") + (section.enabled ? "" : " is-off")}
+              className={"set-primer-tab" + (section.id === active ? " is-active" : "") + (section.enabled ? "" : " is-off")}
               onClick={() => setActive(section.id)}
             >
-              {section.title}
-              <span className="set-subtab-tokens wb-mono">{section.tokens.toLocaleString()}</span>
-              {changed && <span className="set-subtab-dot" title="저장되지 않은 변경" />}
-              {section.translation?.stale && <span className="set-subtab-dot is-stale" title="번역이 원문보다 오래됨" />}
+              <span className="set-primer-tab-name">{section.title}</span>
+              <span className="set-primer-tab-tokens wb-mono">{section.tokens.toLocaleString()}</span>
+              {changed && <span className="set-primer-tab-dot" title="저장되지 않은 변경" />}
+              {!changed && section.translation?.stale && <span className="set-primer-tab-dot is-stale" title="번역이 원문보다 오래됨" />}
             </button>
           );
         })}
@@ -167,9 +169,9 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
         const value = typeof draft === "string" ? draft : section.text;
         const changed = value !== section.text;
         return (
-          <div className="set-subtab-panel" key={section.id} hidden={!open}>
+          <div className="set-primer-panel" key={section.id} hidden={!open}>
             <SubtreeVisibility visible={open}>
-              <section className={"set-primer-card" + (section.enabled ? "" : " is-off")}>
+              <section className={"set-primer-section" + (section.enabled ? "" : " is-off")}>
                 <div className="set-primer-head">
                   <span className="set-primer-name">{section.title}</span>
                   {section.customized && <span className="set-primer-badge is-edited">수정됨</span>}
@@ -178,7 +180,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                   {!section.enabled && <span className="set-primer-badge is-off">꺼짐</span>}
                   {section.translation?.stale && <span className="set-primer-badge is-stale">번역 오래됨</span>}
                   <span className="set-primer-gap" />
-                  <span className="set-primer-tokens wb-mono">{section.tokens.toLocaleString()} 토큰(추정)</span>
+                  <span className="set-primer-tokens wb-mono">{section.tokens.toLocaleString()} 토큰</span>
                   <button
                     type="button"
                     className="set-toggle"
