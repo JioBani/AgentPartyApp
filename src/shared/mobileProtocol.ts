@@ -16,24 +16,6 @@
  * the desktop's own status, settings and diagnostics shapes.
  */
 
-/** Protocol version carried in `v` fields. Bumping it requires updating 01. */
-export const MOBILE_PROTOCOL_VERSION = 1;
-
-/** QR scheme from 01 §2.1 — `agentparty://pair?v=1&d=…`. */
-export const MOBILE_PAIRING_URI_SCHEME = "agentparty";
-
-/**
- * Limits this repository owns. Anything the wire format fixes — frame size,
- * RPC timeout, ring-buffer bounds, pairing TTL, signaling keepalive — lives in
- * `@agentparty/protocol` and must be read from there, not restated here.
- */
-export const MOBILE_LIMITS = {
-  /** 04 §성능·안전 — per-session send backpressure ceiling. */
-  sessionSendQueueMaxBytes: 2 * 1024 * 1024,
-  /** 01 §6 — ICE restart grace before a brand new session is started. */
-  iceRestartGraceMs: 10_000,
-} as const;
-
 /** 01 §6 — STUN only. There is deliberately no TURN entry. */
 export const MOBILE_STUN_SERVERS = [
   "stun:stun.cloudflare.com:3478",

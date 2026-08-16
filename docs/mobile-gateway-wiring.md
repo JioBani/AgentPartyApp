@@ -171,7 +171,7 @@ const stop = gateway.status$.subscribe((status) => broadcastToAllWindows("mobile
 
 - `inFlightRequests > 0` → 지금 폰이 이 데스크톱을 조작 중
 - `lastRequestMethod` / `lastRequestAt` → 무엇을, 언제
-- `queuedBytes` → 백프레셔 상한(2MB) 초과 시 세션을 끊고 되감기에 맡길 값. **M2까지는 항상 0이다**
+- `queuedBytes` → 백프레셔용 값. **M2까지는 항상 0이다**(송신 큐 상한이 아직 없다)
 - 끊기 버튼 → `gateway.disconnect(sessionId)`. 신뢰까지 끊으려면 `pairing.revoke(deviceId)`
   (이쪽은 `trustEpoch`를 올려 예전 `hello`를 거부하게 만든다)
 
@@ -216,6 +216,51 @@ gateway.mock.reset();
   스스로 읽는다. 시드를 남겨두면 시작할 때마다 불필요한 설정 쓰기와 재연결이 한 번씩 일어난다.
 - **스냅샷 제공자를 반드시 등록할 것.** 폰의 첫 `resume`는 항상 스냅샷을 요구하는데(01 §5.3),
   제공자가 없으면 파이프는 빈 상태를 지어내는 대신 **세션을 사유와 함께 종료**한다.
+
+## 앱 없이 파이프만 띄우기 — 게이트웨이 CLI
+
+실물 게이트웨이를 Electron 밖에서 돌린다. 상호운용 하네스·실기기 QA·LTE 격리 재시험에 쓴다.
+
+```
+node scripts/mobile-gateway-cli.mjs   --signaling ws://127.0.0.1:8080/v1/ws   --port 7100 [--data <dir>] [--name <표시 이름>] [--pair] [--auto-confirm]
+```
+
+| 인자 | 뜻 |
+|---|---|
+| `--signaling` | 시그널링 URL. 평문 `ws://`는 루프백·`10.0.2.2`만 허용된다(운영은 `wss://`) |
+| `--port` | 제어 HTTP 포트(기본 7100) |
+| `--data` | 신원·신뢰 저장소 위치. 지우면 페어링이 초기화된다 |
+| `--pair` | 뜨자마자 QR 발행 |
+| `--auto-confirm` | **QA 전용.** 확인 코드 대조(02 §T4)를 건너뛴다. 실기기 검증에는 쓰지 말 것 |
+
+### stdout 이벤트 (JSON 한 줄씩)
+
+`started` · `qr` · `code` · `confirmed` · `paired` · `pairing_failed` · `sessions`.
+사람이 읽는 줄은 `{`로 시작하지 않으므로 그걸로 걸러낸다.
+
+### 제어 API
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /status` | 게이트웨이 상태 + 설정 + 보안 경고 |
+| `GET /logs` | 최근 200줄 (연결 실패 원인) |
+| `GET /devices` | 신뢰 기기 목록 |
+| `POST /pair/open` | QR 발행 → `{qr, expiresAt}`. **2분 만료라 스캔 직전에 호출** |
+| `POST /pair/confirm` | 코드 일치 확인 후 blob2 발송 |
+| `POST /pair/cancel` | 페어링 중단 |
+| `POST /devices/:id/revoke` | 신뢰 해제(trustEpoch 증가) |
+| `POST /sessions/:id/disconnect` | 세션만 끊기 |
+| `POST /emit` | `{type, payload, workspacePath?}` 이벤트 주입(되감기 확인용) |
+
+등록된 앱 메서드는 `qa.echo` 하나(파라미터를 그대로 반환)다. 나머지 `sys.ping`·`sys.info`·
+`push.register`는 파이프가 답한다.
+
+### 제품과 다른 점
+
+CLI의 `safeStorage` 대역은 **암호화하지 않는다**. 그래서 뜰 때 `identity_unencrypted` 경고가
+찍힌다 — 키링 없는 리눅스와 같은 경로이며, 여기서 암호화하는 척하면 실제 강등이 QA에서 보이지
+않게 된다. 또 CLI는 파이프를 ESM으로 번들하므로 `node-datachannel`을 직접 import해
+`deps.loadWebrtcModule`로 주입한다(Electron main은 CommonJS라 불필요).
 
 ## 테스트
 

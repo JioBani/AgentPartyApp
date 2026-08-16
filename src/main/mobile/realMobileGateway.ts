@@ -7,6 +7,7 @@ import {
   decodeRelayPayload,
   encodeRelayPayload,
   fromB64,
+  RESERVED_METHODS,
   isReservedMethod,
   openRelayBox,
   sealRelayBox,
@@ -37,7 +38,6 @@ import type {
   MobileRequestHandler,
   MobileSnapshotProvider,
   PairingSession,
-  PushPayload,
 } from "./mobileGateway";
 import { PairingService } from "./pairingService";
 import { RpcServer } from "./rpcServer";
@@ -68,18 +68,9 @@ interface LiveSession {
   ownEph: { publicKey: Uint8Array; privateKey: Uint8Array };
 }
 
-/** A session that has been offered but has not completed its `hello`. */
-interface PendingSession {
-  sessionId: string;
-  device: TrustedDevice;
-  ownEph: { publicKey: Uint8Array; privateKey: Uint8Array };
-  createdAt: number;
-}
-
 export class RealMobileGateway implements MobileGateway {
   private readonly handlers = new Map<string, MobileRequestHandler>();
   private readonly sessions = new Map<string, LiveSession>();
-  private readonly pending = new Map<string, PendingSession>();
   private readonly statusStream: MutableValueStream<GatewayStatus>;
   private readonly pairingStream: MutableValueStream<PairingState>;
 
@@ -174,7 +165,6 @@ export class RealMobileGateway implements MobileGateway {
     for (const sessionId of [...this.sessions.keys()]) {
       this.endSession(sessionId, "데스크톱이 모바일 연결을 종료했습니다.");
     }
-    this.pending.clear();
     this.pairingService?.cancel();
     this.signaling?.stop();
     this.signaling = undefined;
@@ -201,7 +191,7 @@ export class RealMobileGateway implements MobileGateway {
   }
 
   registeredMethods(): string[] {
-    return [...this.handlers.keys(), "sys.ping", "sys.info", "push.register"].sort();
+    return [...this.handlers.keys(), ...RESERVED_METHODS].sort();
   }
 
   // -- events ---------------------------------------------------------------
@@ -386,13 +376,6 @@ export class RealMobileGateway implements MobileGateway {
     store.requireTrusted(device.deviceId, parsed.epoch);
 
     const ownEph = newSessionEphemeral();
-    this.pending.set(parsed.sessionId, {
-      sessionId: parsed.sessionId,
-      device,
-      ownEph,
-      createdAt: Date.now(),
-    });
-
     this.sendRelay(
       device,
       "hello",
@@ -473,7 +456,6 @@ export class RealMobileGateway implements MobileGateway {
       startedAt: Date.now(),
       ownEph,
     });
-    this.pending.delete(sessionId);
     store.touch(device.deviceId, Date.now());
     this.publish();
   }
