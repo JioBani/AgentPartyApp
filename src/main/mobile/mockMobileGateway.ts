@@ -273,8 +273,9 @@ class MockGateway implements MockMobileGateway {
 
   // -- status / settings / diagnostics --------------------------------------
 
+  /** Built fresh, matching the real gateway (see its getStatus). */
   getStatus(): GatewayStatus {
-    return this.statusStream.current;
+    return this.buildStatus();
   }
 
   get status$(): ValueStream<GatewayStatus> {

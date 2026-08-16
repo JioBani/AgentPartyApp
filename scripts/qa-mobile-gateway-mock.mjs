@@ -82,7 +82,10 @@ assert(gateway.getSettings().enabled === false, "force did not write back enable
 // --- status stream ---------------------------------------------------------
 let pushes = 0;
 const unsubscribe = gateway.status$.subscribe(() => { pushes += 1; });
-assert(gateway.status$.current === gateway.getStatus(), "status$.current and getStatus() are the same value");
+// getStatus() is built fresh so an emit is visible to a caller that polls;
+// status$ is the push channel for state transitions. They agree in content,
+// not identity.
+assert(JSON.stringify(gateway.status$.current) === JSON.stringify(gateway.getStatus()), "status$.current and getStatus() agree");
 
 // --- reserved methods ------------------------------------------------------
 await throws(
@@ -181,6 +184,34 @@ await throws(
 
 assert(pushes > 0, "status$ pushed updates to its subscriber");
 unsubscribe();
+
+// --- getStatus() must reflect an emit that just happened -------------------
+{
+  // The reported bug: getStatus() returned a cached snapshot that emit() never
+  // refreshed, so a caller polling right after publishing saw seq unchanged and
+  // concluded nothing had been published.
+  const g = M.createMockMobileGateway();
+  await g.start({ force: true });
+  const session = await g.pairing.openQr();
+  g.mock.scanQr({ deviceId: 'phone-emit' });
+  await g.pairing.confirm();
+  await session.completed;
+  const id = g.mock.connect({ deviceId: 'phone-emit' });
+  g.mock.subscribe(id, ['C:/w']);
+
+  const before = g.getStatus().events.seq;
+  g.emit('session:events', { n: 1 }, { workspacePath: 'C:/w' });
+  const after = g.getStatus().events.seq;
+  assert(after === before + 1, `getStatus() shows the emit immediately (${before} -> ${after})`);
+  assert(g.getStatus().events.maxSeq === after, 'and the ring-buffer window moves with it');
+
+  // With no session emit is a documented no-op; the counter must NOT move, so a
+  // caller can tell the two cases apart.
+  await g.disconnect(id);
+  const idle = g.getStatus().events.seq;
+  g.emit('session:events', { n: 2 }, { workspacePath: 'C:/w' });
+  assert(g.getStatus().events.seq === idle, 'with no session the counter does not move — a no-op is distinguishable');
+}
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");
 process.exit(failures.length ? 1 : 0);

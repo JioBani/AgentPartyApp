@@ -187,8 +187,23 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/emit") {
       const body = await readBody(req);
+      // emit() is a documented no-op with no connected session (04 §성능·안전).
+      // Reporting ok:true regardless made a silent no-op look like success.
+      const before = gateway.getStatus().events.seq;
       gateway.emit(body.type ?? "qa.event", body.payload ?? {}, body.workspacePath ? { workspacePath: body.workspacePath } : undefined);
-      return json(res, 200, { ok: true, events: gateway.getStatus().events });
+      const after = gateway.getStatus();
+      if (after.events.seq === before) {
+        return json(res, 409, {
+          ok: false,
+          published: false,
+          error:
+            after.sessions.length === 0
+              ? "연결된 세션이 없어 이벤트가 발행되지 않았습니다 (emit은 세션이 0개면 no-op)."
+              : "이벤트가 발행되지 않았습니다.",
+          events: after.events,
+        });
+      }
+      return json(res, 200, { ok: true, published: true, seq: after.events.seq, events: after.events });
     }
     return json(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
   } catch (error) {

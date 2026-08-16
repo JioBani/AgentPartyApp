@@ -724,10 +724,12 @@ function idlePairing(): PairingState {
 }
 
 /**
- * 30 minutes — long enough for a device to be re-flashed mid-test, short enough
- * that a forgotten flag is not an open door for a whole working day.
+ * 10 minutes, matching the signaling server's pairing window (develop). A QR
+ * outliving that window is worse than a short one: it stays on screen looking
+ * valid while `pair.join` is refused, which is harder to diagnose than a plain
+ * expiry.
  */
-const MAX_DEV_PAIRING_TTL_MS = 30 * 60_000;
+const MAX_DEV_PAIRING_TTL_MS = 10 * 60_000;
 
 /**
  * A stable UDP port per desktop identity, in the ephemeral range. Deriving it
