@@ -1,0 +1,288 @@
+/*
+ * RpcServer test (01 §5) — real envelopes through the real EventBridge.
+ *
+ * The rules under test are the ones whose violation is invisible to the phone:
+ * a request that never gets an answer, a rewind that silently returns partial
+ * history, a snapshot that cannot be told apart from "the desktop is empty",
+ * and a chunk group that half-arrives. Each of those is asserted to produce a
+ * definite outcome the phone can act on.
+ */
+import { build } from "esbuild";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
+import path from "node:path";
+import { qaTempDir } from "./lib/qaTemp.mjs";
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(root, "..");
+const outDir = qaTempDir();
+
+async function load(entry, name) {
+  const result = await build({
+    entryPoints: [path.join(projectRoot, entry)],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    external: ["@agentparty/protocol", "ws", "node-datachannel"],
+    write: false,
+  });
+  const bundlePath = path.join(outDir, name);
+  writeFileSync(bundlePath, result.outputFiles[0].text);
+  return import(pathToFileURL(bundlePath).href);
+}
+
+const { RpcServer } = await load("src/main/mobile/rpcServer.ts", "rpcServer.mjs");
+const { EventBridge } = await load("src/main/mobile/eventBridge.ts", "eventBridgeForRpc.mjs");
+const C = await load("src/main/mobile/chunking.ts", "chunkingForRpc.mjs");
+const P = await import("@agentparty/protocol");
+await P.sodiumReady();
+
+const failures = [];
+let blocked = 0;
+const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
+const tick = () => new Promise((r) => setImmediate(r));
+
+const SESSION = "s-1";
+let idSeq = 0;
+const req = (m, p) => ({ k: "req", id: `r-${++idSeq}`, m, ...(p === undefined ? {} : { p }) });
+
+function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1" } = {}) {
+  const bridge = new EventBridge({ bootId });
+  const sent = [];
+  const closes = [];
+  const pushes = [];
+  bridge.attach({ sessionId: SESSION, deliver: (event) => server.deliver(event) });
+
+  const server = new RpcServer({
+    link: {
+      sessionId: SESSION,
+      deviceId: "phone-device-id-000001",
+      deviceName: "Galaxy S25",
+      transport: "directViaRendezvous",
+      send: (envelope) => sent.push(envelope),
+      close: (reason) => closes.push(reason),
+    },
+    eventBridge: bridge,
+    handlers: () => handlers,
+    snapshotProvider: () => snapshotProvider,
+    appName: "AgentParty",
+    appVersion: "0.2.0",
+    registerPush: (deviceId, platform, handle) => pushes.push({ deviceId, platform, handle }),
+    log: () => {},
+    now: () => 1_700_000_000_000,
+    newId: () => "grp-1",
+  });
+
+  return { server, bridge, sent, closes, pushes, handlers, last: () => sent.at(-1) };
+}
+
+console.log("RpcServer assertions:");
+
+// --- reserved methods answered by the pipe ---------------------------------
+{
+  const h = harness();
+  h.server.handle(req("sys.ping"));
+  await tick();
+  const pong = h.last();
+  assert(pong.k === "res" && pong.ok === true, "sys.ping is answered by the pipe");
+  assert(P.SysPingResultSchema.safeParse(pong.r).success, "the sys.ping result matches the shared schema");
+  assert(pong.r.bootId === "boot-1", "sys.ping reports the desktop's bootId");
+  assert(pong.r.transport === "directViaRendezvous", "sys.ping reports the transport actually in use");
+
+  h.bridge.publish("e", {}, undefined);
+  h.server.handle(req("sys.info"));
+  await tick();
+  const info = h.last();
+  assert(P.SysInfoResultSchema.safeParse(info.r).success, "the sys.info result matches the shared schema");
+  assert(info.r.protocolVersion === P.PROTOCOL_VERSION, "sys.info reports the protocol version");
+  assert(info.r.maxSeq === 1, "sys.info reports the live ring-buffer window");
+
+  h.server.handle(req("push.register", { platform: "android", handle: "fcm-token" }));
+  await tick();
+  assert(h.pushes[0]?.handle === "fcm-token", "push.register stores the handle against the verified device");
+  assert(h.pushes[0]?.deviceId === "phone-device-id-000001", "the deviceId comes from the session, not the params");
+
+  h.server.handle(req("push.register", { platform: "windows-phone", handle: "x" }));
+  await tick();
+  assert(h.last().ok === false, "an invalid push platform is rejected rather than stored");
+  assert(h.pushes.length === 1, "and nothing was written");
+}
+
+// --- app methods -----------------------------------------------------------
+{
+  const handlers = new Map();
+  let seen;
+  handlers.set("party.list", async (params, ctx) => { seen = { params, ctx }; return { members: 2 }; });
+  handlers.set("boom", async () => { throw new Error("핸들러 폭발"); });
+  const h = harness({ handlers });
+
+  h.server.handle(req("party.list", { workspacePath: "C:/proj/a", extra: 1 }));
+  await tick();
+  assert(h.last().r?.members === 2, "a registered handler's result is returned");
+  assert(seen.params.extra === 1, "params reach the handler untouched");
+  assert(seen.ctx.workspacePath === "C:/proj/a", "workspacePath is lifted into the context (04 §3)");
+  assert(seen.ctx.deviceId === "phone-device-id-000001", "the context carries the verified device");
+  assert(seen.ctx.signal instanceof AbortSignal, "the handler gets an abort signal");
+
+  h.server.handle(req("party.list", { workspacePath: 42 }));
+  await tick();
+  assert(seen.ctx.workspacePath === undefined, "a non-string workspacePath is left absent, not coerced");
+
+  h.server.handle(req("nope.method"));
+  await tick();
+  const missing = h.last();
+  assert(missing.ok === false && missing.e.code === "method_not_found", "an unknown method returns method_not_found");
+  assert(h.closes.length === 0, "an unknown method does not end the session");
+
+  h.server.handle(req("boom"));
+  await tick();
+  const failed = h.last();
+  assert(failed.ok === false && failed.e.code === "handler_failed", "a throwing handler still produces a response");
+  assert(failed.e.message.includes("핸들러 폭발"), "the handler's message reaches the phone");
+}
+
+// --- 01 §5.2 subscribe -----------------------------------------------------
+{
+  const h = harness();
+  h.server.handle({ k: "ctl", c: "subscribe", workspaces: ["C:/a", "C:/b"] });
+  const ack = h.last();
+  assert(ack.c === "subscribed", "subscribe is acknowledged");
+  assert(ack.workspaces.join(",") === "C:/a,C:/b", "the ack echoes the set now in effect");
+
+  h.bridge.publish("session:events", { n: 1 }, "C:/a");
+  h.bridge.publish("session:events", { n: 2 }, "C:/z");
+  const events = h.sent.filter((e) => e.k === "evt");
+  assert(events.length === 1, "only subscribed workspaces are delivered");
+
+  h.server.handle({ k: "ctl", c: "subscribe", workspaces: [] });
+  h.bridge.publish("session:events", { n: 3 }, "C:/a");
+  assert(h.sent.filter((e) => e.k === "evt").length === 1, "an empty set replaces the old one");
+}
+
+// --- 01 §5.3 rewind --------------------------------------------------------
+{
+  const h = harness({ snapshotProvider: (ctx) => ({ workspaces: ctx.workspaces, live: true }) });
+  h.server.handle({ k: "ctl", c: "subscribe", workspaces: ["C:/a"] });
+  h.bridge.publish("session:events", { n: 1 }, "C:/a");
+  h.bridge.publish("session:events", { n: 2 }, "C:/a");
+
+  const before = h.sent.length;
+  h.server.handle({ k: "ctl", c: "resume", bootId: "boot-1", lastSeq: 1 });
+  await tick();
+  const replayed = h.sent.slice(before);
+  assert(replayed.filter((e) => e.k === "evt").length === 1, "replay resends only events after lastSeq");
+  const resumed = replayed.at(-1);
+  assert(resumed.c === "resumed", "replay ends with a resumed marker");
+  assert(resumed.bootId === "boot-1", "resumed carries bootId so the phone never guesses its cursor");
+  assert(resumed.seq === 2, "resumed carries the seq the phone is now caught up to");
+
+  // A phone that has never synced (01 §5.3: null, never a random value).
+  // The installed @agentparty/protocol predates that change and its
+  // CtlResumeSchema still requires string/number, so decodeRpcEnvelope rejects
+  // the spec-conformant envelope. Detected rather than worked around: bypassing
+  // the shared decoder here would fork envelope validation.
+  if (P.RpcControlSchema.safeParse({ k: "ctl", c: "resume", bootId: null, lastSeq: null }).success) {
+    const fresh = h.sent.length;
+    h.server.handle({ k: "ctl", c: "resume", bootId: null, lastSeq: null });
+    await tick();
+    const snapshot = h.sent.slice(fresh).at(-1) ?? {};
+    assert(snapshot.c === "snapshot", "a null cursor always produces a snapshot");
+    assert(snapshot.bootId === "boot-1", "the snapshot carries bootId");
+    assert(typeof snapshot.seq === "number", "the snapshot carries the seq it is current as of");
+    assert(snapshot.state.live === true, "the registered provider produced the state");
+    assert(snapshot.state.workspaces.join(",") === "C:/a", "the provider sees the session's subscription");
+  } else {
+    console.log("  ! BLOCKED: @agentparty/protocol CtlResumeSchema rejects the null cursor required by 01 §5.3.");
+    console.log("            A first-sync resume is UNVERIFIED until the package accepts bootId/lastSeq null.");
+    blocked += 1;
+  }
+
+  // A different bootId reaches the same snapshot path and IS decodable today.
+  const other = h.sent.length;
+  h.server.handle({ k: "ctl", c: "resume", bootId: "a-different-boot", lastSeq: 1 });
+  await tick();
+  assert(h.sent.slice(other).at(-1).c === "snapshot", "a bootId from a previous desktop run forces a snapshot");
+}
+
+// --- a missing or failing snapshot provider is distinguishable -------------
+{
+  const h = harness();
+  h.server.handle({ k: "ctl", c: "resume", bootId: "another-boot", lastSeq: 1 });
+  await tick();
+  const answer = h.last();
+  assert(answer.c === "snapshot", "the phone still gets an answer");
+  assert(answer.state === null && typeof answer.error === "string", "an absent provider is an explicit error, not an empty state");
+
+  const broken = harness({ snapshotProvider: () => { throw new Error("상태를 읽지 못함"); } });
+  broken.server.handle({ k: "ctl", c: "resume", bootId: "another-boot", lastSeq: 1 });
+  await tick();
+  const failed = broken.last();
+  assert(failed.error?.includes("상태를 읽지 못함"), "a failing provider reports why instead of hanging");
+  assert(broken.closes.length === 0, "a snapshot failure does not kill the session");
+}
+
+// --- keepalive -------------------------------------------------------------
+{
+  const h = harness();
+  h.server.handle({ k: "ctl", c: "ping" });
+  assert(h.last().c === "pong", "ctl.ping is answered with pong");
+}
+
+// --- chunking (01 §5.6) ----------------------------------------------------
+{
+  const handlers = new Map();
+  let got;
+  handlers.set("big.echo", async (params) => { got = params; return { size: params.text.length }; });
+  const h = harness({ handlers });
+
+  // Inbound: a request too large for one frame, arriving as chunks.
+  const big = { k: "req", id: "r-big", m: "big.echo", p: { text: "한".repeat(40_000) } };
+  const chunks = C.splitEnvelope(JSON.stringify(big), "in-1");
+  assert(chunks.length > 1, "the oversize request really is split");
+  for (const chunk of chunks) { h.server.handle(chunk); }
+  await tick();
+  assert(got?.text.length === 40_000, "a chunked request reassembles with multi-byte text intact");
+
+  // Outbound: the response is itself oversize and goes back as chunks.
+  const outbound = h.sent.filter((e) => e.c === "chunk");
+  assert(h.sent.some((e) => e.k === "res") || outbound.length > 0, "the response was sent");
+
+  // A gap ends the session rather than leaving a half-assembled envelope.
+  const h2 = harness();
+  const parts = C.splitEnvelope(JSON.stringify(big), "in-2");
+  h2.server.handle(parts[0]);
+  h2.server.handle(parts[2]);
+  assert(h2.closes.length === 1, "a chunk gap ends the session (01 §4.2 rule)");
+  assert(h2.closes[0].includes("조립"), "the close reason names the reassembly failure");
+}
+
+// --- envelopes that must not arrive ----------------------------------------
+{
+  const h = harness();
+  h.server.handle({ k: "evt", seq: 1, type: "x", d: {}, ts: 1 });
+  assert(h.closes.length === 1, "an event from the phone ends the session — events are desktop→phone only");
+
+  const h2 = harness();
+  h2.server.handle({ nonsense: true });
+  assert(h2.closes.length === 1, "an undecodable payload ends the session instead of being guessed at");
+}
+
+// --- teardown --------------------------------------------------------------
+{
+  const handlers = new Map();
+  let aborted = false;
+  handlers.set("slow", (params, ctx) => new Promise(() => { ctx.signal.addEventListener("abort", () => { aborted = true; }); }));
+  const h = harness({ handlers });
+  h.server.handle(req("slow"));
+  await tick();
+  assert(h.server.activity.inFlight === 1, "an in-flight request is visible for the 'mobile is driving' badge");
+  assert(h.server.activity.lastRequestMethod === "slow", "the badge can name the method");
+
+  h.server.dispose();
+  await tick();
+  assert(aborted, "dispose aborts handlers so they stop work nobody will receive");
+  assert(h.server.activity.inFlight === 0, "in-flight requests are cleared");
+}
+
+console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");
+process.exit(failures.length ? 1 : 0);

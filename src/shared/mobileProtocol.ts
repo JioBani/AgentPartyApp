@@ -216,6 +216,14 @@ export const MOBILE_SETTINGS_DEFAULTS: MobileSettings = {
   natMappingEnabled: true,
 };
 
+/**
+ * Convention (NOT part of the wire envelope): a request whose params carry a
+ * string `workspacePath` is routed by the app to that workspace's engine
+ * (04 §3). The pipe only lifts the field into `RequestContext`; it never
+ * interprets the value, and the protocol package knows nothing about it.
+ */
+export const WORKSPACE_PARAM_FIELD = "workspacePath";
+
 // ---------------------------------------------------------------------------
 // Streams
 // ---------------------------------------------------------------------------
