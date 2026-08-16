@@ -72,6 +72,15 @@ interface ManagedSession {
    * just turn counts. Cleared when the turn's usage is recorded.
    */
   turnStartedAt?: number;
+  /**
+   * Counts turns on this session, so `turn_complete` can name the turn it ends.
+   *
+   * Its payload sums cost and tokens, and a duplicate silently inflates a number
+   * the user spends decisions against — the one duplicate class the user cannot
+   * catch by looking, unlike a paragraph appearing twice. A counter rather than
+   * `turnStartedAt`, which two turns could in principle share.
+   */
+  turnSeq: number;
   awaitingUser: boolean;
   stallNotified: boolean;
   /**
@@ -691,7 +700,7 @@ export class SessionManager extends EventEmitter {
     // normalized status event. Keep the canonical flag in sync so product E2E
     // does not accidentally test only the presentation snapshot.
     if (status === "sent" || status === "requesting" || status === "responding") {
-      if (!session.turnActive) session.turnStartedAt = Date.now();
+      if (!session.turnActive) this.beginTurn(session);
       session.turnActive = true;
       session.awaitingUser = false;
     } else if (status === "idle" || status === "interrupted") {
@@ -714,7 +723,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
+    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, turnSeq: 0, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
@@ -749,6 +758,19 @@ export class SessionManager extends EventEmitter {
    * tell "still generating" from "hung". Any real event re-arms the alarm; a turn
    * that is waiting on the user (approval) is intentionally not treated as stalled.
    */
+  /**
+   * Opens a turn: stamps its start and gives it an identity.
+   *
+   * One helper rather than the four places that used to set `turnStartedAt`
+   * inline — a turn that starts without being counted would let the NEXT
+   * `turn_complete` reuse the previous turn's id, and a consumer deduping on it
+   * would then discard a real turn's cost.
+   */
+  private beginTurn(session: ManagedSession): void {
+    session.turnStartedAt = Date.now();
+    session.turnSeq += 1;
+  }
+
   private trackTurnActivity(session: ManagedSession, event: ClaudeNormalizedEvent): void {
     session.lastActivityAt = Date.now();
     session.stallNotified = false;
@@ -772,6 +794,12 @@ export class SessionManager extends EventEmitter {
     if (startsOrEndsTurn) {
       session.lastTurnActivityAt = session.lastActivityAt;
     }
+    // Stamped here, before the event is queued, and NOT in each adapter: five
+    // harnesses producing their own turn ids is five chances to disagree, and
+    // the turn boundary is already maintained in this one place.
+    if (event.type === "turn_complete") {
+      (event as { turnId?: string }).turnId = `${session.id}:${session.turnSeq}`;
+    }
     switch (event.type) {
       case "turn_complete":
       case "error":
@@ -780,7 +808,7 @@ export class SessionManager extends EventEmitter {
         session.compacting = false;
         break;
       case "approval_request":
-        if (!session.turnActive) session.turnStartedAt = Date.now();
+        if (!session.turnActive) this.beginTurn(session);
         session.turnActive = true;
         session.awaitingUser = true;
         break;
@@ -790,7 +818,7 @@ export class SessionManager extends EventEmitter {
       case "status": {
         const status = String((event as { status?: unknown }).status || "");
         if (status === "sent" || status === "requesting" || status === "responding") {
-          if (!session.turnActive) session.turnStartedAt = Date.now();
+          if (!session.turnActive) this.beginTurn(session);
           session.turnActive = true;
         }
         // A stopped turn is a FINISHED turn. Claude/Codex close it with a
@@ -1032,7 +1060,7 @@ export class SessionManager extends EventEmitter {
       return;
     }
     session.compacting = true;
-    if (!session.turnActive) session.turnStartedAt = Date.now();
+    if (!session.turnActive) this.beginTurn(session);
     session.adapter.compact();
   }
 

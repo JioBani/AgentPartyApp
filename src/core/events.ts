@@ -169,7 +169,18 @@ export type ClaudeNormalizedEvent =
   // `usage` carries the per-turn token split (fresh/cacheRead/cacheWrite/output +
   // context occupancy) as far as the harness reports it — the raw accounting the
   // Token Usage ledger persists. Absent when the harness reports no usage.
-  | { type: "turn_complete"; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; usage?: TurnTokenBreakdown; at: string }
+  /**
+   * `turnId` identifies the turn this ends, so a consumer that receives the
+   * event twice adds its cost once. Stamped by `SessionManager` rather than by
+   * each adapter — the turn boundary is maintained in one place, and five
+   * harnesses minting their own ids is five chances to disagree.
+   *
+   * Absent on events that never passed through a session (replayed fixtures,
+   * isolated adapter tests). A consumer that cannot find it must fall back to
+   * adding the cost, not to dropping it: an undercount is as wrong as an
+   * overcount and hides itself better.
+   */
+  | { type: "turn_complete"; turnId?: string; result: string; costUsd?: number; cost?: TurnCost; stopReason?: string; usage?: TurnTokenBreakdown; at: string }
   // An in-session subagent's lifecycle / live activity / own-transcript block.
   // Kept OUT of the parent transcript: the renderer folds these into a separate
   // per-session subagent slice (dock + drill-in detail). One event can carry any
