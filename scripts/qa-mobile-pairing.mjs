@@ -334,5 +334,42 @@ console.log("PairingService assertions:");
   await throws(() => opened2.completed, "끊겨", "the promise rejects");
 }
 
+// --- a signaling reconnect must not leave a dead QR on screen ---------------
+{
+  const d = await desktop();
+  const opened = d.service.open();
+  assert(d.sent.open.length === 1, 'the token is registered once when the QR opens');
+
+  // The server keeps pairing sessions in memory: a reconnect or a container
+  // swap drops the registration while this side still shows a valid QR. The
+  // phone would then be told pair_not_found for a code the desktop is
+  // displaying as good.
+  d.service.reregister();
+  assert(d.sent.open.length === 2, 'a reconnect re-registers the same token');
+  assert(d.sent.open[1].tokenHash === d.sent.open[0].tokenHash, 'with the SAME tokenHash — a QR already on screen stays correct');
+  assert(d.sent.open[1].expiresAt === d.sent.open[0].expiresAt, 'and the same expiry, not a refreshed one');
+
+  // The identity of the pairing is untouched, so a phone that already scanned
+  // can still complete.
+  const ph = phone(opened.qr);
+  d.service.handlePairJoin(d.sent.open[0].tokenHash, ph.sealedBlob1);
+  assert(d.service.currentState.phase === 'awaitingConfirm', 'a scan after re-registration still works');
+  assert(d.service.currentState.code === ph.code, 'and the confirmation code is unchanged');
+
+  // Past blob2 the exchange is device-to-device; re-opening would only confuse
+  // the server's bookkeeping.
+  d.service.confirm();
+  const afterConfirm = d.sent.open.length;
+  d.service.reregister();
+  assert(d.sent.open.length === afterConfirm, 'no re-registration once the handshake has passed blob2');
+}
+
+// --- with nothing open, re-registration is a no-op --------------------------
+{
+  const d = await desktop();
+  d.service.reregister();
+  assert(d.sent.open.length === 0, 'a reconnect with no open QR registers nothing');
+}
+
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");
 process.exit(failures.length ? 1 : 0);

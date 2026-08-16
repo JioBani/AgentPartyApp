@@ -286,6 +286,31 @@ export class PairingService {
     resolve(device);
   }
 
+  /**
+   * Re-registers the open token after the signaling connection came back.
+   *
+   * The server holds pairing sessions in memory keyed by `tokenHash`, so a
+   * reconnect — or a server restart — drops the registration while this side
+   * still shows a QR with time left on it. The phone would then be told
+   * `pair_not_found` for a code the desktop is displaying as valid, which is
+   * the kind of failure that costs an afternoon to diagnose.
+   *
+   * Only the registration is repeated; the token, keys and confirmation code
+   * are unchanged, so a QR already on screen or scanned stays correct.
+   */
+  reregister(): void {
+    const active = this.active;
+    if (!active || active.awaitingDone) {
+      // Past blob2 the exchange is between the two devices; re-opening the
+      // token would only confuse the server's session bookkeeping.
+      return;
+    }
+    this.deps.transport.openPairing(active.offer.tokenHash, active.offer.expiresAt);
+    this.deps.log("info", "mobile pairing re-registered after reconnect", {
+      expiresAt: active.offer.expiresAt,
+    });
+  }
+
   /** 01 §2.2 — the server dropped the pairing session. */
   handlePairClosed(tokenHash: string, reason: string): void {
     if (!this.active || tokenHash !== this.active.offer.tokenHash) {

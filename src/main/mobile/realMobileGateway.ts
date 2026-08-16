@@ -185,8 +185,14 @@ export class RealMobileGateway implements MobileGateway {
       onPairDone: (tokenHash, blob3) => this.pairingService?.handlePairDone(tokenHash, blob3),
       onPairClosed: (tokenHash, reason) => this.pairingService?.handlePairClosed(tokenHash, reason),
       onPhaseChange: (phase, detail) => {
+        const reconnected = phase === "connected" && this.signalingPhase !== "connected";
         this.signalingPhase = phase;
         this.signalingError = detail.error;
+        if (reconnected) {
+          // The server keeps pairing sessions in memory, so a reconnect leaves
+          // an open QR registered nowhere while it still looks valid here.
+          this.pairingService?.reregister();
+        }
         this.publish();
       },
     });
