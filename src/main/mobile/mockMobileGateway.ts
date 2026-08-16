@@ -523,6 +523,8 @@ class MockGateway implements MockMobileGateway {
         count: buffered.length,
       },
       lastDiagnostics: this.diagnosticsResult,
+      // The mock has no signaling, so no relay can be refused.
+      lastRelayRejection: undefined,
     };
   }
 
