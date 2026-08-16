@@ -293,6 +293,67 @@ console.log("RpcServer assertions:");
   assert(h.server.activity.inFlight === 0, "in-flight requests are cleared");
 }
 
+// --- 01 §5.3: no live event may overtake a resume answer -------------------
+{
+  // A slow snapshot provider is the case that broke: resume() answers
+  // asynchronously, so without a gate an event published during the await
+  // reaches the phone BEFORE the snapshot. The phone's cursor would then sit
+  // ahead of history it never received, and it would never ask for the gap.
+  let release;
+  const slow = new Promise((resolve) => { release = resolve; });
+  const h = harness({ snapshotProvider: async () => { await slow; return { snapshot: true }; } });
+  h.server.handle({ k: 'ctl', c: 'subscribe', workspaces: ['C:/a'] });
+
+  const before = h.sent.length;
+  h.server.handle({ k: 'ctl', c: 'resume', bootId: null, lastSeq: null });
+  await tick();
+
+  // Live traffic while the provider is still working.
+  h.bridge.publish('session:events', { n: 1 }, 'C:/a');
+  h.bridge.publish('session:events', { n: 2 }, 'C:/a');
+  await tick();
+  assert(
+    h.sent.slice(before).filter((e) => e.k === 'evt').length === 0,
+    'no live event is written while the snapshot is still being produced',
+  );
+
+  release();
+  await tick();
+  await tick();
+
+  const after = h.sent.slice(before);
+  const snapshotIndex = after.findIndex((e) => e.c === 'snapshot');
+  const firstEventIndex = after.findIndex((e) => e.k === 'evt');
+  assert(snapshotIndex >= 0, 'the snapshot is sent once the provider finishes');
+  assert(firstEventIndex > snapshotIndex, 'the held events are released only AFTER the snapshot');
+
+  const released = after.filter((e) => e.k === 'evt');
+  assert(released.length === 2, 'every held event is released, none dropped');
+  assert(released[0].seq < released[1].seq, 'and they go out in seq order');
+
+  // Once the gate is open, live events flow straight through again.
+  const settled = h.sent.length;
+  h.bridge.publish('session:events', { n: 3 }, 'C:/a');
+  assert(h.sent.length === settled + 1, 'later events are written immediately, not queued forever');
+}
+
+// --- the same ordering holds on the replay path ----------------------------
+{
+  const h = harness({ snapshotProvider: () => ({}) });
+  h.server.handle({ k: 'ctl', c: 'subscribe', workspaces: ['C:/a'] });
+  h.bridge.publish('session:events', { n: 1 }, 'C:/a');
+  h.bridge.publish('session:events', { n: 2 }, 'C:/a');
+
+  const before = h.sent.length;
+  h.server.handle({ k: 'ctl', c: 'resume', bootId: 'boot-1', lastSeq: 0 });
+  await tick();
+
+  const after = h.sent.slice(before);
+  const resumedIndex = after.findIndex((e) => e.c === 'resumed');
+  assert(resumedIndex === after.length - 1, 'resumed is the last thing written, after the whole replay');
+  assert(after.slice(0, resumedIndex).every((e) => e.k === 'evt'), 'only replayed events precede it');
+}
+
 // --- every envelope this pipe emits conforms to the strict §5.1 schemas ----
 {
   const handlers = new Map();

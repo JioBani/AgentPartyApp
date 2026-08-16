@@ -65,6 +65,13 @@ export interface RpcActivity {
 export class RpcServer {
   private readonly assembler = new ChunkAssembler();
   private readonly inFlight = new Map<string, AbortController>();
+  /**
+   * 01 §5.3 — while a resume is being answered, live events are held rather
+   * than written. Sending one before the replay and its `resumed`/`snapshot`
+   * marker would put the phone's cursor ahead of history it has not received,
+   * and it would never ask for the gap again.
+   */
+  private resumeGate: { queued: RpcEvent[] } | undefined;
   private lastRequestAt: number | undefined;
   private lastRequestMethod: string | undefined;
   private closed = false;
@@ -87,6 +94,10 @@ export class RpcServer {
 
   /** Delivers one desktop→phone event, chunking if it is oversize. */
   deliver(event: RpcEvent): void {
+    if (this.resumeGate) {
+      this.resumeGate.queued.push(event);
+      return;
+    }
     this.write(event);
   }
 
@@ -135,6 +146,9 @@ export class RpcServer {
     }
     this.inFlight.clear();
     this.assembler.reset();
+    // The session is over; held events go nowhere. The phone rewinds on its
+    // next connection, so they are not lost — just not this session's problem.
+    this.resumeGate = undefined;
   }
 
   // -- requests -------------------------------------------------------------
@@ -252,6 +266,10 @@ export class RpcServer {
    * only ever set from what the desktop reports — never guessed locally.
    */
   private resume(request: { bootId?: string | null; lastSeq?: number | null }): void {
+    // Held from here until the answer is complete. A second resume while one
+    // is in flight reuses the same gate rather than opening a second one.
+    this.resumeGate ??= { queued: [] };
+
     const outcome = this.deps.eventBridge.resume(
       this.deps.link.sessionId,
       request.bootId ?? null,
@@ -263,6 +281,7 @@ export class RpcServer {
         this.write(event);
       }
       this.write({ k: "ctl", c: "resumed", bootId: this.deps.eventBridge.bootId, seq: outcome.throughSeq });
+      this.openResumeGate(outcome.throughSeq);
       return;
     }
 
@@ -281,22 +300,48 @@ export class RpcServer {
   }
 
   private async sendSnapshot(provider: MobileSnapshotProvider, reason: string): Promise<void> {
+    // Read BEFORE the provider runs. The desktop cannot take state and seq
+    // atomically, so one of the two errors is unavoidable: report the later
+    // seq and an event that landed just after the provider read it is treated
+    // as included and never resent (silent loss); report the earlier one and
+    // such an event is delivered again on top of a state that may already
+    // contain it. 01 §5.3 asks for zero loss, so the duplicate is chosen.
+    const seq = this.deps.eventBridge.window().seq;
     try {
       const state = await provider({
         deviceId: this.deps.link.deviceId,
         sessionId: this.deps.link.sessionId,
         workspaces: this.deps.eventBridge.subscriptionOf(this.deps.link.sessionId),
       });
-      // Taken after the provider ran: any event published while it was working
-      // is already inside `state`, so replaying from an earlier seq would
-      // duplicate it.
-      const seq = this.deps.eventBridge.markSnapshotDelivered(this.deps.link.sessionId);
       this.write({ k: "ctl", c: "snapshot", bootId: this.deps.eventBridge.bootId, seq, state });
       this.deps.log("info", "mobile rpc sent a snapshot", { reason, seq });
+      this.openResumeGate(seq);
     } catch (error) {
       // Same reasoning as a missing provider: a fabricated empty state would be
       // silently wrong, so the failure ends the session with its cause.
       this.fail(`스냅샷을 만들 수 없어 되감기를 처리하지 못했습니다: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Releases events held during a resume, in `seq` order, skipping any the
+   * phone already has from the replay or the snapshot.
+   */
+  private openResumeGate(throughSeq: number): void {
+    const gate = this.resumeGate;
+    this.resumeGate = undefined;
+    if (!gate) {
+      return;
+    }
+    const pending = gate.queued.filter((event) => event.seq > throughSeq).sort((a, b) => a.seq - b.seq);
+    for (const event of pending) {
+      this.write(event);
+    }
+    if (gate.queued.length > 0) {
+      this.deps.log("debug", "mobile rpc released events held during resume", {
+        held: gate.queued.length,
+        sent: pending.length,
+      });
     }
   }
 
