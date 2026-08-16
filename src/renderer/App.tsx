@@ -1012,16 +1012,17 @@ export function App() {
    * Runs a compaction for a member and shows the transient toolbar spinner
    * (~1.4s, matching the design's icon swap). The spinner is cosmetic — the
    * actual context drop arrives via the snapshot; the auto-compact re-fire guard
-   * is the arm/disarm ref, not this flag. A no-op without a live session (nothing
-   * to compact), surfaced as a notice rather than a silent nothing.
+   * is the arm/disarm ref, not this flag.
+   *
+   * Addressed by MEMBER, not by its session: a member released by idle sleep has
+   * no session id here, and this used to refuse with "세션이 없어…" — a
+   * conversation that plainly still exists and is exactly what compaction is
+   * for. The backend wakes it and compacts.
    */
   function runCompact(name: string): void {
-    const sessionId = sessionIdFor(name);
-    if (!sessionId) {
-      setPartyNotice(`'${name}' 세션이 없어 압축할 컨텍스트가 없습니다.`);
-      return;
-    }
-    void window.agentParty.compact(sessionId).catch(noticeOnFailure("컨텍스트를 압축하지 못했습니다"));
+    void window.agentParty.compactPartyMember(name)
+      .then((result) => applyPartyResult(result, false))
+      .catch(noticeOnFailure("컨텍스트를 압축하지 못했습니다"));
     setCompactingByMember((current) => ({ ...current, [name]: true }));
     window.setTimeout(() => {
       setCompactingByMember((current) => {
