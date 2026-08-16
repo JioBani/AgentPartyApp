@@ -187,8 +187,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/emit") {
       const body = await readBody(req);
-      // emit() is a documented no-op with no connected session (04 §성능·안전).
-      // Reporting ok:true regardless made a silent no-op look like success.
+      // An event is recorded whenever a phone is paired, even with nobody
+      // connected — that window is what rewind replays (01 §5.3). Only an
+      // unpaired desktop records nothing, and that is worth refusing.
       const before = gateway.getStatus().events.seq;
       gateway.emit(body.type ?? "qa.event", body.payload ?? {}, body.workspacePath ? { workspacePath: body.workspacePath } : undefined);
       const after = gateway.getStatus();
@@ -196,14 +197,19 @@ const server = http.createServer(async (req, res) => {
         return json(res, 409, {
           ok: false,
           published: false,
-          error:
-            after.sessions.length === 0
-              ? "연결된 세션이 없어 이벤트가 발행되지 않았습니다 (emit은 세션이 0개면 no-op)."
-              : "이벤트가 발행되지 않았습니다.",
+          error: "페어링된 기기가 없어 이벤트를 기록하지 않았습니다. 먼저 폰을 페어링하세요.",
           events: after.events,
         });
       }
-      return json(res, 200, { ok: true, published: true, seq: after.events.seq, events: after.events });
+      return json(res, 200, {
+        ok: true,
+        published: true,
+        seq: after.events.seq,
+        // Zero here is normal and is the case rewind exists for: recorded now,
+        // replayed when the phone comes back.
+        delivered: after.sessions.length,
+        events: after.events,
+      });
     }
     return json(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
   } catch (error) {

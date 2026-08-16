@@ -125,8 +125,10 @@ await throws(() => cancelled.completed, "취소", "cancel() rejects the pending 
 await throws(() => gateway.pairing.confirm(), "확인을 기다리는", "confirm() with no pairing is an explicit error");
 
 // --- sessions and workspace-scoped events (01 §5.2) ------------------------
+// 01 §5.3 — a paired phone that is merely away must still be able to rewind,
+// so the event is recorded with zero sessions connected.
 gateway.emit("usage:update", { tokens: 1 });
-assert(gateway.mock.emitted().length === 0, "emit() is a no-op with no session (04 §성능·안전)");
+assert(gateway.mock.emitted().length === 1, "an event is recorded while the paired phone is away");
 
 const sessionId = gateway.mock.connect({ deviceId: "phone-1" });
 gateway.mock.subscribe(sessionId, ["C:/proj/a"]);
@@ -139,8 +141,12 @@ const delivered = gateway.mock.deliveredTo(sessionId);
 assert(delivered.length === 2, "unsubscribed workspaces are filtered out");
 assert(delivered[0].type === "session:events" && delivered[0].d.block === 1, "the subscribed workspace is delivered");
 assert(delivered[1].type === "usage:update", "an unscoped event reaches every session");
-assert(delivered[0].seq === 1 && delivered[1].seq === 3, "seq is global and monotonic across all events");
-assert(gateway.getStatus().events.maxSeq === 3, "status reports the ring-buffer window");
+// Written as a relation rather than fixed numbers: the event published before
+// this session connected consumed a seq of its own (01 §5.3), so pinning
+// literals here would only re-encode whichever behaviour happens to be current.
+assert(delivered[0].seq < delivered[1].seq, "seq is monotonic across delivered events");
+assert(delivered[1].seq - delivered[0].seq === 2, "and counts the event this session filtered out, so the phone can see the gap");
+assert(gateway.getStatus().events.maxSeq === delivered[1].seq, "status reports the ring-buffer window at the latest event");
 
 gateway.mock.subscribe(sessionId, []);
 gateway.emit("session:events", { block: 3 }, { workspacePath: "C:/proj/a" });
@@ -205,12 +211,18 @@ unsubscribe();
   assert(after === before + 1, `getStatus() shows the emit immediately (${before} -> ${after})`);
   assert(g.getStatus().events.maxSeq === after, 'and the ring-buffer window moves with it');
 
-  // With no session emit is a documented no-op; the counter must NOT move, so a
-  // caller can tell the two cases apart.
+  // The phone disconnects. Events published now are what rewind replays, so
+  // the counter MUST keep moving (01 §5.3).
   await g.disconnect(id);
-  const idle = g.getStatus().events.seq;
+  const away = g.getStatus().events.seq;
   g.emit('session:events', { n: 2 }, { workspacePath: 'C:/w' });
-  assert(g.getStatus().events.seq === idle, 'with no session the counter does not move — a no-op is distinguishable');
+  assert(g.getStatus().events.seq === away + 1, 'an event published while the phone is away is still recorded');
+
+  // Only an unpaired desktop records nothing — nobody could ever ask for it.
+  await g.pairing.revoke('phone-emit');
+  const unpaired = g.getStatus().events.seq;
+  g.emit('session:events', { n: 3 }, { workspacePath: 'C:/w' });
+  assert(g.getStatus().events.seq === unpaired, 'with no paired device nothing is recorded');
 }
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");

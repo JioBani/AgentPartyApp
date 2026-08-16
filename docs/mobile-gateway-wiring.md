@@ -93,7 +93,11 @@ function broadcastToWorkspace(workspacePath: string, channel: string, payload: u
 
 - 이벤트 타입 이름 = IPC 채널명 그대로. 파이프는 의미를 모르고 페이로드를 손대지 않는다.
 - `seq` 부여·링버퍼(5,000개/10분)·되감기·청크 분할은 전부 파이프가 한다.
-- **세션이 0개면 `emit`은 즉시 반환한다** — 객체 생성도 하지 않으므로 핫패스에 둬도 된다.
+- **페어링된 기기가 0대면 `emit`은 즉시 반환한다** — 아무도 되감을 수 없으므로 기록할 이유가 없다.
+  핫패스에 둬도 되는 이유가 이 검사다(04, develop 정정 `844bdd8`).
+- **폰이 연결돼 있지 않아도 기록한다.** 페어링된 폰이 잠시 떠나 있는 동안 발행된 이벤트가
+  되감기로 재생되어야 한다(01 §5.3). 여기서 `seq`를 건너뛰면 폰의 커서가 그대로라
+  재연결 시 `resumed`를 받고 **아무 일도 없었던 것처럼** 넘어간다 — 조용한 유실이다.
 - 워크스페이스에 매이지 않는 전역 이벤트(사용량 등)는 `scope`를 생략한다:
   `gateway.emit("usage:update", payload)` → 모든 세션에 간다.
 - 반대로 `scope.workspacePath`가 있으면 **그 워크스페이스를 구독한 세션에만** 간다.
@@ -579,7 +583,7 @@ node scripts/mobile-gateway-cli.mjs   --signaling ws://127.0.0.1:8080/v1/ws   --
 | `POST /pair/cancel` | 페어링 중단 |
 | `POST /devices/:id/revoke` | 신뢰 해제(trustEpoch 증가) |
 | `POST /sessions/:id/disconnect` | 세션만 끊기 |
-| `POST /emit` | `{type, payload, workspacePath?}` 이벤트 주입(되감기 확인용). 세션이 0개면 **409**와 사유를 돌려준다 |
+| `POST /emit` | `{type, payload, workspacePath?}` 이벤트 주입. 응답의 `delivered`가 지금 전달된 세션 수이고 **0은 정상**(되감기로 재생된다). 페어링된 기기가 없을 때만 409 |
 
 등록된 앱 메서드는 `qa.echo` 하나(파라미터를 그대로 반환)다. 나머지 `sys.ping`·`sys.info`·
 `push.register`는 파이프가 답한다.

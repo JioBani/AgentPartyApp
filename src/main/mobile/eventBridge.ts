@@ -99,13 +99,17 @@ export class EventBridge {
    * Assigns `seq`, buffers, and delivers to every session subscribed to
    * `workspacePath` (all sessions when the scope is omitted).
    *
-   * Returns before allocating anything when no session is attached — this sits
-   * on `broadcastToWorkspace`, which fires on every session event (04 §성능).
+   * Recording does NOT depend on anyone being attached (01 §5.3, corrected in
+   * 04 by develop). Skipping the seq while a phone is away is silent loss: the
+   * counter would not advance, so on reconnect the phone's `lastSeq` still
+   * equals the head, it is answered `resumed` with nothing to replay, and it
+   * never learns anything happened. The ring buffer exists precisely for the
+   * window when nobody is connected.
+   *
+   * The caller decides whether recording is worth it at all — see the gateway's
+   * `emit`, which skips when no device is paired.
    */
-  publish(type: string, payload: unknown, workspacePath?: string): RpcEvent | undefined {
-    if (this.subscribers.size === 0) {
-      return undefined;
-    }
+  publish(type: string, payload: unknown, workspacePath?: string): RpcEvent {
     const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: this.now() };
     this.buffer.push({ event, workspacePath });
     this.prune();
@@ -118,6 +122,17 @@ export class EventBridge {
       subscriber.session.deliver(event);
     }
     return event;
+  }
+
+  /** How many attached sessions an event with this scope would reach. */
+  audienceFor(workspacePath?: string): number {
+    let count = 0;
+    for (const subscriber of this.subscribers.values()) {
+      if (this.matches(subscriber, workspacePath)) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   /**

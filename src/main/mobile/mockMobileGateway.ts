@@ -165,7 +165,9 @@ class MockGateway implements MockMobileGateway {
   // -- events ---------------------------------------------------------------
 
   emit(type: string, payload: unknown, scope?: MobileEventScope): void {
-    if (this.sessions.size === 0) {
+    // Matches the real gateway: recorded whenever a phone is paired, even if
+    // none is currently connected (01 §5.3). Only an unpaired desktop no-ops.
+    if (this.devicesById.size === 0) {
       return;
     }
     const event: RpcEvent = { k: "evt", seq: ++this.seq, type, d: payload, ts: Date.now() };

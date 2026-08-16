@@ -238,9 +238,14 @@ export class RealMobileGateway implements MobileGateway {
   // -- events ---------------------------------------------------------------
 
   emit(type: string, payload: unknown, scope?: MobileEventScope): void {
-    // Sits on broadcastToWorkspace: return before touching anything when no
-    // phone is connected (04 §성능·안전).
-    if (this.sessions.size === 0) {
+    // Sits on broadcastToWorkspace, so the cheap check comes first: with no
+    // paired phone nothing can ever ask for this history, and recording it
+    // would be pure overhead on every session event.
+    //
+    // A paired-but-absent phone is a different case entirely. It CAN come back
+    // and rewind, so the event is recorded even with zero live sessions — that
+    // window is exactly what the ring buffer is for (01 §5.3).
+    if ((this.identityStore?.devices().length ?? 0) === 0) {
       return;
     }
     this.eventBridge?.publish(type, payload, scope?.workspacePath);
