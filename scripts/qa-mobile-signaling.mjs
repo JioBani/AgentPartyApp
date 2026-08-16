@@ -272,6 +272,60 @@ console.log("SignalingClient assertions:");
   assert(h.sockets.length === 4, "a successful connection resets the backoff");
 }
 
+// --- 01 §3 strict (develop 6aa15a1): unknown fields are refused ------------
+{
+  // The reason this is receive-side and not cosmetic: silently stripping an
+  // unknown field is how three separate protocol mismatches in this project
+  // presented as "it just doesn't work" with nothing in any log.
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  const phone = P.identityFromSeeds(new Uint8Array(32).fill(9), new Uint8Array(32).fill(10));
+
+  h.socket().deliver({
+    t: "relay",
+    from: phone.deviceId,
+    kind: "offer",
+    box: P.toB64(new Uint8Array(48).fill(1)),
+    serverBuild: "2.0.1",
+  });
+
+  assert(h.received.relay.length === 0, "a message carrying an unknown field is NOT delivered to the handler");
+  assert(h.client.currentPhase !== "connected", "and the connection does not carry on as if nothing happened");
+  const reported = h.phases.find((p) => typeof p.error === "string" && p.error.includes("serverBuild"));
+  assert(reported !== undefined, `the offending field is named for the UI (${reported?.error ?? "not reported"})`);
+}
+
+// --- the strict check reads the wire, not the stripped result --------------
+{
+  // decodeServerMessage parses non-strictly and DROPS unknown keys, so a check
+  // running on its output would inspect fields that no longer exist and could
+  // only ever report zero. This is the trap server hit on their own side.
+  const stripped = P.decodeServerMessage(JSON.stringify({ t: "ok", serverBuild: "2.0.1" }));
+  assert(stripped.serverBuild === undefined, "decodeServerMessage does strip the unknown field");
+  assert(
+    P.outOfSpecFields({ t: "ok", serverBuild: "2.0.1" }, "server").length === 1,
+    "but the raw message still shows it — which is why the check runs before decoding",
+  );
+  assert(
+    P.outOfSpecFields(stripped, "server").length === 0,
+    "checking the decoded result would report zero — the vacuous version of this test",
+  );
+}
+
+// --- a spec-conformant server is untouched ---------------------------------
+{
+  // A strict check that also rejected valid traffic would be worse than none.
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  const phone = P.identityFromSeeds(new Uint8Array(32).fill(9), new Uint8Array(32).fill(10));
+  h.socket().deliver({ t: "relay", from: phone.deviceId, kind: "offer", box: P.toB64(new Uint8Array(48).fill(1)) });
+  h.socket().deliver({ t: "pair.join", tokenHash: "th-1", blob1: "b1" });
+  h.socket().deliver({ t: "pong" });
+  assert(h.received.relay.length === 1, "ordinary relay still arrives");
+  assert(h.received.pairJoin.length === 1, "so does pair.join");
+  assert(h.client.currentPhase === "connected", "and the connection stays up");
+}
+
 // --- M4: a signaling reconnect must not disturb a live session -------------
 {
   // A WebRTC session runs peer-to-peer; signaling only carried its setup. So a

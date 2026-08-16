@@ -6,6 +6,7 @@ import {
   decodeServerMessage,
   encodeSignalingMessage,
   fromB64,
+  outOfSpecFields,
   signSignalingAuth,
   toB64,
   type ClientMessage,
@@ -205,6 +206,29 @@ export class SignalingClient {
 
   private receive(data: string): void {
     this.lastServerMessageAt = this.now();
+
+    // 01 §3 strict (develop 6aa15a1): an unknown field is a protocol error, not
+    // something to accept quietly. Checked against the RAW text before
+    // `decodeServerMessage`, because that decoder parses non-strictly and
+    // STRIPS unknown keys — checking its output would inspect the very fields
+    // it just removed and could only ever report zero.
+    //
+    // Extensions travel as a new `t` or a new `v`, so a field nobody agreed on
+    // means the peer is running a protocol this client does not implement, and
+    // acting on the rest of that message is a guess.
+    try {
+      const extras = outOfSpecFields(JSON.parse(data) as unknown, "server");
+      if (extras.length > 0) {
+        // Field NAMES only — 05 forbids retaining relayed content, and a value
+        // here could be someone's sealed box.
+        this.deps.log("error", "mobile signaling: out-of-spec fields from the server", { fields: extras });
+        this.failAndRetry(`시그널링 서버가 규격에 없는 필드를 보냈습니다: ${extras.join(", ")}`);
+        return;
+      }
+    } catch {
+      // Not JSON at all — decodeServerMessage below reports it properly.
+    }
+
     let message: ServerMessage;
     try {
       message = decodeServerMessage(data);

@@ -15,9 +15,16 @@
  * Those are device tests. This answers one question: does the pipe survive
  * thousands of session lifetimes without growing.
  *
+ * `--baseline` runs the SAME loop with the pipe removed: raw node-datachannel
+ * PeerConnections, no transport, no secure session, no bridge. Memory growth
+ * only means something next to it — a figure from the full loop alone cannot
+ * say whether the pipe is leaking or the native library is, and guessing which
+ * would be exactly the unverified hypothesis this project forbids.
+ *
  * Usage:
  *   node scripts/qa-mobile-soak.mjs --hours 24
  *   node scripts/qa-mobile-soak.mjs --minutes 5 --out .qa/soak.jsonl
+ *   node scripts/qa-mobile-soak.mjs --minutes 5 --baseline   (library only)
  *
  * Exit code is non-zero if growth exceeds the thresholds below, so this can be
  * run unattended and its result trusted without reading the log.
@@ -38,7 +45,8 @@ const hours = Number(opt("hours", 0));
 const minutes = Number(opt("minutes", 0));
 const durationMs = hours > 0 || minutes > 0 ? (hours * 60 + minutes) * 60_000 : 24 * 3_600_000;
 const sampleEveryMs = Number(opt("sample", 60)) * 1_000;
-const outPath = path.resolve(opt("out", ".qa/mobile-soak.jsonl"));
+const baselineOnly = argv.includes("--baseline");
+const outPath = path.resolve(opt("out", baselineOnly ? ".qa/mobile-soak-baseline.jsonl" : ".qa/mobile-soak.jsonl"));
 mkdirSync(path.dirname(outPath), { recursive: true });
 
 /**
@@ -196,6 +204,47 @@ async function sessionCycle() {
   }
 }
 
+/**
+ * The same shape of cycle with the pipe removed — two raw PeerConnections and
+ * a DataChannel, opened and closed. Whatever this grows by is the library's
+ * floor, not the pipe's doing.
+ */
+async function baselineCycle() {
+  const id = `base-${(cycleSerial += 1)}`;
+  const a = new ndc.PeerConnection(`a-${id}`, { iceServers: [] });
+  const b = new ndc.PeerConnection(`b-${id}`, { iceServers: [] });
+  try {
+    a.onLocalDescription((sdp, type) => b.setRemoteDescription(sdp, type));
+    b.onLocalDescription((sdp, type) => a.setRemoteDescription(sdp, type));
+    a.onLocalCandidate((c, m) => b.addRemoteCandidate(c, m));
+    b.onLocalCandidate((c, m) => a.addRemoteCandidate(c, m));
+
+    let open = false;
+    let received = 0;
+    b.onDataChannel((channel) => {
+      channel.onMessage(() => { received += 1; });
+    });
+    const channel = a.createDataChannel("agentparty");
+    channel.onOpen(() => { open = true; });
+
+    if (!(await until(() => open, 20_000))) {
+      return { ok: false, reason: "never connected" };
+    }
+    // Comparable traffic, so the two loops differ only by the pipe itself.
+    for (let n = 0; n < 5; n += 1) {
+      channel.sendMessageBinary(Buffer.alloc(320));
+    }
+    await until(() => received >= 5, 10_000);
+    channel.close();
+    return { ok: true };
+  } finally {
+    try { a.close(); } catch { /* teardown must not mask the result */ }
+    try { b.close(); } catch { /* as above */ }
+  }
+}
+
+const runCycle = baselineOnly ? baselineCycle : sessionCycle;
+
 // --- sampling ---------------------------------------------------------------
 function sample(cycles, failures) {
   const mem = process.memoryUsage();
@@ -219,12 +268,15 @@ let cycles = 0;
 let failures = 0;
 const failureReasons = new Map();
 
-console.log(`mobile pipe soak: ${(durationMs / 3_600_000).toFixed(2)}h, sampling every ${sampleEveryMs / 1000}s`);
+console.log(
+  `mobile pipe soak${baselineOnly ? " [BASELINE — node-datachannel only, no pipe]" : ""}: ` +
+    `${(durationMs / 3_600_000).toFixed(2)}h, sampling every ${sampleEveryMs / 1000}s`,
+);
 console.log(`log: ${outPath}`);
 
 let nextSample = Date.now();
 while (Date.now() < deadline) {
-  const result = await sessionCycle();
+  const result = await runCycle();
   cycles += 1;
   if (!result.ok) {
     failures += 1;
@@ -267,7 +319,21 @@ if (!baseline || !last || samples.length < 2) {
   console.log(`  heap growth      : ${heapRatio.toFixed(2)}x (limit ${LIMITS.heapGrowthRatio}x)`);
   console.log(`  handle growth    : ${handleGrowth} (limit ${LIMITS.maxHandleGrowth})`);
 
-  if (rssPerCycle > LIMITS.rssPerCycle) problems.push(`RSS grows ${rssPerCycle.toFixed(0)}B per session cycle`);
+  // node-datachannel grows RSS per PeerConnection on its own, so the absolute
+  // figure says nothing about this code. What the pipe must answer for is the
+  // MARGIN over a `--baseline` run on the same machine.
+  const baselineRss = Number(opt("baseline-rss", "0"));
+  if (baselineRss > 0) {
+    const marginal = rssPerCycle - baselineRss;
+    console.log(`  minus baseline    : ${marginal.toFixed(0)} B/cycle attributable to the pipe`);
+    if (marginal > LIMITS.rssPerCycle) problems.push(`the pipe adds ${marginal.toFixed(0)}B per cycle over the library baseline`);
+  } else if (rssPerCycle > LIMITS.rssPerCycle) {
+    console.log(
+      `  NOTE: run with --baseline and pass --baseline-rss <B/cycle> to separate\n` +
+        `        the library's own growth from this code's.`,
+    );
+    problems.push(`RSS grows ${rssPerCycle.toFixed(0)}B per session cycle (unattributed — no baseline given)`);
+  }
   if (heapRatio > LIMITS.heapGrowthRatio) problems.push(`heap grew ${heapRatio.toFixed(2)}x`);
   if (handleGrowth > LIMITS.maxHandleGrowth) problems.push(`${handleGrowth} native handles accumulated`);
 }
@@ -275,6 +341,15 @@ if (failures > 0) {
   problems.push(`${failures}/${cycles} session cycles failed: ${[...failureReasons].map(([r, n]) => `${r} x${n}`).join("; ")}`);
 }
 
-ndc.cleanup?.();
+try {
+  // node-datachannel's cleanup() aborts the process with a napi assertion after
+  // many PeerConnections have been created and closed — reproducible with the
+  // pipe removed entirely (--baseline), so it is the library's, not ours. It is
+  // caught here because a crash during teardown would swallow the verdict and
+  // the exit code, turning a finished run into no result at all.
+  ndc.cleanup?.();
+} catch (error) {
+  console.log(`  (node-datachannel cleanup() failed on exit: ${String(error?.message ?? error)})`);
+}
 console.log(problems.length ? `\nFAILED\n  - ${problems.join("\n  - ")}` : "\nAll assertions passed");
 process.exit(problems.length ? 1 : 0);
