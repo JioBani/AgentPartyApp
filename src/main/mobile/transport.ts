@@ -16,6 +16,17 @@ export interface Transport {
   /** Queues one already-encrypted frame. */
   send(frame: Uint8Array): void;
 
+  /**
+   * Bytes accepted by `send()` that are not on the wire yet.
+   *
+   * On the interface rather than on one implementation because the 2MB ceiling
+   * (04 §성능·안전) is a rule about every transport, not about WebRTC: a future
+   * `lanDirect` or `userRelay` that could not answer this would quietly have no
+   * backpressure at all. A transport that cannot measure its backlog should say
+   * so by failing to compile here, not by returning a comfortable 0.
+   */
+  queuedBytes(): number;
+
   /** Registers the frame sink. Called once by the session that owns this. */
   onFrame(listener: (frame: Uint8Array) => void): void;
 

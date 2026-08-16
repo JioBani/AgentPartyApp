@@ -502,6 +502,9 @@ class MockGateway implements MockMobileGateway {
         inFlightRequests: session.inFlightRequests,
         lastRequestAt: session.lastRequestAt,
         lastRequestMethod: session.lastRequestMethod,
+        // The mock has no wire, so there is genuinely nothing queued. This is a
+        // truthful 0, not the placeholder the real gateway used to return
+        // before it reported the transport's actual backlog.
         queuedBytes: 0,
         // The mock has no ICE; a fabricated pair would let a UI look verified
         // when nothing was ever negotiated.

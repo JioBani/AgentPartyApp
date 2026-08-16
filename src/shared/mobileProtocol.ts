@@ -219,6 +219,31 @@ export const MOBILE_SETTINGS_DEFAULTS: MobileSettings = {
 };
 
 /**
+ * Limits the pipe enforces itself. Everything the WIRE defines (frame size,
+ * chunking, ring-buffer depth) lives in `@agentparty/protocol` instead — these
+ * two are desktop-side policy, and restating wire limits here is how the two
+ * copies drift apart.
+ */
+export const MOBILE_LIMITS = {
+  /**
+   * 04 §성능·안전 — bytes accepted for one phone but not yet on the wire. Past
+   * this the session is dropped rather than buffered further: holding more
+   * would trade bounded memory for an unbounded queue on a link that is
+   * evidently not draining. The phone loses nothing, because it rewinds on
+   * reconnect and the ring buffer replays what it missed (01 §5.3). That
+   * rewind is precisely what makes dropping safe here.
+   */
+  sessionSendQueueMaxBytes: 2 * 1024 * 1024,
+  /**
+   * 01 §6 — how long ICE may sit `disconnected` before the session is given
+   * up. Recovering in place keeps the session keys (01 §4.1: an ICE restart is
+   * the SAME session); past this the phone is expected to build a new session
+   * from §3.3 and rewind, so holding the old one open only delays that.
+   */
+  iceRestartGraceMs: 10_000,
+} as const;
+
+/**
  * Convention (NOT part of the wire envelope): a request whose params carry a
  * string `workspacePath` is routed by the app to that workspace's engine
  * (04 §3). The pipe only lifts the field into `RequestContext`; it never

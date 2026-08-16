@@ -6,6 +6,7 @@ import {
   type SdpPayload,
 } from "@agentparty/protocol";
 import {
+  MOBILE_LIMITS,
   MOBILE_STUN_SERVERS,
   type IceCandidatePair,
   type TransportKind,
@@ -57,6 +58,8 @@ interface NativeDataChannel {
   sendMessageBinary(buffer: Uint8Array): boolean;
   close(): void;
   isOpen(): boolean;
+  /** Bytes handed to the stack that have not left the machine yet. */
+  bufferedAmount(): number;
   onOpen(cb: () => void): void;
   onClosed(cb: () => void): void;
   onError(cb: (error: string) => void): void;
@@ -83,6 +86,12 @@ export interface WebrtcTransportDeps {
   /** Injected in tests so the native module is not required. */
   loadNative?: () => NativeModule;
   iceServers?: string[];
+  /**
+   * Overrides the 01 §6 recovery window. Exists so a test can watch the timeout
+   * fire without waiting 10 real seconds — the same seam `PairingService` uses
+   * for its TTL. Production never passes it.
+   */
+  iceRestartGraceMs?: number;
   /**
    * A router port mapping to advertise (01 §3.3, develop 1ccfadf). ICE is then
    * pinned to `internalPort` and the external `address:port` is offered as an
@@ -124,7 +133,11 @@ export class WebrtcTransport implements Transport {
   private closed = false;
   /** Frames handed to `send()` before the channel opened. */
   private readonly pending: Uint8Array[] = [];
+  private pendingBytes = 0;
   private announcedMapping = false;
+  /** True once a remote offer has been applied — a further one is a restart. */
+  private negotiated = false;
+  private iceRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Mid libdatachannel used for the data channel; candidates must match it. */
   private dataChannelMid = "0";
 
@@ -170,9 +183,17 @@ export class WebrtcTransport implements Transport {
   /**
    * Verifies and applies the phone's offer, then answers.
    *
+   * A SECOND offer on the same session is the phone's `restartIce()` (01 §6).
+   * It is applied to the same PeerConnection on purpose: an ICE restart is the
+   * same session with the same keys (01 §4.1), so the secure session's counter
+   * and the RPC state above it carry straight over and nothing needs replaying.
+   * Building a new connection here would silently invalidate both.
+   *
    * @throws {TransportSecurityError} when the signature is invalid or the SDP's
    *   fingerprint does not match the signed one. The session must be abandoned:
-   *   retrying would negotiate with the same impostor.
+   *   retrying would negotiate with the same impostor. This is checked on a
+   *   restart exactly as on the first offer — a restart is an unauthenticated
+   *   moment otherwise, and the peer's key is the only thing that makes it safe.
    */
   acceptOffer(payload: SdpPayload): void {
     const pc = this.requireOpen();
@@ -191,6 +212,16 @@ export class WebrtcTransport implements Transport {
         `webrtc: the peer's SDP failed verification, refusing to connect (${String(error)})`,
       );
     }
+    if (this.negotiated) {
+      // The peer discards every candidate it knew when it restarts (new
+      // ice-ufrag), so the router mapping has to be offered again — it is not
+      // something ICE re-gathers on its own.
+      this.announcedMapping = false;
+      this.deps.log("info", "mobile webrtc: accepting an ICE restart on the same session", {
+        session: this.deps.sessionId,
+      });
+    }
+    this.negotiated = true;
     pc.setRemoteDescription(payload.sdp, "offer");
   }
 
@@ -217,9 +248,54 @@ export class WebrtcTransport implements Transport {
       // The DataChannel opens a beat after the answer; holding frames avoids
       // losing the session's first envelope to a race.
       this.pending.push(frame);
+      this.pendingBytes += frame.byteLength;
+      this.enforceSendCeiling();
       return;
     }
     this.channel.sendMessageBinary(frame);
+    this.enforceSendCeiling();
+  }
+
+  /**
+   * Bytes accepted from above but not yet on the wire: frames still held for an
+   * unopened channel, plus whatever the stack has buffered.
+   */
+  queuedBytes(): number {
+    if (this.closed) {
+      return 0;
+    }
+    let buffered = 0;
+    try {
+      buffered = this.channel?.bufferedAmount() ?? 0;
+    } catch (error) {
+      // A channel being torn down can refuse the query. The pending count alone
+      // is still a truthful lower bound, so the status read survives; it is
+      // logged rather than swallowed because a persistently unreadable channel
+      // would make the ceiling below unenforceable.
+      this.deps.log("debug", "mobile webrtc: bufferedAmount unavailable", { error: String(error) });
+    }
+    return this.pendingBytes + buffered;
+  }
+
+  /**
+   * 04 §성능·안전 — past the 2MB ceiling the session is dropped instead of
+   * buffered further. See `MOBILE_LIMITS.sessionSendQueueMaxBytes` for why
+   * dropping is the safe choice: the phone rewinds and loses nothing.
+   */
+  private enforceSendCeiling(): void {
+    const queued = this.queuedBytes();
+    if (queued <= MOBILE_LIMITS.sessionSendQueueMaxBytes) {
+      return;
+    }
+    this.deps.log("warn", "mobile webrtc: send queue over the ceiling, dropping the session", {
+      session: this.deps.sessionId,
+      queued,
+      ceiling: MOBILE_LIMITS.sessionSendQueueMaxBytes,
+    });
+    this.close(
+      `보내지 못한 데이터가 ${Math.round(queued / 1024)}KB를 넘어 연결을 끊었습니다. ` +
+        "폰이 다시 연결하면 놓친 내용부터 이어받습니다.",
+    );
   }
 
   onFrame(listener: (frame: Uint8Array) => void): void {
@@ -236,6 +312,8 @@ export class WebrtcTransport implements Transport {
     }
     this.closed = true;
     this.pending.length = 0;
+    this.pendingBytes = 0;
+    this.clearIceRecoveryTimer();
     try {
       this.channel?.close();
       this.pc?.close();
@@ -304,11 +382,19 @@ export class WebrtcTransport implements Transport {
           this.setState("connecting", {});
           return;
         case "connected":
-          // `connected` is the ICE/DTLS layer; frames only flow once the
-          // DataChannel itself opens, which onOpen reports.
+          // `connected` is the ICE/DTLS layer; on the FIRST connect frames only
+          // flow once the DataChannel opens, which onOpen reports. After a
+          // recovery the channel never closed, so onOpen will not fire again and
+          // this is the only signal that the session is usable — without it the
+          // status would stay "reconnecting" for a link that is working.
+          this.clearIceRecoveryTimer();
+          if (this.channel?.isOpen()) {
+            this.setState("connected", {});
+          }
           return;
         case "disconnected":
           this.setState("reconnecting", {});
+          this.startIceRecoveryTimer();
           return;
         case "failed":
           // STUN only: there is no relay to fall back to (00 §원칙 2).
@@ -323,6 +409,42 @@ export class WebrtcTransport implements Transport {
     });
 
     pc.onDataChannel((channel) => this.adoptChannel(channel));
+  }
+
+  /**
+   * 01 §6 — ICE may sit `disconnected` for `iceRestartGraceMs` before the
+   * session is given up. The phone's `restartIce()` is the opportunistic path
+   * that recovers within this window; when it does not (a hard handover, where
+   * the old interface is simply gone) the confirmed normal path is a new
+   * session plus a §5.3 rewind, so this closes to let that start rather than
+   * holding a dead connection open indefinitely.
+   */
+  private startIceRecoveryTimer(): void {
+    if (this.iceRecoveryTimer) {
+      return;
+    }
+    const graceMs = this.deps.iceRestartGraceMs ?? MOBILE_LIMITS.iceRestartGraceMs;
+    this.iceRecoveryTimer = setTimeout(() => {
+      this.iceRecoveryTimer = undefined;
+      if (this.closed || this.currentState !== "reconnecting") {
+        return;
+      }
+      this.deps.log("info", "mobile webrtc: ICE did not recover in time, ending the session", {
+        session: this.deps.sessionId,
+        graceMs,
+      });
+      this.close("네트워크가 바뀌어 연결이 끊어졌습니다. 폰이 다시 연결하면 이어집니다.");
+    }, graceMs);
+    // Node keeps the process alive for a pending timer; a grace window is not a
+    // reason for the app to refuse to exit.
+    this.iceRecoveryTimer.unref?.();
+  }
+
+  private clearIceRecoveryTimer(): void {
+    if (this.iceRecoveryTimer) {
+      clearTimeout(this.iceRecoveryTimer);
+      this.iceRecoveryTimer = undefined;
+    }
   }
 
   /**
@@ -356,6 +478,9 @@ export class WebrtcTransport implements Transport {
       for (const frame of this.pending.splice(0)) {
         channel.sendMessageBinary(frame);
       }
+      // The bytes moved from `pending` into the stack's own buffer, which
+      // `queuedBytes()` reads directly — leaving the count here would double it.
+      this.pendingBytes = 0;
       this.setState("connected", {});
     });
 

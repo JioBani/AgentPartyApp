@@ -32,8 +32,8 @@ esbuild로 파이프 모듈을 번들할 때는 `@agentparty/protocol`·`ws`·`n
 | `MobileGateway` 인터페이스 + 타입 | 사용 가능 (`src/main/mobile/mobileGateway.ts`) |
 | `MockMobileGateway` (폰 시뮬레이터 포함) | 사용 가능 (`src/main/mobile/mockMobileGateway.ts`) |
 | 실물 게이트웨이(시그널링·WebRTC·E2E·RPC·진단·NAT 매핑·푸시) | 사용 가능 (`createMobileGateway({implementation:"real", deps})`) |
-| 송신 큐 백프레셔(`queuedBytes`) | **미구현 — 항상 0** (M2) |
-| ICE restart | **미구현** (M4) |
+| 송신 큐 백프레셔(`queuedBytes`) | 사용 가능 — 실제 백로그를 보고, 2MB 초과 시 세션 종료 |
+| ICE restart · 세션 만료(10초) | 사용 가능 |
 | LanDirect·사용자 릴레이 | **미구현** (M6) |
 
 > **제품 E2E는 아직 없다.** 파이프는 모듈 테스트와 상호운용 하네스·실기기로 검증했지만,
@@ -250,9 +250,17 @@ rxjs는 쓰지 않는다. `subscribe(fn)`이 해제 함수를 돌려준다.
 
 - `inFlightRequests > 0` → 지금 폰이 이 데스크톱을 조작 중
 - `lastRequestMethod` / `lastRequestAt` → 무엇을, 언제
+- `state` → `connecting` | `connected` | `reconnecting` | `closed`.
+  **`reconnecting`을 "끊김"으로 그리지 말 것** — 폰이 Wi-Fi↔LTE로 넘어가는 중이라는 뜻이고,
+  10초 안에 돌아오면 같은 세션이 그대로 이어진다(01 §6, 키도 그대로다). 10초를 넘기면
+  파이프가 세션을 닫고 목록에서 사라지므로, 그때 비로소 "끊김"이다. 폰은 곧 새 세션을
+  만들어 되감기로 따라잡는다
 - `candidatePair` → 실제로 연결을 나르는 ICE 쌍. `type`이 `host`면 LAN, `srflx`/`prflx`면 NAT를
   통과한 것이다. `relay`는 이 시스템에 TURN이 없으므로 나오면 안 된다
-- `queuedBytes` → 백프레셔용. **M2까지는 항상 0이다**(송신 큐 상한이 아직 없다)
+- `queuedBytes` → 아직 회선에 나가지 못한 바이트. 정상 링크에서는 0 근처에 머문다.
+  **2MB(`MOBILE_LIMITS.sessionSendQueueMaxBytes`)를 넘으면 파이프가 세션을 끊는다** —
+  폰은 재접속 후 되감기(01 §5.3)로 놓친 것을 받으므로 유실은 없다. UI에서 이 값이 계속
+  커지는 세션은 "링크가 느려지고 있음"으로 읽으면 된다
 - 끊기 버튼 → `gateway.disconnect(sessionId)`. 신뢰까지 끊으려면 `pairing.revoke(deviceId)`
   (이쪽은 `trustEpoch`를 올려 예전 `hello`를 거부하게 만든다)
 

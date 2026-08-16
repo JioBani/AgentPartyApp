@@ -272,6 +272,37 @@ console.log("SignalingClient assertions:");
   assert(h.sockets.length === 4, "a successful connection resets the backoff");
 }
 
+// --- M4: a signaling reconnect must not disturb a live session -------------
+{
+  // A WebRTC session runs peer-to-peer; signaling only carried its setup. So a
+  // dropped and redialled socket has to leave the session alone. The mechanism
+  // is that the client keeps its handlers and its identity across the redial —
+  // if it re-registered from scratch, relay traffic for an in-flight session
+  // (an ICE restart's offer, most importantly) would land nowhere and the
+  // session would strand with no error anywhere.
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  const phone = P.identityFromSeeds(new Uint8Array(32).fill(9), new Uint8Array(32).fill(10));
+
+  h.socket().deliver({ t: "relay", from: phone.deviceId, kind: "offer", box: P.toB64(new Uint8Array(48).fill(1)) });
+  assert(h.received.relay.length === 1, "a relay arrives before the outage");
+
+  h.socket().close_("1006 abnormal");
+  h.time.advance(1_000);
+  const second = completeHandshake(h, identity);
+  assert(second.verified, "the redial authenticates with the SAME identity — no re-pairing is implied");
+  assert(second.hello.deviceId === identity.deviceId, "and announces the same deviceId, so the phone's relays still route here");
+  assert(h.client.currentPhase === "connected", "the client is connected again");
+
+  // The restart offer the phone sends after a network change (01 §6).
+  h.socket().deliver({ t: "relay", from: phone.deviceId, kind: "offer", box: P.toB64(new Uint8Array(48).fill(2)) });
+  assert(h.received.relay.length === 2, "relay for an in-flight session is still routed after the reconnect");
+  assert(h.received.relay[1]?.kind === "offer", "including the ICE-restart offer, which is what keeps the session alive");
+
+  const closingPhase = h.phases.find((p) => p.phase === "failed");
+  assert(closingPhase === undefined, "a recoverable outage never reports `failed` — that would tell the app to give up");
+}
+
 // --- terminal errors are NOT retried ---------------------------------------
 {
   for (const code of ["auth_failed", "unsupported_version", "replaced"]) {
