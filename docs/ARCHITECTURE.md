@@ -10,7 +10,7 @@ For the current module index and end-to-end call flows, see
 ### Shared contracts
 
 - `src/shared/types.ts`: renderer, IPC, and HTTP payload shapes.
-- `src/shared/apiSpec.ts`: single source for the automation API endpoint list.
+- `src/shared/apiSpec.ts`: the shape of the automation API's self-description. The endpoint and method lists inside it are derived from the capability table below, not written by hand.
 - `src/shared/appUpdate.ts`: release feed address and the update status/release contract.
 
 Change this layer when a public contract changes.
@@ -33,9 +33,9 @@ IPC and HTTP both call this controller. If a feature can be triggered from the U
 ### Infrastructure adapters
 
 - `src/main/main.ts`: Electron lifecycle, menu, window creation, IPC channel registration.
-- `src/main/automationApi.ts`: local HTTP request coordination.
-- `src/main/automation`: shared HTTP mechanics, query parsing, and
-  feature-scoped route adapters.
+- `src/main/api`: the capability table — one `(method, params) → handler` list, grouped by domain under `api/routes/`, that the local HTTP server and a paired phone's RPC both dispatch. A capability registered here cannot behave differently on the two transports because there is only one handler.
+- `src/main/automationApi.ts`: local HTTP transport — window/party scope resolution, parameter merging, and status codes.
+- `src/main/automation`: shared HTTP mechanics and the QA-only route adapter (QA scaffolding fabricates state for tests, so it stays out of the capability table and off the mobile link).
 - `src/main/sessionManager.ts`: live harness process/session ownership.
 - `src/main/settings.ts`, `src/main/authService.ts`, `src/main/partyRepository.ts`, `src/main/logger.ts`: local persistence and app infrastructure.
 - `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates `main` and immediately init-starts its session so slash commands and skills can be discovered for the palette. Opening non-main members does not start a harness; their first chat message starts the member session at the project root before sending input.
@@ -58,8 +58,8 @@ Renderer code should not duplicate business behavior. It requests state or comma
 
 1. Add or modify the application method in `AppController`.
 2. Expose the capability through IPC in `main.ts` if the renderer needs it.
-3. Expose the same capability through HTTP in `automationApi.ts` if it is user-visible or automation-relevant.
-4. Add the endpoint to `src/shared/apiSpec.ts` and document it in `docs/API.md`.
+3. Add one entry to the capability table under `src/main/api/routes/` if the capability is user-visible or automation-relevant. That single entry serves the HTTP endpoint, its `GET /api/spec` declaration, and the mobile-link RPC method; set `remote: false` on it for desktop-local surfaces (window chrome, screen capture) that make no sense from a phone.
+4. Document the endpoint in `docs/API.md`.
 5. If the capability pushes state to the renderer, register the push channel in `main.ts` and subscribe in `preload.ts` + `App.tsx` (see `update:status`).
 6. Add focused E2E coverage in `scripts/e2e-smoke.js` or a more specific test.
 7. After implementation, review the changed code against these rules:

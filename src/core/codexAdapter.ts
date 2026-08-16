@@ -577,11 +577,11 @@ export class CodexAdapter extends EventEmitter {
    * `behavior` is the allow/deny fallback. Each request method maps to its own
    * protocol response shape (command/file/permissions/user-input/elicitation).
    */
-  respondApproval(requestId: string, behavior?: "allow" | "deny", updatedInput?: unknown, _message?: string): void {
+  respondApproval(requestId: string, behavior?: "allow" | "deny", updatedInput?: unknown, _message?: string): boolean {
     const approval = this.pendingApprovals.get(requestId);
     if (!approval) {
       this.emitEvent({ type: "error", message: `Unknown Codex approval request '${requestId}'.`, at: now() });
-      return;
+      return false;
     }
     const decision = codexDecisionOf(behavior, updatedInput);
     const params = (approval.input || {}) as Record<string, any>;
@@ -589,6 +589,7 @@ export class CodexAdapter extends EventEmitter {
     this.respond(requestId, result);
     this.pendingApprovals.delete(requestId);
     this.emitEvent({ type: "approval_resolved", requestId, decision: decision === "decline" ? "deny" : "allow", answers: approvalAnswers(updatedInput), at: now() });
+    return true;
   }
 
   private async ensureThread(): Promise<void> {

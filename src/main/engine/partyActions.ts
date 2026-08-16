@@ -50,6 +50,13 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
 };
 
+/**
+ * The complete action list, in declaration order. The API route table expands
+ * this into one endpoint + one RPC method per action, so adding an action here
+ * publishes it everywhere instead of needing a matching route edit.
+ */
+export const PARTY_ACTION_NAMES = Object.keys(PARTY_ACTIONS) as PartyActionName[];
+
 export function runPartyAction(party: PartyApplicationService, name: string, action: string, body: any, partyId?: string): PartyMutationResult | Promise<PartyMutationResult> {
   const handler = PARTY_ACTIONS[action as PartyActionName];
   if (!handler) {

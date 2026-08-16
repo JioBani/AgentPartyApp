@@ -49,7 +49,16 @@ export interface HarnessSession extends EventEmitter {
   reconnectMcpServer?(name: string): Promise<void>;
   setMcpServerEnabled?(name: string, enabled: boolean): Promise<void>;
   authenticateMcpServer?(name: string): Promise<McpAuthResult>;
-  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void;
+  /**
+   * Answers one pending approval.
+   *
+   * Returns whether the harness ACCEPTED the answer — false when it holds no
+   * such request (already answered, dropped when the turn ended, or never
+   * existed). The caller must not report success on false: a phone answering a
+   * push notification minutes later has no other way to learn that its tap did
+   * nothing.
+   */
+  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): boolean;
   on(event: "event", listener: (event: ClaudeNormalizedEvent) => void): this;
   on(event: "snapshot", listener: (snapshot: ClaudeSessionSnapshot) => void): this;
 }

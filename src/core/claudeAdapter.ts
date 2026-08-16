@@ -559,11 +559,11 @@ export class ClaudeAdapter extends EventEmitter {
     };
   }
 
-  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void {
+  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): boolean {
     const pending = this.pendingApprovals.get(requestId);
     if (!pending) {
       this.emitEvent({ type: "error", message: `No pending permission request for ${requestId}.`, at: now() });
-      return;
+      return false;
     }
 
     // `updatedInput` doubles as a control envelope: the card sends
@@ -610,6 +610,7 @@ export class ClaudeAdapter extends EventEmitter {
       result,
       at: now(),
     });
+    return true;
   }
 
   restart(resumeCurrentSession = false): void {

@@ -22,6 +22,7 @@ import { inspectCursorAgent } from "../../core/cursorAgentCli";
 import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
 import { log } from "../logger";
+import type { ApprovalDelivery } from "../../shared/approvals";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -263,8 +264,8 @@ export class LocalEngine implements EngineConnection {
     this.party.syncMemberCursorPolicy(sessionId, validated);
   }
 
-  async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {
-    this.deps.sessionManager.approve(sessionId, requestId, behavior, updatedInput, message);
+  async approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> {
+    return this.deps.sessionManager.approve(sessionId, requestId, behavior, updatedInput, message);
   }
 
   async closeSession(sessionId: string): Promise<boolean> {

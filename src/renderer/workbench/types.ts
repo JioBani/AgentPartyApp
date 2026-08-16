@@ -53,7 +53,9 @@ export type { TranscriptBlock };
  * cause — and kept distinct from `not-started`, which would wrongly suggest
  * there is no conversation to come back to.
  */
-export type MemberStatus = "working" | "idle" | "approval" | "not-started" | "stalled" | "disconnected" | "sleeping" | "closed";
+import type { MemberStatus } from "../../shared/memberDisplayStatus";
+
+export type { MemberStatus };
 
 export type PanelDensity = "wide" | "mid" | "narrow";
 

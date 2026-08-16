@@ -32,6 +32,7 @@ import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import type { ApprovalDelivery } from "../shared/approvals";
 
 /**
  * Status strings that begin or end a turn. Used only by idle sleep's
@@ -71,6 +72,15 @@ interface ManagedSession {
    * just turn counts. Cleared when the turn's usage is recorded.
    */
   turnStartedAt?: number;
+  /**
+   * Counts turns on this session, so `turn_complete` can name the turn it ends.
+   *
+   * Its payload sums cost and tokens, and a duplicate silently inflates a number
+   * the user spends decisions against — the one duplicate class the user cannot
+   * catch by looking, unlike a paragraph appearing twice. A counter rather than
+   * `turnStartedAt`, which two turns could in principle share.
+   */
+  turnSeq: number;
   awaitingUser: boolean;
   stallNotified: boolean;
   /**
@@ -707,7 +717,7 @@ export class SessionManager extends EventEmitter {
     // normalized status event. Keep the canonical flag in sync so product E2E
     // does not accidentally test only the presentation snapshot.
     if (status === "sent" || status === "requesting" || status === "responding") {
-      if (!session.turnActive) session.turnStartedAt = Date.now();
+      if (!session.turnActive) this.beginTurn(session);
       session.turnActive = true;
       session.awaitingUser = false;
     } else if (status === "idle" || status === "interrupted") {
@@ -734,7 +744,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, awaitingUser: false, stallNotified: false };
+    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, turnSeq: 0, awaitingUser: false, stallNotified: false };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
@@ -769,6 +779,19 @@ export class SessionManager extends EventEmitter {
    * tell "still generating" from "hung". Any real event re-arms the alarm; a turn
    * that is waiting on the user (approval) is intentionally not treated as stalled.
    */
+  /**
+   * Opens a turn: stamps its start and gives it an identity.
+   *
+   * One helper rather than the four places that used to set `turnStartedAt`
+   * inline — a turn that starts without being counted would let the NEXT
+   * `turn_complete` reuse the previous turn's id, and a consumer deduping on it
+   * would then discard a real turn's cost.
+   */
+  private beginTurn(session: ManagedSession): void {
+    session.turnStartedAt = Date.now();
+    session.turnSeq += 1;
+  }
+
   private trackTurnActivity(session: ManagedSession, event: ClaudeNormalizedEvent): void {
     session.lastActivityAt = Date.now();
     session.stallNotified = false;
@@ -792,6 +815,12 @@ export class SessionManager extends EventEmitter {
     if (startsOrEndsTurn) {
       session.lastTurnActivityAt = session.lastActivityAt;
     }
+    // Stamped here, before the event is queued, and NOT in each adapter: five
+    // harnesses producing their own turn ids is five chances to disagree, and
+    // the turn boundary is already maintained in this one place.
+    if (event.type === "turn_complete") {
+      (event as { turnId?: string }).turnId = `${session.id}:${session.turnSeq}`;
+    }
     switch (event.type) {
       case "turn_complete":
         session.turnActive = false;
@@ -804,7 +833,7 @@ export class SessionManager extends EventEmitter {
         this.endCompaction(session);
         break;
       case "approval_request":
-        if (!session.turnActive) session.turnStartedAt = Date.now();
+        if (!session.turnActive) this.beginTurn(session);
         session.turnActive = true;
         session.awaitingUser = true;
         break;
@@ -814,7 +843,7 @@ export class SessionManager extends EventEmitter {
       case "status": {
         const status = String((event as { status?: unknown }).status || "");
         if (status === "sent" || status === "requesting" || status === "responding") {
-          if (!session.turnActive) session.turnStartedAt = Date.now();
+          if (!session.turnActive) this.beginTurn(session);
           session.turnActive = true;
         }
         // A stopped turn is a FINISHED turn. Claude/Codex close it with a
@@ -1086,7 +1115,7 @@ export class SessionManager extends EventEmitter {
       throw new Error(`Session '${id}' is not running, so there is nothing to compact.`);
     }
     this.beginCompaction(session);
-    if (!session.turnActive) session.turnStartedAt = Date.now();
+    if (!session.turnActive) this.beginTurn(session);
     session.adapter.compact();
   }
 
@@ -1115,6 +1144,20 @@ export class SessionManager extends EventEmitter {
   isTurnActive(id: string): boolean {
     const session = this.sessions.get(id);
     return Boolean(session && !session.closed && session.turnActive);
+  }
+
+  /**
+   * Whether the stall watchdog has fired on this session and nothing has
+   * happened since — the same fact the renderer reads off the transcript tail,
+   * from the flag itself rather than from what it appended.
+   *
+   * Exists so a caller WITHOUT a transcript (the party list a phone receives)
+   * can still tell `stalled` from `working`. Cleared by any real event, so it
+   * means "silent right now", not "was silent once this turn".
+   */
+  isStalled(id: string): boolean {
+    const session = this.sessions.get(id);
+    return Boolean(session && !session.closed && session.turnActive && session.stallNotified);
   }
 
   closeSession(id: string): boolean {
@@ -1235,8 +1278,19 @@ export class SessionManager extends EventEmitter {
     this.emit("sessions", this.listSessions());
   }
 
-  approve(id: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): void {
-    this.sessions.get(id)?.adapter.respondApproval(requestId, behavior, updatedInput, message);
+  /**
+   * Answers a pending approval, reporting what became of it.
+   *
+   * This used to be `sessions.get(id)?.…` — an unknown session silently did
+   * nothing while the caller's HTTP request returned 200, so an answer sent to
+   * a respawned member looked accepted and the turn sat waiting forever.
+   */
+  approve(id: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): ApprovalDelivery {
+    const session = this.sessions.get(id);
+    if (!session) {
+      return "no_such_session";
+    }
+    return session.adapter.respondApproval(requestId, behavior, updatedInput, message) ? "delivered" : "not_pending";
   }
 
   listSessions(): SessionView[] {

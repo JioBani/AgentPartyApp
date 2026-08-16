@@ -16,6 +16,14 @@ If the port is already in use, the app binds to a free local port. The current U
 - Request and response bodies are JSON.
 - Every new UI or app capability must add an API endpoint here.
 - Every endpoint call is logged to the app log file.
+- Parameters may arrive as path segments, query string, or JSON body; a handler
+  reads one merged object, and a path segment always wins over a body field of
+  the same name.
+- A path that exists but was called with the wrong verb answers `405` with
+  `{ "error": "method_not_allowed", "allow": ["POST"] }`. An unknown path
+  answers `404 { "error": "not_found" }`. A rejected request answers `4xx` with
+  `{ "ok": false, "error": "<reason>" }`; an unhandled failure answers `500` in
+  the same shape.
 
 ## Discovery
 
@@ -26,7 +34,24 @@ Returns current app state, router URL, automation URL, log file path, and
 
 ### `GET /api/spec`
 
-Returns a machine-readable list of supported endpoints.
+Returns a machine-readable description of this build's surface:
+
+```json
+{
+  "version": 1,
+  "baseUrl": "http://127.0.0.1:47831",
+  "endpoints": ["GET /api/state", "POST /api/party/members/:name/send"],
+  "methods": ["state.get", "member.send"]
+}
+```
+
+`endpoints` is every HTTP route this build serves. `methods` is the subset of
+capabilities a **paired phone** may call by name over the mobile link (see
+`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md`); desktop-local surfaces
+such as window chrome and screen capture are excluded from it.
+
+Both lists are derived from one capability table (`src/main/api/routes/`), so
+HTTP and the mobile link cannot expose different behavior for the same action.
 
 ### `GET /api/state`
 
@@ -1139,6 +1164,28 @@ range), `ratePerHour`, and `overheadRatio`. Every derived field is `undefined`
 metrics require the per-turn `atStart` timestamp**, recorded from the ledger's
 phase-2 alignment onward — older records have no active time and contribute 0.
 
+### `GET /api/token-usage/turns`
+
+The **raw per-turn records** behind the aggregate above, chronological — the
+drill-in when a rollup row raises a question the buckets cannot answer ("which
+turn cost that?"). Same ledger, no separate instrumentation.
+
+Query params share the time-range contract with `GET /api/token-usage`
+(`range` / `from` / `to`), plus:
+
+```text
+party    restrict to a single party id (#id identity)
+member   restrict to one member name
+limit    cap the number of records (newest kept); omit for all
+```
+
+Returns a `TurnUsageRecord[]`. Each record carries `at` (turn END, ISO — usage is
+reported then), `atStart` when known, `partyId`, `member`, `sessionId`,
+`appSessionId`, `provider`, `model`, `effort`, `trigger`, the token split, and
+cost. As above, a **missing token field means "not reported", not zero**, and
+`atStart` is absent on records written before the ledger's phase-2 alignment —
+those contribute 0 active time rather than a fabricated span.
+
 ## Sessions
 
 ### `POST /api/sessions`
@@ -1394,7 +1441,16 @@ When the session belongs to a party member, the policy is persisted.
 
 ### `POST /api/sessions/:id/approve`
 
-Responds to a pending approval request.
+Responds to a pending approval request. Use this when you have the session in
+hand (the desktop UI does); to answer by the approval's own id, see
+[`POST /api/approvals/:id/respond`](#post-apiapprovalsidrespond).
+
+Answers `{ "ok": true, "result": "delivered" | "not_pending" | "no_such_session" }`.
+**`ok` only means the call was handled** — `result` is whether the harness
+actually took the answer. It is `not_pending` when the request was already
+answered or its turn moved on, and `no_such_session` when the session is gone
+(closed, respawned). Reporting either as success leaves a turn waiting forever
+while the caller believes it approved something.
 
 ```json
 {
@@ -1496,6 +1552,54 @@ a fallback). Member role files are stored under
 `.agent_party_app/parties/<party>/members`, but member sessions always start with
 cwd set to the workspace root. The result is scoped to the targeted window's
 workspace (`?window=<id>`; focused window when omitted).
+
+```json
+{
+  "parties": [
+    { "id": "party-1786723850678-…", "name": "deploy",
+      "createdAt": "2026-08-14T16:10:50.678Z", "updatedAt": "2026-08-14T16:10:50.678Z" }
+  ],
+  "currentPartyId": "party-1786723850678-…",
+  "members": [
+    {
+      "partyId": "party-1786723850678-…",
+      "name": "ui",
+      "role": "",
+      "runtime": "claude-code",
+      "status": "running",
+      "model": "claude-opus-5[1m]",
+      "effort": "medium",
+      "reasoning": "adaptive",
+      "permissionMode": "bypassPermissions",
+      "createdAt": "2026-08-15T04:23:08.235Z",
+      "updatedAt": "2026-08-16T14:23:40.161Z",
+      "sessionId": "resume-1786886853245",
+      "sessionBootId": "boot-39520-…",
+      "harnessSessionId": "2f637945-…",
+      "lastContextTokens": 842796,
+      "sleptAt": "2026-08-16T13:21:06.989Z",
+      "queue": { "items": [] }
+    }
+  ],
+  "messages": [
+    { "partyId": "party-…", "id": "m-1", "from": "main", "to": "ui",
+      "content": "…", "createdAt": "2026-08-16T14:00:00.000Z", "delivered": true }
+  ]
+}
+```
+
+Optional per member: `harnessSessionId`, `sessionId`, `sessionBootId`,
+`lastContextTokens`, `lastContextWindow`, `sleptAt`, `codexPolicy`, `cursorPolicy`,
+`autoCompact`, `gate`. A party carries `gate` only when one is configured.
+
+**`status` is not the value the member list displays.** The wire carries
+`idle | opened | running | closed | missing_session | sleeping`; the eight labels
+in the UI (`working`, `idle`, `approval`, `not-started`, `stalled`,
+`disconnected`, `sleeping`, `closed`) are derived in the renderer from the member,
+its session, and its transcript — see `src/renderer/workbench/memberStatus.ts`.
+A caller without the transcript can derive every one of them except `approval` and
+`stalled`, and must not substitute `idle` for those two: a stalled member shown as
+merely waiting states something false.
 
 ### `POST /api/parties`
 
@@ -1623,6 +1727,56 @@ person typed it and is waiting.
 This endpoint is a **human/user turn**, so omitting `interrupt` means `false`.
 The app's own Send button remains independent and fills its value from
 `composer.interruptOnSend`; a caller may explicitly pass either boolean.
+
+### `GET /api/party/members/:name/queue`
+
+What a **busy** member has been sent but has not yet been handed. A message to a
+member mid-turn parks here rather than being pushed at the harness, and drains
+when the member goes idle — so a queued message is neither lost nor delivered
+out of turn.
+
+```json
+{
+  "ok": true,
+  "queue": {
+    "items": [
+      { "id": "q-1", "text": "이것도 봐줘", "from": null, "at": "2026-08-15T08:00:00.000Z", "cutIn": false }
+    ],
+    "merge": true,
+    "collapsed": false
+  }
+}
+```
+
+`from` is the sending member's name, or `null` for the user — it drives the
+sender chip and the merge boundary. `cutIn` marks a row that jumped ahead via
+`interrupt`; cut-in rows sit before ordinary ones and keep arrival order among
+themselves, so a later interrupt cannot leapfrog an earlier one. `merge` and
+`collapsed` are per-member preferences; absent means "inherit the default"
+(merge defaults **on**). A member's queue holds at most 20 rows — past that
+`enqueue` refuses visibly rather than dropping silently.
+
+### `POST /api/party/members/:name/queue`
+
+Mutates that queue. **One endpoint carrying a discriminated `action`**, so the
+API surface and the UI's buttons provably run the same code path:
+
+```text
+send                          deliver the leading run now ("합쳐서 지금 보내기")
+clear                         drop everything waiting
+sendItem   {itemId}           deliver exactly one row now
+cancel     {itemId}           remove one row
+edit       {itemId}           remove one row and hand its text back for the composer
+move       {itemId, toIndex}  put one row at an absolute position (the drop half of a drag)
+mergeUp    {itemId}           fold one row into the row above it
+mergeInto  {itemId, targetId} fold one row into another
+preference {merge?, collapsed?}  persist a per-member preference
+```
+
+An unknown or malformed action is **rejected**, not coerced into a default —
+a misspelled action that fell through would be a mutation the caller never
+asked for. `preference` requires at least one of `merge`/`collapsed`, and the
+`itemId` actions require one.
 
 ### `POST /api/party/members/:name/send`
 
@@ -1910,6 +2064,18 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+Over the mobile link the response also carries `seq`, the event-stream position
+these blocks are consistent with; apply only events past it. HTTP callers
+receive no events and so get no `seq`.
+
+The value is sampled **before** the read, not after. These blocks are a saved
+copy written at some instant inside the read — genuinely async for a WSL
+workspace, which crosses a process boundary. A `seq` taken afterwards would make
+the client skip events the saved copy does not contain, which is loss; taken
+before, it re-applies a few the copy already has, which is duplication. The
+protocol makes the same trade for the rewind snapshot: zero loss, and duplicates
+are the reducer's to absorb.
+
 A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
 `<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
 reference, because base64-wrapped PNG is both the largest thing a transcript
@@ -2150,6 +2316,29 @@ pins a member session to the party that spawned it even if a user later selects
 another party in the desktop window. Ordinary UI and automation clients can
 omit the header and retain the active-window behavior above.
 
+### `GET /api/workspaces`
+
+Lists the workspaces this desktop is currently serving — one entry per workspace
+an open window is viewing, plus the default a new window would use:
+
+```json
+{
+  "workspaces": [
+    {
+      "uri": "C:/Project/AgentPartyApp",
+      "kind": "local",
+      "path": "C:/Project/AgentPartyApp",
+      "windowIds": ["win-1"],
+      "isDefault": true
+    }
+  ]
+}
+```
+
+`kind` is `local` or `wsl` (a WSL entry also carries `distro`). A caller that
+must act on a specific workspace lists these and then addresses it per request —
+`?window=<id>` for HTTP, `workspacePath` for the mobile link.
+
 ### `GET /api/windows`
 
 Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
@@ -2175,6 +2364,260 @@ silently substitutes that workspace's currently selected party.
 
 Points an existing window at a different workspace. Body
 `{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
+
+## Approvals
+
+### `GET /api/approvals`
+
+Approvals still waiting on an answer, oldest first.
+
+Exists for a caller that was not connected when the approval was raised. A phone
+learns of approvals through the event stream; once one falls out of the ring
+buffer there is no other way to discover it, so without this listing the phone
+could answer only approvals it happened to be online for.
+
+Optional `workspacePath` narrows it to one workspace. Omitted, it lists every
+workspace this desktop serves — which is what a phone reconnecting wants, since
+it reaches all of them.
+
+```json
+{
+  "ok": true,
+  "approvals": [
+    {
+      "requestId": "req-7f21",
+      "workspacePath": "C:/Project/AgentPartyApp",
+      "sessionId": "sess-4c19",
+      "member": "ui",
+      "requestedAt": 1786891902265,
+      "toolName": "Bash",
+      "title": "rm -rf build/"
+
+    }
+  ]
+}
+```
+
+`requestedAt` is epoch **milliseconds as a number**, not a timestamp string.
+
+`member` is resolved per request rather than stored, so a member renamed while
+its approval waited is listed under the name now on screen. It is absent when no
+member owns the session (a plain session tab), and `toolName`/`title` are absent
+when the app started mid-turn and never saw the request itself — the row is
+still answerable, just unnamed.
+
+Over the mobile link the response also carries `seq`, the event-stream position
+this listing is consistent with; apply only events past it. HTTP callers receive
+no events and so get no `seq`.
+
+The same list rides in `GET /api/state` as `pendingApprovals` (scoped to that
+workspace), which is how a phone whose `resume` fell outside the ring buffer
+gets them back without a second call.
+
+### `POST /api/approvals/:id/respond`
+
+Answers an approval knowing only **its own id** — no session, no workspace.
+
+This exists for the push path. A phone woken by a notification holds the
+approval id and nothing else: it has no session list, a cold start has no store,
+and iOS gives it roughly 30 seconds from the tap to reconnect and answer, so a
+lookup round trip does not fit. A session id remembered from an earlier run is
+already stale once the member has respawned. The desktop resolves the id itself
+against every workspace it serves, WSL engines included.
+
+Body is the same as `POST /api/sessions/:id/approve` minus the session:
+`{ "behavior": "allow" | "deny", "updatedInput": …, "message": "" }`. A
+`behavior` that is neither `allow` nor `deny` is rejected with `400` rather than
+defaulted — defaulting would answer a security prompt on the user's behalf.
+
+Over the mobile link the id travels as a field rather than a path segment, and
+it is accepted as either `id` or `requestId`. `id` is the path segment's name,
+but every response and event — `GET /api/approvals`, this endpoint's own reply,
+`approval_request`, `approval_resolved` — calls the same value `requestId`. A
+caller that listed approvals and answered one therefore sends `requestId`, and
+used to be told `'id' is required` for a perfectly well-formed request.
+
+```json
+{
+  "ok": true,
+  "outcome": "already_resolved",
+  "requestId": "request-id",
+  "workspacePath": "C:/Project/AgentPartyApp",
+  "sessionId": "session-1",
+  "requestedAt": 1786800000000,
+  "resolvedAt": 1786800060000,
+  "decision": "allow"
+}
+```
+
+`outcome` is the point of this endpoint, and callers must branch on it:
+
+| `outcome` | Meaning |
+| --- | --- |
+| `delivered` | The harness took the answer; the turn is proceeding. |
+| `already_resolved` | Someone answered it first — at the desk or on another device. `decision` and `resolvedAt` say how and when. |
+| `expired` | The request is gone: its turn ended, or its session was closed/respawned. Nothing can consume the answer. |
+| `unknown` | This desktop is not holding that approval. Usually an aged-out notification rather than a bad id — see the retention note below — so present it as "too old", not as a fault. |
+
+The ordinary case is a notification tapped ten minutes late, on a request that
+has since expired or been answered — so a phone that showed "approved" for any
+of the last three would be lying to its user. A failure to *reach* the engine (a
+WSL distro that is down) is **not** an outcome: it surfaces as an error, so the
+caller retries instead of telling the user the request is gone.
+
+Approvals are remembered for 24 hours or 1,000 requests, whichever comes first.
+Past that the record is gone and the answer is `unknown` — which is why that
+outcome is normally a stale notification, not a malformed id. The two are
+genuinely indistinguishable here: an approval id carries no timestamp, so once
+the record is evicted there is nothing left to date it by. Treat `unknown` the
+same as `expired` for the user (nothing was approved); only the wording differs.
+
+## Mobile link
+
+Pairing and health for the phone connection (AgentPartyMobile). The phone talks
+to this desktop over an end-to-end encrypted P2P channel and calls the **same**
+capabilities listed elsewhere in this document by their `<domain>.<verb>` names
+— `GET /api/spec` → `methods` is the authoritative list for this build, and
+`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
+
+The endpoints below manage the link itself. The app runs the **real** gateway by
+default: it opens a signalling socket and speaks WebRTC to a phone. The
+in-memory mock is an explicit QA opt-in, selected only by
+`AGENTPARTY_MOBILE_PIPE=mock`, and it opens no socket.
+
+There is no fallback between them. If the real gateway fails to start, the link
+stays down and the error is reported — it does not quietly become the mock,
+because a QA run that believed it was exercising the real pipe would prove
+nothing.
+
+`GET /api/mobile/status` tells you which state you are in: `running` is whether
+a gateway is up at all, and `signaling` is that gateway's own connection to the
+signalling server (`connected`, `backoff`, `disabled`, …). The mock reports
+`running` without ever reaching a server, so `signaling` is the field that
+distinguishes a real link from a simulated one.
+
+In a headless engine process (a WSL distro's engine server) these endpoints
+fail with an explicit message rather than reporting an empty device list —
+there is no user there to compare a pairing code.
+
+### `GET /api/mobile/status`
+
+Everything the pairing screen and a QA run need, readable at any time:
+
+```json
+{
+  "ok": true,
+  "status": {
+    "running": true,
+    "bootId": "…",
+    "deviceId": "…",
+    "deviceName": "DESKTOP-01",
+    "signaling": "connected",
+    "signalingUrl": "wss://sig.agentparty.app",
+    "signalingError": null,
+    "sessions": [
+      {
+        "sessionId": "sess-1",
+        "deviceId": "…",
+        "deviceName": "Galaxy S25",
+        "transport": "directViaRendezvous",
+        "state": "connected",
+        "subscribedWorkspaces": ["C:/Project/AgentPartyApp"],
+        "inFlightRequests": 0,
+        "lastRequestMethod": "party.list",
+        "queuedBytes": 0
+      }
+    ],
+    "trustedDeviceCount": 1,
+    "pairing": { "phase": "idle", "qr": null, "code": null },
+    "events": { "seq": 42, "minSeq": 1, "maxSeq": 42, "count": 42 },
+    "lastDiagnostics": null
+  }
+}
+```
+
+`sessions[].inFlightRequests > 0` is what the desktop shows as
+"모바일에서 조작 중"; `lastRequestMethod` names what the phone just ran.
+
+### `POST /api/mobile/pair/open`
+
+Opens a single-use pairing QR, valid for two minutes. Returns the string to
+render: `{ "ok": true, "qr": "agentparty://pair?v=1&…", "expiresAt": 1786800000000 }`.
+
+Opening a second QR cancels the first. The 4-digit confirmation code is **not**
+returned here — it only exists after the phone has scanned and proved itself.
+Poll `GET /api/mobile/status` → `pairing.code` for it.
+
+### `POST /api/mobile/pair/confirm`
+
+The user pressed "the codes match". Completes the handshake and returns the
+fresh status. Errors when nothing is awaiting confirmation.
+
+### `POST /api/mobile/pair/cancel`
+
+Aborts the pairing in progress and invalidates its token. Idempotent.
+
+### `GET /api/mobile/devices`
+
+`{ "ok": true, "devices": [{ "deviceId", "name", "pairedAt", "lastSeenAt", "epoch", "push" }] }`.
+
+### `POST /api/mobile/devices/:id/revoke`
+
+Forgets a phone, bumps its trust epoch so an old handshake is rejected, and
+drops any session it holds. Returns the remaining `devices`.
+
+### `POST /api/mobile/devices/:id/rename`
+
+Body `{ "name": "거실 폰" }`. Display name only — identity is unchanged.
+
+### `POST /api/mobile/sessions/:id/disconnect`
+
+Cuts one live phone session immediately; the pairing survives and the phone may
+re-dial. Body `{ "reason": "…" }` is optional. Use `revoke` to end the trust.
+
+### `GET /api/mobile/diagnostics`
+
+Runs STUN probes and a port-mapping attempt, then reports whether a direct
+connection is expected to work:
+
+```json
+{
+  "ok": true,
+  "diagnostics": {
+    "reason": "cgnat_100_64",
+    "wanAddress": "100.72.1.4",
+    "wanIsPrivate": true,
+    "behindNat": true,
+    "mappingKind": "endpointIndependent",
+    "ipv6Available": false,
+    "portMapping": null,
+    "probes": [{ "name": "stun:cloudflare", "ok": true, "detail": "…", "elapsedMs": 41 }],
+    "errors": []
+  }
+}
+```
+
+`reason` is one of `ok_direct`, `no_upnp`, `double_nat`, `cgnat_100_64`,
+`private_wan`, `symmetric_nat`, `ipv6_only`, `unknown`. The Korean explanation
+for each is rendered by the 모바일 연결 tab. Concurrent calls share one run.
+
+### `GET` / `POST /api/mobile/settings`
+
+`{ "ok": true, "settings": { "enabled", "signalingUrl", "pushUrl", "deviceName", "natMappingEnabled" } }`.
+
+POST takes a partial patch and returns the accepted settings, which are
+persisted to `settings.json`. Changing `enabled` or `signalingUrl` reconnects.
+The URLs are **not** validated on write — an unreachable server must show up as
+a visible connection failure in `status.signaling`, not be silently replaced.
+
+### QA flow
+
+```js
+const { qr } = await post("/api/mobile/pair/open");   // hand `qr` to the phone/emulator
+// phone scans → poll until the code appears
+const { status } = await get("/api/mobile/status");   // status.pairing.code === "4213"
+await post("/api/mobile/pair/confirm");
+```
 
 ## QA Endpoints (test-only)
 
@@ -2484,6 +2927,49 @@ read by both this route and the scripts, so there is no second copy to drift.
 
 Returns `{ ok, party, members }`. `npm run design:gallery` launches the app on an
 isolated userData + workspace and opens it.
+
+### `POST /api/qa/members/:name/kill-harness`
+
+**Kills a member's harness process, leaving the session behind** — the state a
+crashed harness actually leaves. The adapter then reports whatever it really
+reports, which is the only way an e2e can discover that different harnesses
+signal death differently. Deliberately not an injected `status: "closed"`: that
+fabricated the tidy value the app wants to see instead of the mess it must cope
+with.
+
+### `POST /api/qa/gate/open`
+
+Opens a Message Gate editor in the renderer, so the modal can be reviewed
+without hand-clicking to it. Body `{ "kind": "member" | "party", "member": "<name>" }`.
+
+### `POST /api/qa/environment`
+
+Stands a **fixed environment report** in for the real probe, so the 환경 screen
+and its blocker cards can be reviewed without breaking the reviewer's machine.
+Body is a partial report; `{ "reset": true }` puts the real probe back.
+
+### `POST /api/qa/mobile/:action`
+
+Drives the **phone side** of the mock mobile gateway — the only way an HTTP
+caller can act as the phone. Fails loudly on the real gateway rather than
+no-opping, so a QA run cannot pass while having exercised nothing.
+
+```text
+scan         {deviceName?, deviceId?}              the phone scans the open QR
+fail-pairing {error}                               fail it the way a bad code would
+connect      {deviceId?, transport?, workspaces?}  a trusted phone dials in → {sessionId}
+subscribe    {sessionId, workspaces[]}             the phone's ctl.subscribe
+request      {method, params?, sessionId?}         dispatch an RPC as the phone would
+delivered    {sessionId}                           events that session actually received
+emitted      {}                                    every event emitted, pre-filter
+snapshot     {sessionId?}                          invoke the resume snapshot provider
+diagnostics  {reason, patch?}                      set what a diagnostics run reports
+reset        {}                                    clear sessions, devices, events, pairing
+```
+
+`request` runs the **registered handler**, so an e2e can prove a phone's
+`party.list` and a local `GET /api/party` answer identically. See
+`scripts/e2e-mobile-link.mjs`.
 
 ### `POST /api/qa/reset`
 

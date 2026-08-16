@@ -21,7 +21,7 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
-import { parseWorkspaceLocation, serializeWorkspaceLocation } from "../../shared/workspaceLocation";
+import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -43,6 +43,11 @@ import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
+import type { MobileLinkService } from "../mobileLink";
+import type { ApprovalIndex } from "../approvalIndex";
+import { SingleFlight } from "../singleFlight";
+import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
+import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -71,6 +76,20 @@ export interface AppControllerDeps {
    * replace, so the update endpoints report that plainly instead of pretending.
    */
   updater?: UpdateController;
+  /**
+   * Mobile link (pairing, phone sessions, diagnostics). Desktop-owned and
+   * absent in a headless remote engine, which has no user to confirm a pairing
+   * code — the mobile endpoints report that plainly instead of answering with
+   * an empty device list.
+   */
+  mobileLink?: MobileLinkService;
+  /**
+   * Where each approval request was seen, so one can be answered by its id
+   * alone. Fed from the workspace event stream in main.ts; absent in the
+   * headless engine server, whose approvals are answered by session id over
+   * RPC by the desktop that owns the window.
+   */
+  approvals?: ApprovalIndex;
 }
 
 /**
@@ -201,6 +220,12 @@ export class AppController {
       const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
+    // A phone pins no window, so it gets the workspace's own current party —
+    // the same listing `party.list` answers with. Skipped entirely when no
+    // phone is connected, since it costs an extra engine call.
+    if (this.deps.mobileLink?.hasSessions()) {
+      this.deps.mobileLink.publish("party:update", await engine.listParty(undefined), workspacePath);
+    }
     void this.reconcileUsageProviders();
   }
 
@@ -262,6 +287,7 @@ export class AppController {
       }
       entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
     }
+    this.deps.mobileLink?.publish("party:layout", { partyId: result.partyId, layout: result.layout }, workspacePath);
     return result;
   }
 
@@ -309,6 +335,12 @@ export class AppController {
       runtime: { appRoot: AppController.APP_ROOT },
       party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
+      // Carried in the state a rewinding phone receives, so an approval raised
+      // while it was outside the ring buffer is restored without a second call
+      // — the case where it is otherwise unreachable. Omitted rather than empty
+      // when this process keeps no index: "nothing is waiting" is a claim the
+      // headless engine cannot make.
+      ...(this.deps.approvals ? { pendingApprovals: this.deps.approvals.pending(workspacePath) } : {}),
       ...(await this.getResumableState(workspacePath)),
     };
     // Keep the background usage poller tracking this window's providers.
@@ -424,6 +456,7 @@ export class AppController {
     for (const entry of this.deps.windowRegistry.all()) {
       const payload = await this.listModels(entry.workspacePath);
       entry.window.webContents.send("models:update", payload);
+      this.deps.mobileLink?.publish("models:update", payload, entry.workspacePath);
     }
   }
 
@@ -506,6 +539,85 @@ export class AppController {
     return updater;
   }
 
+  // --- Mobile link (설정 → 모바일 연결) -----------------------------------
+  // Pairing, trusted phones, live phone sessions, and NAT diagnostics. The
+  // capabilities a phone CALLS are not here — those are the same methods the
+  // desktop UI and HTTP use, dispatched from the shared capability table.
+
+  getMobileStatus(): { ok: true; status: GatewayStatus } {
+    return { ok: true, status: this.mobile().status() };
+  }
+
+  getMobileSettings(): { ok: true; settings: MobileSettings } {
+    return { ok: true, settings: this.mobile().settings() };
+  }
+
+  async updateMobileSettings(patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> {
+    return { ok: true, settings: await this.mobile().updateSettings(patch) };
+  }
+
+  listMobileDevices(): { ok: true; devices: TrustedDevice[] } {
+    return { ok: true, devices: this.mobile().devices() };
+  }
+
+  /**
+   * Opens a single-use pairing QR. The 4-digit confirmation code appears in
+   * `getMobileStatus().pairing.code` once the phone has scanned — the caller
+   * (UI or QA) polls that rather than holding a session object.
+   */
+  async openMobilePairing(): Promise<{ ok: true; qr: string; expiresAt: number }> {
+    return { ok: true, ...(await this.mobile().openPairing()) };
+  }
+
+  async confirmMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.confirmPairing();
+    return { ok: true, status: link.status() };
+  }
+
+  async cancelMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.cancelPairing();
+    return { ok: true, status: link.status() };
+  }
+
+  /** Forgets a phone and drops any session it holds. Returns the list that remains. */
+  async revokeMobileDevice(deviceId: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
+    const link = this.mobile();
+    await link.revokeDevice(deviceId);
+    return { ok: true, devices: link.devices() };
+  }
+
+  async renameMobileDevice(deviceId: string, name: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
+    const link = this.mobile();
+    await link.renameDevice(deviceId, name);
+    return { ok: true, devices: link.devices() };
+  }
+
+  /** Cuts one live phone session now; the trust record survives (04 §즉시 끊기). */
+  async disconnectMobileSession(sessionId: string, reason?: string): Promise<{ ok: true; status: GatewayStatus }> {
+    const link = this.mobile();
+    await link.disconnectSession(sessionId, reason);
+    return { ok: true, status: link.status() };
+  }
+
+  async getMobileDiagnostics(): Promise<{ ok: true; diagnostics: NatDiagnostics }> {
+    return { ok: true, diagnostics: await this.mobile().diagnostics() };
+  }
+
+  /**
+   * The mobile link, or a hard error. Absent in the headless WSL engine, which
+   * has no identity store and no user to confirm a pairing code — saying so is
+   * better than answering with an empty device list that reads as "not paired".
+   */
+  private mobile(): MobileLinkService {
+    const link = this.deps.mobileLink;
+    if (!link) {
+      throw new Error("이 프로세스는 모바일 연결을 제공하지 않습니다 (데스크톱 앱에서만 사용할 수 있습니다).");
+    }
+    return link;
+  }
+
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     const previous = getSettings();
     updateSettings(patch || {});
@@ -526,6 +638,7 @@ export class AppController {
     // Settings are global — push to EVERY window so a change made over HTTP or in
     // another window reflects live (e.g. transcript zoom), not only on next load.
     // (The renderer preserves each window's own workspacePath on merge.)
+    this.deps.mobileLink?.publish("settings:update", settings);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("settings:update", settings);
     }
@@ -638,6 +751,7 @@ export class AppController {
 
   /** Keeps every window in sync when Authentication is driven over HTTP. */
   private broadcastAuth(auth: ReturnType<typeof getAuthState>): ReturnType<typeof getAuthState> {
+    this.deps.mobileLink?.publish("auth:update", auth);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("auth:update", auth);
     }
@@ -647,6 +761,37 @@ export class AppController {
   // --- Windows + workspace ------------------------------------------------
   listWindows(): WindowInfo[] {
     return this.deps.windowRegistry.list();
+  }
+
+  /**
+   * The workspaces this desktop is currently serving: one entry per workspace an
+   * open window is viewing, plus the default a new window would use.
+   *
+   * A paired phone reaches every workspace of the PC it paired with (문서 04 §3),
+   * so it lists these once and then stamps `workspacePath` on each later call
+   * rather than being pinned to one workspace for the life of its session.
+   */
+  listWorkspaces(): { workspaces: Array<WorkspaceDisplay & { windowIds: string[]; isDefault: boolean }> } {
+    const byKey = new Map<string, { path: string; windowIds: string[] }>();
+    const remember = (workspacePath: string, windowId?: string) => {
+      const key = workspaceKey(workspacePath);
+      const entry = byKey.get(key) || { path: workspacePath, windowIds: [] };
+      if (windowId) entry.windowIds.push(windowId);
+      byKey.set(key, entry);
+    };
+    for (const window of this.deps.windowRegistry.list()) {
+      remember(window.workspacePath, window.id);
+    }
+    const fallback = getSettings().workspacePath || process.cwd();
+    remember(fallback);
+    const defaultKey = workspaceKey(fallback);
+    return {
+      workspaces: [...byKey].map(([key, entry]) => ({
+        ...this.workspaceDisplay(entry.path),
+        windowIds: entry.windowIds,
+        isDefault: key === defaultKey,
+      })),
+    };
   }
 
   /**
@@ -735,9 +880,19 @@ export class AppController {
     return this.engineFor(workspacePath).sendUserTurn(sessionId, text, attachments);
   }
 
-  async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true }> {
-    await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
-    return { ok: true };
+  async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true; result?: unknown }> {
+    const result = await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
+    // `approve` answers with a delivery verdict; a caller that reported a bare
+    // `{ok:true}` would tell the user an expired request had been approved.
+    if (action !== "approve") {
+      // Every other action answered a bare `{ok:true}` before and still does —
+      // whatever they happen to return is internal, not a contract.
+      return { ok: true };
+    }
+    if (result === "delivered") {
+      this.deps.approvals?.markResolved(String(body?.requestId || ""), body?.behavior === "deny" ? "deny" : "allow");
+    }
+    return { ok: true, result };
   }
 
   interruptSession(workspacePath: string, sessionId: string): Promise<void> {
@@ -781,8 +936,131 @@ export class AppController {
     return this.engineFor(workspacePath).setSessionCursorPolicy(sessionId, policy);
   }
 
-  approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void> {
-    return this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
+  async approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> {
+    const delivery = await this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
+    if (delivery === "delivered") {
+      this.deps.approvals?.markResolved(requestId, behavior);
+    }
+    return delivery;
+  }
+
+  /**
+   * Answers an approval knowing only its OWN id.
+   *
+   * This is the path a phone takes out of a push notification: it holds the
+   * approval id and nothing else, and iOS gives it seconds, so it cannot first
+   * ask which session owns the request — and a session id it remembered from an
+   * earlier run is stale the moment the member respawns.
+   *
+   * The outcome is reported as a distinct value rather than success/failure,
+   * because the ordinary case is a notification tapped long after the request
+   * expired or was answered at the desk. Reporting those as success would have
+   * the phone tell its user it approved something that never happened.
+   */
+  /**
+   * Approvals still waiting on an answer, for a client that was not listening
+   * when they were raised.
+   *
+   * Resolves each one to its MEMBER NAME here rather than storing it: a member
+   * can be renamed while its approval waits, and a list that named the member
+   * as it was would send the user looking for something that is no longer on
+   * their screen. A session with no member behind it (a plain session tab)
+   * reports no name rather than a made-up one.
+   */
+  async listPendingApprovals(workspacePath?: string): Promise<{ ok: true; approvals: PendingApproval[] }> {
+    const approvals = this.deps.approvals;
+    if (!approvals) {
+      // Same reason as `respondToApproval`: the headless engine keeps no index.
+      // An empty list would read as "nothing is waiting", which is a claim this
+      // process cannot make.
+      throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
+    }
+    const pending = approvals.pending(workspacePath);
+    const namesByWorkspace = new Map<string, Map<string, string>>();
+    const namesFor = async (workspace: string): Promise<Map<string, string>> => {
+      const cached = namesByWorkspace.get(workspace);
+      if (cached) {
+        return cached;
+      }
+      const names = new Map<string, string>();
+      try {
+        const listing = await this.engineFor(workspace).listParty();
+        for (const member of listing.members) {
+          if (member.sessionId) {
+            names.set(member.sessionId, member.name);
+          }
+        }
+      } catch (error) {
+        // A workspace whose engine is down must not take the whole list with
+        // it: the approvals are still real and still answerable by id. Only the
+        // friendly name is lost, and it is logged rather than swallowed.
+        log("warn", "api", "pending approvals: party lookup failed", { workspace, error: String(error) });
+      }
+      namesByWorkspace.set(workspace, names);
+      return names;
+    };
+    const listed: PendingApproval[] = [];
+    for (const entry of pending) {
+      const names = await namesFor(entry.workspacePath);
+      listed.push({
+        requestId: entry.requestId,
+        workspacePath: entry.workspacePath,
+        sessionId: entry.sessionId,
+        member: names.get(entry.sessionId),
+        requestedAt: entry.requestedAt,
+        toolName: entry.toolName,
+        title: entry.title,
+      });
+    }
+    return { ok: true, approvals: listed };
+  }
+
+  /**
+   * Answers in flight, keyed by request id.
+   *
+   * `resolvedAt` makes a REPEAT call idempotent, but not a CONCURRENT one: two
+   * taps, or two devices, both pass the resolved check before either marks the
+   * request, and both reach the harness. The second then gets `not_pending`
+   * back and reports `expired` — telling the user their answer was too late
+   * when it was in fact delivered by the first. Sharing the first promise makes
+   * the second call return what actually happened.
+   */
+  private readonly approvalsInFlight = new SingleFlight<ApprovalResponseResult>();
+
+  respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
+    return this.approvalsInFlight.run(requestId, () =>
+      this.deliverApprovalResponse(requestId, behavior, updatedInput, message));
+  }
+
+  private async deliverApprovalResponse(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
+    const approvals = this.deps.approvals;
+    if (!approvals) {
+      // The headless engine server keeps no index — the desktop that owns the
+      // window does. Answering `unknown` here would be a confident lie: it
+      // looks identical to "that approval aged out", and the caller would stop
+      // retrying against the process that CAN answer.
+      throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
+    }
+    const known = approvals.find(requestId);
+    if (!known) {
+      return { ok: true, outcome: "unknown", requestId };
+    }
+    const where = { requestId, workspacePath: known.workspacePath, sessionId: known.sessionId, requestedAt: known.requestedAt };
+    if (known.resolvedAt) {
+      return { ok: true, outcome: "already_resolved", ...where, resolvedAt: known.resolvedAt, decision: known.decision };
+    }
+    // A failure to REACH the engine (a WSL distro that is down) is not one of
+    // the four outcomes — it propagates, so the phone retries rather than
+    // telling the user the request is gone.
+    const delivery = await this.engineFor(known.workspacePath).approveSession(known.sessionId, requestId, behavior, updatedInput, message);
+    if (delivery === "delivered") {
+      approvals.markResolved(requestId, behavior);
+      return { ok: true, outcome: "delivered", ...where, resolvedAt: Date.now(), decision: behavior };
+    }
+    // The session is gone, or it is alive but no longer holds the request: the
+    // turn moved on. Either way nothing can consume this answer.
+    log("info", "api", "approval could not be delivered", { requestId, delivery, workspace: known.workspacePath });
+    return { ok: true, outcome: "expired", ...where };
   }
 
   // --- MCP (external servers a member connects to; by session id) ---------
@@ -1644,6 +1922,52 @@ export class AppController {
   }
 
   /** Opens a Message Gate modal (member editor or party manager) — QA of the modal UI. */
+  /**
+   * Test-only: drives the mock gateway's PHONE side, which no HTTP caller can
+   * otherwise reach — scanning a QR, dialling in, subscribing, sending an RPC.
+   * This is what lets an E2E prove that a phone's `party.list` and the local
+   * `GET /api/party` run the same handler.
+   *
+   * It fails loudly on the real gateway: a QA run that believes it paired a
+   * phone must not pass while having exercised nothing.
+   */
+  async qaMobileSimulate(action: string, body: any): Promise<{ ok: true; action: string; result: unknown }> {
+    this.requireQa();
+    const mock = this.mobile().mockControls();
+    const result = await (async (): Promise<unknown> => {
+      switch (action) {
+        case "scan":
+          mock.scanQr({ deviceName: body?.deviceName, deviceId: body?.deviceId });
+          return this.mobile().status().pairing;
+        case "fail-pairing":
+          mock.failPairing(String(body?.error || "QA induced pairing failure"));
+          return this.mobile().status().pairing;
+        case "connect":
+          return { sessionId: mock.connect({ deviceId: body?.deviceId, transport: body?.transport, workspaces: body?.workspaces }) };
+        case "subscribe":
+          mock.subscribe(String(body?.sessionId || ""), Array.isArray(body?.workspaces) ? body.workspaces : []);
+          return { sessionId: body?.sessionId, workspaces: body?.workspaces };
+        case "request":
+          return mock.request(String(body?.method || ""), body?.params, body?.sessionId ? { sessionId: String(body.sessionId) } : undefined);
+        case "delivered":
+          return { events: mock.deliveredTo(String(body?.sessionId || "")) };
+        case "emitted":
+          return { events: mock.emitted() };
+        case "snapshot":
+          return mock.snapshot(body?.sessionId ? String(body.sessionId) : undefined);
+        case "diagnostics":
+          mock.setDiagnostics(body?.reason, body?.patch);
+          return { reason: body?.reason };
+        case "reset":
+          mock.reset();
+          return { reset: true };
+        default:
+          throw new Error(`Unknown mobile simulator action '${action}'.`);
+      }
+    })();
+    return { ok: true, action, result };
+  }
+
   qaOpenGate(windowId: string | undefined, kind: "member" | "party", member: string): { ok: true; kind: string; member: string } {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:open-gate", { kind, member });

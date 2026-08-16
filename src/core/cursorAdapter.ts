@@ -394,12 +394,13 @@ export class CursorAdapter extends EventEmitter {
     };
   }
 
-  respondApproval(requestId: string): void {
+  respondApproval(requestId: string): boolean {
     this.emitEvent({
       type: "error",
       message: `Cursor print mode does not expose an interactive approval request '${requestId}'.`,
       at: now(),
     });
+    return false;
   }
 
   private runTurn(text: string): void {
