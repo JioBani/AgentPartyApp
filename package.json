@@ -198,7 +198,9 @@
     "test:e2e:interrupt-notice": "npm run build && node scripts/e2e-interrupt-notice.mjs",
     "test:e2e:catalog-list": "npm run build && node scripts/e2e-model-catalog-list.mjs",
     "test:catalog-list": "node scripts/qa-model-catalog-list.mjs",
-    "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs"
+    "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs",
+    "test:e2e:mobile-device": "npm run build && node scripts/e2e-mobile-device.mjs",
+    "test:e2e:mobile-link-device": "npm run build && node scripts/e2e-mobile-link-device.mjs"
   },
   "build": {
     "appId": "party.agentparty.desktop",

@@ -218,6 +218,8 @@ export function MobileLinkCard({ active }: { active: boolean }) {
         pairing={pairing}
         qr={qr}
         busy={busy}
+        signaling={status?.running ? status.signaling : undefined}
+        signalingUrl={status?.signalingUrl}
         onOpen={() => void run("pair", async () => {
           const opened = await window.agentParty.openMobilePairing();
           setQr({ text: opened.qr, expiresAt: opened.expiresAt });
@@ -263,16 +265,29 @@ export function MobileLinkCard({ active }: { active: boolean }) {
  * confirms they match. The code is what stops a stranger who intercepted the QR
  * from completing the pairing, so it is the loudest thing in this card.
  */
-function PairingCard({ pairing, qr, busy, onOpen, onConfirm, onCancel }: {
+function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onConfirm, onCancel }: {
   pairing: GatewayStatus["pairing"] | undefined;
   qr: { text: string; expiresAt: number } | undefined;
   busy: string;
+  signaling: GatewayStatus["signaling"] | undefined;
+  signalingUrl: string | undefined;
   onOpen: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const phase = pairing?.phase || "idle";
   const open = phase === "awaitingScan" || phase === "awaitingConfirm";
+  // The server address travels in the QR and the phone STORES it. Pairing while
+  // the link is down therefore hands the phone an address that may never work,
+  // and no change on this side can reach it afterwards — only unpairing and
+  // pairing again.
+  //
+  // The pipe already refuses outright when it has NEVER connected, because that
+  // case cannot recover. What is left here is the recoverable one: it connected
+  // before and is retrying now. Blocking that would break a working flow over a
+  // blip, so the user is told what they are about to bake in and allowed to
+  // decide.
+  const linkDown = Boolean(signaling && signaling !== "connected");
 
   return (
     <section className="set-card">
@@ -285,6 +300,17 @@ function PairingCard({ pairing, qr, busy, onOpen, onConfirm, onCancel }: {
       )}
       {phase === "completed" && (
         <div className="set-inline-note is-success"><Check size={14} /><span>폰이 등록되었습니다.</span></div>
+      )}
+      {!open && linkDown && (
+        <div className="set-inline-note is-warn" role="alert">
+          <AlertTriangle size={14} />
+          <span>
+            서버에 연결돼 있지 않습니다(재시도 중). 지금 발행하면 폰이
+            {signalingUrl ? ` ${signalingUrl} 주소를` : " 이 주소를"} 저장하므로,
+            주소가 잘못돼 있으면 나중에 고쳐도 그 폰은 연결되지 않습니다 — 해제 후 다시 연결해야 합니다.
+            연결이 돌아온 뒤 발행하는 편이 안전합니다.
+          </span>
+        </div>
       )}
       {!open ? (
         <div className="set-diag-actions">
