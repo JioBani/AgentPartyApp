@@ -27,7 +27,8 @@ import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
-import { applyPartyPrimerPatch, partyPrimerView, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
+import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerView, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
+import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
@@ -38,7 +39,7 @@ import { runSessionAction } from "./sessionActions";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
-import { getSubscriptionProxyStatus } from "../../core/subscriptionProxy";
+import { getSubscriptionProxyStatus, subscriptionProxyConfig } from "../../core/subscriptionProxy";
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
@@ -552,6 +553,37 @@ export class AppController {
    */
   savePartyPrimerSection(patch: { section: string; text?: string | null; enabled?: boolean }): { section: PartyPrimerSectionView; settings: AppSettings } {
     const { settings: partyPrimer, applied } = applyPartyPrimerPatch(getSettings().partyPrimer, patch);
+    const settings = this.updateSettings({ partyPrimer });
+    return { section: applied, settings };
+  }
+
+  /**
+   * Translates one primer section into Korean and stores the result next to it.
+   * The prompt itself stays English — this is a reading aid for the human, which
+   * is why the stored translation carries a hash of the English it came from and
+   * reports itself stale once that text is edited.
+   *
+   * `translation: null` in the patch clears a saved translation instead.
+   */
+  async translatePartyPrimerSection(patch: { section: string; clear?: boolean; model?: string }): Promise<{ section: PartyPrimerSectionView; settings: AppSettings }> {
+    const current = getSettings();
+    const view = partyPrimerView(current.partyPrimer).find((entry) => entry.id === patch.section);
+    if (!view) {
+      throw new Error(`알 수 없는 프롬프트 섹션입니다: ${patch.section}`);
+    }
+    const translation = patch.clear
+      ? null
+      : {
+          ...(await translatePrimerSection({ title: view.title, text: view.text }, {
+            routerBaseUrl: this.deps.getRouterBaseUrl(),
+            routerAuthToken: getSettings().routerAuthToken,
+            subscriptionProxy: subscriptionProxyConfig(),
+          }, patch.model)),
+          // Hash the text the translator was actually given, not the section as
+          // it may read by the time the answer arrives.
+          source: view.text,
+        };
+    const { settings: partyPrimer, applied } = applyPartyPrimerTranslation(current.partyPrimer, { section: patch.section, translation });
     const settings = this.updateSettings({ partyPrimer });
     return { section: applied, settings };
   }

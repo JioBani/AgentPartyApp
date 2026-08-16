@@ -437,6 +437,9 @@ at. Sections are returned in assembly order; the primer is those texts joined
 with a blank line, with `{{party}}` / `{{member}}` / `{{role}}` replaced by the
 member's own identity.
 
+A section that has been translated also carries
+`translation: { text, model, at, stale }` — see `POST /api/party/primer/translate`.
+
 ### `POST /api/party/primer`
 
 Edits **one** section. `{ "section": "gate", "text": "…" }` sets an override,
@@ -458,6 +461,33 @@ is stored as "no override", so that section keeps tracking app updates.
 Takes effect for sessions started or resumed **after** the change; a running
 member keeps the primer it booted with. Same controller method as Settings →
 런타임 → 파티 프롬프트.
+
+### `POST /api/party/primer/translate`
+
+Translates one section into Korean and stores the result beside it, so a human
+can check what the members are actually told. The primer itself stays English —
+this is a reading aid, never what a session receives.
+
+`{ "section": "gate" }` translates; `{ "section": "gate", "clear": true }` drops
+a saved translation. The response is the same `{ section, settings }` shape as
+`POST /api/party/primer`, with the section's `translation` filled in:
+
+```json
+{ "text": "## Message Gate — …", "model": "GPT-5.6 Luna",
+  "at": "2026-08-16T14:55:29.674Z", "stale": false }
+```
+
+The call is a **headless one-shot on a connected subscription** — no metered API
+spend. Models are tried in preference order (`GPT-5.6 Luna` at max effort, then
+`sonnet` at high) and the response says which one answered. If none is connected
+the call FAILS and the error names every model tried with its reason; it never
+falls back to a metered provider. `model` pins one candidate instead of walking
+the order (QA; the UI never sends it).
+
+`stale` is `true` once the English text changes after the translation was made —
+the stored translation carries a hash of the source it was made from, so editing
+a section marks its translation out of date with no bookkeeping by the caller.
+Re-run the same request to refresh it.
 
 ### `POST /api/shell/open-path`
 

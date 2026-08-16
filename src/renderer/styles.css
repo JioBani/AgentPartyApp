@@ -7599,6 +7599,23 @@ body.wb-resizing {
 .set-primer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .set-primer-gap { flex: 1; }
 
+/* Saved Korean reading of a section. Visually SUBORDINATE to the editor above
+   it — the English is what members actually get, so the translation must never
+   look like the thing being edited. */
+.set-primer-badge.is-stale { background: var(--danger-dim); color: var(--danger); }
+.set-primer-tr { border: var(--border-width) solid var(--border-subtle); border-radius: 9px; background: var(--bg-2); overflow: hidden; }
+.set-primer-tr.is-stale { border-color: var(--danger-bd); }
+.set-primer-tr-head { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-bottom: var(--border-width) solid var(--border-subtle); }
+.set-primer-tr-label { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; color: var(--text-2); }
+.set-primer-tr-meta { font-size: 10.5px; color: var(--text-3); }
+.set-primer-tr-clear { background: none; border: none; padding: 0; font-size: 11px; color: var(--text-3); cursor: pointer; }
+.set-primer-tr-clear:hover:not(:disabled) { color: var(--danger); }
+.set-primer-tr-clear:disabled { opacity: 0.5; cursor: default; }
+.set-primer-tr-stale { display: flex; align-items: flex-start; gap: 7px; padding: 9px 11px; background: var(--danger-dim); font-size: 11.5px; line-height: 1.5; color: var(--danger); }
+.set-primer-tr-stale svg { flex: none; margin-top: 1px; }
+.set-primer-tr-stale b { font-weight: 700; }
+.set-primer-tr-text { margin: 0; padding: 11px 12px; max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-sans); font-size: 12px; line-height: 1.65; color: var(--text-1); }
+
 /* Harness picker inside the 하네스 기본값 tab. A second, quieter tab row: it
    selects WITHIN the tab the top strip already chose, so it reads as pills on the
    page rather than as folder tabs cut into the header. */

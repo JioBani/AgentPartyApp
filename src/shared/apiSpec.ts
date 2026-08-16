@@ -17,6 +17,7 @@ export const automationEndpoints = [
   "POST /api/settings",
   "GET /api/party/primer",
   "POST /api/party/primer",
+  "POST /api/party/primer/translate",
   "GET /api/appearance/fonts",
   "POST /api/shell/open-path",
   "POST /api/clipboard/image",

@@ -23,6 +23,7 @@ import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
 import { GateReviewerControl } from "../workbench/GateReviewerControl";
 import { PartyPrimerSettings, type PartyPrimerSectionPatch } from "../workbench/PartyPrimerSettings";
+import type { PartyPrimerSectionId } from "../../shared/partyPrimer";
 import { Segmented } from "../workbench/Segmented";
 import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
@@ -559,7 +560,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -575,6 +576,8 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveGateDefault: (reviewer: GateReviewer) => void;
   /** One primer section at a time — text override and/or on-off. */
   onSavePartyPrimer: (patch: PartyPrimerSectionPatch) => void;
+  /** Translates one primer section into Korean (or clears that translation). */
+  onTranslatePartyPrimer: (patch: { section: PartyPrimerSectionId; clear?: boolean }) => Promise<void>;
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveMemberMessaging: (patch: { interruptOnSend: boolean }) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
@@ -763,6 +766,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             <PartyPrimerSettings
               settings={settings.partyPrimer}
               onSave={onSavePartyPrimer}
+              onTranslate={onTranslatePartyPrimer}
               onDirtyChange={(value) => markDirty("primer", value)}
             />
           </section>

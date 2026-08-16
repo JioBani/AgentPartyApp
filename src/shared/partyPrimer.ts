@@ -152,9 +152,49 @@ export interface PartyPrimerSectionOverride {
   enabled?: boolean;
 }
 
+/**
+ * A stored Korean reading of one section. The primer itself stays English (that
+ * is what the models are given); this exists so a human can check what the
+ * members are actually told.
+ */
+export interface PartyPrimerTranslation {
+  text: string;
+  /**
+   * Hash of the ENGLISH text this was translated from. The translation is stale
+   * exactly when that no longer matches the section's current text — which is
+   * how editing the prompt marks its translation out of date without anyone
+   * having to remember to.
+   */
+  sourceHash: string;
+  /** Catalog model id that produced it, so a bad translation is attributable. */
+  model: string;
+  /** ISO timestamp of the call. */
+  at: string;
+}
+
 /** User customization of the primer, persisted in `AppSettings.partyPrimer`. */
 export interface PartyPrimerSettings {
   sections?: Partial<Record<PartyPrimerSectionId, PartyPrimerSectionOverride>>;
+  /**
+   * Saved translations, keyed by section. Kept separate from `sections` so
+   * resetting a section's TEXT does not throw away its translation — the
+   * translation simply reads as stale until it is re-run.
+   */
+  translations?: Partial<Record<PartyPrimerSectionId, PartyPrimerTranslation>>;
+}
+
+/**
+ * FNV-1a over the source text — a change detector, not a security hash. Written
+ * here rather than pulled from `node:crypto` because the renderer computes it
+ * too (it decides whether to draw the "번역본이 최신이 아님" banner).
+ */
+export function primerTextHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 /** The placeholders an override may use; anything else is left verbatim. */
@@ -210,12 +250,18 @@ export interface PartyPrimerSectionView {
   /** The text actually used — the override when set, else `defaultText`. */
   text: string;
   customized: boolean;
+  /**
+   * The saved Korean reading, when there is one. `stale` means the English text
+   * changed after it was made, so it no longer describes what members are told.
+   */
+  translation?: PartyPrimerTranslation & { stale: boolean };
 }
 
 /** The whole primer as sections, for the settings UI and `GET /api/party/primer`. */
 export function partyPrimerView(settings?: PartyPrimerSettings): PartyPrimerSectionView[] {
   return PARTY_PRIMER_SECTIONS.map((section) => {
     const text = partyPrimerSectionText(section, settings);
+    const saved = settings?.translations?.[section.id];
     return {
       id: section.id,
       title: section.title,
@@ -225,6 +271,7 @@ export function partyPrimerView(settings?: PartyPrimerSettings): PartyPrimerSect
       defaultText: section.body,
       text,
       customized: text !== section.body,
+      translation: saved ? { ...saved, stale: saved.sourceHash !== primerTextHash(text) } : undefined,
     };
   });
 }
@@ -238,12 +285,15 @@ export function normalizePartyPrimerSettings(value: unknown): PartyPrimerSetting
   if (!value || typeof value !== "object") {
     return undefined;
   }
-  const rawSections = (value as PartyPrimerSettings).sections;
-  if (!rawSections || typeof rawSections !== "object") {
-    return undefined;
-  }
+  const rawSections = ((value as PartyPrimerSettings).sections || {}) as Record<string, unknown>;
+  const rawTranslations = ((value as PartyPrimerSettings).translations || {}) as Record<string, unknown>;
   const sections: Partial<Record<PartyPrimerSectionId, PartyPrimerSectionOverride>> = {};
+  const translations: Partial<Record<PartyPrimerSectionId, PartyPrimerTranslation>> = {};
   for (const section of PARTY_PRIMER_SECTIONS) {
+    const translation = normalizePartyPrimerTranslation(rawTranslations[section.id]);
+    if (translation) {
+      translations[section.id] = translation;
+    }
     const raw = (rawSections as Record<string, unknown>)[section.id];
     if (!raw || typeof raw !== "object") {
       continue;
@@ -262,7 +312,66 @@ export function normalizePartyPrimerSettings(value: unknown): PartyPrimerSetting
       sections[section.id] = next;
     }
   }
-  return Object.keys(sections).length ? { sections } : undefined;
+  const next: PartyPrimerSettings = {};
+  if (Object.keys(sections).length) {
+    next.sections = sections;
+  }
+  if (Object.keys(translations).length) {
+    next.translations = translations;
+  }
+  return next.sections || next.translations ? next : undefined;
+}
+
+/** Validates one stored translation; anything half-written is dropped whole. */
+function normalizePartyPrimerTranslation(value: unknown): PartyPrimerTranslation | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Partial<PartyPrimerTranslation>;
+  if (typeof raw.text !== "string" || !raw.text.trim()) {
+    return undefined;
+  }
+  // A translation without its source hash could never be judged stale, and a
+  // translation that silently claims to be current is worse than none.
+  if (typeof raw.sourceHash !== "string" || !raw.sourceHash) {
+    return undefined;
+  }
+  return {
+    text: raw.text,
+    sourceHash: raw.sourceHash,
+    model: typeof raw.model === "string" ? raw.model : "",
+    at: typeof raw.at === "string" ? raw.at : "",
+  };
+}
+
+/**
+ * Stores (or clears, with `translation: null`) one section's Korean reading.
+ * The caller supplies the English text it was made from, so the stale check
+ * compares against exactly what the translator saw — not against whatever the
+ * section says by the time the answer came back.
+ */
+export function applyPartyPrimerTranslation(
+  current: PartyPrimerSettings | undefined,
+  input: { section: string; translation: (Omit<PartyPrimerTranslation, "sourceHash"> & { source: string }) | null },
+): { settings: PartyPrimerSettings | undefined; applied: PartyPrimerSectionView } {
+  const section = partyPrimerSection(input.section);
+  if (!section) {
+    throw new Error(`알 수 없는 프롬프트 섹션입니다: ${input.section} (사용 가능: ${PARTY_PRIMER_SECTION_IDS.join(", ")})`);
+  }
+  const translations = { ...(current?.translations || {}) };
+  if (input.translation === null) {
+    delete translations[section.id];
+  } else {
+    translations[section.id] = {
+      text: input.translation.text,
+      sourceHash: primerTextHash(input.translation.source),
+      model: input.translation.model,
+      at: input.translation.at,
+    };
+  }
+  const settings = normalizePartyPrimerSettings({ sections: current?.sections || {}, translations });
+  const applied = partyPrimerView(settings).find((view) => view.id === section.id)!;
+  return { settings, applied };
 }
 
 /**
@@ -299,7 +408,9 @@ export function applyPartyPrimerPatch(
     }
   }
   sections[section.id] = entry;
-  const settings = normalizePartyPrimerSettings({ sections });
+  // Translations ride along untouched: an edited section keeps its Korean
+  // reading and simply reports itself stale (the hash no longer matches).
+  const settings = normalizePartyPrimerSettings({ sections, translations: current?.translations || {} });
   const applied = partyPrimerView(settings).find((view) => view.id === section.id)!;
   return { settings, applied };
 }

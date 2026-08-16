@@ -209,6 +209,18 @@ export class AutomationApiServer {
         }));
         return;
       }
+      // Korean reading of one section (subscription models only) — or `clear`.
+      if (method === "POST" && url.pathname === "/api/party/primer/translate") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.translatePartyPrimerSection({
+          section: String(body?.section || ""),
+          clear: body?.clear === true,
+          // Optional pin, so a caller can exercise one specific model instead of
+          // the preference order (the UI never sends it).
+          model: typeof body?.model === "string" && body.model ? body.model : undefined,
+        }));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/shell/open-path") {
         const body = await readJson(req);
         sendJson(res, 200, await c.openLocalPath(windowId, String(body?.path || ""), { reveal: body?.reveal === true }));

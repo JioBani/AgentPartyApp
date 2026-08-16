@@ -8,6 +8,7 @@ import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
 import type { PartyPrimerSectionPatch } from "./workbench/PartyPrimerSettings";
+import type { PartyPrimerSectionId } from "../shared/partyPrimer";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import { publishFontProbe } from "./app/fontProbe";
@@ -905,6 +906,17 @@ export function App() {
    * validation — an unknown section or a disabled required section is refused
    * there rather than silently stored.
    */
+  /**
+   * Translates one primer section (or clears its translation). Unlike the other
+   * settings writes this one can fail slowly and for external reasons (no
+   * subscription connected, proxy down), so the error is thrown back to the card
+   * that asked for it and shown there — not swallowed into a corner toast.
+   */
+  async function translatePartyPrimerSection(patch: { section: PartyPrimerSectionId; clear?: boolean }) {
+    const result = await window.agentParty.translatePartyPrimerSection(patch);
+    setState((current) => ({ ...current, settings: result.settings }));
+  }
+
   async function savePartyPrimerSection(patch: PartyPrimerSectionPatch) {
     try {
       const result = await window.agentParty.savePartyPrimerSection(patch);
@@ -1605,6 +1617,7 @@ export function App() {
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
                   onSavePartyPrimer={savePartyPrimerSection}
+                  onTranslatePartyPrimer={translatePartyPrimerSection}
                   onSaveComposer={saveComposerSettings}
                   onSaveMemberMessaging={saveMemberMessaging}
                   discord={discord}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Info as InfoIcon, RotateCcw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Info as InfoIcon, Languages, RotateCcw } from "lucide-react";
 import {
   partyPrimerView,
   PARTY_PRIMER_VARIABLES,
@@ -27,9 +27,11 @@ export interface PartyPrimerSectionPatch {
  * saving on every keystroke would rewrite the prompt of every session started
  * mid-sentence.
  */
-export function PartyPrimerSettings({ settings, onSave, onDirtyChange }: {
+export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChange }: {
   settings?: PartyPrimerSettingsValue;
   onSave: (patch: PartyPrimerSectionPatch) => void;
+  /** Runs the Korean translation of one section (or clears it); resolves when stored. */
+  onTranslate: (patch: { section: PartyPrimerSectionId; clear?: boolean }) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const sections = useMemo(() => partyPrimerView(settings), [settings]);
@@ -37,6 +39,23 @@ export function PartyPrimerSettings({ settings, onSave, onDirtyChange }: {
   // Staged text per section. A section absent here has no pending edit — which
   // is also how a saved section resets itself: the entry is dropped on save.
   const [drafts, setDrafts] = useState<Partial<Record<PartyPrimerSectionId, string>>>({});
+  // Which section is mid-translation, and the last failure per section. A failed
+  // translation has to say so on the card — a button that just stops spinning
+  // reads as "nothing happened".
+  const [translating, setTranslating] = useState<PartyPrimerSectionId | null>(null);
+  const [translateError, setTranslateError] = useState<Partial<Record<PartyPrimerSectionId, string>>>({});
+
+  async function runTranslate(id: PartyPrimerSectionId, clear?: boolean) {
+    setTranslating(id);
+    setTranslateError((current) => ({ ...current, [id]: "" }));
+    try {
+      await onTranslate({ section: id, clear });
+    } catch (error) {
+      setTranslateError((current) => ({ ...current, [id]: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setTranslating(null);
+    }
+  }
 
   const dirty = sections.some((section) => {
     const draft = drafts[section.id];
@@ -95,6 +114,7 @@ export function PartyPrimerSettings({ settings, onSave, onDirtyChange }: {
                 {changed && <span className="set-primer-badge is-dirty">저장 안 됨</span>}
                 {section.required && <span className="set-primer-badge">필수</span>}
                 {!section.enabled && <span className="set-primer-badge is-off">꺼짐</span>}
+                {section.translation?.stale && <span className="set-primer-badge is-stale">번역 오래됨</span>}
               </button>
               <button
                 type="button"
@@ -129,6 +149,18 @@ export function PartyPrimerSettings({ settings, onSave, onDirtyChange }: {
                   >
                     <RotateCcw size={13} />기본값으로
                   </button>
+                  {/* Translating the STAGED text would file a Korean reading of
+                      something no member is being told, so it waits for 저장. */}
+                  <button
+                    type="button"
+                    className="set-btn-soft"
+                    disabled={translating !== null || changed}
+                    title={changed ? "먼저 저장한 뒤 번역하세요." : "구독 모델로 이 섹션을 한국어로 번역합니다."}
+                    onClick={() => void runTranslate(section.id)}
+                  >
+                    <Languages size={13} />
+                    {translating === section.id ? "번역 중…" : section.translation ? "다시 번역" : "번역하기"}
+                  </button>
                   <span className="set-primer-gap" />
                   {changed && (
                     <button type="button" className="set-btn-soft" onClick={() => clearDraft(section.id)}>편집 취소</button>
@@ -145,6 +177,41 @@ export function PartyPrimerSettings({ settings, onSave, onDirtyChange }: {
                     저장
                   </button>
                 </div>
+
+                {translateError[section.id] && (
+                  <div className="set-inline-note is-error">
+                    <AlertTriangle size={14} />
+                    <span>{translateError[section.id]}</span>
+                  </div>
+                )}
+
+                {section.translation && (
+                  <div className={"set-primer-tr" + (section.translation.stale ? " is-stale" : "")}>
+                    <div className="set-primer-tr-head">
+                      <span className="set-primer-tr-label">한국어 번역</span>
+                      <span className="set-primer-tr-meta wb-mono">
+                        {section.translation.model}
+                        {section.translation.at ? ` · ${new Date(section.translation.at).toLocaleString()}` : ""}
+                      </span>
+                      <span className="set-primer-gap" />
+                      <button
+                        type="button"
+                        className="set-primer-tr-clear"
+                        disabled={translating !== null}
+                        onClick={() => void runTranslate(section.id, true)}
+                      >
+                        번역 삭제
+                      </button>
+                    </div>
+                    {section.translation.stale && (
+                      <div className="set-primer-tr-stale">
+                        <AlertTriangle size={13} />
+                        <span>이 번역 이후 원문이 바뀌었습니다. 아래 내용은 현재 멤버가 받는 프롬프트와 다를 수 있으니 <b>다시 번역</b>하세요.</span>
+                      </div>
+                    )}
+                    <pre className="set-primer-tr-text">{section.translation.text}</pre>
+                  </div>
+                )}
               </div>
             )}
           </section>
