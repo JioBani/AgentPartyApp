@@ -159,10 +159,20 @@ console.log("WebrtcTransport assertions (real node-datachannel loopback):");
     assert(Buffer.from(phoneReceived[0]).equals(Buffer.from([9, 8, 7])), "the desktop's frame bytes are unchanged");
 
     assert(states.includes("connected"), "the transport reported connected");
+
+    // develop asks for candidate types after every field test, so the transport
+    // has to be able to say which pair actually carried the session.
+    const pair = desktop.selectedCandidatePair();
+    assert(pair !== undefined, "the selected ICE candidate pair is reported once connected");
+    assert(typeof pair?.local?.type === "string" && typeof pair?.remote?.type === "string",
+      `both ends carry a candidate type (local ${pair?.local?.type}, remote ${pair?.remote?.type})`);
+    assert(pair?.local?.type !== "relay" && pair?.remote?.type !== "relay",
+      "neither end is a relay candidate — this system has no TURN (00 §원칙 2)");
   }
 
   desktop.close("test over");
   assert(desktop.state === "closed", "close() moves the transport to closed");
+  assert(desktop.selectedCandidatePair() === undefined, "a closed transport reports no pair rather than a stale one");
   throws(() => desktop.send(Buffer.from([0])), "closed transport", "sending after close is an error, not a silent drop");
   phonePc.close();
 }

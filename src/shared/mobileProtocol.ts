@@ -128,6 +128,26 @@ export interface MobileSessionStatus {
   lastRequestMethod: string | undefined;
   /** Bytes queued but not yet handed to the transport (backpressure view). */
   queuedBytes: number;
+  /**
+   * The ICE pair actually carrying this session, once one is selected. The
+   * `type` pair is what tells a diagnosis apart: host/host is a LAN, srflx or
+   * prflx means a NAT was traversed, and relay would mean a TURN server —
+   * which this system does not use, so it should never appear.
+   */
+  candidatePair: IceCandidatePair | undefined;
+}
+
+export interface IceCandidateInfo {
+  address: string;
+  port: number;
+  /** `host` | `srflx` | `prflx` | `relay`. */
+  type: string;
+  transportType: string;
+}
+
+export interface IceCandidatePair {
+  local: IceCandidateInfo;
+  remote: IceCandidateInfo;
 }
 
 export type PairingPhase =

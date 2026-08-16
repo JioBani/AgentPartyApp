@@ -500,6 +500,9 @@ class MockGateway implements MockMobileGateway {
         lastRequestAt: session.lastRequestAt,
         lastRequestMethod: session.lastRequestMethod,
         queuedBytes: 0,
+        // The mock has no ICE; a fabricated pair would let a UI look verified
+        // when nothing was ever negotiated.
+        candidatePair: undefined,
       })),
       trustedDeviceCount: this.devicesById.size,
       pairing: this.pairingStream.current,

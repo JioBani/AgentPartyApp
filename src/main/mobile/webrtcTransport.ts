@@ -5,7 +5,12 @@ import {
   type Identity,
   type SdpPayload,
 } from "@agentparty/protocol";
-import { MOBILE_STUN_SERVERS, type TransportKind, type TransportState } from "../../shared/mobileProtocol";
+import {
+  MOBILE_STUN_SERVERS,
+  type IceCandidatePair,
+  type TransportKind,
+  type TransportState,
+} from "../../shared/mobileProtocol";
 import type { MobileGatewayDeps } from "./index";
 import { TransportSecurityError, TransportUnavailableError, type Transport } from "./transport";
 
@@ -38,6 +43,14 @@ interface NativePeerConnection {
   onStateChange(cb: (state: string) => void): void;
   onGatheringStateChange(cb: (state: string) => void): void;
   onDataChannel(cb: (channel: NativeDataChannel) => void): void;
+  getSelectedCandidatePair(): { local: NativeCandidateInfo; remote: NativeCandidateInfo } | null;
+}
+
+interface NativeCandidateInfo {
+  address: string;
+  port: number;
+  type: string;
+  transportType: string;
 }
 
 interface NativeDataChannel {
@@ -130,6 +143,28 @@ export class WebrtcTransport implements Transport {
 
   get state(): TransportState {
     return this.currentState;
+  }
+
+  /**
+   * The ICE pair in use, once ICE has settled. `undefined` before that and
+   * after close — reporting a stale pair would misdescribe a dead session.
+   */
+  selectedCandidatePair(): IceCandidatePair | undefined {
+    if (!this.pc || this.closed) {
+      return undefined;
+    }
+    try {
+      const pair = this.pc.getSelectedCandidatePair();
+      if (!pair) {
+        return undefined;
+      }
+      return { local: describeCandidate(pair.local), remote: describeCandidate(pair.remote) };
+    } catch (error) {
+      // Querying a connection that is tearing down can throw; that is not
+      // worth failing a status read over.
+      this.deps.log("debug", "mobile webrtc: candidate pair unavailable", { error: String(error) });
+      return undefined;
+    }
   }
 
   /**
@@ -357,6 +392,10 @@ export class WebrtcTransport implements Transport {
     this.currentState = state;
     this.stateListener?.(state, detail);
   }
+}
+
+function describeCandidate(info: NativeCandidateInfo) {
+  return { address: info.address, port: info.port, type: info.type, transportType: info.transportType };
 }
 
 /**

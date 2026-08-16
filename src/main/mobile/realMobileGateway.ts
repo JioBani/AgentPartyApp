@@ -694,6 +694,7 @@ export class RealMobileGateway implements MobileGateway {
       lastRequestAt: activity.lastRequestAt,
       lastRequestMethod: activity.lastRequestMethod,
       queuedBytes: 0,
+      candidatePair: session.transport.selectedCandidatePair(),
     };
   }
 
