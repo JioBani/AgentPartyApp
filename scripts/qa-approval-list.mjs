@@ -78,5 +78,40 @@ console.log("\nan approval seen only as resolved:");
   assert(index.find("req-x")?.resolvedAt !== undefined, "…and is reported as already answered rather than unknown");
 }
 
+console.log("\nanswering the same approval twice at once:");
+{
+  const sf = path.join(outDir, "single-flight.mjs");
+  const sfBuilt = await build({ entryPoints: [path.join(projectRoot, "src/main/singleFlight.ts")], bundle: true, format: "esm", platform: "node", write: false });
+  writeFileSync(sf, sfBuilt.outputFiles[0].text);
+  const { SingleFlight } = await import(pathToFileURL(sf).href);
+
+  const flight = new SingleFlight();
+  let deliveries = 0;
+  const deliver = async () => {
+    deliveries += 1;
+    await new Promise((r) => setTimeout(r, 10));
+    return { outcome: "delivered" };
+  };
+  // Two taps, or one tap from the phone while the desktop card is open. Both
+  // pass the `resolvedAt` check before either records anything.
+  const [a, b] = await Promise.all([
+    flight.run("req-1", deliver),
+    flight.run("req-1", deliver),
+  ]);
+  assert(deliveries === 1, "the harness is reached once, not twice");
+  assert(a.outcome === "delivered" && b.outcome === "delivered",
+    "both callers are told what actually happened — the second is not told 'too late' for an answer that landed");
+  assert(!flight.has("req-1"), "the entry is dropped once settled, so it is not a cache");
+
+  // A different request must not be collapsed into it.
+  let others = 0;
+  await Promise.all([flight.run("req-2", async () => { others += 1; }), flight.run("req-3", async () => { others += 1; })]);
+  assert(others === 2, "different approvals are independent");
+
+  // A failure must not leave the key wedged: the next attempt has to be able to run.
+  await flight.run("req-4", async () => { throw new Error("engine down"); }).catch(() => {});
+  assert(!flight.has("req-4"), "a failed attempt clears, so a retry is possible");
+}
+
 console.log(failures.length ? `\nAPPROVAL LIST FAILED (${failures.length})` : "\nAPPROVAL LIST PASSED");
 process.exit(failures.length ? 1 : 0);

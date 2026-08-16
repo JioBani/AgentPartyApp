@@ -45,6 +45,7 @@ import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
+import { SingleFlight } from "../singleFlight";
 import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
 import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
@@ -1014,7 +1015,24 @@ export class AppController {
     return { ok: true, approvals: listed };
   }
 
-  async respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
+  /**
+   * Answers in flight, keyed by request id.
+   *
+   * `resolvedAt` makes a REPEAT call idempotent, but not a CONCURRENT one: two
+   * taps, or two devices, both pass the resolved check before either marks the
+   * request, and both reach the harness. The second then gets `not_pending`
+   * back and reports `expired` — telling the user their answer was too late
+   * when it was in fact delivered by the first. Sharing the first promise makes
+   * the second call return what actually happened.
+   */
+  private readonly approvalsInFlight = new SingleFlight<ApprovalResponseResult>();
+
+  respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
+    return this.approvalsInFlight.run(requestId, () =>
+      this.deliverApprovalResponse(requestId, behavior, updatedInput, message));
+  }
+
+  private async deliverApprovalResponse(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
     const approvals = this.deps.approvals;
     if (!approvals) {
       // The headless engine server keeps no index — the desktop that owns the

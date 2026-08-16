@@ -2044,6 +2044,18 @@ thread (Claude/Codex) via the stored thread id so the model context continues to
 { "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
 ```
 
+Over the mobile link the response also carries `seq`, the event-stream position
+these blocks are consistent with; apply only events past it. HTTP callers
+receive no events and so get no `seq`.
+
+The value is sampled **before** the read, not after. These blocks are a saved
+copy written at some instant inside the read — genuinely async for a WSL
+workspace, which crosses a process boundary. A `seq` taken afterwards would make
+the client skip events the saved copy does not contain, which is loss; taken
+before, it re-applies a few the copy already has, which is duplication. The
+protocol makes the same trade for the rewind snapshot: zero loss, and duplicates
+are the reducer's to absorb.
+
 A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
 `<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
 reference, because base64-wrapped PNG is both the largest thing a transcript
