@@ -151,13 +151,17 @@ console.log("RpcServer assertions:");
   assert(failed.ok === false && failed.e.code === "handler_failed", "a throwing handler still produces a response");
   assert(failed.e.message.includes("핸들러 폭발"), "the handler's message reaches the phone");
 
-  // An app handler that wants the phone to branch throws RpcError.
-  handlers.set("approval.respond", async () => { throw new M.RpcError("already_resolved", "이미 응답된 요청입니다"); });
-  h.server.handle(req("approval.respond"));
+  // A handler that could not perform the request answers with its own code.
+  // Note this is for genuine exceptions only: an outcome the phone must act on
+  // (approval.respond's already_resolved, which carries decision/resolvedAt)
+  // belongs in the SUCCESS value — as an error it would reach the phone as a
+  // link failure, indistinguishable from "could not reach the PC".
+  handlers.set("member.send", async () => { throw new M.RpcError("invalid_params", "text는 문자열이어야 합니다"); });
+  h.server.handle(req("member.send"));
   await tick();
-  const resolved = h.last();
-  assert(resolved.e.code === "already_resolved", "a handler's own RpcError code reaches the phone verbatim");
-  assert(resolved.e.message.includes("이미 응답"), "along with its message");
+  const rejected = h.last();
+  assert(rejected.e.code === "invalid_params", "a handler's own RpcError code reaches the phone verbatim");
+  assert(rejected.e.message.includes("문자열"), "along with its message");
 
   // A stray Node error carries an unrelated `code`; it must not become one.
   handlers.set("reads.file", async () => { const error = new Error("no such file"); error.code = "ENOENT"; throw error; });

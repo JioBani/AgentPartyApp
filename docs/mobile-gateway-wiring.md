@@ -188,9 +188,9 @@ gateway.onRequest("party.list", async (params, ctx) => {
 ```ts
 import { RpcError } from "./mobile";
 
-gateway.onRequest("approval.respond", async (params) => {
-  if (alreadyAnswered(params.requestId)) {
-    throw new RpcError("already_resolved", "이미 응답된 요청입니다");
+gateway.onRequest("member.send", async (params) => {
+  if (typeof params?.text !== "string") {
+    throw new RpcError("invalid_params", "text는 문자열이어야 합니다");
   }
   …
 });
@@ -199,6 +199,21 @@ gateway.onRequest("approval.respond", async (params) => {
 평범한 `Error`는 `handler_failed`가 된다 — 진짜 결함에는 맞지만 폰이 분기할 수는 없다.
 판정은 `instanceof`로 한다. Node 오류 상당수가 무관한 `code`(`ENOENT`, `ECONNREFUSED`)를
 갖고 있어서, 그것들이 프로토콜 코드로 폰에 새어 나가면 안 되기 때문이다.
+
+#### 오류로 던지면 안 되는 것 — 결과(outcome)
+
+`RpcError`는 **요청을 수행할 수 없었을 때**만 쓴다. "수행했고 결과가 이러함"은 성공 응답의
+값이어야 한다. 예: `approval.respond`의 `already_resolved`(09 §7)는 오류가 아니라 네 갈래
+`outcome` 중 하나이고, `decision`·`resolvedAt`·`resolvedBy`를 함께 싣는다.
+
+오류로 던지면 두 가지를 잃는다:
+
+- 폰에서 `LinkFailure`로 보여 **"PC에 닿지 못함"과 구분되지 않는다** — 재시도해야 할 상황과
+  이미 끝난 상황이 같아 보인다.
+- 함께 실어야 할 필드를 실을 자리가 없다.
+
+판단 기준: 폰이 그 응답에 **데이터를 함께 받아야 하거나**, 그것이 정상 흐름의 한 갈래라면
+성공 응답의 값이다. 오류 코드는 재시도·설정 변경 같은 **다른 행동**을 유도할 때만 쓴다.
 
 > AGENTS.md 규칙상 폰에 노출하는 메서드는 대응하는 HTTP 엔드포인트가 있어야 한다.
 > `automationApi.ts`의 라우팅은 현재 라우트 **테이블이 아니라 if 체인**이므로

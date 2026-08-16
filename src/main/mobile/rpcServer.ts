@@ -396,10 +396,15 @@ export class RpcServer {
 /**
  * An error carrying a protocol error code back to the phone.
  *
- * App handlers throw this when the phone needs to branch on the reason rather
- * than read a message — `already_resolved` for an approval that was answered
- * already, for instance. A plain Error becomes `handler_failed`, which is
- * right for a genuine fault but useless to branch on.
+ * App handlers throw this when the request could NOT be performed and the
+ * phone needs to branch on why — invalid parameters, for instance. A plain
+ * Error becomes `handler_failed`, which is right for a genuine fault but
+ * useless to branch on.
+ *
+ * An *outcome* is not an error. "It was already resolved, here is the original
+ * decision" is a value of the success response: as an error it would reach the
+ * phone as a link failure, indistinguishable from a connection problem, and
+ * there would be nowhere to put the fields that go with it.
  *
  * The check is `instanceof` rather than "has a code property" on purpose: many
  * Node errors carry an unrelated `code` (`ENOENT`, `ECONNREFUSED`), and those
