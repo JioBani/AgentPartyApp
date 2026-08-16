@@ -477,6 +477,9 @@ class MockGateway implements MockMobileGateway {
       transport: session.transport,
       receivedAt: Date.now(),
       signal: new AbortController().signal,
+      // Live read, matching the real gateway: a handler that emits and then
+      // reads must see its own emit reflected.
+      currentSeq: () => this.seq,
     };
   }
 

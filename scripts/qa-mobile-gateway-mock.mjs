@@ -156,6 +156,39 @@ assert(gateway.mock.deliveredTo(sessionId).length === 2, "an empty subscription 
 const answered = await gateway.mock.request("party.list", { workspacePath: "C:/proj/a" });
 assert(answered.seenBy === "phone-1", "the handler receives a verified deviceId in its context");
 await throws(() => gateway.mock.request("nope.method"), "method_not_found", "an unregistered method is method_not_found");
+
+// ctx.currentSeq() (07 89f5af4) must behave the same on the mock: desktop-app
+// builds against the mock, and a mock that answered differently from the real
+// gateway is exactly how a bug reached a live device once already.
+{
+  const seqGateway = M.createMobileGateway({ implementation: "mock" });
+  await seqGateway.start();
+  await seqGateway.pairing.openQr();
+  seqGateway.mock.scanQr({ deviceName: "Galaxy S25", deviceId: "phone-seq" });
+  await seqGateway.pairing.confirm();
+  const sid = seqGateway.mock.connect({ deviceId: "phone-seq" });
+  seqGateway.mock.subscribe(sid, ["C:/w"]);
+
+  const readings = [];
+  seqGateway.onRequest("member.transcript", async (params, ctx) => {
+    readings.push(ctx.currentSeq());
+    seqGateway.emit("session:events", { during: true }, { workspacePath: "C:/w" });
+    readings.push(ctx.currentSeq());
+    return {};
+  });
+
+  seqGateway.emit("session:events", { n: 1 }, { workspacePath: "C:/w" });
+  seqGateway.emit("session:events", { n: 2 }, { workspacePath: "C:/w" });
+  await seqGateway.mock.request("member.transcript", { workspacePath: "C:/w" });
+
+  assert(readings[0] === 2, `the mock's currentSeq() reports the seq at call time (${readings[0]})`);
+  assert(readings[1] === 3, `and is re-read, matching the real gateway (${readings[1]})`);
+  assert(
+    readings[1] === seqGateway.getStatus().events.seq,
+    "and agrees with the same gateway's reported event seq",
+  );
+  await seqGateway.stop();
+}
 unregister();
 await throws(() => gateway.mock.request("party.list"), "method_not_found", "unregister() removes the handler");
 

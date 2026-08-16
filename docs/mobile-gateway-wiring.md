@@ -168,6 +168,23 @@ gateway.onRequest("party.list", async (params, ctx) => {
 | `workspacePath` | **params의 `workspacePath` 문자열 필드를 파이프가 들어올린 값.** 파이프는 값을 해석하지 않는다 (04 §3) |
 | `transport` | `directViaRendezvous` 등 |
 | `signal` | 폰이 끊기거나 15초 응답 기한이 지나면 abort |
+| `currentSeq()` | **호출 시점의** 이벤트 seq. 함수인 이유는 아래 |
+
+`currentSeq()`는 "이 답변은 seq N까지를 반영한다"를 정확히 만들기 위한 것이다. 폰은 N
+이후 이벤트만 델타로 적용한다.
+
+**반드시 답변 내용을 다 만든 뒤에 읽어라.** 핸들러 진입 시점에 값으로 잡아두면, await 하는
+동안 발생한 이벤트가 답변에는 들어갔는데 seq에는 안 잡혀서 폰이 같은 이벤트를 두 번 적용한다.
+
+```ts
+gateway.onRequest("member.transcript", async (params, ctx) => {
+  const text = await readTranscript(params.workspacePath);
+  return { text, seq: ctx.currentSeq() };   // 읽기는 여기서
+});
+```
+
+링버퍼에 남아 있는 범위가 아니라 **누적 카운터**다. 버퍼는 잘려나가므로 버퍼 내용에서
+유도하면 값이 뒤로 갈 수 있고, 그러면 폰이 이미 반영한 것을 다시 적용한다.
 
 규칙 두 가지가 **에러로** 강제된다 — 조용히 무시되지 않는다:
 

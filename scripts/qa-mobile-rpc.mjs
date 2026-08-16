@@ -47,8 +47,8 @@ const SESSION = "s-1";
 let idSeq = 0;
 const req = (m, p) => ({ k: "req", id: `r-${++idSeq}`, m, ...(p === undefined ? {} : { p }) });
 
-function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1" } = {}) {
-  const bridge = new EventBridge({ bootId });
+function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1", bridgeOverride } = {}) {
+  const bridge = bridgeOverride ?? new EventBridge({ bootId });
   const sent = [];
   const nonConforming = [];
   const closes = [];
@@ -119,6 +119,64 @@ console.log("RpcServer assertions:");
   assert(h.pushes.length === 1, "and nothing was written");
 }
 
+// --- ctx.currentSeq(): the baseline a handler's answer is true as of --------
+{
+  // The point of this is that desktop-app can say "this transcript reflects
+  // everything up to N", and the phone applies only events after N. If the
+  // number were stale the phone would re-apply events already in the answer.
+  const handlers = new Map();
+  const readings = [];
+  handlers.set("member.transcript", async (params, ctx) => {
+    readings.push({ label: "atEntry", seq: ctx.currentSeq() });
+    // A real handler awaits — reads a file, queries an engine — and events keep
+    // arriving while it does.
+    await tick();
+    h.bridge.publish("session:events", { during: true }, "C:/w");
+    await tick();
+    readings.push({ label: "atAnswer", seq: ctx.currentSeq() });
+    return { text: "…" };
+  });
+  const h = harness({ handlers });
+
+  h.bridge.publish("session:events", { n: 1 }, "C:/w");
+  h.bridge.publish("session:events", { n: 2 }, "C:/w");
+  h.server.handle(req("member.transcript", { workspacePath: "C:/w" }));
+  await tick(); await tick(); await tick();
+
+  const atEntry = readings.find((r) => r.label === "atEntry");
+  const atAnswer = readings.find((r) => r.label === "atAnswer");
+  assert(atEntry?.seq === 2, `currentSeq() reports the seq at the moment it is called (${atEntry?.seq})`);
+  assert(
+    atAnswer?.seq === 3,
+    `it is re-read, so an event published mid-handler is included (${atAnswer?.seq}) — a value captured at entry would report 2 and the phone would replay it`,
+  );
+  assert(h.bridge.window().seq === 3, "and it agrees with the bridge's own window");
+}
+
+// --- currentSeq() is the counter, unaffected by what the buffer still holds -
+{
+  // The ring buffer is trimmed, so what it CONTAINS is not the history. The
+  // baseline handed to the phone has to be the counter: derived from buffer
+  // contents it would move backwards whenever entries were dropped, and the
+  // phone would re-apply everything it had already merged.
+  const bridge = new EventBridge({ bootId: "boot-1", maxCount: 2 });
+  for (let n = 1; n <= 5; n += 1) {
+    bridge.publish("session:events", { n }, "C:/w");
+  }
+  const window = bridge.window();
+  assert(window.seq === 5, "five events were published");
+  assert(window.count === 2, `but the buffer only kept the newest 2 (count ${window.count})`);
+  assert(window.minSeq === 4, `so the buffer starts at seq 4, not 1 (${window.minSeq})`);
+
+  const handlers = new Map();
+  let reading;
+  handlers.set("party.list", async (params, ctx) => { reading = ctx.currentSeq(); return {}; });
+  const h = harness({ handlers, bridgeOverride: bridge });
+  h.server.handle(req("party.list", {}));
+  await tick();
+  assert(reading === 5, `currentSeq() reports the full count 5, not the trimmed buffer's extent (${reading})`);
+}
+
 // --- app methods -----------------------------------------------------------
 {
   const handlers = new Map();
@@ -134,6 +192,7 @@ console.log("RpcServer assertions:");
   assert(seen.ctx.workspacePath === "C:/proj/a", "workspacePath is lifted into the context (04 §3)");
   assert(seen.ctx.deviceId === "phone-device-id-000001", "the context carries the verified device");
   assert(seen.ctx.signal instanceof AbortSignal, "the handler gets an abort signal");
+  assert(typeof seen.ctx.currentSeq === "function", "the handler can read the event seq (07 89f5af4)");
 
   h.server.handle(req("party.list", { workspacePath: 42 }));
   await tick();

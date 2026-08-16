@@ -171,6 +171,22 @@ export interface RequestContext {
    * long handler can stop work nobody will receive.
    */
   signal: AbortSignal;
+  /**
+   * The event `seq` as of the moment it is called — the high-water mark of the
+   * event stream, so "this answer reflects everything up to N" is exactly true
+   * and the phone applies only events after N as deltas.
+   *
+   * A FUNCTION, not a value, because it must be read at the point the answer's
+   * content is assembled. A handler that awaits before building its reply and
+   * used a value captured at entry would report a seq older than the data it
+   * returns, and the phone would re-apply events already included.
+   *
+   * This is the counter, NOT anything derived from the ring buffer's current
+   * contents. The buffer is trimmed, so what it holds is not the history; a
+   * baseline read from it could move backwards as entries are dropped, and the
+   * phone would re-apply everything it had already merged.
+   */
+  currentSeq(): number;
 }
 
 // ---------------------------------------------------------------------------

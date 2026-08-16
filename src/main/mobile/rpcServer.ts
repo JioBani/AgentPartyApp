@@ -231,6 +231,9 @@ export class RpcServer {
       transport: this.deps.link.transport,
       receivedAt: this.now(),
       signal,
+      // Read through to the bridge on each call rather than captured here, so
+      // a handler that awaits still gets the seq matching what it is returning.
+      currentSeq: () => this.deps.eventBridge.window().seq,
     };
   }
 
