@@ -22,7 +22,7 @@ export interface EventSession {
 /** What a `resume` request resolved to. The caller performs the transfer. */
 export type ResumeOutcome =
   | { kind: "replay"; events: RpcEvent[]; throughSeq: number }
-  | { kind: "snapshot"; reason: "boot_changed" | "out_of_window"; fromSeq: number };
+  | { kind: "snapshot"; reason: "no_cursor" | "boot_changed" | "out_of_window"; fromSeq: number };
 
 export interface EventBridgeOptions {
   bootId: string;
@@ -124,9 +124,17 @@ export class EventBridge {
    * 01 §5.3 — resolves a phone's `resume`. Replay is possible only when the
    * boot matches and `lastSeq` is still inside the buffer; otherwise the caller
    * must send a snapshot. `lastSeq === this.seq` is a valid no-op replay.
+   *
+   * A phone that has never synced sends `bootId: null, lastSeq: null` and always
+   * gets a snapshot. The protocol forbids inventing a cursor there: a random or
+   * zero `lastSeq` could accidentally land inside the buffer and replay a
+   * fragment of history as if it were the whole state.
    */
-  resume(sessionId: string, bootId: string, lastSeq: number): ResumeOutcome {
+  resume(sessionId: string, bootId: string | null, lastSeq: number | null): ResumeOutcome {
     const subscriber = this.require(sessionId);
+    if (bootId === null || lastSeq === null) {
+      return { kind: "snapshot", reason: "no_cursor", fromSeq: this.seq };
+    }
     if (bootId !== this.bootId) {
       return { kind: "snapshot", reason: "boot_changed", fromSeq: this.seq };
     }

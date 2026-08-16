@@ -102,6 +102,11 @@ console.log("EventBridge assertions:");
   bridge.attach(phone);
   bridge.setSubscription("s-1", ["C:/a"]);
 
+  // 01 §5.3 — a phone that has never synced sends a null cursor.
+  const first = bridge.resume("s-1", null, null);
+  assert(first.kind === "snapshot" && first.reason === "no_cursor", "a null cursor always yields a snapshot");
+  assert(bridge.resume("s-1", "boot-1", null).reason === "no_cursor", "a null lastSeq alone is enough to force one");
+
   const empty = bridge.resume("s-1", "boot-1", 0);
   assert(empty.kind === "replay" && empty.events.length === 0, "empty buffer at head replays zero events");
   const ahead = bridge.resume("s-1", "boot-1", 7);
