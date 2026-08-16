@@ -78,6 +78,18 @@ const chat = T.applyEvents({}, "s1", [
 assert(!JSON.stringify(chat).includes("SECRET subagent output"), "subagent output never enters the main transcript");
 assert(chat.length === 1 && chat[0].kind === "assistant", "only the parent assistant text is in the chat");
 
+// The badge is per-turn, not a session-lifetime accumulator. A fresh `sent`
+// boundary clears completed rows before the next turn's spawns arrive.
+let perTurn = S.applySubagentEvents({}, "s-turn", [
+  { type: "subagent", agentId: "old-a", lifecycle: { phase: "done" } },
+  { type: "subagent", agentId: "old-b", lifecycle: { phase: "done" } },
+]);
+perTurn = S.applySubagentEvents(perTurn, "s-turn", [
+  { type: "status", status: "sent" },
+  { type: "subagent", agentId: "new-a", lifecycle: { phase: "working" } },
+]);
+assert(perTurn["s-turn"].length === 1 && perTurn["s-turn"][0].id === "new-a", "new turn resets the dock count instead of accumulating completed Claude agents");
+
 // ---- Layer 3: scenarios + dock model ----------------------------------------
 const SC = await bundle("src/shared/subagentScenarios.ts", "sub-scenarios.mjs", []);
 const M = await bundle("src/renderer/workbench/subagentModel.ts", "sub-model.mjs", ["react"]);
