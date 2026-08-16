@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, Info as InfoIcon, Languages, RotateCcw } from "lucide-react";
+import { AlertTriangle, Info as InfoIcon, Languages, RotateCcw } from "lucide-react";
 import {
+  partyPrimerTotals,
   partyPrimerView,
+  PARTY_PRIMER_DELIVERY,
   PARTY_PRIMER_VARIABLES,
   type PartyPrimerSectionId,
   type PartyPrimerSettings as PartyPrimerSettingsValue,
 } from "../../shared/partyPrimer";
+import { SubtreeVisibility } from "./SubtreeVisibility";
 
 export interface PartyPrimerSectionPatch {
   section: PartyPrimerSectionId;
@@ -17,15 +20,22 @@ export interface PartyPrimerSectionPatch {
 /**
  * Settings → 런타임 → 파티 프롬프트.
  *
- * Shows the member primer the way it is actually assembled — one card per
- * section — so the user can read what every member is told at session start and
- * edit just the part they disagree with. The text comes from
+ * Shows the member primer the way it is actually assembled — one SUB-TAB per
+ * section — so the user reads what every member is told at session start and
+ * edits just the part they disagree with. The text comes from
  * `shared/partyPrimer`, the same module the session is built from, so this
  * screen can never show a prompt the app does not use.
  *
+ * Sub-tabs rather than stacked cards: a section body is a full page of prose, so
+ * an accordion buried the section you wanted under the one you had opened. The
+ * strip doubles as the cost readout — each tab carries that section's estimated
+ * token weight, which is the number you actually weigh when deciding to trim or
+ * switch one off.
+ *
  * Edits are STAGED per section: a textarea is only committed by 저장, because
  * saving on every keystroke would rewrite the prompt of every session started
- * mid-sentence.
+ * mid-sentence. Panels stay MOUNTED (hidden) so switching tabs never throws a
+ * staged edit away.
  */
 export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChange }: {
   settings?: PartyPrimerSettingsValue;
@@ -35,7 +45,8 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const sections = useMemo(() => partyPrimerView(settings), [settings]);
-  const [openId, setOpenId] = useState<PartyPrimerSectionId | null>(null);
+  const totals = useMemo(() => partyPrimerTotals(sections), [sections]);
+  const [active, setActive] = useState<PartyPrimerSectionId>(sections[0].id);
   // Staged text per section. A section absent here has no pending edit — which
   // is also how a saved section resets itself: the entry is dropped on save.
   const [drafts, setDrafts] = useState<Partial<Record<PartyPrimerSectionId, string>>>({});
@@ -87,6 +98,39 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
           변경 내용은 다음에 시작·재개하는 세션부터 적용됩니다.
         </span>
       </div>
+
+      {/* 총량: what the assembled prompt costs a member, and what is switched off. */}
+      <div className="set-primer-total">
+        <div className="set-primer-total-main">
+          <span className="set-primer-total-num wb-mono">{totals.tokens.toLocaleString()}</span>
+          <span className="set-primer-total-unit">토큰 (추정)</span>
+        </div>
+        <div className="set-primer-total-meta">
+          <span>켜진 섹션 {totals.enabledSections}/{totals.totalSections}</span>
+          <span>{totals.characters.toLocaleString()}자</span>
+          {totals.disabledTokens > 0 && <span>꺼둔 섹션 −{totals.disabledTokens.toLocaleString()} 토큰</span>}
+        </div>
+      </div>
+      <div className="set-inline-note is-soft">
+        <InfoIcon size={14} />
+        <span>
+          토큰 수는 <b>추정치</b>입니다(한글 1.6자·그 외 3.8자 ≈ 1토큰). 앱에는 각 모델의 토크나이저가 없고 제공자마다 계산이 달라 실제 청구값과는 차이가 납니다.
+          섹션 간 비교와 “이걸 줄이면 얼마나 주는가”를 보는 용도로 쓰세요. 프롬프트는 세션당 한 번 설치되고 이후 턴에서는 대체로 캐시로 재사용됩니다.
+        </span>
+      </div>
+
+      {/* 주입 시점: the answer to "턴마다 들어가나?" — stated per harness. */}
+      <div className="set-primer-delivery">
+        <div className="set-primer-delivery-label">프롬프트가 들어가는 시점</div>
+        {PARTY_PRIMER_DELIVERY.map((entry) => (
+          <div className={"set-primer-delivery-row" + (entry.delivered ? "" : " is-none")} key={entry.harness}>
+            <span className="set-primer-delivery-harness">{entry.label}</span>
+            <span className={"set-primer-delivery-when" + (entry.delivered ? "" : " is-none")}>{entry.when}</span>
+            <span className="set-primer-delivery-detail">{entry.detail}</span>
+          </div>
+        ))}
+      </div>
+
       <div className="set-inline-note is-soft">
         <InfoIcon size={14} />
         <span>
@@ -94,127 +138,147 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
         </span>
       </div>
 
+      {/* One section at a time. The strip carries each section's token weight. */}
+      <div className="set-subtabs" role="tablist" aria-label="프롬프트 섹션">
+        {sections.map((section) => {
+          const draft = drafts[section.id];
+          const changed = typeof draft === "string" && draft !== section.text;
+          return (
+            <button
+              type="button"
+              key={section.id}
+              role="tab"
+              aria-selected={section.id === active}
+              className={"set-subtab" + (section.id === active ? " is-active" : "") + (section.enabled ? "" : " is-off")}
+              onClick={() => setActive(section.id)}
+            >
+              {section.title}
+              <span className="set-subtab-tokens wb-mono">{section.tokens.toLocaleString()}</span>
+              {changed && <span className="set-subtab-dot" title="저장되지 않은 변경" />}
+              {section.translation?.stale && <span className="set-subtab-dot is-stale" title="번역이 원문보다 오래됨" />}
+            </button>
+          );
+        })}
+      </div>
+
       {sections.map((section) => {
-        const open = openId === section.id;
+        const open = section.id === active;
         const draft = drafts[section.id];
         const value = typeof draft === "string" ? draft : section.text;
         const changed = value !== section.text;
         return (
-          <section className={"set-primer-card" + (section.enabled ? "" : " is-off")} key={section.id}>
-            <div className="set-primer-head">
-              <button
-                type="button"
-                className="set-primer-title"
-                aria-expanded={open}
-                onClick={() => setOpenId(open ? null : section.id)}
-              >
-                <ChevronDown size={14} className={"set-primer-caret" + (open ? " is-open" : "")} />
-                <span className="set-primer-name">{section.title}</span>
-                {section.customized && <span className="set-primer-badge is-edited">수정됨</span>}
-                {changed && <span className="set-primer-badge is-dirty">저장 안 됨</span>}
-                {section.required && <span className="set-primer-badge">필수</span>}
-                {!section.enabled && <span className="set-primer-badge is-off">꺼짐</span>}
-                {section.translation?.stale && <span className="set-primer-badge is-stale">번역 오래됨</span>}
-              </button>
-              <button
-                type="button"
-                className="set-toggle"
-                disabled={section.required}
-                title={section.required ? "이 섹션은 멤버가 자기 정체성과 툴을 아는 근거라 끌 수 없습니다." : undefined}
-                onClick={() => onSave({ section: section.id, enabled: !section.enabled })}
-              >
-                <span className={"set-switch" + (section.enabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-              </button>
-            </div>
-            <div className="set-primer-summary">{section.summary}</div>
-            {open && (
-              <div className="set-primer-body">
-                <textarea
-                  className="set-primer-textarea wb-mono"
-                  value={value}
-                  spellCheck={false}
-                  onChange={(event) => stage(section.id, event.target.value)}
-                />
-                <div className="set-primer-actions">
-                  <button
-                    type="button"
-                    className="set-btn-soft"
-                    disabled={!section.customized && !changed}
-                    onClick={() => {
-                      clearDraft(section.id);
-                      if (section.customized) {
-                        onSave({ section: section.id, text: null });
-                      }
-                    }}
-                  >
-                    <RotateCcw size={13} />기본값으로
-                  </button>
-                  {/* Translating the STAGED text would file a Korean reading of
-                      something no member is being told, so it waits for 저장. */}
-                  <button
-                    type="button"
-                    className="set-btn-soft"
-                    disabled={translating !== null || changed}
-                    title={changed ? "먼저 저장한 뒤 번역하세요." : "구독 모델로 이 섹션을 한국어로 번역합니다."}
-                    onClick={() => void runTranslate(section.id)}
-                  >
-                    <Languages size={13} />
-                    {translating === section.id ? "번역 중…" : section.translation ? "다시 번역" : "번역하기"}
-                  </button>
+          <div className="set-subtab-panel" key={section.id} hidden={!open}>
+            <SubtreeVisibility visible={open}>
+              <section className={"set-primer-card" + (section.enabled ? "" : " is-off")}>
+                <div className="set-primer-head">
+                  <span className="set-primer-name">{section.title}</span>
+                  {section.customized && <span className="set-primer-badge is-edited">수정됨</span>}
+                  {changed && <span className="set-primer-badge is-dirty">저장 안 됨</span>}
+                  {section.required && <span className="set-primer-badge">필수</span>}
+                  {!section.enabled && <span className="set-primer-badge is-off">꺼짐</span>}
+                  {section.translation?.stale && <span className="set-primer-badge is-stale">번역 오래됨</span>}
                   <span className="set-primer-gap" />
-                  {changed && (
-                    <button type="button" className="set-btn-soft" onClick={() => clearDraft(section.id)}>편집 취소</button>
-                  )}
+                  <span className="set-primer-tokens wb-mono">{section.tokens.toLocaleString()} 토큰(추정)</span>
                   <button
                     type="button"
-                    className="set-btn-accent"
-                    disabled={!changed}
-                    onClick={() => {
-                      onSave({ section: section.id, text: value });
-                      clearDraft(section.id);
-                    }}
+                    className="set-toggle"
+                    disabled={section.required}
+                    title={section.required ? "이 섹션은 멤버가 자기 정체성과 툴을 아는 근거라 끌 수 없습니다." : "이 섹션을 프롬프트에서 빼거나 다시 넣습니다."}
+                    onClick={() => onSave({ section: section.id, enabled: !section.enabled })}
                   >
-                    저장
+                    <span className={"set-switch" + (section.enabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
                   </button>
                 </div>
+                <div className="set-primer-summary">{section.summary}</div>
 
-                {translateError[section.id] && (
-                  <div className="set-inline-note is-error">
-                    <AlertTriangle size={14} />
-                    <span>{translateError[section.id]}</span>
-                  </div>
-                )}
-
-                {section.translation && (
-                  <div className={"set-primer-tr" + (section.translation.stale ? " is-stale" : "")}>
-                    <div className="set-primer-tr-head">
-                      <span className="set-primer-tr-label">한국어 번역</span>
-                      <span className="set-primer-tr-meta wb-mono">
-                        {section.translation.model}
-                        {section.translation.at ? ` · ${new Date(section.translation.at).toLocaleString()}` : ""}
-                      </span>
-                      <span className="set-primer-gap" />
-                      <button
-                        type="button"
-                        className="set-primer-tr-clear"
-                        disabled={translating !== null}
-                        onClick={() => void runTranslate(section.id, true)}
-                      >
-                        번역 삭제
-                      </button>
-                    </div>
-                    {section.translation.stale && (
-                      <div className="set-primer-tr-stale">
-                        <AlertTriangle size={13} />
-                        <span>이 번역 이후 원문이 바뀌었습니다. 아래 내용은 현재 멤버가 받는 프롬프트와 다를 수 있으니 <b>다시 번역</b>하세요.</span>
-                      </div>
+                <div className="set-primer-body">
+                  <textarea
+                    className="set-primer-textarea wb-mono"
+                    value={value}
+                    spellCheck={false}
+                    onChange={(event) => stage(section.id, event.target.value)}
+                  />
+                  <div className="set-primer-actions">
+                    <button
+                      type="button"
+                      className="set-btn-soft"
+                      disabled={!section.customized && !changed}
+                      onClick={() => {
+                        clearDraft(section.id);
+                        if (section.customized) {
+                          onSave({ section: section.id, text: null });
+                        }
+                      }}
+                    >
+                      <RotateCcw size={13} />기본값으로
+                    </button>
+                    {/* Translating the STAGED text would file a Korean reading of
+                        something no member is being told, so it waits for 저장. */}
+                    <button
+                      type="button"
+                      className="set-btn-soft"
+                      disabled={translating !== null || changed}
+                      title={changed ? "먼저 저장한 뒤 번역하세요." : "구독 모델로 이 섹션을 한국어로 번역합니다."}
+                      onClick={() => void runTranslate(section.id)}
+                    >
+                      <Languages size={13} />
+                      {translating === section.id ? "번역 중…" : section.translation ? "다시 번역" : "번역하기"}
+                    </button>
+                    <span className="set-primer-gap" />
+                    {changed && (
+                      <button type="button" className="set-btn-soft" onClick={() => clearDraft(section.id)}>편집 취소</button>
                     )}
-                    <pre className="set-primer-tr-text">{section.translation.text}</pre>
+                    <button
+                      type="button"
+                      className="set-btn-accent"
+                      disabled={!changed}
+                      onClick={() => {
+                        onSave({ section: section.id, text: value });
+                        clearDraft(section.id);
+                      }}
+                    >
+                      저장
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
-          </section>
+
+                  {translateError[section.id] && (
+                    <div className="set-inline-note is-error">
+                      <AlertTriangle size={14} />
+                      <span>{translateError[section.id]}</span>
+                    </div>
+                  )}
+
+                  {section.translation && (
+                    <div className={"set-primer-tr" + (section.translation.stale ? " is-stale" : "")}>
+                      <div className="set-primer-tr-head">
+                        <span className="set-primer-tr-label">한국어 번역</span>
+                        <span className="set-primer-tr-meta wb-mono">
+                          {section.translation.model}
+                          {section.translation.at ? ` · ${new Date(section.translation.at).toLocaleString()}` : ""}
+                        </span>
+                        <span className="set-primer-gap" />
+                        <button
+                          type="button"
+                          className="set-primer-tr-clear"
+                          disabled={translating !== null}
+                          onClick={() => void runTranslate(section.id, true)}
+                        >
+                          번역 삭제
+                        </button>
+                      </div>
+                      {section.translation.stale && (
+                        <div className="set-primer-tr-stale">
+                          <AlertTriangle size={13} />
+                          <span>이 번역 이후 원문이 바뀌었습니다. 아래 내용은 현재 멤버가 받는 프롬프트와 다를 수 있으니 <b>다시 번역</b>하세요.</span>
+                        </div>
+                      )}
+                      <pre className="set-primer-tr-text">{section.translation.text}</pre>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </SubtreeVisibility>
+          </div>
         );
       })}
     </div>

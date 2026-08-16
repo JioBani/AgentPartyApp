@@ -238,6 +238,81 @@ export function buildPartyPrimer(identity: PartyIdentity, settings?: PartyPrimer
     .join("\n\n");
 }
 
+/**
+ * Rough token footprint of a piece of prompt text.
+ *
+ * An ESTIMATE, and labelled as one everywhere it is shown: the app has no
+ * tokenizer for the models it drives, and the providers' counts differ from each
+ * other anyway. Counted per script because one ratio for both is wrong by more
+ * than 2x: Latin prompt text runs ~3.8 characters per token, while Hangul is
+ * token-dense at ~1.6 (a translated section costs far more than its English
+ * source even though it looks shorter).
+ *
+ * Use it to compare sections and to see what trimming one buys — not as a bill.
+ */
+export function estimatePrimerTokens(text: string): number {
+  let hangul = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if ((code >= 0xac00 && code <= 0xd7a3) || (code >= 0x1100 && code <= 0x11ff) || (code >= 0x3130 && code <= 0x318f)) {
+      hangul += 1;
+    }
+  }
+  const other = text.length - hangul;
+  return Math.round(hangul / 1.6 + other / 3.8);
+}
+
+/**
+ * WHEN each harness receives the primer. Stated per harness because they differ
+ * in a way that matters for cost and for "why didn't my edit take effect":
+ * nobody re-sends it per turn, but the moment it IS installed decides when a
+ * change reaches a member.
+ *
+ * Kept next to the primer itself so the settings screen cannot drift from what
+ * the adapters actually do (`claudeAdapter.partySystemPrompt`,
+ * `codexAdapter.partyDeveloperInstructions`, `cursorAdapter.buildPrompt`).
+ */
+export interface PartyPrimerDelivery {
+  harness: "claude-code" | "codex" | "cursor" | "grok";
+  label: string;
+  /** Short answer to "턴마다? 시작할 때?". */
+  when: string;
+  detail: string;
+  /** False = this harness's members never receive the primer at all. */
+  delivered: boolean;
+}
+
+export const PARTY_PRIMER_DELIVERY: readonly PartyPrimerDelivery[] = [
+  {
+    harness: "claude-code",
+    label: "Claude Code",
+    when: "세션 시작 시 1회",
+    detail: "세션이 뜰 때 시스템 프롬프트에 덧붙습니다(preset append). 턴마다 앱이 다시 얹지 않으며, 대화 기록에도 남지 않습니다.",
+    delivered: true,
+  },
+  {
+    harness: "codex",
+    label: "Codex",
+    when: "스레드 시작·재개 시 1회",
+    detail: "thread/start 의 developer instructions 로 한 번, 스레드를 재개할 때 같은 값으로 한 번 더 설치됩니다. turn/start 입력에는 사용자 메시지만 담기므로 프라이머가 대화로 반복 쌓이지 않습니다.",
+    delivered: true,
+  },
+  {
+    harness: "cursor",
+    label: "Cursor CLI",
+    when: "첫 메시지에 1회",
+    detail: "cursor-agent 에는 시스템 프롬프트 자리가 없어 첫 프롬프트 앞에 한 번 붙습니다. 이후 턴에는 붙지 않고 그 채팅 기록에 남습니다.",
+    delivered: true,
+  },
+  {
+    harness: "grok",
+    label: "Grok Build",
+    when: "주입 안 됨",
+    detail: "파티 툴(MCP)만 연결되고 프라이머는 전달되지 않습니다. Grok 멤버는 이 화면의 규약을 받지 못합니다.",
+    delivered: false,
+  },
+];
+
 /** One section as the settings screen and the automation API see it. */
 export interface PartyPrimerSectionView {
   id: PartyPrimerSectionId;
@@ -250,6 +325,8 @@ export interface PartyPrimerSectionView {
   /** The text actually used — the override when set, else `defaultText`. */
   text: string;
   customized: boolean;
+  /** Estimated tokens this section adds to every member session (see `estimatePrimerTokens`). */
+  tokens: number;
   /**
    * The saved Korean reading, when there is one. `stale` means the English text
    * changed after it was made, so it no longer describes what members are told.
@@ -271,9 +348,35 @@ export function partyPrimerView(settings?: PartyPrimerSettings): PartyPrimerSect
       defaultText: section.body,
       text,
       customized: text !== section.body,
+      tokens: estimatePrimerTokens(text),
       translation: saved ? { ...saved, stale: saved.sourceHash !== primerTextHash(text) } : undefined,
     };
   });
+}
+
+/** What the assembled primer costs a member session, and what is off. */
+export interface PartyPrimerTotals {
+  /** Estimated tokens of the primer as assembled (enabled sections only). */
+  tokens: number;
+  characters: number;
+  enabledSections: number;
+  totalSections: number;
+  /** Estimated tokens of the sections currently switched OFF — what they would add back. */
+  disabledTokens: number;
+}
+
+export function partyPrimerTotals(sections: PartyPrimerSectionView[]): PartyPrimerTotals {
+  const enabled = sections.filter((section) => section.enabled);
+  // Section joins add a blank line each; counted so the total matches the text a
+  // session actually receives rather than the sum of the parts.
+  const assembled = enabled.map((section) => section.text).join("\n\n");
+  return {
+    tokens: estimatePrimerTokens(assembled),
+    characters: assembled.length,
+    enabledSections: enabled.length,
+    totalSections: sections.length,
+    disabledTokens: sections.filter((section) => !section.enabled).reduce((sum, section) => sum + section.tokens, 0),
+  };
 }
 
 /**

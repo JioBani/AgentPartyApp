@@ -7567,11 +7567,39 @@ body.wb-resizing {
 .set-primer { display: flex; flex-direction: column; gap: 10px; padding: 13px 20px 18px; }
 .set-primer-card { border: var(--border-width) solid var(--border-subtle); border-radius: 10px; background: var(--bg-1); padding: 10px 12px; }
 .set-primer-card.is-off { opacity: 0.6; }
-.set-primer-head { display: flex; align-items: center; gap: 8px; }
-.set-primer-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; background: none; border: none; padding: 0; cursor: pointer; text-align: left; }
-.set-primer-caret { flex: none; color: var(--text-3); transition: transform 0.15s; }
-.set-primer-caret.is-open { transform: rotate(180deg); }
+.set-primer-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .set-primer-name { font-size: 13px; font-weight: 600; color: var(--text-0); }
+.set-primer-tokens { font-size: 11px; color: var(--text-3); }
+
+/* Section sub-tabs carry each section's estimated weight, so the strip is also
+   the cost breakdown — the number you weigh when deciding to trim one. */
+.set-subtab-tokens { margin-left: 7px; font-size: 10.5px; color: var(--text-3); }
+.set-subtab.is-active .set-subtab-tokens { color: var(--text-2); }
+.set-subtab.is-off { opacity: 0.55; text-decoration: line-through; }
+.set-subtab-dot.is-stale { background: var(--danger); }
+
+/* Total cost of the assembled prompt. One big number: the per-section split is
+   already on the tabs, so this answers "얼마짜리 프롬프트인가" at a glance. */
+.set-primer-total { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: var(--border-width) solid var(--border-subtle); border-radius: 10px; background: var(--bg-1); }
+.set-primer-total-main { display: flex; align-items: baseline; gap: 6px; }
+.set-primer-total-num { font-size: 22px; font-weight: 700; color: var(--text-0); }
+.set-primer-total-unit { font-size: 11.5px; color: var(--text-3); }
+.set-primer-total-meta { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-3); }
+
+/* When each harness installs the primer. A table, not prose: the harnesses
+   differ, and "턴마다인가" has to be answerable in one glance per row. */
+.set-primer-delivery { border: var(--border-width) solid var(--border-subtle); border-radius: 10px; background: var(--bg-1); overflow: hidden; }
+.set-primer-delivery-label { padding: 10px 13px 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--text-3); }
+.set-primer-delivery-row { display: grid; grid-template-columns: 110px 130px 1fr; gap: 10px; align-items: baseline; padding: 8px 13px; border-top: var(--border-width) solid var(--border-subtle); }
+.set-primer-delivery-row.is-none { opacity: 0.75; }
+.set-primer-delivery-harness { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.set-primer-delivery-when { font-size: 11.5px; font-weight: 600; color: var(--live); }
+.set-primer-delivery-when.is-none { color: var(--danger); }
+.set-primer-delivery-detail { font-size: 11.5px; line-height: 1.55; color: var(--text-3); }
+/* Narrow windows: stack the row instead of squeezing the detail to one word. */
+@media (max-width: 900px) {
+  .set-primer-delivery-row { grid-template-columns: 1fr; gap: 3px; }
+}
 .set-primer-badge { flex: none; padding: 1px 7px; border-radius: 5px; background: var(--bg-3); font-size: 10.5px; font-weight: 600; color: var(--text-3); }
 .set-primer-badge.is-edited { background: var(--accent-dim); color: var(--accent); }
 .set-primer-badge.is-dirty { background: var(--live-dim); color: var(--live); }

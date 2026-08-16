@@ -425,11 +425,31 @@ use:
   "sections": [
     { "id": "identity", "title": "정체성", "summary": "…", "required": true,
       "enabled": true, "defaultText": "# AgentParty — party member session…",
-      "text": "# AgentParty — party member session…", "customized": false }
+      "text": "# AgentParty — party member session…", "customized": false,
+      "tokens": 106 }
   ],
-  "variables": ["{{party}}", "{{member}}", "{{role}}"]
+  "variables": ["{{party}}", "{{member}}", "{{role}}"],
+  "totals": { "tokens": 2442, "characters": 9242, "enabledSections": 6,
+              "totalSections": 6, "disabledTokens": 0 },
+  "delivery": [
+    { "harness": "claude-code", "label": "Claude Code", "when": "세션 시작 시 1회",
+      "detail": "…", "delivered": true }
+  ]
 }
 ```
+
+`tokens` / `totals.tokens` are an **estimate** (Hangul ≈ 1.6 chars/token, other
+text ≈ 3.8) — the app ships no tokenizer for the models it drives and providers
+count differently. Use them to compare sections and to see what switching one off
+saves (`totals.disabledTokens`), not as a bill. `totals` counts the assembled
+prompt, blank-line joins included, so it matches the text a session receives
+rather than the sum of the parts.
+
+`delivery` answers "does this go out every turn": it does not. Claude Code
+installs it once on the session's system prompt, Codex once as thread-scoped
+developer instructions (re-applied on resume, never in `turn/start.input`),
+Cursor once in front of the first prompt, and Grok members are not given the
+primer at all (`delivered: false`).
 
 `defaultText` is the built-in text, `text` is what a session actually gets (the
 user's override when set), and `customized` says which of the two you are looking

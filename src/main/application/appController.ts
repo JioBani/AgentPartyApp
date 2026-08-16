@@ -27,7 +27,7 @@ import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
-import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerView, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
+import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerTotals, partyPrimerView, PARTY_PRIMER_DELIVERY, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
 import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
@@ -540,8 +540,20 @@ export class AppController {
    * 프롬프트 renders, and what an agent reads before editing a section, so both
    * see one truth rather than a copy of the prompt.
    */
-  getPartyPrimer(): { sections: PartyPrimerSectionView[]; variables: readonly string[] } {
-    return { sections: partyPrimerView(getSettings().partyPrimer), variables: PARTY_PRIMER_VARIABLES };
+  getPartyPrimer(): {
+    sections: PartyPrimerSectionView[];
+    variables: readonly string[];
+    totals: ReturnType<typeof partyPrimerTotals>;
+    delivery: typeof PARTY_PRIMER_DELIVERY;
+  } {
+    const sections = partyPrimerView(getSettings().partyPrimer);
+    return {
+      sections,
+      variables: PARTY_PRIMER_VARIABLES,
+      totals: partyPrimerTotals(sections),
+      // When each harness installs it — the answer to "턴마다 들어가나?".
+      delivery: PARTY_PRIMER_DELIVERY,
+    };
   }
 
   /**
