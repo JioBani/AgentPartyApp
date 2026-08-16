@@ -277,16 +277,23 @@ function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onCon
 }) {
   const phase = pairing?.phase || "idle";
   const open = phase === "awaitingScan" || phase === "awaitingConfirm";
-  // The server address travels in the QR and the phone STORES it. Pairing while
-  // the link is down therefore hands the phone an address that may never work,
-  // and no change on this side can reach it afterwards — only unpairing and
-  // pairing again.
+  // The server address travels in the QR and the phone STORES it, so pairing
+  // while the link is down can hand the phone an address that does not work.
   //
-  // The pipe already refuses outright when it has NEVER connected, because that
-  // case cannot recover. What is left here is the recoverable one: it connected
-  // before and is retrying now. Blocking that would break a working flow over a
-  // blip, so the user is told what they are about to bake in and allowed to
-  // decide.
+  // This used to add that the only way out was to unpair and pair again. 01
+  // (ddc2563) settled the opposite: the signalling address is NOT part of the
+  // trust relationship. The phone keeps an ordered list of addresses and
+  // refreshes it from `sys.info` on a live session, so a changed or wrong
+  // address is meant to be corrected in place. Telling a user to unpair would
+  // send them through a recovery the design exists to avoid.
+  //
+  // That list is not built yet (mobile-pipe/desktop-pipe own it), so the warning
+  // below states the risk without promising either remedy — naming the list
+  // today would describe behaviour this build does not have.
+  //
+  // The pipe already refuses outright when it has NEVER connected. What is left
+  // here is the case where it connected before and is retrying now; blocking
+  // that would break a working flow over a blip.
   const linkDown = Boolean(signaling && signaling !== "connected");
 
   return (
@@ -306,9 +313,8 @@ function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onCon
           <AlertTriangle size={14} />
           <span>
             서버에 연결돼 있지 않습니다(재시도 중). 지금 발행하면 폰이
-            {signalingUrl ? ` ${signalingUrl} 주소를` : " 이 주소를"} 저장하므로,
-            주소가 잘못돼 있으면 나중에 고쳐도 그 폰은 연결되지 않습니다 — 해제 후 다시 연결해야 합니다.
-            연결이 돌아온 뒤 발행하는 편이 안전합니다.
+            {signalingUrl ? ` ${signalingUrl} 주소를` : " 이 주소를"} 저장합니다.
+            주소가 잘못돼 있으면 그 폰은 연결되지 않습니다. 연결이 돌아온 뒤 발행하는 편이 안전합니다.
           </span>
         </div>
       )}
