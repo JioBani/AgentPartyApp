@@ -34,7 +34,7 @@ const result = await build({
 const bundlePath = path.join(qaTempDir(), "signalingClient.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
 const SC = await import(pathToFileURL(bundlePath).href);
-const { SignalingClient, acceptIceServers } = SC;
+const { SignalingClient, acceptIceServers, signalingEndpoint } = SC;
 const P = await import("@agentparty/protocol");
 await P.sodiumReady();
 
@@ -270,6 +270,35 @@ console.log("SignalingClient assertions:");
   h.socket().close_("1006 abnormal");
   h.time.advance(1_000);
   assert(h.sockets.length === 4, "a successful connection resets the backoff");
+}
+
+// --- 01 §2.1: a bare host completes to the canonical URL -------------------
+{
+  // The QR carries `s` = host with no scheme, and the connect URL is always
+  // `wss://<s>/v1/ws`. The phone therefore only ever holds a host, and so do
+  // the desktop's settings and trust records — but the desktop alone used to
+  // demand the full path and fail with `Unexpected server response: 404`,
+  // which names neither the path nor the cause. Reported by desktop-app.
+  assert(signalingEndpoint("sig.agentparty.app") === "wss://sig.agentparty.app/v1/ws", "a bare host gets wss:// and the §3 path");
+  assert(signalingEndpoint("sig.example.com:8443") === "wss://sig.example.com:8443/v1/ws", "a host:port keeps its port");
+  assert(signalingEndpoint("wss://sig.example.com") === "wss://sig.example.com/v1/ws", "a scheme with no path gets the path");
+  assert(signalingEndpoint("wss://sig.example.com/") === "wss://sig.example.com/v1/ws", "a trailing slash counts as no path");
+  assert(
+    signalingEndpoint("wss://tunnel.example/team/v1/ws") === "wss://tunnel.example/team/v1/ws",
+    "an explicit path is left alone, so a prefixed deployment still works",
+  );
+  assert(signalingEndpoint("ws://127.0.0.1:8080") === "ws://127.0.0.1:8080/v1/ws", "a local ws:// test server is honoured as typed");
+  assert(
+    signalingEndpoint("wss://sig.example.com/v1/ws") === "wss://sig.example.com/v1/ws",
+    "an already-complete URL is unchanged — normalising is idempotent",
+  );
+
+  // A bare host must never be silently downgraded (01 §2.1).
+  assert(signalingEndpoint("sig.example.com").startsWith("wss://"), "a scheme-less host defaults to the SECURE scheme");
+
+  let threw = "";
+  try { signalingEndpoint("   "); } catch (error) { threw = String(error?.message ?? error); }
+  assert(threw.includes("empty"), `an empty URL is refused rather than silently defaulted (${threw.slice(0, 40)})`);
 }
 
 // --- 01 §3 strict (develop 6aa15a1): unknown fields are refused ------------

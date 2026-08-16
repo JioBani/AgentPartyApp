@@ -455,6 +455,43 @@ export class SignalingClient {
 }
 
 /**
+ * Completes a signaling URL the way the phone does.
+ *
+ * 01 §2.1 fixes the canonical form: the QR carries `s` = `host[:port]` with no
+ * scheme, and "접속 URL은 항상 `wss://<s>/v1/ws`". The phone therefore only ever
+ * handles a host, and the desktop's trust records and settings show the same
+ * thing — so a user typing `sig.example.com`, or a QA run passing
+ * `wss://host`, is giving the natural value, not a malformed one.
+ *
+ * Without this the desktop alone demanded the full path and failed with
+ * `Unexpected server response: 404`, which names neither the path nor the
+ * cause. `pushClient.pushEndpoint` already did this for §7; the two now agree.
+ *
+ * An explicit path is left alone, so a deployment behind a prefix (a tunnel,
+ * a shared host) still works.
+ */
+export function signalingEndpoint(base: string): string {
+  const trimmed = base.trim();
+  if (trimmed === "") {
+    throw new Error("mobile signaling: the signaling URL is empty");
+  }
+  // A bare host gets `wss:`, matching the QR's scheme-less form. Defaulting to
+  // the secure scheme is the only safe direction (01 §2.1 forbids a silent
+  // downgrade); an explicit `ws://` is honoured because the caller typed it.
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `wss://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    throw new Error(`mobile signaling: "${base}" is not a valid signaling URL`);
+  }
+  if (url.pathname && url.pathname !== "/") {
+    return url.toString();
+  }
+  return new URL("/v1/ws", url).toString();
+}
+
+/**
  * Names the out-of-spec fields in a raw message, for the log line only.
  *
  * Reads the RAW text on purpose: the decoder rejects such a message rather
