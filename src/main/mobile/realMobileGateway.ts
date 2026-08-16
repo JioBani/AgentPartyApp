@@ -567,6 +567,7 @@ export class RealMobileGateway implements MobileGateway {
       snapshotProvider: () => this.snapshotProviderFn,
       appName: this.settings.deviceName,
       appVersion: this.deps.appVersion,
+      signalingUrl: () => this.effectiveSignalingUrl(),
       registerPush: (deviceId, platform, handle) => store.setPushHandle(deviceId, platform, handle, Date.now()),
       log: this.deps.log,
     });
