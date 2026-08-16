@@ -49,6 +49,7 @@ const req = (m, p) => ({ k: "req", id: `r-${++idSeq}`, m, ...(p === undefined ? 
 function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1" } = {}) {
   const bridge = new EventBridge({ bootId });
   const sent = [];
+  const nonConforming = [];
   const closes = [];
   const pushes = [];
   bridge.attach({ sessionId: SESSION, deliver: (event) => server.deliver(event) });
@@ -59,7 +60,16 @@ function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1" } =
       deviceId: "phone-device-id-000001",
       deviceName: "Galaxy S25",
       transport: "directViaRendezvous",
-      send: (envelope) => sent.push(envelope),
+      send: (envelope) => {
+        // server made the §5.1 envelope schemas .strict(), so an out-of-spec
+        // field is now a parse error on the phone rather than a silent drop.
+        // Every envelope this pipe emits is checked against them here.
+        const parsed = P.RpcEnvelopeSchema.safeParse(envelope);
+        if (!parsed.success) {
+          nonConforming.push({ envelope, issue: parsed.error.issues[0]?.message ?? "" });
+        }
+        sent.push(envelope);
+      },
       close: (reason) => closes.push(reason),
     },
     eventBridge: bridge,
@@ -73,7 +83,7 @@ function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1" } =
     newId: () => "grp-1",
   });
 
-  return { server, bridge, sent, closes, pushes, handlers, last: () => sent.at(-1) };
+  return { server, bridge, sent, closes, pushes, handlers, nonConforming, last: () => sent.at(-1) };
 }
 
 console.log("RpcServer assertions:");
@@ -204,21 +214,20 @@ console.log("RpcServer assertions:");
   assert(h.sent.slice(other).at(-1).c === "snapshot", "a bootId from a previous desktop run forces a snapshot");
 }
 
-// --- a missing or failing snapshot provider is distinguishable -------------
+// --- a snapshot that cannot be produced is never faked ---------------------
 {
   const h = harness();
   h.server.handle({ k: "ctl", c: "resume", bootId: "another-boot", lastSeq: 1 });
   await tick();
-  const answer = h.last();
-  assert(answer.c === "snapshot", "the phone still gets an answer");
-  assert(answer.state === null && typeof answer.error === "string", "an absent provider is an explicit error, not an empty state");
+  assert(!h.sent.some((e) => e.c === "snapshot"), "no snapshot is sent when there is no provider");
+  assert(h.closes.length === 1, "the session ends instead of fabricating an empty state");
+  assert(h.closes[0].includes("스냅샷 제공자"), "the close reason names the missing provider");
 
   const broken = harness({ snapshotProvider: () => { throw new Error("상태를 읽지 못함"); } });
   broken.server.handle({ k: "ctl", c: "resume", bootId: "another-boot", lastSeq: 1 });
   await tick();
-  const failed = broken.last();
-  assert(failed.error?.includes("상태를 읽지 못함"), "a failing provider reports why instead of hanging");
-  assert(broken.closes.length === 0, "a snapshot failure does not kill the session");
+  assert(broken.closes[0]?.includes("상태를 읽지 못함"), "a failing provider surfaces its cause in the close reason");
+  assert(!broken.sent.some((e) => e.c === "snapshot"), "and sends no snapshot at all");
 }
 
 // --- keepalive -------------------------------------------------------------
@@ -284,5 +293,42 @@ console.log("RpcServer assertions:");
   assert(h.server.activity.inFlight === 0, "in-flight requests are cleared");
 }
 
+// --- every envelope this pipe emits conforms to the strict §5.1 schemas ----
+{
+  const handlers = new Map();
+  handlers.set("ok.method", async () => ({ value: 1 }));
+  const h = harness({ handlers, snapshotProvider: () => ({ state: 1 }) });
+  h.server.handle({ k: "ctl", c: "subscribe", workspaces: ["C:/a"] });
+  h.server.handle({ k: "ctl", c: "ping" });
+  h.server.handle(req("ok.method"));
+  h.server.handle(req("nope"));
+  await tick();
+  h.bridge.publish("session:events", { n: 1 }, "C:/a");
+  h.server.handle({ k: "ctl", c: "resume", bootId: "boot-1", lastSeq: 0 });
+  await tick();
+  h.server.handle({ k: "ctl", c: "resume", bootId: null, lastSeq: null });
+  await tick();
+
+  // Prove the check can fail: an extra field must be rejected, or the
+  // conformance assertion below would pass vacuously.
+  assert(
+    !P.RpcEnvelopeSchema.safeParse({ k: "ctl", c: "pong", ts: 1, extra: 1 }).success,
+    "the schemas really are strict — an unknown field is a parse error",
+  );
+
+  const kinds = new Set(h.sent.map((e) => e.c ?? e.k));
+  assert(kinds.size >= 5, `the pass exercised several envelope kinds (${[...kinds].join(",")})`);
+  const first = h.nonConforming[0];
+  assert(
+    h.nonConforming.length === 0,
+    `no emitted envelope violates the strict schema${first ? ` (${JSON.stringify(first.envelope).slice(0, 80)} -> ${first.issue})` : ""}`,
+  );
+  assert(h.sent.some((e) => e.c === "snapshot" && e.bootId === "boot-1"), "the null cursor yields a conformant snapshot");
+}
+
+if (blocked > 0) {
+  console.log(`
+${blocked} check(s) BLOCKED on an @agentparty/protocol update — see above.`);
+}
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");
 process.exit(failures.length ? 1 : 0);

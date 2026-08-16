@@ -268,20 +268,12 @@ export class RpcServer {
 
     const provider = this.deps.snapshotProvider();
     if (!provider) {
-      // Answering with an empty snapshot would look to the phone like "the
-      // desktop has nothing", which is indistinguishable from a real empty
-      // state. An error says which it is.
-      this.write({
-        k: "ctl",
-        c: "snapshot",
-        bootId: this.deps.eventBridge.bootId,
-        seq: outcome.fromSeq,
-        state: null,
-        error: "이 데스크톱에 스냅샷 제공자가 등록되지 않았습니다.",
-      });
-      this.deps.log("error", "mobile rpc: resume needs a snapshot but no provider is registered", {
-        reason: outcome.reason,
-      });
+      // Sending `state: null` would read to the phone as "the desktop has
+      // nothing", which is indistinguishable from a real empty state. 01 §5.3
+      // has no error variant of `snapshot`, and inventing a field would now be
+      // rejected by the strict envelope schemas — so the session ends with a
+      // reason the phone can show instead.
+      this.fail("이 데스크톱에 스냅샷 제공자가 등록되지 않아 되감기를 처리할 수 없습니다.");
       return;
     }
 
@@ -302,15 +294,9 @@ export class RpcServer {
       this.write({ k: "ctl", c: "snapshot", bootId: this.deps.eventBridge.bootId, seq, state });
       this.deps.log("info", "mobile rpc sent a snapshot", { reason, seq });
     } catch (error) {
-      this.write({
-        k: "ctl",
-        c: "snapshot",
-        bootId: this.deps.eventBridge.bootId,
-        seq: this.deps.eventBridge.window().seq,
-        state: null,
-        error: `스냅샷을 만들 수 없습니다: ${String(error)}`,
-      });
-      this.deps.log("error", "mobile rpc snapshot provider failed", { error: String(error) });
+      // Same reasoning as a missing provider: a fabricated empty state would be
+      // silently wrong, so the failure ends the session with its cause.
+      this.fail(`스냅샷을 만들 수 없어 되감기를 처리하지 못했습니다: ${String(error)}`);
     }
   }
 
