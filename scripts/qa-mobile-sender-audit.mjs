@@ -56,6 +56,18 @@ const EXPECTED_TYPES = ["hello", "auth", "relay", "pair.open", "pair.accept", "p
 const identity = P.identityFromSeeds(new Uint8Array(32).fill(3), new Uint8Array(32).fill(4));
 const phone = P.identityFromSeeds(new Uint8Array(32).fill(9), new Uint8Array(32).fill(10));
 
+/**
+ * Client-direction samples for the `t` values that exist in BOTH directions.
+ * Keyed by `t` so the vector's list drives which ones are exercised.
+ */
+const SHARED_CLIENT_SHAPES = {
+  relay: { t: "relay", to: phone.deviceId, kind: "offer", box: P.toB64(new Uint8Array(48).fill(1)) },
+  presence: { t: "presence", of: phone.deviceId },
+  "pair.join": { t: "pair.join", tokenHash: "th-1", blob1: "b1" },
+  "pair.accept": { t: "pair.accept", tokenHash: "th-1", blob2: "b2" },
+  "pair.done": { t: "pair.done", tokenHash: "th-1", blob3: "b3" },
+};
+
 function clock() {
   let now = 1_700_000_000_000;
   const timers = new Map();
@@ -183,8 +195,11 @@ assert(
   // table that has never heard of these messages".
   const vectorPath = path.resolve(projectRoot, "../AgentPartyMobile/docs/아키텍처/vectors/protocol-v1.json");
   let clientTable;
+  let vectorShared;
   try {
-    clientTable = JSON.parse(readFileSync(vectorPath, "utf8"))?.signalingFields?.client;
+    const vector = JSON.parse(readFileSync(vectorPath, "utf8"));
+    clientTable = vector?.signalingFields?.client;
+    vectorShared = vector?.signalingSharedNames;
   } catch (error) {
     assert(false, `the protocol vectors could not be read to confirm the direction (${String(error?.message ?? error)})`);
   }
@@ -195,6 +210,39 @@ assert(
         `\`${type}\` exists in the CLIENT table, so auditing it as \`client\` was a real check`,
       );
     }
+  }
+
+  // Why the existence check is the RIGHT guard, and enough on its own.
+  //
+  // Five `t` values live in both directions with different fields (server
+  // 0.7.0 `sharedMessageNames()`, mirrored in the vector). For those, a wrong
+  // direction does NOT hide an out-of-spec field — zod reports the
+  // unrecognized key alongside the missing-required one — so they are safe
+  // either way. Only `relay` additionally flags the direction itself, via
+  // `to`/`from`; the rest simply keep working. That distinction is worth
+  // stating because "shared names fail loudly" is true of `relay` alone and
+  // reads as a general rule.
+  //
+  // The unsafe case is the direction-EXCLUSIVE type, which reports nothing at
+  // all. So checking that each observed type exists in the audited direction
+  // covers exactly the gap, and nothing more is needed.
+  const shared = vectorShared ?? [];
+  assert(shared.length > 0, "the vector lists the shared message names");
+  for (const entry of shared) {
+    const frame = SHARED_CLIENT_SHAPES[entry.t];
+    if (!frame) {
+      assert(false, `no client-shaped sample for shared name \`${entry.t}\` — add one`);
+      continue;
+    }
+    const junk = { ...frame, notAField: "x" };
+    assert(
+      P.outOfSpecFields(junk, "client").includes("notAField"),
+      `shared \`${entry.t}\`: junk is caught in the right direction`,
+    );
+    assert(
+      P.outOfSpecFields(junk, "server").includes("notAField"),
+      `shared \`${entry.t}\`: junk is caught even in the WRONG direction — shared names cannot hide a field`,
+    );
   }
 }
 
