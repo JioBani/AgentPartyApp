@@ -18,6 +18,8 @@ const api = {
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   getInitialState: () => ipcRenderer.invoke("app:getInitialState"),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
+  /** Edits ONE section of the member primer (Settings → 런타임 → 파티 프롬프트). */
+  savePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:save", patch),
   chooseWorkspace: () => ipcRenderer.invoke("workspace:choose"),
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),

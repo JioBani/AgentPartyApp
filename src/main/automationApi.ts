@@ -194,6 +194,21 @@ export class AutomationApiServer {
         sendJson(res, 200, c.updateSettings(await readJson(req)));
         return;
       }
+      // The member primer, section by section (built-in text + the user's edit).
+      if (method === "GET" && url.pathname === "/api/party/primer") {
+        sendJson(res, 200, c.getPartyPrimer());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/party/primer") {
+        const body = await readJson(req);
+        sendJson(res, 200, c.savePartyPrimerSection({
+          section: String(body?.section || ""),
+          // `null` clears the override; an absent key leaves the text unchanged.
+          text: body?.text === null ? null : typeof body?.text === "string" ? body.text : undefined,
+          enabled: typeof body?.enabled === "boolean" ? body.enabled : undefined,
+        }));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/shell/open-path") {
         const body = await readJson(req);
         sendJson(res, 200, await c.openLocalPath(windowId, String(body?.path || ""), { reveal: body?.reveal === true }));

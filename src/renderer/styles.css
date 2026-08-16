@@ -7558,6 +7558,46 @@ body.wb-resizing {
 .set-switch-knob { position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: left 0.15s; }
 .set-switch.is-on .set-switch-knob { left: 18.5px; }
 .set-toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text-1); }
+.set-toggle:disabled { cursor: default; opacity: 0.5; }
+
+/* 파티 프롬프트 tab — the member primer, one collapsible card per section. The
+   text IS the product here, so an opened section becomes a full-width monospace
+   editor; collapsed, the tab reads as a table of contents of what a member is
+   told at session start. */
+.set-primer { display: flex; flex-direction: column; gap: 10px; padding: 13px 20px 18px; }
+.set-primer-card { border: var(--border-width) solid var(--border-subtle); border-radius: 10px; background: var(--bg-1); padding: 10px 12px; }
+.set-primer-card.is-off { opacity: 0.6; }
+.set-primer-head { display: flex; align-items: center; gap: 8px; }
+.set-primer-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; background: none; border: none; padding: 0; cursor: pointer; text-align: left; }
+.set-primer-caret { flex: none; color: var(--text-3); transition: transform 0.15s; }
+.set-primer-caret.is-open { transform: rotate(180deg); }
+.set-primer-name { font-size: 13px; font-weight: 600; color: var(--text-0); }
+.set-primer-badge { flex: none; padding: 1px 7px; border-radius: 5px; background: var(--bg-3); font-size: 10.5px; font-weight: 600; color: var(--text-3); }
+.set-primer-badge.is-edited { background: var(--accent-dim); color: var(--accent); }
+.set-primer-badge.is-dirty { background: var(--live-dim); color: var(--live); }
+.set-primer-badge.is-off { background: var(--danger-dim); color: var(--danger); }
+.set-primer-summary { margin: 4px 0 0 21px; font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.set-primer-body { margin-top: 10px; display: flex; flex-direction: column; gap: 9px; }
+.set-primer-textarea {
+  width: 100%;
+  min-height: 260px;
+  max-height: 52vh;
+  resize: vertical;
+  padding: 11px 12px;
+  border-radius: 9px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.6;
+  /* The primer is markdown-ish prose with long bullet lines: wrap it rather than
+     scroll sideways, so a narrow window still shows the whole sentence. */
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.set-primer-textarea:focus { outline: none; border-color: var(--accent-bd); }
+.set-primer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.set-primer-gap { flex: 1; }
 
 /* Harness picker inside the 하네스 기본값 tab. A second, quieter tab row: it
    selects WITHIN the tab the top strip already chose, so it reads as pills on the

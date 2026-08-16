@@ -14,6 +14,7 @@ import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/
 import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
+import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -182,7 +183,11 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
   const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  // Drops overrides for sections the app no longer has, and no-op entries (text
+  // identical to the built-in), so a stale file cannot make a member session
+  // start with a prompt the settings screen would not show.
+  const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
+  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

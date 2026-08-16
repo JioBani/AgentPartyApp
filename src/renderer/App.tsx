@@ -7,6 +7,7 @@ import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompac
 import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { GateReviewer, PartyGate } from "../shared/messageGate";
+import type { PartyPrimerSectionPatch } from "./workbench/PartyPrimerSettings";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import { publishFontProbe } from "./app/fontProbe";
@@ -899,6 +900,21 @@ export function App() {
   }
 
   /**
+   * Edits one section of the member primer. Goes through the controller (not a
+   * raw settings patch) so the UI and `POST /api/party/primer` share the same
+   * validation — an unknown section or a disabled required section is refused
+   * there rather than silently stored.
+   */
+  async function savePartyPrimerSection(patch: PartyPrimerSectionPatch) {
+    try {
+      const result = await window.agentParty.savePartyPrimerSection(patch);
+      setState((current) => ({ ...current, settings: result.settings }));
+    } catch (error) {
+      noticeOnFailure("파티 프롬프트를 저장하지 못했습니다")(error);
+    }
+  }
+
+  /**
    * Stars/unstars a model. Persisted immediately and independently of the
    * catalog's Apply button: tidying a list is not a runtime change, so it must
    * neither wait on Apply nor be discarded by Cancel.
@@ -1588,6 +1604,7 @@ export function App() {
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
+                  onSavePartyPrimer={savePartyPrimerSection}
                   onSaveComposer={saveComposerSettings}
                   onSaveMemberMessaging={saveMemberMessaging}
                   discord={discord}

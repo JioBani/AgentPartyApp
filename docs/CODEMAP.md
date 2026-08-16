@@ -82,9 +82,14 @@ Automation client
    `src/shared/transcriptEvents.ts` and renders them in
    `src/renderer/workbench/Transcript.tsx`.
 
-The agent-facing party primer (`buildPartyPrimer` in `src/core/partyBridge.ts`)
-teaches the tool surface and the queue-versus-interrupt timing so behavior does
-not depend on model memory; `scripts/qa-party-bridge.mjs` locks it. Codex
+The agent-facing party primer (`buildPartyPrimer` in `src/shared/partyPrimer.ts`,
+re-exported from `src/core/partyBridge.ts`) teaches the tool surface, the
+member-to-member communication discipline and the queue-versus-interrupt timing
+so behavior does not depend on model memory; `scripts/qa-party-bridge.mjs` locks
+it. It is a LIST OF SECTIONS, each of which the user can rewrite or switch off in
+Settings → 런타임 → 파티 프롬프트 (`AppSettings.partyPrimer`, `GET/POST
+/api/party/primer`); `SessionManager.createAdapter` resolves the customization
+once and hands the finished text to whichever adapter starts the member. Codex
 installs it once through `thread/start.developerInstructions` and reapplies the
 same thread-scoped override on `thread/resume`, so `turn/start.input` carries
 only the user's message and the primer never repeats as conversation history.

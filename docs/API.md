@@ -414,6 +414,51 @@ The ids the first version of this setting used (`maplestory`, `geist-mono`,
 `system-sans`, …) are still accepted and migrate to the equivalent family name on
 read, so an upgrading user keeps the font they chose.
 
+### `GET /api/party/primer`
+
+Returns the **party-member primer** — the system/developer prompt every member
+session starts with — section by section, plus the placeholders a section may
+use:
+
+```json
+{
+  "sections": [
+    { "id": "identity", "title": "정체성", "summary": "…", "required": true,
+      "enabled": true, "defaultText": "# AgentParty — party member session…",
+      "text": "# AgentParty — party member session…", "customized": false }
+  ],
+  "variables": ["{{party}}", "{{member}}", "{{role}}"]
+}
+```
+
+`defaultText` is the built-in text, `text` is what a session actually gets (the
+user's override when set), and `customized` says which of the two you are looking
+at. Sections are returned in assembly order; the primer is those texts joined
+with a blank line, with `{{party}}` / `{{member}}` / `{{role}}` replaced by the
+member's own identity.
+
+### `POST /api/party/primer`
+
+Edits **one** section. `{ "section": "gate", "text": "…" }` sets an override,
+`{ "section": "gate", "text": null }` restores the built-in text, and
+`{ "section": "discord", "enabled": false }` drops that section from the primer.
+`text` and `enabled` may be sent together; an absent key leaves that axis alone.
+
+```json
+{ "section": { "id": "gate", "enabled": true, "customized": true, "text": "…" },
+  "settings": { "…": "the full public settings" } }
+```
+
+The response carries the section as it now stands, so a caller can assert the
+edit landed instead of trusting `200`. An unknown `section`, or disabling a
+`required` one (`identity`, `tools` — how a member knows who it is and which
+tools are real), is an error, not a silent no-op. Text identical to the built-in
+is stored as "no override", so that section keeps tracking app updates.
+
+Takes effect for sessions started or resumed **after** the change; a running
+member keeps the primer it booted with. Same controller method as Settings →
+런타임 → 파티 프롬프트.
+
 ### `POST /api/shell/open-path`
 
 Opens a local file the way the desktop would. The same controller method as a

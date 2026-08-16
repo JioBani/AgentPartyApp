@@ -27,6 +27,7 @@ import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
 import { getPublicSettings, getSettings, updateSettings } from "../settings";
+import { applyPartyPrimerPatch, partyPrimerView, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
@@ -530,6 +531,29 @@ export class AppController {
       entry.window.webContents.send("settings:update", settings);
     }
     return settings;
+  }
+
+  /**
+   * The party-member primer, section by section: the built-in text, the user's
+   * edit, and whether the section is on. This is what Settings → 런타임 → 파티
+   * 프롬프트 renders, and what an agent reads before editing a section, so both
+   * see one truth rather than a copy of the prompt.
+   */
+  getPartyPrimer(): { sections: PartyPrimerSectionView[]; variables: readonly string[] } {
+    return { sections: partyPrimerView(getSettings().partyPrimer), variables: PARTY_PRIMER_VARIABLES };
+  }
+
+  /**
+   * Edits ONE primer section: `text` sets an override (`null`, empty, or text
+   * identical to the built-in clears it), `enabled` turns an optional section off.
+   * Returns the resulting section so a caller never has to assume the edit landed.
+   * Takes effect for sessions started (or resumed) after the change — a running
+   * member keeps the primer it booted with.
+   */
+  savePartyPrimerSection(patch: { section: string; text?: string | null; enabled?: boolean }): { section: PartyPrimerSectionView; settings: AppSettings } {
+    const { settings: partyPrimer, applied } = applyPartyPrimerPatch(getSettings().partyPrimer, patch);
+    const settings = this.updateSettings({ partyPrimer });
+    return { section: applied, settings };
   }
 
   /** Desktop auth cards with each native CLI's real, cached login state. */
