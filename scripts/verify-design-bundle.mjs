@@ -16,7 +16,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BUNDLE_DIR = path.join(root, "build", "design-bundle");
+// Either bundle: the design system by default, or the screens project with
+// `--dir design-project`. Both are made of the same kind of page and must clear
+// the same bar before anything is uploaded.
+const dirArg = process.argv.indexOf("--dir");
+const BUNDLE_DIR = path.join(root, "build", dirArg > 0 ? process.argv[dirArg + 1] : "design-bundle");
 const SHOT_DIR = path.join(root, "build", "design-shots");
 const wantShots = process.argv.includes("--shots");
 
@@ -32,6 +36,8 @@ function pages(dir = BUNDLE_DIR, prefix = "") {
 }
 
 const failures = [];
+/** path → measured `WxH`, consumed by the manifest builder for card viewports. */
+const sizes = {};
 const ok = (condition, message) => {
   if (!condition) failures.push(message);
   return condition;
@@ -84,6 +90,8 @@ async function main() {
     ok(probe.fontsLoaded !== false, `${relative}: the Maplestory woff2 did not load (fallback type would be shown)`);
     ok(probe.firstWidth > 200 && probe.firstHeight > 40, `${relative}: content renders at ${probe.firstWidth}×${probe.firstHeight} — effectively empty`);
 
+    // A little padding: the card frame should not clip the surface it shows.
+    sizes[relative] = `${Math.min(1440, probe.firstWidth + 40)}x${Math.min(920, probe.firstHeight + 48)}`;
     const mark = failures.some((f) => f.startsWith(relative)) ? "FAIL" : "ok  ";
     console.log(`  ${mark} ${relative.padEnd(38)} ${probe.firstWidth}×${probe.firstHeight}  ${styled ? probe.bg0 : "unstyled"}`);
 
@@ -93,6 +101,10 @@ async function main() {
       fs.writeFileSync(shot, image.toPNG());
     }
   }
+
+  // The MEASURED size of each page, so the card viewports in the Design System
+  // pane come from what the page actually renders rather than a guess.
+  fs.writeFileSync(path.join(BUNDLE_DIR, "_sizes.json"), `${JSON.stringify(sizes, null, 2)}\n`);
 
   console.log(failures.length ? `\nDESIGN BUNDLE FAILED (${failures.length})` : `\nDESIGN BUNDLE OK — ${list.length} pages render standalone`);
   for (const failure of failures) console.log(`  - ${failure}`);
