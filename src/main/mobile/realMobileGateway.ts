@@ -30,6 +30,7 @@ import { NatDiagnosticsProbe } from "./diagnostics";
 import { EventBridge } from "./eventBridge";
 import { IdentityStore } from "./identityStore";
 import { NatMapper } from "./natMapper";
+import { PushClient } from "./pushClient";
 import type { MobileGatewayDeps } from "./index";
 import type {
   MobileEventScope,
@@ -40,6 +41,7 @@ import type {
   MobileRequestHandler,
   MobileSnapshotProvider,
   PairingSession,
+  PushPayload,
 } from "./mobileGateway";
 import { PairingService } from "./pairingService";
 import { RpcServer } from "./rpcServer";
@@ -89,6 +91,7 @@ export class RealMobileGateway implements MobileGateway {
   private readonly bootId = randomUUID();
   private readonly diagnosticsProbe: NatDiagnosticsProbe;
   private natMapper: NatMapper | undefined;
+  private pushClient: PushClient | undefined;
 
   constructor(private readonly deps: MobileGatewayDeps) {
     this.settings = { ...MOBILE_SETTINGS_DEFAULTS, ...deps.readSettings() };
@@ -159,6 +162,12 @@ export class RealMobileGateway implements MobileGateway {
       return;
     }
 
+    this.pushClient = new PushClient({
+      identity: identityStore.identity,
+      pushUrl: () => options.pushUrl ?? this.settings.pushUrl,
+      log: this.deps.log,
+    });
+
     this.natMapper = new NatMapper({
       log: this.deps.log,
       // Stable per desktop so renewals reuse one router entry instead of
@@ -187,6 +196,7 @@ export class RealMobileGateway implements MobileGateway {
     }
     this.pairingService?.cancel();
     void this.natMapper?.stop();
+    this.pushClient = undefined;
     this.natMapper = undefined;
     this.signaling?.stop();
     this.signaling = undefined;
@@ -286,8 +296,41 @@ export class RealMobileGateway implements MobileGateway {
         this.requireIdentity().setPushHandle(deviceId, platform, handle, Date.now());
         this.publish();
       },
-      notify: async (): Promise<void> => {
-        throw new Error("모바일 푸시 알림은 아직 구현되지 않았습니다 (desktop-pipe M5).");
+      notify: async (deviceId: string, payload: PushPayload): Promise<void> => {
+        const client = this.pushClient;
+        if (!client) {
+          throw new Error("mobile gateway: start() has not completed");
+        }
+        const device = this.requireIdentity().find(deviceId);
+        if (!device) {
+          throw new Error(`알 수 없는 기기입니다: ${deviceId}`);
+        }
+        if (!device.push) {
+          throw new Error(`${device.name}이(가) 아직 푸시 핸들을 등록하지 않았습니다.`);
+        }
+        if ([...this.sessions.values()].some((session) => session.device.deviceId === deviceId)) {
+          // 01 §7 — push exists for a phone the desktop cannot reach. Sending
+          // one to a connected phone would duplicate what the live channel
+          // already delivered.
+          throw new Error(`${device.name}은(는) 연결되어 있어 푸시가 필요하지 않습니다.`);
+        }
+        await client.notify(
+          {
+            deviceId,
+            platform: device.push.platform,
+            handle: device.push.handle,
+            kxPk: fromB64(device.kxPk),
+          },
+          {
+            v: 1,
+            type: payload.type,
+            deviceId: this.requireIdentity().deviceId,
+            requestId: payload.requestId,
+            title: payload.title,
+            body: payload.body,
+            exp: payload.expiresAt,
+          },
+        );
       },
     };
   }

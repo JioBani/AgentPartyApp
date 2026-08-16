@@ -257,11 +257,18 @@ export interface MobilePushApi {
   notify(deviceId: string, payload: PushPayload): Promise<void>;
 }
 
+/**
+ * 01 §7 — the only notification the protocol defines. `type` is a literal
+ * rather than a free string because the phone's NSE validates it against the
+ * shared schema: anything else would be sealed, delivered, and then dropped
+ * unopened on the device.
+ */
 export interface PushPayload {
-  type: string;
+  type: "approval";
   title: string;
   body: string;
   /** Correlates the notification with the E2E request the phone will confirm. */
-  requestId?: string;
-  expiresAt?: number;
+  requestId: string;
+  /** Unix ms after which the phone should stop showing it. */
+  expiresAt: number;
 }
