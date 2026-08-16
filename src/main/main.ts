@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, screen, shell } from "electron";
+import * as os from "node:os";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -33,7 +34,7 @@ import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
-import { createMobileGateway } from "./mobile";
+import { createMobileGateway, type CreateMobileGatewayOptions } from "./mobile";
 import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 
@@ -556,18 +557,9 @@ ${body}
 
   // The mobile link. Built before the controller (which takes it as a
   // dependency) and handed the controller straight after, the same two-step the
-  // Discord bridge uses. `"mock"` until desktop-pipe's real gateway lands — the
-  // factory THROWS for `"real"` rather than handing back a mock that would make
-  // a dead link look connected.
+  // Discord bridge uses.
   mobileLink = new MobileLinkService({
-    // The mock is seeded at construction; the real gateway reads the same
-    // `settings.json` block through its own `readSettings` dep, so the app stays
-    // the single source either way. Swapping to the real pipe is this one
-    // argument plus its `deps`.
-    gateway: createMobileGateway({
-      implementation: "mock",
-      mock: { settings: getSettings().mobile || MOBILE_SETTINGS_DEFAULTS },
-    }),
+    gateway: createMobileGateway(mobilePipeOptions()),
     // QA points the link at a locally running signaling server without editing
     // code. A per-run override: the pipe does not write it back to settings.
     startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
@@ -649,6 +641,47 @@ const advertisedWorkspaces = new Map<string, string>();
  * Replaces the old machine-global `<userData>/automation.json` (which a second
  * process, even on a different cwd, overwrote — see docs/FEEDBACK.md).
  */
+/**
+ * How the mobile pipe is constructed: the REAL gateway by default.
+ *
+ * The mock is opt-in through `AGENTPARTY_MOBILE_PIPE=mock`, and only QA asks
+ * for it — `scripts/e2e-mobile-link.mjs` drives the phone simulator through
+ * `/api/qa/mobile/*`, which the real gateway has no equivalent of. It is never
+ * a fallback: if the real pipe cannot start, that must surface as a broken link
+ * rather than a mock quietly making the UI look connected (AGENTS.md).
+ *
+ * `start()` honours the `enabled` setting, so a user who has not turned the
+ * mobile link on gets no sockets from this.
+ */
+function mobilePipeOptions(): CreateMobileGatewayOptions {
+  if (process.env.AGENTPARTY_MOBILE_PIPE === "mock") {
+    log("warn", "mobile", "using the MOCK mobile pipe (AGENTPARTY_MOBILE_PIPE=mock) — no phone can really connect");
+    return { implementation: "mock", mock: { settings: getSettings().mobile || MOBILE_SETTINGS_DEFAULTS } };
+  }
+  return {
+    implementation: "real",
+    deps: {
+      userDataPath: app.getPath("userData"),
+      secretCipher: safeStorage,
+      log: (level, message, detail) => log(level, "mobile", message, detail),
+      onSecurityWarning: (warning) => {
+        // Logged as well as pushed. The renderer may have no window open when
+        // the pipe starts, and a degraded-security condition that only ever
+        // existed as a dropped IPC message would be exactly the silent failure
+        // this callback exists to prevent.
+        log("warn", "mobile", `security warning: ${warning.code}`, { message: warning.message });
+        for (const entry of registry().all()) {
+          entry.window.webContents.send("mobile:warning", warning);
+        }
+      },
+      readSettings: () => getSettings().mobile || MOBILE_SETTINGS_DEFAULTS,
+      writeSettings: (mobile) => { updateSettings({ mobile }); },
+      defaultDeviceName: os.hostname(),
+      appVersion: app.getVersion(),
+    },
+  };
+}
+
 function reconcileDiscovery(): void {
   const baseUrl = automationApi?.baseUrl;
   // The API binds an ephemeral port; before it starts, baseUrl reads `:0`. Skip

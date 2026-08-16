@@ -68,6 +68,11 @@ async function main() {
       AGENTPARTY_QA: "1",
       AGENTPARTY_USER_DATA: userData,
       AGENTPARTY_AUTOMATION_PORT: "",
+      // This run drives the PHONE SIMULATOR (`/api/qa/mobile/*`), which only the
+      // mock has — the real pipe would need an actual phone and a signaling
+      // server. The app defaults to the real gateway, so QA asks for the mock
+      // explicitly rather than the app quietly choosing it.
+      AGENTPARTY_MOBILE_PIPE: "mock",
     },
   });
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
