@@ -49,7 +49,7 @@ import { PushError } from "./mobileGateway";
 import { PairingService } from "./pairingService";
 import { RpcServer } from "./rpcServer";
 import { SecureSession, newSessionEphemeral } from "./secureSession";
-import { SignalingClient, type SignalingPhase } from "./signalingClient";
+import { SignalingClient, signalingEndpoint, type SignalingPhase } from "./signalingClient";
 import { MutableValueStream } from "./valueStream";
 import { WebrtcTransport } from "./webrtcTransport";
 
@@ -145,7 +145,9 @@ export class RealMobileGateway implements MobileGateway {
     this.identityStore = identityStore;
     this.eventBridge = new EventBridge({ bootId: this.bootId });
 
-    const signalingUrl = options.signalingUrl ?? this.settings.signalingUrl;
+    // Completed here so the socket, the QR's host and the status all describe
+    // the same endpoint (01 §2.1).
+    const signalingUrl = this.effectiveSignalingUrl();
     const signaling = new SignalingClient({
       url: signalingUrl,
       identity: identityStore.identity,
@@ -720,9 +722,13 @@ export class RealMobileGateway implements MobileGateway {
    * back, so that window is genuinely recoverable and refusing it would only
    * make the UI feel broken.
    */
-  /** The signaling URL this run is actually using: the override, else settings. */
+  /**
+   * The signaling URL this run is actually using: the override, else settings,
+   * completed to the 01 §2.1 canonical form so a bare host works exactly as it
+   * does on the phone.
+   */
   private effectiveSignalingUrl(): string {
-    return this.startOptions.signalingUrl ?? this.settings.signalingUrl;
+    return signalingEndpoint(this.startOptions.signalingUrl ?? this.settings.signalingUrl);
   }
 
   private requireSignalingReachable(): void {
