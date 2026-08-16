@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FlaskConical, FoldVertical, FolderOpen, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
@@ -23,6 +23,8 @@ import { HarnessIcon } from "../workbench/HarnessIcon";
 import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
 import { GateReviewerControl } from "../workbench/GateReviewerControl";
+import { PartyPrimerSettings, type PartyPrimerSectionPatch } from "../workbench/PartyPrimerSettings";
+import type { PartyPrimerSectionId } from "../../shared/partyPrimer";
 import { Segmented } from "../workbench/Segmented";
 import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
@@ -552,6 +554,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "general", label: "일반", icon: <Settings2 size={14} /> },
   { id: "harness", label: "하네스 기본값", icon: <SquareTerminal size={14} /> },
   { id: "environment", label: "환경", icon: <ShieldCheck size={14} /> },
+  { id: "primer", label: "파티 프롬프트", icon: <FileText size={14} /> },
   { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
   { id: "mobile", label: "모바일 연결", icon: <Smartphone size={14} /> },
@@ -559,7 +562,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> 
   { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -573,6 +576,10 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
+  /** One primer section at a time — text override and/or on-off. */
+  onSavePartyPrimer: (patch: PartyPrimerSectionPatch) => void;
+  /** Translates one primer section into Korean (or clears that translation). */
+  onTranslatePartyPrimer: (patch: { section: PartyPrimerSectionId; clear?: boolean }) => Promise<void>;
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveMemberMessaging: (patch: { interruptOnSend: boolean }) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
@@ -750,6 +757,21 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 </SubtreeVisibility>
               </div>
             ))}
+        </SubtreeVisibility>
+        </div>
+
+        {/* The member primer — what every member session is told at start. */}
+        <div className="set-tab-panel" hidden={tab !== "primer"}>
+        <SubtreeVisibility visible={tab === "primer"}>
+          <section className="set-card">
+            <div className="set-card-label">파티 프롬프트<span className="set-card-sub wb-mono">멤버 세션 시스템 프롬프트</span></div>
+            <PartyPrimerSettings
+              settings={settings.partyPrimer}
+              onSave={onSavePartyPrimer}
+              onTranslate={onTranslatePartyPrimer}
+              onDirtyChange={(value) => markDirty("primer", value)}
+            />
+          </section>
         </SubtreeVisibility>
         </div>
 

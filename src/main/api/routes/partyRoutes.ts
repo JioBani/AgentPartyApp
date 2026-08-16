@@ -55,6 +55,38 @@ export const partyRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.setPartyGate(ctx.workspace, text(p.id), p, ctx.windowId),
   },
   {
+    // The member primer — the system/developer prompt every member session
+    // starts with — section by section, with its estimated token weight and
+    // where each harness installs it. App-global, like the settings it lives in.
+    name: "party.primer.get",
+    http: "GET /api/party/primer",
+    handler: (_p, ctx) => ctx.controller.getPartyPrimer(),
+  },
+  {
+    // Edits ONE section: `text` sets an override (`null` restores the built-in),
+    // `enabled` drops an optional section from the primer.
+    name: "party.primer.save",
+    http: "POST /api/party/primer",
+    handler: (p, ctx) => ctx.controller.savePartyPrimerSection({
+      section: text(p.section),
+      // `null` clears the override; an absent key leaves the text unchanged.
+      text: p.text === null ? null : typeof p.text === "string" ? p.text : undefined,
+      enabled: typeof p.enabled === "boolean" ? p.enabled : undefined,
+    }),
+  },
+  {
+    // Korean reading of one section, on a connected subscription — or `clear`.
+    name: "party.primer.translate",
+    http: "POST /api/party/primer/translate",
+    handler: (p, ctx) => ctx.controller.translatePartyPrimerSection({
+      section: text(p.section),
+      clear: p.clear === true,
+      // Optional pin, so a caller can exercise one specific model instead of the
+      // preference order (the UI never sends it).
+      model: optText(p.model),
+    }),
+  },
+  {
     /**
      * The party tool surface for a harness whose tools run OUTSIDE this process
      * (Codex, via scripts/agentparty-codex-mcp-server.mjs). The caller is the

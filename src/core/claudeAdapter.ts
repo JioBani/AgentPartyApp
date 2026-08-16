@@ -71,6 +71,12 @@ export interface ClaudeAdapterOptions {
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
   /**
+   * The primer text to append to the system prompt for this member, already
+   * resolved against the user's Settings → 파티 프롬프트 customization. Absent =
+   * the built-in primer (the host did not customize it).
+   */
+  partyPrimer?: string;
+  /**
    * Supplies the Claude Agent SDK module. Production leaves this unset and the
    * real package is imported. QA passes a fake so adapter behaviour can be
    * driven without a harness process — `scripts/qa-*.mjs` already relied on this
@@ -899,7 +905,7 @@ export class ClaudeAdapter extends EventEmitter {
     if (!identity) {
       return {};
     }
-    return { systemPrompt: { type: "preset", preset: "claude_code", append: buildPartyPrimer(identity) } };
+    return { systemPrompt: { type: "preset", preset: "claude_code", append: this.options.partyPrimer || buildPartyPrimer(identity) } };
   }
 
   private readonly canUseTool: CanUseTool = async (toolName, input, options) => {

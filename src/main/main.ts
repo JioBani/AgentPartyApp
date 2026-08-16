@@ -857,6 +857,12 @@ function registerIpc(): void {
 
   handle("settings:update", async (_event, patch) => controller().updateSettings(patch || {}));
 
+  // Same controller method as `POST /api/party/primer` — the UI and the
+  // automation API must never take different routes to the same setting.
+  handle("party:primer:save", async (_event, patch) => controller().savePartyPrimerSection(patch || {}));
+
+  handle("party:primer:translate", async (_event, patch) => controller().translatePartyPrimerSection(patch || {}));
+
   handle("workspace:choose", async (event) => {
     const window = registry().byWebContents(event.sender)?.window;
     const result = await dialog.showOpenDialog(window!, {

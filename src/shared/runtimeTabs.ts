@@ -6,7 +6,7 @@
  * reports success while leaving the screen where it was is the silent no-op this
  * project keeps having to dig back out.
  */
-export const RUNTIME_TAB_IDS = ["general", "harness", "environment", "gate", "discord", "mobile", "versions", "diagnostics"] as const;
+export const RUNTIME_TAB_IDS = ["general", "harness", "environment", "primer", "gate", "discord", "mobile", "versions", "diagnostics"] as const;
 
 export type RuntimeTabId = (typeof RUNTIME_TAB_IDS)[number];
 

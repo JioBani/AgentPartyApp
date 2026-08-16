@@ -40,6 +40,13 @@ export interface GrokAdapterOptions {
   permissionMode?: string;
   /** Party tool relay and any other MCP servers this member should see. */
   mcpServers?: GrokAcpMcpServer[];
+  /**
+   * The party primer for this member. ACP's `session/new` carries no system or
+   * developer prompt (`{cwd, mcpServers}` is the whole shape), so — exactly like
+   * the Cursor harness — it rides in front of the FIRST user turn and then lives
+   * in that thread's history. Absent for non-member sessions.
+   */
+  partyPrimer?: string;
   /** Test seam for lifecycle QA; production always launches the real Grok ACP session. */
   sessionFactory?: () => GrokSession;
   /** Stamped on usage_limit events for the SessionManager's fan-in filter. */
@@ -69,9 +76,16 @@ export class GrokAdapter extends EventEmitter {
   }>();
   private usageRefreshTimer?: NodeJS.Timeout;
   private lastUsageStatus = "";
+  /**
+   * Whether this thread has already been given the party primer. A RESUMED
+   * thread (`session/load`) still holds it in its history, so it starts true —
+   * sending it again would repeat the whole primer as a fresh user message.
+   */
+  private primerDelivered: boolean;
 
   constructor(private readonly options: GrokAdapterOptions) {
     super();
+    this.primerDelivered = Boolean(options.resumeSessionId);
     this.snapshot = {
       id: options.sessionId,
       harnessAlive: false,
@@ -224,6 +238,22 @@ export class GrokAdapter extends EventEmitter {
     });
   }
 
+  /**
+   * Puts the party primer in front of the first turn of a fresh thread.
+   *
+   * Grok speaks ACP, whose `session/new` has no system or developer prompt slot,
+   * so this is the only channel available — the same one the Cursor harness
+   * uses. It is marked delivered only once the turn actually SUCCEEDS: a turn
+   * that errored may never have reached the thread, and repeating the primer
+   * costs tokens, while losing it costs the member every party rule it has.
+   */
+  private withPartyPrimer(text: string): string {
+    if (this.primerDelivered || !this.options.partyPrimer) {
+      return text;
+    }
+    return `${this.options.partyPrimer}\n\n${text}`;
+  }
+
   private startUsagePolling(): void {
     if (this.usageRefreshTimer) return;
     this.usageRefreshTimer = setInterval(() => void this.refreshUsageLimits(), 60_000);
@@ -244,6 +274,7 @@ export class GrokAdapter extends EventEmitter {
       return;
     }
     const text = this.queued.shift() as string;
+    const prompt = this.withPartyPrimer(text);
     this.turnActive = true;
     // `requesting`/`responding` are the app-wide busy states. Using Grok's
     // private-looking `running` value made the UI and party interrupt endpoint
@@ -252,7 +283,7 @@ export class GrokAdapter extends EventEmitter {
     this.emitEvent({ type: "status", status: "requesting", at: now() });
 
     this.session
-      .prompt(text, {
+      .prompt(prompt, {
         onText: (chunk) => {
           this.markResponding();
           this.emitEvent({ type: "assistant_text_delta", text: chunk, at: now() });
@@ -302,6 +333,9 @@ export class GrokAdapter extends EventEmitter {
       .then((result) => {
         const interrupted = this.interruptRequested || /cancel/i.test(String(result.stopReason || ""));
         this.interruptRequested = false;
+        // The thread accepted the turn, so it now holds the primer that rode in
+        // front of it; later turns carry the user's text alone.
+        this.primerDelivered = true;
         if (interrupted) {
           this.emitInterruptedNotice(result.stopReason);
         }
@@ -383,6 +417,9 @@ export class GrokAdapter extends EventEmitter {
     this.starting = undefined;
     this.turnActive = false;
     this.interruptRequested = false;
+    // A restart starts a NEW thread unless one is being resumed, so the primer
+    // has to ride again — nothing is owed to the old thread's history.
+    this.primerDelivered = Boolean(this.options.resumeSessionId);
     this.patch({ harnessAlive: false, status: "starting" });
     this.start();
   }

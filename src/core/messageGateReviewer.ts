@@ -1,7 +1,5 @@
-import { catalogModelById, catalogModelByRuntime, routerTargetForModel } from "../shared/modelCatalog";
-import type { CatalogModel, EffortLevel, ReasoningBudgetSpec } from "../shared/modelCatalog";
 import type { GateReviewer, GateReviewResult } from "../shared/messageGate";
-import { assertSubscriptionModelAvailable, type SubscriptionProxyConfig } from "./subscriptionProxy";
+import { callHeadlessModel, type HeadlessTransport } from "./headlessModelCall";
 
 /**
  * Message Gate reviewer — a HEADLESS one-shot model call that judges whether a
@@ -28,15 +26,12 @@ export interface GateReviewMessage {
   content: string;
 }
 
-/** Live transport handed in by the wiring layer (never guessed here). */
-export interface GateReviewTransport {
-  /** The LIVE embedded router base URL (actual bound port), e.g. http://127.0.0.1:PORT. */
-  routerBaseUrl: string;
-  routerAuthToken: string;
-  subscriptionProxy: SubscriptionProxyConfig;
-  /** Abort the call after this many ms → treated as a review failure (fail-open). */
-  timeoutMs?: number;
-}
+/**
+ * Live transport handed in by the wiring layer. The gate has no transport of its
+ * own: routing, credentials and reasoning-field translation are the shared
+ * headless call's job (`headlessModelCall.ts`).
+ */
+export type GateReviewTransport = HeadlessTransport;
 
 /**
  * Reasoning reviews are slow for real: sonnet + adaptive thinking on a long
@@ -94,149 +89,20 @@ export async function reviewGateMessage(
   reviewer: GateReviewer,
   transport: GateReviewTransport,
 ): Promise<GateReviewResult> {
-  const entry = catalogModelById(reviewer.model) || catalogModelByRuntime(reviewer.model);
-  if (!entry) {
-    throw new Error(`Message Gate reviewer model '${reviewer.model}' is not in the catalog.`);
+  const result = await callHeadlessModel({
+    model: reviewer.model,
+    effort: reviewer.effort,
+    system: SYSTEM_PROMPT,
+    user: buildUserPrompt(message),
+    maxTokens: MAX_TOKENS,
+  }, { ...transport, timeoutMs: transport.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+  const verdict = parseVerdict(result.text);
+  // Capture the reviewer's own token spend (measured) so the ledger can price
+  // the gate's overhead — a missing field means "not reported", never 0.
+  if (result.usage) {
+    verdict.usage = result.usage;
   }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), transport.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  try {
-    let endpoint: string;
-    let apiKey: string;
-    let model: string;
-    let viaRouter: boolean;
-    if (entry.provider === "anthropic" && entry.claudeSubscriptionModel) {
-      await assertSubscriptionModelAvailable(entry.claudeSubscriptionModel, "claude", transport.subscriptionProxy);
-      endpoint = joinUrl(transport.subscriptionProxy.baseUrl, "messages");
-      apiKey = transport.subscriptionProxy.apiKey;
-      model = entry.claudeSubscriptionModel;
-      viaRouter = false;
-    } else {
-      const target = routerTargetForModel(reviewer.model);
-      if (!target) {
-        throw new Error(`Message Gate reviewer model '${reviewer.model}' has no routable provider target.`);
-      }
-      endpoint = joinUrl(transport.routerBaseUrl, "v1/messages");
-      apiKey = transport.routerAuthToken || "dummy";
-      // The router maps the alias → concrete target itself; hand it the catalog id.
-      model = reviewer.model;
-      viaRouter = true;
-    }
-
-    const reasoning = reasoningPayload(entry, reviewer.effort, viaRouter);
-    const requestBody = {
-      model,
-      // A thinking budget is spent BEFORE the verdict, so the cap has to clear it
-      // or the JSON gets truncated away.
-      max_tokens: MAX_TOKENS + (reasoning.budgetTokens ?? 0),
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserPrompt(message) }],
-      stream: false,
-      ...reasoning.body,
-    };
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const detail = (await safeText(response)).slice(0, 300);
-      throw new Error(`Reviewer call failed (${response.status})${detail ? `: ${detail}` : ""}`);
-    }
-    const payload = await response.json();
-    const verdict = parseVerdict(payload);
-    // Capture the reviewer's own token spend (measured) so the ledger can price
-    // the gate's overhead — a missing field means "not reported", never 0.
-    const u = payload?.usage;
-    if (u && typeof u === "object") {
-      verdict.usage = {
-        input: typeof u.input_tokens === "number" ? u.input_tokens : undefined,
-        output: typeof u.output_tokens === "number" ? u.output_tokens : undefined,
-        cacheRead: typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : undefined,
-        cacheWrite: typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : undefined,
-      };
-    }
-    return verdict;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** The reasoning fields to merge into a request, plus any budget the cap must clear. */
-interface ReasoningPayload {
-  body: Record<string, unknown>;
-  budgetTokens?: number;
-}
-
-/**
- * Translates the reviewer's `effort` setting into the reasoning fields the
- * chosen transport actually accepts.
- *
- * The two wires disagree, and getting it wrong is NOT a soft failure: the
- * Anthropic Messages wire rejects `effort` with 400 "Extra inputs are not
- * permitted", and because the gate is fail-open that 400 would silently deliver
- * every message unreviewed. So `effort` goes only to the router; Anthropic gets
- * `thinking`.
- *
- * Which `thinking` shapes a model accepts is read from its catalog reasoning
- * spec rather than hardcoded — `adaptive` is real for sonnet/opus but 400s on
- * haiku, and a new model must remain a catalog-only change.
- *
- * Thinking is never DISABLED, at any effort. A classifier that cannot reason is
- * the exact failure this gate cannot tolerate: haiku with thinking off scored
- * 12/24 over 144 live calls — it agreed a message satisfied the rule and
- * rejected it anyway on grounds of its own. With thinking on it scored 24/24,
- * and the smallest budget the catalog allows was enough (1024 → 24/24, no worse
- * than 4096). So `effort` scales the budget rather than switching reasoning off.
- */
-function reasoningPayload(entry: CatalogModel, effort: string, viaRouter: boolean): ReasoningPayload {
-  const spec = entry.reasoning;
-  if (!spec || !effort) {
-    return { body: {} };
-  }
-  if (viaRouter) {
-    const options = spec.effort?.options;
-    if (!options?.includes(effort as EffortLevel)) {
-      return { body: {} };
-    }
-    // Router-side reasoning also draws from max_tokens, with no explicit budget.
-    return { body: { effort }, budgetTokens: REASONING_HEADROOM };
-  }
-  const modes = spec.thinking?.modes;
-  if (!modes?.length) {
-    return { body: {} };
-  }
-  if (modes.includes("adaptive")) {
-    // Adaptive has no budget knob; reserve headroom so thinking cannot starve the verdict.
-    return { body: { thinking: { type: "adaptive" } }, budgetTokens: REASONING_HEADROOM };
-  }
-  if (modes.includes("enabled")) {
-    const budgetTokens = thinkingBudgetFor(spec.budget, effort);
-    // budget_tokens is a target the model can overshoot; reserve extra cap.
-    return { body: { thinking: { type: "enabled", budget_tokens: budgetTokens } }, budgetTokens: budgetTokens + REASONING_HEADROOM };
-  }
-  return { body: {} };
-}
-
-/** Maps an effort level onto the model's own catalog budget range (min → max). */
-function thinkingBudgetFor(budget: ReasoningBudgetSpec | undefined, effort: string): number {
-  const min = budget?.min ?? 1024;
-  const max = budget?.max ?? budget?.default ?? min;
-  const fallback = budget?.default ?? min;
-  const scale: Record<string, number> = { low: 0, medium: 0.25, high: 0.5, xhigh: 0.75, max: 1 };
-  const ratio = scale[effort];
-  if (ratio === undefined) {
-    return fallback;
-  }
-  return Math.round(min + (max - min) * ratio);
+  return verdict;
 }
 
 function buildUserPrompt(message: GateReviewMessage): string {
@@ -251,13 +117,8 @@ function buildUserPrompt(message: GateReviewMessage): string {
   ].join("\n");
 }
 
-/** Extracts the assistant text from an Anthropic Messages response and parses the JSON verdict. */
-function parseVerdict(payload: unknown): GateReviewResult {
-  const text = anthropicText(payload);
-  if (!text) {
-    const stop = (payload as { stop_reason?: unknown })?.stop_reason;
-    throw new Error(`Reviewer returned no text content${typeof stop === "string" && stop ? ` (stop_reason: ${stop})` : ""}.`);
-  }
+/** Parses the JSON verdict out of the reviewer's answer text. */
+function parseVerdict(text: string): GateReviewResult {
   const json = extractJsonObject(text);
   if (!json || typeof json !== "object") {
     throw new Error(`Reviewer response was not JSON: ${text.slice(0, 200)}`);
@@ -300,18 +161,6 @@ function normalizeVerdict(obj: Record<string, unknown>): "allow" | "reject" | un
   return undefined;
 }
 
-function anthropicText(payload: unknown): string {
-  const content = (payload as { content?: unknown })?.content;
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  return content
-    .filter((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "text")
-    .map((block) => String((block as { text?: unknown }).text || ""))
-    .join("")
-    .trim();
-}
-
 /** Finds the first balanced {...} JSON object in a text blob (tolerates code fences/prose). */
 function extractJsonObject(text: string): unknown {
   const start = text.indexOf("{");
@@ -335,16 +184,4 @@ function extractJsonObject(text: string): unknown {
     }
   }
   return undefined;
-}
-
-async function safeText(response: Response): Promise<string> {
-  try {
-    return await response.text();
-  } catch {
-    return "";
-  }
-}
-
-function joinUrl(base: string, suffix: string): string {
-  return `${base.replace(/\/+$/, "")}/${suffix.replace(/^\/+/, "")}`;
 }

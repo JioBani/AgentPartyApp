@@ -439,6 +439,112 @@ The ids the first version of this setting used (`maplestory`, `geist-mono`,
 `system-sans`, …) are still accepted and migrate to the equivalent family name on
 read, so an upgrading user keeps the font they chose.
 
+### `GET /api/party/primer`
+
+Returns the **party-member primer** — the system/developer prompt every member
+session starts with — section by section, plus the placeholders a section may
+use:
+
+```json
+{
+  "sections": [
+    { "id": "identity", "title": "정체성", "summary": "…", "required": true,
+      "enabled": true, "defaultText": "# AgentParty — party member session…",
+      "text": "# AgentParty — party member session…", "customized": false,
+      "tokens": 106 }
+  ],
+  "variables": ["{{party}}", "{{member}}", "{{role}}"],
+  "totals": { "tokens": 2442, "characters": 9242, "enabledSections": 6,
+              "totalSections": 6, "disabledTokens": 0 },
+  "delivery": [
+    { "harness": "claude-code", "label": "Claude Code", "channel": "system",
+      "when": "세션 시작 시 1회", "detail": "…", "delivered": true }
+  ]
+}
+```
+
+`tokens` / `totals.tokens` are an **estimate** (Hangul ≈ 1.6 chars/token, other
+text ≈ 3.8) — the app ships no tokenizer for the models it drives and providers
+count differently. Use them to compare sections and to see what switching one off
+saves (`totals.disabledTokens`), not as a bill. `totals` counts the assembled
+prompt, blank-line joins included, so it matches the text a session receives
+rather than the sum of the parts.
+
+`delivery` answers "does this go out every turn": it does not. `channel` says
+which slot it occupies, which is not cosmetic — a `system`/`developer` primer is
+standing instruction the user never sees, while a `user` one is an ordinary first
+message that lives in the visible history and can be summarised away by
+compaction.
+
+| harness | channel | when |
+| --- | --- | --- |
+| Claude Code | `system` (preset append) | session start |
+| Codex | `developer` (thread-scoped instructions) | thread start + resume |
+| Cursor CLI | `user` (in front of the first prompt) | first message |
+| Grok Build | `user` (in front of the first prompt) | first message |
+
+Cursor and Grok get the `user` channel because neither `cursor-agent` nor ACP's
+`session/new` has a system or developer slot at all. A resumed thread already
+holds it in history, so it is not sent again.
+
+`defaultText` is the built-in text, `text` is what a session actually gets (the
+user's override when set), and `customized` says which of the two you are looking
+at. Sections are returned in assembly order; the primer is those texts joined
+with a blank line, with `{{party}}` / `{{member}}` / `{{role}}` replaced by the
+member's own identity.
+
+A section that has been translated also carries
+`translation: { text, model, at, stale }` — see `POST /api/party/primer/translate`.
+
+### `POST /api/party/primer`
+
+Edits **one** section. `{ "section": "gate", "text": "…" }` sets an override,
+`{ "section": "gate", "text": null }` restores the built-in text, and
+`{ "section": "discord", "enabled": false }` drops that section from the primer.
+`text` and `enabled` may be sent together; an absent key leaves that axis alone.
+
+```json
+{ "section": { "id": "gate", "enabled": true, "customized": true, "text": "…" },
+  "settings": { "…": "the full public settings" } }
+```
+
+The response carries the section as it now stands, so a caller can assert the
+edit landed instead of trusting `200`. An unknown `section`, or disabling a
+`required` one (`identity`, `tools` — how a member knows who it is and which
+tools are real), is an error, not a silent no-op. Text identical to the built-in
+is stored as "no override", so that section keeps tracking app updates.
+
+Takes effect for sessions started or resumed **after** the change; a running
+member keeps the primer it booted with. Same controller method as Settings →
+런타임 → 파티 프롬프트.
+
+### `POST /api/party/primer/translate`
+
+Translates one section into Korean and stores the result beside it, so a human
+can check what the members are actually told. The primer itself stays English —
+this is a reading aid, never what a session receives.
+
+`{ "section": "gate" }` translates; `{ "section": "gate", "clear": true }` drops
+a saved translation. The response is the same `{ section, settings }` shape as
+`POST /api/party/primer`, with the section's `translation` filled in:
+
+```json
+{ "text": "## Message Gate — …", "model": "GPT-5.6 Luna",
+  "at": "2026-08-16T14:55:29.674Z", "stale": false }
+```
+
+The call is a **headless one-shot on a connected subscription** — no metered API
+spend. Models are tried in preference order (`GPT-5.6 Luna` at max effort, then
+`sonnet` at high) and the response says which one answered. If none is connected
+the call FAILS and the error names every model tried with its reason; it never
+falls back to a metered provider. `model` pins one candidate instead of walking
+the order (QA; the UI never sends it).
+
+`stale` is `true` once the English text changes after the translation was made —
+the stored translation carries a hash of the source it was made from, so editing
+a section marks its translation out of date with no bookkeeping by the caller.
+Re-run the same request to refresh it.
+
 ### `POST /api/shell/open-path`
 
 Opens a local file the way the desktop would. The same controller method as a

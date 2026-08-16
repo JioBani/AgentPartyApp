@@ -15,6 +15,7 @@ import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
+import type { PartyPrimerSettings } from "./partyPrimer";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -131,6 +132,12 @@ export interface AppSettings {
    * `shared/mobileProtocol.ts`.
    */
   mobile?: MobileSettings;
+  /**
+   * Per-section edits of the party-member primer — the system prompt every member
+   * session starts with. Absent = the built-in text for every section. Edited in
+   * Settings → 런타임 → 파티 프롬프트. See `shared/partyPrimer.ts`.
+   */
+  partyPrimer?: PartyPrimerSettings;
 }
 
 /** All harnesses that have defaults, in a stable order. */

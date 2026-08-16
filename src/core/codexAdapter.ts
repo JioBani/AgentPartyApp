@@ -66,6 +66,11 @@ export interface CodexAdapterOptions {
   usageSourceId?: string;
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  /**
+   * The primer text for this member, already resolved against the user's
+   * Settings → 파티 프롬프트 customization. Absent = the built-in primer.
+   */
+  partyPrimer?: string;
   automationBaseUrl?: string;
   /**
    * OpenRouter API key. When the model routes through a custom provider whose
@@ -753,7 +758,10 @@ export class CodexAdapter extends EventEmitter {
    * session is rebuilt, without adding another conversation item.
    */
   private partyDeveloperInstructions(): string | undefined {
-    return this.options.partyIdentity ? buildPartyPrimer(this.options.partyIdentity) : undefined;
+    if (!this.options.partyIdentity) {
+      return undefined;
+    }
+    return this.options.partyPrimer || buildPartyPrimer(this.options.partyIdentity);
   }
 
   private partyToolConfig(): Record<string, unknown> | undefined {

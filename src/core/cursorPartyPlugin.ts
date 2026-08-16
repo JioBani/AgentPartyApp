@@ -18,6 +18,8 @@ export function prepareCursorPartyRuntime(input: {
   sessionId: string;
   automationBaseUrl: string;
   identity: PartyIdentity;
+  /** Primer text resolved from the user's customization; absent = built-in. */
+  primer?: string;
 }): CursorPartyRuntime {
   const safeId = input.sessionId.replace(/[^a-zA-Z0-9_.-]/g, "_");
   // Cursor derives the provider identifier from the plugin directory basename,
@@ -51,7 +53,7 @@ export function prepareCursorPartyRuntime(input: {
       },
     },
   }, null, 2));
-  return { pluginDir, primer: buildPartyPrimer(input.identity) };
+  return { pluginDir, primer: input.primer || buildPartyPrimer(input.identity) };
 }
 
 function resolvePartyMcpServerScript(): string {

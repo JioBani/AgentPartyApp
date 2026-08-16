@@ -7558,6 +7558,152 @@ body.wb-resizing {
 .set-switch-knob { position: absolute; top: 2.5px; left: 2.5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: left 0.15s; }
 .set-switch.is-on .set-switch-knob { left: 18.5px; }
 .set-toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text-1); }
+.set-toggle:disabled { cursor: default; opacity: 0.5; }
+
+/* 파티 프롬프트 tab — the member primer.
+   Layout is one summary block over a TABBED surface: the section tabs are
+   attached to the panel they open (same idiom as the settings tabs above them,
+   one level quieter), rather than a row of pills floating over a separate card.
+   Spacing runs on a 6 / 10 / 14 / 18 rhythm so the three regions read as one
+   page instead of three islands. */
+.set-primer { display: flex; flex-direction: column; padding: 14px 20px 18px; }
+
+/* summary: cost, timing, caveats */
+.set-primer-brief { border: var(--border-width) solid var(--border-subtle); border-radius: 10px; background: var(--bg-1); overflow: hidden; }
+.set-primer-brief-top { display: flex; align-items: baseline; gap: 8px 20px; flex-wrap: wrap; padding: 13px 16px; }
+.set-primer-total { display: flex; align-items: baseline; gap: 7px; }
+.set-primer-total-num { font-size: 24px; font-weight: 700; line-height: 1; color: var(--text-0); font-variant-numeric: tabular-nums; }
+.set-primer-total-unit { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; color: var(--text-2); }
+.set-primer-total-unit small { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bg-3); color: var(--text-3); }
+/* Facts share the total's baseline — label then value on one line, so the row
+   reads as one sentence of numbers instead of three stacked mini-cards. */
+.set-primer-facts { display: flex; align-items: baseline; gap: 18px; margin: 0 0 0 auto; flex-wrap: wrap; }
+.set-primer-fact { display: flex; align-items: baseline; gap: 6px; }
+.set-primer-fact dt { font-size: 11px; color: var(--text-3); }
+.set-primer-fact dd { margin: 0; font-size: 12px; color: var(--text-1); font-variant-numeric: tabular-nums; }
+
+.set-primer-delivery { border-top: var(--border-width) solid var(--border-subtle); background: var(--bg-2); }
+.set-primer-delivery-label { padding: 10px 16px 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-3); }
+.set-primer-delivery-row { display: grid; grid-template-columns: 100px 104px 128px minmax(0, 1fr); gap: 10px 12px; align-items: baseline; padding: 5px 16px; }
+/* WHERE it lands. A system/developer prompt is standing instruction the user
+   never sees; a first-message primer is ordinary chat history that compaction
+   can summarise away. Colour separates the two so the difference is readable
+   without parsing the sentence at the end of the row. */
+.set-primer-channel { justify-self: start; padding: 1px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.set-primer-channel.is-system { background: var(--accent-dim); color: var(--accent); }
+.set-primer-channel.is-developer { background: var(--accent-dim); color: var(--accent); }
+.set-primer-channel.is-user { background: var(--bg-3); color: var(--text-2); }
+.set-primer-delivery-row:last-child { padding-bottom: 12px; }
+.set-primer-delivery-harness { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.set-primer-delivery-when { font-size: 11.5px; font-weight: 600; color: var(--live); }
+.set-primer-delivery-when.is-none { color: var(--danger); }
+.set-primer-delivery-detail { font-size: 11px; line-height: 1.55; color: var(--text-3); }
+
+.set-primer-notes { margin: 0; padding: 10px 16px 12px 30px; border-top: var(--border-width) solid var(--border-subtle); display: flex; flex-direction: column; gap: 4px; }
+.set-primer-notes li { font-size: 11px; line-height: 1.55; color: var(--text-3); }
+.set-primer-notes b { color: var(--text-1); }
+.set-primer-notes code { font-size: 11px; color: var(--text-2); }
+
+/* Tabs attached to the panel: the strip's bottom border IS the panel's top edge,
+   and the active tab breaks through it. */
+.set-primer-tabs { display: flex; align-items: flex-end; gap: 3px; margin-top: 18px; padding: 0 2px; border-bottom: var(--border-width) solid var(--border); }
+.set-primer-tab {
+  position: relative;
+  bottom: calc(-1 * var(--border-width));
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: 8px 8px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-primer-tab:hover { color: var(--text-0); background: var(--bg-2); }
+.set-primer-tab.is-active {
+  background: var(--bg-1);
+  border-color: var(--border);
+  border-bottom-color: var(--bg-1);
+  color: var(--text-0);
+  font-weight: 600;
+}
+.set-primer-tab.is-off .set-primer-tab-name { text-decoration: line-through; opacity: 0.65; }
+/* Each tab carries its section's weight, so the strip doubles as the cost
+   breakdown. Tabular figures keep the column steady as values change. */
+.set-primer-tab-tokens { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.set-primer-tab.is-active .set-primer-tab-tokens { color: var(--text-2); }
+.set-primer-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.set-primer-tab-dot.is-stale { background: var(--danger); }
+
+.set-primer-panel { border: var(--border-width) solid var(--border); border-top: none; border-radius: 0 0 10px 10px; background: var(--bg-1); padding: 14px 16px 16px; }
+.set-primer-panel[hidden] { display: none; }
+.set-primer-section { display: flex; flex-direction: column; gap: 6px; }
+.set-primer-section.is-off { opacity: 0.62; }
+.set-primer-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-height: 26px; }
+.set-primer-name { font-size: 13.5px; font-weight: 600; color: var(--text-0); }
+.set-primer-badge { flex: none; padding: 1px 7px; border-radius: 5px; background: var(--bg-3); font-size: 10.5px; font-weight: 600; color: var(--text-3); }
+.set-primer-badge.is-edited { background: var(--accent-dim); color: var(--accent); }
+.set-primer-badge.is-dirty { background: var(--live-dim); color: var(--live); }
+.set-primer-badge.is-off { background: var(--danger-dim); color: var(--danger); }
+.set-primer-badge.is-stale { background: var(--danger-dim); color: var(--danger); }
+.set-primer-tokens { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* The switch is the row's right edge; its own 38px box would otherwise push the
+   header taller than the title line it sits on. */
+.set-primer-head .set-toggle { height: 26px; padding: 0; }
+.set-primer-summary { font-size: 11.5px; line-height: 1.55; color: var(--text-3); }
+.set-primer-body { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.set-primer-textarea {
+  width: 100%;
+  min-height: 240px;
+  max-height: 52vh;
+  resize: vertical;
+  padding: 12px 13px;
+  border-radius: 9px;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.65;
+  /* The primer is markdown-ish prose with long bullet lines: wrap it rather than
+     scroll sideways, so a narrow window still shows the whole sentence. */
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.set-primer-textarea:focus { outline: none; border-color: var(--accent-bd); }
+.set-primer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.set-primer-gap { flex: 1; }
+.set-primer-actions .set-btn-soft,
+.set-primer-actions .set-btn-accent { height: 34px; }
+
+/* Saved Korean reading of a section. Visually SUBORDINATE to the editor above
+   it — the English is what members actually get, so the translation must never
+   look like the thing being edited. */
+.set-primer-tr { border: var(--border-width) solid var(--border-subtle); border-radius: 9px; background: var(--bg-2); overflow: hidden; }
+.set-primer-tr.is-stale { border-color: var(--danger-bd); }
+.set-primer-tr-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: var(--border-width) solid var(--border-subtle); }
+.set-primer-tr-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-2); }
+.set-primer-tr-meta { font-size: 10.5px; color: var(--text-3); }
+.set-primer-tr-clear { background: none; border: none; padding: 0; font-size: 11px; color: var(--text-3); cursor: pointer; }
+.set-primer-tr-clear:hover:not(:disabled) { color: var(--danger); }
+.set-primer-tr-clear:disabled { opacity: 0.5; cursor: default; }
+.set-primer-tr-stale { display: flex; align-items: flex-start; gap: 7px; padding: 9px 12px; background: var(--danger-dim); font-size: 11.5px; line-height: 1.55; color: var(--danger); }
+.set-primer-tr-stale svg { flex: none; margin-top: 1px; }
+.set-primer-tr-stale b { font-weight: 700; }
+.set-primer-tr-text { margin: 0; padding: 12px 13px; max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-sans); font-size: 12px; line-height: 1.7; color: var(--text-1); }
+
+/* Narrow window: the delivery row stacks instead of squeezing its detail to one
+   word per line, and the tab strip scrolls rather than wrapping into a block
+   that no longer reads as a row of tabs. */
+@media (max-width: 900px) {
+  .set-primer-delivery-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .set-primer-channel { justify-self: start; }
+  .set-primer-tabs { overflow-x: auto; scrollbar-width: thin; }
+}
 
 /* Harness picker inside the 하네스 기본값 tab. A second, quieter tab row: it
    selects WITHIN the tab the top strip already chose, so it reads as pills on the

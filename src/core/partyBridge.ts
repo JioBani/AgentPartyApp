@@ -12,14 +12,15 @@ import type { CursorPolicy } from "../shared/cursorPolicy";
 // construction, so the agent never states (and cannot spoof) who it is — that is
 // where "zero model-memory reliance" comes from.
 
-export interface PartyIdentity {
-  /** The party this session's member belongs to. */
-  party: string;
-  /** This session's member name — stamped as `from` on every send. */
-  member: string;
-  /** This member's role/requirement, surfaced in the session primer. */
-  role?: string;
-}
+// The identity, the tool-surface names and the session primer live in
+// `shared/partyPrimer`, so the settings screen can show and edit the very text a
+// member session is built from. Re-exported here because this module is what
+// `core`/`main` already import for everything party-related.
+export type { PartyIdentity } from "../shared/partyPrimer";
+export { PARTY_MCP_SERVER, PARTY_TOOL_PREFIX, buildPartyPrimer } from "../shared/partyPrimer";
+
+import type { PartyIdentity } from "../shared/partyPrimer";
+import { PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "../shared/partyPrimer";
 
 export interface PartyToolResult {
   ok: boolean;
@@ -148,10 +149,6 @@ export interface PartyBridge {
   attachImage(input: { path?: string; url?: string; caption?: string }): Promise<PartyToolResult>;
 }
 
-/** MCP server name for the in-process party tool surface. */
-export const PARTY_MCP_SERVER = "agentparty-app";
-/** Namespaced prefix of the party tools as the agent sees them (mcp__<server>__<tool>). */
-export const PARTY_TOOL_PREFIX = `mcp__${PARTY_MCP_SERVER}__`;
 export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
@@ -554,71 +551,6 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       return bridge.attachImage({ path: imagePath, url, caption: typeof input.caption === "string" ? input.caption : undefined });
     }
   }
-}
-
-/**
- * Session-start primer injected into a member's system prompt. Gives the model
- * deterministic knowledge of the app, its identity, the communication protocol,
- * and — critically — which tool surface to drive, so it never confuses our
- * in-process `agentparty-app` tools with legacy `agentparty` MCP servers that
- * may also be present (project `.mcp.json`, plugins). This is how we avoid
- * relying on model memory: the correct surface is installed when the harness
- * session starts (system/developer instructions where the harness supports it).
- */
-export function buildPartyPrimer(identity: PartyIdentity): string {
-  const tool = (name: string) => `${PARTY_TOOL_PREFIX}${name}`;
-  const roleLine = identity.role ? `- Your role: ${identity.role}` : "- Your role: (none specified)";
-  return [
-    "# AgentParty — party member session",
-    "",
-    "You are a member running inside the **AgentParty** desktop app, where several AI coding sessions (members) share one workspace and message each other. You can drive the app's party features directly through its in-process tools.",
-    "",
-    "Your identity is fixed by the app (never restate or change it):",
-    `- Party: ${identity.party}`,
-    `- Your member name: ${identity.member}`,
-    roleLine,
-    "",
-    "## Party tools — use ONLY this surface",
-    "All party actions go through the `agentparty-app` server. These are the only party tools you may call:",
-    `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`${identity.member}\` — never supply it. When \`interrupt\` is omitted, your saved member override and then the Runtime default apply. Pass \`true\` to cut in or \`false\` to be explicitly QUEUED behind the recipient's current turn (a Codex member receives it at its next tool call).`,
-    `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same QUEUE-then-current-turn timing, and the same optional \`interrupt\`).`,
-    `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
-    `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
-    `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` first for valid harness/model/reasoning options).`,
-    `- \`${tool("member-remove")}\` — remove a member from your party (cannot remove 'main').`,
-    `- \`${tool("member-permission")}\` — change another member's permission; use \`permissionMode\` (Claude Code), \`codexPolicy\` (Codex), or \`cursorPolicy\` (Cursor).`,
-    `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,
-    `- \`${tool("party-gate-set")}\` — set the PARTY-WIDE gate every inheriting member follows: \`enabled\`, \`rule\`, \`reviewer\`. It moves every inheriting member at once, so reach for \`${tool("gate-set")}\` when only one member should change.`,
-    `- \`${tool("list")}\` — list your party's members and their status.`,
-    `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
-    `- \`${tool("discord-connect")}\` / \`${tool("discord-send")}\` / \`${tool("discord-disconnect")}\` — bridge YOURSELF to Discord so the user can follow you from a phone or another PC. See the section below.`,
-    "",
-    "⚠️ Other similarly-named tools — e.g. `mcp__agentparty__*` or `mcp__plugin_*_agentparty__*` — are LEGACY and must not be used. Drive every party action through the `agentparty-app__*` tools above.",
-    "",
-    "## Communication protocol",
-    "- Messages from other members arrive as a user turn wrapped in `<channel source=\"agentparty\" from=\"…\" to=\"…\">…</channel>`.",
-    `- To reply or initiate, call \`${tool("send")}\` with the recipient's member name. Replies are asynchronous: the other member's response arrives later as its own incoming message.`,
-    "- **Turn timing (read this to avoid \"tangled\" turns).** Each member handles ONE turn at a time. A message you send lands in the recipient's queue and is only read when their CURRENT turn ends — for a Codex member, at its next tool call. So right after you send: they have NOT seen it yet if they were busy, and a slow reply means they are still finishing earlier work, not that your message was dropped. It will be handled in order once their turn completes.",
-    `- Before assuming a message was missed, check \`${tool("member-status")}\` (or \`${tool("list")}\`) to see if the member is busy. When a message genuinely cannot wait for their current turn, use \`interrupt: true\` on \`${tool("send")}\`/\`${tool("broadcast")}\`, or call \`${tool("interrupt")}\` — this stops their turn so your message is seen immediately.`,
-    "",
-    "## Message Gate — your outgoing messages may be reviewed",
-    `- Your party may enable a **Message Gate**: before a message you send (\`${tool("send")}\` or \`${tool("broadcast")}\`) is delivered, a lightweight reviewer model checks it against the party's communication rules (e.g. "be concise", "don't route through the orchestrator — talk to the owner directly").`,
-    `- If the reviewer **rejects** your message, it is NOT delivered and the \`${tool("send")}\` tool returns \`{ok:false, error:"<reason>"}\`. The reason tells you exactly which rule you broke and how to fix it — rewrite your message to comply and send again. This is normal, not an error on your side.`,
-    `- If a message genuinely must go through even though it would be rejected (a real blocker/urgent alert), call \`${tool("send")}\` with \`force: true\` and a short \`forceReason\`. Use this sparingly — every forced send is surfaced to the user.`,
-    "- The gate is fail-open: if the reviewer itself errors, your message is delivered unreviewed (with a visible notice), so a gate problem never blocks your work.",
-    `- You can also configure another member's gate with \`${tool("gate-set")}\` when coordinating (e.g. tighten or relax a teammate's outgoing-message rules).`,
-    "",
-    "## Discord bridge — reporting to the user when they are away",
-    `- If the user asks you to "connect to Discord" (or to report there), call \`${tool("discord-connect")}\` once. It creates or reuses a channel named after you in the user's server. Then use \`${tool("discord-send")}\` to report.`,
-    "- Messages the user types in that channel arrive here as an ordinary user turn wrapped in `<channel source=\"discord\" from=\"…\">…</channel>`. Reply the same way you reply to the user in the app — and when the reply is meant for Discord, send it with `discord-send` as well, because the user is reading there, not in the app.",
-    "- **Write for a person on a phone.** Summarize the situation in a few lines. Do NOT paste raw logs, diffs, stack traces or file dumps.",
-    `- **2000 characters is a hard limit.** \`${tool("discord-send")}\` REJECTS longer content instead of truncating it — split the report into several sends yourself.`,
-    "- **Rate limits are yours to handle.** Nothing is queued or retried for you. If the tool returns an error containing `retry_after_ms`, wait at least that long, then send again.",
-    `- **Images work both ways.** \`${tool("discord-send-image")}\` uploads a screenshot or chart from this machine; an image the user attaches in Discord arrives as an ordinary attachment on the user turn. Everything else (buttons, menus, modals, non-image files) does not exist — never claim the user can click something.`,
-    "- Approvals and permission prompts are NOT available over Discord. If you are blocked on one, say so in the channel and ask the user to handle it in the app.",
-    "- **Do not send a bare acknowledgement** (\"받았습니다\", \"on it\"). The app already marks the user's message 📨 delivered → ⚙️ working → ✅ done from the harness itself, so a receipt message only costs a turn. Send content, not confirmation.",
-    "- The user can also drive the app from Discord with `!` commands (`!상태`, `!연결`, `!중단`, `!재시작`). Those are handled by the app, never by you — you will not see them.",
-  ].join("\n");
 }
 
 interface McpToolResult {

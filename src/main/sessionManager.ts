@@ -10,6 +10,7 @@ import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
+import { buildPartyPrimer } from "../shared/partyPrimer";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
 import { discoverCodexModels } from "../core/codexModelDiscovery";
@@ -1350,6 +1351,10 @@ export class SessionManager extends EventEmitter {
     const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const harnessDefaults = harnessDefaultsOf(settings, selectedHarness);
     const selectedModel = request.model || harnessDefaults.model;
+    // Resolved ONCE here rather than inside each adapter: the primer is a user
+    // setting (Settings → 런타임 → 파티 프롬프트), and the adapters must not each
+    // reach into settings to find out what a member is told at session start.
+    const partyPrimer = binding ? buildPartyPrimer(binding.identity, settings.partyPrimer) : undefined;
     if (selectedHarness === "cursor") {
       const partyRuntime = binding
         ? prepareCursorPartyRuntime({
@@ -1357,6 +1362,7 @@ export class SessionManager extends EventEmitter {
             sessionId: id,
             automationBaseUrl: this.codexAutomationBaseUrl(settings.automationApiPort),
             identity: binding.identity,
+            primer: partyPrimer,
           })
         : undefined;
       return new CursorAdapter({
@@ -1404,6 +1410,9 @@ export class SessionManager extends EventEmitter {
         effort: request.effort || harnessDefaults.effort,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         mcpServers: partyServers,
+        // ACP has no system/developer prompt slot, so the primer rides in front
+        // of the first turn (the Cursor arrangement).
+        partyPrimer,
         usageSourceId,
       }) as unknown as HarnessSession;
     }
@@ -1432,6 +1441,7 @@ export class SessionManager extends EventEmitter {
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,
+        partyPrimer,
         automationBaseUrl: this.codexAutomationBaseUrl(settings.automationApiPort),
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
         // account catalog (openai) only. See codexProviders.ts.
@@ -1465,6 +1475,7 @@ export class SessionManager extends EventEmitter {
       resumeSessionId,
       partyBridge: binding?.bridge,
       partyIdentity: binding?.identity,
+      partyPrimer,
       usageSourceId,
     });
   }
