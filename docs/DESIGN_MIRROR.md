@@ -9,18 +9,29 @@
 | 대상 | 무엇 | id |
 | --- | --- | --- |
 | `AgentParty Design System (as built)` | **디자인 시스템** — 파운데이션 3 + 컴포넌트 28 (변형 + `.prompt.md`) | `18fbdba3-0e2b-4008-9606-4c6b11063246` |
-| `AgentParty Desktop` | **프로젝트** — 그 시스템으로 만들어진 화면 56장 | `8082a168-4a3c-4140-a895-f25ad44aa2c2` |
+| `AgentParty Desktop` | **프로젝트** — 그 시스템으로 만들어진 단일 페이지 앱 목업 (화면 6 · 대화상자 4 · 인라인 패널 2, 각 한 벌씩) | `8082a168-4a3c-4140-a895-f25ad44aa2c2` |
 
 디자인 시스템이 문서화하는 단위는 **컴포넌트와 그 변형, 그리고 언제 쓰는지**다.
 화면은 시스템의 산출물이지 시스템이 아니라서 프로젝트로 뺐다(처음 한 번은 화면만
 잔뜩 올렸다가 "디자인 시스템이 아니라 프로젝트 같다"는 지적을 받았다).
 
-프로젝트 쪽 페이지는 자기 CSS 사본을 갖지 않고 `_ds/<시스템>/…` 을 링크한다 — 그래야
-시스템이 움직이면 화면도 같이 움직이고, 토큰 사본이 둘로 갈라지지 않는다.
+프로젝트 쪽은 자기 CSS 사본을 갖지 않고 `_ds/<시스템>/…` 을 링크한다 — 그래야 시스템이
+움직이면 화면도 같이 움직이고, 토큰 사본이 둘로 갈라지지 않는다.
 
-> 둘 다 **as built**(구현된 결과)다. 시안 정본이 아니다. 새 화면을 *디자인* 할 때는
-> 기존 핸드오프 흐름(`docs/디자인 핸드오프/`)을 쓰고, 여기는 "지금 앱이 실제로 이렇게
-> 생겼다"를 보여주는 용도로만 갱신한다.
+프로젝트는 **한 장짜리 목업**이다. 처음엔 상태마다 한 페이지씩 19장으로 만들었는데,
+워크벤치가 8장·설정 화면이 7장·창 크롬이 19장에 복사돼 "하나 고치면 전부 손봐야 하는"
+물건이 됐다. 앱 자신은 창 하나에서 화면을 갈아끼우므로, 목업도 그 이음매를 따라
+조립해 **모든 조각이 정확히 한 벌**이 되게 했다.
+
+> ## ⚠️ 이 파이프라인은 **씨딩 전용**이다 — 다시 돌려 올리지 말 것
+>
+> 앱의 현재 모습을 클로드 디자인에 **한 번 심는 것**이 목적이다. 심은 뒤로는
+> **클로드 디자인이 디자인의 정본**이고, 거기서 한 작업이 앱으로 내려온다.
+>
+> 그래서 캡처 스크립트를 다시 돌려 업로드하면 **그 사이 한 디자인 작업을 덮어쓴다.**
+> 앱 구조가 크게 바뀌어 처음부터 다시 심어야 할 때만, 그 사실을 알고 다시 돌린다.
+>
+> 방향이 반대인 작업(디자인 → 앱)은 아래 "내려받기" 절을 볼 것.
 
 일반 프로젝트는 DesignSync 로 **만들 수 없다**(`create_project` 는 design-system 타입만
 만든다). `AgentParty Desktop` 은 사용자가 claude.ai/design 에서 만들고 id 를 넘겨줬다.
@@ -38,14 +49,20 @@
 ```bash
 npm run build                                # dist/ 가 최신이어야 캡처가 현재 UI를 뜬다
 node scripts/build-design-bundle.mjs         # 토큰 생성 + 스타일시트/폰트 복사 + Foundations 카드
-node scripts/capture-design-surfaces.mjs     # 화면·모달 (프로젝트 쪽)
-node scripts/capture-design-components.mjs   # 컴포넌트 변형 카드 + prompt.md (시스템 쪽)
-node scripts/split-design-bundle.mjs         # 시스템 / 프로젝트 두 벌로 가른다
-node scripts/verify-design-bundle.mjs                    # 시스템 페이지 실측 + 카드 크기 측정
-node scripts/verify-design-bundle.mjs --dir design-project  # 프로젝트 페이지도 같은 잣대로
+
+# 디자인 시스템 (컴포넌트)
+node scripts/capture-design-components.mjs   # 컴포넌트 변형 카드 + prompt.md
+node scripts/verify-design-bundle.mjs        # 페이지 실측 + 카드 크기 측정
 node scripts/build-design-manifest.mjs       # _ds_manifest.json (없으면 창이 비어 보인다)
-node scripts/link-design-project.mjs         # 화면들이 _ds/<시스템>/ 을 링크하게 바꾼다
+
+# 프로젝트 (단일 페이지 앱 목업)
+node scripts/capture-mockup-parts.mjs        # 창 크롬·화면·대화상자를 조각으로 한 번씩만
+node scripts/build-mockup-page.mjs           # 한 장으로 조립 + data 속성 배선
+node scripts/verify-mockup.mjs               # (electron) 조각이 한 벌인지 + 배선이 도는지 클릭 실측
 ```
+
+`split-design-bundle.mjs` · `capture-design-surfaces.mjs` · `link-design-project.mjs` 는
+페이지-당-화면이던 옛 구조의 잔재다(19장 목업). 지금 구조에서는 쓰지 않는다.
 
 산출물은 `build/design-bundle/`(시스템)과 `build/design-project/`(화면). git 에는
 넣지 않는다 — 언제든 재생성되고, 절반이 복사된 폰트다.
@@ -57,7 +74,20 @@ node scripts/link-design-project.mjs         # 화면들이 _ds/<시스템>/ 을
 - `styles.css` · `design-system.css` · Maplestory woff2 를 **그대로 복사**한다.
 - 색/모양/타입 Foundations 카드 3장을 토큰에서 생성한다.
 
-### 2. `capture-design-surfaces.mjs`
+### 2. `capture-mockup-parts.mjs` + `build-mockup-page.mjs` (프로젝트)
+앱을 **조각 단위로 한 번씩만** 뜬다: 창 크롬(타이틀바·레일), 화면 6종(`.program-main`),
+대화상자 4종, 인라인 패널 2종(멤버 만들기·명령 팔레트 — 앱이 제자리에 렌더하는 것들).
+런타임 화면은 **한 번의 캡처로 7개 탭이 전부** 딸려온다(앱이 비활성 탭 패널을 unmount
+하지 않고 숨기기 때문).
+
+조립본은 `data-goto`/`data-open`/`data-close`/`data-tab`/`data-theme-toggle` 로만 동작하고,
+스크립트는 40줄이다. 화면을 추가해도 스크립트는 건드릴 필요가 없다. 다크 테마 사본은
+없다 — 토큰이 바뀔 뿐이다.
+
+`verify-mockup.mjs` 가 **조각이 한 벌인지**(워크벤치 1, 크롬 1, 설정 탭 줄 1)와
+**배선이 실제로 도는지**(레일·탭·대화상자·테마를 클릭해 DOM 확인)를 실측한다.
+
+### 2b. `capture-design-surfaces.mjs` (옛 구조)
 QA 모드로 진짜 앱을 띄우고(모의 하네스 — 모델 호출 없음), 자동화 API 로 각 상태를
 만든 뒤 DevTools 프로토콜로 렌더된 DOM 을 떠온다. 두 가지가 중요하다.
 
@@ -116,3 +146,19 @@ QA 갤러리 26장은 여기서 **컴포넌트 4개(승인·질문·압축·환�
 - 모달은 scrim 클릭도 Escape 도 닫히지 않는다(의도된 설계). 캡처 사이에 명시적으로
   닫지 않으면 다음 캡처가 **앞 모달을 다시 떠온다** — 실제로 4장이 같은 모달이었다.
   지금은 닫은 뒤 열린 모달이 남았는지 검사한다.
+
+## 내려받기 — 디자인 → 앱
+
+씨딩이 끝난 뒤의 정상 방향. 바뀐 것의 성격에 따라 경로가 다르다.
+
+| 바뀐 것 | 경로 | 자동화 |
+| --- | --- | --- |
+| **토큰**(색·radius·border 등) | 디자인 시스템의 `foundations/tokens.css` → `src/renderer/theme/themes.ts` | 가능 (아직 미구현) |
+| **컴포넌트 스타일**(패딩·크기·상태색) | 컴포넌트 카드의 규칙 ↔ `src/renderer/styles.css` 비교 → 바뀐 선언만 반영 | 반자동 (diff 추출) |
+| **구조·플로우**(새 화면, 배치 변경) | 목업의 해당 섹션이 곧 핸드오프 문서 — 사람이 구현 | 수동 |
+
+토큰이 제일 값싸다. 앱 전체가 토큰 기반이라 `themes.ts` 하나만 갱신하면 리테마가 끝나고,
+목업/시스템은 그 토큰을 링크하고 있으므로 양쪽이 같은 값을 보게 된다.
+
+내려받을 때 지켜야 할 것 하나: **클래스 이름을 바꾸지 않는다.** 디자인 쪽 마크업이
+앱과 같은 클래스를 쓰는 덕분에 "여기가 바뀌었다 → 앱의 이 규칙"이 성립한다.

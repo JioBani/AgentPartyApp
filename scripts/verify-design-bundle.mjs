@@ -74,11 +74,26 @@ async function main() {
   const window = new BrowserWindow({ width: 1440, height: 900, show: false, webPreferences: { offscreen: true } });
   console.log(`checking ${list.length} pages\n`);
 
+  // A mockup bundle is pages of an app, not design-system cards: it carries
+  // `_pages.json` instead of card markers, and what has to hold for it is that
+  // its links go somewhere. Checking the wrong contract would either fail every
+  // page or check nothing.
+  const isMockup = fs.existsSync(path.join(BUNDLE_DIR, "_pages.json"));
+
   for (const relative of list) {
     const file = path.join(BUNDLE_DIR, relative);
-    // The card marker is what puts the page in the Design System pane at all.
-    const head = fs.readFileSync(file, "utf8").slice(0, 200);
-    ok(head.startsWith("<!-- @dsCard "), `${relative}: missing the first-line @dsCard marker`);
+    const source = fs.readFileSync(file, "utf8");
+    if (isMockup) {
+      // Every internal link must land on a file that exists — a mockup whose
+      // nav rail leads nowhere is worse than one with no nav at all.
+      for (const [, href] of source.matchAll(/href="([^"#:]+\.html)"/g)) {
+        const target = path.join(BUNDLE_DIR, path.dirname(relative), href);
+        ok(fs.existsSync(target), `${relative}: link to '${href}' has no page`);
+      }
+    } else {
+      // The card marker is what puts the page in the Design System pane at all.
+      ok(source.slice(0, 200).startsWith("<!-- @dsCard "), `${relative}: missing the first-line @dsCard marker`);
+    }
 
     await window.loadFile(file);
     await new Promise((resolve) => setTimeout(resolve, 350));
