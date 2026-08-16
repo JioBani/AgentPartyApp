@@ -1,6 +1,7 @@
 import type { MobileSettings } from "../../shared/mobileProtocol";
 import type { MobileGateway } from "./mobileGateway";
 import { createMockMobileGateway, type MockMobileGateway, type MockMobileGatewayOptions } from "./mockMobileGateway";
+import { RealMobileGateway } from "./realMobileGateway";
 
 export type { MobileGateway } from "./mobileGateway";
 export type {
@@ -16,6 +17,7 @@ export type {
   SnapshotContext,
 } from "./mobileGateway";
 export { createMockMobileGateway } from "./mockMobileGateway";
+export { RealMobileGateway } from "./realMobileGateway";
 export type { MockControls, MockMobileGateway, MockMobileGatewayOptions } from "./mockMobileGateway";
 
 /**
@@ -78,8 +80,9 @@ export interface CreateMobileGatewayOptions {
 /**
  * Single construction point for the mobile pipe.
  *
- * @throws when `implementation: "real"` is requested before the real gateway
- *   ships, or when its dependencies are missing.
+ * @throws when `implementation: "real"` is requested without its dependencies.
+ *   There is no fallback to the mock: a UI that looked connected while the pipe
+ *   was absent would be worse than a startup failure.
  */
 export function createMobileGateway(options: CreateMobileGatewayOptions): MobileGateway | MockMobileGateway {
   if (options.implementation === "mock") {
@@ -88,8 +91,5 @@ export function createMobileGateway(options: CreateMobileGatewayOptions): Mobile
   if (!options.deps) {
     throw new Error("createMobileGateway: the real gateway requires MobileGatewayDeps");
   }
-  throw new Error(
-    "createMobileGateway: the real mobile gateway is not implemented yet (desktop-pipe M1). " +
-      'Use implementation: "mock" until it lands.',
-  );
+  return new RealMobileGateway(options.deps);
 }

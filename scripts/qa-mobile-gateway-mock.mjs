@@ -25,7 +25,10 @@ const result = await build({
   platform: "node",
   // libsodium is a WASM module: bundling it detaches its crypto binding
   // ("No secure random number generator found"). Resolve it at runtime.
-  external: ["@agentparty/protocol"],
+  // index.ts now also reaches the real gateway, which lazily requires the
+  // native WebRTC module. The bundler follows that require statically even
+  // though it only runs when a transport is constructed.
+  external: ["@agentparty/protocol", "ws", "node-datachannel"],
   write: false,
 });
 
@@ -50,11 +53,21 @@ await throws(
   "requires MobileGatewayDeps",
   "createMobileGateway('real') without deps fails loudly",
 );
-await throws(
-  () => M.createMobileGateway({ implementation: "real", deps: {} }),
-  "not implemented yet",
-  "createMobileGateway('real') never silently returns a mock",
-);
+const real = M.createMobileGateway({
+  implementation: "real",
+  deps: {
+    userDataPath: qaTempDir(),
+    secretCipher: { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from(t), decryptString: (b) => b.toString() },
+    log: () => {},
+    onSecurityWarning: () => {},
+    readSettings: () => ({}),
+    writeSettings: () => {},
+    defaultDeviceName: "QA Desktop",
+    appVersion: "0.0.0",
+  },
+});
+assert(real.mock === undefined, "createMobileGateway('real') never returns the mock simulator");
+assert(typeof real.onRequest === "function", "the real gateway satisfies the same interface");
 assert(typeof M.createMobileGateway({ implementation: "mock" }).mock === "object", "'mock' returns the simulator");
 
 // --- lifecycle -------------------------------------------------------------

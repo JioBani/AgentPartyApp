@@ -29,10 +29,14 @@ esbuild로 파이프 모듈을 번들할 때는 이 패키지를 **`external`로
 | `MobileGateway` 인터페이스 + 타입 | **사용 가능** (`src/main/mobile/mobileGateway.ts`) |
 | `MockMobileGateway` (폰 시뮬레이터 포함) | **사용 가능** (`src/main/mobile/mockMobileGateway.ts`) |
 | 공유 타입·상수·사유 코드 | **사용 가능** (`src/shared/mobileProtocol.ts`) |
-| 실물 게이트웨이 (시그널링·WebRTC·E2E) | 미구현 — `createMobileGateway({implementation:"real"})`은 **명시적으로 던진다** |
+| 실물 게이트웨이 (시그널링·WebRTC·E2E·RPC) | **사용 가능** — `createMobileGateway({implementation:"real", deps})` |
+| 진단(`diagnostics()`) · 푸시(`push.notify()`) | 미구현 — 호출하면 **명시적으로 던진다**(M3/M5) |
 
-목이 실물인 척하는 폴백은 없다. `"real"`을 요청했는데 목이 돌아오면 "붙었는데 안 되는" 상태를
-UI가 정상으로 그리게 되므로, 실물이 없으면 예외로 실패한다 (AGENTS.md: 실패 은폐 금지).
+목이 실물인 척하는 폴백은 없다. `deps` 없이 `"real"`을 요청하면 예외로 실패한다.
+아직 없는 기능(진단·푸시)도 그럴듯한 값을 지어내지 않고 던진다 (AGENTS.md: 실패 은폐 금지).
+
+`diagnostics()`를 호출하는 UI/라우트를 지금 붙이면 예외를 보게 된다. M3까지는 그 버튼을
+비활성으로 두거나 예외 메시지를 그대로 표시하는 편이 낫다.
 
 ## 붙이는 곳 — 총 4군데
 
@@ -42,7 +46,7 @@ UI가 정상으로 그리게 되므로, 실물이 없으면 예외로 실패한�
 import { createMobileGateway, type MobileGateway } from "./mobile";
 
 const gateway: MobileGateway = createMobileGateway({
-  implementation: "mock",          // 실물이 나오면 "real"로 교체
+  implementation: "real",          // 목으로 개발할 때는 "mock"
   deps: {                          // "real"일 때만 필요
     userDataPath: app.getPath("userData"),
     secretCipher: safeStorage,     // Electron safeStorage를 그대로 넘긴다 (isEncryptionAvailable/encryptString/decryptString)
@@ -97,7 +101,10 @@ gateway.setSnapshotProvider(async (ctx) => ({
 }));
 ```
 
-등록하지 않으면 파이프는 그런 `resume`에 **오류로 답한다**(빈 스냅샷을 지어내지 않는다).
+제공자를 등록하지 않으면 파이프는 빈 스냅샷을 지어내는 대신 **세션을 사유와 함께 종료한다**.
+01 §5.3에 `snapshot`의 오류 변형이 없고, "데스크톱에 아무것도 없다"와 "데스크톱이 알려줄 수 없었다"가
+폰에서 같아 보이면 안 되기 때문이다. **실물 게이트웨이를 붙이면 이 등록은 사실상 필수다** —
+폰의 첫 `resume`는 항상 스냅샷을 요구한다.
 
 ### 4. 메서드 핸들러 — `onRequest`
 
@@ -164,7 +171,7 @@ const stop = gateway.status$.subscribe((status) => broadcastToAllWindows("mobile
 
 - `inFlightRequests > 0` → 지금 폰이 이 데스크톱을 조작 중
 - `lastRequestMethod` / `lastRequestAt` → 무엇을, 언제
-- `queuedBytes` → 백프레셔(상한 2MB 초과 시 파이프가 세션을 끊고 되감기에 맡긴다)
+- `queuedBytes` → 백프레셔 상한(2MB) 초과 시 세션을 끊고 되감기에 맡길 값. **M2까지는 항상 0이다**
 - 끊기 버튼 → `gateway.disconnect(sessionId)`. 신뢰까지 끊으려면 `pairing.revoke(deviceId)`
   (이쪽은 `trustEpoch`를 올려 예전 `hello`를 거부하게 만든다)
 
@@ -199,11 +206,16 @@ gateway.mock.reset();
 
 목의 동작은 계약이다. `npm run test:mobile-mock`이 지킨다.
 
-## 실물로 바꿀 때 (M1)
+## 실물로 바꿀 때
 
 바뀌는 것은 `createMobileGateway`의 `implementation` 인자 하나다.
 접합 코드(`emit` 한 줄, `onRequest` 등록, 스냅샷 제공자, HTTP 라우트, UI)는 그대로 둔다.
-`deps`는 그때 필요하므로 미리 채워두면 교체가 한 줄로 끝난다.
+
+실물에서 달라지는 점 두 가지:
+- **`gateway.updateSettings(persisted)`로 시드하지 말 것.** 실물은 `deps.readSettings()`를
+  스스로 읽는다. 시드를 남겨두면 시작할 때마다 불필요한 설정 쓰기와 재연결이 한 번씩 일어난다.
+- **스냅샷 제공자를 반드시 등록할 것.** 폰의 첫 `resume`는 항상 스냅샷을 요구하는데(01 §5.3),
+  제공자가 없으면 파이프는 빈 상태를 지어내는 대신 **세션을 사유와 함께 종료**한다.
 
 ## 테스트
 
