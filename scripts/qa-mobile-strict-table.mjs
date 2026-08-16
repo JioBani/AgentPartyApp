@@ -28,6 +28,7 @@
  * a dead pairing screen.
  */
 import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const P = await import("@agentparty/protocol");
@@ -51,20 +52,29 @@ const NONCE = P.toB64(new Uint8Array(32).fill(2));
  */
 const SPEC_FRAMES = [
   ["§3.1 challenge", { t: "challenge", nonce: NONCE, serverId: "sig.agentparty.app", ts: 1 }],
+  ["§3.1 challenge + id", { t: "challenge", nonce: NONCE, serverId: "sig.agentparty.app", ts: 1, id: "req-1" }],
   ["§3.1 ok", { t: "ok" }],
   ["§3.1 ok + iceServers", { t: "ok", iceServers: ["stun:stun.cloudflare.com:3478"] }],
   ["§3.1 ok + id", { t: "ok", id: "req-1" }],
   ["§3.1a err", { t: "err", code: "peer_offline" }],
   ["§3.1a err + id", { t: "err", code: "peer_offline", id: "req-1" }],
+  ["§3.1a err + message", { t: "err", code: "peer_offline", message: "상대가 접속해 있지 않습니다." }],
   ["§3.1 pong", { t: "pong" }],
+  ["§3.1 pong + id", { t: "pong", id: "req-1" }],
   ["§3.2 relay", { t: "relay", from: DEVICE, kind: "offer", box: BOX }],
   ["§3.2 relay + id", { t: "relay", from: DEVICE, kind: "offer", box: BOX, id: "req-1" }],
   ["§3.4 presence", { t: "presence", of: DEVICE, online: true }],
   ["§3.4 presence + id", { t: "presence", of: DEVICE, online: false, id: "req-1" }],
-  // §2.2 pairing, relayed to this desktop.
-  ["§2.2 pair.join", { t: "pair.join", tokenHash: "th-1", blob1: "b1" }],
+  // §2.2 pairing. `pair.opened` / `pair.joined` are RESPONSES and carry the
+  // optional `id`; the rest are relays and do not (01 §3.4 — "응답·err").
+  ["§2.2 pair.opened", { t: "pair.opened", tokenHash: "th-1" }],
+  ["§2.2 pair.opened + id", { t: "pair.opened", tokenHash: "th-1", id: "req-1" }],
   ["§2.2 pair.joined", { t: "pair.joined", tokenHash: "th-1" }],
   ["§2.2 pair.joined + id", { t: "pair.joined", tokenHash: "th-1", id: "req-1" }],
+  ["§2.2 pair.join", { t: "pair.join", tokenHash: "th-1", blob1: "b1" }],
+  // Relayed to the PHONE, not to this desktop, but the schema is shared and a
+  // gap in the table is a gap regardless of which side receives it.
+  ["§2.2 pair.accept", { t: "pair.accept", tokenHash: "th-1", blob2: "b2" }],
   ["§2.2 pair.done", { t: "pair.done", tokenHash: "th-1", blob3: "b3" }],
   ["§2.2 pair.closed", { t: "pair.closed", tokenHash: "th-1", reason: "expired" }],
 ];
@@ -110,6 +120,7 @@ for (const kind of RELAY_KINDS) {
   // the schema must be widened BEFORE that ships.
   for (const frame of [
     { t: "pair.join", tokenHash: "th-1", blob1: "b1", id: "req-1" },
+    { t: "pair.accept", tokenHash: "th-1", blob2: "b2", id: "req-1" },
     { t: "pair.done", tokenHash: "th-1", blob3: "b3", id: "req-1" },
     { t: "pair.closed", tokenHash: "th-1", reason: "expired", id: "req-1" },
   ]) {
@@ -117,6 +128,46 @@ for (const kind of RELAY_KINDS) {
       !P.ServerMessageStrictSchema.safeParse(frame).success,
       `${frame.t} + id is refused — matching AgentPartyServer, which sends these relays without one`,
     );
+  }
+}
+
+// --- the hand table must match the canonical vector ------------------------
+{
+  // The frames above carry real values, which a generated table cannot. But a
+  // hand-written list drifts, and a type or field added to §3 that nobody adds
+  // here would simply go untested. So the NAMES are cross-checked against
+  // `signalingFields` in the protocol vectors (server 0.5.0): the vector owns
+  // the table, this file only owns the values.
+  const vectorPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../AgentPartyMobile/docs/아키텍처/vectors/protocol-v1.json",
+  );
+  let vector;
+  try {
+    vector = JSON.parse(await readFile(vectorPath, "utf8"));
+  } catch (error) {
+    // Loud rather than skipped: without this the table above is unguarded.
+    assert(false, `the protocol vectors could not be read for the cross-check (${vectorPath}): ${String(error?.message ?? error)}`);
+  }
+
+  const table = vector?.signalingFields?.server;
+  if (table) {
+    const covered = new Set(SPEC_FRAMES.map(([, f]) => f.t));
+    for (const type of Object.keys(table)) {
+      assert(covered.has(type), `vector type \`${type}\` is covered by a frame above`);
+    }
+
+    // And each covered type's optional fields are exercised, since an optional
+    // field that no frame carries is exactly where strict quietly over-rejects.
+    for (const [type, fields] of Object.entries(table)) {
+      const shapes = SPEC_FRAMES.filter(([, f]) => f.t === type).map(([, f]) => Object.keys(f));
+      for (const optional of fields.optional ?? []) {
+        assert(
+          shapes.some((keys) => keys.includes(optional)),
+          `\`${type}\` is tested WITH its optional \`${optional}\` — an untested optional is where over-rejection hides`,
+        );
+      }
+    }
   }
 }
 

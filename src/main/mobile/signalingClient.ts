@@ -207,34 +207,24 @@ export class SignalingClient {
   private receive(data: string): void {
     this.lastServerMessageAt = this.now();
 
-    // 01 §3 strict (develop 6aa15a1): an unknown field is a protocol error, not
-    // something to accept quietly. Checked against the RAW text before
-    // `decodeServerMessage`, because that decoder parses non-strictly and
-    // STRIPS unknown keys — checking its output would inspect the very fields
-    // it just removed and could only ever report zero.
-    //
-    // Extensions travel as a new `t` or a new `v`, so a field nobody agreed on
-    // means the peer is running a protocol this client does not implement, and
-    // acting on the rest of that message is a guess.
+    let message: ServerMessage;
     try {
-      const extras = outOfSpecFields(JSON.parse(data) as unknown, "server");
+      // 01 §3 strict (develop 6aa15a1): `decodeServerMessage` itself rejects a
+      // field nobody agreed on (protocol 0.5.0). Extensions travel as a new `t`
+      // or a new `v`, so an unknown field means the peer speaks a protocol this
+      // client does not implement, and acting on the rest of the message would
+      // be a guess.
+      message = decodeServerMessage(data);
+    } catch (error) {
+      // Name the offending fields when that is what went wrong, because
+      // "unknown message" sends the reader looking in the wrong place. NAMES
+      // only — a value here could be someone's sealed box (05).
+      const extras = outOfSpecFieldsOf(data);
       if (extras.length > 0) {
-        // Field NAMES only — 05 forbids retaining relayed content, and a value
-        // here could be someone's sealed box.
         this.deps.log("error", "mobile signaling: out-of-spec fields from the server", { fields: extras });
         this.failAndRetry(`시그널링 서버가 규격에 없는 필드를 보냈습니다: ${extras.join(", ")}`);
         return;
       }
-    } catch {
-      // Not JSON at all — decodeServerMessage below reports it properly.
-    }
-
-    let message: ServerMessage;
-    try {
-      message = decodeServerMessage(data);
-    } catch (error) {
-      // A message this client cannot parse means the peer is not the server
-      // this protocol version expects. Surfacing beats guessing.
       this.deps.log("error", "mobile signaling: undecodable message", { error: String(error) });
       this.failAndRetry("시그널링 서버가 알 수 없는 메시지를 보냈습니다.");
       return;
@@ -461,6 +451,22 @@ export class SignalingClient {
       throw new Error("mobile signaling: write attempted with no socket");
     }
     this.socket.send(encodeSignalingMessage(message));
+  }
+}
+
+/**
+ * Names the out-of-spec fields in a raw message, for the log line only.
+ *
+ * Reads the RAW text on purpose: the decoder rejects such a message rather
+ * than returning it, so there is no decoded object to inspect — and asking a
+ * strict decoder's output for the fields it refused would report nothing.
+ */
+function outOfSpecFieldsOf(data: string): string[] {
+  try {
+    return outOfSpecFields(JSON.parse(data) as unknown, "server");
+  } catch {
+    // Not JSON at all; the caller's generic message is the right one.
+    return [];
   }
 }
 

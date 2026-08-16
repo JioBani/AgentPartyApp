@@ -295,20 +295,26 @@ console.log("SignalingClient assertions:");
   assert(reported !== undefined, `the offending field is named for the UI (${reported?.error ?? "not reported"})`);
 }
 
-// --- the strict check reads the wire, not the stripped result --------------
+// --- the rejection comes from the decoder itself (protocol 0.5.0) ----------
 {
-  // decodeServerMessage parses non-strictly and DROPS unknown keys, so a check
-  // running on its output would inspect fields that no longer exist and could
-  // only ever report zero. This is the trap server hit on their own side.
-  const stripped = P.decodeServerMessage(JSON.stringify({ t: "ok", serverBuild: "2.0.1" }));
-  assert(stripped.serverBuild === undefined, "decodeServerMessage does strip the unknown field");
+  // Until 0.5.0 `decodeServerMessage` parsed non-strictly and DROPPED unknown
+  // keys, so this pipe pre-checked the raw text. The decoder now rejects, and
+  // that single source is what the client relies on — a second copy of the
+  // rule here is what drifts.
+  let threw = "";
+  try { P.decodeServerMessage(JSON.stringify({ t: "ok", serverBuild: "2.0.1" })); }
+  catch (error) { threw = String(error?.message ?? error); }
+  assert(threw.includes("serverBuild"), `decodeServerMessage itself rejects the unknown field (${threw.slice(0, 60)})`);
+
+  // The names still have to come off the RAW text, because a rejected message
+  // produces no decoded object to inspect.
   assert(
-    P.outOfSpecFields({ t: "ok", serverBuild: "2.0.1" }, "server").length === 1,
-    "but the raw message still shows it — which is why the check runs before decoding",
+    P.outOfSpecFields({ t: "ok", serverBuild: "2.0.1" }, "server").join() === "serverBuild",
+    "and the raw message is what names the field for the log",
   );
   assert(
-    P.outOfSpecFields(stripped, "server").length === 0,
-    "checking the decoded result would report zero — the vacuous version of this test",
+    P.decodeServerMessage(JSON.stringify({ t: "ok", iceServers: ["stun:a:3478"] })).iceServers.length === 1,
+    "while a spec-valid optional field still decodes — strictness did not cost a legitimate frame",
   );
 }
 
