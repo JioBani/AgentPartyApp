@@ -44,7 +44,7 @@ import type { TranscriptBlock } from "../../shared/transcript";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
-import { invokePartyTool, type PartyBridge, type PartyToolResult } from "../../core/partyBridge";
+import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes } from "../../core/modelRegistry";
@@ -2772,7 +2772,7 @@ export class PartyApplicationService {
           }));
         return { ok: true, data: { members } };
       },
-      listModels: async () => ({ ok: true, data: partyModelDiscovery(this.deps.sessionManager.getCodexModelState()) }),
+      listModels: async (query) => partyModelDiscovery(this.deps.sessionManager.getCodexModelState(), query),
       status: async (name) => {
         try {
           return { ok: true, data: { members: this.memberTurnStatus(name, party).members } };
@@ -2927,52 +2927,202 @@ export class PartyApplicationService {
  * the live Codex account catalog when discovered; a discovery failure rides
  * along as `codexModelsError` instead of being dropped.
  */
-function partyModelDiscovery(codexModels?: CodexModelDiscoveryState): {
-  harnesses: Array<Record<string, unknown>>;
-  models: Array<Record<string, unknown>>;
-  codexModelsError?: string;
-} {
+/**
+ * Answers the `list-models` party tool.
+ *
+ * The route table is a harness×provider cross product — ~120 rows covering ~45
+ * distinct models — so returning all of it in full detail cost ~10k tokens to
+ * answer "which models exist". Two shapes now share this function:
+ *
+ * - **no filter → index.** One row per distinct model, ~80% smaller. It still
+ *   names **every** model, and a model that cannot run on a harness is listed
+ *   under `unavailableOn` rather than dropped.
+ * - **any filter → detail.** The full rows, but only for the matches.
+ *
+ * The invariant throughout is that **an empty answer never means "no such
+ * model"**: a filter matching nothing is an error that names what does exist,
+ * and matches that are all unavailable come back WITH their reasons instead of
+ * reading as absence.
+ */
+function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, query?: PartyModelQuery): PartyToolResult {
   const settings = getSettings();
   const routes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels?.models);
+  const harnessRows = harnesses.map((harness) => ({
+    id: harness.id,
+    label: harness.label,
+    status: harness.status,
+    permission: permissionDiscoveryFor(settings, harness.id),
+  }));
+  const codexModelsError = codexModels?.status === "error" ? codexModels.error : undefined;
+
+  const wanted = {
+    harness: query?.harness?.trim().toLowerCase() || "",
+    provider: query?.provider?.trim().toLowerCase() || "",
+    text: query?.query?.trim().toLowerCase() || "",
+  };
+  const filtered = routes.filter((route) => {
+    if (wanted.harness && (route.harnessId || "claude-code").toLowerCase() !== wanted.harness) {
+      return false;
+    }
+    if (wanted.provider && (route.providerId || "").toLowerCase() !== wanted.provider) {
+      return false;
+    }
+    if (wanted.text) {
+      const haystack = `${route.model} ${route.label || ""}`.toLowerCase();
+      if (!haystack.includes(wanted.text)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const narrowed = Boolean(wanted.harness || wanted.provider || wanted.text);
+  if (!narrowed) {
+    return { ok: true, data: { harnesses: harnessRows, codexModelsError, ...modelIndex(routes) } };
+  }
+  if (!filtered.length) {
+    return { ok: false, error: noMatchReason(routes, wanted) };
+  }
+
+  // An all-unavailable match is the exact case where an empty list would be
+  // read as "that model does not exist". Surface those rows with their reason
+  // instead, and say why they came back despite the default.
+  const usable = filtered.filter((route) => route.enabled !== false);
+  const forced = !usable.length && !query?.includeUnavailable;
+  const shown = query?.includeUnavailable || forced ? filtered : usable;
+  const hiddenUnavailable = filtered.length - shown.length;
+
   return {
-    harnesses: harnesses.map((harness) => {
-      return {
-        id: harness.id,
-        label: harness.label,
-        status: harness.status,
-        permission: permissionDiscoveryFor(settings, harness.id),
-      };
-    }),
-    codexModelsError: codexModels?.status === "error" ? codexModels.error : undefined,
-    models: routes.map((route) => {
-      const thinking = route.capabilities.thinking;
-      const effort = route.capabilities.effort;
-      const serviceTier = route.capabilities.serviceTier;
-      const reasoning = thinking.supported || effort.supported
-        ? {
-            effort: effort.supported ? { options: effort.options.map((option) => option.id), default: effort.defaultValue } : undefined,
-            thinking: thinking.supported && thinking.modes ? { modes: thinking.modes.map((mode) => mode.id), default: thinking.defaultValue } : undefined,
-            budget: thinking.supported ? thinking.budget : undefined,
-          }
-        : null;
-      return {
-        id: route.model,
-        label: route.label,
-        harness: route.harnessId,
-        executionHarness: route.harnessId || "claude-code",
-        provider: route.providerId,
-        perf: route.meta?.perf,
-        costTier: route.meta?.costTier,
-        inPerM: route.meta?.inPerM,
-        outPerM: route.meta?.outPerM,
-        ioPerM: route.meta?.ioPerM,
-        context: route.meta?.context,
-        reasoning,
-        serviceTier: serviceTier?.supported
-          ? { options: serviceTier.options.map((option) => option.id), default: serviceTier.defaultValue }
-          : null,
-      };
-    }),
+    ok: true,
+    data: {
+      harnesses: harnessRows,
+      codexModelsError,
+      matched: shown.length,
+      hiddenUnavailable: hiddenUnavailable || undefined,
+      note: forced
+        ? "Every route matching this filter is currently unavailable. They are listed anyway, each with `unavailableReason` — the model exists, it just cannot run right now."
+        : hiddenUnavailable
+          ? `${hiddenUnavailable} matching route(s) are currently unavailable and were omitted. Pass includeUnavailable: true to see them with the reason.`
+          : undefined,
+      models: shown.map((route) => detailRow(route)),
+    },
+  };
+}
+
+/**
+ * The compact browse view: one row per distinct model label.
+ *
+ * `id` is carried per harness ONLY where it differs from the label, because the
+ * id is what `member-create` takes and it is harness-specific (`Grok 4.5` on
+ * claude-code is `x-ai/grok-4.5` on codex). Eliding the ids that equal the
+ * label keeps the index small without ever leaving the caller to guess one.
+ */
+function modelIndex(routes: ReturnType<typeof buildModelRoutes>): {
+  indexed: number;
+  hint: string;
+  models: Array<Record<string, unknown>>;
+} {
+  const byLabel = new Map<string, {
+    label: string;
+    harness: string[];
+    unavailableOn: string[];
+    ids: Record<string, string>;
+    meta?: { perf?: number; costTier?: number; context?: string };
+  }>();
+  for (const route of routes) {
+    const label = route.label || route.model;
+    const harnessId = route.harnessId || "claude-code";
+    let entry = byLabel.get(label);
+    if (!entry) {
+      entry = { label, harness: [], unavailableOn: [], ids: {}, meta: route.meta };
+      byLabel.set(label, entry);
+    }
+    if (route.enabled === false) {
+      if (!entry.unavailableOn.includes(harnessId)) {
+        entry.unavailableOn.push(harnessId);
+      }
+      continue;
+    }
+    if (!entry.harness.includes(harnessId)) {
+      entry.harness.push(harnessId);
+    }
+    if (route.model !== label && !entry.ids[harnessId]) {
+      entry.ids[harnessId] = route.model;
+    }
+  }
+  const models = [...byLabel.values()].map((entry) => {
+    // A harness with any usable route is not "unavailable on" — the same label
+    // can have one dead provider route beside a live one.
+    const unavailableOn = entry.unavailableOn.filter((harnessId) => !entry.harness.includes(harnessId));
+    return {
+      label: entry.label,
+      harness: entry.harness,
+      ...(Object.keys(entry.ids).length ? { ids: entry.ids } : {}),
+      ...(entry.meta?.perf !== undefined ? { perf: entry.meta.perf } : {}),
+      ...(entry.meta?.costTier !== undefined ? { costTier: entry.meta.costTier } : {}),
+      ...(entry.meta?.context ? { context: entry.meta.context } : {}),
+      ...(unavailableOn.length ? { unavailableOn } : {}),
+    };
+  });
+  return {
+    indexed: models.length,
+    hint: "Every model is listed. `harness` is where it runs; `ids` gives the member-create id for a harness whose id differs from the label (otherwise pass the label). `unavailableOn` names harnesses that cannot run it. Call again with harness/provider/query for full reasoning, service-tier and pricing detail.",
+    models,
+  };
+}
+
+/** Why a filter matched nothing, phrased so the caller can widen it correctly. */
+function noMatchReason(routes: ReturnType<typeof buildModelRoutes>, wanted: { harness: string; provider: string; text: string }): string {
+  const knownHarnesses = [...new Set(routes.map((route) => route.harnessId || "claude-code"))];
+  const knownProviders = [...new Set(routes.map((route) => route.providerId).filter(Boolean))];
+  if (wanted.harness && !knownHarnesses.some((id) => id.toLowerCase() === wanted.harness)) {
+    return `No harness "${wanted.harness}". Available harnesses: ${knownHarnesses.join(", ")}.`;
+  }
+  if (wanted.provider && !knownProviders.some((id) => String(id).toLowerCase() === wanted.provider)) {
+    return `No provider "${wanted.provider}". Available providers: ${knownProviders.join(", ")}.`;
+  }
+  const parts = [
+    wanted.harness ? `harness=${wanted.harness}` : "",
+    wanted.provider ? `provider=${wanted.provider}` : "",
+    wanted.text ? `query="${wanted.text}"` : "",
+  ].filter(Boolean).join(", ");
+  return `No model matches ${parts}. Each filter is valid on its own, so the combination is what excludes everything — drop one, or call list-models with no arguments for the full index of ${new Set(routes.map((route) => route.label || route.model)).size} models.`;
+}
+
+/** The full route row — reasoning options, tier and pricing included. */
+function detailRow(route: ReturnType<typeof buildModelRoutes>[number]): Record<string, unknown> {
+  const thinking = route.capabilities.thinking;
+  const effort = route.capabilities.effort;
+  const serviceTier = route.capabilities.serviceTier;
+  const reasoning = thinking.supported || effort.supported
+    ? {
+        effort: effort.supported ? { options: effort.options.map((option) => option.id), default: effort.defaultValue } : undefined,
+        thinking: thinking.supported && thinking.modes ? { modes: thinking.modes.map((mode) => mode.id), default: thinking.defaultValue } : undefined,
+        budget: thinking.supported ? thinking.budget : undefined,
+      }
+    : null;
+  return {
+    id: route.model,
+    label: route.label,
+    harness: route.harnessId,
+    executionHarness: route.harnessId || "claude-code",
+    provider: route.providerId,
+    perf: route.meta?.perf,
+    costTier: route.meta?.costTier,
+    inPerM: route.meta?.inPerM,
+    outPerM: route.meta?.outPerM,
+    ioPerM: route.meta?.ioPerM,
+    context: route.meta?.context,
+    reasoning,
+    serviceTier: serviceTier?.supported
+      ? { options: serviceTier.options.map((option) => option.id), default: serviceTier.defaultValue }
+      : null,
+    // Only ever set on a row the caller explicitly asked to see (or that came
+    // back because every match was unavailable) — so it reads as a reason, not
+    // as noise on healthy rows.
+    ...(route.enabled === false
+      ? { available: false, unavailableReason: route.unavailableReason || "This route is not currently available." }
+      : {}),
   };
 }
 
