@@ -17,6 +17,15 @@ export interface ApprovalLocation {
   workspacePath: string;
   sessionId: string;
   requestedAt: number;
+  /**
+   * What is being approved, kept so a phone listing pending approvals can say
+   * WHAT it is answering. Without these the list is a row of opaque ids, and a
+   * user cannot consent to something the screen will not name.
+   *
+   * Absent when the app started mid-turn and only saw the `approval_resolved`.
+   */
+  toolName?: string;
+  title?: string;
   /** Set once an `approval_resolved` for this id has been observed. */
   resolvedAt?: number;
   decision?: "allow" | "deny";
@@ -44,7 +53,14 @@ export class ApprovalIndex {
       const requestId = typeof event?.requestId === "string" ? event.requestId : "";
       if (!requestId) continue;
       if (event.type === "approval_request") {
-        this.byRequestId.set(requestId, { requestId, workspacePath, sessionId, requestedAt: Date.now() });
+        this.byRequestId.set(requestId, {
+          requestId,
+          workspacePath,
+          sessionId,
+          requestedAt: Date.now(),
+          toolName: typeof event.toolName === "string" ? event.toolName : undefined,
+          title: typeof event.title === "string" ? event.title : undefined,
+        });
         this.evict();
       } else if (event.type === "approval_resolved") {
         const known = this.byRequestId.get(requestId);
@@ -57,6 +73,8 @@ export class ApprovalIndex {
           workspacePath: known?.workspacePath || workspacePath,
           sessionId: known?.sessionId || sessionId,
           requestedAt: known?.requestedAt || Date.now(),
+          toolName: known?.toolName,
+          title: known?.title,
           resolvedAt: Date.now(),
           decision,
         });
@@ -86,6 +104,26 @@ export class ApprovalIndex {
   /** Live entries, newest last. Exposed for diagnostics and tests. */
   list(): ApprovalLocation[] {
     return [...this.byRequestId.values()];
+  }
+
+  /**
+   * Approvals still waiting on an answer, oldest first.
+   *
+   * This is what a phone asks for after being away: an approval raised while it
+   * was disconnected is outside the event ring buffer, so without this listing
+   * the phone can answer only approvals it happened to be online for — and the
+   * user has no way to discover the rest from the phone at all.
+   *
+   * Aged-out entries are dropped here too, so a stale row cannot be offered as
+   * answerable when {@link find} would no longer resolve it.
+   */
+  pending(workspacePath?: string): ApprovalLocation[] {
+    const cutoff = Date.now() - MAX_AGE_MS;
+    return [...this.byRequestId.values()]
+      .filter((entry) => !entry.resolvedAt
+        && entry.requestedAt >= cutoff
+        && (!workspacePath || entry.workspacePath === workspacePath))
+      .sort((a, b) => a.requestedAt - b.requestedAt);
   }
 
   private evict(): void {

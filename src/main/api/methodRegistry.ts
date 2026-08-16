@@ -27,6 +27,17 @@ export interface MethodContext {
   caller?: string;
   /** Base URL of the local automation server, for the spec route. */
   apiBaseUrl: string;
+  /**
+   * The phone's event-stream position, for a handler that reads state the phone
+   * also receives as events. Present only on the mobile transport — an HTTP
+   * caller receives no events, so there is no position to report.
+   *
+   * Call it BEFORE reading, never after. The read lands somewhere inside the
+   * await; a seq taken afterwards makes the phone skip events the answer does
+   * not contain, which is loss rather than duplication (01 §5.3 chose the same
+   * way for the rewind snapshot).
+   */
+  currentSeq?: () => number;
 }
 
 /**

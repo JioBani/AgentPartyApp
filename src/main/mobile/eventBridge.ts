@@ -152,6 +152,18 @@ export class EventBridge {
     return this.seq;
   }
 
+  /**
+   * The last `seq` assigned — the phone's position in the stream, for a handler
+   * that answers with state the phone also receives as events.
+   *
+   * Taken from the counter, NOT from the buffer: the buffer is pruned, so a
+   * value derived from it would go backwards and the phone would re-apply
+   * events it had already handled.
+   */
+  currentSeq(): number {
+    return this.seq;
+  }
+
   /** Ring-buffer window reported by `sys.info` and the status route. */
   window(): { seq: number; minSeq: number; maxSeq: number; count: number } {
     return {

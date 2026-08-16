@@ -162,6 +162,18 @@ export interface RequestContext {
    * long handler can stop work nobody will receive.
    */
   signal: AbortSignal;
+  /**
+   * The event stream's position right now, for a handler answering with state
+   * the phone also receives as events. The phone applies only events past the
+   * value the answer carries.
+   *
+   * A FUNCTION, not a value, so the handler chooses when to sample it — and it
+   * must sample BEFORE reading. The read lands somewhere inside the await; a
+   * seq taken after the answer is built makes the phone skip events the answer
+   * does not contain, which is loss rather than duplication. 01 §5.3 made the
+   * same choice for the rewind snapshot.
+   */
+  currentSeq: () => number;
 }
 
 // ---------------------------------------------------------------------------

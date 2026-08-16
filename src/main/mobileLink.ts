@@ -188,6 +188,9 @@ export class MobileLinkService {
       controller: this.requireController(),
       workspace: context.workspacePath || this.deps.defaultWorkspace(),
       apiBaseUrl: this.deps.automationBaseUrl(),
+      // Only the phone gets one: an HTTP caller receives no events, so it has
+      // no position in the stream to report.
+      currentSeq: () => context.currentSeq(),
     };
   }
 

@@ -39,6 +39,28 @@ export type ApprovalDelivery =
   /** The session itself is gone. */
   | "no_such_session";
 
+/**
+ * One approval still waiting on an answer, as listed for a client that was not
+ * connected when it was raised.
+ *
+ * Field names match {@link ApprovalResponseResult} on purpose — the same fact
+ * under two names in one API is how clients end up handling only one of them.
+ */
+export interface PendingApproval {
+  requestId: string;
+  workspacePath: string;
+  sessionId: string;
+  /** Which member owns the session, when the desktop knows it. */
+  member?: string;
+  requestedAt: number;
+  /**
+   * What is being approved. Absent when the app started mid-turn and never saw
+   * the request itself — the row is still answerable, just unnamed.
+   */
+  toolName?: string;
+  title?: string;
+}
+
 export interface ApprovalResponseResult {
   ok: true;
   outcome: ApprovalOutcome;

@@ -2335,6 +2335,50 @@ Points an existing window at a different workspace. Body
 
 ## Approvals
 
+### `GET /api/approvals`
+
+Approvals still waiting on an answer, oldest first.
+
+Exists for a caller that was not connected when the approval was raised. A phone
+learns of approvals through the event stream; once one falls out of the ring
+buffer there is no other way to discover it, so without this listing the phone
+could answer only approvals it happened to be online for.
+
+Optional `workspacePath` narrows it to one workspace. Omitted, it lists every
+workspace this desktop serves — which is what a phone reconnecting wants, since
+it reaches all of them.
+
+```json
+{
+  "ok": true,
+  "approvals": [
+    {
+      "requestId": "req-7f21",
+      "workspacePath": "C:/Project/AgentPartyApp",
+      "sessionId": "sess-4c19",
+      "member": "ui",
+      "requestedAt": 1786891902265,
+      "toolName": "Bash",
+      "title": "rm -rf build/"
+    }
+  ]
+}
+```
+
+`member` is resolved per request rather than stored, so a member renamed while
+its approval waited is listed under the name now on screen. It is absent when no
+member owns the session (a plain session tab), and `toolName`/`title` are absent
+when the app started mid-turn and never saw the request itself — the row is
+still answerable, just unnamed.
+
+Over the mobile link the response also carries `seq`, the event-stream position
+this listing is consistent with; apply only events past it. HTTP callers receive
+no events and so get no `seq`.
+
+The same list rides in `GET /api/state` as `pendingApprovals` (scoped to that
+workspace), which is how a phone whose `resume` fell outside the ring buffer
+gets them back without a second call.
+
 ### `POST /api/approvals/:id/respond`
 
 Answers an approval knowing only **its own id** — no session, no workspace.

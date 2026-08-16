@@ -10,6 +10,28 @@ import { ApiError, required, text, type MethodRoute } from "../methodRegistry";
  */
 export const approvalRoutes: MethodRoute[] = [
   {
+    /**
+     * What is waiting for an answer right now.
+     *
+     * Exists for a client that was not connected when the approval was raised:
+     * once it falls out of the event ring buffer there is no other way to learn
+     * of it, so without this a phone could answer only approvals it happened to
+     * be online for.
+     */
+    name: "approval.list",
+    http: "GET /api/approvals",
+    handler: async (p, ctx) => {
+      // Read BEFORE the listing, never after. The listing lands somewhere
+      // inside the await; a seq taken afterwards would make the phone skip
+      // approval events this answer does not contain — loss, not duplication.
+      const seq = ctx.currentSeq?.();
+      const listed = await ctx.controller.listPendingApprovals(
+        p.workspacePath === undefined ? undefined : text(p.workspacePath),
+      );
+      return seq === undefined ? listed : { ...listed, seq };
+    },
+  },
+  {
     name: "approval.respond",
     http: "POST /api/approvals/:id/respond",
     handler: (p, ctx) => {

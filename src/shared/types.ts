@@ -8,6 +8,7 @@ import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { MemberQueueState } from "./messageQueue";
 import type { MemberStatus } from "./memberDisplayStatus";
+import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
 import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
@@ -481,6 +482,15 @@ export interface InitialAppState {
   runtime?: { appRoot: string };
   party: { parties?: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
   windows?: WindowInfo[];
+  /**
+   * Approvals still waiting on an answer in this workspace.
+   *
+   * Present so a phone whose `resume` fell outside the event ring buffer gets
+   * them back with the snapshot rather than having to know to ask. Absent — not
+   * empty — from a process that keeps no approval index, because an empty list
+   * would assert that nothing is waiting.
+   */
+  pendingApprovals?: PendingApproval[];
   resumableSessions?: ResumableSessionInfo[];
   resumableSessionsError?: string;
 }

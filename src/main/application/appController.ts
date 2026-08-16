@@ -45,7 +45,7 @@ import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
-import type { ApprovalDelivery, ApprovalResponseResult } from "../../shared/approvals";
+import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
 import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
 export interface AppControllerDeps {
@@ -334,6 +334,12 @@ export class AppController {
       runtime: { appRoot: AppController.APP_ROOT },
       party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
+      // Carried in the state a rewinding phone receives, so an approval raised
+      // while it was outside the ring buffer is restored without a second call
+      // — the case where it is otherwise unreachable. Omitted rather than empty
+      // when this process keeps no index: "nothing is waiting" is a claim the
+      // headless engine cannot make.
+      ...(this.deps.approvals ? { pendingApprovals: this.deps.approvals.pending(workspacePath) } : {}),
       ...(await this.getResumableState(workspacePath)),
     };
     // Keep the background usage poller tracking this window's providers.
@@ -950,6 +956,64 @@ export class AppController {
    * expired or was answered at the desk. Reporting those as success would have
    * the phone tell its user it approved something that never happened.
    */
+  /**
+   * Approvals still waiting on an answer, for a client that was not listening
+   * when they were raised.
+   *
+   * Resolves each one to its MEMBER NAME here rather than storing it: a member
+   * can be renamed while its approval waits, and a list that named the member
+   * as it was would send the user looking for something that is no longer on
+   * their screen. A session with no member behind it (a plain session tab)
+   * reports no name rather than a made-up one.
+   */
+  async listPendingApprovals(workspacePath?: string): Promise<{ ok: true; approvals: PendingApproval[] }> {
+    const approvals = this.deps.approvals;
+    if (!approvals) {
+      // Same reason as `respondToApproval`: the headless engine keeps no index.
+      // An empty list would read as "nothing is waiting", which is a claim this
+      // process cannot make.
+      throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
+    }
+    const pending = approvals.pending(workspacePath);
+    const namesByWorkspace = new Map<string, Map<string, string>>();
+    const namesFor = async (workspace: string): Promise<Map<string, string>> => {
+      const cached = namesByWorkspace.get(workspace);
+      if (cached) {
+        return cached;
+      }
+      const names = new Map<string, string>();
+      try {
+        const listing = await this.engineFor(workspace).listParty();
+        for (const member of listing.members) {
+          if (member.sessionId) {
+            names.set(member.sessionId, member.name);
+          }
+        }
+      } catch (error) {
+        // A workspace whose engine is down must not take the whole list with
+        // it: the approvals are still real and still answerable by id. Only the
+        // friendly name is lost, and it is logged rather than swallowed.
+        log("warn", "api", "pending approvals: party lookup failed", { workspace, error: String(error) });
+      }
+      namesByWorkspace.set(workspace, names);
+      return names;
+    };
+    const listed: PendingApproval[] = [];
+    for (const entry of pending) {
+      const names = await namesFor(entry.workspacePath);
+      listed.push({
+        requestId: entry.requestId,
+        workspacePath: entry.workspacePath,
+        sessionId: entry.sessionId,
+        member: names.get(entry.sessionId),
+        requestedAt: entry.requestedAt,
+        toolName: entry.toolName,
+        title: entry.title,
+      });
+    }
+    return { ok: true, approvals: listed };
+  }
+
   async respondToApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> {
     const approvals = this.deps.approvals;
     if (!approvals) {
