@@ -121,19 +121,21 @@ console.log("RpcServer assertions:");
 
 // --- ctx.currentSeq(): the baseline a handler's answer is true as of --------
 {
-  // The point of this is that desktop-app can say "this transcript reflects
-  // everything up to N", and the phone applies only events after N. If the
-  // number were stale the phone would re-apply events already in the answer.
+  // It is a function so the CALLER picks the instant. For a handler that reads
+  // state, the correct instant is BEFORE the read: state and seq cannot be
+  // taken atomically, and of the two possible errors 01 §5.3 chooses the
+  // duplicate over the loss. desktop-app caught the earlier guidance here
+  // having this backwards.
   const handlers = new Map();
   const readings = [];
   handlers.set("member.transcript", async (params, ctx) => {
-    readings.push({ label: "atEntry", seq: ctx.currentSeq() });
-    // A real handler awaits — reads a file, queries an engine — and events keep
-    // arriving while it does.
+    readings.push({ label: "beforeRead", seq: ctx.currentSeq() });
+    // The state read lands somewhere in here, at instant T, while events keep
+    // arriving.
     await tick();
     h.bridge.publish("session:events", { during: true }, "C:/w");
     await tick();
-    readings.push({ label: "atAnswer", seq: ctx.currentSeq() });
+    readings.push({ label: "afterRead", seq: ctx.currentSeq() });
     return { text: "…" };
   });
   const h = harness({ handlers });
@@ -143,14 +145,21 @@ console.log("RpcServer assertions:");
   h.server.handle(req("member.transcript", { workspacePath: "C:/w" }));
   await tick(); await tick(); await tick();
 
-  const atEntry = readings.find((r) => r.label === "atEntry");
-  const atAnswer = readings.find((r) => r.label === "atAnswer");
-  assert(atEntry?.seq === 2, `currentSeq() reports the seq at the moment it is called (${atEntry?.seq})`);
+  const before = readings.find((r) => r.label === "beforeRead");
+  const after = readings.find((r) => r.label === "afterRead");
+  assert(before?.seq === 2, `currentSeq() reports the seq at the moment it is called (${before?.seq})`);
   assert(
-    atAnswer?.seq === 3,
-    `it is re-read, so an event published mid-handler is included (${atAnswer?.seq}) — a value captured at entry would report 2 and the phone would replay it`,
+    after?.seq === 3,
+    `and a later call sees a later value (${after?.seq}) — the reading is live, which is what lets the caller choose`,
   );
-  assert(h.bridge.window().seq === 3, "and it agrees with the bridge's own window");
+  assert(
+    before.seq < after.seq,
+    "the two differ, so WHICH instant a handler reports is a real decision and not cosmetic",
+  );
+  assert(
+    h.bridge.window().seq === after.seq,
+    "reporting the later seq (3) would tell the phone to skip the mid-read event, which the answer does not contain — that is the silent loss 01 §5.3 forbids",
+  );
 }
 
 // --- currentSeq() is the counter, unaffected by what the buffer still holds -

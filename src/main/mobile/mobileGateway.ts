@@ -172,14 +172,25 @@ export interface RequestContext {
    */
   signal: AbortSignal;
   /**
-   * The event `seq` as of the moment it is called — the high-water mark of the
-   * event stream, so "this answer reflects everything up to N" is exactly true
-   * and the phone applies only events after N as deltas.
+   * The event `seq` at the moment it is called. The phone takes it to mean
+   * "this answer already includes everything up to N" and applies only later
+   * events.
    *
-   * A FUNCTION, not a value, because it must be read at the point the answer's
-   * content is assembled. A handler that awaits before building its reply and
-   * used a value captured at entry would report a seq older than the data it
-   * returns, and the phone would re-apply events already included.
+   * A FUNCTION, not a value, so the CALLER chooses the instant — and which
+   * instant is right depends on what the handler returns.
+   *
+   * A handler that READS STATE (a transcript, a member list) must call it
+   * BEFORE the read. State and seq cannot be captured atomically, so the read
+   * lands at some instant T and one of two errors is unavoidable:
+   *   - seq from before the read: events in (before, T] are in the returned
+   *     state and are replayed as well — DUPLICATES.
+   *   - seq from after the read: events in (T, after] are NOT in the returned
+   *     state, yet the phone skips them — SILENT LOSS.
+   * 01 §5.3 requires zero loss, so the duplicate is chosen. `sendSnapshot`
+   * makes exactly this trade for exactly this reason; a handler that reports
+   * the later seq reintroduces the loss the snapshot path exists to avoid.
+   *
+   * A handler that reads no state has no T and may call it anywhere.
    *
    * This is the counter, NOT anything derived from the ring buffer's current
    * contents. The buffer is trimmed, so what it holds is not the history; a
