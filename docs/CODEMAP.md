@@ -39,7 +39,8 @@ Automation client
 
 | Area | Primary files | Owns |
 | --- | --- | --- |
-| Shared contracts | `src/shared/types.ts`, `src/shared/apiSpec.ts` | Cross-process payloads and the discoverable HTTP endpoint list |
+| Shared contracts | `src/shared/types.ts`, `src/shared/apiSpec.ts` | Cross-process payloads and the shape of the discoverable API spec |
+| Capability table | `src/main/api/methodRegistry.ts`, `src/main/api/routes/*` | The one `(method, params) → handler` list that local HTTP and the mobile link both dispatch |
 | Shared policy/model logic | `src/shared/modelCatalog.ts`, `modelIdentity.ts`, `codexPolicy.ts`, `cursorPolicy.ts`, `messageGate.ts` | Pure validation, normalization, and public policy shapes |
 | Provider adapters | `src/core/claudeAdapter.ts`, `codexAdapter.ts`, `cursorAdapter.ts` | Provider process/protocol lifecycle and normalized session events |
 | Provider support | `src/core/modelRegistry.ts`, `costing.ts`, `codexModelDiscovery.ts`, `subscriptionProxy.ts` | Routing, pricing, discovery, and subscription proxy contracts |
@@ -50,7 +51,7 @@ Automation client
 | Session runtime | `src/main/sessionManager.ts`, `src/main/harness/*` | Live sessions, snapshots, events, approvals, and harness factories |
 | Engine topology | `src/main/engine/*`, `src/main/engine/transport/*` | Local/remote engine selection, RPC, WSL transport, and engine server |
 | Persistence | `src/main/partyRepository.ts`, `settings.ts`, `usageLedger.ts` | On-disk party, settings, and usage state; harness CLIs own their credentials |
-| External surfaces | `src/main/automationApi.ts`, `src/main/automation/*`, `discordBridgeService.ts`, `discordControl.ts` | HTTP request coordination, feature route adapters, and Discord integration into `AppController` |
+| External surfaces | `src/main/automationApi.ts`, `src/main/automation/*`, `discordBridgeService.ts`, `discordControl.ts` | HTTP transport (scope resolution, parameter merging, status codes), the QA-only route adapter, and Discord integration into `AppController` |
 | App self-update | `src/shared/appUpdate.ts`, `src/main/updateService.ts` | GitHub release feed, update state machine, and the shared status contract (see docs/RELEASE.md) |
 | Electron wiring | `src/main/main.ts`, `windowRegistry.ts`, `preload/preload.ts` | Process lifecycle, windows, IPC registration, and renderer bridge |
 | Renderer shell | `src/renderer/App.tsx`, `src/renderer/app/*` | App state, event reduction, navigation, and secondary views |
@@ -114,10 +115,12 @@ For every user-visible capability, update all applicable points:
 1. `AppController` method.
 2. Renderer IPC registration in `src/main/main.ts` and
    `src/preload/preload.ts`.
-3. HTTP route in `src/main/automationApi.ts`.
-4. Endpoint declaration in `src/shared/apiSpec.ts`.
-5. Contract documentation in `docs/API.md`.
-6. Real-app E2E coverage when behavior crosses process or UI boundaries.
+3. One entry in the capability table under `src/main/api/routes/`. This
+   publishes the HTTP endpoint, its `GET /api/spec` declaration, and the mobile
+   RPC method in a single edit — set `remote: false` on the entry to keep a
+   desktop-local surface off the phone.
+4. Contract documentation in `docs/API.md`.
+5. Real-app E2E coverage when behavior crosses process or UI boundaries.
 
 UI, HTTP, and Discord adapters must not reimplement the use case.
 

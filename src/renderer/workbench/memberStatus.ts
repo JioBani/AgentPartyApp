@@ -1,4 +1,5 @@
 import type { PartyMember, SessionView } from "../../shared/types";
+import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
 import { memberColor } from "../theme/memberColors";
 import { parseContextTokens } from "../../shared/modelCatalog";
 import { resolveAutoCompact, type AutoCompactSetting } from "../../shared/autoCompact";
@@ -34,52 +35,30 @@ function hasPendingApproval(transcript: TranscriptBlock[], session?: SessionView
   return transcript.some((block) => block.kind === "approval" && !block.resolved);
 }
 
+/**
+ * Gathers this window's facts and hands them to the shared decision table.
+ *
+ * The ordering used to live here. It moved to `shared/memberDisplayStatus` when
+ * the main process had to answer the same question for a phone — which holds no
+ * transcript and so cannot re-derive it. Two copies of the ordering would drift;
+ * two copies of the FACT-GATHERING is fine, because each side reads what it
+ * actually has (this one a transcript, the other the approval index).
+ *
+ * A note the shared table cannot carry: `not-started` here also covers the
+ * app-restart case. A restart clears the stale binding, so a restarted member
+ * arrives with no `sessionId` — its conversation is intact and messaging it
+ * resumes, which is why that is not `disconnected`.
+ */
 function deriveStatus(member: PartyMember, session: SessionView | undefined, transcript: TranscriptBlock[]): MemberStatus {
-  // Checked before the no-session case below, which it would otherwise fall
-  // into: a sleeping member has no session BY DESIGN. Reporting it as
-  // "not started" would deny the conversation that is sitting right there in
-  // the transcript, and hide why the next message takes a moment to land.
-  if (member.status === "sleeping") {
-    return "sleeping";
-  }
-  // Checked here for the OPPOSITE reason to `sleeping`: a closed member refuses
-  // to start on its own. Calling it "not started" asserted the one thing that is
-  // untrue — that a message would start it — while prewarm skipped it and
-  // member-to-member delivery rejected it outright. Reachable without this
-  // window doing anything: another window on the same party closing that tab
-  // closes the member for everyone.
-  if (member.status === "closed") {
-    return "closed";
-  }
-  if (!member.sessionId || !session) {
-    return "not-started";
-  }
-  // The member is bound to a session that nothing is behind any more: its
-  // harness process is gone, or this process does not hold that session. Either
-  // way it reads as ready but cannot be used, which is what the user hit.
-  //
-  // This is checked FIRST on purpose. Everything below describes a live session
-  // — an unresolved approval restored from disk would otherwise pin a dead
-  // member in "approval" forever (the shape of the #4-class bug), and a status
-  // left mid-flight would read as busy.
-  //
-  // Note this is NOT the app-restart case: a restart clears the stale binding,
-  // so a restarted member arrives with no sessionId and correctly reads
-  // "not-started" above — its conversation is intact and messaging it resumes.
-  if (member.status === "missing_session") {
-    return "disconnected";
-  }
-  if (hasPendingApproval(transcript, session)) {
-    return "approval";
-  }
-  if (isSessionBusy(session)) {
-    // The stall watchdog appends a "stall" diagnostic as the newest block when a
-    // turn goes silent; while it stays newest (no later activity) the member is
-    // stalled, not merely working — so the UI can offer stop/restart instead of
-    // an indefinite spinner. Real activity appends after it and clears this.
-    return isStalled(transcript) ? "stalled" : "working";
-  }
-  return "idle";
+  return deriveMemberStatus({
+    stored: member.status,
+    hasLiveSession: Boolean(member.sessionId && session),
+    busy: isSessionBusy(session),
+    pendingApproval: hasPendingApproval(transcript, session),
+    // The watchdog appends a "stall" diagnostic as the newest block when a turn
+    // goes silent; real activity appends after it and clears this.
+    stalled: isStalled(transcript),
+  });
 }
 
 function isStalled(transcript: TranscriptBlock[]): boolean {

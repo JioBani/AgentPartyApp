@@ -18,6 +18,7 @@ import {
 } from "@agentparty/protocol";
 import {
   MOBILE_SETTINGS_DEFAULTS,
+  MOBILE_SIGNALING_FALLBACKS,
   MOBILE_STUN_SERVERS,
   type GatewayStatus,
   type MobilePlatform,
@@ -149,9 +150,9 @@ export class RealMobileGateway implements MobileGateway {
 
     // Completed here so the socket, the QR's host and the status all describe
     // the same endpoint (01 §2.1).
-    const signalingUrl = this.effectiveSignalingUrl();
+    const signalingUrls = this.signalingUrls();
     const signaling = new SignalingClient({
-      url: signalingUrl,
+      urls: signalingUrls,
       identity: identityStore.identity,
       log: this.deps.log,
     });
@@ -160,7 +161,7 @@ export class RealMobileGateway implements MobileGateway {
     this.pairingService = new PairingService({
       identityStore,
       log: this.deps.log,
-      signalingHost: () => hostOf(signalingUrl),
+      signalingHost: () => hostOf(this.effectiveSignalingUrl()),
       desktopName: () => this.settings.deviceName,
       transport: signaling,
       pairingTtlMs: this.resolvePairingTtl(options.pairingTtlMs),
@@ -209,6 +210,7 @@ export class RealMobileGateway implements MobileGateway {
         const reconnected = phase === "connected" && this.signalingPhase !== "connected";
         if (phase === "connected") {
           this.signalingEverConnected = true;
+          this.rememberWorkingSignalingUrl();
         }
         this.signalingPhase = phase;
         this.signalingError = detail.error;
@@ -567,6 +569,7 @@ export class RealMobileGateway implements MobileGateway {
       snapshotProvider: () => this.snapshotProviderFn,
       appName: this.settings.deviceName,
       appVersion: this.deps.appVersion,
+      signalingUrl: () => this.effectiveSignalingUrl(),
       registerPush: (deviceId, platform, handle) => store.setPushHandle(deviceId, platform, handle, Date.now()),
       log: this.deps.log,
     });
@@ -754,18 +757,57 @@ export class RealMobileGateway implements MobileGateway {
    * does on the phone.
    */
   private effectiveSignalingUrl(): string {
-    return signalingEndpoint(this.startOptions.signalingUrl ?? this.settings.signalingUrl);
+    // Once connected this is whichever address answered, which is what
+    // `sys.info` must report (01 ddc2563) — not the one the run started with.
+    return this.signaling?.currentUrl() ?? this.signalingUrls()[0];
+  }
+
+  /**
+   * Puts the address that answered at the front of the list, by making it the
+   * setting (01 ddc2563 — "성공한 것을 맨 앞으로").
+   *
+   * Skipped while a start-time override is active: that URL belongs to one QA
+   * run and writing it into the user's settings would outlive the run and
+   * silently repoint the product.
+   */
+  private rememberWorkingSignalingUrl(): void {
+    if (this.startOptions.signalingUrl !== undefined) {
+      return;
+    }
+    const working = this.signaling?.currentUrl();
+    if (!working || signalingEndpoint(this.settings.signalingUrl) === working) {
+      return;
+    }
+    this.settings = { ...this.settings, signalingUrl: working };
+    this.deps.writeSettings(this.settings);
+    this.deps.log("info", "mobile signaling: promoted the address that answered", { url: working });
+  }
+
+  /**
+   * The addresses to try, in order: the configured one first, then the
+   * built-in operator defaults (01 ddc2563).
+   *
+   * A start-time override replaces the setting rather than joining the list —
+   * a QA run pointed at a local server must not quietly fail over to the
+   * public one and test something else entirely.
+   */
+  private signalingUrls(): string[] {
+    const configured = this.startOptions.signalingUrl ?? this.settings.signalingUrl;
+    if (this.startOptions.signalingUrl !== undefined) {
+      return [signalingEndpoint(configured)];
+    }
+    return [...new Set([configured, ...MOBILE_SIGNALING_FALLBACKS].map((url) => signalingEndpoint(url)))];
   }
 
   private requireSignalingReachable(): void {
     if (this.signalingEverConnected) {
       return;
     }
-    const url = this.effectiveSignalingUrl();
+    const tried = this.signalingUrls();
     throw new Error(
-      `시그널링 서버(${url})에 아직 한 번도 연결되지 않아 QR을 발급할 수 없습니다. ` +
-        "지금 발급하면 폰이 이 주소를 신뢰 기록에 저장해, 나중에 주소를 고쳐도 계속 연결하지 못합니다. " +
-        "서버 주소를 확인한 뒤 다시 시도하세요.",
+      `페어링을 등록할 수 있는 시그널링 서버가 없습니다(시도: ${tried.join(", ")}). ` +
+        "서버에 등록되지 않은 QR은 폰이 스캔해도 완료되지 않습니다. " +
+        "서버 주소를 확인하거나 연결을 기다린 뒤 다시 시도하세요.",
     );
   }
 

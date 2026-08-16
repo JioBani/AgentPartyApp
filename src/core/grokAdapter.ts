@@ -469,11 +469,11 @@ export class GrokAdapter extends EventEmitter {
     }
   }
 
-  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): void {
+  respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown): boolean {
     const pending = this.pendingApprovals.get(requestId);
     if (!pending) {
       this.emitEvent({ type: "error", message: `No pending Grok permission request for ${requestId}.`, at: now() });
-      return;
+      return false;
     }
     const always = Boolean(updatedInput && typeof updatedInput === "object" && (updatedInput as any).__approvalScope === "always");
     const option = selectGrokPermissionOption(pending.request.options, behavior, always);
@@ -491,6 +491,7 @@ export class GrokAdapter extends EventEmitter {
       });
     }
     pending.resolve(outcome);
+    return true;
   }
 
   private handlePermissionRequest(request: GrokAcpPermissionRequest): Promise<GrokAcpPermissionOutcome> {

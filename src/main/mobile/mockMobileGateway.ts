@@ -478,7 +478,8 @@ class MockGateway implements MockMobileGateway {
       receivedAt: Date.now(),
       signal: new AbortController().signal,
       // Live read, matching the real gateway: a handler that emits and then
-      // reads must see its own emit reflected.
+      // reads must see its own emit reflected. Sampled at call time rather
+      // than captured here, so the handler chooses when to read it.
       currentSeq: () => this.seq,
     };
   }

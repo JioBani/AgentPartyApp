@@ -7,7 +7,10 @@ import type { IdleSleepSettings } from "./idleSleep";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
 import type { MemberQueueState } from "./messageQueue";
+import type { MemberStatus } from "./memberDisplayStatus";
+import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
@@ -122,6 +125,12 @@ export interface AppSettings {
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
    */
   discord?: DiscordBridgeSettings;
+  /**
+   * Mobile link: master switch, signaling/push server URLs, and the name this
+   * desktop shows on a paired phone. Edited in Settings → 모바일 연결. See
+   * `shared/mobileProtocol.ts`.
+   */
+  mobile?: MobileSettings;
 }
 
 /** All harnesses that have defaults, in a stable order. */
@@ -217,6 +226,15 @@ export interface PartyMember {
    * `missing_session` (something died unexpectedly) cannot promise.
    */
   status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
+  /**
+   * The status the member LIST shows, derived from {@link status} plus the live
+   * session (`shared/memberDisplayStatus`). View-only: attached on read and
+   * never persisted, so it is absent from anything loaded off disk.
+   *
+   * Present so a client without a transcript — a paired phone — is told the
+   * answer rather than guessing at `approval` and `stalled`.
+   */
+  displayStatus?: MemberStatus;
   runtime?: MemberRuntime;
   role?: string;
   sessionId?: string;
@@ -464,6 +482,15 @@ export interface InitialAppState {
   runtime?: { appRoot: string };
   party: { parties?: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
   windows?: WindowInfo[];
+  /**
+   * Approvals still waiting on an answer in this workspace.
+   *
+   * Present so a phone whose `resume` fell outside the event ring buffer gets
+   * them back with the snapshot rather than having to know to ask. Absent — not
+   * empty — from a process that keeps no approval index, because an empty list
+   * would assert that nothing is waiting.
+   */
+  pendingApprovals?: PendingApproval[];
   resumableSessions?: ResumableSessionInfo[];
   resumableSessionsError?: string;
 }

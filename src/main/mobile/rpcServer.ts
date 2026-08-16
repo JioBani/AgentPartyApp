@@ -47,6 +47,16 @@ export interface RpcServerDeps {
   /** Reported by `sys.info`. */
   appName: string;
   appVersion: string;
+  /**
+   * The signaling URL this desktop is actually using (01 ddc2563).
+   *
+   * A function, not a value: it is read when `sys.info` is answered, so a
+   * desktop that has since failed over to another entry in its list reports
+   * where it IS, not where it started. That is the point of the field — the
+   * phone updates its own list from a LIVE session, which is what makes a
+   * planned migration invisible to the user.
+   */
+  signalingUrl: () => string;
   /** Stores a push handle when the phone registers one (01 §7). */
   registerPush: (deviceId: string, platform: "android" | "ios", handle: string) => void;
   log: MobileGatewayDeps["log"];
@@ -202,6 +212,9 @@ export class RpcServer {
         return {
           name: this.deps.appName,
           version: this.deps.appVersion,
+          // 01 ddc2563 — the address is NOT part of trust, so the phone must be
+          // able to learn a new one without re-pairing.
+          signalingUrl: this.deps.signalingUrl(),
           protocolVersion: PROTOCOL_VERSION,
           bootId: this.deps.eventBridge.bootId,
           minSeq: window.minSeq,

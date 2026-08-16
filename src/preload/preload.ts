@@ -5,6 +5,8 @@ import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
+import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
+import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
 
 const api = {
   /**
@@ -30,6 +32,25 @@ const api = {
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
+  // Mobile link (설정 → 모바일 연결). Reads are cheap and synchronous inside the
+  // main process; `onMobileStatus` keeps the tab live between them.
+  getMobileStatus: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:status"),
+  getMobileSettings: (): Promise<{ ok: true; settings: MobileSettings }> => ipcRenderer.invoke("mobile:settings"),
+  updateMobileSettings: (patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> =>
+    ipcRenderer.invoke("mobile:updateSettings", patch),
+  listMobileDevices: (): Promise<{ ok: true; devices: TrustedDevice[] }> => ipcRenderer.invoke("mobile:devices"),
+  /** Opens a pairing QR; the confirmation code arrives on the status stream. */
+  openMobilePairing: (): Promise<{ ok: true; qr: string; expiresAt: number }> => ipcRenderer.invoke("mobile:pairOpen"),
+  confirmMobilePairing: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:pairConfirm"),
+  cancelMobilePairing: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:pairCancel"),
+  revokeMobileDevice: (deviceId: string): Promise<{ ok: true; devices: TrustedDevice[] }> =>
+    ipcRenderer.invoke("mobile:revokeDevice", deviceId),
+  renameMobileDevice: (deviceId: string, name: string): Promise<{ ok: true; devices: TrustedDevice[] }> =>
+    ipcRenderer.invoke("mobile:renameDevice", deviceId, name),
+  /** Cuts one phone session now; the pairing survives. */
+  disconnectMobileSession: (sessionId: string): Promise<{ ok: true; status: GatewayStatus }> =>
+    ipcRenderer.invoke("mobile:disconnectSession", sessionId),
+  runMobileDiagnostics: (): Promise<{ ok: true; diagnostics: NatDiagnostics }> => ipcRenderer.invoke("mobile:diagnostics"),
   getDiscordStatus: () => ipcRenderer.invoke("discord:get"),
   updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
@@ -62,7 +83,16 @@ const api = {
   setPermissionMode: (sessionId: string, permissionMode: string) => ipcRenderer.invoke("session:setPermissionMode", sessionId, permissionMode),
   setCodexPolicy: (sessionId: string, policy: unknown) => ipcRenderer.invoke("session:setCodexPolicy", sessionId, policy),
   setCursorPolicy: (sessionId: string, policy: unknown) => ipcRenderer.invoke("session:setCursorPolicy", sessionId, policy),
-  approve: (sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) => ipcRenderer.invoke("session:approve", sessionId, requestId, behavior, updatedInput, message),
+  /**
+   * Answers an approval. Resolves with what became of it — `delivered` only when
+   * the harness took it, so a click on a card whose turn has already moved on is
+   * reported instead of silently doing nothing.
+   */
+  approve: (sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> =>
+    ipcRenderer.invoke("session:approve", sessionId, requestId, behavior, updatedInput, message),
+  /** Answers an approval by its id alone, for a caller with no session in hand. */
+  respondToApproval: (requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> =>
+    ipcRenderer.invoke("approval:respond", requestId, behavior, updatedInput, message),
   listMcpServers: (sessionId: string) => ipcRenderer.invoke("session:mcpList", sessionId),
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
@@ -173,6 +203,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("discord:update", listener);
     return () => ipcRenderer.off("discord:update", listener);
+  },
+  onMobileStatus: (callback: (payload: GatewayStatus) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: GatewayStatus) => callback(payload);
+    ipcRenderer.on("mobile:status", listener);
+    return () => ipcRenderer.off("mobile:status", listener);
   },
   onUsageUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

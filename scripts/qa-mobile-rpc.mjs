@@ -78,6 +78,7 @@ function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1", br
     snapshotProvider: () => snapshotProvider,
     appName: "AgentParty",
     appVersion: "0.2.0",
+    signalingUrl: () => "wss://sig.test/v1/ws",
     registerPush: (deviceId, platform, handle) => pushes.push({ deviceId, platform, handle }),
     log: () => {},
     now: () => 1_700_000_000_000,
@@ -107,6 +108,17 @@ console.log("RpcServer assertions:");
   assert(P.SysInfoResultSchema.safeParse(info.r).success, "the sys.info result matches the shared schema");
   assert(info.r.protocolVersion === P.PROTOCOL_VERSION, "sys.info reports the protocol version");
   assert(info.r.maxSeq === 1, "sys.info reports the live ring-buffer window");
+
+  // 01 ddc2563 — the signaling address is NOT part of trust, so a phone must be
+  // able to learn a new one over a LIVE session rather than re-pairing.
+  assert(
+    info.r.signalingUrl === "wss://sig.test/v1/ws",
+    `sys.info carries the desktop's signaling URL (${info.r.signalingUrl})`,
+  );
+  assert(
+    Object.prototype.hasOwnProperty.call(P.SysInfoResultSchema.shape ?? {}, "signalingUrl"),
+    "BLOCKED: SysInfoResultSchema does not declare signalingUrl — a phone parsing non-strictly would STRIP it and never see the new address (server: add the field)",
+  );
 
   h.server.handle(req("push.register", { platform: "android", handle: "fcm-token" }));
   await tick();

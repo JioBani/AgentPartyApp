@@ -21,6 +21,7 @@ import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } fro
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import type { UpdateStatus } from "../shared/appUpdate";
 import { UpdatePill } from "./workbench/UpdatePill";
+import { MobileDrivingPill } from "./workbench/MobileDrivingPill";
 import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
@@ -31,6 +32,7 @@ import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { isRuntimeTabId, type RuntimeTabId } from "../shared/runtimeTabs";
+import type { ApprovalDelivery } from "../shared/approvals";
 import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
@@ -598,6 +600,20 @@ export function App() {
     (what: string) => (error: unknown) => setPartyNotice(`${what}: ${ipcErrorMessage(error)}`),
     [],
   );
+
+  /**
+   * An approval card can outlive the request behind it — the turn ends, the
+   * member respawns, or someone answered it on a phone. The click used to
+   * report nothing in those cases while the card visibly flipped to "resolved",
+   * so the user believed they had answered.
+   */
+  const noticeIfNotDelivered = useCallback((delivery: ApprovalDelivery) => {
+    if (delivery === "no_such_session") {
+      setPartyNotice("이 승인 요청의 세션이 이미 종료되어 응답이 전달되지 않았습니다.");
+    } else if (delivery === "not_pending") {
+      setPartyNotice("이미 처리되었거나 만료된 승인 요청입니다. 응답이 전달되지 않았습니다.");
+    }
+  }, []);
 
   // Auto-dismiss the status toast so a transient notice doesn't linger.
   useEffect(() => {
@@ -1215,7 +1231,9 @@ export function App() {
       if (!sessionId) {
         return;
       }
-      void window.agentParty.approve(sessionId, requestId, behavior, updatedInput).catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
+      void window.agentParty.approve(sessionId, requestId, behavior, updatedInput)
+        .then(noticeIfNotDelivered)
+        .catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, behavior));
     },
     answerQuestion(name, requestId, input, answers) {
@@ -1224,7 +1242,9 @@ export function App() {
         return;
       }
       const updatedInput = { ...(input && typeof input === "object" ? input : {}), answers };
-      void window.agentParty.approve(sessionId, requestId, "allow", updatedInput).catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
+      void window.agentParty.approve(sessionId, requestId, "allow", updatedInput)
+        .then(noticeIfNotDelivered)
+        .catch(noticeOnFailure("승인 결과를 전달하지 못했습니다"));
       setLogsBySession((current) => markApprovalResolved(current, sessionId, requestId, "allow", answers));
     },
     interrupt(name) {
@@ -1452,6 +1472,8 @@ export function App() {
           </button>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
+          {/* Renders only while a phone is connected — see MobileDrivingPill. */}
+          <span className="no-drag"><MobileDrivingPill /></span>
         </div>
         <div className="window-controls">
           <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>

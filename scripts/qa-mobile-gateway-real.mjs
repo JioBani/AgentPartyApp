@@ -182,8 +182,8 @@ console.log("RealMobileGateway assertions:");
   try { await g.instance.pairing.openQr(); } catch (error) { threw = String(error?.message ?? error); }
   assert(threw.length > 0, "openQr() is refused while signaling has never connected");
   assert(
-    threw.includes("신뢰 기록") || threw.includes("연결되지 않"),
-    `and the reason explains the durable consequence, not just "offline" (${threw.slice(0, 50)})`,
+    threw.includes("등록"),
+    `and the reason is REGISTRATION, not trust contamination (01 ddc2563) (${threw.slice(0, 45)})`,
   );
   assert(
     g.instance.pairing.state$.current.phase === "idle",

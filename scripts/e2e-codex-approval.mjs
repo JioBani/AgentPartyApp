@@ -72,11 +72,17 @@ async function main() {
     await postJson(`${baseUrl}/api/window/close`, {});
     await waitForExit(child);
     console.log("CODEX APPROVAL E2E PASSED");
+    // Exit explicitly. Every assertion passes and the app process is gone, but
+    // the script's own stdio pipes keep the event loop alive, so node never
+    // returned on its own — the run reported a non-zero exit long after it had
+    // actually succeeded, which is worse than failing loudly.
+    process.exitCode = 0;
   } catch (error) {
     killProcessTree(child.pid);
     throw error;
   } finally {
     await removePath(decisionFile);
+    process.exit(process.exitCode ?? 0);
   }
 }
 

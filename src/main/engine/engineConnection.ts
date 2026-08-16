@@ -21,6 +21,7 @@ import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
+import type { ApprovalDelivery } from "../../shared/approvals";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -208,7 +209,8 @@ export interface EngineConnection {
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
-  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<void>;
+  /** Answers a pending approval and reports whether the harness took it. */
+  approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery>;
   closeSession(sessionId: string): Promise<boolean>;
 
   // --- Token usage (workspace-scoped) ------------------------------------
