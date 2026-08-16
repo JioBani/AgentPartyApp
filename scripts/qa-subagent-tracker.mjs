@@ -23,10 +23,16 @@ async function bundle(entry, name) {
   const r = await build({ entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "node", write: false });
   const p = path.join(outDir, name); writeFileSync(p, r.outputFiles[0].text); return import(pathToFileURL(p).href);
 }
+async function bundleWithExternalPackages(entry, name) {
+  const r = await build({ entryPoints: [path.join(projectRoot, entry)], bundle: true, format: "esm", platform: "node", packages: "external", write: false });
+  const p = path.join(outDir, name); writeFileSync(p, r.outputFiles[0].text); return import(pathToFileURL(p).href);
+}
 const readJsonl = (rel) => readFileSync(path.join(projectRoot, rel), "utf8").split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
 
 const { ClaudeSubagentTracker, CodexSubagentTracker } = await bundle("src/core/subagentTracker.ts", "tracker.mjs");
 const { applySubagentEvents } = await bundle("src/renderer/app/subagentEvents.ts", "sub-fold-2.mjs");
+const { CodexAdapter } = await bundleWithExternalPackages("src/core/codexAdapter.ts", "subagent-codex-adapter.mjs");
+const { ClaudeAdapter } = await bundleWithExternalPackages("src/core/claudeAdapter.ts", "subagent-claude-adapter.mjs");
 
 const stamp = (emits) => emits.map((e) => ({ type: "subagent", agentId: e.agentId, lifecycle: e.lifecycle, activity: e.activity, block: e.block, at: "t" }));
 
@@ -138,6 +144,68 @@ console.log("\nCODEX replay (recorded gpt-mini traffic):");
   assert(yWeb.length === 1 && /1등급/.test(yWeb[0].arg || ""), "empty top-level query falls back to action.queries (card is not an empty strip)");
   const yAsst = ysub.blocks.filter((b) => b.kind === "assistant");
   assert(yAsst.length === 1 && /조사 결과/.test(yAsst[0].text), "empty/whitespace agentMessage completions add no blank blocks (only the real message)");
+}
+
+// A request response can establish the root without a `thread/started`
+// notification (notably on resume). Drive the real adapter in that protocol
+// order: before the fix it classified child-x as parent activity and emitted no
+// `subagent` event at all.
+console.log("\nCODEX adapter root from thread response:");
+{
+  const adapter = new CodexAdapter({ id: "adapter-root", cwd: process.cwd(), model: "gpt-5.4-mini", effort: "low", debugEnabled: false });
+  const events = [];
+  adapter.on("event", (event) => events.push(event));
+  adapter.applyThreadResult({ thread: { id: "root-from-response" }, model: "gpt-5.4-mini" });
+  adapter.readMessage(JSON.stringify({
+    method: "item/completed",
+    params: {
+      threadId: "root-from-response",
+      item: { type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: ["child-from-response"], prompt: "inspect one file" },
+    },
+  }));
+  adapter.readMessage(JSON.stringify({
+    method: "item/completed",
+    params: {
+      threadId: "child-from-response",
+      item: { type: "agentMessage", text: "inspection complete" },
+    },
+  }));
+  const childEvents = events.filter((event) => event.type === "subagent" && event.agentId === "child-from-response");
+  assert(childEvents.length >= 2, `response-established root routes child notifications to the subagent dock (${childEvents.length} events)`);
+  assert(childEvents.some((event) => event.block?.kind === "assistant"), "child output stays in its own subagent transcript after response-only root initialization");
+  adapter.dispose();
+}
+
+console.log("\nCODEX root change:");
+{
+  const tracker = new CodexSubagentTracker();
+  tracker.setRoot("old-root");
+  tracker.collab({ tool: "spawnAgent", receiverThreadIds: ["old-child"] });
+  tracker.setRoot("new-root");
+  assert(!tracker.isSubagentThread("new-root"), "a restarted adapter's new root is never classified as a child");
+  assert(tracker.threadStatus("old-child", "active").length === 0, "changing roots discards child state from the previous Codex thread");
+}
+
+console.log("\nCLAUDE stuck-hook diagnostic:");
+{
+  const adapter = new ClaudeAdapter({
+    id: "hook-watch", cwd: process.cwd(), model: "haiku", effort: "low",
+    safeMode: false, debugEnabled: false, storageDir: outDir,
+    customModelRoutes: [], routerBaseUrl: "http://127.0.0.1:1", routerAuthToken: "",
+    hookStallMs: 15,
+  });
+  const events = [];
+  adapter.on("event", (event) => events.push(event));
+  await adapter.normalize({ type: "system", subtype: "hook_started", hook_id: "hook-stuck", hook_name: "Stop" });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const diagnostic = events.find((event) => event.type === "diagnostic" && event.category === "hook");
+  assert(Boolean(diagnostic) && /Stop/.test(diagnostic.title), "an unmatched Claude hook is surfaced with its name instead of an indefinite spinner");
+
+  await adapter.normalize({ type: "system", subtype: "hook_started", hook_id: "hook-ok", hook_name: "UserPromptSubmit" });
+  await adapter.normalize({ type: "system", subtype: "hook_response", hook_id: "hook-ok", hook_name: "UserPromptSubmit" });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert(!events.some((event) => event.type === "diagnostic" && /UserPromptSubmit/.test(event.title)), "a matched hook response cancels the watchdog (no false warning)");
+  adapter.dispose();
 }
 
 console.log(failures.length ? `\nSUBAGENT TRACKER FAILED (${failures.length})` : "\nSUBAGENT TRACKER PASSED");
