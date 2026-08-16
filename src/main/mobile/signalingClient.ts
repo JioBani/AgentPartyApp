@@ -95,6 +95,8 @@ export class SignalingClient {
 
   private pingTimer: NodeJS.Timeout | undefined;
   private lastServerMessageAt = 0;
+  /** 01 §3.1 — STUN servers the signaling server offered on `ok`. */
+  private offeredIceServers: string[] = [];
   private reconnectTimer: NodeJS.Timeout | undefined;
 
   private readonly now: () => number;
@@ -111,6 +113,15 @@ export class SignalingClient {
 
   get currentPhase(): SignalingPhase {
     return this.phase;
+  }
+
+  /**
+   * ICE servers the signaling server offered (01 §3.1), already filtered to
+   * `stun:`. Empty until an `ok` carrying them arrives, and empty for a server
+   * that offers none — the caller falls back to its built-in list.
+   */
+  get iceServers(): readonly string[] {
+    return this.offeredIceServers;
   }
 
   start(handlers: SignalingHandlers): void {
@@ -221,6 +232,10 @@ export class SignalingClient {
         return;
       }
       case "ok": {
+        this.offeredIceServers = acceptIceServers(
+          (message as { iceServers?: unknown }).iceServers,
+          (entry) => this.deps.log("warn", "mobile signaling: ignoring a non-STUN ICE server", { entry }),
+        );
         this.attempt = 0;
         this.setPhase("connected");
         this.startPing();
@@ -423,6 +438,32 @@ export class SignalingClient {
     }
     this.socket.send(encodeSignalingMessage(message));
   }
+}
+
+/**
+ * 01 §3.1 — the server may offer ICE servers, and only `stun:` is allowed.
+ *
+ * A `turn:`/`turns:` entry is dropped rather than used: this system routes no
+ * media through anyone else's server (00 §원칙 2), so honouring one would
+ * quietly undo that guarantee at the request of a semi-trusted party
+ * (02 §신뢰 경계). Dropping is logged, never silent.
+ */
+export function acceptIceServers(value: unknown, onRejected?: (entry: string) => void): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const accepted: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    if (/^stun:/i.test(entry)) {
+      accepted.push(entry);
+    } else {
+      onRejected?.(entry);
+    }
+  }
+  return accepted;
 }
 
 /** Real `ws` adapter. Isolated so the client itself stays socket-agnostic. */

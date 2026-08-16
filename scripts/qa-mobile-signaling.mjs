@@ -33,11 +33,13 @@ const result = await build({
 });
 const bundlePath = path.join(qaTempDir(), "signalingClient.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
-const { SignalingClient } = await import(pathToFileURL(bundlePath).href);
+const SC = await import(pathToFileURL(bundlePath).href);
+const { SignalingClient, acceptIceServers } = SC;
 const P = await import("@agentparty/protocol");
 await P.sodiumReady();
 
 const failures = [];
+let blocked = 0;
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
 
 /** Virtual clock: the pacing rules are about time, so time is controlled. */
@@ -318,5 +320,48 @@ console.log("SignalingClient assertions:");
   assert(h.sockets.length === 1, "a stopped client never redials");
 }
 
+// --- 01 §3.1: ICE servers offered on `ok` ----------------------------------
+{
+  // Only stun: is honoured. A turn:/turns: entry would route media through
+  // someone else's server, which this system does not do (00 §원칙 2) — and
+  // the offer comes from a semi-trusted party (02 §신뢰 경계), so it is dropped
+  // rather than obeyed.
+  const rejected = [];
+  const accepted = acceptIceServers(
+    ['stun:a.example:3478', 'turn:evil.example:3478', 'turns:evil.example:5349', 'stun:b.example:19302', 42, null],
+    (entry) => rejected.push(entry),
+  );
+  assert(accepted.join(',') === 'stun:a.example:3478,stun:b.example:19302', 'only stun: entries are kept, in order');
+  assert(rejected.join(',') === 'turn:evil.example:3478,turns:evil.example:5349', 'turn/turns are dropped and reported, not silently ignored');
+  assert(acceptIceServers(undefined).length === 0, 'a server that offers nothing yields an empty list');
+  assert(acceptIceServers('stun:a.example').length === 0, 'a non-array offer is refused rather than coerced');
+
+  const h = harness({ identity });
+  completeHandshake(h, identity);
+  assert(h.client.iceServers.length === 0, 'with no offer the client reports none, so the caller uses its built-in list');
+}
+
+// --- the offer only survives if the shared schema carries it ---------------
+{
+  const h = harness({ identity });
+  const socket = h.socket();
+  socket.open();
+  const nonce = P.newChallengeNonce();
+  const ts = h.time.now();
+  socket.deliver({ t: 'challenge', nonce: P.toB64(nonce), serverId: 'sig.test', ts });
+  socket.deliver({ t: 'ok', iceServers: ['stun:offered.example:3478'] });
+
+  const carried = P.ServerOkSchema.safeParse({ t: 'ok', iceServers: ['stun:x'] });
+  const schemaKeeps = carried.success && Array.isArray(carried.data.iceServers);
+  if (schemaKeeps) {
+    assert(h.client.iceServers[0] === 'stun:offered.example:3478', 'an offered STUN server reaches the transport');
+  } else {
+    console.log('  ! BLOCKED: @agentparty/protocol ServerOkSchema drops `iceServers`, so a server offer never reaches this client.');
+    blocked += 1;
+  }
+}
+if (blocked > 0) {
+  console.log(`\n${blocked} check(s) BLOCKED on an @agentparty/protocol update — see above.`);
+}
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nAll assertions passed");
 process.exit(failures.length ? 1 : 0);

@@ -18,6 +18,7 @@ import {
 } from "@agentparty/protocol";
 import {
   MOBILE_SETTINGS_DEFAULTS,
+  MOBILE_STUN_SERVERS,
   type GatewayStatus,
   type MobilePlatform,
   type MobileSessionStatus,
@@ -488,6 +489,9 @@ export class RealMobileGateway implements MobileGateway {
       identity: store.identity,
       peerSigPk: fromB64(device.sigPk),
       log: this.deps.log,
+      // 01 §3.1 — the server's list goes first, then the built-in public
+      // servers as a fallback. A server that offers none changes nothing.
+      iceServers: [...(this.signaling?.iceServers ?? []), ...MOBILE_STUN_SERVERS],
       loadNative: this.deps.loadWebrtcModule as never,
       mappedCandidate: this.mappedCandidateForTransport(),
       sendSdp: (payload) => this.sendRelay(device, "answer", payload as unknown as Record<string, unknown>),
