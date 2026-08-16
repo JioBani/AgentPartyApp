@@ -96,7 +96,11 @@ translation stores a hash of the English it came from, so an edited section
 reports its translation stale instead of quietly drifting. That call and the
 Message Gate reviewer share one headless transport
 (`src/core/headlessModelCall.ts`: subscription-proxy vs router routing, reasoning
-fields per wire, measured usage). Codex
+fields per wire, measured usage). Which SLOT each harness has for it differs, and
+`PARTY_PRIMER_DELIVERY` records that next to the text: system prompt (Claude
+Code), developer instructions (Codex), or — where the protocol has neither slot —
+in front of the first user turn (Cursor's `cursor-agent`, and Grok's ACP
+`session/new`, whose params are only `{cwd, mcpServers}`). Codex
 installs it once through `thread/start.developerInstructions` and reapplies the
 same thread-scoped override on `thread/resume`, so `turn/start.input` carries
 only the user's message and the primer never repeats as conversation history.

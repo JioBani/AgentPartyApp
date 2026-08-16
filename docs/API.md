@@ -432,8 +432,8 @@ use:
   "totals": { "tokens": 2442, "characters": 9242, "enabledSections": 6,
               "totalSections": 6, "disabledTokens": 0 },
   "delivery": [
-    { "harness": "claude-code", "label": "Claude Code", "when": "세션 시작 시 1회",
-      "detail": "…", "delivered": true }
+    { "harness": "claude-code", "label": "Claude Code", "channel": "system",
+      "when": "세션 시작 시 1회", "detail": "…", "delivered": true }
   ]
 }
 ```
@@ -445,11 +445,22 @@ saves (`totals.disabledTokens`), not as a bill. `totals` counts the assembled
 prompt, blank-line joins included, so it matches the text a session receives
 rather than the sum of the parts.
 
-`delivery` answers "does this go out every turn": it does not. Claude Code
-installs it once on the session's system prompt, Codex once as thread-scoped
-developer instructions (re-applied on resume, never in `turn/start.input`),
-Cursor once in front of the first prompt, and Grok members are not given the
-primer at all (`delivered: false`).
+`delivery` answers "does this go out every turn": it does not. `channel` says
+which slot it occupies, which is not cosmetic — a `system`/`developer` primer is
+standing instruction the user never sees, while a `user` one is an ordinary first
+message that lives in the visible history and can be summarised away by
+compaction.
+
+| harness | channel | when |
+| --- | --- | --- |
+| Claude Code | `system` (preset append) | session start |
+| Codex | `developer` (thread-scoped instructions) | thread start + resume |
+| Cursor CLI | `user` (in front of the first prompt) | first message |
+| Grok Build | `user` (in front of the first prompt) | first message |
+
+Cursor and Grok get the `user` channel because neither `cursor-agent` nor ACP's
+`session/new` has a system or developer slot at all. A resumed thread already
+holds it in history, so it is not sent again.
 
 `defaultText` is the built-in text, `text` is what a session actually gets (the
 user's override when set), and `customized` says which of the two you are looking

@@ -1356,6 +1356,9 @@ export class SessionManager extends EventEmitter {
         effort: request.effort || harnessDefaults.effort,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         mcpServers: partyServers,
+        // ACP has no system/developer prompt slot, so the primer rides in front
+        // of the first turn (the Cursor arrangement).
+        partyPrimer,
         usageSourceId,
       }) as unknown as HarnessSession;
     }

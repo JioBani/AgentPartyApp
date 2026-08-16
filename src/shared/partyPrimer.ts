@@ -272,9 +272,25 @@ export function estimatePrimerTokens(text: string): number {
  * the adapters actually do (`claudeAdapter.partySystemPrompt`,
  * `codexAdapter.partyDeveloperInstructions`, `cursorAdapter.buildPrompt`).
  */
+/**
+ * WHICH channel the primer occupies. Not cosmetic: a system/developer prompt is
+ * out-of-band instruction the model treats as its standing brief and the user
+ * never sees, while a `user` primer is an ordinary first message that sits in
+ * the visible chat history and can be summarised away by compaction.
+ */
+export type PartyPrimerChannel = "system" | "developer" | "user";
+
+export const PARTY_PRIMER_CHANNEL_LABELS: Record<PartyPrimerChannel, string> = {
+  system: "시스템 프롬프트",
+  developer: "개발자 프롬프트",
+  user: "첫 사용자 메시지",
+};
+
 export interface PartyPrimerDelivery {
   harness: "claude-code" | "codex" | "cursor" | "grok";
   label: string;
+  /** Where it goes — see {@link PartyPrimerChannel}. */
+  channel: PartyPrimerChannel;
   /** Short answer to "턴마다? 시작할 때?". */
   when: string;
   detail: string;
@@ -286,6 +302,7 @@ export const PARTY_PRIMER_DELIVERY: readonly PartyPrimerDelivery[] = [
   {
     harness: "claude-code",
     label: "Claude Code",
+    channel: "system",
     when: "세션 시작 시 1회",
     detail: "세션이 뜰 때 시스템 프롬프트에 덧붙습니다(preset append). 턴마다 앱이 다시 얹지 않으며, 대화 기록에도 남지 않습니다.",
     delivered: true,
@@ -293,6 +310,7 @@ export const PARTY_PRIMER_DELIVERY: readonly PartyPrimerDelivery[] = [
   {
     harness: "codex",
     label: "Codex",
+    channel: "developer",
     when: "스레드 시작·재개 시 1회",
     detail: "thread/start 의 developer instructions 로 한 번, 스레드를 재개할 때 같은 값으로 한 번 더 설치됩니다. turn/start 입력에는 사용자 메시지만 담기므로 프라이머가 대화로 반복 쌓이지 않습니다.",
     delivered: true,
@@ -300,16 +318,18 @@ export const PARTY_PRIMER_DELIVERY: readonly PartyPrimerDelivery[] = [
   {
     harness: "cursor",
     label: "Cursor CLI",
+    channel: "user",
     when: "첫 메시지에 1회",
-    detail: "cursor-agent 에는 시스템 프롬프트 자리가 없어 첫 프롬프트 앞에 한 번 붙습니다. 이후 턴에는 붙지 않고 그 채팅 기록에 남습니다.",
+    detail: "cursor-agent 에는 시스템·개발자 프롬프트 자리가 없어 첫 프롬프트 앞에 한 번 붙습니다. 이후 턴에는 붙지 않고 그 채팅 기록에 남습니다.",
     delivered: true,
   },
   {
     harness: "grok",
     label: "Grok Build",
-    when: "주입 안 됨",
-    detail: "파티 툴(MCP)만 연결되고 프라이머는 전달되지 않습니다. Grok 멤버는 이 화면의 규약을 받지 못합니다.",
-    delivered: false,
+    channel: "user",
+    when: "첫 메시지에 1회",
+    detail: "ACP 의 session/new 에는 시스템·개발자 프롬프트 자리가 없어(cwd·MCP 서버뿐) Cursor 와 같은 방식으로 첫 프롬프트 앞에 한 번 붙습니다. 스레드를 재개할 때는 이미 기록에 있으므로 다시 보내지 않습니다.",
+    delivered: true,
   },
 ];
 

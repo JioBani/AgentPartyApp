@@ -3,6 +3,7 @@ import { AlertTriangle, Languages, RotateCcw } from "lucide-react";
 import {
   partyPrimerTotals,
   partyPrimerView,
+  PARTY_PRIMER_CHANNEL_LABELS,
   PARTY_PRIMER_DELIVERY,
   PARTY_PRIMER_VARIABLES,
   type PartyPrimerSectionId,
@@ -119,6 +120,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
           {PARTY_PRIMER_DELIVERY.map((entry) => (
             <div className="set-primer-delivery-row" key={entry.harness}>
               <span className="set-primer-delivery-harness">{entry.label}</span>
+              <span className={"set-primer-channel is-" + entry.channel}>{PARTY_PRIMER_CHANNEL_LABELS[entry.channel]}</span>
               <span className={"set-primer-delivery-when" + (entry.delivered ? "" : " is-none")}>{entry.when}</span>
               <span className="set-primer-delivery-detail">{entry.detail}</span>
             </div>
