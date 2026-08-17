@@ -4,16 +4,11 @@ import {
   ChevronLeft,
   ChevronRight,
   DollarSign,
-  Maximize2,
   Menu,
   MessageSquare,
-  Minus,
   Play,
-  Sun,
   X,
 } from "lucide-react";
-import { App } from "../App";
-import { useTheme } from "../theme/ThemeProvider";
 import {
   firstSlideOfScene,
   GUIDE_SCENES,
@@ -24,27 +19,32 @@ import {
 } from "../../shared/guide";
 import { slideAt } from "./slides";
 import { GuideChat } from "./GuideChat";
+import { GuideStage } from "./GuideStage";
 import "./guide.css";
 
-/** The stage renders the real workbench at this fixed size and scales the whole
- *  box down. The spotlight rectangles are percentages measured against exactly
- *  these dimensions, so they must not drift apart. */
+/** The stage renders the real workbench at a fixed 1440×942 (see
+ *  `.guide-stage-app` / `.guide-stage-frame`) and scales the whole box down. The
+ *  spotlight rectangles are percentages measured against exactly those
+ *  dimensions, so the two must not drift apart. */
 const STAGE_W = 1440;
-const STAGE_H = 942;
 
-type GuideView = "chat" | "deck" | "end";
+type GuideMode = "chat" | "deck" | "end";
 
 function requireGuideHost(): typeof window.agentPartyGuide {
   const host = window.agentPartyGuide;
   if (!host) {
-    throw new Error("가이드 preload 가 window.agentPartyGuide 를 노출하지 않았습니다.");
+    throw new Error("preload 가 window.agentPartyGuide 를 노출하지 않았습니다.");
   }
   return host;
 }
 
-export function GuideApp() {
-  const { cycleTheme } = useTheme();
-  const [view, setView] = useState<GuideView>("chat");
+/**
+ * The guide screen. Lives in the main window like any other view — the nav rail,
+ * the titlebar and the window controls stay where the user left them, and
+ * leaving the guide is a navigation, not a window close.
+ */
+export function GuideView({ onLeave }: { onLeave: () => void }) {
+  const [mode, setMode] = useState<GuideMode>("chat");
   const [index, setIndex] = useState(0);
   const [generation, setGeneration] = useState(0);
   const [tocOpen, setTocOpen] = useState(false);
@@ -56,19 +56,32 @@ export function GuideApp() {
   const apply = useCallback((next: number, { present = true }: { present?: boolean } = {}) => {
     try {
       const slide = slideAt(next);
-      const host = requireGuideHost();
-      host.applySnapshot(slide.snapshot);
-      host.notifySlide(slide.index);
       setIndex(slide.index);
       if (present) {
-        setView("deck");
+        setMode("deck");
       }
       setTocOpen(false);
+      // Bumped even when the index is unchanged: re-selecting a slide must
+      // rebuild the stage from the snapshot, never leave an edited state behind.
       setGeneration((value) => value + 1);
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     }
+  }, []);
+
+  // Main mirrors what is on screen so GET /api/guide answers about the real
+  // view, not about a window it used to own.
+  useEffect(() => {
+    try {
+      requireGuideHost().notifyState({ open: true, presenting: mode === "deck", slide: index });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, [mode, index]);
+
+  useEffect(() => () => {
+    window.agentPartyGuide?.notifyState({ open: false, presenting: false, slide: 0 });
   }, []);
 
   useEffect(() => {
@@ -92,24 +105,10 @@ export function GuideApp() {
     };
   }, [apply]);
 
-  useEffect(() => {
-    if (view !== "deck") {
-      return;
-    }
-    const id = window.setTimeout(() => {
-      try {
-        requireGuideHost().flushSideEffects();
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : String(caught));
-      }
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [generation, view]);
-
   // The stage keeps the workbench whole — never cropped — so it is scaled to fit
   // whatever the window currently gives it.
   useLayoutEffect(() => {
-    if (view !== "deck") {
+    if (mode !== "deck") {
       return;
     }
     const element = stageRef.current;
@@ -121,7 +120,7 @@ export function GuideApp() {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [view]);
+  }, [mode]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -137,13 +136,13 @@ export function GuideApp() {
         setAskOpen(false);
         return;
       }
-      if (typing || view !== "deck") {
+      if (typing || mode !== "deck") {
         return;
       }
       if (event.key === "ArrowRight" || event.key === "PageDown") {
         event.preventDefault();
         if (index >= GUIDE_SLIDE_COUNT - 1) {
-          setView("end");
+          setMode("end");
         } else {
           apply(index + 1);
         }
@@ -160,46 +159,33 @@ export function GuideApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [apply, index, view]);
+  }, [apply, index, mode]);
 
   const slide = slideAt(index);
   const scene = sceneOf(index);
-  const paid = view !== "deck" || askOpen;
+  const paid = mode !== "deck" || askOpen;
 
   return (
     <div className="guide-window">
-      <div className="app-titlebar">
-        <div className="titlebar-drag">
-          <div className="titlebar-brand">
-            <span className="brand-mark"><span className="brand-mark-dot" /></span>
-            <span className="brand-name">AgentParty</span>
-            <small className="brand-sub">가이드</small>
-          </div>
-          <div className="guide-titlebar-tools no-drag">
-            <span
-              className={"guide-cost " + (paid ? "is-paid" : "is-free")}
-              title={paid ? "채팅은 선택한 모델의 비용이 발생한다" : "프레젠테이션은 AI를 쓰지 않는다"}
-            >
-              <DollarSign size={11} />
-              {paid ? "채팅은 비용이 발생" : "AI 사용 안 함"}
-            </span>
-            <GuideLanguage onError={setError} />
-            <button type="button" className="titlebar-action" title="테마 전환" onClick={cycleTheme}>
-              <Sun size={14} />
-            </button>
-          </div>
-        </div>
-        <div className="window-controls">
-          <button type="button" className="window-button" title="최소화" onClick={() => void window.agentParty.minimizeWindow()}><Minus size={15} /></button>
-          <button type="button" className="window-button" title="최대화" onClick={() => void window.agentParty.maximizeWindow()}><Maximize2 size={14} /></button>
-          <button type="button" className="window-button close" title="닫기" onClick={() => void window.agentParty.closeWindow()}><X size={16} /></button>
-        </div>
+      {/* The app titlebar already names the screen and carries the theme toggle
+          and window controls, so this row keeps only what is the guide's own:
+          whether the current surface spends tokens, and the language. */}
+      <div className="guide-topbar">
+        <span
+          className={"guide-cost " + (paid ? "is-paid" : "is-free")}
+          title={paid ? "채팅은 선택한 모델의 비용이 발생한다" : "프레젠테이션은 AI를 쓰지 않는다"}
+        >
+          <DollarSign size={11} />
+          {paid ? "채팅은 비용이 발생" : "AI 사용 안 함"}
+        </span>
+        <span className="guide-spacer" />
+        <GuideLanguage onError={setError} />
       </div>
 
       <div className="guide-body">
         {error ? <div className="wb-inline-note is-warning" role="alert" style={{ margin: "10px 12px 0" }}>{error}</div> : null}
 
-        {view === "chat" ? (
+        {mode === "chat" ? (
           <GuideChat
             kind="chatbot"
             onStart={() => apply(0)}
@@ -207,7 +193,7 @@ export function GuideApp() {
           />
         ) : null}
 
-        {view === "deck" ? (
+        {mode === "deck" ? (
           <>
             <div className="guide-deck">
               <div className="guide-deck-top">
@@ -246,7 +232,7 @@ export function GuideApp() {
               <div className="guide-stage-area">
                 <div className={"guide-stage" + (askOpen ? "" : " is-focused")} ref={stageRef}>
                   <div className="guide-stage-app" style={{ transform: `scale(${scale})` }}>
-                    <App key={generation} />
+                    <GuideStage snapshot={slide.snapshot} generation={generation} />
                   </div>
                   <div className="guide-stage-shade" />
                   <div className="guide-spot" style={slide.spot} />
@@ -268,7 +254,7 @@ export function GuideApp() {
                   type="button"
                   className="guide-nav-btn"
                   title="다음 (→)"
-                  onClick={() => (index >= GUIDE_SLIDE_COUNT - 1 ? setView("end") : apply(index + 1))}
+                  onClick={() => (index >= GUIDE_SLIDE_COUNT - 1 ? setMode("end") : apply(index + 1))}
                 >
                   <ChevronRight size={15} />
                 </button>
@@ -323,7 +309,7 @@ export function GuideApp() {
           </>
         ) : null}
 
-        {view === "end" ? (
+        {mode === "end" ? (
           <div className="guide-end">
             <h2>여기까지입니다</h2>
             <p>
@@ -332,7 +318,7 @@ export function GuideApp() {
             </p>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button type="button" className="ghost-btn" onClick={() => apply(0)}>다시 보기</button>
-              <button type="button" className="accent-btn" onClick={() => void requireGuideHost().leaveToWorkspace()}>
+              <button type="button" className="accent-btn" onClick={onLeave}>
                 작업공간으로
                 <ArrowRight size={14} />
               </button>
@@ -345,8 +331,8 @@ export function GuideApp() {
   );
 }
 
-/** Language lives in the titlebar. Only Korean ships today; the placeholder row
- *  stays so the seam is visible rather than invented later (§9). */
+/** Language lives in the guide's own top row. Only Korean ships today; the
+ *  placeholder stays so the seam is visible rather than invented later (§9). */
 function GuideLanguage({ onError }: { onError: (message: string) => void }) {
   const [language, setLanguage] = useState("ko");
   useEffect(() => {

@@ -176,15 +176,15 @@ export class AutomationApiServer {
         return;
       }
       if (method === "GET" && url.pathname === "/api/guide") {
-        sendJson(res, 200, c.getGuideWindow());
+        sendJson(res, 200, c.getGuideScreen());
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/open") {
-        sendJson(res, 200, await c.openGuideWindow());
+        sendJson(res, 200, await c.openGuideScreen());
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/close") {
-        sendJson(res, 200, c.closeGuideWindow());
+        sendJson(res, 200, c.closeGuideScreen());
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/slide") {
@@ -194,11 +194,11 @@ export class AutomationApiServer {
       }
       if (method === "POST" && url.pathname === "/api/guide/capture") {
         const body = await readJson(req);
-        sendJson(res, 200, await c.captureGuideWindow(typeof body.path === "string" ? body.path : undefined));
+        sendJson(res, 200, await c.captureGuideScreen(typeof body.path === "string" ? body.path : undefined));
         return;
       }
       if (method === "GET" && url.pathname === "/api/guide/inspect") {
-        sendJson(res, 200, await c.inspectGuideWindow());
+        sendJson(res, 200, await c.inspectGuideScreen());
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/ask") {

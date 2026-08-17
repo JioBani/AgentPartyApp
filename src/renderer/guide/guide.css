@@ -9,15 +9,23 @@
  * 정본이 바뀌면 여기도 바꾼다. 눈대중으로 값을 고치지 마라.
  */
 
-/* ---------- 가이드 창 ---------- */
-.guide-window { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-1); }
+/* ---------- 가이드 화면 ---------- */
+/* 가이드는 별도 창이 아니라 메인 창의 한 화면이다. 그러므로 이 파일은 앱 전체
+   번들에 함께 실린다 — 여기의 모든 규칙은 반드시 .guide-window 안으로 한정한다.
+   범위를 벗어난 한 줄이 앱 전체의 글자 줄바꿈을 바꾼 적이 있다. */
+.guide-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-1); }
 .guide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
-/* 창 상단 오른쪽에 붙는 언어 선택 + 비용 표시 */
-.guide-titlebar-tools { display: flex; align-items: center; gap: 8px; }
-.titlebar-brand { flex: none; white-space: nowrap; }
-.titlebar-brand .brand-name, .titlebar-brand .brand-sub { white-space: nowrap; flex: none; }
-.wb-assistant-head strong, .wb-user-who { white-space: nowrap; }
+/* 화면 상단 오른쪽에 붙는 언어 선택 + 비용 표시. 정본에서는 가이드 창의
+   타이틀바에 있었지만, 메인 창에서는 타이틀바가 이미 화면 이름·테마·창 버튼을
+   들고 있으므로 가이드 고유의 두 가지만 이 줄로 내려온다. */
+.guide-topbar {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    height: var(--bar-height); padding: 0 14px 0 18px; box-sizing: border-box;
+    border-bottom: var(--border-width) solid var(--border);
+    background: var(--bg-2);
+  }
+.guide-window .wb-assistant-head strong, .guide-window .wb-user-who { white-space: nowrap; }
 .guide-lang {
     height: 22px; padding: 0 6px; border-radius: var(--radius-pill);
     border: var(--border-width) solid var(--border); background: var(--bg-2);

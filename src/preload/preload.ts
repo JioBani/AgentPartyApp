@@ -5,7 +5,8 @@ import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
-import type { GuideWindowInfo } from "../shared/guide";
+import type { GuideScreenInfo } from "../shared/guide";
+import type { GuideHostApi } from "../shared/guideHost";
 
 const api = {
   /**
@@ -94,7 +95,7 @@ const api = {
   newWindow: (workspacePath?: string, partyId?: string) => ipcRenderer.invoke("window:new", workspacePath, partyId),
   listWindows: () => ipcRenderer.invoke("window:list"),
   /** Opens (or focuses) the guide stage window. Same path as POST /api/guide/open. */
-  openGuide: (): Promise<GuideWindowInfo> => ipcRenderer.invoke("guide:open"),
+  openGuide: (): Promise<GuideScreenInfo> => ipcRenderer.invoke("guide:open"),
   /** First-install offer (§8). Same path as GET /api/guide/offer. */
   getGuideOffer: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer"),
   /** Records that the offer popup was shown. Same path as POST /api/guide/offer. */
@@ -231,5 +232,54 @@ const api = {
 };
 
 contextBridge.exposeInMainWorld("agentParty", api);
+
+/**
+ * The guide screen's own surface. Separate from `agentParty` on purpose: the
+ * workbench must not be able to reach the guide's chat session, and the guide's
+ * chrome asks for things (a knowledge path, a harness-free model catalog) that
+ * are not part of the app bridge.
+ */
+const guide: GuideHostApi = {
+  notifyState: (state) => ipcRenderer.send("guide:state", state),
+  onSetSlide: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { index?: number }) => {
+      if (typeof payload?.index === "number") {
+        callback(payload.index);
+      }
+    };
+    ipcRenderer.on("guide:set-slide", listener);
+    return () => {
+      ipcRenderer.off("guide:set-slide", listener);
+    };
+  },
+  onSetAsk: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { open?: boolean }) => {
+      if (typeof payload?.open === "boolean") {
+        callback(payload.open);
+      }
+    };
+    ipcRenderer.on("guide:set-ask", listener);
+    return () => {
+      ipcRenderer.off("guide:set-ask", listener);
+    };
+  },
+  knowledgePath: () => ipcRenderer.invoke("guide:knowledge"),
+  listRoutes: () => ipcRenderer.invoke("guide:models"),
+  getChat: (kind) => ipcRenderer.invoke("guide:chat:get", kind),
+  sendChat: (kind, text, viewing) => ipcRenderer.invoke("guide:chat:send", kind, text, viewing),
+  resetChat: (kind) => ipcRenderer.invoke("guide:chat:reset", kind),
+  compactChat: (kind) => ipcRenderer.invoke("guide:chat:compact", kind),
+  getChatSettings: () => ipcRenderer.invoke("guide:chat:settings"),
+  updateChatSettings: (patch) => ipcRenderer.invoke("guide:chat:settings", patch),
+  onChatUpdate: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]) => callback(payload);
+    ipcRenderer.on("guide:chat-update", listener);
+    return () => {
+      ipcRenderer.off("guide:chat-update", listener);
+    };
+  },
+};
+
+contextBridge.exposeInMainWorld("agentPartyGuide", guide);
 
 export type AgentPartyApi = typeof api;

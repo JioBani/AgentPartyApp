@@ -43,7 +43,7 @@ import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
-import type { GuideInspect, GuideWindowInfo } from "../../shared/guide";
+import type { GuideInspect, GuideScreenInfo } from "../../shared/guide";
 import { hasConnectedAccount } from "../../shared/guideAuth";
 import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shared/guideChat";
 import type { GuideOfferView } from "../../shared/guideOffer";
@@ -77,17 +77,17 @@ export interface AppControllerDeps {
    */
   updater?: UpdateController;
   /**
-   * Guide stage window. Desktop-only — the headless engine has no BrowserWindow
-   * and must fail out loud if something asks for the guide.
+   * The guide screen inside an app window. Desktop-only — the headless engine
+   * has no window to navigate and must fail out loud if something asks for it.
    */
   guide?: {
-    open: () => Promise<GuideWindowInfo>;
-    close: () => GuideWindowInfo;
-    setSlide: (index: number) => Promise<GuideWindowInfo>;
-    get: () => GuideWindowInfo;
+    open: () => Promise<GuideScreenInfo>;
+    close: () => GuideScreenInfo;
+    setSlide: (index: number) => Promise<GuideScreenInfo>;
+    get: () => GuideScreenInfo;
     capture: (outputPath?: string) => Promise<{ ok: true; path: string; width: number; height: number; bytes: number }>;
     inspect: () => Promise<GuideInspect>;
-    setAsk: (open: boolean) => GuideWindowInfo;
+    setAsk: (open: boolean) => GuideScreenInfo;
     click: (selector: string) => Promise<{ ok: true; selector: string }>;
   };
   guideChat?: {
@@ -708,8 +708,12 @@ export class AppController {
     return info;
   }
 
-  /** Opens (or focuses) the guide stage window. Does not touch the party store. */
-  async openGuideWindow(): Promise<GuideWindowInfo> {
+  /**
+   * Navigates the focused app window to the guide screen. Same path as the nav
+   * rail's 가이드 button and as POST /api/guide/open, so a user and an agent
+   * land identically — including the account gate below. Touches no party store.
+   */
+  async openGuideScreen(): Promise<GuideScreenInfo> {
     const auth = await this.listAuthProviders();
     if (!hasConnectedAccount(auth)) {
       const focused = this.deps.windowRegistry.resolve();
@@ -721,23 +725,23 @@ export class AppController {
     return this.requireGuide().open();
   }
 
-  closeGuideWindow(): GuideWindowInfo {
+  closeGuideScreen(): GuideScreenInfo {
     return this.requireGuide().close();
   }
 
-  setGuideSlide(index: number): Promise<GuideWindowInfo> {
+  setGuideSlide(index: number): Promise<GuideScreenInfo> {
     return this.requireGuide().setSlide(index);
   }
 
-  getGuideWindow(): GuideWindowInfo {
+  getGuideScreen(): GuideScreenInfo {
     return this.requireGuide().get();
   }
 
-  captureGuideWindow(outputPath?: string): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
+  captureGuideScreen(outputPath?: string): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
     return this.requireGuide().capture(outputPath);
   }
 
-  inspectGuideWindow(): Promise<GuideInspect> {
+  inspectGuideScreen(): Promise<GuideInspect> {
     return this.requireGuide().inspect();
   }
 
@@ -745,7 +749,7 @@ export class AppController {
     return this.requireGuide().click(selector);
   }
 
-  setGuideAsk(open: boolean): GuideWindowInfo {
+  setGuideAsk(open: boolean): GuideScreenInfo {
     return this.requireGuide().setAsk(open);
   }
 
@@ -753,7 +757,7 @@ export class AppController {
     return { path: this.requireGuideChat().knowledgePath() };
   }
 
-  /** The model catalog the guide window's own settings modal shows. Scoped to
+  /** The model catalog the guide's own settings modal shows. Scoped to
    *  the guide's cwd (its knowledge folder) so it never touches a user party. */
   async guideModels(): Promise<unknown[]> {
     const payload = await this.listModels(this.requireGuideChat().knowledgePath());
@@ -794,7 +798,7 @@ export class AppController {
 
   private requireGuide(): NonNullable<AppControllerDeps["guide"]> {
     if (!this.deps.guide) {
-      throw new Error("가이드 창은 데스크톱 앱에서만 열 수 있습니다.");
+      throw new Error("가이드 화면은 데스크톱 앱에서만 열 수 있습니다.");
     }
     return this.deps.guide;
   }

@@ -2153,7 +2153,6 @@ omit the header and retain the active-window behavior above.
 ### `GET /api/windows`
 
 Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
-The guide stage is not in this list — use `GET /api/guide`.
 
 ### `POST /api/windows`
 
@@ -2179,10 +2178,15 @@ Points an existing window at a different workspace. Body
 
 ## Guide
 
-The in-app guide is a **separate BrowserWindow** with its own preload. It mounts
-the real `App` tree against a fake `window.agentParty` and never talks to the
-party store. Opening it, jumping slides, or clicking around the stage must not
-change the user's parties or workspace.
+The in-app guide is a **screen of an ordinary app window** (`ViewId: "guide"`),
+reached from the nav rail's 가이드 button or from `POST /api/guide/open` — both
+run the same AppController method, so a user and an agent land identically.
+
+Its presentation stage is an **iframe** (`dist-renderer/guide/stage/index.html`)
+that mounts the real `App` tree against a fake `window.agentParty` and its own
+in-memory `localStorage`. The stage is a picture of the app: it never talks to
+the party store, and jumping slides or clicking around it must not change the
+user's parties, workspace, or saved UI state.
 
 ### `GET /api/guide/offer`
 
@@ -2200,36 +2204,46 @@ AppController method as the dialog appearing. Anything else is an error.
 ### `GET /api/guide`
 
 `{ open, presenting, id?, slide, slideCount, slideId?, title?, sceneId?, sceneTitle? }`.
-`open: false` when the window is not showing. `presenting` is false on the
-landing ("가이드 보기") until a slide is shown. The guide window is **not**
-in `GET /api/windows`.
+`open: false` when no window is showing the guide screen. `presenting` is false
+on the landing ("가이드 보기") until a slide is shown. `id` is the window
+currently showing it, named the same way `GET /api/windows` names it — the guide
+is that window, not a separate one.
+
+The screen reports its own state back to main, so navigating away from the guide
+in the UI is reflected here rather than leaving a stale `open: true`.
 
 ### `POST /api/guide/open`
 
-Opens the guide (or focuses it if already open). Returns the same payload as
-`GET /api/guide`. Starts at slide 0.
+Navigates the focused app window to the guide screen (focusing and restoring it
+first). Returns the same payload as `GET /api/guide`. Starts on the landing
+chat; the presentation starts at slide 0.
+
+Errors when no account is connected — the window is sent to 인증 instead (§8).
 
 ### `POST /api/guide/close`
 
-Closes the guide window. Returns `{ open: false, … }`.
+Leaves the guide screen and returns that window to the Workbench. Returns
+`{ open: false, … }`.
 
 ### `POST /api/guide/slide`
 
 Body `{ "index": 0 }`. Jumps to that absolute snapshot and remounts the stage.
-Out-of-range or a missing window is an error — nothing is substituted.
+Out-of-range, or the guide not being on screen, is an error — nothing is
+substituted.
 
 ### `POST /api/guide/capture`
 
-Captures the guide window. Body `{ "path": "C:/tmp/guide.png" }` (optional).
-The guide is not a `GET /api/windows` entry, so `POST /api/capture` cannot see
-it — this is the dedicated route. A full-size white frame still counts as a
-successful capture — use `GET /api/guide/inspect` to ask what is actually in
+Captures the window showing the guide. Body `{ "path": "C:/tmp/guide.png" }`
+(optional). `POST /api/capture` can now reach the same window by id; this route
+stays because it fails loudly when the guide is NOT on screen, instead of
+returning a picture of some other view. A full-size white frame still counts as
+a successful capture — use `GET /api/guide/inspect` to ask what is actually in
 the DOM.
 
 ### `GET /api/guide/inspect`
 
 Reads the live guide DOM through a fixed `webContents.executeJavaScript`
-script (no caller text). Returns whether `.guide-root`, landing, chatbot,
+script (no caller text). Returns whether `.guide-window`, landing, chatbot,
 cost copy, and the 「질문하기」 FAB are present, their boxes/styles, FAB
 contrast under both `light` and `dark`, and any `[[slide:N]]` missing/link
 nodes. A missing selector is `{ present: false }`, never a guessed zero box.

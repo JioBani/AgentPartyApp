@@ -1,24 +1,21 @@
 /**
- * Extra surface the guide window's renderer chrome uses to drive the fake
- * preload. Not part of `AgentPartyApi` — `App` never sees this.
+ * Extra surface the guide screen uses, alongside the ordinary `window.agentParty`
+ * bridge. Not part of `AgentPartyApi` — the workbench never sees this.
+ *
+ * The stage's fake bridge is NOT in here: it lives inside the stage iframe's own
+ * document (`renderer/guide/stage/`), so nothing in the main window can reach it
+ * and nothing in it can reach the real app.
  */
-import type { GuideSnapshot } from "./guide";
 import type { GuideChatKind, GuideChatSettings, GuideChatView } from "./guideChat";
 
 export interface GuideHostApi {
-  /** Replace the absolute snapshot `window.agentParty` will serve next. */
-  applySnapshot: (snapshot: GuideSnapshot) => void;
-  getSnapshot: () => GuideSnapshot;
-  /** Tell main the chrome (or HTTP) landed on this slide, so GET /api/guide matches. */
-  notifySlide: (index: number) => void;
-  /** HTTP / menu asked to jump. Chrome applies the matching snapshot and remounts. */
+  /** Mirror what is on screen in main, so GET /api/guide answers about the real
+   *  view rather than about state it guessed. */
+  notifyState: (state: { open: boolean; presenting: boolean; slide: number }) => void;
+  /** HTTP / menu asked to jump. The screen applies that slide and remounts the stage. */
   onSetSlide: (callback: (index: number) => void) => () => void;
   /** HTTP / inspect asked to open or close the slide-chat panel. */
   onSetAsk: (callback: (open: boolean) => void) => () => void;
-  /** After App remounts and subscribes, replay view / events / QA opens. */
-  flushSideEffects: () => void;
-  /** Close the guide and return to the real workbench (§2-4 last beat). */
-  leaveToWorkspace: () => Promise<void>;
   knowledgePath: () => Promise<{ path: string }>;
   /** The model catalog for the guide's own model settings (harness-free, §6). */
   listRoutes: () => Promise<import("../renderer/workbench/routes").RouteLike[]>;

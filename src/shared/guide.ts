@@ -1,6 +1,6 @@
 /**
- * Guide stage contract — the snapshot the fake preload holds, and the catalog
- * the desktop window / HTTP API use to name slides.
+ * Guide stage contract — the snapshot the stage's fake `window.agentParty`
+ * serves, and the catalog the guide screen / HTTP API use to name slides.
  *
  * Slide *content* lives in `src/renderer/guide/`. This file is only the shape
  * both sides must agree on.
@@ -68,9 +68,12 @@ export interface GuideSnapshot {
   tokenUsageTurns?: TurnUsageRecord[];
 }
 
-export interface GuideWindowInfo {
+export interface GuideScreenInfo {
+  /** A window is showing the guide screen right now. */
   open: boolean;
+  /** The presentation is up, as opposed to the landing chat. */
   presenting: boolean;
+  /** The window showing it, named the way GET /api/windows names it. */
   id?: string;
   slide: number;
   slideCount: number;

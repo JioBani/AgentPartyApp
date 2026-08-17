@@ -245,10 +245,14 @@ try {
   const presented = await post("/api/guide/slide", { index: 0 });
   assert(presented.presenting === true && presented.slide === 0, "가이드 보기 / slide 0 starts the presentation");
 
+  // The guide is a SCREEN of an app window now, so GET /api/guide must name a
+  // window that GET /api/windows actually lists. (The old check here — "no
+  // window id starts with guide-" — became a check that can no longer fail.)
   const windows = await get("/api/windows");
+  const ids = (windows.windows || []).map((win) => String(win.id));
   assert(
-    !(windows.windows || []).some((win) => String(win.id || "").startsWith("guide-")),
-    "guide window is not in GET /api/windows",
+    Boolean(presented.id) && ids.includes(String(presented.id)),
+    `the guide is a screen of a listed window (${presented.id} ∈ ${ids.join(", ") || "none"})`,
   );
 
   await new Promise((resolve) => setTimeout(resolve, 1500));

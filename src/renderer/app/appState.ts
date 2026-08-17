@@ -6,7 +6,7 @@ import { DEFAULT_FONT_SETTINGS } from "../../shared/appFonts";
 import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 
-export type ViewId = "workbench" | "sessions" | "usage" | "auth" | "runtime" | "automation";
+export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "runtime" | "automation";
 
 /** Staged per-member runtime values applied when a member's session starts. */
 export interface MemberRuntimeDraft {
@@ -64,6 +64,7 @@ export const initialState: InitialAppState = {
 export function viewTitle(view: ViewId): string {
   const titles: Record<ViewId, string> = {
     workbench: "Workbench",
+    guide: "가이드",
     sessions: "세션",
     usage: "Token Usage",
     auth: "인증",
@@ -78,6 +79,7 @@ export function viewSubtitle(view: ViewId): string {
   // screen header (matching the runtime design mockup), not crammed inline here.
   const subtitles: Record<ViewId, string> = {
     workbench: "패널과 탭으로 멤버 세션을 나누어 실행합니다.",
+    guide: "앱을 실제로 움직여 보여주고, 궁금한 것에 답합니다.",
     sessions: "활성 세션을 열거나 이전 작업을 이어서 진행합니다.",
     usage: "어디서 얼마나 타는지 몇 초 안에 알아채고, 원인까지 한 화면에서 내려갑니다.",
     auth: "구독과 provider API 키를 관리합니다.",
@@ -92,5 +94,5 @@ export function displayPath(value: string | undefined): string {
 }
 
 export function isViewId(value: string): value is ViewId {
-  return ["workbench", "sessions", "usage", "auth", "runtime", "automation"].includes(value);
+  return ["workbench", "guide", "sessions", "usage", "auth", "runtime", "automation"].includes(value);
 }

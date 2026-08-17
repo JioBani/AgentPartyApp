@@ -15,7 +15,10 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.join(here, "src/renderer/index.html"),
-        guide: path.join(here, "src/renderer/guide/index.html"),
+        // The guide's STAGE only. The guide screen itself is part of the main
+        // bundle now; this second document exists so the demo can own its
+        // `window.agentParty` without touching the real one.
+        guideStage: path.join(here, "src/renderer/guide/stage/index.html"),
       },
     },
   },

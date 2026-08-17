@@ -1,99 +1,70 @@
 /**
- * The guide BrowserWindow. A separate preload and an in-memory session
- * partition keep it off the user's party store, settings IPC, and localStorage.
+ * The guide SCREEN — a view inside the ordinary app window.
  *
- * Not registered in WindowRegistry — a registry entry would receive
- * `party:update` / `session:events` broadcasts and show up in GET /api/windows.
+ * It used to be its own BrowserWindow with its own preload. That bought
+ * isolation for the stage but cost the user a second window to manage: opening
+ * the guide threw them out of the app instead of moving them inside it. The
+ * stage now gets its isolation from an iframe with its own document
+ * (`renderer/guide/stage/`), so the guide can be a navigation like any other.
+ *
+ * This class therefore owns no window. It drives whichever app window is showing
+ * the guide, and mirrors that window's own report of what is on screen — so
+ * GET /api/guide never claims a slide the user is not looking at.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { BrowserWindow, ipcMain, shell } from "electron";
-import { clampGuideSlide, GUIDE_SLIDE_COUNT, GUIDE_SLIDES, sceneOf, type GuideInspect, type GuideWindowInfo } from "../shared/guide";
+import { BrowserWindow, ipcMain, type WebContents } from "electron";
+import { clampGuideSlide, GUIDE_SLIDE_COUNT, GUIDE_SLIDES, sceneOf, type GuideInspect, type GuideScreenInfo } from "../shared/guide";
 import { getLogFilePath, log } from "./logger";
 
-export class GuideWindowHost {
-  private window: BrowserWindow | undefined;
+const NOT_OPEN = "가이드 화면이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.";
+
+export class GuideScreenHost {
+  /** The window that last reported the guide on screen. */
+  private viewer: WebContents | undefined;
   private slide = 0;
   private presenting = false;
+  private showing = false;
   private ipcReady = false;
 
   constructor(private readonly deps: {
-    placeWindow?: (window: BrowserWindow) => void;
-    focusWorkbench?: () => void;
+    /** The app window a fresh `open()` should navigate — normally the focused one. */
+    targetWindow: () => BrowserWindow | undefined;
   }) {}
 
-  get(): GuideWindowInfo {
+  get(): GuideScreenInfo {
     return this.info();
   }
 
-  isFocused(): boolean {
-    return Boolean(this.window && !this.window.isDestroyed() && this.window.isFocused());
-  }
-
+  /** Guide chat updates go to the window actually showing the guide. */
   send(channel: string, payload: unknown): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, payload);
+    if (this.viewer && !this.viewer.isDestroyed()) {
+      this.viewer.send(channel, payload);
     }
   }
 
-  async open(): Promise<GuideWindowInfo> {
+  async open(): Promise<GuideScreenInfo> {
     this.ensureIpc();
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.focus();
-      return this.info();
+    const window = this.deps.targetWindow();
+    if (!window || window.isDestroyed()) {
+      throw new Error("가이드를 열 앱 창이 없습니다.");
     }
-
-    const window = new BrowserWindow({
-      width: 1480,
-      height: 960,
-      minWidth: 960,
-      minHeight: 640,
-      title: "AgentParty 가이드",
-      backgroundColor: "#0f1419",
-      titleBarStyle: "hidden",
-      frame: false,
-      webPreferences: {
-        preload: path.join(__dirname, "../preload/guidePreload.js"),
-        // In-memory session: isolated localStorage / cache, gone when the window closes.
-        partition: "guide",
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-        backgroundThrottling: false,
-      },
-    });
-    this.deps.placeWindow?.(window);
-    this.window = window;
-    this.slide = 0;
-    this.presenting = false;
-
-    window.on("closed", () => {
-      if (this.window === window) {
-        this.window = undefined;
-      }
-      log("info", "guide", "guide window closed");
-    });
-
-    const rendererUrl = process.env.AGENTPARTY_RENDERER_URL;
-    if (rendererUrl) {
-      const base = rendererUrl.replace(/\/$/, "");
-      await window.loadURL(`${base}/guide/index.html`);
-      window.webContents.openDevTools({ mode: "detach" });
-    } else {
-      await window.loadFile(path.join(__dirname, "../../dist-renderer/guide/index.html"));
+    if (window.isMinimized()) {
+      window.restore();
     }
-    await this.waitForRoot();
-    log("info", "guide", "guide window opened", { id: this.windowId(), slide: this.slide });
+    window.focus();
+    window.webContents.send("nav:set", { view: "guide" });
+    this.viewer = window.webContents;
+    await this.waitForScreen(window.webContents);
+    this.showing = true;
+    log("info", "guide", "guide screen opened", { id: this.viewerId(), slide: this.slide });
     return this.info();
   }
 
-  /** loadURL resolving is not first paint. A white capture used to pass here. */
-  private async waitForRoot(): Promise<void> {
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
+  /** Navigating is not painting. A capture used to pass on the previous view. */
+  private async waitForScreen(contents: WebContents): Promise<void> {
     for (let i = 0; i < 50; i += 1) {
-      const ready = await this.window.webContents
+      const ready = await contents
         .executeJavaScript(`Boolean(document.querySelector(".guide-window"))`)
         .catch(() => false);
       if (ready) {
@@ -101,14 +72,16 @@ export class GuideWindowHost {
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new Error("가이드 창에 .guide-window 가 나타나지 않았습니다.");
+    throw new Error("가이드 화면에 .guide-window 가 나타나지 않았습니다.");
   }
 
-  close(): GuideWindowInfo {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close();
+  close(): GuideScreenInfo {
+    const contents = this.viewer;
+    if (contents && !contents.isDestroyed()) {
+      contents.send("nav:set", { view: "workbench" });
     }
-    this.window = undefined;
+    this.viewer = undefined;
+    this.showing = false;
     this.presenting = false;
     this.slide = 0;
     return this.info();
@@ -119,10 +92,8 @@ export class GuideWindowHost {
    * width×height — this is the measurement that cannot silently pass.
    */
   async inspect(): Promise<GuideInspect> {
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
-    const result = await this.window.webContents
+    const contents = this.requireViewer();
+    const result = await contents
       .executeJavaScript(`(${GUIDE_INSPECT_SCRIPT})()`)
       .catch((error: unknown) => {
         throw new Error(`가이드 inspect 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -134,13 +105,11 @@ export class GuideWindowHost {
   }
 
   async capture(outputPath?: string): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
-    const image = await this.window.webContents.capturePage();
+    const contents = this.requireViewer();
+    const image = await contents.capturePage();
     const size = image.getSize();
     if (size.width < 2 || size.height < 2) {
-      throw new Error(`가이드 창 캡처가 비었습니다 (${size.width}×${size.height}).`);
+      throw new Error(`가이드 화면 캡처가 비었습니다 (${size.width}×${size.height}).`);
     }
     const buffer = image.toPNG();
     const dest = outputPath?.trim()
@@ -150,50 +119,51 @@ export class GuideWindowHost {
     return { ok: true, path: dest, width: size.width, height: size.height, bytes: buffer.length };
   }
 
-  async setSlide(index: number): Promise<GuideWindowInfo> {
+  async setSlide(index: number): Promise<GuideScreenInfo> {
     const next = clampGuideSlide(index);
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
+    const contents = this.requireViewer();
     this.slide = next;
     this.presenting = true;
-    this.window.webContents.send("guide:set-slide", { index: next });
+    contents.send("guide:set-slide", { index: next });
     return this.info();
   }
 
-  setAsk(open: boolean): GuideWindowInfo {
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
+  setAsk(open: boolean): GuideScreenInfo {
+    const contents = this.requireViewer();
     if (!this.presenting) {
       throw new Error("프레젠테이션이 열려 있을 때만 질문하기 패널을 엽니다.");
     }
-    this.window.webContents.send("guide:set-ask", { open });
+    contents.send("guide:set-ask", { open });
     return this.info();
   }
 
-  /** Clicks one element in the guide window. Surfaces the miss instead of
+  /** Clicks one element on the guide screen. Surfaces the miss instead of
    *  reporting a silent success, so a QA driver cannot pass on a dead selector. */
   async click(selector: string): Promise<{ ok: true; selector: string }> {
-    if (!this.window || this.window.isDestroyed()) {
-      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
-    }
-    const hit = await this.window.webContents.executeJavaScript(
+    const contents = this.requireViewer();
+    const hit = await contents.executeJavaScript(
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) { return false; } el.click(); return true; })()`,
     );
     if (!hit) {
-      throw new Error(`가이드 창에서 '${selector}' 를 찾지 못했습니다.`);
+      throw new Error(`가이드 화면에서 '${selector}' 를 찾지 못했습니다.`);
     }
     return { ok: true, selector };
   }
 
-  private info(): GuideWindowInfo {
+  private requireViewer(): WebContents {
+    if (!this.showing || !this.viewer || this.viewer.isDestroyed()) {
+      throw new Error(NOT_OPEN);
+    }
+    return this.viewer;
+  }
+
+  private info(): GuideScreenInfo {
     const meta = GUIDE_SLIDES[this.slide];
-    const open = Boolean(this.window && !this.window.isDestroyed());
+    const open = this.showing && Boolean(this.viewer && !this.viewer.isDestroyed());
     return {
       open,
       presenting: open && this.presenting,
-      id: open ? this.windowId() : undefined,
+      id: open ? this.viewerId() : undefined,
       slide: this.slide,
       slideCount: GUIDE_SLIDE_COUNT,
       slideId: meta?.id,
@@ -203,8 +173,10 @@ export class GuideWindowHost {
     };
   }
 
-  private windowId(): string {
-    return this.window ? `guide-${this.window.id}` : "";
+  /** The window showing the guide, named the way WindowRegistry names it. */
+  private viewerId(): string {
+    const window = this.viewer && !this.viewer.isDestroyed() ? BrowserWindow.fromWebContents(this.viewer) : undefined;
+    return window ? `win-${window.id}` : "";
   }
 
   private ensureIpc(): void {
@@ -213,61 +185,28 @@ export class GuideWindowHost {
     }
     this.ipcReady = true;
 
-    ipcMain.handle("guide:window", (event, action: unknown) => {
-      const target = BrowserWindow.fromWebContents(event.sender);
-      if (!target || target !== this.window) {
-        throw new Error("가이드 창이 아닌 곳에서 guide:window 를 호출했습니다.");
+    // The screen is the source of truth for what the user is looking at: the
+    // user can leave the guide from the nav rail without main being asked.
+    ipcMain.on("guide:state", (event, payload: { open?: boolean; presenting?: boolean; slide?: number }) => {
+      if (typeof payload?.open !== "boolean") {
+        return;
       }
-      if (action === "minimize") {
-        target.minimize();
-        return { ok: true };
-      }
-      if (action === "maximize") {
-        if (target.isMaximized()) {
-          target.unmaximize();
-        } else {
-          target.maximize();
+      if (!payload.open) {
+        if (this.viewer === event.sender) {
+          this.viewer = undefined;
+          this.showing = false;
+          this.presenting = false;
         }
-        return { ok: true };
-      }
-      if (action === "close") {
-        target.close();
-        return { ok: true };
-      }
-      throw new Error(`알 수 없는 가이드 창 동작: ${String(action)}`);
-    });
-
-    ipcMain.handle("guide:open-external", async (_event, target: unknown) => {
-      const url = String(target || "");
-      if (!/^https?:\/\//i.test(url)) {
-        return { ok: false, error: "가이드에서는 http(s) URL 만 열 수 있습니다." };
-      }
-      await shell.openExternal(url);
-      return { ok: true };
-    });
-
-    ipcMain.handle("guide:leave", (event) => {
-      if (!this.window || event.sender !== this.window.webContents) {
-        throw new Error("가이드 창이 아닌 곳에서 guide:leave 를 호출했습니다.");
-      }
-      this.close();
-      this.deps.focusWorkbench?.();
-      return { ok: true };
-    });
-
-    ipcMain.on("guide:slide-changed", (event, payload: { index?: number }) => {
-      if (!this.window || event.sender !== this.window.webContents) {
         return;
       }
-      if (typeof payload?.index !== "number") {
-        return;
-      }
+      this.viewer = event.sender;
+      this.showing = true;
+      this.presenting = Boolean(payload.presenting);
       try {
-        this.slide = clampGuideSlide(payload.index);
-        this.presenting = true;
+        this.slide = clampGuideSlide(payload.slide ?? 0);
       } catch (error) {
-        log("warn", "guide", "ignored invalid slide-changed", {
-          index: payload.index,
+        log("warn", "guide", "ignored an out-of-range slide report", {
+          slide: payload.slide,
           error: error instanceof Error ? error.message : String(error),
         });
       }

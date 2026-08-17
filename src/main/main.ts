@@ -32,7 +32,7 @@ import { UpdateService } from "./updateService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
-import { GuideWindowHost } from "./guideWindow";
+import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
 
 // Let webContents.capturePage() return real pixels even when the window is
@@ -97,7 +97,7 @@ let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
-let guideWindow: GuideWindowHost | undefined;
+let guideScreen: GuideScreenHost | undefined;
 let guideChat: GuideChatHost | undefined;
 
 /**
@@ -488,14 +488,13 @@ ${body}
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
   windowRegistry = new WindowRegistry();
-  guideWindow = new GuideWindowHost({
-    placeWindow: placeWindowOnDisplay,
-    focusWorkbench: () => registry().resolve()?.window.focus(),
+  guideScreen = new GuideScreenHost({
+    targetWindow: () => registry().resolve()?.window,
   });
   guideChat = new GuideChatHost({
     sessionManager,
     knowledge: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() },
-    emit: (channel, payload) => guideWindow?.send(channel, payload),
+    emit: (channel, payload) => guideScreen?.send(channel, payload),
   });
 
   // Route session streams to the windows viewing that session's workspace.
@@ -559,52 +558,52 @@ ${body}
     updater: updateService,
     guide: {
       open: () => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.open();
+        return guideScreen.open();
       },
       close: () => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.close();
+        return guideScreen.close();
       },
       setSlide: (index) => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.setSlide(index);
+        return guideScreen.setSlide(index);
       },
       get: () => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.get();
+        return guideScreen.get();
       },
       capture: (outputPath) => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.capture(outputPath);
+        return guideScreen.capture(outputPath);
       },
       inspect: () => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.inspect();
+        return guideScreen.inspect();
       },
       setAsk: (open) => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.setAsk(open);
+        return guideScreen.setAsk(open);
       },
       click: (selector) => {
-        if (!guideWindow) {
-          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        if (!guideScreen) {
+          throw new Error("가이드 화면 호스트가 아직 없습니다.");
         }
-        return guideWindow.click(selector);
+        return guideScreen.click(selector);
       },
     },
     guideChat: {
@@ -790,12 +789,8 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
 }
 
 function focusedWindow(): BrowserWindow | undefined {
-  // The guide is not in WindowRegistry. If we fell through to the last
-  // registered window, File → New Party (etc.) would mutate the real party
-  // while the user is looking at the stage.
-  if (guideWindow?.isFocused()) {
-    return undefined;
-  }
+  // The guide is a screen of an ordinary app window now, so there is no longer a
+  // window outside WindowRegistry that menu commands could land on by mistake.
   return registry().resolve()?.window;
 }
 
@@ -821,7 +816,7 @@ function registerApplicationMenu(): void {
         { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
         { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
         { type: "separator" },
-        { label: "가이드", accelerator: "F1", click: () => void controller().openGuideWindow() },
+        { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
         { label: "Reload", role: "reload" },
         { label: "Toggle DevTools", role: "toggleDevTools" },
@@ -972,7 +967,7 @@ function registerIpc(): void {
     controller().openWindow(workspacePath || senderWorkspace(event), partyId)
   );
   handle("window:list", async () => controller().listWindows());
-  handle("guide:open", async () => controller().openGuideWindow());
+  handle("guide:open", async () => controller().openGuideScreen());
   handle("guide:offer", async () => controller().getGuideOffer());
   handle("guide:offer:shown", async () => controller().markGuideOfferShown());
   handle("guide:knowledge", async () => controller().guideKnowledge());

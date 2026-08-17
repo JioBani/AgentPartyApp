@@ -39,6 +39,7 @@ import { applySubagentEvents } from "./app/subagentEvents";
 import { hasConnectedAccount } from "../shared/guideAuth";
 import { nextGuideOfferAction } from "../shared/guideOffer";
 import { GuideOfferDialog } from "./app/GuideOfferDialog";
+import { GuideView } from "./guide/GuideView";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -1421,6 +1422,11 @@ export function App() {
     setState((prev) => ({ ...prev, settings }));
   }
 
+  /**
+   * The nav rail does NOT switch the view itself. It asks main, which checks the
+   * account gate (§8) and then navigates this window — one path for the click
+   * and for POST /api/guide/open, so an agent and a user land the same way.
+   */
   async function openGuide() {
     try {
       await window.agentParty.openGuide();
@@ -1429,9 +1435,9 @@ export function App() {
     }
   }
 
-  // "guide" is not a ViewId — it opens a separate window. doctor will add
-  // "문제 해결" on the same rail; keep this list a flat append, no new abstraction.
-  const navItems: Array<{ id: ViewId | "guide"; label: string; icon: JSX.Element }> = [
+  // doctor will add "문제 해결" on the same rail; keep this list a flat append,
+  // no new abstraction.
+  const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
     { id: "guide", label: "가이드", icon: <BookOpen size={18} /> },
     { id: "sessions", label: "세션", icon: <History size={18} /> },
@@ -1566,6 +1572,10 @@ export function App() {
                 }}
               />
             </>
+          ) : currentView === "guide" ? (
+            // Full bleed: the guide brings its own top row and its own body, and
+            // a 작업공간 chip over a presentation would be noise.
+            <GuideView onLeave={() => setCurrentView("workbench")} />
           ) : (
             <>
               <header className="screen-header">
