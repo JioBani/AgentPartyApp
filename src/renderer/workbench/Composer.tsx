@@ -28,7 +28,7 @@ import {
   serializeDraft,
   setCaret,
 } from "./composerDraft";
-import { sendsOnEnter } from "../../shared/composerSettings";
+import { sendsImmediately, sendsOnEnter } from "../../shared/composerSettings";
 import { useComposerPrefs } from "../app/composerPrefs";
 import { usePartyMembers } from "../app/partyMemberPrefs";
 import { useModelRoutes } from "../app/modelRoutePrefs";
@@ -684,10 +684,19 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   /**
    * `bypassQueue` is Ctrl/Cmd+Enter — already this app's universal "send now".
-   * With a busy member that now also means "do not wait your turn": the message
-   * is parked like any other (so it is never lost if the delivery fails) and
-   * then immediately handed over, which is exactly what the row's 지금 보내기
-   * does. An idle member is unaffected; nothing was queued to skip.
+   * With a busy member that also means "do not wait your turn". An idle member
+   * is unaffected; nothing was queued to skip.
+   *
+   * ONE call, not park-then-deliver. This used to send normally and then chase
+   * the parked row with a second `sendItem`, which is the same operation the
+   * backend already performs for `interrupt` — and the two-step version got it
+   * wrong three ways: it addressed the row BY POSITION (`items.at(-1)`), so an
+   * interrupt-on-send park, which lands at the FRONT, made it grab a different
+   * sender's waiting message and deliver that one while the message just typed
+   * stayed in the queue; a member that went idle in the gap between the two
+   * calls delivered the row on its own, and the follow-up then failed with "이미
+   * 대기열에 없습니다", reporting a delivered message as still waiting; and it
+   * stopped the turn even mid-COMPACTION, which the single path refuses to do.
    */
   function submit(event?: FormEvent, bypassQueue = false) {
     event?.preventDefault();
@@ -703,20 +712,12 @@ export function Composer({ view, density, actions }: ComposerProps) {
     knownRefs.current = [];
     setAttachments([]);
     setAttachError("");
-    void (async () => {
-      const result = await actions.sendMessage(view.name, text, images);
-      if (!bypassQueue || !result?.queued) {
-        return;
-      }
-      const parked = result.queue?.items?.at(-1);
-      if (parked) {
-        await actions.runQueueCommand(view.name, { action: "sendItem", itemId: parked.id });
-      }
-    })().catch((error) => {
-      // The message is still in the queue if this failed — say so rather than
-      // leaving the user thinking Ctrl+Enter did nothing.
-      setAttachError(`지금 보내기에 실패했습니다 (메시지는 대기열에 있습니다): ${error instanceof Error ? error.message : String(error)}`);
-    });
+    // `interrupt: true` only when the gesture asked for it; otherwise the send
+    // keeps whatever the composer setting says (App resolves that).
+    void actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined)
+      .catch((error) => {
+        setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      });
   }
 
   /**
@@ -753,9 +754,13 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (event.key !== "Enter") {
       return;
     }
-    if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
+    const modifiers = { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey };
+    if (sendsOnEnter(prefs.sendKey, modifiers)) {
       event.preventDefault();
-      submit(undefined, event.ctrlKey || event.metaKey);
+      // NOT "was Ctrl held": under the default send key Ctrl+Enter IS the send
+      // key, so reading the modifier alone made every ordinary send stop the
+      // member's turn. See `sendsImmediately`.
+      submit(undefined, sendsImmediately(prefs.sendKey, modifiers));
       return;
     }
     if (!multiline) {

@@ -1156,7 +1156,7 @@ export function App() {
       // asking for a tab you are already on must still move the screen there.
       setRuntimeTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
     },
-    async sendMessage(name, text, attachments) {
+    async sendMessage(name, text, attachments, options) {
       // Optimistic echo when the member already has a live session (instant feel);
       // for a not-yet-started member the echo is appended once the shared send
       // path returns its session id below.
@@ -1170,9 +1170,11 @@ export function App() {
       // user turn. UI and agents go through the identical AppController method.
       // `interrupt` is the composer's preference: OFF queues behind the member's
       // in-flight turn, ON stops it so this message is handled now. The backend
-      // never interrupts a compaction, and an idle member is unaffected.
+      // never interrupts a compaction, and an idle member is unaffected. A
+      // caller may override it for one send (Ctrl/Cmd+Enter's "지금 보내기"),
+      // which is why this is `??` and not an `||` on a boolean.
       const result = await window.agentParty.sendMemberMessage(name, text, attachments, {
-        interrupt: state.settings.composer?.interruptOnSend === true,
+        interrupt: options?.interrupt ?? state.settings.composer?.interruptOnSend === true,
       });
       await applyPartyResult(result, false);
       if (result.queued) {

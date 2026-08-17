@@ -65,3 +65,24 @@ export function sendsOnEnter(setting: ComposerSendKey, modifiers: { ctrlOrMeta: 
   }
   return setting === "enter" && !modifiers.shift;
 }
+
+/**
+ * Whether this keystroke ALSO means "do not wait your turn" — park the message
+ * at the front of the queue and stop the member's in-flight turn.
+ *
+ * It must be the send gesture PLUS something the user cannot press by accident.
+ * Under `enter` that extra is Ctrl/Cmd; under `ctrl-enter` Ctrl/Cmd IS the send
+ * key, so the extra is Shift.
+ *
+ * Reading "Ctrl/Cmd is held" as the intent — which is what this used to do —
+ * made the DEFAULT send gesture a turn-stopping one: every ordinary message to
+ * a busy member interrupted it, and {@link ComposerSettings.interruptOnSend},
+ * which exists precisely so that destructive behaviour is opt-in, could never
+ * be observed by anyone on the default send key.
+ */
+export function sendsImmediately(setting: ComposerSendKey, modifiers: { ctrlOrMeta: boolean; shift: boolean }): boolean {
+  if (!sendsOnEnter(setting, modifiers)) {
+    return false;
+  }
+  return setting === "enter" ? modifiers.ctrlOrMeta : modifiers.ctrlOrMeta && modifiers.shift;
+}
