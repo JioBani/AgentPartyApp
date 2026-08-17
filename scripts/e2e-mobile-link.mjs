@@ -101,6 +101,7 @@ async function main() {
     await settingsPersistThroughTheGateway();
     await diagnosticsReportAReason();
     await theTabRendersWhatTheApiReports();
+    await disablingTearsTheSurfaceDown();
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -127,18 +128,39 @@ async function specPublishesBothTransports() {
 
 /** The link ships OFF; enabling it is a deliberate user action in 설정. */
 async function linkIsOffUntilEnabled() {
-  console.log("\n[status] off by default, running once enabled");
-  const initial = (await get("/api/mobile/status")).status;
-  assert(initial.running === false, "the link is off on a fresh install");
-  assert(initial.signaling === "disabled", "and reports that plainly rather than 'connecting'");
-  assert(typeof initial.bootId === "string" && initial.bootId.length > 0, "bootId is set (the phone keys resume on it)");
-  assert(initial.pairing.phase === "idle", "no pairing in progress at startup");
-  assert(initial.sessions.length === 0, "no phone sessions yet");
-  assert((await get("/api/mobile/devices")).devices.length === 0, "no trusted devices yet");
+  console.log("\n[status] off means no gateway surface until explicitly enabled");
+  const initial = (await get("/api/mobile/settings")).settings;
+  assert(initial.enabled === false, "the link is off on a fresh install");
+
+  await post("/api/navigation", { view: "runtime", tab: "general" });
+  await delay(250);
+  const tabs = (await post("/api/measure", { selector: ".set-tab", limit: 20 })).elements || [];
+  assert(!tabs.some((entry) => entry.text === "모바일 연결"), "the mobile settings tab is absent while disabled");
+  assert(!(await measure(".wb-mobile-pill")), "the titlebar mounts no mobile status probe while disabled");
+
+  for (const route of ["/api/mobile/status", "/api/mobile/devices", "/api/mobile/diagnostics"]) {
+    const response = await fetch(base + route);
+    const detail = await response.text();
+    assert(!response.ok && detail.includes("모바일 연결이 비활성화"), `${route} fails explicitly while disabled`);
+  }
+  const disabledMethods = (await post("/api/qa/mobile/methods", {})).result.methods;
+  assert(!disabledMethods.includes("party.list") && disabledMethods.includes("sys.info"),
+    "app RPC handlers are absent while the pipe's reserved methods remain");
 
   const enabled = (await post("/api/mobile/settings", { enabled: true })).settings;
-  assert(enabled.enabled === true, "the user turns it on in 설정 → 모바일 연결");
-  assert((await get("/api/mobile/status")).status.running === true, "the gateway comes up");
+  assert(enabled.enabled === true, "the automation settings API turns it on deliberately");
+  await delay(250);
+  const enabledTabs = (await post("/api/measure", { selector: ".set-tab", limit: 20 })).elements || [];
+  assert(enabledTabs.some((entry) => entry.text === "모바일 연결"),
+    "the settings update reveals the mobile tab without restarting");
+  const status = (await get("/api/mobile/status")).status;
+  assert(status.running === true, "the gateway comes up");
+  const enabledMethods = (await post("/api/qa/mobile/methods", {})).result.methods;
+  assert(enabledMethods.includes("party.list"), "enabling registers the app RPC handlers");
+  assert(typeof status.bootId === "string" && status.bootId.length > 0, "bootId is set (the phone keys resume on it)");
+  assert(status.pairing.phase === "idle", "no pairing is in progress immediately after enabling");
+  assert(status.sessions.length === 0, "no phone sessions yet");
+  assert((await get("/api/mobile/devices")).devices.length === 0, "no trusted devices yet");
 }
 
 /** Connection-lock setup is a desktop setting, never a phone/release API. */
@@ -243,10 +265,12 @@ async function eventsFollowTheWorkspaceSubscription() {
 
   const other = path.join(os.tmpdir(), "agentparty-mobile-e2e-other");
   await post("/api/qa/mobile/subscribe", { sessionId, workspaces: [other] });
-  const countBefore = (await post("/api/qa/mobile/delivered", { sessionId })).result.events.length;
+  const countBefore = (await post("/api/qa/mobile/delivered", { sessionId })).result.events
+    .filter((event) => event.type === "party:update").length;
   await post(`/api/party/members/${watcher}/status`, {});
   await delay(300);
-  const countAfter = (await post("/api/qa/mobile/delivered", { sessionId })).result.events.length;
+  const countAfter = (await post("/api/qa/mobile/delivered", { sessionId })).result.events
+    .filter((event) => event.type === "party:update").length;
   assert(countAfter === countBefore, "events for an unsubscribed workspace are not delivered");
   await post("/api/qa/mobile/subscribe", { sessionId, workspaces: [ws] });
 }
@@ -409,6 +433,19 @@ async function theTabRendersWhatTheApiReports() {
   await post(`/api/mobile/sessions/${encodeURIComponent(sessionId)}/disconnect`, {});
   await delay(400);
   assert(!(await measure(".wb-mobile-pill")), "the titlebar pill disappears when the phone disconnects");
+}
+
+async function disablingTearsTheSurfaceDown() {
+  console.log("\n[disable] turning the gate off tears the link down again");
+  const disabled = (await post("/api/mobile/settings", { enabled: false })).settings;
+  assert(disabled.enabled === false, "the settings API disables the link");
+  await delay(300);
+  const methods = (await post("/api/qa/mobile/methods", {})).result.methods;
+  assert(!methods.includes("party.list"), "app RPC handlers are unregistered");
+  const tabs = (await post("/api/measure", { selector: ".set-tab", limit: 20 })).elements || [];
+  assert(!tabs.some((entry) => entry.text === "모바일 연결"), "the mobile settings tab disappears");
+  const response = await fetch(base + "/api/mobile/status");
+  assert(!response.ok && (await response.text()).includes("모바일 연결이 비활성화"), "mobile APIs return to the explicit disabled error");
 }
 
 /**

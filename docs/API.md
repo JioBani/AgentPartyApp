@@ -2627,21 +2627,33 @@ capabilities listed elsewhere in this document by their `<domain>.<verb>` names
 — `GET /api/spec` → `methods` is the authoritative list for this build, and
 `AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
 
-The endpoints below manage the link itself. The app runs the **real** gateway by
-default: it opens a signalling socket and speaks WebRTC to a phone. The
-in-memory mock is an explicit QA opt-in, selected only by
-`AGENTPARTY_MOBILE_PIPE=mock`, and it opens no socket.
+The feature ships **disabled by default** (`mobile.enabled: false`). In that
+state the app does not start the gateway, open a signalling socket, register
+phone RPC handlers, subscribe to gateway events, or show the `모바일 연결`
+settings tab. This is a deployment gate, not a removed feature.
+
+`GET /api/mobile/settings` and `POST /api/mobile/settings` remain available as
+the management surface. Enable deliberately with
+`POST /api/mobile/settings` + `{ "enabled": true }`; the settings tab appears
+immediately. Every other `/api/mobile/*` endpoint fails with an explicit
+`모바일 연결이 비활성화되어 있습니다` error while the gate is off. Disabling it
+again stops the gateway and removes its handlers/subscriptions and tab.
+
+Once enabled, the app runs the **real** gateway by default: it opens a
+signalling socket and speaks WebRTC to a phone. The in-memory mock is an
+explicit QA opt-in, selected only by `AGENTPARTY_MOBILE_PIPE=mock`, and it opens
+no socket.
 
 There is no fallback between them. If the real gateway fails to start, the link
 stays down and the error is reported — it does not quietly become the mock,
 because a QA run that believed it was exercising the real pipe would prove
 nothing.
 
-`GET /api/mobile/status` tells you which state you are in: `running` is whether
-a gateway is up at all, and `signaling` is that gateway's own connection to the
-signalling server (`connected`, `backoff`, `disabled`, …). The mock reports
-`running` without ever reaching a server, so `signaling` is the field that
-distinguishes a real link from a simulated one.
+After enablement, `GET /api/mobile/status` tells you which state you are in:
+`running` is whether a gateway is up at all, and `signaling` is that gateway's
+own connection to the signalling server (`connected`, `backoff`, `disabled`,
+…). The mock reports `running` without ever reaching a server, so `signaling`
+is the field that distinguishes a real link from a simulated one.
 
 In a headless engine process (a WSL distro's engine server) these endpoints
 fail with an explicit message rather than reporting an empty device list —
@@ -2756,6 +2768,8 @@ POST takes a partial patch and returns the accepted settings, which are
 persisted to `settings.json`. Changing `enabled` or `signalingUrl` reconnects.
 The URLs are **not** validated on write — an unreachable server must show up as
 a visible connection failure in `status.signaling`, not be silently replaced.
+These are the only mobile endpoints callable while `enabled` is false, because
+they are the switch used to opt in without editing the file by hand.
 
 ### QA flow
 
@@ -3132,6 +3146,7 @@ the same desktop lock use case as the settings UI in QA/development builds.
 There is intentionally no release `/api/mobile/lock/*` endpoint.
 
 ```text
+methods                                                 list currently registered pipe/RPC methods
 scan         {deviceName?, deviceId?}              the phone scans the open QR
 fail-pairing {error}                               fail it the way a bad code would
 connect      {deviceId?, transport?, workspaces?}  a trusted phone dials in → {sessionId}

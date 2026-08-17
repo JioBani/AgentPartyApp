@@ -1501,7 +1501,7 @@ export function App() {
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
           {/* Renders only while a phone is connected — see MobileDrivingPill. */}
-          <span className="no-drag"><MobileDrivingPill /></span>
+          {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
         </div>
         <div className="window-controls">
           <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>

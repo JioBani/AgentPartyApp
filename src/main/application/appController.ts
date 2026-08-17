@@ -555,7 +555,12 @@ export class AppController {
   }
 
   async updateMobileSettings(patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> {
-    return { ok: true, settings: await this.mobile().updateSettings(patch) };
+    const settings = await this.mobile().updateSettings(patch);
+    const publicSettings = getPublicSettings();
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("settings:update", publicSettings);
+    }
+    return { ok: true, settings };
   }
 
   listMobileDevices(): { ok: true; devices: TrustedDevice[] } {
@@ -2018,6 +2023,8 @@ export class AppController {
     this.requireQa();
     const result = await (async (): Promise<unknown> => {
       switch (action) {
+        case "methods":
+          return { methods: this.mobile().registeredMethods() };
         case "lock-set": {
           const kind = body?.kind === "pattern" ? "pattern" : body?.kind === "pin" ? "pin" : undefined;
           if (!kind) {
