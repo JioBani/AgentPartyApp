@@ -311,6 +311,7 @@ const host: GuideHostApi = {
   },
   leaveToWorkspace: () => ipcRenderer.invoke("guide:leave"),
   knowledgePath: () => ipcRenderer.invoke("guide:knowledge"),
+  listRoutes: () => ipcRenderer.invoke("guide:models"),
   getChat: (kind) => ipcRenderer.invoke("guide:chat:get", kind),
   sendChat: (kind, text, viewing) => ipcRenderer.invoke("guide:chat:send", kind, text, viewing),
   resetChat: (kind) => ipcRenderer.invoke("guide:chat:reset", kind),

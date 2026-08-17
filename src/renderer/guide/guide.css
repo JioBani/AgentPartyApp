@@ -1,329 +1,225 @@
-.guide-root {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  background: var(--bg-1);
-  color: var(--text-0);
-}
+/*
+ * 가이드 창 스타일 — 디자인 정본(claude.ai/design · guide.html)에서 그대로 옮긴다.
+ *
+ * 규칙(guide-handoff §1):
+ *  - 새 색·글꼴·반경·그림자를 만들지 않는다. 값은 전부 foundations/tokens.css 의 var(--*).
+ *  - 말풍선·컴포저·모달·pill·세그먼트는 styles.css 의 wb-* 를 그대로 쓴다.
+ *  - 이 파일에는 가이드 창에만 있는 guide-* 만 둔다.
+ *
+ * 정본이 바뀌면 여기도 바꾼다. 눈대중으로 값을 고치지 마라.
+ */
 
-.guide-chrome {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border-bottom: var(--border-width) solid var(--border-subtle);
-  background: var(--bg-0);
-  -webkit-app-region: drag;
-  user-select: none;
-  z-index: 4;
-}
+/* ---------- 가이드 창 ---------- */
+.guide-window { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-1); }
+.guide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
-.guide-chrome button,
-.guide-chrome .guide-window-controls {
-  -webkit-app-region: no-drag;
-}
+/* 창 상단 오른쪽에 붙는 언어 선택 + 비용 표시 */
+.guide-titlebar-tools { display: flex; align-items: center; gap: 8px; }
+.titlebar-brand { flex: none; white-space: nowrap; }
+.titlebar-brand .brand-name, .titlebar-brand .brand-sub { white-space: nowrap; flex: none; }
+.wb-assistant-head strong, .wb-user-who { white-space: nowrap; }
+.guide-lang {
+    height: 22px; padding: 0 6px; border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--border); background: var(--bg-2);
+    color: var(--text-1); font-size: var(--font-meta); font-family: inherit;
+  }
+.guide-cost {
+    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+    border-radius: var(--radius-pill); font-size: var(--font-meta); letter-spacing: .01em;
+    border: var(--border-width) solid var(--border); background: var(--bg-3); color: var(--text-2);
+  }
+.guide-cost.is-free { border-color: var(--success-bd); background: var(--success-dim); color: var(--success); }
+.guide-cost.is-paid { border-color: var(--live-bd); background: var(--live-dim); color: var(--live); }
 
-.guide-kicker {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.6;
-  flex: 0 0 auto;
-}
+/* ---------- 챗봇 (창의 기본 상태) ---------- */
+.guide-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.guide-chat-scroll { flex: 1; min-height: 0; width: 100%; overflow-y: auto; display: flex; justify-content: center; }
+.guide-chat-col { width: min(680px, 100%); padding: 26px 22px 8px; box-sizing: border-box; }
+.guide-hero { display: flex; flex-direction: column; gap: 6px; padding: 34px 0 18px; }
+.guide-hero h1 { margin: 0; font-size: 21px; font-weight: var(--weight-bold); color: var(--text-0); letter-spacing: -.01em; }
+.guide-hero p { margin: 0; font-size: var(--font-ui); color: var(--text-2); text-wrap: pretty; word-break: keep-all; }
+/* 한국어는 어절 안에서 끊기면 읽기가 나빠진다 — 문장 조각은 어절 단위로만 넘긴다. */
+.guide-caption p, .guide-caption strong, .guide-end p, .guide-hint,
+.guide-offer-card small, .guide-toc-row, .wb-md p { word-break: keep-all; }
+.guide-offer-card {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px;
+    margin: 6px 0 20px; padding: 15px 16px;
+    border: var(--border-width) solid var(--accent-bd); border-radius: var(--radius-card);
+    background: linear-gradient(180deg, var(--accent-dim), transparent), var(--bg-2);
+  }
+.guide-offer-card strong { display: block; font-size: var(--font-heading); color: var(--text-0); }
+.guide-offer-card small { display: block; margin-top: 3px; font-size: var(--font-body); color: var(--text-2); }
+.guide-suggests { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.guide-suggest {
+    height: 26px; padding: 0 10px; border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--border); background: var(--bg-2);
+    color: var(--text-1); font-size: var(--font-body-sm); font-family: inherit; cursor: pointer;
+  }
+.guide-suggest:hover { border-color: var(--border-strong); background: var(--bg-3); }
+.guide-section-label {
+    margin: 0 0 8px; font-size: var(--font-meta); font-weight: var(--weight-bold);
+    letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+  }
 
-.guide-title {
-  font-size: 14px;
-  font-weight: 600;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* 슬라이드 마커 [[slide:N]] 가 렌더된 결과 */
+.guide-marker {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    height: 28px; padding: 0 11px; border-radius: var(--radius-button);
+    border: var(--border-width) solid var(--accent-bd); background: var(--accent-dim);
+    color: var(--accent); font-size: var(--font-body); font-weight: var(--weight-semibold);
+    font-family: inherit; cursor: pointer;
+  }
+.guide-marker:hover { background: var(--bg-2); }
+.guide-marker-miss {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    height: 28px; padding: 0 11px; border-radius: var(--radius-button);
+    border: var(--border-width) dashed var(--danger-bd); background: var(--danger-dim);
+    color: var(--danger); font-size: var(--font-body);
+  }
 
-.guide-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
+/* ---------- 컴포저 (챗봇 · 슬라이드 채팅 공용) ---------- */
+.guide-composer-wrap { width: min(680px, 100%); padding: 0 22px 16px; box-sizing: border-box; }
+.guide-composer-note {
+    display: flex; align-items: center; gap: 6px; margin: 0 0 7px; padding-left: 2px;
+    font-size: var(--font-body-sm); color: var(--live);
+  }
+.guide-composer-meta {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    font-size: var(--font-meta); color: var(--text-3);
+  }
+.guide-composer-meta .guide-spacer { flex: 1; }
 
-.guide-nav button {
-  appearance: none;
-  border: var(--border-width) solid var(--border);
-  background: var(--bg-2);
-  color: var(--text-0);
-  border-radius: var(--radius-button);
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
+/* ---------- 프레젠테이션 ---------- */
+.guide-deck { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.guide-deck-top {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    height: var(--bar-height); padding: 0 12px;
+    border-bottom: var(--border-width) solid var(--border-subtle); background: var(--bg-2);
+  }
+.guide-scene {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: var(--font-title); font-weight: var(--weight-semibold); color: var(--text-0);
+  }
+.guide-scene-index { font-size: var(--font-meta); color: var(--text-3); letter-spacing: .04em; }
+.guide-deck-top .guide-spacer { flex: 1; }
+.guide-count { font-size: var(--font-meta); color: var(--text-2); letter-spacing: .03em; }
 
-.guide-nav button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
+.guide-progress { flex: none; display: flex; gap: 2px; padding: 7px 12px 0; }
+.guide-progress-seg {
+    flex: 1; height: 4px; border: 0; padding: 0; border-radius: 2px;
+    background: var(--bg-4); cursor: pointer;
+  }
+.guide-progress-seg.is-seen { background: var(--accent-bd); }
+.guide-progress-seg.is-current { background: var(--accent); }
+.guide-progress-scene { flex: none; display: flex; gap: 2px; padding: 5px 12px 0; }
+.guide-progress-scene span {
+    font-size: var(--font-micro); color: var(--text-3); text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 
-.guide-count {
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  opacity: 0.75;
-  min-width: 4.5em;
-  text-align: center;
-}
-
-.guide-window-controls {
-  display: flex;
-  gap: 2px;
-}
-
-.guide-window-controls button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  width: 32px;
-  height: 28px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.guide-window-controls button.close:hover {
-  background: #c42b1c;
-  color: #fff;
-}
-
+.guide-stage-area { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px 22px; }
 .guide-stage {
-  flex: 1 1 auto;
-  min-height: 0;
-  position: relative;
-  overflow: hidden;
-}
+    position: relative; height: 100%; width: auto; max-width: 100%; aspect-ratio: 1440 / 942;
+    overflow: hidden;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-panel);
+    background: var(--bg-2); box-shadow: 0 10px 30px var(--shadow);
+  }
+/* 무대는 그림이 아니라 진짜 워크벤치다 — 목업에서도 사본을 만들지 않고
+     index.html 을 그대로 띄운다. 워크벤치를 고치면 가이드가 저절로 따라온다.
+     (검수 바 42px 은 창 밖 물건이므로 위로 밀어 잘라낸다.) */
+.guide-stage-frame {
+    position: absolute; top: 0; left: 0; width: 1440px; height: 942px;
+    border: 0; transform-origin: top left; pointer-events: none;
+  }
+.guide-stage-shade { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity var(--motion-base) ease; }
+.guide-stage.is-focused .guide-stage-shade { opacity: .34; }
+.guide-spot {
+    position: absolute; border-radius: var(--radius-card);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px var(--scrim);
+    transition: all var(--motion-slow) ease; opacity: 0;
+  }
+.guide-stage.is-focused .guide-spot { opacity: 1; }
+.guide-caption {
+    position: absolute; left: 18px; right: 18px; bottom: 18px;
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; box-sizing: border-box;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+    background: var(--bg-2); box-shadow: 0 6px 20px var(--shadow);
+  }
+.guide-caption strong { font-size: var(--font-title); color: var(--text-0); }
+.guide-caption p { margin: 3px 0 0; font-size: var(--font-body); color: var(--text-1); text-wrap: pretty; }
+.guide-caption-step {
+    flex: none; width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center; font-size: var(--font-meta);
+    background: var(--accent); color: var(--accent-fg); font-weight: var(--weight-bold);
+  }
 
-.guide-stage-app {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.guide-stage-app .titlebar,
-.guide-stage-app .window-controls {
-  /* The real titlebar is decorative here — chrome above owns the window. */
-  opacity: 0.55;
-}
-
-.guide-progress {
-  flex: 0 0 auto;
-  height: 3px;
-  background: var(--bg-3);
-}
-
-.guide-progress > span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 160ms ease;
-}
-
-.guide-footer {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-}
-
-.guide-hint {
-  margin: 0;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.guide-leave,
-.guide-start {
-  appearance: none;
-  border: var(--border-width) solid var(--accent-bd);
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-radius: var(--radius-button);
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.guide-landing {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.guide-landing-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 16px 0;
-}
-
-.guide-chat {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.guide-chat-bar,
-.guide-chat-input form {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px;
-}
-
-.guide-chat-bar input,
-.guide-chat-bar select,
-.guide-chat-input input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.guide-chat-log {
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: 12px;
-}
-
-.guide-chat-empty {
-  color: var(--text-2);
-}
-
-.guide-bubble {
-  margin: 0 0 8px;
-  max-width: 85%;
-}
-
-.guide-bubble.user {
-  margin-left: auto;
-}
-
-.guide-bubble.assistant {
-  white-space: pre-wrap;
-}
-
-.guide-cost-on {
-  margin: 0 12px 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-1);
-}
-
-.guide-context.high {
-  color: var(--warning);
-}
-
+.guide-deck-bottom {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px 12px;
+  }
+.guide-deck-bottom .guide-spacer { flex: 1; }
+.guide-nav-btn {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border-radius: var(--radius-button); border: var(--border-width) solid var(--border);
+    background: var(--bg-2); color: var(--text-1); cursor: pointer;
+  }
+.guide-nav-btn:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.guide-nav-btn:disabled { opacity: .4; cursor: not-allowed; }
+.guide-hint { font-size: var(--font-meta); color: var(--text-3); }
 .guide-ask-fab {
-  position: absolute;
-  right: 16px;
-  bottom: 48px;
-  z-index: 5;
-  appearance: none;
-  border: 2px solid var(--accent);
-  background: var(--bg-2);
-  color: var(--text-0);
-  border-radius: var(--radius-button);
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
-  box-shadow: 0 10px 28px var(--shadow-strong);
-  cursor: pointer;
-}
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px;
+    border-radius: 16px; border: var(--border-width) solid var(--accent);
+    background: var(--accent); color: var(--accent-fg);
+    font-size: var(--font-ui); font-weight: var(--weight-semibold); font-family: inherit;
+    cursor: pointer; box-shadow: 0 4px 14px var(--shadow);
+  }
+.guide-ask-fab:hover { filter: brightness(1.08); }
 
-.guide-ask-fab:hover {
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-
-.guide-ask-fab:focus-visible {
-  outline: var(--focus-ring-width) solid var(--accent);
-  outline-offset: 2px;
-}
-
-.guide-ask-panel {
-  position: absolute;
-  right: 12px;
-  bottom: 44px;
-  width: min(420px, calc(100% - 24px));
-  height: min(420px, 50%);
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-2);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: 0 18px 40px var(--shadow-strong);
-}
-
-.guide-ask-head {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-}
-
-.guide-slide-link {
-  appearance: none;
-  border: var(--border-width) solid var(--accent-bd);
-  background: var(--accent-dim);
-  color: var(--text-0);
-  border-radius: var(--radius-button);
-  padding: 0 6px;
-  margin: 0 4px;
-  cursor: pointer;
-}
-
-.guide-slide-missing {
-  margin: 0 4px;
-  color: var(--warning);
-}
-
+/* 목차 — 장면 단위 */
 .guide-toc {
-  position: relative;
-}
+    position: absolute; top: calc(var(--bar-height) + 6px); left: 12px; z-index: 30;
+    width: 330px; padding: 8px; box-sizing: border-box;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+    background: var(--bg-2); box-shadow: 0 12px 32px var(--shadow-strong);
+  }
+.guide-toc-row {
+    width: 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+    padding: 9px 10px; border: 0; border-radius: var(--radius-button);
+    background: transparent; color: var(--text-1); font-family: inherit; font-size: var(--font-ui);
+    text-align: left; cursor: pointer;
+  }
+.guide-toc-row:hover { background: var(--bg-3); }
+.guide-toc-row.is-current { background: var(--accent-dim); color: var(--accent); font-weight: var(--weight-semibold); }
+.guide-toc-row small { display: block; margin-top: 2px; font-size: var(--font-meta); color: var(--text-3); font-weight: var(--weight-regular); }
+.guide-toc-range { font-size: var(--font-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
-.guide-toc-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
-  min-width: 160px;
-  background: var(--bg-2);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-card);
-  z-index: 6;
-}
+/* 슬라이드 채팅 — 무대 아래에서 올라오는 시트 */
+.guide-ask-sheet {
+    position: absolute; left: 0; right: 0; bottom: 52px; z-index: 25;
+    display: flex; flex-direction: column; max-height: 58%;
+    border-top: var(--border-width) solid var(--border);
+    background: var(--bg-2); box-shadow: 0 -10px 30px var(--shadow);
+  }
+.guide-ask-head {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    height: 34px; padding: 0 12px; border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+.guide-ask-head strong { font-size: var(--font-title); color: var(--text-0); }
+.guide-ask-head .guide-spacer { flex: 1; }
+.guide-ask-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 12px 0; }
+.guide-attach {
+    display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
+    border-radius: var(--radius-badge); border: var(--border-width) solid var(--border);
+    background: var(--bg-3); color: var(--text-2); font-size: var(--font-meta);
+  }
 
-.guide-toc-list button {
-  display: block;
-  width: 100%;
-  text-align: left;
-}
+/* 마무리 슬라이드 */
+.guide-end { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; height: 100%; padding: 40px; box-sizing: border-box; text-align: center; }
+.guide-end h2 { margin: 0; font-size: 20px; color: var(--text-0); }
+.guide-end p { margin: 0; max-width: 460px; font-size: var(--font-ui); color: var(--text-2); text-wrap: pretty; }
 
-.guide-toc-list button.active {
-  border-color: var(--accent);
-}
-
-.guide-error {
-  margin: 24px;
-  padding: 16px;
-  border: 1px solid #c42b1c;
-  border-radius: 8px;
-  color: #ffb4ac;
-}
+/* 무대 안쪽 — 정본의 iframe 자리에 진짜 App 트리를 같은 크기로 놓는다.
+   좌표(스포트라이트 %)가 정본과 같으려면 이 상자 크기가 같아야 한다. */
+.guide-stage-app { position: absolute; top: 0; left: 0; width: 1440px; height: 942px; transform-origin: top left; overflow: hidden; }
+.guide-stage-app > * { width: 1440px; height: 942px; }

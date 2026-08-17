@@ -600,6 +600,12 @@ ${body}
         }
         return guideWindow.setAsk(open);
       },
+      click: (selector) => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.click(selector);
+      },
     },
     guideChat: {
       knowledgePath: () => {
@@ -970,6 +976,7 @@ function registerIpc(): void {
   handle("guide:offer", async () => controller().getGuideOffer());
   handle("guide:offer:shown", async () => controller().markGuideOfferShown());
   handle("guide:knowledge", async () => controller().guideKnowledge());
+  handle("guide:models", async () => controller().guideModels());
   handle("guide:chat:get", async (_event, kind: unknown) => controller().getGuideChat(requireChatKind(kind)));
   handle("guide:chat:send", async (_event, kind: unknown, text: string, viewing?: { index: number; title: string; scene: string }) =>
     controller().sendGuideChat(requireChatKind(kind), text, viewing));

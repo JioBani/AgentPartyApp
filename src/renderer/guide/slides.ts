@@ -8,8 +8,7 @@ import {
   IMPL,
   MAIN,
   REVIEWER,
-  emptyPartySnapshot,
-  member,
+    member,
   sessionView,
   snap,
 } from "./fixtures";
@@ -44,25 +43,24 @@ const two = [
   { id: "p2", tabs: ["reviewer"], active: "reviewer" },
 ];
 
+/** The populated party the first scene spotlights — sidebar, harness badges and
+ *  the member-create affordance all live on this one state. */
+const TWO: GuideSnapshot = snap({
+  members: [MAIN, REVIEWER],
+  sessions: [sessionView("s-main", MAIN.model!, "idle", 12000), sessionView("s-reviewer", REVIEWER.model!, "idle")],
+  transcripts: { main: REPLY, reviewer: [] },
+  panels: two,
+});
+
 const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
-  empty: emptyPartySnapshot(),
-  "one-member": snap({
-    members: [member({ name: "main", status: "idle", runtime: "claude-code", role: "진행", model: "claude-sonnet-4.5" })],
-    sessions: [],
-    transcripts: { main: [] },
-    panels: [{ id: "p1", tabs: ["main"], active: "main" }],
-  }),
-  "first-chat": snap({
+  sidebar: TWO,
+  harness: TWO,
+  create: TWO,
+  composer: snap({
     members: [MAIN],
     sessions: [sessionView("s-main", MAIN.model!, "idle", 12000)],
     transcripts: { main: REPLY },
     panels: [{ id: "p1", tabs: ["main"], active: "main" }],
-  }),
-  "two-members": snap({
-    members: [MAIN, REVIEWER],
-    sessions: [sessionView("s-main", MAIN.model!, "idle", 12000), sessionView("s-reviewer", REVIEWER.model!, "idle")],
-    transcripts: { main: REPLY, reviewer: [] },
-    panels: two,
   }),
   channel: snap({
     members: [MAIN, REVIEWER],
@@ -70,7 +68,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     transcripts: { main: CHANNEL_MAIN, reviewer: CHANNEL_REVIEWER },
     panels: two,
   }),
-  working: snap({
+  tabs: snap({
     members: [member({ name: "main", status: "running", runtime: "claude-code", role: "진행", model: "claude-sonnet-4.5", sessionId: "s-main" }), REVIEWER, IMPL],
     sessions: [sessionView("s-main", MAIN.model!, "responding", 88000), sessionView("s-reviewer", REVIEWER.model!, "idle", 14000)],
     transcripts: { main: REPLY, reviewer: [] },
@@ -79,7 +77,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
       { id: "p2", tabs: ["reviewer", "impl"], active: "reviewer" },
     ],
   }),
-  approval: snap({
+  tools: snap({
     members: [member({ name: "main", status: "running", runtime: "claude-code", role: "진행", model: "claude-sonnet-4.5", sessionId: "s-main" }), REVIEWER],
     sessions: [sessionView("s-main", MAIN.model!, "idle", 40000, 1), sessionView("s-reviewer", REVIEWER.model!, "idle")],
     transcripts: { main: APPROVAL, reviewer: [] },
@@ -92,13 +90,13 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     panels: two,
     gate: { enabled: true, rule: "자리표시자 규칙" },
   }),
-  ready: snap({
+  usage: snap({
     members: [MAIN, REVIEWER],
     sessions: [sessionView("s-main", MAIN.model!, "idle", 18000), sessionView("s-reviewer", REVIEWER.model!, "idle", 4000)],
     transcripts: { main: CHANNEL_MAIN, reviewer: CHANNEL_REVIEWER },
     panels: two,
   }),
-  leave: snap({
+  limit: snap({
     members: [MAIN, REVIEWER],
     sessions: [sessionView("s-main", MAIN.model!, "idle", 18000), sessionView("s-reviewer", REVIEWER.model!, "idle", 4000)],
     transcripts: { main: CHANNEL_MAIN, reviewer: CHANNEL_REVIEWER },
@@ -106,19 +104,16 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
   }),
 };
 
-export interface GuideSlide {
+/** A slide is its catalog entry (title · caption · spotlight) plus the absolute
+ *  workbench state the stage shows for it. */
+export type GuideSlide = (typeof GUIDE_SLIDES)[number] & {
   index: number;
-  id: GuideSlideId;
-  scene: (typeof GUIDE_SLIDES)[number]["scene"];
-  title: string;
   snapshot: GuideSnapshot;
-}
+};
 
 export const GUIDE_STAGE_SLIDES: GuideSlide[] = GUIDE_SLIDES.map((meta, index) => ({
+  ...meta,
   index,
-  id: meta.id,
-  scene: meta.scene,
-  title: meta.title,
   snapshot: SLIDE_SNAPSHOTS[meta.id],
 }));
 

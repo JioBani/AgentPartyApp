@@ -88,6 +88,7 @@ export interface AppControllerDeps {
     capture: (outputPath?: string) => Promise<{ ok: true; path: string; width: number; height: number; bytes: number }>;
     inspect: () => Promise<GuideInspect>;
     setAsk: (open: boolean) => GuideWindowInfo;
+    click: (selector: string) => Promise<{ ok: true; selector: string }>;
   };
   guideChat?: {
     knowledgePath: () => string;
@@ -740,12 +741,23 @@ export class AppController {
     return this.requireGuide().inspect();
   }
 
+  clickGuide(selector: string): Promise<{ ok: true; selector: string }> {
+    return this.requireGuide().click(selector);
+  }
+
   setGuideAsk(open: boolean): GuideWindowInfo {
     return this.requireGuide().setAsk(open);
   }
 
   guideKnowledge(): { path: string } {
     return { path: this.requireGuideChat().knowledgePath() };
+  }
+
+  /** The model catalog the guide window's own settings modal shows. Scoped to
+   *  the guide's cwd (its knowledge folder) so it never touches a user party. */
+  async guideModels(): Promise<unknown[]> {
+    const payload = await this.listModels(this.requireGuideChat().knowledgePath());
+    return payload.modelRoutes;
   }
 
   getGuideChatSettings(): GuideChatSettings {

@@ -20,6 +20,8 @@ export interface GuideHostApi {
   /** Close the guide and return to the real workbench (§2-4 last beat). */
   leaveToWorkspace: () => Promise<void>;
   knowledgePath: () => Promise<{ path: string }>;
+  /** The model catalog for the guide's own model settings (harness-free, §6). */
+  listRoutes: () => Promise<import("../renderer/workbench/routes").RouteLike[]>;
   getChat: (kind: GuideChatKind) => Promise<GuideChatView>;
   sendChat: (kind: GuideChatKind, text: string, viewing?: { index: number; title: string; scene: string }) => Promise<GuideChatView>;
   resetChat: (kind: GuideChatKind) => Promise<GuideChatView>;

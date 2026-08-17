@@ -168,6 +168,43 @@ export function getTheme(id: string): Theme {
   return THEMES.find((theme) => theme.id === id) || THEMES[0];
 }
 
+/**
+ * Type, motion and control size — theme-independent, so it is emitted once on
+ * bare `:root` rather than per theme.
+ *
+ * ⚠️ The design project's `foundations/tokens.css` is generated FROM this file
+ * and already publishes this scale; the app was the side missing it, which made
+ * every `var(--font-*)` in guide.css resolve to nothing. Keep the two equal.
+ */
+const SCALE: Record<string, string> = {
+  "font-micro": "9.5px",
+  "font-meta": "10px",
+  "font-caption": "10.5px",
+  "font-body-sm": "11px",
+  "font-body": "11.5px",
+  "font-ui": "12px",
+  "font-ui-lg": "12.5px",
+  "font-title": "13px",
+  "font-heading": "14px",
+  "font-display": "15px",
+  "weight-regular": "400",
+  "weight-medium": "500",
+  "weight-semibold": "600",
+  "weight-bold": "700",
+  "motion-fast": "0.12s",
+  "motion-base": "0.15s",
+  "motion-slow": "0.3s",
+  "motion-pulse": "1.6s",
+  "motion-sweep": "1.2s",
+  "control-height": "30px",
+  "control-height-sm": "26px",
+  "row-height": "38px",
+  "tab-height": "37px",
+  "bar-height": "40px",
+  "dot-size": "7px",
+  "touch-target-min": "44px",
+};
+
 /** Builds the `--token: value` declaration block for one theme. */
 function declarations(theme: Theme): string {
   const lines: string[] = [`color-scheme: ${theme.scheme};`];
@@ -188,5 +225,9 @@ function declarations(theme: Theme): string {
 export function buildThemeStylesheet(): string {
   const blocks = THEMES.map((theme) => `:root[data-theme="${theme.id}"] {\n  ${declarations(theme)}\n}`);
   blocks.unshift(`:root {\n  ${declarations(getTheme(DEFAULT_THEME_ID))}\n}`);
+  const scale = Object.entries(SCALE)
+    .map(([token, value]) => `--${token}: ${value};`)
+    .join("\n  ");
+  blocks.unshift(`:root {\n  ${scale}\n}`);
   return blocks.join("\n\n");
 }

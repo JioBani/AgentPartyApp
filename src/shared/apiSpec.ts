@@ -114,6 +114,7 @@ export const automationEndpoints = [
   "POST /api/guide/capture",
   "GET /api/guide/inspect",
   "POST /api/guide/ask",
+  "POST /api/guide/click",
   "GET /api/guide/knowledge",
   "GET /api/guide/chat",
   "POST /api/guide/chat",

@@ -94,14 +94,14 @@ export class GuideWindowHost {
     }
     for (let i = 0; i < 50; i += 1) {
       const ready = await this.window.webContents
-        .executeJavaScript(`Boolean(document.querySelector(".guide-root"))`)
+        .executeJavaScript(`Boolean(document.querySelector(".guide-window"))`)
         .catch(() => false);
       if (ready) {
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new Error("가이드 창에 .guide-root 가 나타나지 않았습니다.");
+    throw new Error("가이드 창에 .guide-window 가 나타나지 않았습니다.");
   }
 
   close(): GuideWindowInfo {
@@ -170,6 +170,21 @@ export class GuideWindowHost {
     }
     this.window.webContents.send("guide:set-ask", { open });
     return this.info();
+  }
+
+  /** Clicks one element in the guide window. Surfaces the miss instead of
+   *  reporting a silent success, so a QA driver cannot pass on a dead selector. */
+  async click(selector: string): Promise<{ ok: true; selector: string }> {
+    if (!this.window || this.window.isDestroyed()) {
+      throw new Error("가이드 창이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.");
+    }
+    const hit = await this.window.webContents.executeJavaScript(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) { return false; } el.click(); return true; })()`,
+    );
+    if (!hit) {
+      throw new Error(`가이드 창에서 '${selector}' 를 찾지 못했습니다.`);
+    }
+    return { ok: true, selector };
   }
 
   private info(): GuideWindowInfo {
@@ -328,14 +343,26 @@ const GUIDE_INSPECT_SCRIPT = `function inspectGuide() {
     dataTheme: document.documentElement.getAttribute("data-theme"),
     url: location.href,
     presenting: Boolean(document.querySelector(".guide-stage")),
-    root: nodeOf(".guide-root"),
-    landing: nodeOf(".guide-landing"),
-    start: nodeOf(".guide-start"),
+    root: nodeOf(".guide-window"),
+    landing: nodeOf(".guide-chat"),
+    start: nodeOf(".guide-offer-card .accent-btn"),
     chat: nodeOf(".guide-chat"),
-    cost: nodeOf(".guide-cost-on"),
+    cost: nodeOf(".guide-composer-note"),
     fab: nodeOf(".guide-ask-fab"),
+    stage: nodeOf(".guide-stage"),
+    stageFocused: Boolean(document.querySelector(".guide-stage.is-focused")),
+    shade: nodeOf(".guide-stage-shade"),
+    spot: nodeOf(".guide-spot"),
+    spotShadow: (() => {
+      const el = document.querySelector(".guide-spot");
+      return el ? getComputedStyle(el).boxShadow : null;
+    })(),
+    caption: nodeOf(".guide-caption"),
+    toc: nodeOf(".guide-toc"),
+    askSheet: nodeOf(".guide-ask-sheet"),
+    progressSegs: document.querySelectorAll(".guide-progress-seg").length,
     fabByTheme: { light: fabLight, dark: fabDark },
-    slideMissing: Array.from(document.querySelectorAll(".guide-slide-missing")).map((el) => ({ text: (el.textContent || "").trim() })),
-    slideLinks: Array.from(document.querySelectorAll(".guide-slide-link")).map((el) => ({ text: (el.textContent || "").trim() })),
+    slideMissing: Array.from(document.querySelectorAll(".guide-marker-miss")).map((el) => ({ text: (el.textContent || "").trim() })),
+    slideLinks: Array.from(document.querySelectorAll(".guide-marker")).map((el) => ({ text: (el.textContent || "").trim() })),
   };
 }`;

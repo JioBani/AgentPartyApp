@@ -1,6 +1,13 @@
-import { GUIDE_SLIDE_COUNT } from "../../shared/guide";
+import { AlertTriangle, Play } from "lucide-react";
 import { parseGuideSlideMarkers } from "../../shared/guideChat";
+import { GUIDE_SLIDE_COUNT, sceneOf } from "../../shared/guide";
 
+/**
+ * Assistant text with `[[slide:N]]` turned into a button that jumps to that
+ * slide. A number outside the deck is NOT swallowed — it is shown as a miss with
+ * the range that does exist, because a stale number means the knowledge canon
+ * has drifted and the user should see that, not a silently missing link.
+ */
 export function GuideMarkedText({
   text,
   onOpenSlide,
@@ -9,28 +16,33 @@ export function GuideMarkedText({
   onOpenSlide?: (index: number) => void;
 }) {
   const parts = parseGuideSlideMarkers(text, GUIDE_SLIDE_COUNT);
-  if (!parts.length) {
-    return <span>{text}</span>;
-  }
   return (
-    <span>
-      {parts.map((part, i) => {
-        if (part.kind === "text") {
-          return <span key={i}>{part.text}</span>;
-        }
+    <>
+      {parts.map((part, at) => {
         if (part.kind === "slide" && typeof part.index === "number") {
+          const scene = sceneOf(part.index);
           return (
-            <button key={i} type="button" className="guide-slide-link" onClick={() => onOpenSlide?.(part.index!)}>
-              슬라이드 {part.index + 1}
+            <button
+              key={at}
+              type="button"
+              className="guide-marker"
+              onClick={() => onOpenSlide?.(part.index as number)}
+            >
+              <Play size={12} />
+              슬라이드 {part.index + 1} · {scene.title}
             </button>
           );
         }
-        return (
-          <span key={i} className="guide-slide-missing" role="status">
-            슬라이드 {part.index} 은(는) 없습니다 (0…{GUIDE_SLIDE_COUNT - 1})
-          </span>
-        );
+        if (part.kind === "invalid") {
+          return (
+            <span key={at} className="guide-marker-miss">
+              <AlertTriangle size={12} />
+              슬라이드 {String(part.index)} 은(는) 없습니다 (0…{GUIDE_SLIDE_COUNT - 1})
+            </span>
+          );
+        }
+        return <p key={at}>{part.text}</p>;
       })}
-    </span>
+    </>
   );
 }
