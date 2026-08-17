@@ -181,15 +181,23 @@ QA에서 안 보이게 된다.
 
 ## 6. 미해결 / 미검증 항목
 
-### 6.1 원칙 ⑤ — 실제 Electron 프로세스 제품 E2E (유일한 마감 미충족)
+### 6.1 원칙 ⑤ — 실제 Electron 프로세스 제품 E2E (**검증 완료**)
 
-자동 검증만으로는 못 닫는다. review-desktop-pipe가 보류 중이며, 닫으려면
-desktop-app의 최종 E2E 보고 5항목이 필요하다: ① 확인한 커밋 ② Electron 프로세스
-확인 방식 ③ UI/자동화 API로 수행한 모바일 흐름 ④ S22 성공 결과 ⑤ 남은 실패 유무.
+2026-08-17 desktop-app이 실제 Electron `mobile-link@948faef`와 실제 Mobile
+`72d87d3`/태블릿 `HA275888`로 제품 E2E를 수행해 PASS했다. 자동화 API는 `:52343`,
+Mobile 자동화 API는 `:8182`였고, 기존 `Yve8p5HsZrD_QUECMrxe6B` trust를 재페어링 없이
+재사용했다.
 
-desktop-app에 **리뷰로 직접 보고**해 달라고 요청해 둔 상태다. 나는 완료 통보 한 줄만
-받았으므로 재구성해서 전달하지 않았다. **후임도 하지 말 것** — 보지 않은 것을
-보고하는 일이 된다.
+- `configured:false`에서 phone이 첫 `ctl.lock required:false`를 받고 desktop session은
+  `lockAuthenticated:true`가 됐다.
+- 양쪽 sessionId `36cc7bb1-79ae-445a-8a93-4f11251726ae`로 full connect했다.
+- 연결 중 signaling을 8080에서 8090으로 변경한 뒤에도 bootId와 sessionId가 유지됐다.
+- phone이 다시 요청한 `sys.info.signalingUrl`은 8090을 반환했다.
+- EventBridge seq `4,5,6,7,8`이 연속이고 중복이 없었으며 desktop
+  `lastDeliveredSeq=8`, phone `lastSeq=8`이 일치했다.
+
+상세 증거는 `docs/notes/evidence/desktop-electron-live-signaling-e2e-2026-08-17.md`에
+보존했다. S22는 사용자 전용 정책에 따라 접근하지 않았고 태블릿은 E2E 후 해제됐다.
 
 ### 6.2 빈 시그널링 설정 → `getStatus()` 예외 가능성 (**미검증 가설**)
 
@@ -313,7 +321,7 @@ develop의 "추가 다듬기 중단" 지시로 손대지 않았다.
 | **server** | `@agentparty/protocol` 패키지와 시그널링 서버. 스키마 추가 요청 대상 |
 | **security** | 연결 잠금 총괄. 프로토콜 변경 요청은 security→develop 경로로만 |
 | **ux** | 앱 화면·l10n. PIN/패턴 입력 화면 |
-| **review-desktop-pipe** | 내 영역 리뷰어. 원칙 ⑤ 보류 중 |
+| **review-desktop-pipe** | 내 영역 리뷰어. 원칙 ⑤ 제품 E2E 증거 최종 판정 담당 |
 
 **메시지 게이트**가 있다. develop에게는 프로토콜 이슈 / 문서·코드 불일치 / (검증
 결과와 산출물 경로가 포함된) 완료 보고 / 실제 블로커만 통과한다. 거부되면 이유가
@@ -337,9 +345,8 @@ develop의 "추가 다듬기 중단" 지시로 손대지 않았다.
 
 ## 10. 다음에 할 일
 
-1. desktop-app의 E2E 보고가 review-desktop-pipe에 도착했는지 확인 → **원칙 ⑤ 종결**
+1. review-desktop-pipe의 원칙 ⑤ 최종 판정을 기록한다(제품 E2E 증거 전달 완료)
 2. 사용자 QA에서 파이프 결함이 나오면 수정(확인은 desktop-app이 한다)
-3. security의 잠금 설계 확정 대기 → 파이프 내 lock 프레임·세션 게이팅 구현
-4. QA 종료 후: 6.2 가설 검증, 6.5 라벨 정리, 리뷰 지적 백로그 반영
+3. QA 종료 후: 6.2 가설 검증, 6.5 라벨 정리, 리뷰 지적 백로그 반영
 
 새 기능·리팩토링은 develop이 재개를 지시할 때까지 금지.
