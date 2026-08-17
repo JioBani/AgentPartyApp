@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { ModelCatalogModal, type ModelCatalogValue } from "../workbench/ModelCatalogModal";
 import type { RouteLike } from "../workbench/routes";
@@ -11,78 +11,23 @@ import type { EffortSetting, HarnessId } from "../../shared/types";
  * favourites, effort) must stay identical: a simplified copy would teach the
  * user two different things about the same catalog.
  *
- * The guide does not ask which harness to run on. Picking a model connects that
- * model's own default harness, resolved by {@link HARNESS_PREFERENCE}.
+ * The guide does not ask which harness to run on — the caller has already
+ * collapsed the list to one row per model, each bound to its home harness
+ * (see `guideRoutes.ts`).
  */
 
-/** Only harnesses the guide can actually run on are offered. */
-const GUIDE_HARNESSES: HarnessId[] = ["claude-code", "codex", "cursor", "grok"];
-
-/** A model's HOME harness — the one whose vendor actually makes it. The same
- *  model is often offered by several harnesses; picking one in the guide should
- *  connect the harness it belongs to, not whichever happens to sort first. */
-const HOME_BY_PROVIDER: Record<string, HarnessId> = {
-  anthropic: "claude-code",
-  openai: "codex",
-  cursor: "cursor",
-  xai: "grok",
-};
-
-/** Fallback order for models with no home harness (OpenRouter, DeepSeek, …). */
-const HARNESS_PREFERENCE = GUIDE_HARNESSES;
-
-/** Lower is better. A route on the model's home harness always wins. */
-function rankOf(route: RouteLike): number {
-  const harness = (route.harnessId || "claude-code") as HarnessId;
-  const home = HOME_BY_PROVIDER[route.providerId || ""];
-  if (home && harness === home) {
-    return -1;
-  }
-  return HARNESS_PREFERENCE.indexOf(harness);
-}
-
-/** One row per model: the same model offered by several harnesses collapses to
- *  its preferred one, because the guide shows models, not harness × model. */
-function dedupeByModel(routes: RouteLike[]): RouteLike[] {
-  const best = new Map<string, RouteLike>();
-  for (const route of routes) {
-    const key = route.label || route.model;
-    if (!HARNESS_PREFERENCE.includes((route.harnessId || "claude-code") as HarnessId)) {
-      continue;
-    }
-    const rank = rankOf(route);
-    const held = best.get(key);
-    const heldRank = held ? rankOf(held) : Number.MAX_SAFE_INTEGER;
-    if (!held || rank < heldRank) {
-      best.set(key, route);
-    }
-  }
-  return [...best.values()];
-}
-
 export function GuideModelModal({
+  routes,
   settings,
   onApply,
   onClose,
 }: {
+  routes: RouteLike[];
   settings: GuideChatSettings;
   onApply: (next: GuideChatSettings) => void;
   onClose: () => void;
 }) {
-  const [routes, setRoutes] = useState<RouteLike[]>([]);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    void window.agentPartyGuide
-      .listRoutes()
-      .then(setRoutes)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
-  }, []);
-
-  const scoped = useMemo(
-    () => dedupeByModel(routes.filter((route) => GUIDE_HARNESSES.includes((route.harnessId || "claude-code") as HarnessId))),
-    [routes],
-  );
 
   const value: ModelCatalogValue = {
     model: settings.model || "",
@@ -127,7 +72,7 @@ export function GuideModelModal({
           <span className="wb-dot" /> 가이드
         </span>
       }
-      routes={scoped}
+      routes={routes}
       value={value}
       config={{ effort: true, serviceTier: true, thinking: true }}
       dim

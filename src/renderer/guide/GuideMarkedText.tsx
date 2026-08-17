@@ -1,4 +1,5 @@
 import { AlertTriangle, Play } from "lucide-react";
+import { Markdown } from "../workbench/Markdown";
 import { parseGuideSlideMarkers } from "../../shared/guideChat";
 import { GUIDE_SLIDE_COUNT, sceneOf } from "../../shared/guide";
 
@@ -41,7 +42,9 @@ export function GuideMarkedText({
             </span>
           );
         }
-        return <p key={at}>{part.text}</p>;
+        // Model output is markdown — rendered with the workbench renderer so the
+        // guide never shows raw `**` or backticks to a first-time user.
+        return <Markdown key={at} text={part.text || ""} />;
       })}
     </>
   );

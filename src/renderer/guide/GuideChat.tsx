@@ -3,6 +3,7 @@ import { Cpu, Info, Play, RotateCcw } from "lucide-react";
 import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shared/guideChat";
 import { GuideMarkedText } from "./GuideMarkedText";
 import { GuideModelModal } from "./GuideModelModal";
+import { guideModelLabel, useGuideRoutes } from "./guideRoutes";
 
 /** Questions the guide can actually answer — no app-state questions on purpose,
  *  those belong to `문제 해결` (§6-2-1). */
@@ -32,6 +33,7 @@ export function GuideChat({
   const [error, setError] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const { routes, error: routesError } = useGuideRoutes();
 
   useEffect(() => {
     const host = window.agentPartyGuide;
@@ -68,12 +70,20 @@ export function GuideChat({
     }
   }
 
-  const empty = view.blocks.length === 0;
-  const pill = `${settings.model || "모델 없음"} · effort ${settings.effort || "medium"}`;
+  // The guide is not a developer surface: harness plumbing (spawn lines, turn
+  // lifecycle, tool traffic) never reaches it. The turn-complete block also
+  // carries token and price numbers, which §7 forbids showing here — the cost
+  // signal in the guide is "uses AI / does not", never a figure.
+  const shown = view.blocks.filter((block) => block.kind === "user" || block.kind === "assistant" || block.kind === "error");
+
+  const empty = shown.length === 0;
+  // The catalog's own name — a raw model id here would disagree with the row
+  // the user just clicked.
+  const pill = `${guideModelLabel(routes, settings.model)} · effort ${settings.effort || "medium"}`;
 
   const transcript = (
     <div className="wb-transcript density-wide" style={{ height: "auto", minHeight: 0, overflow: "visible" }}>
-      {view.blocks.map((block) => {
+      {shown.map((block) => {
         const text = "text" in block ? String((block as { text?: unknown }).text || "") : "";
         if (block.kind === "user") {
           return (
@@ -96,7 +106,7 @@ export function GuideChat({
         return (
           <div key={block.id} className="wb-block wb-assistant">
             <div className="wb-assistant-body">
-              <div className="wb-inline-note is-warning">{text || block.kind}</div>
+              <div className="wb-inline-note is-warning" role="alert">{text || "가이드가 답하지 못했습니다."}</div>
             </div>
           </div>
         );
@@ -118,7 +128,7 @@ export function GuideChat({
           여기서부터는 선택한 모델의 비용이 발생합니다.
         </p>
       )}
-      {error || view.error ? <div className="wb-inline-note is-warning" role="alert">{error || view.error}</div> : null}
+      {error || view.error || routesError ? <div className="wb-inline-note is-warning" role="alert">{error || view.error || routesError}</div> : null}
       <div className="wb-composer">
         <div className="wb-composer-box">
           <div
@@ -217,6 +227,7 @@ export function GuideChat({
       {composer}
       {modelOpen ? (
         <GuideModelModal
+          routes={routes}
           settings={settings}
           onApply={(next) => setSettings(next)}
           onClose={() => setModelOpen(false)}
