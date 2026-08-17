@@ -225,10 +225,16 @@
 .guide-stage-app > * { width: 1440px; height: 942px; }
 
 /* 대화와 입력의 경계 — 스크롤할 때 둘이 섞여 보이면 안 된다.
-   정본에는 없는 규칙이지만 실사용에서 구분이 안 된다는 지적을 받아 더했다. */
+   창 전체를 가로지르는 띠는 화면을 두 동강 내므로, 대화와 같은 폭의
+   **떠 있는 섬**으로 둔다. 정본에 없는 규칙이며 실사용 지적으로 더했다. */
 .guide-composer-band {
   flex: none; width: 100%; display: flex; justify-content: center;
-  padding-top: 12px;
-  border-top: var(--border-width) solid var(--border);
+  padding: 0 22px 14px; box-sizing: border-box;
+}
+.guide-composer-band .guide-composer-wrap {
+  width: min(680px, 100%); padding: 12px 14px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-panel);
   background: var(--bg-2);
+  box-shadow: 0 6px 20px var(--shadow);
 }
