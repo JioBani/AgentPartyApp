@@ -51,8 +51,19 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
   const [askOpen, setAskOpen] = useState(false);
   const [error, setError] = useState("");
   const [scale, setScale] = useState(1);
+  /**
+   * Which slide the STAGE is actually showing, as opposed to the one that was
+   * asked for. The picture has to change before the ring and the caption move:
+   * the other order highlights a spot on the previous screen for a moment, and
+   * reads as the guide pointing at the wrong thing.
+   */
+  const [shownIndex, setShownIndex] = useState(0);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  /** Read by the stage's callback, which must see the slide asked for LAST —
+   *  not the one that was current when the callback was created. */
+  const indexRef = useRef(0);
+  indexRef.current = index;
 
   /** Takes focus back from the stage iframe. A modal inside the demo autofocuses
    *  its first field, and while that holds focus the arrow keys type into the
@@ -68,6 +79,13 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
     }
     rootRef.current.focus({ preventScroll: true });
   }, []);
+
+  /** The stage finished building a slide: the picture on screen is now the one
+   *  that was asked for, so the ring and the caption may follow it. */
+  const onStaged = useCallback(() => {
+    setShownIndex(indexRef.current);
+    takeFocus();
+  }, [takeFocus]);
 
   const apply = useCallback((next: number, { present = true }: { present?: boolean } = {}) => {
     try {
@@ -85,6 +103,18 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
       setError(caught instanceof Error ? caught.message : String(caught));
     }
   }, []);
+
+  // Safety net for the lag above: if the stage never reports back (a build that
+  // threw, a frame that never loaded), the ring must still move rather than sit
+  // on the previous slide forever — a stuck highlight would look like the deck
+  // ignored the key press.
+  useEffect(() => {
+    if (shownIndex === index) {
+      return;
+    }
+    const id = window.setTimeout(() => setShownIndex(index), 2000);
+    return () => window.clearTimeout(id);
+  }, [index, shownIndex]);
 
   // Main mirrors what is on screen so GET /api/guide answers about the real
   // view, not about a window it used to own.
@@ -178,6 +208,7 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
   }, [apply, index, mode]);
 
   const slide = slideAt(index);
+  const shown = slideAt(shownIndex);
   const scene = sceneOf(index);
   const paid = mode !== "deck" || askOpen;
 
@@ -276,15 +307,17 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
               <div className="guide-stage-area">
                 <div className={"guide-stage" + (askOpen ? "" : " is-focused")} ref={stageRef}>
                   <div className="guide-stage-app" style={{ transform: `scale(${scale})` }}>
-                    <GuideStage snapshot={slide.snapshot} generation={generation} onStaged={takeFocus} />
+                    <GuideStage snapshot={slide.snapshot} generation={generation} onStaged={onStaged} />
                   </div>
                   <div className="guide-stage-shade" />
-                  <div className="guide-spot" style={slide.spot} />
-                  <div className={"guide-caption at-" + slide.caption}>
-                    <span className="guide-caption-step">{index + 1}</span>
+                  {/* Ring and caption describe what is ON the stage right now,
+                      so they lag the key press by exactly one stage build. */}
+                  <div className="guide-spot" style={shown.spot} />
+                  <div className={"guide-caption at-" + shown.caption}>
+                    <span className="guide-caption-step">{shownIndex + 1}</span>
                     <div>
-                      <strong>{slide.title}</strong>
-                      <p>{slide.text}</p>
+                      <strong>{shown.title}</strong>
+                      <p>{shown.text}</p>
                     </div>
                   </div>
                 </div>

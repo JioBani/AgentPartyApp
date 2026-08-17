@@ -70,6 +70,9 @@ function contextMenu(el: Element): void {
  * looked at, with nothing to show it ever opened.
  */
 export async function runStageSteps(steps: readonly GuideStageStep[]): Promise<string[]> {
+  if (!steps.length) {
+    return [];
+  }
   await sleep(400);
   for (const step of steps) {
     const target = await waitFor(step.selector);
