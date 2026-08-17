@@ -2153,6 +2153,7 @@ omit the header and retain the active-window behavior above.
 ### `GET /api/windows`
 
 Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
+The guide stage is not in this list — use `GET /api/guide`.
 
 ### `POST /api/windows`
 
@@ -2175,6 +2176,92 @@ silently substitutes that workspace's currently selected party.
 
 Points an existing window at a different workspace. Body
 `{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
+
+## Guide
+
+The in-app guide is a **separate BrowserWindow** with its own preload. It mounts
+the real `App` tree against a fake `window.agentParty` and never talks to the
+party store. Opening it, jumping slides, or clicking around the stage must not
+change the user's parties or workspace.
+
+### `GET /api/guide/offer`
+
+`{ pending, shown }`. First-install popup state (§8). `pending` is true only
+on a brand-new userData that has not yet been shown the
+*"가이드를 먼저 보시겠습니까?"* dialog. An existing `settings.json` with no
+offer record is treated as an **upgrade** — `shown: true`, never offered.
+There is no "finished the guide" flag.
+
+### `POST /api/guide/offer`
+
+Body `{ "shown": true }` only. Records that the popup was presented. Same
+AppController method as the dialog appearing. Anything else is an error.
+
+### `GET /api/guide`
+
+`{ open, presenting, id?, slide, slideCount, slideId?, title?, sceneId?, sceneTitle? }`.
+`open: false` when the window is not showing. `presenting` is false on the
+landing ("가이드 보기") until a slide is shown. The guide window is **not**
+in `GET /api/windows`.
+
+### `POST /api/guide/open`
+
+Opens the guide (or focuses it if already open). Returns the same payload as
+`GET /api/guide`. Starts at slide 0.
+
+### `POST /api/guide/close`
+
+Closes the guide window. Returns `{ open: false, … }`.
+
+### `POST /api/guide/slide`
+
+Body `{ "index": 0 }`. Jumps to that absolute snapshot and remounts the stage.
+Out-of-range or a missing window is an error — nothing is substituted.
+
+### `POST /api/guide/capture`
+
+Captures the guide window. Body `{ "path": "C:/tmp/guide.png" }` (optional).
+The guide is not a `GET /api/windows` entry, so `POST /api/capture` cannot see
+it — this is the dedicated route. A full-size white frame still counts as a
+successful capture — use `GET /api/guide/inspect` to ask what is actually in
+the DOM.
+
+### `GET /api/guide/inspect`
+
+Reads the live guide DOM through a fixed `webContents.executeJavaScript`
+script (no caller text). Returns whether `.guide-root`, landing, chatbot,
+cost copy, and the 「질문하기」 FAB are present, their boxes/styles, FAB
+contrast under both `light` and `dark`, and any `[[slide:N]]` missing/link
+nodes. A missing selector is `{ present: false }`, never a guessed zero box.
+
+### `POST /api/guide/ask`
+
+Body `{ "open": true }`. Opens or closes the presentation 「질문하기」 panel —
+the same action as the FAB. Errors if the presentation is not showing.
+
+### `GET /api/guide/knowledge`
+
+`{ path }` — the knowledge md folder the guide session uses as cwd
+(dev: `<app>/guide/knowledge`, packaged: extraResources).
+
+### `GET /api/guide/chat?kind=chatbot|slide`
+
+One conversation. Chatbot is persisted; slide chat is not.
+
+### `POST /api/guide/chat`
+
+Body `{ kind, text, viewing? }`. Same AppController method as the guide input.
+`viewing` is `{ index, title, scene }` for slide chat (appended to that turn only).
+
+### `POST /api/guide/chat/reset` · `POST /api/guide/chat/compact`
+
+Reset starts a new conversation. Compact uses the harness default.
+
+### `GET/POST /api/guide/chat/settings`
+
+Shared harness / model / effort / language for both chats. Claude Code and
+Codex have defaults; other harnesses have none — send fails until the user picks
+a model.
 
 ## QA Endpoints (test-only)
 

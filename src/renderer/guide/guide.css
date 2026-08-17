@@ -1,0 +1,329 @@
+.guide-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.guide-chrome {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  background: var(--bg-0);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 4;
+}
+
+.guide-chrome button,
+.guide-chrome .guide-window-controls {
+  -webkit-app-region: no-drag;
+}
+
+.guide-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  flex: 0 0 auto;
+}
+
+.guide-title {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.guide-nav button {
+  appearance: none;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-0);
+  border-radius: var(--radius-button);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.guide-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.guide-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  opacity: 0.75;
+  min-width: 4.5em;
+  text-align: center;
+}
+
+.guide-window-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.guide-window-controls button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.guide-window-controls button.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.guide-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.guide-stage-app {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.guide-stage-app .titlebar,
+.guide-stage-app .window-controls {
+  /* The real titlebar is decorative here — chrome above owns the window. */
+  opacity: 0.55;
+}
+
+.guide-progress {
+  flex: 0 0 auto;
+  height: 3px;
+  background: var(--bg-3);
+}
+
+.guide-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.guide-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+}
+
+.guide-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.guide-leave,
+.guide-start {
+  appearance: none;
+  border: var(--border-width) solid var(--accent-bd);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-button);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guide-landing {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.guide-landing-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+
+.guide-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.guide-chat-bar,
+.guide-chat-input form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.guide-chat-bar input,
+.guide-chat-bar select,
+.guide-chat-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.guide-chat-log {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 12px;
+}
+
+.guide-chat-empty {
+  color: var(--text-2);
+}
+
+.guide-bubble {
+  margin: 0 0 8px;
+  max-width: 85%;
+}
+
+.guide-bubble.user {
+  margin-left: auto;
+}
+
+.guide-bubble.assistant {
+  white-space: pre-wrap;
+}
+
+.guide-cost-on {
+  margin: 0 12px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.guide-context.high {
+  color: var(--warning);
+}
+
+.guide-ask-fab {
+  position: absolute;
+  right: 16px;
+  bottom: 48px;
+  z-index: 5;
+  appearance: none;
+  border: 2px solid var(--accent);
+  background: var(--bg-2);
+  color: var(--text-0);
+  border-radius: var(--radius-button);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 10px 28px var(--shadow-strong);
+  cursor: pointer;
+}
+
+.guide-ask-fab:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.guide-ask-fab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: 2px;
+}
+
+.guide-ask-panel {
+  position: absolute;
+  right: 12px;
+  bottom: 44px;
+  width: min(420px, calc(100% - 24px));
+  height: min(420px, 50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 18px 40px var(--shadow-strong);
+}
+
+.guide-ask-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+}
+
+.guide-slide-link {
+  appearance: none;
+  border: var(--border-width) solid var(--accent-bd);
+  background: var(--accent-dim);
+  color: var(--text-0);
+  border-radius: var(--radius-button);
+  padding: 0 6px;
+  margin: 0 4px;
+  cursor: pointer;
+}
+
+.guide-slide-missing {
+  margin: 0 4px;
+  color: var(--warning);
+}
+
+.guide-toc {
+  position: relative;
+}
+
+.guide-toc-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  min-width: 160px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-card);
+  z-index: 6;
+}
+
+.guide-toc-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.guide-toc-list button.active {
+  border-color: var(--accent);
+}
+
+.guide-error {
+  margin: 24px;
+  padding: 16px;
+  border: 1px solid #c42b1c;
+  border-radius: 8px;
+  color: #ffb4ac;
+}

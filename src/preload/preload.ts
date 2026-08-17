@@ -5,6 +5,7 @@ import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
+import type { GuideWindowInfo } from "../shared/guide";
 
 const api = {
   /**
@@ -92,6 +93,12 @@ const api = {
   closeWindow: () => ipcRenderer.invoke("window:close"),
   newWindow: (workspacePath?: string, partyId?: string) => ipcRenderer.invoke("window:new", workspacePath, partyId),
   listWindows: () => ipcRenderer.invoke("window:list"),
+  /** Opens (or focuses) the guide stage window. Same path as POST /api/guide/open. */
+  openGuide: (): Promise<GuideWindowInfo> => ipcRenderer.invoke("guide:open"),
+  /** First-install offer (§8). Same path as GET /api/guide/offer. */
+  getGuideOffer: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer"),
+  /** Records that the offer popup was shown. Same path as POST /api/guide/offer. */
+  markGuideOfferShown: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer:shown"),
   listParty: () => ipcRenderer.invoke("party:list"),
   createParty: (input: unknown) => ipcRenderer.invoke("party:createParty", input),
   selectParty: (partyId: string) => ipcRenderer.invoke("party:select", partyId),

@@ -163,6 +163,81 @@ export class AutomationApiServer {
         sendJson(res, 200, { windows: c.listWindows() });
         return;
       }
+      if (method === "GET" && url.pathname === "/api/guide/offer") {
+        sendJson(res, 200, c.getGuideOffer());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/offer") {
+        const body = await readJson(req);
+        if (body.shown !== true) {
+          throw new Error("POST /api/guide/offer 는 { shown: true } 만 받습니다. 완료 표시는 두지 않습니다.");
+        }
+        sendJson(res, 200, c.markGuideOfferShown());
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/guide") {
+        sendJson(res, 200, c.getGuideWindow());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/open") {
+        sendJson(res, 200, await c.openGuideWindow());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/close") {
+        sendJson(res, 200, c.closeGuideWindow());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/slide") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.setGuideSlide(Number(body.index)));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/capture") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.captureGuideWindow(typeof body.path === "string" ? body.path : undefined));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/guide/inspect") {
+        sendJson(res, 200, await c.inspectGuideWindow());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/ask") {
+        const body = await readJson(req);
+        sendJson(res, 200, c.setGuideAsk(body.open !== false));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/guide/knowledge") {
+        sendJson(res, 200, c.guideKnowledge());
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/guide/chat/settings") {
+        sendJson(res, 200, c.getGuideChatSettings());
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/chat/settings") {
+        sendJson(res, 200, c.updateGuideChatSettings(await readJson(req)));
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/guide/chat") {
+        const kind = url.searchParams.get("kind");
+        sendJson(res, 200, c.getGuideChat(kind === "slide" ? "slide" : "chatbot"));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/chat") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.sendGuideChat(body.kind === "slide" ? "slide" : "chatbot", String(body.text || ""), body.viewing));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/chat/reset") {
+        const body = await readJson(req);
+        sendJson(res, 200, c.resetGuideChat(body.kind === "slide" ? "slide" : "chatbot"));
+        return;
+      }
+      if (method === "POST" && url.pathname === "/api/guide/chat/compact") {
+        const body = await readJson(req);
+        sendJson(res, 200, c.compactGuideChat(body.kind === "slide" ? "slide" : "chatbot"));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/windows") {
         const body = await readJson(req);
         // Defaults to the CALLING window's workspace, not the global setting: a

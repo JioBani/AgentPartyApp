@@ -32,6 +32,8 @@ import { UpdateService } from "./updateService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import { GuideWindowHost } from "./guideWindow";
+import { GuideChatHost, requireChatKind } from "./guideChat";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -95,6 +97,8 @@ let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
+let guideWindow: GuideWindowHost | undefined;
+let guideChat: GuideChatHost | undefined;
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -484,6 +488,15 @@ ${body}
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
   windowRegistry = new WindowRegistry();
+  guideWindow = new GuideWindowHost({
+    placeWindow: placeWindowOnDisplay,
+    focusWorkbench: () => registry().resolve()?.window.focus(),
+  });
+  guideChat = new GuideChatHost({
+    sessionManager,
+    knowledge: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() },
+    emit: (channel, payload) => guideWindow?.send(channel, payload),
+  });
 
   // Route session streams to the windows viewing that session's workspace.
   sessionManager.on("events", (payload: any) => {
@@ -544,6 +557,94 @@ ${body}
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
+    guide: {
+      open: () => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.open();
+      },
+      close: () => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.close();
+      },
+      setSlide: (index) => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.setSlide(index);
+      },
+      get: () => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.get();
+      },
+      capture: (outputPath) => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.capture(outputPath);
+      },
+      inspect: () => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.inspect();
+      },
+      setAsk: (open) => {
+        if (!guideWindow) {
+          throw new Error("가이드 창 호스트가 아직 없습니다.");
+        }
+        return guideWindow.setAsk(open);
+      },
+    },
+    guideChat: {
+      knowledgePath: () => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.knowledgePath();
+      },
+      settings: () => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.getSettings();
+      },
+      updateSettings: (patch) => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.updateSettings(patch);
+      },
+      view: (kind) => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.view(kind);
+      },
+      send: (kind, text, viewing) => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.send(kind, text, viewing);
+      },
+      reset: (kind) => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.reset(kind);
+      },
+      compact: (kind) => {
+        if (!guideChat) {
+          throw new Error("가이드 채팅이 아직 없습니다.");
+        }
+        return guideChat.compact(kind);
+      },
+    },
   });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
@@ -683,6 +784,12 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
 }
 
 function focusedWindow(): BrowserWindow | undefined {
+  // The guide is not in WindowRegistry. If we fell through to the last
+  // registered window, File → New Party (etc.) would mutate the real party
+  // while the user is looking at the stage.
+  if (guideWindow?.isFocused()) {
+    return undefined;
+  }
   return registry().resolve()?.window;
 }
 
@@ -707,6 +814,8 @@ function registerApplicationMenu(): void {
         { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
         { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
         { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
+        { type: "separator" },
+        { label: "가이드", accelerator: "F1", click: () => void controller().openGuideWindow() },
         { type: "separator" },
         { label: "Reload", role: "reload" },
         { label: "Toggle DevTools", role: "toggleDevTools" },
@@ -857,6 +966,21 @@ function registerIpc(): void {
     controller().openWindow(workspacePath || senderWorkspace(event), partyId)
   );
   handle("window:list", async () => controller().listWindows());
+  handle("guide:open", async () => controller().openGuideWindow());
+  handle("guide:offer", async () => controller().getGuideOffer());
+  handle("guide:offer:shown", async () => controller().markGuideOfferShown());
+  handle("guide:knowledge", async () => controller().guideKnowledge());
+  handle("guide:chat:get", async (_event, kind: unknown) => controller().getGuideChat(requireChatKind(kind)));
+  handle("guide:chat:send", async (_event, kind: unknown, text: string, viewing?: { index: number; title: string; scene: string }) =>
+    controller().sendGuideChat(requireChatKind(kind), text, viewing));
+  handle("guide:chat:reset", async (_event, kind: unknown) => controller().resetGuideChat(requireChatKind(kind)));
+  handle("guide:chat:compact", async (_event, kind: unknown) => controller().compactGuideChat(requireChatKind(kind)));
+  handle("guide:chat:settings", async (_event, patch?: unknown) => {
+    if (patch && typeof patch === "object") {
+      return controller().updateGuideChatSettings(patch);
+    }
+    return controller().getGuideChatSettings();
+  });
 
   // Party ops carry the SENDER WINDOW id: each window has its own active party, so
   // the same workspace's two windows view/act on different parties independently.

@@ -43,6 +43,11 @@ import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
+import type { GuideInspect, GuideWindowInfo } from "../../shared/guide";
+import { hasConnectedAccount } from "../../shared/guideAuth";
+import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shared/guideChat";
+import type { GuideOfferView } from "../../shared/guideOffer";
+import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -71,6 +76,28 @@ export interface AppControllerDeps {
    * replace, so the update endpoints report that plainly instead of pretending.
    */
   updater?: UpdateController;
+  /**
+   * Guide stage window. Desktop-only — the headless engine has no BrowserWindow
+   * and must fail out loud if something asks for the guide.
+   */
+  guide?: {
+    open: () => Promise<GuideWindowInfo>;
+    close: () => GuideWindowInfo;
+    setSlide: (index: number) => Promise<GuideWindowInfo>;
+    get: () => GuideWindowInfo;
+    capture: (outputPath?: string) => Promise<{ ok: true; path: string; width: number; height: number; bytes: number }>;
+    inspect: () => Promise<GuideInspect>;
+    setAsk: (open: boolean) => GuideWindowInfo;
+  };
+  guideChat?: {
+    knowledgePath: () => string;
+    settings: () => GuideChatSettings;
+    updateSettings: (patch: Partial<GuideChatSettings>) => GuideChatSettings;
+    view: (kind: GuideChatKind) => GuideChatView;
+    send: (kind: GuideChatKind, text: string, viewing?: { index: number; title: string; scene: string }) => Promise<GuideChatView>;
+    reset: (kind: GuideChatKind) => GuideChatView;
+    compact: (kind: GuideChatKind) => GuideChatView;
+  };
 }
 
 /**
@@ -310,6 +337,7 @@ export class AppController {
       party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
       windows: this.deps.windowRegistry.list(),
       ...(await this.getResumableState(workspacePath)),
+      guideOffer: getGuideOffer(),
     };
     // Keep the background usage poller tracking this window's providers.
     void this.reconcileUsageProviders();
@@ -677,6 +705,93 @@ export class AppController {
       this.activePartyByWindow.set(info.id, partyId);
     }
     return info;
+  }
+
+  /** Opens (or focuses) the guide stage window. Does not touch the party store. */
+  async openGuideWindow(): Promise<GuideWindowInfo> {
+    const auth = await this.listAuthProviders();
+    if (!hasConnectedAccount(auth)) {
+      const focused = this.deps.windowRegistry.resolve();
+      if (focused) {
+        this.navigate(focused.id, "auth");
+      }
+      throw new Error("연결된 계정이 없습니다. 인증 화면에서 계정을 연결한 뒤 다시 열어 주세요.");
+    }
+    return this.requireGuide().open();
+  }
+
+  closeGuideWindow(): GuideWindowInfo {
+    return this.requireGuide().close();
+  }
+
+  setGuideSlide(index: number): Promise<GuideWindowInfo> {
+    return this.requireGuide().setSlide(index);
+  }
+
+  getGuideWindow(): GuideWindowInfo {
+    return this.requireGuide().get();
+  }
+
+  captureGuideWindow(outputPath?: string): Promise<{ ok: true; path: string; width: number; height: number; bytes: number }> {
+    return this.requireGuide().capture(outputPath);
+  }
+
+  inspectGuideWindow(): Promise<GuideInspect> {
+    return this.requireGuide().inspect();
+  }
+
+  setGuideAsk(open: boolean): GuideWindowInfo {
+    return this.requireGuide().setAsk(open);
+  }
+
+  guideKnowledge(): { path: string } {
+    return { path: this.requireGuideChat().knowledgePath() };
+  }
+
+  getGuideChatSettings(): GuideChatSettings {
+    return this.requireGuideChat().settings();
+  }
+
+  updateGuideChatSettings(patch: Partial<GuideChatSettings>): GuideChatSettings {
+    return this.requireGuideChat().updateSettings(patch);
+  }
+
+  getGuideChat(kind: GuideChatKind): GuideChatView {
+    return this.requireGuideChat().view(kind);
+  }
+
+  sendGuideChat(kind: GuideChatKind, text: string, viewing?: { index: number; title: string; scene: string }): Promise<GuideChatView> {
+    return this.requireGuideChat().send(kind, text, viewing);
+  }
+
+  resetGuideChat(kind: GuideChatKind): GuideChatView {
+    return this.requireGuideChat().reset(kind);
+  }
+
+  compactGuideChat(kind: GuideChatKind): GuideChatView {
+    return this.requireGuideChat().compact(kind);
+  }
+
+  getGuideOffer(): GuideOfferView {
+    return getGuideOffer();
+  }
+
+  markGuideOfferShown(): GuideOfferView {
+    return markGuideOfferShown();
+  }
+
+  private requireGuide(): NonNullable<AppControllerDeps["guide"]> {
+    if (!this.deps.guide) {
+      throw new Error("가이드 창은 데스크톱 앱에서만 열 수 있습니다.");
+    }
+    return this.deps.guide;
+  }
+
+  private requireGuideChat(): NonNullable<AppControllerDeps["guideChat"]> {
+    if (!this.deps.guideChat) {
+      throw new Error("가이드 채팅은 데스크톱 앱에서만 쓸 수 있습니다.");
+    }
+    return this.deps.guideChat;
   }
 
   /** Points a window at a different workspace and returns its fresh state. */
