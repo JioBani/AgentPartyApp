@@ -23,8 +23,12 @@ S22 `192.168.137.119:5555`에는 접근하지 않았다. 기존 CLI userData를 
 - desktop/phone sessionId: `36cc7bb1-79ae-445a-8a93-4f11251726ae`
 - 추가 pairing 없이 기존 trust 사용
 - desktop lock 설정: `configured:false`
-- phone이 첫 `ctl.lock {required:false}`를 수신
 - desktop session: `lockAuthenticated:true`
+
+첫 `ctl.lock {required:false}` 패킷의 별도 raw 캡처나 스크린샷은 남기지 않았다.
+`lockAuthenticated:true` full-connect 제품 상태와 현재 `RpcServer.begin()`이 의무 첫
+프레임으로 현재 lock state를 쓰는 구현을 함께 근거로 required:false 전송을 판정했다.
+패킷을 직접 캡처했다고 주장하지 않는다.
 
 이 결과는 보존된 pre-lock CLI와 lock 필수 phone 사이의 15초 timeout이 현재 소스에서는
 해소됐음을 실제 제품 경로로 확인한다.
@@ -51,5 +55,10 @@ signaling socket 교체가 진행 중 WebRTC/SecureSession/RPC/EventBridge를 �
 - desktop lastDeliveredSeq: `8`
 - phone lastSeq: `8`
 
-phone 저장 주소 목록은 `[8080, dead.invalid]` 그대로였으며 이번 live-change는 그 목록을
-직접 변조하는 테스트가 아니었다. 테스트 후 태블릿 `HA275888`은 해제됐다.
+phone 저장 주소 목록은 재시작 전후 `[8080, dead.invalid]` 그대로였다. Mobile은 connect
+직후 `sys.info`만 저장하고 이후 generic `sys.info` 응답은 trust list에 반영하지 않는
+경로이므로, 이는 desktop live-session 보존 요구와 분리된 Mobile 잔여 결함이다. 실패를
+숨기지 않고 mobile-pipe 범위에서 추적한다. 테스트 후 태블릿 `HA275888`은 해제됐다.
+
+review-desktop-pipe는 수행자 desktop-app의 직접 보고와 위 캡처 한계를 확인한 뒤
+desktop-pipe 원칙 ①②③④⑤⑥⑦을 모두 PASS로 최종 판정했다.

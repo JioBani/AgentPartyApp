@@ -188,8 +188,9 @@ QA에서 안 보이게 된다.
 Mobile 자동화 API는 `:8182`였고, 기존 `Yve8p5HsZrD_QUECMrxe6B` trust를 재페어링 없이
 재사용했다.
 
-- `configured:false`에서 phone이 첫 `ctl.lock required:false`를 받고 desktop session은
-  `lockAuthenticated:true`가 됐다.
+- `configured:false`에서 desktop session이 `lockAuthenticated:true`로 full connect했다.
+  첫 `ctl.lock required:false` 패킷의 별도 캡처는 없으며, 이 프레임 전송은 제품 상태와
+  현재 `rpc.begin()` 구현을 함께 근거로 판정했다.
 - 양쪽 sessionId `36cc7bb1-79ae-445a-8a93-4f11251726ae`로 full connect했다.
 - 연결 중 signaling을 8080에서 8090으로 변경한 뒤에도 bootId와 sessionId가 유지됐다.
 - phone이 다시 요청한 `sys.info.signalingUrl`은 8090을 반환했다.
@@ -197,7 +198,8 @@ Mobile 자동화 API는 `:8182`였고, 기존 `Yve8p5HsZrD_QUECMrxe6B` trust를 
   `lastDeliveredSeq=8`, phone `lastSeq=8`이 일치했다.
 
 상세 증거는 `docs/notes/evidence/desktop-electron-live-signaling-e2e-2026-08-17.md`에
-보존했다. S22는 사용자 전용 정책에 따라 접근하지 않았고 태블릿은 E2E 후 해제됐다.
+보존했다. review-desktop-pipe의 최종 판정은 원칙 ①②③④⑤⑥⑦ 모두 PASS다. S22는
+사용자 전용 정책에 따라 접근하지 않았고 태블릿은 E2E 후 해제됐다.
 
 ### 6.2 빈 시그널링 설정 → `getStatus()` 예외 가능성 (**미검증 가설**)
 
@@ -321,7 +323,7 @@ develop의 "추가 다듬기 중단" 지시로 손대지 않았다.
 | **server** | `@agentparty/protocol` 패키지와 시그널링 서버. 스키마 추가 요청 대상 |
 | **security** | 연결 잠금 총괄. 프로토콜 변경 요청은 security→develop 경로로만 |
 | **ux** | 앱 화면·l10n. PIN/패턴 입력 화면 |
-| **review-desktop-pipe** | 내 영역 리뷰어. 원칙 ⑤ 제품 E2E 증거 최종 판정 담당 |
+| **review-desktop-pipe** | 내 영역 리뷰어. 최종 원칙 ①②③④⑤⑥⑦ 모두 PASS 판정 |
 
 **메시지 게이트**가 있다. develop에게는 프로토콜 이슈 / 문서·코드 불일치 / (검증
 결과와 산출물 경로가 포함된) 완료 보고 / 실제 블로커만 통과한다. 거부되면 이유가
@@ -345,7 +347,8 @@ develop의 "추가 다듬기 중단" 지시로 손대지 않았다.
 
 ## 10. 다음에 할 일
 
-1. review-desktop-pipe의 원칙 ⑤ 최종 판정을 기록한다(제품 E2E 증거 전달 완료)
+1. phone이 live `sys.info.signalingUrl`을 trust list에 학습하지 않는 Mobile 잔여 결함은
+   mobile-pipe 범위에서 추적한다. desktop session 보존 요구와 혼동하지 않는다.
 2. 사용자 QA에서 파이프 결함이 나오면 수정(확인은 desktop-app이 한다)
 3. QA 종료 후: 6.2 가설 검증, 6.5 라벨 정리, 리뷰 지적 백로그 반영
 
