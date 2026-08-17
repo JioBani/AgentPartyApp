@@ -2300,6 +2300,101 @@ export class AppController {
   }
 
   /**
+   * Sends pointer input to elements inside the Electron renderer without moving
+   * the operating-system cursor. Unlike `element.click()`, these are Chromium
+   * input events, so pointer-only controls receive their real pointer lifecycle.
+   */
+  async qaPointer(
+    windowId: string | undefined,
+    body: {
+      steps?: Array<{ selector?: string; action?: string }>;
+      delayMs?: number;
+    },
+  ): Promise<{
+    ok: true;
+    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }>;
+  }> {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    const requested = Array.isArray(body?.steps) ? body.steps : [];
+    if (requested.length === 0 || requested.length > 64) {
+      throw new Error("Pointer input requires between 1 and 64 steps.");
+    }
+    const delayMs = Math.min(500, Math.max(0, Number.isFinite(body?.delayMs) ? Number(body.delayMs) : 40));
+    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }> = [];
+    let isDown = false;
+
+    try {
+      for (const [index, step] of requested.entries()) {
+        const selector = String(step?.selector || "").trim();
+        const action = String(step?.action || "click").trim().toLowerCase();
+        if (!selector) {
+          throw new Error(`Pointer step ${index + 1} requires a selector.`);
+        }
+        if (action !== "move" && action !== "down" && action !== "up" && action !== "click") {
+          throw new Error(`Pointer step ${index + 1} has unsupported action '${action}'.`);
+        }
+        const point = await win.webContents.executeJavaScript(
+          `(() => {
+            const selector = ${JSON.stringify(selector)};
+            const matches = document.querySelectorAll(selector);
+            if (matches.length !== 1) return { count: matches.length };
+            const el = matches[0];
+            el.scrollIntoView({ block: "center", inline: "center" });
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return { count: 1, hidden: true };
+            return {
+              count: 1,
+              hidden: false,
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+            };
+          })()`,
+        );
+        if (point?.count !== 1) {
+          throw new Error(`Pointer selector '${selector}' matched ${point?.count || 0} elements; exactly one is required.`);
+        }
+        if (point.hidden || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+          throw new Error(`Pointer selector '${selector}' is not visible.`);
+        }
+        const coordinates = { x: point.x as number, y: point.y as number };
+        win.webContents.sendInputEvent({ type: "mouseMove", ...coordinates });
+        if (action === "down") {
+          if (isDown) throw new Error(`Pointer step ${index + 1} tried to press while already pressed.`);
+          win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...coordinates });
+          isDown = true;
+        } else if (action === "up") {
+          if (!isDown) throw new Error(`Pointer step ${index + 1} tried to release before pressing.`);
+          win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...coordinates });
+          isDown = false;
+        } else if (action === "click") {
+          if (isDown) throw new Error(`Pointer step ${index + 1} cannot click while already pressed.`);
+          win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...coordinates });
+          win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...coordinates });
+        }
+        completed.push({ selector, action, ...coordinates });
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    } catch (error) {
+      if (isDown && completed.length > 0) {
+        const last = completed[completed.length - 1];
+        win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: last.x, y: last.y });
+      }
+      throw error;
+    }
+    if (isDown) {
+      const last = completed[completed.length - 1];
+      win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: last.x, y: last.y });
+      throw new Error("Pointer sequence ended while still pressed; add a final 'up' step.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    return { ok: true, steps: completed };
+  }
+
+  /**
    * Resizes/moves the window so a driver can verify RESPONSIVE behaviour at a
    * real width — the app switches layout on measured element width, which no
    * amount of state injection stands in for. Only the given fields change, and

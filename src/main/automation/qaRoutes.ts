@@ -18,6 +18,7 @@ export const QA_ENDPOINTS = [
   "POST /api/qa/mobile/:action",
   "POST /api/qa/open",
   "POST /api/qa/input",
+  "POST /api/qa/pointer",
   "POST /api/qa/window/bounds",
   "POST /api/qa/usage",
   "POST /api/qa/design-gallery",
@@ -55,6 +56,10 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
   }
   if (method === "POST" && url.pathname === "/api/qa/input") {
     sendJson(res, 200, await c.qaInput(windowId, await readJson(req)));
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/qa/pointer") {
+    sendJson(res, 200, await c.qaPointer(windowId, await readJson(req)));
     return;
   }
   if (method === "POST" && url.pathname === "/api/qa/window/bounds") {

@@ -3045,6 +3045,34 @@ actually in the target afterwards — not merely that the call ran:
 member receives the whole path. Assert on `draft` or `references` when a path
 matters — asserting on `value` would pass while the path silently went missing.
 
+### `POST /api/qa/pointer`
+
+Sends real Chromium pointer input to elements in the targeted Electron window
+without moving the operating-system cursor. This is the pointer counterpart of
+`/api/qa/input`; use it for controls whose behaviour depends on
+`pointerdown`/`pointerenter`/`pointerup` rather than a synthetic DOM click.
+Window-scoped (`?window=<id>`; focused window when omitted).
+
+```json
+{
+  "steps": [
+    { "selector": ".mob-pattern-grid:first-of-type button:nth-child(1)", "action": "down" },
+    { "selector": ".mob-pattern-grid:first-of-type button:nth-child(2)", "action": "move" },
+    { "selector": ".mob-pattern-grid:first-of-type button:nth-child(3)", "action": "up" }
+  ],
+  "delayMs": 40
+}
+```
+
+Each selector must match exactly one visible element. Actions are `move`,
+`down`, `up`, and `click` (the default). A sequence may contain 1–64 steps and
+must finish with the pointer released. `delayMs` defaults to 40 and is capped at
+500 so React can process state between gesture steps. Returns the selector,
+action, and renderer-local coordinates used for every completed step.
+
+The endpoint is QA-only (`AGENTPARTY_QA=1`) and injects input only into the
+target Electron renderer; it never controls the desktop cursor.
+
 ### `POST /api/qa/window/bounds`
 
 Resizes/moves the targeted window, so responsive behaviour can be verified at a
