@@ -52,6 +52,22 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
   const [error, setError] = useState("");
   const [scale, setScale] = useState(1);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  /** Takes focus back from the stage iframe. A modal inside the demo autofocuses
+   *  its first field, and while that holds focus the arrow keys type into the
+   *  picture instead of turning the slide. */
+  const takeFocus = useCallback(() => {
+    const active = document.activeElement;
+    // The stage iframe IS inside this root, so "contains" is not the question —
+    // focus on the frame element means focus is in the demo document. A field of
+    // our own (the ask sheet) keeps it: the user may be typing a question.
+    const inStage = active instanceof HTMLIFrameElement;
+    if (!rootRef.current || (!inStage && rootRef.current.contains(active))) {
+      return;
+    }
+    rootRef.current.focus({ preventScroll: true });
+  }, []);
 
   const apply = useCallback((next: number, { present = true }: { present?: boolean } = {}) => {
     try {
@@ -166,7 +182,10 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
   const paid = mode !== "deck" || askOpen;
 
   return (
-    <div className="guide-window">
+    // tabIndex -1: the deck's own arrow-key handler lives on THIS document, so
+    // the chrome must be able to hold focus itself. Without a focusable root
+    // there is nowhere to put focus back to after the stage's modals grab it.
+    <div className="guide-window" ref={rootRef} tabIndex={-1}>
       {/* The app titlebar already names the screen and carries the theme toggle
           and window controls, so this row keeps only what is the guide's own:
           where you are, what it costs, and the language. */}
@@ -257,7 +276,7 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
               <div className="guide-stage-area">
                 <div className={"guide-stage" + (askOpen ? "" : " is-focused")} ref={stageRef}>
                   <div className="guide-stage-app" style={{ transform: `scale(${scale})` }}>
-                    <GuideStage snapshot={slide.snapshot} generation={generation} />
+                    <GuideStage snapshot={slide.snapshot} generation={generation} onStaged={takeFocus} />
                   </div>
                   <div className="guide-stage-shade" />
                   <div className="guide-spot" style={slide.spot} />

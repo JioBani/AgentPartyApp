@@ -5,6 +5,7 @@ import {
   GUIDE_STAGE_APPLY,
   GUIDE_STAGE_FAILED,
   GUIDE_STAGE_READY,
+  GUIDE_STAGE_STAGED,
   type GuideStageMessage,
 } from "../../shared/guideStage";
 
@@ -19,13 +20,22 @@ import {
  */
 const STAGE_URL = "./guide/stage/index.html";
 
-export function GuideStage({ snapshot, generation }: { snapshot: GuideSnapshot; generation: number }) {
+export function GuideStage({ snapshot, generation, onStaged }: {
+  snapshot: GuideSnapshot;
+  generation: number;
+  /** Called once a slide is fully staged — the chrome takes focus back then. */
+  onStaged?: () => void;
+}) {
   const { themeId } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
   // A slide whose modal/menu never opened. Shown ON the stage rather than logged:
   // the picture would otherwise look finished while missing its subject.
   const [failure, setFailure] = useState<{ generation: number; text: string } | undefined>();
+  // Held in a ref so the message listener is installed once and still calls the
+  // current callback — re-subscribing would miss a message posted in between.
+  const onStagedRef = useRef(onStaged);
+  onStagedRef.current = onStaged;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -37,6 +47,8 @@ export function GuideStage({ snapshot, generation }: { snapshot: GuideSnapshot; 
         setReady(true);
       } else if (message.type === GUIDE_STAGE_FAILED) {
         setFailure({ generation: message.generation, text: message.failures.join(" · ") });
+      } else if (message.type === GUIDE_STAGE_STAGED) {
+        onStagedRef.current?.();
       }
     };
     window.addEventListener("message", onMessage);

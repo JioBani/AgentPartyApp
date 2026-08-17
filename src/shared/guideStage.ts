@@ -14,6 +14,15 @@ export const GUIDE_STAGE_READY = "guide-stage:ready";
 export const GUIDE_STAGE_APPLY = "guide-stage:apply";
 /** Stage → chrome: a slide's staging (modal/menu opening) did not happen. */
 export const GUIDE_STAGE_FAILED = "guide-stage:failed";
+/**
+ * Stage → chrome: this slide is fully staged, and the stage wants no focus.
+ *
+ * The demo contains real inputs (the party name, the composer) and real modals
+ * that autofocus themselves. Focus landing in the stage iframe means the arrow
+ * keys go to a text box inside the picture instead of turning the page, so the
+ * stage hands focus back and the chrome takes it.
+ */
+export const GUIDE_STAGE_STAGED = "guide-stage:staged";
 
 export interface GuideStageReadyMessage {
   type: typeof GUIDE_STAGE_READY;
@@ -37,4 +46,13 @@ export interface GuideStageFailedMessage {
   failures: string[];
 }
 
-export type GuideStageMessage = GuideStageReadyMessage | GuideStageApplyMessage | GuideStageFailedMessage;
+export interface GuideStageStagedMessage {
+  type: typeof GUIDE_STAGE_STAGED;
+  generation: number;
+}
+
+export type GuideStageMessage =
+  | GuideStageReadyMessage
+  | GuideStageApplyMessage
+  | GuideStageFailedMessage
+  | GuideStageStagedMessage;

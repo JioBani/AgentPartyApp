@@ -13,7 +13,9 @@
 /* 가이드는 별도 창이 아니라 메인 창의 한 화면이다. 그러므로 이 파일은 앱 전체
    번들에 함께 실린다 — 여기의 모든 규칙은 반드시 .guide-window 안으로 한정한다.
    범위를 벗어난 한 줄이 앱 전체의 글자 줄바꿈을 바꾼 적이 있다. */
-.guide-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-1); }
+/* tabIndex -1 만 있고 눈에 보이는 초점 테두리는 없다 — 초점은 방향키를 받기
+   위한 것이지 사용자가 고른 대상이 아니다. */
+.guide-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-1); outline: none; }
 .guide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
 /* 화면 상단 오른쪽에 붙는 언어 선택 + 비용 표시. 정본에서는 가이드 창의

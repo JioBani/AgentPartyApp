@@ -7,6 +7,7 @@ import {
   GUIDE_STAGE_APPLY,
   GUIDE_STAGE_FAILED,
   GUIDE_STAGE_READY,
+  GUIDE_STAGE_STAGED,
   type GuideStageMessage,
 } from "../../../shared/guideStage";
 import { runStageSteps } from "./steps";
@@ -18,6 +19,7 @@ export function mountStage(fake: FakeAgentParty): void {
   if (!root) {
     throw new Error("가이드 무대의 #root 가 없습니다.");
   }
+  refuseFocus();
   // No StrictMode here. Its double-mount would replay the slide's session events
   // twice, and the stage is a picture the user reads — it has to be exactly the
   // state the chrome asked for.
@@ -26,6 +28,24 @@ export function mountStage(fake: FakeAgentParty): void {
       <Stage fake={fake} />
     </ThemeProvider>,
   );
+}
+
+/**
+ * The stage is a picture, so nothing in it may hold the caret.
+ *
+ * Real modals autofocus their first field (the party name, the wizard's name
+ * box) and the composer takes focus on mount. Focus inside this iframe means
+ * the arrow keys type into a text box in the demo instead of turning the slide
+ * — the deck's key handler lives in the chrome document and never sees them.
+ * Every focus attempt is therefore refused as it happens, whenever it happens.
+ */
+function refuseFocus(): void {
+  document.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      target.blur();
+    }
+  }, true);
 }
 
 function Stage({ fake }: { fake: FakeAgentParty }) {
@@ -64,14 +84,16 @@ function Stage({ fake }: { fake: FakeAgentParty }) {
     const id = window.setTimeout(() => {
       fake.flushSideEffects();
       const steps = fake.getSnapshot().steps || [];
-      if (!steps.length) {
-        return;
-      }
       void runStageSteps(steps).then((failures) => {
-        if (cancelled || !failures.length) {
+        if (cancelled) {
           return;
         }
-        window.parent.postMessage({ type: GUIDE_STAGE_FAILED, generation, failures }, "*");
+        if (failures.length) {
+          window.parent.postMessage({ type: GUIDE_STAGE_FAILED, generation, failures }, "*");
+        }
+        // Whatever the steps opened may have taken focus on its way in; the
+        // chrome takes it back so the arrow keys still turn the page.
+        window.parent.postMessage({ type: GUIDE_STAGE_STAGED, generation }, "*");
       });
     }, 0);
     return () => {
