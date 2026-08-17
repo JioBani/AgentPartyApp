@@ -214,7 +214,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     setCodexPolicy: () => refused(),
     setCursorPolicy: () => refused(),
     approve: () => refused(),
-    listMcpServers: () => Promise.resolve({ supported: true, harness: "claude-code" as const, servers: [] }),
+    listMcpServers: () => Promise.resolve(current().mcp ?? { supported: true, harness: "claude-code" as const, servers: [] }),
     reconnectMcpServer: () => refused(),
     setMcpServerEnabled: () => refused(),
     authenticateMcpServer: () => refused(),
@@ -313,7 +313,7 @@ export function createFakeAgentParty(): FakeAgentParty {
       const next = current();
       if (next.view) {
         for (const listener of navigateListeners) {
-          listener({ view: next.view });
+          listener({ view: next.view, tab: next.viewTab, harness: next.viewHarness });
         }
       }
       for (const payload of next.sessionEvents || []) {

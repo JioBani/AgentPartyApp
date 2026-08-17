@@ -206,6 +206,11 @@ export class AutomationApiServer {
         sendJson(res, 200, c.setGuideAsk(body.open !== false));
         return;
       }
+      if (method === "POST" && url.pathname === "/api/guide/stage/measure") {
+        const body = await readJson(req);
+        sendJson(res, 200, await c.measureGuideStage(String(body.selector || "")));
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/guide/click") {
         const body = await readJson(req);
         sendJson(res, 200, await c.clickGuide(String(body.selector || "")));

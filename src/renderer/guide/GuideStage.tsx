@@ -3,6 +3,7 @@ import { useTheme } from "../theme/ThemeProvider";
 import type { GuideSnapshot } from "../../shared/guide";
 import {
   GUIDE_STAGE_APPLY,
+  GUIDE_STAGE_FAILED,
   GUIDE_STAGE_READY,
   type GuideStageMessage,
 } from "../../shared/guideStage";
@@ -22,17 +23,21 @@ export function GuideStage({ snapshot, generation }: { snapshot: GuideSnapshot; 
   const { themeId } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
+  // A slide whose modal/menu never opened. Shown ON the stage rather than logged:
+  // the picture would otherwise look finished while missing its subject.
+  const [failure, setFailure] = useState<{ generation: number; text: string } | undefined>();
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const message = event.data as GuideStageMessage | undefined;
-      if (!message || message.type !== GUIDE_STAGE_READY) {
+      if (!message || event.source !== frameRef.current?.contentWindow) {
         return;
       }
-      if (event.source !== frameRef.current?.contentWindow) {
-        return;
+      if (message.type === GUIDE_STAGE_READY) {
+        setReady(true);
+      } else if (message.type === GUIDE_STAGE_FAILED) {
+        setFailure({ generation: message.generation, text: message.failures.join(" · ") });
       }
-      setReady(true);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -48,5 +53,10 @@ export function GuideStage({ snapshot, generation }: { snapshot: GuideSnapshot; 
     );
   }, [ready, snapshot, themeId, generation]);
 
-  return <iframe ref={frameRef} className="guide-stage-frame" src={STAGE_URL} title="가이드 무대" />;
+  return (
+    <>
+      <iframe ref={frameRef} className="guide-stage-frame" src={STAGE_URL} title="가이드 무대" />
+      {failure?.generation === generation && <div className="guide-stage-error">{failure.text}</div>}
+    </>
+  );
 }

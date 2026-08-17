@@ -261,7 +261,7 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
                   </div>
                   <div className="guide-stage-shade" />
                   <div className="guide-spot" style={slide.spot} />
-                  <div className="guide-caption">
+                  <div className={"guide-caption at-" + slide.caption}>
                     <span className="guide-caption-step">{index + 1}</span>
                     <div>
                       <strong>{slide.title}</strong>

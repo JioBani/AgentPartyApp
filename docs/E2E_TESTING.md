@@ -486,6 +486,7 @@ The guide's **full-process** verifiers are not npm scripts — run them directly
 | `node scripts/verify-guide-stage.mjs` | Boots the real app, creates a canary party, opens the guide **screen**, jumps slides, and asserts the party store on disk is byte-identical afterwards. This is the isolation proof for the stage iframe's fake `window.agentParty`. |
 | `node scripts/verify-guide-offer.mjs` | First-install popup vs. upgrade, over two boots with different userData. |
 | `node scripts/verify-guide-chat-live.mjs` | A **real** model turn in the guide chat (minimal prompt/output, per `AGENTS.md`). Costs money. |
+| `node scripts/qa-guide-slides.mjs <port>` | Walks every slide of a RUNNING app: the modal/menu the slide is about actually opened, its subject exists on the stage, and the caption does not cover it. Prints the measured `spot` literal for each slide — paste back into `GUIDE_SLIDES` after a workbench layout change. |
 
 ### Measuring the screen instead of squinting at it
 

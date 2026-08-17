@@ -148,6 +148,14 @@
     position: absolute; top: 0; left: 0; width: 1440px; height: 942px;
     border: 0; transform-origin: top left; pointer-events: none;
   }
+/* 슬라이드가 열려 했던 모달·메뉴가 안 열렸을 때. 조용히 넘어가면 그림은
+     멀쩡해 보이고 설명만 틀리므로, 무대 위에 그대로 띄운다. */
+.guide-stage-error {
+    position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+    z-index: 5; max-width: 86%; padding: 8px 14px; border-radius: var(--radius-pill);
+    background: var(--danger); color: var(--accent-fg);
+    font-size: 13px; font-weight: 600; text-align: center;
+  }
 .guide-stage-shade { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity var(--motion-base) ease; }
 .guide-stage.is-focused .guide-stage-shade { opacity: .34; }
 .guide-spot {
@@ -156,6 +164,15 @@
     transition: all var(--motion-slow) ease; opacity: 0;
   }
 .guide-stage.is-focused .guide-spot { opacity: 1; }
+.guide-caption.at-top { top: 18px; bottom: auto; }
+.guide-caption.at-bottom-left { right: auto; width: min(52%, 560px); }
+.guide-caption.at-bottom-right { left: auto; width: min(52%, 560px); }
+.guide-caption.at-top-left { top: 18px; bottom: auto; right: auto; width: min(52%, 560px); }
+.guide-caption.at-top-right { top: 18px; bottom: auto; left: auto; width: min(52%, 560px); }
+/* 캡션 자리는 슬라이드마다 다르다. 고정된 아래쪽 띠는 컴포저·탭줄처럼 아래에
+   있는 것을 설명할 때 **설명하려는 바로 그것을 가린다.** 그래서 슬라이드가
+   자기 자리를 고른다(GUIDE_SLIDES.caption). 겹치지 않는지는 눈이 아니라
+   POST /api/guide/stage/measure 와 캡션 박스 비교로 확인한다. */
 .guide-caption {
     position: absolute; left: 18px; right: 18px; bottom: 18px;
     display: flex; align-items: flex-start; gap: 10px;

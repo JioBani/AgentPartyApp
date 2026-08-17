@@ -90,6 +90,7 @@ export interface AppControllerDeps {
     inspect: () => Promise<GuideInspect>;
     setAsk: (open: boolean) => GuideScreenInfo;
     click: (selector: string) => Promise<{ ok: true; selector: string }>;
+    measureStage: (selector: string) => Promise<unknown>;
   };
   guideChat?: {
     knowledgePath: () => string;
@@ -748,6 +749,14 @@ export class AppController {
 
   clickGuide(selector: string): Promise<{ ok: true; selector: string }> {
     return this.requireGuide().click(selector);
+  }
+
+  /** Slide spotlight geometry, in the units the slide catalog is written in. */
+  measureGuideStage(selector: string): Promise<unknown> {
+    if (!selector.trim()) {
+      throw new Error("POST /api/guide/stage/measure 는 'selector' 가 필요합니다.");
+    }
+    return this.requireGuide().measureStage(selector.trim());
   }
 
   setGuideAsk(open: boolean): GuideScreenInfo {

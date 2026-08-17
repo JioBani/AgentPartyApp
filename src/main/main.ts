@@ -585,6 +585,7 @@ ${body}
       inspect: () => requireGuideScreen().inspect(),
       setAsk: (open) => requireGuideScreen().setAsk(open),
       click: (selector) => requireGuideScreen().click(selector),
+      measureStage: (selector) => requireGuideScreen().measureStage(selector),
     },
     guideChat: {
       knowledgePath: () => requireGuideChat().knowledgePath(),

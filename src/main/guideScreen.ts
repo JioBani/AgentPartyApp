@@ -19,6 +19,12 @@ import { getLogFilePath, log } from "./logger";
 
 const NOT_OPEN = "가이드 화면이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.";
 
+/** One measured element, already in `GUIDE_SLIDES` spot units. */
+interface StageSpot {
+  text: string;
+  spot: { left: string; top: string; width: string; height: string };
+}
+
 export class GuideScreenHost {
   /**
    * Every window currently showing the guide. More than one is legal — the same
@@ -159,6 +165,38 @@ export class GuideScreenHost {
     return this.info();
   }
 
+  /**
+   * Measures elements INSIDE the stage iframe, in the stage's own coordinate
+   * system (percent of 1440x942).
+   *
+   * Slide spotlights are authored as percentages of the stage, and the file that
+   * holds them says they must be re-measured rather than eyeballed when the
+   * workbench layout changes. Nothing could actually measure them: the stage is
+   * a separate document, so `document.querySelector` in the main frame cannot
+   * see it, and the stage is scaled on screen so window coordinates are the
+   * wrong units. This reaches the child frame and answers in the units the
+   * slide catalog is written in.
+   */
+  async measureStage(selector: string): Promise<{ ok: true; selector: string; count: number; elements: StageSpot[] }> {
+    const contents = this.requireViewer();
+    const frame = contents.mainFrame.frames.find((child) => child.url.includes("/guide/stage/"));
+    if (!frame) {
+      throw new Error("무대 iframe 을 찾지 못했습니다. 프레젠테이션이 열려 있어야 합니다.");
+    }
+    const result = (await frame
+      .executeJavaScript(`(${STAGE_MEASURE_SCRIPT})(${JSON.stringify(selector)})`)
+      .catch((error: unknown) => {
+        throw new Error(`무대 계측 실패: ${error instanceof Error ? error.message : String(error)}`);
+      })) as { error?: string; count?: number; elements?: StageSpot[] };
+    if (result?.error) {
+      throw new Error(String(result.error));
+    }
+    if (!result?.count) {
+      throw new Error(`무대에서 '${selector}' 를 찾지 못했습니다.`);
+    }
+    return { ok: true, selector, count: result.count, elements: result.elements || [] };
+  }
+
   /** Clicks one element on the guide screen. Surfaces the miss instead of
    *  reporting a silent success, so a QA driver cannot pass on a dead selector. */
   async click(selector: string): Promise<{ ok: true; selector: string }> {
@@ -238,6 +276,38 @@ export class GuideScreenHost {
     });
   }
 }
+
+/**
+ * Fixed measuring body for the stage frame. Percent of the stage box, rounded to
+ * two decimals — the exact shape a `GUIDE_SLIDES` spot is written in, so a
+ * measured value can be pasted straight into the catalog.
+ */
+const STAGE_MEASURE_SCRIPT = `function measureStage(selector) {
+  const STAGE_W = 1440;
+  const STAGE_H = 942;
+  let nodes;
+  try {
+    nodes = Array.from(document.querySelectorAll(selector));
+  } catch (error) {
+    return { error: "선택자가 올바르지 않습니다: " + selector };
+  }
+  const pct = (value, total) => Math.round((value / total) * 10000) / 100 + "%";
+  return {
+    count: nodes.length,
+    elements: nodes.slice(0, 20).map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        text: (el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 80),
+        spot: {
+          left: pct(r.left, STAGE_W),
+          top: pct(r.top, STAGE_H),
+          width: pct(r.width, STAGE_W),
+          height: pct(r.height, STAGE_H),
+        },
+      };
+    }),
+  };
+}`;
 
 /**
  * Fixed inspect body. The page never receives caller text — same contract as

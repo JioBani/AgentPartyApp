@@ -236,7 +236,9 @@ try {
   const opened = await post("/api/guide/open", {});
   assert(opened.open === true, `guide opened (${JSON.stringify(opened)})`);
   assert(opened.presenting === false, "opens on the landing, not mid-presentation");
-  assert(opened.slideCount === 10, `ten placeholder slides (got ${opened.slideCount})`);
+  // The deck's length is content, not contract — assert only that there IS one,
+  // so adding a slide does not fail the isolation proof.
+  assert(opened.slideCount >= 10, `the deck has slides (got ${opened.slideCount})`);
 
   const knowledge = await get("/api/guide/knowledge");
   assert(String(knowledge.path || "").toLowerCase().includes("guide") && String(knowledge.path || "").toLowerCase().includes("knowledge"), `knowledge path is the md folder (${knowledge.path})`);

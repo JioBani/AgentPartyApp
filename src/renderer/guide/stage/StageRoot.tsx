@@ -5,9 +5,11 @@ import { ThemeProvider, useTheme } from "../../theme/ThemeProvider";
 import type { FakeAgentParty } from "./fakeAgentParty";
 import {
   GUIDE_STAGE_APPLY,
+  GUIDE_STAGE_FAILED,
   GUIDE_STAGE_READY,
   type GuideStageMessage,
 } from "../../../shared/guideStage";
+import { runStageSteps } from "./steps";
 import "../../design-system.css";
 import "../../styles.css";
 
@@ -51,13 +53,31 @@ function Stage({ fake }: { fake: FakeAgentParty }) {
   }, [fake, setTheme]);
 
   // Replay the slide's view / session events / QA opens AFTER `App` remounted
-  // and re-subscribed — one tick later, same as a real event arriving.
+  // and re-subscribed — one tick later, same as a real event arriving. Then open
+  // whatever real UI the slide is ABOUT (modal, wizard, menu); a step that finds
+  // nothing is reported back so the chrome can say so on screen.
   useEffect(() => {
     if (generation < 0) {
       return;
     }
-    const id = window.setTimeout(() => fake.flushSideEffects(), 0);
-    return () => window.clearTimeout(id);
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      fake.flushSideEffects();
+      const steps = fake.getSnapshot().steps || [];
+      if (!steps.length) {
+        return;
+      }
+      void runStageSteps(steps).then((failures) => {
+        if (cancelled || !failures.length) {
+          return;
+        }
+        window.parent.postMessage({ type: GUIDE_STAGE_FAILED, generation, failures }, "*");
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
   }, [fake, generation]);
 
   if (generation < 0) {

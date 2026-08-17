@@ -12,6 +12,8 @@ import type { GuideSnapshot } from "./guide";
 export const GUIDE_STAGE_READY = "guide-stage:ready";
 /** Chrome → stage: the absolute state to render next. */
 export const GUIDE_STAGE_APPLY = "guide-stage:apply";
+/** Stage → chrome: a slide's staging (modal/menu opening) did not happen. */
+export const GUIDE_STAGE_FAILED = "guide-stage:failed";
 
 export interface GuideStageReadyMessage {
   type: typeof GUIDE_STAGE_READY;
@@ -27,4 +29,12 @@ export interface GuideStageApplyMessage {
   generation: number;
 }
 
-export type GuideStageMessage = GuideStageReadyMessage | GuideStageApplyMessage;
+export interface GuideStageFailedMessage {
+  type: typeof GUIDE_STAGE_FAILED;
+  /** The generation the failure belongs to, so a stale report cannot stick to a
+   *  slide the user has already moved past. */
+  generation: number;
+  failures: string[];
+}
+
+export type GuideStageMessage = GuideStageReadyMessage | GuideStageApplyMessage | GuideStageFailedMessage;
