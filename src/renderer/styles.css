@@ -4231,6 +4231,7 @@ body.wb-resizing {
 
 .wb-cmd-row.is-disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .wb-cmd-preview-disabled {
@@ -4681,12 +4682,23 @@ body.wb-resizing {
 
 /* Small single-column modal (threshold editor). */
 .wb-modal.wb-modal-sm { width: min(430px, 92vw); }
+.wb-command-modal-note { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.wb-command-status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 0 var(--space-6);
+  overflow-y: auto;
+}
+.wb-command-status-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 10px 0; border-bottom: var(--border-width) solid var(--border-subtle); color: var(--text-2); font-size: 12px; }
+.wb-command-status-row:last-child { border-bottom: 0; }
+.wb-command-status-row strong { color: var(--text-0); font-weight: 600; text-align: right; }
 .wb-modal-body-col {
   display: block;
   padding: var(--space-6);
   overflow-y: auto;
 }
-.wb-modal-foot-end { justify-content: flex-end; }
+.wb-modal-foot.wb-modal-foot-end { justify-content: flex-end; }
 
 /* Three tiers: a fixed head (+ optional harness switch), a fixed search row,
    and the scrolling list. Only the last one scrolls, so the search box and the

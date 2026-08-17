@@ -1576,6 +1576,8 @@ export function App() {
                   setSidebarOpen(open);
                   try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
                 }}
+                onOpenUsage={() => setCurrentView("usage")}
+                onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
             </>
           ) : (

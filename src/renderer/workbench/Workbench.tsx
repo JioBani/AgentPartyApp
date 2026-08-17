@@ -33,6 +33,8 @@ import { MessageGateModal } from "./MessageGateModal";
 import { PartyGateModal } from "./PartyGateModal";
 import type { GateReviewer, PartyGate } from "../../shared/messageGate";
 import { CompactModal } from "./AutoCompactEditor";
+import { PermissionModal } from "./PermissionModal";
+import { SessionStatusModal } from "./SessionStatusModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 
 interface WorkbenchProps {
@@ -83,6 +85,9 @@ interface WorkbenchProps {
   /** Every member with a tab here, frontmost or not: what this window must hold. */
   onOpenMembersChange: (members: string[]) => void;
   onToggleSidebar: (open: boolean) => void;
+  /** App-shell views opened by AgentParty-backed slash commands. */
+  onOpenUsage: () => void;
+  onOpenSessions: () => void;
 }
 
 interface DragState {
@@ -137,7 +142,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -175,7 +180,9 @@ export function Workbench(props: WorkbenchProps) {
    */
   const syncedLayoutRef = useRef<string>("");
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
+  const [permissionTarget, setPermissionTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
+  const [statusTarget, setStatusTarget] = useState<string | null>(null);
   const [gateTarget, setGateTarget] = useState<string | null>(null);
   const [partyGateTarget, setPartyGateTarget] = useState<string | null>(null);
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
@@ -563,7 +570,9 @@ export function Workbench(props: WorkbenchProps) {
   const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs)), [layout]);
   const activePartyName = parties.find((party) => party.id === activePartyId)?.name || "No Party";
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
+  const permissionView = permissionTarget ? viewMap.get(permissionTarget) : undefined;
   const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
+  const statusView = statusTarget ? viewMap.get(statusTarget) : undefined;
   const compactView = compactTarget ? viewMap.get(compactTarget) : undefined;
   const gateView = gateTarget ? viewMap.get(gateTarget) : undefined;
   const activeParty = parties.find((party) => party.id === activePartyId);
@@ -645,8 +654,12 @@ export function Workbench(props: WorkbenchProps) {
               }}
               onPromoteTab={(member) => setLayout((current) => promoteTab(current, panel.id, member))}
               onOpenRuntime={setRuntimeTarget}
+              onOpenPermissions={setPermissionTarget}
               onOpenMcp={setMcpTarget}
+              onOpenStatus={setStatusTarget}
               onOpenCompact={setCompactTarget}
+              onOpenUsage={onOpenUsage}
+              onOpenSessions={onOpenSessions}
               onOpenGate={setGateTarget}
               onTabPointerDown={onTabPointerDown}
               openSubId={subUi.open[panel.active]}
@@ -681,12 +694,20 @@ export function Workbench(props: WorkbenchProps) {
         />
       )}
 
+      {permissionView && (
+        <PermissionModal view={permissionView} actions={actions} onClose={() => setPermissionTarget(null)} />
+      )}
+
       {mcpView && (
         <McpModal
           view={mcpView}
           actions={actions}
           onClose={() => setMcpTarget(null)}
         />
+      )}
+
+      {statusView && (
+        <SessionStatusModal view={statusView} onClose={() => setStatusTarget(null)} />
       )}
 
       {compactView && (

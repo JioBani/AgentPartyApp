@@ -22,6 +22,7 @@ const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></ht
 const { window } = dom;
 const def = (n, v) => { try { Object.defineProperty(globalThis, n, { value: v, configurable: true, writable: true }); } catch {} };
 def("window", window); def("document", window.document); def("HTMLElement", window.HTMLElement);
+def("Node", window.Node); def("Text", window.Text); def("Range", window.Range);
 def("getComputedStyle", window.getComputedStyle.bind(window));
 def("requestAnimationFrame", (cb) => setTimeout(() => cb(Date.now()), 0)); def("cancelAnimationFrame", clearTimeout);
 window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }; globalThis.ResizeObserver = window.ResizeObserver;
@@ -65,6 +66,32 @@ const groups = groupByCategory(cc.commands);
 assert(groups[0].key === "command", "category grouping keeps Commands first");
 assert(groups.some((g) => g.key === "agentparty"), "AgentParty commands form their own section");
 
+const expectedActions = {
+  "claude-code": {
+    model: "runtime", compact: "compact", status: "status", usage: "usage",
+    permissions: "permissions", plan: "permissions", effort: "runtime",
+    autocompact: "auto-compact", stop: "interrupt", doctor: "environment",
+    mcp: "mcp", resume: "sessions",
+  },
+  codex: {
+    model: "runtime", permissions: "permissions", approvals: "permissions",
+    new: "restart", compact: "compact", status: "status", usage: "usage",
+    mcp: "mcp", resume: "sessions", stop: "interrupt",
+    autocompact: "auto-compact", doctor: "environment",
+  },
+};
+for (const [harness, actions] of Object.entries(expectedActions)) {
+  const palette = getHarnessPalette(harness);
+  for (const [id, action] of Object.entries(actions)) {
+    const command = palette.commands.find((candidate) => candidate.id === id);
+    assert(command?.run.type === "action" && command.run.action === action, `${harness} /${id} is wired to ${action}`);
+  }
+}
+assert(codex.commands.every((command) => command.run.type === "action" || Boolean(command.disabledReason)), "every Codex fallback command is app-backed or visibly disabled");
+assert(cc.commands.filter((command) => command.source === "agentparty").every((command) => command.disabledReason), "unimplemented AgentParty pseudo-commands remain visible but disabled");
+assert(cc.commands.find((command) => command.id === "clear")?.run.type === "insert", "Claude /clear keeps its existing native dispatch path");
+assert(!cc.commands.find((command) => command.id === "context")?.disabledReason, "Claude /context remains enabled");
+
 console.log("\nLive discovery (buildPalette merges harness-reported commands):");
 assert(buildPalette("claude-code").commands.length === cc.commands.length, "no discovery → static built-in inventory (fallback)");
 const discovered = [
@@ -97,6 +124,16 @@ const actions = {
   restart: (...a) => calls.push(["restart", ...a]),
   interrupt: (...a) => calls.push(["interrupt", ...a]),
   setPermissionMode: () => {},
+  openEnvironmentSettings: (...a) => calls.push(["environment", ...a]),
+};
+const commandUi = {
+  openRuntime: (...a) => calls.push(["runtime", ...a]),
+  openPermissions: (...a) => calls.push(["permissions", ...a]),
+  openMcp: (...a) => calls.push(["mcp", ...a]),
+  openStatus: (...a) => calls.push(["status", ...a]),
+  openUsage: (...a) => calls.push(["usage", ...a]),
+  openSessions: (...a) => calls.push(["sessions", ...a]),
+  openAutoCompact: (...a) => calls.push(["auto-compact", ...a]),
 };
 const view = {
   name: "rev", color: "#888",
@@ -104,13 +141,12 @@ const view = {
   status: "idle", unread: 0, pendingApproval: false, busy: false, model: "sonnet", effort: "medium", permissionMode: "default",
   transcript: [],
 };
-reactDom.createRoot(document.getElementById("root")).render(React.createElement(Composer, { view, density: "wide", actions }));
+reactDom.createRoot(document.getElementById("root")).render(React.createElement(Composer, { view, density: "wide", actions, commandUi }));
 await new Promise((r) => setTimeout(r, 80));
 
 const textarea = document.querySelector(".wb-composer-textarea");
 function setDraft(val) {
-  const desc = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
-  desc.set.call(textarea, val);
+  textarea.textContent = val;
   textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
 }
 const key = (k) => textarea.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
@@ -135,15 +171,34 @@ await new Promise((r) => setTimeout(r, 40));
 assert(calls.some((c) => c[0] === "compact" && c[1] === "rev"), "Enter on /compact fires actions.compact(member)");
 assert(!calls.some((c) => c[0] === "send"), "selecting a command does NOT send a chat message");
 assert(!document.querySelector(".wb-cmd-palette"), "palette closes after selection");
-assert((textarea.value || "") === "", "action command clears the draft");
+assert((textarea.dataset.draft || "") === "", "action command clears the draft");
 
-// Insert command: selecting /model drops its trigger into the draft (no send).
+// App-backed command: selecting /model opens Runtime rather than inserting a
+// terminal command that this environment cannot execute.
 setDraft("/model");
 await new Promise((r) => setTimeout(r, 40));
 key("Enter");
 await new Promise((r) => setTimeout(r, 40));
-assert(textarea.value === "/model ", "insert command writes '/model ' into the draft for arguments");
-assert(!document.querySelector(".wb-cmd-palette"), "palette closes once the trigger ends (trailing space)");
+assert(calls.some((c) => c[0] === "runtime"), "selecting /model opens the AgentParty Runtime UI");
+assert((textarea.dataset.draft || "") === "", "UI action does not leave '/model' in the draft");
+
+// Unsupported commands remain visible but cannot be selected or turned into a
+// model prompt. Enter keeps the palette open so the preview reason stays visible.
+setDraft("/diff");
+await new Promise((r) => setTimeout(r, 40));
+const sendsBeforeDisabled = calls.filter((c) => c[0] === "send").length;
+key("Enter");
+await new Promise((r) => setTimeout(r, 40));
+assert(Boolean(document.querySelector(".wb-cmd-row.is-disabled")), "unsupported /diff is visibly disabled");
+assert(Boolean(document.querySelector(".wb-cmd-preview-disabled")), "disabled preview explains that AgentParty does not support it");
+assert((textarea.dataset.draft || "") === "/diff", "disabled /diff is not inserted or cleared");
+assert(calls.filter((c) => c[0] === "send").length === sendsBeforeDisabled, "disabled /diff is never sent to the model");
+setDraft("/diff now");
+await new Promise((r) => setTimeout(r, 20));
+textarea.closest("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+await new Promise((r) => setTimeout(r, 30));
+assert(document.querySelector(".wb-attach-hint.is-error")?.textContent.includes("AgentParty"), "manually typed disabled command shows a visible support error");
+assert(calls.filter((c) => c[0] === "send").length === sendsBeforeDisabled, "manual Send cannot bypass command disabling");
 
 // Escape dismisses without selecting.
 setDraft("/de");
@@ -169,10 +224,10 @@ const liveView = {
   } },
 };
 const liveRoot = document.createElement("div"); document.body.appendChild(liveRoot);
-reactDom.createRoot(liveRoot).render(React.createElement(Composer, { view: liveView, density: "wide", actions }));
+reactDom.createRoot(liveRoot).render(React.createElement(Composer, { view: liveView, density: "wide", actions, commandUi }));
 await new Promise((r) => setTimeout(r, 80));
 const liveTextarea = liveRoot.querySelector(".wb-composer-textarea");
-const setLive = (val) => { const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value"); d.set.call(liveTextarea, val); liveTextarea.dispatchEvent(new window.Event("input", { bubbles: true })); };
+const setLive = (val) => { liveTextarea.textContent = val; liveTextarea.dispatchEvent(new window.Event("input", { bubbles: true })); };
 setLive("/work");
 await new Promise((r) => setTimeout(r, 50));
 const liveNames = [...liveRoot.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
@@ -182,6 +237,18 @@ await new Promise((r) => setTimeout(r, 50));
 const allLive = [...liveRoot.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
 assert(!allLive.includes("/code-review"), "static-only commands are dropped once the live inventory drives the palette");
 assert(allLive.includes("/codex:rescue"), "namespaced discovered command (codex:rescue) is present");
+const rescueRow = [...liveRoot.querySelectorAll(".wb-cmd-row")].find((row) => row.querySelector(".wb-cmd-name")?.textContent === "/codex:rescue");
+rescueRow.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 30));
+assert(liveRoot.querySelector(".wb-cmd-preview-title .wb-mono")?.textContent === "/codex:rescue", "hover preview follows the visually grouped row, not the pre-group array index");
+
+const codexBuilt = buildPalette("codex", [
+  { name: "review-agent", source: "skill", description: "Review changes" },
+  { name: "github", source: "plugin", description: "GitHub plugin" },
+]);
+assert(codexBuilt.commands.find((c) => c.id === "review-agent")?.disabledReason === "AgentParty에서는 지원하지 않는 스킬입니다.", "unsupported skill uses the AgentParty skill message");
+assert(codexBuilt.commands.find((c) => c.id === "github")?.disabledReason === "AgentParty에서는 지원하지 않는 플러그인입니다.", "unsupported plugin uses the AgentParty plugin message");
+assert(codexBuilt.commands.find((c) => c.id === "member-create")?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", "unsupported command uses the AgentParty command message");
 
 console.log(failures.length ? `\nCOMMAND PALETTE FAILED (${failures.length})` : "\nCOMMAND PALETTE PASSED");
 process.exit(failures.length ? 1 : 0);

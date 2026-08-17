@@ -38,7 +38,20 @@ export type PaletteBadge =
  * default. `action` invokes a locally-wired session action with no round-trip
  * through the model. The composer maps `action` ids to its `WorkbenchActions`.
  */
-export type PaletteRun = { type: "insert" } | { type: "action"; action: "compact" | "restart" | "interrupt" };
+export type PaletteAction =
+  | "compact"
+  | "restart"
+  | "interrupt"
+  | "runtime"
+  | "permissions"
+  | "mcp"
+  | "status"
+  | "usage"
+  | "sessions"
+  | "auto-compact"
+  | "environment";
+
+export type PaletteRun = { type: "insert" } | { type: "action"; action: PaletteAction };
 
 export interface PaletteCommand {
   /** Stable id within a harness, e.g. "model". */
@@ -89,6 +102,50 @@ export const CATEGORY_ORDER: { key: PaletteCategory; label: string }[] = [
 ];
 
 const SLASH = "/";
+const UNSUPPORTED_COMMAND = "AgentParty에서는 지원하지 않는 명령입니다.";
+
+/** User-facing wording stays about AgentParty, never the underlying harness transport. */
+function unsupportedReason(source: PaletteSource | undefined): string {
+  if (source === "skill") return "AgentParty에서는 지원하지 않는 스킬입니다.";
+  if (source === "plugin") return "AgentParty에서는 지원하지 않는 플러그인입니다.";
+  return UNSUPPORTED_COMMAND;
+}
+
+/**
+ * Existing AgentParty capabilities that can safely replace a terminal-only
+ * slash command. Keeping this mapping here makes the palette inventory and its
+ * execution policy one fact: a row cannot look enabled without a real action.
+ */
+function appActionFor(harness: HarnessId, name: string): PaletteAction | undefined {
+  switch (name) {
+    case "model":
+    case "effort":
+      return "runtime";
+    case "permissions":
+    case "approvals":
+      return "permissions";
+    case "mcp":
+      return "mcp";
+    case "status":
+      return "status";
+    case "usage":
+      return "usage";
+    case "resume":
+      return "sessions";
+    case "new":
+      return "restart";
+    case "stop":
+      return "interrupt";
+    case "autocompact":
+      return "auto-compact";
+    case "doctor":
+      return "environment";
+    case "plan":
+      return harness === "claude-code" ? "permissions" : undefined;
+    default:
+      return undefined;
+  }
+}
 
 /** Claude Code dialect: `/` opens the palette over the full command taxonomy. */
 const CLAUDE_CODE: HarnessPalette = {
@@ -96,17 +153,24 @@ const CLAUDE_CODE: HarnessPalette = {
   prefixes: [SLASH],
   commands: [
     // Built-in control commands.
-    cmd("model", "Switch session model / effort", "command", "built-in", { args: "[model]" }),
+    cmd("model", "AgentParty Runtime에서 모델과 추론 설정 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
     cmd("compact", "Compact the conversation to free context", "command", "built-in", { run: { type: "action", action: "compact" } }),
     cmd("clear", "Clear the conversation", "command", "built-in", { badges: ["destructive"] }),
-    cmd("status", "Show session status", "command", "built-in", { badges: ["read-only"] }),
+    cmd("status", "AgentParty 세션 상태 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "status" } }),
     cmd("context", "Show context usage breakdown", "command", "built-in", { badges: ["read-only"] }),
-    cmd("permissions", "Manage allow / ask / deny rules", "command", "built-in"),
-    cmd("diff", "Review uncommitted changes", "command", "built-in", { badges: ["requires-git", "read-only"] }),
-    cmd("mcp", "Manage MCP servers", "command", "built-in"),
-    cmd("agents", "Manage subagents", "command", "built-in"),
-    cmd("tasks", "Show background tasks", "command", "built-in", { badges: ["read-only"] }),
-    cmd("resume", "Resume a previous session", "command", "built-in"),
+    cmd("usage", "AgentParty 계정 사용 한도 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "usage" } }),
+    cmd("permissions", "AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
+    cmd("plan", "AgentParty 권한 설정에서 Plan 모드 선택", "command", "built-in", { run: { type: "action", action: "permissions" } }),
+    cmd("effort", "AgentParty Runtime에서 추론 강도 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
+    cmd("autocompact", "AgentParty 자동 압축 설정 열기", "command", "built-in", { run: { type: "action", action: "auto-compact" } }),
+    cmd("stop", "현재 실행 중인 턴 중단", "command", "built-in", { run: { type: "action", action: "interrupt" } }),
+    cmd("doctor", "AgentParty 환경 진단 열기", "command", "built-in", { run: { type: "action", action: "environment" } }),
+    cmd("theme", "Change terminal theme", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("diff", "Review uncommitted changes", "command", "built-in", { badges: ["requires-git", "read-only"], disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("mcp", "AgentParty MCP 서버 관리 열기", "command", "built-in", { run: { type: "action", action: "mcp" } }),
+    cmd("agents", "Manage subagents", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("tasks", "Show background tasks", "command", "built-in", { badges: ["read-only"], disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("resume", "AgentParty 세션 기록 열기", "command", "built-in", { run: { type: "action", action: "sessions" } }),
     // Built-in skills (prompt/workflow handed to the model).
     cmd("code-review", "Review the current branch / PR", "skill", "skill", { args: "[PR#]", badges: ["requires-git", "cloud"] }),
     cmd("debug", "Investigate a failure", "skill", "skill", { args: "[topic]" }),
@@ -114,10 +178,10 @@ const CLAUDE_CODE: HarnessPalette = {
     cmd("verify", "Verify a claim or change", "skill", "skill", { args: "[claim]" }),
     cmd("loop", "Run a self-paced task loop", "skill", "skill", { args: "[task]", badges: ["background"] }),
     // AgentParty app commands (drive the local API / party surface).
-    cmd("member-create", "Create a new party member", "agentparty", "agentparty", { args: "<name>" }),
-    cmd("member-open", "Open a member in a new panel", "agentparty", "agentparty", { args: "<name>" }),
-    cmd("send-to", "Send a message to another member", "agentparty", "agentparty", { args: "<member> <text>" }),
-    cmd("split-panel", "Split the current panel region", "agentparty", "agentparty"),
+    cmd("member-create", "Create a new party member", "agentparty", "agentparty", { args: "<name>", disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("member-open", "Open a member in a new panel", "agentparty", "agentparty", { args: "<name>", disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("send-to", "Send a message to another member", "agentparty", "agentparty", { args: "<member> <text>", disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("split-panel", "Split the current panel region", "agentparty", "agentparty", { disabledReason: UNSUPPORTED_COMMAND }),
   ],
 };
 
@@ -126,18 +190,25 @@ const CODEX: HarnessPalette = {
   harness: "codex",
   prefixes: [SLASH],
   commands: [
-    cmd("model", "Switch model", "command", "built-in", { args: "[model]" }),
-    cmd("approvals", "Change approval mode", "command", "built-in"),
-    cmd("new", "Start a new conversation", "command", "built-in", { badges: ["destructive"] }),
-    cmd("init", "Create an AGENTS.md for this repo", "command", "built-in", { badges: ["edits-files"] }),
+    cmd("model", "AgentParty Runtime에서 모델 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
+    cmd("permissions", "AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
+    cmd("approvals", "구식 이름 — AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
+    cmd("new", "빈 대화로 하드 리스타트", "command", "built-in", { badges: ["destructive"], run: { type: "action", action: "restart" } }),
+    cmd("init", "Create an AGENTS.md for this repo", "command", "built-in", { badges: ["edits-files"], disabledReason: UNSUPPORTED_COMMAND }),
     cmd("compact", "Summarize to free context", "command", "built-in", { run: { type: "action", action: "compact" } }),
-    cmd("diff", "Show working-tree diff", "command", "built-in", { badges: ["requires-git", "read-only"] }),
-    cmd("mention", "Mention a file", "command", "built-in", { args: "<path>" }),
-    cmd("status", "Show session status", "command", "built-in", { badges: ["read-only"] }),
-    cmd("mcp", "List MCP servers", "command", "built-in", { badges: ["read-only"] }),
+    cmd("diff", "Show working-tree diff", "command", "built-in", { badges: ["requires-git", "read-only"], disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("mention", "Mention a file", "command", "built-in", { args: "<path>", disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("status", "AgentParty 세션 상태 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "status" } }),
+    cmd("usage", "AgentParty 계정 사용 한도 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "usage" } }),
+    cmd("mcp", "AgentParty MCP 서버 관리 열기", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "mcp" } }),
+    cmd("resume", "AgentParty 세션 기록 열기", "command", "built-in", { run: { type: "action", action: "sessions" } }),
+    cmd("stop", "현재 실행 중인 턴 중단", "command", "built-in", { run: { type: "action", action: "interrupt" } }),
+    cmd("autocompact", "AgentParty 자동 압축 설정 열기", "command", "built-in", { run: { type: "action", action: "auto-compact" } }),
+    cmd("doctor", "AgentParty 환경 진단 열기", "command", "built-in", { run: { type: "action", action: "environment" } }),
+    cmd("theme", "Change terminal theme", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
     // AgentParty commands are harness-independent.
-    cmd("member-create", "Create a new party member", "agentparty", "agentparty", { args: "<name>" }),
-    cmd("send-to", "Send a message to another member", "agentparty", "agentparty", { args: "<member> <text>" }),
+    cmd("member-create", "Create a new party member", "agentparty", "agentparty", { args: "<name>", disabledReason: UNSUPPORTED_COMMAND }),
+    cmd("send-to", "Send a message to another member", "agentparty", "agentparty", { args: "<member> <text>", disabledReason: UNSUPPORTED_COMMAND }),
   ],
 };
 
@@ -147,9 +218,15 @@ const PALETTES: Record<HarnessId, HarnessPalette> = {
   cursor: {
     ...CLAUDE_CODE,
     harness: "cursor",
-    commands: CLAUDE_CODE.commands.map((command) => command.id === "compact"
-      ? { ...command, id: "compress", trigger: "/compress", title: "compress", description: "Compress the Cursor chat context" }
-      : command),
+    commands: CLAUDE_CODE.commands.map((command) => {
+      if (command.id === "compact") {
+        return { ...command, id: "compress", trigger: "/compress", title: "compress", description: "Compress the Cursor chat context" };
+      }
+      if (command.run.type === "action") {
+        return command;
+      }
+      return disable(command, UNSUPPORTED_COMMAND);
+    }),
   },
 };
 
@@ -174,13 +251,17 @@ export function buildPalette(runtime: string | undefined, discovered?: Discovere
   }
   const prefix = base.prefixes[0] ?? SLASH;
   const known = new Map(base.commands.map((c) => [c.id, c]));
-  const live = discovered.map((d) => discoveredToCommand(d, prefix, known.get(d.name)));
-  const appParty = base.commands.filter((c) => c.source === "agentparty");
-  return { ...base, commands: [...live, ...appParty] };
+  const live = discovered.map((d) => discoveredToCommand(d, prefix, known.get(d.name), base.harness));
+  // App-backed actions remain available even when the harness does not report
+  // the terminal command (the reason we own these rows). Fake AgentParty rows
+  // also remain visible, but disabled, until they gain a real controller path.
+  const alwaysVisible = base.commands.filter((c) => c.run.type === "action" || c.source === "agentparty");
+  const liveIds = new Set(live.map((command) => command.id));
+  return { ...base, commands: [...live, ...alwaysVisible.filter((command) => !liveIds.has(command.id))] };
 }
 
 /** Classifies a discovered command, enriching from a matching static entry. */
-function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, known: PaletteCommand | undefined): PaletteCommand {
+function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, known: PaletteCommand | undefined, harness: HarnessId): PaletteCommand {
   const name = discovered.name;
   // Explicit harness-reported source wins over name-shape inference.
   const source = explicitSource(discovered.source) ?? known?.source ?? classifySource(name);
@@ -188,8 +269,18 @@ function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, know
   const base: PaletteCommand = known
     ? { ...known }
     : { id: name, trigger: prefix + name, title: name, description: "", category, source, run: { type: "insert" } };
-  const disabled = Boolean(discovered.disabledReason);
-  const badges = disabled ? [...(base.badges || []).filter((b) => b !== "disabled"), "disabled" as PaletteBadge] : base.badges;
+  const action = appActionFor(harness, name);
+  // Claude's initializationResult is itself the SDK's executable inventory.
+  // It does not preserve skill provenance, so disabling an unknown simple name
+  // would incorrectly block valid project/user skills. Cursor's ACP command
+  // notification has the same contract. Codex is the exception: its inventory
+  // is skills/plugins metadata, not an app-server slash dispatcher.
+  const nativeAllowed = harness === "claude-code" || harness === "cursor";
+  const unsupported = action || name === "compact" || nativeAllowed ? undefined : unsupportedReason(source);
+  const disabledReason = discovered.disabledReason ? unsupportedReason(source) : unsupported || base.disabledReason;
+  const badges = disabledReason
+    ? [...(base.badges || []).filter((b) => b !== "disabled"), "disabled" as PaletteBadge]
+    : (base.badges || []).filter((b) => b !== "disabled");
   return {
     ...base,
     id: name,
@@ -201,7 +292,16 @@ function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, know
     description: discovered.description || base.description,
     args: discovered.argumentHint || base.args,
     badges,
-    disabledReason: discovered.disabledReason || base.disabledReason,
+    disabledReason,
+    run: action ? { type: "action", action } : base.run,
+  };
+}
+
+function disable(command: PaletteCommand, reason: string): PaletteCommand {
+  return {
+    ...command,
+    disabledReason: command.disabledReason || reason,
+    badges: [...(command.badges || []).filter((badge) => badge !== "disabled"), "disabled"],
   };
 }
 
@@ -318,7 +418,7 @@ function cmd(
   description: string,
   category: PaletteCategory,
   source: PaletteSource,
-  extra: { args?: string; badges?: PaletteBadge[]; run?: PaletteRun } = {},
+  extra: { args?: string; badges?: PaletteBadge[]; run?: PaletteRun; disabledReason?: string } = {},
 ): PaletteCommand {
   return {
     id,
@@ -328,7 +428,10 @@ function cmd(
     category,
     source,
     args: extra.args,
-    badges: extra.badges,
+    badges: extra.disabledReason
+      ? [...(extra.badges || []).filter((badge) => badge !== "disabled"), "disabled"]
+      : extra.badges,
+    disabledReason: extra.disabledReason,
     run: extra.run ?? { type: "insert" },
   };
 }

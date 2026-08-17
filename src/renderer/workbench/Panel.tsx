@@ -31,8 +31,12 @@ interface PanelProps {
   /** Move a tab to the front of this panel and activate it (overflow list). */
   onPromoteTab: (member: string) => void;
   onOpenRuntime: (member: string) => void;
+  onOpenPermissions: (member: string) => void;
   onOpenMcp: (member: string) => void;
+  onOpenStatus: (member: string) => void;
   onOpenCompact: (member: string) => void;
+  onOpenUsage: () => void;
+  onOpenSessions: () => void;
   onOpenGate: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
   /** Subagent dock/detail UI state for this panel's active member. */
@@ -44,7 +48,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenSessions, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
@@ -233,7 +237,20 @@ export function Panel(props: PanelProps) {
       {view ? (
         <>
           <Transcript view={view} density={density} actions={actions} />
-          <Composer view={view} density={density} actions={actions} />
+          <Composer
+            view={view}
+            density={density}
+            actions={actions}
+            commandUi={{
+              openRuntime: () => onOpenRuntime(view.name),
+              openPermissions: () => onOpenPermissions(view.name),
+              openMcp: () => onOpenMcp(view.name),
+              openStatus: () => onOpenStatus(view.name),
+              openUsage: onOpenUsage,
+              openSessions: onOpenSessions,
+              openAutoCompact: () => onOpenCompact(view.name),
+            }}
+          />
         </>
       ) : (
         <div className="wb-panel-empty">No member in this panel.</div>

@@ -9,6 +9,7 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessForRuntime } from "../../shared/types";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
+import type { PaletteAction } from "./paletteModel";
 import {
   DEFAULT_MAX_IMAGES_PER_TURN,
   DEFAULT_MAX_IMAGE_BYTES,
@@ -52,6 +53,15 @@ interface ComposerProps {
   view: MemberView;
   density: PanelDensity;
   actions: WorkbenchActions;
+  commandUi: {
+    openRuntime: () => void;
+    openPermissions: () => void;
+    openMcp: () => void;
+    openStatus: () => void;
+    openUsage: () => void;
+    openSessions: () => void;
+    openAutoCompact: () => void;
+  };
 }
 
 /**
@@ -84,7 +94,7 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
-export function Composer({ view, density, actions }: ComposerProps) {
+export function Composer({ view, density, actions, commandUi }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -124,17 +134,27 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const maxImages = view.vision?.maxImages ?? DEFAULT_MAX_IMAGES_PER_TURN;
   const maxBytes = view.vision?.maxBytesPerImage ?? DEFAULT_MAX_IMAGE_BYTES;
 
+  function runPaletteAction(action: PaletteAction) {
+    if (action === "compact") actions.compact(view.name);
+    else if (action === "restart") actions.restart(view.name);
+    else if (action === "interrupt") actions.interrupt(view.name);
+    else if (action === "runtime") commandUi.openRuntime();
+    else if (action === "permissions") commandUi.openPermissions();
+    else if (action === "mcp") commandUi.openMcp();
+    else if (action === "status") commandUi.openStatus();
+    else if (action === "usage") commandUi.openUsage();
+    else if (action === "sessions") commandUi.openSessions();
+    else if (action === "auto-compact") commandUi.openAutoCompact();
+    else if (action === "environment") actions.openEnvironmentSettings();
+  }
+
   // Command/skill palette — harness-aware (`/` for claude-code/codex, etc.).
   const palette = useCommandPalette({
     runtime: harness,
     discovered: view.session?.snapshot.slashCommands,
     draft,
     setDraft,
-    onAction: (action) => {
-      if (action === "compact") actions.compact(view.name);
-      else if (action === "restart") actions.restart(view.name);
-      else if (action === "interrupt") actions.interrupt(view.name);
-    },
+    onAction: runPaletteAction,
   });
 
   // --- `:m` members / `:a` models -----------------------------------------
@@ -292,6 +312,9 @@ export function Composer({ view, density, actions }: ComposerProps) {
     const text = serializeDraft(root);
     renderedRef.current = text;
     setDraft(text);
+    if (attachError) {
+      setAttachError("");
+    }
     syncCaret();
   }
 
@@ -696,6 +719,18 @@ export function Composer({ view, density, actions }: ComposerProps) {
     const root = editorRef.current;
     const text = (root ? serializeDraft(root) : draft).trim();
     if (!text && attachments.length === 0) {
+      return;
+    }
+    if (palette.blocked) {
+      setAttachError(`${palette.blocked.trigger}: ${palette.blocked.reason}`);
+      return;
+    }
+    if (palette.typedAction) {
+      runPaletteAction(palette.typedAction);
+      setDraft("");
+      knownRefs.current = [];
+      setAttachments([]);
+      setAttachError("");
       return;
     }
     const images = attachments.length ? attachments : undefined;

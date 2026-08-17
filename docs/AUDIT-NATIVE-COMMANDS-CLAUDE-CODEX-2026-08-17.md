@@ -283,7 +283,51 @@ AgentParty는 이 항목을 `/imagegen`, `/openai-docs` 같은 slash command로 
 - command 선택 시 문자열 삽입: `src/renderer/workbench/useCommandPalette.ts:60-68`
 - `/model ` 삽입만 검사하는 QA: `scripts/qa-command-palette.mjs:140-145`
 
-## 10. 외부 기준 문서
+## 10. 2026-08-18 구현 반영
+
+이 감사 결과를 바탕으로 command palette를 실행 정책의 단일 진실 공급원으로 변경했다. 목록에 보이는 항목은 이제 다음 세 상태 중 하나다.
+
+### 10.1 AgentParty 기능으로 정상 실행
+
+| 명령 | Claude Code | Codex | AgentParty 동작 |
+|---|---:|---:|---|
+| `/model` | 지원 | 지원 | Runtime 모델·추론 설정 modal |
+| `/effort` | 지원 | 해당 없음 | Runtime 모델·추론 설정 modal |
+| `/permissions` | 지원 | 지원 | 멤버 권한 설정 modal |
+| `/approvals` | 해당 없음 | 호환 별칭 | 멤버 권한 설정 modal |
+| `/plan` | 지원 | 미지원 | Claude 권한 설정 modal |
+| `/mcp` | 지원 | 지원 | MCP 서버 관리 modal |
+| `/status` | 지원 | 지원 | 현재 멤버의 세션 상태 modal |
+| `/usage` | 지원 | 지원 | AgentParty Usage 화면 |
+| `/resume` | 지원 | 지원 | AgentParty Sessions 화면 |
+| `/new` | 해당 없음 | 지원 | 기존 hard restart 동작 |
+| `/compact` | 지원 | 지원 | 기존 native compact action |
+| `/stop` | 지원 | 지원 | 현재 턴 interrupt action |
+| `/autocompact` | 지원 | 지원 | 자동 압축 설정 modal |
+| `/doctor` | 지원 | 지원 | Runtime 환경 진단 화면 |
+
+이 항목들은 composer에 slash 문자열을 넣거나 모델에게 평문으로 보내지 않는다. palette 선택 또는 명령 직접 입력 시 동일한 앱 action/UI로 분기한다.
+
+### 10.2 노출은 유지하지만 실행 불가
+
+- Claude/Codex 정적 CLI-only 명령은 `disabled` badge, 비활성 행, `AgentParty에서는 지원하지 않는 명령입니다.` 사유를 표시한다.
+- Codex `skills/list` 및 `plugin/installed` 항목은 목록에 유지하되 각각 `AgentParty에서는 지원하지 않는 스킬입니다.`, `AgentParty에서는 지원하지 않는 플러그인입니다.`를 표시한다. app-server·SDK 같은 내부 transport 이름은 사용자 문구에 노출하지 않는다.
+- `/member-create`, `/member-open`, `/send-to`, `/split-panel`처럼 실제 AppController action이 없던 AgentParty 가짜 명령도 동일하게 비활성화했다.
+- 마우스 선택과 Enter/Tab 적용을 모두 차단한다. 사용자가 명령을 직접 완성해 Send를 눌러도 모델에게 전송하지 않고 composer 내부에 오류를 표시한다.
+
+### 10.3 의도적으로 유지한 예외
+
+- Claude `/clear`는 이번 변경에서 그대로 유지했다. SDK context clear의 화면 transcript/경계 피드백 문제는 별도 과제다.
+- Claude `/context`와 SDK가 실제 `system/init` inventory로 보고한 동적 command/skill/MCP prompt는 기존 native dispatch를 유지한다.
+- Cursor는 이번 Claude Code/Codex 감사 범위 밖이다. 기존 local action인 `/compress`와 AgentParty로 연결된 action만 유지하고, 나머지 정적 fallback은 안전하게 비활성화했다.
+
+### 10.4 검증
+
+- palette model/DOM 회귀 검사: 지원 action 실행, 비활성 행·사유 표시, 직접 입력 우회 차단, Codex skill/plugin 비활성화를 확인한다.
+- 실제 AgentParty 앱을 격리된 QA workspace로 실행해 `/model`, `/permissions`, `/status`, `/mcp` UI와 `/diff` 차단을 직접 조작했다.
+- 실제 화면 PNG를 확인해 command palette의 disabled 상태와 modal의 패딩·간격·비율을 검토했다. 이 과정에서 상태 modal의 공용 2열 grid 상속과 footer 버튼 정렬 우선순위 결함을 발견해 수정했다.
+
+## 11. 외부 기준 문서
 
 - OpenAI, Codex developer commands: https://developers.openai.com/codex/cli/slash-commands
 - Anthropic, Claude Code commands: https://code.claude.com/docs/en/commands
