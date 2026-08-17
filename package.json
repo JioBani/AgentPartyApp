@@ -201,6 +201,8 @@
     "test:e2e:catalog-list": "npm run build && node scripts/e2e-model-catalog-list.mjs",
     "test:catalog-list": "node scripts/qa-model-catalog-list.mjs",
     "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs",
+    "test:cli-continuation": "npm run build && node scripts/qa-cli-continuation.mjs",
+    "test:e2e:cli-continuation": "npm run build && node scripts/e2e-cli-continuation.mjs && node scripts/e2e-cli-continuation-wsl.mjs",
     "test:e2e:mobile-device": "npm run build && node scripts/e2e-mobile-device.mjs",
     "test:e2e:mobile-link-device": "npm run build && node scripts/e2e-mobile-link-device.mjs",
     "test:e2e:mobile-connection-lock-device": "npm run build && node scripts/e2e-mobile-connection-lock-device.mjs"

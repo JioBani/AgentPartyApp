@@ -1234,7 +1234,7 @@ export function App() {
       // not just "has a sessionId": that status is the app's own statement that
       // the binding is DEAD, so the member does need starting again.
       const boundElsewhere = Boolean(member?.sessionId) && member?.status !== "missing_session";
-      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping") {
+      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping" || member?.externalCli) {
         return;
       }
       void ensureSession(name, { auto: true }).then((result) => {

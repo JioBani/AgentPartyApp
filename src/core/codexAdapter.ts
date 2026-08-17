@@ -9,6 +9,7 @@ import { EnvironmentBlockedError, errorEventPayload, isSpawnFailure } from "./en
 import { CodexSubagentTracker, codexWebSearchQuery, type SubagentEmit } from "./subagentTracker";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
+import { terminateProcessTree } from "./processTree";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
@@ -1618,7 +1619,7 @@ export class CodexAdapter extends EventEmitter {
     this.process = undefined;
     child?.removeAllListeners("error");
     child?.removeAllListeners("exit");
-    child?.kill();
+    if (child?.pid) terminateProcessTree(child.pid);
     const interrupted = new Error("Codex app-server stopped for session reinitialization.");
     for (const pending of this.pendingRequests.values()) {
       pending.reject(interrupted);

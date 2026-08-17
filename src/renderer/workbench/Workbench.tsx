@@ -373,7 +373,7 @@ export function Workbench(props: WorkbenchProps) {
       .flatMap((panel) => panel.tabs)
       .filter((name) => {
         const view = viewMap.get(name);
-        if (!view || view.session || view.status === "sleeping") {
+        if (!view || view.session || view.status === "sleeping" || view.status === "external-cli") {
           return false;
         }
         // `missing_session` is the app's own statement that the binding is dead,

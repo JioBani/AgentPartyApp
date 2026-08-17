@@ -7,6 +7,7 @@ import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
 import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
 import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
+import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
 
 const api = {
   /**
@@ -170,6 +171,9 @@ const api = {
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),
   /** Where the harness keeps its own untrimmed copy of this member's conversation. */
   getHarnessOriginal: (name: string): Promise<{ ok: true; original: { harness: string; path: string; exists: boolean; bytes?: number } | null }> => ipcRenderer.invoke("party:harness-original", name),
+  /** Inspects or transfers this member's native thread to the default terminal. */
+  continueMemberInCli: (name: string, action: CliContinuationAction): Promise<CliContinuationResult> =>
+    ipcRenderer.invoke("party:cli-continuation", name, action),
   onSessionEvents: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("session:events", listener);

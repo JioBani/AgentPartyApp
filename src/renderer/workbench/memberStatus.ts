@@ -51,7 +51,7 @@ function hasPendingApproval(transcript: TranscriptBlock[], session?: SessionView
  */
 function deriveStatus(member: PartyMember, session: SessionView | undefined, transcript: TranscriptBlock[]): MemberStatus {
   return deriveMemberStatus({
-    stored: member.status,
+    stored: member.externalCli ? "external_cli" : member.status,
     hasLiveSession: Boolean(member.sessionId && session),
     busy: isSessionBusy(session),
     pendingApproval: hasPendingApproval(transcript, session),
@@ -222,6 +222,8 @@ export function statusLabel(status: MemberStatus): string {
     // it — the label exists to explain that first short delay, not to alarm.
     case "sleeping":
       return "sleeping";
+    case "external-cli":
+      return "CLI";
     // Someone closed this member — here or in another window on the same party.
     // Distinct from `sleeping` (which wakes itself on the next message) and from
     // `not started` (which starts itself): this one waits to be asked.

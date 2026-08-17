@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plug, RefreshCw } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -15,6 +15,7 @@ import { ContextDonut } from "./ContextDonut";
 import { WorkingDots } from "./StatusIndicator";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
+import { CliContinuationModal } from "./CliContinuationModal";
 
 interface PanelProps {
   panel: PanelState;
@@ -47,8 +48,10 @@ export function Panel(props: PanelProps) {
   const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenMcp, onOpenCompact, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
+  const cliOwned = view?.status === "external-cli";
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cliContinuationOpen, setCliContinuationOpen] = useState(false);
 
   // Subagent dock + drill-in detail, derived from the active member's subagents.
   const subagents = view?.subagents || [];
@@ -104,7 +107,7 @@ export function Panel(props: PanelProps) {
     <div
       ref={ref}
       data-panel-id={panel.id}
-      className={"wb-panel density-" + density + (focused ? " is-focused" : "")}
+      className={"wb-panel density-" + density + (focused ? " is-focused" : "") + (cliOwned ? " is-external-cli" : "")}
       style={{ ...(view ? memberColorVars(view.name) : {}), flexGrow: panel.weight, flexBasis: 0 }}
       onMouseDownCapture={onFocus}
     >
@@ -220,6 +223,13 @@ export function Panel(props: PanelProps) {
                     >
                       <Plug size={14} /> MCP 서버
                     </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      onClick={() => { setMenuOpen(false); setCliContinuationOpen(true); }}
+                    >
+                      <SquareTerminal size={14} /> CLI로 이어가기
+                    </button>
                   </div>
                 </>
               )}
@@ -230,7 +240,14 @@ export function Panel(props: PanelProps) {
 
       {dock && <SubagentDock view={dock} onToggle={onToggleSubDock} onOpen={onOpenSub} />}
 
-      {view ? (
+      {view && cliOwned ? (
+        <div className="wb-external-cli-state" role="status">
+          <SquareTerminal size={28} />
+          <strong>외부 CLI에서 작업 중</strong>
+          <span>이 멤버의 대화는 현재 터미널 프로세스가 사용하고 있습니다.</span>
+          <small>CLI를 종료하면 이 탭이 자동으로 다시 활성화됩니다. 탭의 × 버튼으로 닫는 것은 가능합니다.</small>
+        </div>
+      ) : view ? (
         <>
           <Transcript view={view} density={density} actions={actions} />
           <Composer view={view} density={density} actions={actions} />
@@ -241,6 +258,10 @@ export function Panel(props: PanelProps) {
 
       {detail && view && (
         <SubagentDetail detail={detail} parentName={view.name} parentColor={view.color} density={density} onBack={onCloseSub} />
+      )}
+
+      {cliContinuationOpen && view && (
+        <CliContinuationModal member={view.name} color={view.color} onClose={() => setCliContinuationOpen(false)} />
       )}
 
       {dropTarget && (

@@ -74,6 +74,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
             return null;
           }
           const active = member === panel.active;
+          const cliOwned = view.status === "external-cli";
           // The insertion marker rides the tab the cursor is over, on the side
           // the drop would land — without it a reorder is invisible until it has
           // already happened.
@@ -88,13 +89,15 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                 "wb-tab" +
                 (active ? " is-active" : "") +
                 (view.busy ? " is-working" : "") +
+                (cliOwned ? " is-external-cli" : "") +
                 (draggingMember === member ? " is-dragging" : "") +
                 marker
               }
               style={memberColorVars(member)}
-              onPointerDown={(event) => onTabPointerDown(member, event)}
-              onClick={() => onSelect(member)}
-              title={`${member} · ${harnessLabel(view.member.runtime)}`}
+              onPointerDown={(event) => { if (!cliOwned) onTabPointerDown(member, event); }}
+              onClick={() => { if (!cliOwned) onSelect(member); }}
+              aria-disabled={cliOwned}
+              title={cliOwned ? `${member} · 외부 CLI에서 작업 중` : `${member} · ${harnessLabel(view.member.runtime)}`}
             >
               <span className="wb-tab-accent" />
               <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
@@ -153,13 +156,15 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                   if (!view) {
                     return null;
                   }
+                  const cliOwned = view.status === "external-cli";
                   return (
                     <div
                       key={member}
-                      className="wb-tab-overflow-item"
+                      className={"wb-tab-overflow-item" + (cliOwned ? " is-external-cli" : "")}
                       style={memberColorVars(member)}
                       role="menuitem"
-                      onClick={() => { setOverflowOpen(false); onPromote(member); }}
+                      onClick={() => { if (!cliOwned) { setOverflowOpen(false); onPromote(member); } }}
+                      aria-disabled={cliOwned}
                     >
                       <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
                       <span className="wb-tab-overflow-name">{member}</span>
