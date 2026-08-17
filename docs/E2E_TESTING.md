@@ -477,6 +477,16 @@ next person does not re-investigate a silent orphan.
 | `test:subscription-install` | Network integration: downloads the official CLIProxyAPI release from GitHub and verifies SHA-256. Also short-circuits when a live bridge is already reachable on the machine, so it is not a deterministic offline unit. |
 | `test:engine-rpc` | **Currently red for a product reason, not a stale assertion.** The headless `engineServerEntry` pulls `AppController`, which imports `electron` (`clipboard`/`nativeImage`). The QA correctly refuses an Electron reference in the WSL-bound server bundle. Do not wire into `test:ui` until the headless entry is Electron-free again; that is a product fix, not a test tweak. |
 | `test:wsl-*` | Need a WSL distro (and often a built `dist/engine-server.mjs`). Wiring them would fail every Windows-only `test:ui` run. Judged separately from this batch. |
+| `test:guide-auth` / `test:guide-chat` / `test:guide-offer` | Pure-logic guards for the guide (account gate, knowledge-path resolution, first-install offer). Written **after the unit bundle was frozen** (2026-08-02 verification policy), so they are run on demand rather than appended to `test:ui`. Cheap — run all three when touching `src/main/guideChat.ts`, `guideAuth.ts` or `guideOffer.ts`. |
+
+The guide's **full-process** verifiers are not npm scripts — run them directly:
+
+| Script | What it proves |
+|---|---|
+| `node scripts/verify-guide-stage.mjs` | Boots the real app, creates a canary party, opens the guide **screen**, jumps slides, and asserts the party store on disk is byte-identical afterwards. This is the isolation proof for the stage iframe's fake `window.agentParty`. |
+| `node scripts/verify-guide-offer.mjs` | First-install popup vs. upgrade, over two boots with different userData. |
+| `node scripts/verify-guide-chat-live.mjs` | A **real** model turn in the guide chat (minimal prompt/output, per `AGENTS.md`). Costs money. |
+| `node scripts/qa-guide-slides.mjs <port>` | Walks every slide of a RUNNING app: the modal/menu the slide is about actually opened, its subject exists on the stage, and the caption does not cover it. Prints the measured `spot` literal for each slide — paste back into `GUIDE_SLIDES` after a workbench layout change. |
 
 ### Measuring the screen instead of squinting at it
 

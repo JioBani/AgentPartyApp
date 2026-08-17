@@ -1,0 +1,289 @@
+/*
+ * 가이드 창 스타일 — 디자인 정본(claude.ai/design · guide.html)에서 그대로 옮긴다.
+ *
+ * 규칙(guide-handoff §1):
+ *  - 새 색·글꼴·반경·그림자를 만들지 않는다. 값은 전부 foundations/tokens.css 의 var(--*).
+ *  - 말풍선·컴포저·모달·pill·세그먼트는 styles.css 의 wb-* 를 그대로 쓴다.
+ *  - 이 파일에는 가이드 창에만 있는 guide-* 만 둔다.
+ *
+ * 정본이 바뀌면 여기도 바꾼다. 눈대중으로 값을 고치지 마라.
+ */
+
+/* ---------- 가이드 화면 ---------- */
+/* 가이드는 별도 창이 아니라 메인 창의 한 화면이다. 그러므로 이 파일은 앱 전체
+   번들에 함께 실린다 — 여기의 모든 규칙은 반드시 .guide-window 안으로 한정한다.
+   범위를 벗어난 한 줄이 앱 전체의 글자 줄바꿈을 바꾼 적이 있다. */
+/* tabIndex -1 만 있고 눈에 보이는 초점 테두리는 없다 — 초점은 방향키를 받기
+   위한 것이지 사용자가 고른 대상이 아니다. */
+.guide-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-1); outline: none; }
+.guide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+/* 화면 상단 오른쪽에 붙는 언어 선택 + 비용 표시. 정본에서는 가이드 창의
+   타이틀바에 있었지만, 메인 창에서는 타이틀바가 이미 화면 이름·테마·창 버튼을
+   들고 있으므로 가이드 고유의 두 가지만 이 줄로 내려온다. */
+.guide-topbar {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    height: var(--bar-height); padding: 0 14px 0 18px; box-sizing: border-box;
+    border-bottom: var(--border-width) solid var(--border);
+    background: var(--bg-2);
+  }
+.guide-window .wb-assistant-head strong, .guide-window .wb-user-who { white-space: nowrap; }
+/* 워크벤치 세그먼트는 폼 안에서 칸을 균등 분배하려고 flex:1 이다. 여기서는
+   툴바 위 두 칸이라 글자만큼만 차지해야 한다. */
+.guide-topbar .wb-segment {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; font-size: var(--font-body-sm); font-family: inherit; cursor: pointer;
+  }
+.guide-topbar .guide-spacer { flex: 1; }
+.guide-lang {
+    height: 22px; padding: 0 6px; border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--border); background: var(--bg-2);
+    color: var(--text-1); font-size: var(--font-meta); font-family: inherit;
+  }
+.guide-cost {
+    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+    border-radius: var(--radius-pill); font-size: var(--font-meta); letter-spacing: .01em;
+    border: var(--border-width) solid var(--border); background: var(--bg-3); color: var(--text-2);
+  }
+.guide-cost.is-free { border-color: var(--success-bd); background: var(--success-dim); color: var(--success); }
+.guide-cost.is-paid { border-color: var(--live-bd); background: var(--live-dim); color: var(--live); }
+
+/* ---------- 챗봇 (창의 기본 상태) ---------- */
+.guide-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+/* `both-edges` 라서 스크롤바가 생겨도 가운데 칸이 옆으로 밀리지 않는다 —
+   한쪽만 예약하면 대화 칸과 아래 컴포저가 몇 px 어긋난 채로 서 있게 된다. */
+.guide-chat-scroll { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-gutter: stable both-edges; display: flex; justify-content: center; }
+.guide-chat-col { width: min(680px, 100%); padding: 26px 22px 8px; box-sizing: border-box; }
+.guide-hero { display: flex; flex-direction: column; gap: 6px; padding: 34px 0 18px; }
+.guide-hero h1 { margin: 0; font-size: 21px; font-weight: var(--weight-bold); color: var(--text-0); letter-spacing: -.01em; }
+.guide-hero p { margin: 0; font-size: var(--font-ui); color: var(--text-2); text-wrap: pretty; word-break: keep-all; }
+/* 한국어는 어절 안에서 끊기면 읽기가 나빠진다 — 문장 조각은 어절 단위로만 넘긴다. */
+.guide-caption p, .guide-caption strong, .guide-end p, .guide-hint,
+.guide-offer-card small, .guide-toc-row, .wb-md p { word-break: keep-all; }
+.guide-offer-card {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px;
+    margin: 6px 0 20px; padding: 15px 16px;
+    border: var(--border-width) solid var(--accent-bd); border-radius: var(--radius-card);
+    background: linear-gradient(180deg, var(--accent-dim), transparent), var(--bg-2);
+  }
+.guide-offer-card strong { display: block; font-size: var(--font-heading); color: var(--text-0); }
+.guide-offer-card small { display: block; margin-top: 3px; font-size: var(--font-body); color: var(--text-2); }
+.guide-suggests { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.guide-suggest {
+    height: 26px; padding: 0 10px; border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--border); background: var(--bg-2);
+    color: var(--text-1); font-size: var(--font-body-sm); font-family: inherit; cursor: pointer;
+  }
+.guide-suggest:hover { border-color: var(--border-strong); background: var(--bg-3); }
+.guide-section-label {
+    margin: 0 0 8px; font-size: var(--font-meta); font-weight: var(--weight-bold);
+    letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+  }
+
+/* 슬라이드 마커 [[slide:N]] 가 렌더된 결과 */
+.guide-marker {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    height: 28px; padding: 0 11px; border-radius: var(--radius-button);
+    border: var(--border-width) solid var(--accent-bd); background: var(--accent-dim);
+    color: var(--accent); font-size: var(--font-body); font-weight: var(--weight-semibold);
+    font-family: inherit; cursor: pointer;
+  }
+.guide-marker:hover { background: var(--bg-2); }
+.guide-marker-miss {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    height: 28px; padding: 0 11px; border-radius: var(--radius-button);
+    border: var(--border-width) dashed var(--danger-bd); background: var(--danger-dim);
+    color: var(--danger); font-size: var(--font-body);
+  }
+
+/* ---------- 컴포저 (챗봇 · 슬라이드 채팅 공용) ---------- */
+.guide-composer-wrap { width: min(680px, 100%); padding: 0 22px 16px; box-sizing: border-box; }
+.guide-composer-note {
+    display: flex; align-items: center; gap: 6px; margin: 0 0 7px; padding-left: 2px;
+    font-size: var(--font-body-sm); color: var(--live);
+  }
+.guide-composer-meta {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    font-size: var(--font-meta); color: var(--text-3);
+  }
+.guide-composer-meta .guide-spacer { flex: 1; }
+
+/* ---------- 프레젠테이션 ---------- */
+.guide-deck { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.guide-deck-top {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    height: var(--bar-height); padding: 0 12px;
+    border-bottom: var(--border-width) solid var(--border-subtle); background: var(--bg-2);
+  }
+.guide-scene {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: var(--font-title); font-weight: var(--weight-semibold); color: var(--text-0);
+  }
+.guide-scene-index { font-size: var(--font-meta); color: var(--text-3); letter-spacing: .04em; }
+.guide-deck-top .guide-spacer { flex: 1; }
+.guide-count { font-size: var(--font-meta); color: var(--text-2); letter-spacing: .03em; }
+
+.guide-progress { flex: none; display: flex; gap: 2px; padding: 7px 12px 0; }
+.guide-progress-seg {
+    flex: 1; height: 4px; border: 0; padding: 0; border-radius: 2px;
+    background: var(--bg-4); cursor: pointer;
+  }
+.guide-progress-seg.is-seen { background: var(--accent-bd); }
+.guide-progress-seg.is-current { background: var(--accent); }
+.guide-progress-scene { flex: none; display: flex; gap: 2px; padding: 5px 12px 0; }
+.guide-progress-scene span {
+    font-size: var(--font-micro); color: var(--text-3); text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+.guide-stage-area { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px 22px; }
+.guide-stage {
+    position: relative; height: 100%; width: auto; max-width: 100%; aspect-ratio: 1440 / 942;
+    overflow: hidden;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-panel);
+    background: var(--bg-2); box-shadow: 0 10px 30px var(--shadow);
+  }
+/* 무대는 그림이 아니라 진짜 워크벤치다 — 목업에서도 사본을 만들지 않고
+     index.html 을 그대로 띄운다. 워크벤치를 고치면 가이드가 저절로 따라온다.
+     (검수 바 42px 은 창 밖 물건이므로 위로 밀어 잘라낸다.) */
+.guide-stage-frame {
+    position: absolute; top: 0; left: 0; width: 1440px; height: 942px;
+    border: 0; transform-origin: top left; pointer-events: none;
+  }
+/* 슬라이드가 열려 했던 모달·메뉴가 안 열렸을 때. 조용히 넘어가면 그림은
+     멀쩡해 보이고 설명만 틀리므로, 무대 위에 그대로 띄운다. */
+.guide-stage-error {
+    position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+    z-index: 5; max-width: 86%; padding: 8px 14px; border-radius: var(--radius-pill);
+    background: var(--danger); color: var(--accent-fg);
+    font-size: 13px; font-weight: 600; text-align: center;
+  }
+.guide-stage-shade { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity var(--motion-base) ease; }
+.guide-stage.is-focused .guide-stage-shade { opacity: .34; }
+.guide-spot {
+    position: absolute; border-radius: var(--radius-card);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px var(--scrim);
+    transition: all var(--motion-slow) ease; opacity: 0;
+  }
+.guide-stage.is-focused .guide-spot { opacity: 1; }
+.guide-caption.at-top { top: 18px; bottom: auto; }
+.guide-caption.at-bottom-left { right: auto; width: min(52%, 560px); }
+.guide-caption.at-bottom-right { left: auto; width: min(52%, 560px); }
+.guide-caption.at-top-left { top: 18px; bottom: auto; right: auto; width: min(52%, 560px); }
+.guide-caption.at-top-right { top: 18px; bottom: auto; left: auto; width: min(52%, 560px); }
+/* 캡션 자리는 슬라이드마다 다르다. 고정된 아래쪽 띠는 컴포저·탭줄처럼 아래에
+   있는 것을 설명할 때 **설명하려는 바로 그것을 가린다.** 그래서 슬라이드가
+   자기 자리를 고른다(GUIDE_SLIDES.caption). 겹치지 않는지는 눈이 아니라
+   POST /api/guide/stage/measure 와 캡션 박스 비교로 확인한다. */
+.guide-caption {
+    position: absolute; left: 18px; right: 18px; bottom: 18px;
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; box-sizing: border-box;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+    background: var(--bg-2); box-shadow: 0 6px 20px var(--shadow);
+  }
+.guide-caption strong { font-size: var(--font-title); color: var(--text-0); }
+.guide-caption p { margin: 3px 0 0; font-size: var(--font-body); color: var(--text-1); text-wrap: pretty; }
+.guide-caption-step {
+    flex: none; width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center; font-size: var(--font-meta);
+    background: var(--accent); color: var(--accent-fg); font-weight: var(--weight-bold);
+  }
+
+.guide-deck-bottom {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px 12px;
+  }
+.guide-deck-bottom .guide-spacer { flex: 1; }
+.guide-nav-btn {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border-radius: var(--radius-button); border: var(--border-width) solid var(--border);
+    background: var(--bg-2); color: var(--text-1); cursor: pointer;
+  }
+.guide-nav-btn:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.guide-nav-btn:disabled { opacity: .4; cursor: not-allowed; }
+.guide-hint { font-size: var(--font-meta); color: var(--text-3); }
+.guide-ask-fab {
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px;
+    border-radius: 16px; border: var(--border-width) solid var(--accent);
+    background: var(--accent); color: var(--accent-fg);
+    font-size: var(--font-ui); font-weight: var(--weight-semibold); font-family: inherit;
+    cursor: pointer; box-shadow: 0 4px 14px var(--shadow);
+  }
+.guide-ask-fab:hover { filter: brightness(1.08); }
+
+/* 목차 — 장면 단위 */
+.guide-toc {
+    position: absolute; top: calc(var(--bar-height) + 6px); left: 12px; z-index: 30;
+    width: 330px; padding: 8px; box-sizing: border-box;
+    border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+    background: var(--bg-2); box-shadow: 0 12px 32px var(--shadow-strong);
+  }
+.guide-toc-row {
+    width: 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+    padding: 9px 10px; border: 0; border-radius: var(--radius-button);
+    background: transparent; color: var(--text-1); font-family: inherit; font-size: var(--font-ui);
+    text-align: left; cursor: pointer;
+  }
+.guide-toc-row:hover { background: var(--bg-3); }
+.guide-toc-row.is-current { background: var(--accent-dim); color: var(--accent); font-weight: var(--weight-semibold); }
+.guide-toc-row small { display: block; margin-top: 2px; font-size: var(--font-meta); color: var(--text-3); font-weight: var(--weight-regular); }
+.guide-toc-range { font-size: var(--font-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 슬라이드 채팅 — 무대 아래에서 올라오는 시트 */
+.guide-ask-sheet {
+    position: absolute; left: 0; right: 0; bottom: 52px; z-index: 25;
+    display: flex; flex-direction: column; max-height: 58%;
+    border-top: var(--border-width) solid var(--border);
+    background: var(--bg-2); box-shadow: 0 -10px 30px var(--shadow);
+  }
+.guide-ask-head {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    height: 34px; padding: 0 12px; border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+.guide-ask-head strong { font-size: var(--font-title); color: var(--text-0); }
+.guide-ask-head .guide-spacer { flex: 1; }
+/* 시트 자체가 이미 패널이다 — 안에 컴포저 섬을 또 띄우면 상자 안의 상자가 된다.
+   그래서 시트에서는 테두리 없이, 대화와 같은 폭의 가운데 칸으로만 둔다. */
+.guide-ask-chat { display: flex; flex-direction: column; min-height: 0; }
+.guide-ask-chat .guide-composer-wrap { margin: 0 auto; padding: 10px 12px 12px; }
+
+/* 대화는 **자기가** 스크롤한다. 바깥에 스크롤 컨테이너를 하나 더 두면
+   Transcript 의 "바닥에 붙어 따라가기"가 절대 안 움직이는 요소를 붙잡게 되어,
+   답이 흐르는 동안 화면 아래로 자라 나간다. 가운데 칸은 블록마다 준다. */
+.guide-chat > .wb-transcript, .guide-ask-chat > .wb-transcript {
+    scrollbar-gutter: stable both-edges;
+  }
+.guide-chat > .wb-transcript > *, .guide-ask-chat > .wb-transcript > * {
+    width: min(680px, 100%); align-self: center;
+  }
+.guide-attach {
+    display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
+    border-radius: var(--radius-badge); border: var(--border-width) solid var(--border);
+    background: var(--bg-3); color: var(--text-2); font-size: var(--font-meta);
+  }
+
+/* 마무리 슬라이드 */
+.guide-end { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; height: 100%; padding: 40px; box-sizing: border-box; text-align: center; }
+.guide-end h2 { margin: 0; font-size: 20px; color: var(--text-0); }
+.guide-end p { margin: 0; max-width: 460px; font-size: var(--font-ui); color: var(--text-2); text-wrap: pretty; }
+
+/* 무대 안쪽 — 정본의 iframe 자리에 진짜 App 트리를 같은 크기로 놓는다.
+   좌표(스포트라이트 %)가 정본과 같으려면 이 상자 크기가 같아야 한다. */
+.guide-stage-app { position: absolute; top: 0; left: 0; width: 1440px; height: 942px; transform-origin: top left; overflow: hidden; }
+.guide-stage-app > * { width: 1440px; height: 942px; }
+
+/* 대화와 입력의 경계 — 스크롤할 때 둘이 섞여 보이면 안 된다.
+   창 전체를 가로지르는 띠는 화면을 두 동강 내므로, 대화와 같은 폭의
+   **떠 있는 섬**으로 둔다. 정본에 없는 규칙이며 실사용 지적으로 더했다. */
+.guide-composer-band {
+  flex: none; width: 100%; display: flex; justify-content: center;
+  padding: 0 22px 14px; box-sizing: border-box;
+}
+.guide-composer-band .guide-composer-wrap {
+  width: min(680px, 100%); padding: 12px 14px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-2);
+  box-shadow: 0 6px 20px var(--shadow);
+}

@@ -5,6 +5,7 @@ import { appRoutes } from "./routes/appRoutes";
 import { approvalRoutes } from "./routes/approvalRoutes";
 import { authRoutes } from "./routes/authRoutes";
 import { discordRoutes } from "./routes/discordRoutes";
+import { guideRoutes } from "./routes/guideRoutes";
 import { mobileRoutes } from "./routes/mobileRoutes";
 import { modelRoutes } from "./routes/modelRoutes";
 import { partyRoutes } from "./routes/partyRoutes";
@@ -32,6 +33,7 @@ const routes: MethodRoute[] = [
   ...approvalRoutes,
   ...authRoutes,
   ...discordRoutes,
+  ...guideRoutes,
   ...mobileRoutes,
   ...modelRoutes,
   ...sessionRoutes,

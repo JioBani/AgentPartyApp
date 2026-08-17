@@ -20,6 +20,24 @@ interface TranscriptProps {
   view: MemberView;
   density: PanelDensity;
   actions: WorkbenchActions;
+  /**
+   * How much machinery this surface shows.
+   *
+   * `"full"` (workbench): watching what the agent actually ran IS the work, so
+   * tool boxes open on sight and every `spawned` / `requesting` / `turn complete`
+   * line is visible.
+   *
+   * `"answers"` (guide): the reader came for an answer, not to supervise an
+   * agent. Tool boxes stay collapsed (they are the guide reading its own
+   * knowledge files) and status lines are dropped entirely — including
+   * `turn complete - $5 in / $25 out`, which contradicts the guide's rule that
+   * cost is shown as 쓴다/안 쓴다 and never as a number.
+   *
+   * Errors are NOT status: a real failure is its own block kind and shows in
+   * both modes. A picture result also opens in both — collapsed, it cannot be
+   * told apart from an image that failed to render.
+   */
+  detail?: "full" | "answers";
 }
 
 // A member's transcript holds up to 800 persisted blocks. Mounting all of them
@@ -30,7 +48,7 @@ interface TranscriptProps {
 // message rendering; this bounds the switch-time render cost to a constant.
 const TAIL_BLOCKS = 150;
 
-export function Transcript({ view, density, actions }: TranscriptProps) {
+export function Transcript({ view, density, actions, detail = "full" }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the view is pinned to the bottom (true unless the user scrolled up).
   const stickRef = useRef(true);
@@ -114,14 +132,14 @@ export function Transcript({ view, density, actions }: TranscriptProps) {
       {!view.transcriptLoading && shown.map((block) => (
         // Key by kind+id: an AskUserQuestion approval and its merged tool block
         // share the same tool-use id, so id alone would collide.
-        <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} />
+        <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} detail={detail} />
       ))}
       {!view.transcriptLoading && view.busy && <TypingIndicator />}
     </div>
   );
 }
 
-function Block({ block, view, density, actions }: { block: TranscriptBlock; view: MemberView; density: PanelDensity; actions: WorkbenchActions }) {
+function Block({ block, view, density, actions, detail }: { block: TranscriptBlock; view: MemberView; density: PanelDensity; actions: WorkbenchActions; detail: "full" | "answers" }) {
   switch (block.kind) {
     case "user":
       return (
@@ -184,7 +202,7 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
       if (block.name === "AskUserQuestion") {
         return null;
       }
-      return <ToolBlock block={block} density={density} />;
+      return <ToolBlock block={block} density={density} detail={detail} />;
     case "channel":
       return <ChannelBlock block={block} view={view} />;
     case "image":
@@ -196,11 +214,12 @@ function Block({ block, view, density, actions }: { block: TranscriptBlock; view
     case "compact":
       return <CompactBlock block={block} view={view} actions={actions} />;
     case "status":
-      return (
+      // Harness plumbing: spawned / requesting / responding / turn complete.
+      return detail === "full" ? (
         <div className="wb-block wb-status">
           <Search size={13} /> <span className="wb-mono">{block.text}</span>
         </div>
-      );
+      ) : null;
     case "error":
       return (
         <div className="wb-block wb-error">
@@ -510,7 +529,7 @@ const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
  */
 const IMAGE_HIDDEN_TOOLS = new Set(["Read", "read_file"]);
 
-function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity }) {
+function ToolBlock({ block, density, detail }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity; detail: "full" | "answers" }) {
   const [full, setFull] = useState(false);
   const arg = summarizeArg(block.input);
   // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
@@ -533,7 +552,7 @@ function ToolBlock({ block, density }: { block: Extract<TranscriptBlock, { kind:
   // rendered at all, which was the reported bug for Codex's `image_view`. Text
   // results keep the old rule: they read fine from the summary and would
   // otherwise flood the transcript.
-  const openByDefault = images.length > 0 || (density === "wide" && Boolean(result));
+  const openByDefault = images.length > 0 || (detail === "full" && density === "wide" && Boolean(result));
 
   // A display tool that produced its picture renders as the same card as an
   // attached image — no disclosure box, no `{"path": …}` dump. The tool ran to

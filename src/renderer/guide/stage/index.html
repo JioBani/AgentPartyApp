@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1440, initial-scale=1" />
+    <title>AgentParty 가이드 무대</title>
+    <script>
+      // The stage shares the main window's origin, therefore its localStorage.
+      // A demo must never write the user's real sidebar width, panel state or
+      // theme, so this document gets its own in-memory store BEFORE any bundle
+      // loads. Shadowing the accessor with an own property is enough — nothing
+      // in the app holds a reference to the original.
+      (function () {
+        var data = Object.create(null);
+        var memory = {
+          getItem: function (key) { return Object.prototype.hasOwnProperty.call(data, String(key)) ? data[String(key)] : null; },
+          setItem: function (key, value) { data[String(key)] = String(value); },
+          removeItem: function (key) { delete data[String(key)]; },
+          clear: function () { data = Object.create(null); },
+          key: function (index) { var keys = Object.keys(data); return index < keys.length ? keys[index] : null; },
+          get length() { return Object.keys(data).length; },
+        };
+        Object.defineProperty(window, "localStorage", { value: memory, configurable: true });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./entry.tsx"></script>
+  </body>
+</html>

@@ -88,6 +88,9 @@
     "test:backend": "node scripts/qa-model-backend.mjs",
     "test:harness-protocol": "node scripts/qa-harness-protocol.mjs",
     "test:subscription-auth": "node scripts/qa-subscription-auth.mjs",
+    "test:guide-auth": "node scripts/qa-guide-auth.mjs",
+    "test:guide-chat": "node scripts/qa-guide-chat.mjs",
+    "test:guide-offer": "node scripts/qa-guide-offer.mjs",
     "test:subscription-install": "node scripts/qa-subscription-proxy-install.mjs",
     "test:claude-cli-detection": "node scripts/qa-claude-cli-detection.mjs",
     "test:e2e:claude-cli-detection": "npm run build && node scripts/e2e-claude-cli-detection.mjs",
@@ -242,6 +245,10 @@
       {
         "from": "scripts/agentparty-acp-mcp-relay.mjs",
         "to": "bin/agentparty-acp-mcp-relay.mjs"
+      },
+      {
+        "from": "guide/knowledge",
+        "to": "guide/knowledge"
       }
     ],
     "win": {

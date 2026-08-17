@@ -38,6 +38,8 @@ import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
 import { createMobileGateway, type CreateMobileGatewayOptions } from "./mobile";
 import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
+import { GuideScreenHost } from "./guideScreen";
+import { GuideChatHost, requireChatKind } from "./guideChat";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -108,6 +110,8 @@ let mobileLink: MobileLinkService | undefined;
  * approval raised inside a distro without knowing that is where it lives.
  */
 const approvals = new ApprovalIndex();
+let guideScreen: GuideScreenHost | undefined;
+let guideChat: GuideChatHost | undefined;
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -123,6 +127,22 @@ function workspaceFromArgv(argv: string[]): string | undefined {
     log("warn", "window", warning, { argv: argv.slice(1) });
   }
   return location;
+}
+
+/** The guide screen host, or an explicit error — never a silent no-op. */
+function requireGuideScreen(): GuideScreenHost {
+  if (!guideScreen) {
+    throw new Error("가이드 화면 호스트가 아직 없습니다.");
+  }
+  return guideScreen;
+}
+
+/** The guide chat host, or an explicit error — never a silent no-op. */
+function requireGuideChat(): GuideChatHost {
+  if (!guideChat) {
+    throw new Error("가이드 채팅이 아직 없습니다.");
+  }
+  return guideChat;
 }
 
 /** The Discord bridge, or an explicit error — never a silent no-op. */
@@ -498,6 +518,14 @@ ${body}
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
   windowRegistry = new WindowRegistry();
+  guideScreen = new GuideScreenHost({
+    targetWindow: (windowId) => registry().resolve(windowId)?.window,
+  });
+  guideChat = new GuideChatHost({
+    sessionManager,
+    knowledge: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() },
+    emit: (channel, payload) => guideScreen?.send(channel, payload),
+  });
 
   // Route session streams to the windows viewing that session's workspace.
   sessionManager.on("events", (payload: any) => {
@@ -592,6 +620,30 @@ ${body}
     mobileLink,
     approvals,
     launchCliContinuation: ({ target, location }) => launchCliContinuation({ target, location }),
+    // One line per capability. The previous form repeated the same null check
+    // eight times, which is how `open` came to DROP its `windowId` argument
+    // without TypeScript noticing — a shorter parameter list satisfies a longer
+    // signature, so the knob existed and did nothing.
+    guide: {
+      open: (windowId) => requireGuideScreen().open(windowId),
+      close: () => requireGuideScreen().close(),
+      setSlide: (index) => requireGuideScreen().setSlide(index),
+      get: () => requireGuideScreen().get(),
+      capture: (outputPath) => requireGuideScreen().capture(outputPath),
+      inspect: () => requireGuideScreen().inspect(),
+      setAsk: (open) => requireGuideScreen().setAsk(open),
+      click: (selector) => requireGuideScreen().click(selector),
+      measureStage: (selector) => requireGuideScreen().measureStage(selector),
+    },
+    guideChat: {
+      knowledgePath: () => requireGuideChat().knowledgePath(),
+      settings: () => requireGuideChat().getSettings(),
+      updateSettings: (patch) => requireGuideChat().updateSettings(patch),
+      view: (kind) => requireGuideChat().view(kind),
+      send: (kind, text, viewing) => requireGuideChat().send(kind, text, viewing),
+      reset: (kind) => requireGuideChat().reset(kind),
+      compact: (kind) => requireGuideChat().compact(kind),
+    },
   });
   mobileLink.setController(appController);
   automationApi = new AutomationApiServer({
@@ -790,6 +842,8 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
 }
 
 function focusedWindow(): BrowserWindow | undefined {
+  // The guide is a screen of an ordinary app window now, so there is no longer a
+  // window outside WindowRegistry that menu commands could land on by mistake.
   return registry().resolve()?.window;
 }
 
@@ -814,6 +868,8 @@ function registerApplicationMenu(): void {
         { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
         { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
         { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
+        { type: "separator" },
+        { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
         { label: "Reload", role: "reload" },
         { label: "Toggle DevTools", role: "toggleDevTools" },
@@ -994,6 +1050,22 @@ function registerIpc(): void {
     controller().openWindow(workspacePath || senderWorkspace(event), partyId)
   );
   handle("window:list", async () => controller().listWindows());
+  handle("guide:open", async () => controller().openGuideScreen());
+  handle("guide:offer", async () => controller().getGuideOffer());
+  handle("guide:offer:shown", async () => controller().markGuideOfferShown());
+  handle("guide:knowledge", async () => controller().guideKnowledge());
+  handle("guide:models", async () => controller().guideModels());
+  handle("guide:chat:get", async (_event, kind: unknown) => controller().getGuideChat(requireChatKind(kind)));
+  handle("guide:chat:send", async (_event, kind: unknown, text: string, viewing?: { index: number; title: string; scene: string }) =>
+    controller().sendGuideChat(requireChatKind(kind), text, viewing));
+  handle("guide:chat:reset", async (_event, kind: unknown) => controller().resetGuideChat(requireChatKind(kind)));
+  handle("guide:chat:compact", async (_event, kind: unknown) => controller().compactGuideChat(requireChatKind(kind)));
+  handle("guide:chat:settings", async (_event, patch?: unknown) => {
+    if (patch && typeof patch === "object") {
+      return controller().updateGuideChatSettings(patch);
+    }
+    return controller().getGuideChatSettings();
+  });
 
   // Party ops carry the SENDER WINDOW id: each window has its own active party, so
   // the same workspace's two windows view/act on different parties independently.

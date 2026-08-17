@@ -521,6 +521,8 @@ export interface InitialAppState {
   pendingApprovals?: PendingApproval[];
   resumableSessions?: ResumableSessionInfo[];
   resumableSessionsError?: string;
+  /** §8 first-install offer. Absent on the guide stage (never offer there). */
+  guideOffer?: { pending: boolean; shown: boolean };
 }
 
 export interface ResumableSessionInfo {

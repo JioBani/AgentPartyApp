@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -40,6 +40,10 @@ import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
+import { hasConnectedAccount } from "../shared/guideAuth";
+import { nextGuideOfferAction } from "../shared/guideOffer";
+import { GuideOfferDialog } from "./app/GuideOfferDialog";
+import { GuideView } from "./guide/GuideView";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -84,6 +88,8 @@ export function App() {
   // is fetched once and kept live via the "update:status" channel.
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | undefined>();
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [guideOfferOpen, setGuideOfferOpen] = useState(false);
+  const guideOfferHandled = useRef(false);
   const [discord, setDiscord] = useState<DiscordBridgeStatus | undefined>();
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
@@ -294,6 +300,28 @@ export function App() {
       }
     }
   }, [views]);
+
+  useEffect(() => {
+    const offer = state.guideOffer;
+    if (!offer || guideOfferHandled.current) {
+      return;
+    }
+    const action = nextGuideOfferAction(offer.pending, hasConnectedAccount(state.auth));
+    if (action === "idle") {
+      return;
+    }
+    if (action === "auth") {
+      setCurrentView("auth");
+      return;
+    }
+    guideOfferHandled.current = true;
+    setGuideOfferOpen(true);
+    void window.agentParty.markGuideOfferShown().then((next) => {
+      setState((current) => ({ ...current, guideOffer: next }));
+    }).catch((error) => {
+      setPartyNotice(`가이드 안내를 기록하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, [state.guideOffer, state.auth]);
 
   useEffect(() => {
     void window.agentParty.getInitialState().then((next) => {
@@ -1444,8 +1472,24 @@ export function App() {
     setState((prev) => ({ ...prev, settings }));
   }
 
+  /**
+   * The nav rail does NOT switch the view itself. It asks main, which checks the
+   * account gate (§8) and then navigates this window — one path for the click
+   * and for POST /api/guide/open, so an agent and a user land the same way.
+   */
+  async function openGuide() {
+    try {
+      await window.agentParty.openGuide();
+    } catch (error) {
+      setPartyNotice(`가이드를 열지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // doctor will add "문제 해결" on the same rail; keep this list a flat append,
+  // no new abstraction.
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
+    { id: "guide", label: "가이드", icon: <BookOpen size={18} /> },
     { id: "sessions", label: "세션", icon: <History size={18} /> },
     { id: "usage", label: "Token Usage", icon: <BarChart3 size={18} /> },
     { id: "auth", label: "인증", icon: <KeyRound size={18} /> },
@@ -1516,7 +1560,7 @@ export function App() {
         <nav className="nav-rail" aria-label="기본 탐색">
           <div className="nav-items">
             {navItems.map((item) => (
-              <button key={item.id} data-view={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => setCurrentView(item.id)} title={item.label}>
+              <button key={item.id} data-view={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => { if (item.id === "guide") void openGuide(); else setCurrentView(item.id); }} title={item.label}>
                 {item.icon}
               </button>
             ))}
@@ -1582,6 +1626,10 @@ export function App() {
                 onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
             </>
+          ) : currentView === "guide" ? (
+            // Full bleed: the guide brings its own top row and its own body, and
+            // a 작업공간 chip over a presentation would be noise.
+            <GuideView onLeave={() => setCurrentView("workbench")} />
           ) : (
             <>
               <header className="screen-header">
@@ -1674,6 +1722,16 @@ export function App() {
       {/* Opens even when the status fetch has not landed (or failed): the dialog
           can re-check from inside, and a button that does nothing would be the
           silent no-op this project forbids. */}
+      {guideOfferOpen && (
+        <GuideOfferDialog
+          onAccept={() => {
+            setGuideOfferOpen(false);
+            void openGuide();
+          }}
+          onDismiss={() => setGuideOfferOpen(false)}
+        />
+      )}
+
       {updateModalOpen && (
         <UpdateModal
           status={updateStatus || { state: "idle", currentVersion: "" }}
