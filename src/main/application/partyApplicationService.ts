@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import type {
   CreateMemberInput,
   CreatePartyInput,
@@ -39,6 +40,7 @@ import {
 } from "../../shared/messageQueue";
 import { log } from "../logger";
 import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
+import { cliContinuationTarget } from "../../shared/cliContinuation";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
@@ -492,7 +494,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
-    if (!member.sessionId) {
+    if (!member.sessionId && !member.externalCli) {
       member.status = "opened";
       member.updatedAt = new Date().toISOString();
       this.persistParty(workspace, state, this.partyIdOf(member));
@@ -653,6 +655,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "start a session");
     // An OPPORTUNISTIC start (renderer prewarm on panel open) races member
     // close: the prewarm could execute after the close and silently resurrect
     // the member with a fresh session (the smoke-e2e "queued message was
@@ -754,6 +757,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "restart the session");
     const requestedHarness = input.selectedHarnessId ? normalizeHarnessId(input.selectedHarnessId) : undefined;
     const currentHarness = normalizeHarnessId(member.runtime);
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
@@ -807,6 +811,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "send a message");
     let session: SessionView | undefined;
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
     // Interrupt is meaningful only for a turn that existed when this message
@@ -973,6 +978,7 @@ export class PartyApplicationService {
    * the queue and was never delivered.
    */
   private deliverFromQueue(member: PartyMember, take: { state: MemberQueueState; turn: DequeuedTurn }, logMessage: string): PartyCommandResult {
+    this.assertNotOwnedByExternalCli(member, "deliver queued messages");
     const sessionId = member.sessionId;
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
       throw new Error(`'${member.name}' has no live session — its queue was left untouched.`);
@@ -1059,6 +1065,7 @@ export class PartyApplicationService {
    */
   sendQueuedNow(name: string, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
+    this.assertNotOwnedByExternalCli(member, "send queued messages");
     const queue = this.queueOf(member);
     const take = takeNext(queue);
     if (!take.ok) {
@@ -1073,6 +1080,7 @@ export class PartyApplicationService {
   /** "지금 보내기" on one row — same rule, and the row jumps the queue on its way. */
   sendQueuedItem(name: string, itemId: string, partyId?: string): PartyCommandResult {
     const member = this.requireMember(this.readState(), name, partyId);
+    this.assertNotOwnedByExternalCli(member, "send queued messages");
     const queue = this.queueOf(member);
     if (this.isSessionBusy(member.sessionId)) {
       const front = moveItemToFront(queue, itemId);
@@ -1226,6 +1234,94 @@ export class PartyApplicationService {
     // A member's cwd IS its workspace (the locked workspace model), which is
     // exactly the key Claude Code derives its directory name from.
     return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
+  }
+
+  /**
+   * The harness-owned thread that an ordinary interactive CLI may take over.
+   * Resolve the live adapter id before the persisted copy so a just-completed
+   * first turn is transferable even if the next party-state write has not run.
+   */
+  getCliContinuationTarget(name: string, partyId?: string) {
+    const member = this.requireMember(this.readState(), name, partyId);
+    if (member.externalCli) {
+      return { supported: false as const, reason: "이미 외부 CLI에서 이어서 작업 중입니다." };
+    }
+    if (this.isSessionBusy(member.sessionId)) {
+      return { supported: false as const, reason: "응답이 진행 중입니다. 현재 턴을 중단하거나 완료한 뒤 CLI로 이어가세요." };
+    }
+    const harnessSessionId = (member.sessionId
+      ? this.deps.sessionManager.harnessSessionId(member.sessionId)
+      : undefined) || member.harnessSessionId;
+    return cliContinuationTarget({ ...member, harnessSessionId });
+  }
+
+  /** Atomically releases the app writer and marks the member as CLI-owned. */
+  beginCliContinuation(name: string, partyId?: string) {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (member.externalCli) {
+      return { supported: false as const, reason: "이미 외부 CLI에서 이어서 작업 중입니다." };
+    }
+    if (this.isSessionBusy(member.sessionId)) {
+      return { supported: false as const, reason: "응답이 진행 중입니다. 현재 턴을 중단하거나 완료한 뒤 CLI로 이어가세요." };
+    }
+    const harnessSessionId = (member.sessionId
+      ? this.deps.sessionManager.harnessSessionId(member.sessionId)
+      : undefined) || member.harnessSessionId;
+    const resolved = cliContinuationTarget({ ...member, harnessSessionId });
+    if (!resolved.supported) return resolved;
+
+    if (member.sessionId) {
+      this.captureHarnessThread(member);
+      this.stopRecording(member.sessionId);
+      // Codex disposal kills and waits for the whole launcher/native process
+      // tree, so the external CLI never races the app's old active writer.
+      this.deps.sessionManager.closeSession(member.sessionId);
+    }
+    const handoffId = randomUUID();
+    member.sessionId = undefined;
+    member.sessionBootId = undefined;
+    member.status = "external_cli";
+    member.externalCli = { handoffId, startedAt: new Date().toISOString() };
+    member.updatedAt = member.externalCli.startedAt;
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member handed to external CLI", { workspace, partyId: member.partyId, member: member.name, handoffId });
+    return { supported: true as const, target: resolved.target, handoffId };
+  }
+
+  recordCliContinuationProcess(
+    name: string,
+    handoffId: string,
+    process: { terminalPid: number; host: "local" | "wsl"; distro?: string },
+    partyId?: string,
+  ): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (!member.externalCli || member.externalCli.handoffId !== handoffId) {
+      throw new Error(`CLI handoff '${handoffId}' is no longer active for '${member.name}'.`);
+    }
+    member.externalCli = { ...member.externalCli, ...process };
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    return this.result(`Member '${member.name}' is owned by the external CLI.`, state, member);
+  }
+
+  /** Releases only the matching handoff; an old process watcher cannot clear a newer one. */
+  finishCliContinuation(name: string, handoffId: string, partyId?: string): PartyCommandResult {
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.membersOf(state, this.requireParty(state, partyId).id).find((candidate) => candidate.name === name);
+    if (!member || !member.externalCli || member.externalCli.handoffId !== handoffId) {
+      return this.result(`CLI handoff '${handoffId}' is no longer active.`, state, member);
+    }
+    member.externalCli = undefined;
+    if (member.status === "external_cli") member.status = "opened";
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "external CLI ownership released", { workspace, partyId: member.partyId, member: member.name, handoffId, status: member.status });
+    return this.result(`External CLI ownership released for '${member.name}'.`, state, member);
   }
 
   /**
@@ -1538,6 +1634,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "bind another session");
     if (!this.deps.sessionManager.hasSession(sessionId)) {
       throw new Error(`Session '${sessionId}' is not active.`);
     }
@@ -1723,6 +1820,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "sleep the member");
     const sessionId = member.sessionId;
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
       return this.result(`Member '${member.name}' holds no live session to release.`, state, member);
@@ -1808,6 +1906,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "compact the conversation");
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
     let woke = false;
     if (!sessionId) {
@@ -2058,6 +2157,17 @@ export class PartyApplicationService {
       ? resolveMemberMessageInterrupt(options?.interrupt, sender.outboundInterrupt, this.memberMessagingPolicy || getSettings().memberMessaging)
       : options?.interrupt === true;
     const message = createPartyMessage(target, content, from);
+    if (target.externalCli) {
+      message.error = "target_member_in_external_cli";
+      target.updatedAt = message.createdAt;
+      state.messages.push(message);
+      this.persistParty(workspace, state, this.partyIdOf(target));
+      log("info", "party", "message refused: target is owned by external CLI", { workspace, partyId: target.partyId, from: message.from, to: message.to });
+      return {
+        ...this.result(`Message was not delivered to '${target.name}': it is currently controlled by an external CLI.`, state, target),
+        partyMessage: message,
+      };
+    }
     // R-63: an open tab without a live session used to record
     // `target_member_has_no_active_session` and never deliver. User turns already
     // auto-start; party messages must do the same for any non-closed member.
@@ -2171,6 +2281,7 @@ export class PartyApplicationService {
   interruptMember(name: string, partyId?: string): PartyCommandResult & { interrupted: boolean } {
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "interrupt the member");
     if (!member.sessionId || !this.deps.sessionManager.hasSession(member.sessionId)) {
       throw new Error(`Member '${member.name}' has no active session to interrupt.`);
     }
@@ -2198,6 +2309,7 @@ export class PartyApplicationService {
   forceStopMember(name: string, partyId?: string): PartyCommandResult & { released: boolean } {
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
     const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "force-stop the member");
     if (!member.sessionId || !this.deps.sessionManager.hasSession(member.sessionId)) {
       throw new Error(`Member '${member.name}' has no active session to force-stop.`);
     }
@@ -2281,7 +2393,9 @@ export class PartyApplicationService {
     // Agents read this to decide whether a teammate can be given work, and
     // "not started" invites the wrong repair — a duplicate member-create — for a
     // member that is one message away from carrying on its existing conversation.
-    const status = view
+    const status = member.externalCli
+      ? "external_cli"
+      : view
       ? String(view.snapshot.status)
       : member.status === "sleeping" ? "sleeping" : member.sessionId ? "missing_session" : "not_started";
     return {
@@ -2297,7 +2411,16 @@ export class PartyApplicationService {
       turnCount: view?.snapshot.turnCount,
       pendingApprovalCount: view?.snapshot.pendingApprovalCount,
       model: view?.snapshot.model ?? member.model,
+      externalCli: member.externalCli ? { ...member.externalCli } : undefined,
     };
+  }
+
+  private assertNotOwnedByExternalCli(member: PartyMember, action: string): void {
+    if (!member.externalCli) return;
+    throw new Error(
+      `Member '${member.name}' is being used in an external CLI, so AgentParty cannot ${action}. `
+      + "Close the CLI first; the tab will become available automatically.",
+    );
   }
 
   private sessionViewOf(sessionId?: string): SessionView | undefined {
@@ -2603,7 +2726,7 @@ export class PartyApplicationService {
     return {
       ...member,
       displayStatus: deriveMemberStatus({
-        stored: member.status,
+        stored: member.externalCli ? "external_cli" : member.status,
         hasLiveSession,
         busy: this.isSessionBusy(member.sessionId),
         pendingApproval: Number(snapshot?.pendingApprovalCount || 0) > 0,

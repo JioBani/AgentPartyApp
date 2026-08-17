@@ -21,6 +21,7 @@ export type MemberStatus =
   | "stalled"
   | "disconnected"
   | "sleeping"
+  | "external-cli"
   | "closed";
 
 /** What the caller must find out before the table below can decide. */
@@ -42,6 +43,9 @@ export interface MemberStatusFacts {
  * claiming something untrue.
  */
 export function deriveMemberStatus(facts: MemberStatusFacts): MemberStatus {
+  if (facts.stored === "external_cli") {
+    return "external-cli";
+  }
   // Before the no-session case, which it would otherwise fall into: a sleeping
   // member has no session BY DESIGN. "not started" would deny the conversation
   // sitting right there in the transcript, and hide why the next message takes

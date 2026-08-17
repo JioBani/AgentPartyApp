@@ -2273,6 +2273,77 @@ directory from the ABSOLUTE cwd (every character outside `[a-zA-Z0-9]` becomes
 `-`), so **moving the project folder orphans the history** — the new path maps
 to a different, empty directory. Report that rather than a path leading nowhere.
 
+### `POST /api/party/members/:name/cli-continuation`
+
+Inspects or transfers a member's harness-owned conversation to its ordinary
+interactive CLI. This is desktop-local and is not published to the mobile RPC
+catalog.
+
+Read-only inspection uses `{ "action": "inspect" }` and returns the cwd and
+copyable command:
+
+```json
+{
+  "ok": true,
+  "supported": true,
+  "member": "impl",
+  "harness": "codex",
+  "sessionId": "019f…",
+  "cwd": "C:\\Project\\App",
+  "host": "local",
+  "command": "codex resume 019f…",
+  "launched": false,
+  "transcriptSync": "not-automatic"
+}
+```
+
+For WSL, `cwd` is the distro-native POSIX path and the response also includes
+`"host":"wsl"` and `"distro":"Ubuntu-22.04"`. The displayed command is the
+command to run inside that distro; `{ "action": "launch" }` wraps it with
+`wsl.exe -d <distro> --cd <cwd>` automatically and opens the configured default
+terminal.
+
+The launch action refuses a busy turn, synchronously terminates the complete
+AgentParty-owned harness process tree, marks the member `external_cli`, then
+opens the CLI. The member's tab stays visible but disabled; its close button is
+still available. A successful launch returns `launched:true` and `terminalPid`
+for diagnostics, and the party member carries:
+
+```json
+{
+  "status": "external_cli",
+  "externalCli": {
+    "handoffId": "…",
+    "startedAt": "2026-08-18T00:00:00.000Z",
+    "host": "local",
+    "terminalPid": 12345
+  }
+}
+```
+
+AgentParty polls that process and automatically releases ownership when it
+exits. App restart re-arms the watcher from the persisted PID, or clears a stale
+handoff whose process is already gone. Closing the disabled tab keeps
+`externalCli` until the process exits and leaves the member `closed` afterward.
+A launch failure is visible and releases ownership so the member is immediately
+usable again.
+
+While `externalCli` is present, user sends, queue delivery, session
+start/resume/respawn, compact, bind, interrupt, and force-stop are rejected before
+they can reach the harness. A member-to-member send returns a persisted
+`partyMessage.error` of `target_member_in_external_cli` instead of waking,
+queueing, or racing the external writer.
+
+Only a harness's native provider is transferable (`claude-code` + Anthropic,
+`codex` + OpenAI, `cursor` + Cursor, `grok` + xAI). Cross-harness and app-router
+sessions return `supported:false` with a reason because an ordinary CLI cannot
+recreate their private routing settings.
+
+External CLI turns are written to the harness's own history, but the current
+AgentParty adapters do not replay another process's old turns into their event
+stream. Resuming in the app therefore preserves model context but does not yet
+backfill those turns into the visible transcript.
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,

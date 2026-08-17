@@ -1,7 +1,7 @@
 /*
  * The member list's status, as served to a client that has no transcript.
  *
- * The eight display values used to exist only in the renderer, derived from the
+ * The display values used to exist only in the renderer, derived from the
  * member, its session and its transcript. A paired phone holds no transcript,
  * so it could compute six of them and would have to guess at `approval` and
  * `stalled` — and guessing `idle` there shows a stalled member as merely
@@ -39,17 +39,17 @@ await engine.qaSeed({ members: [{ name: "alice", autoReply: false }] });
 const listing = await engine.listParty();
 const alice = listing.members.find((m) => m.name === "alice");
 
-const DISPLAY_VALUES = new Set(["working", "idle", "approval", "not-started", "stalled", "disconnected", "sleeping", "closed"]);
-const STORED_VALUES = new Set(["idle", "opened", "running", "closed", "missing_session", "sleeping"]);
+const DISPLAY_VALUES = new Set(["working", "idle", "approval", "not-started", "stalled", "disconnected", "sleeping", "external-cli", "closed"]);
+const STORED_VALUES = new Set(["idle", "opened", "running", "closed", "missing_session", "sleeping", "external_cli"]);
 
 console.log("\nderived status on the party listing:");
 assert(Boolean(alice), "the seeded member is listed");
 assert(alice?.displayStatus !== undefined, "the member carries displayStatus");
-assert(DISPLAY_VALUES.has(alice?.displayStatus), `displayStatus is one of the eight (got ${alice?.displayStatus})`);
+assert(DISPLAY_VALUES.has(alice?.displayStatus), `displayStatus is in the public display domain (got ${alice?.displayStatus})`);
 // The whole point: a live member stores `running`, which is NOT a display
 // value. A client echoing the stored field would render a status that does not
 // exist in the design.
-assert(alice?.status === "running", "the stored status is still the raw six-value one");
+assert(alice?.status === "running", "the stored status remains a raw lifecycle value");
 assert(!DISPLAY_VALUES.has("running"), "…and `running` is not among the display values");
 assert(alice?.displayStatus === "idle", "a bound, quiet member reads idle rather than its stored `running`");
 
@@ -59,7 +59,7 @@ const raw = readFileSync(partyFile, "utf8");
 assert(!raw.includes("displayStatus"), "displayStatus is absent from party.json on disk");
 const stored = JSON.parse(raw).members.find((m) => m.name === "alice");
 assert(stored && stored.displayStatus === undefined, "…and absent from the member record itself");
-assert(STORED_VALUES.has(stored?.status), `the persisted status stays in the six-value domain (got ${stored?.status})`);
+assert(STORED_VALUES.has(stored?.status), `the persisted status stays in the lifecycle domain (got ${stored?.status})`);
 
 console.log("\nsleeping and closed pass through unchanged:");
 // These two are read straight off the stored value, so they are the cases where
@@ -75,6 +75,7 @@ const { deriveMemberStatus } = await (async () => {
 const facts = { stored: "idle", hasLiveSession: true, busy: false, pendingApproval: false, stalled: false };
 assert(deriveMemberStatus({ ...facts, stored: "sleeping", hasLiveSession: false }) === "sleeping", "a sleeping member is sleeping, not not-started");
 assert(deriveMemberStatus({ ...facts, stored: "closed", hasLiveSession: false }) === "closed", "a closed member is closed, not not-started");
+assert(deriveMemberStatus({ ...facts, stored: "external_cli", hasLiveSession: false }) === "external-cli", "an external CLI owner stays visible without a live app session");
 assert(deriveMemberStatus({ ...facts, hasLiveSession: false }) === "not-started", "no live session reads not-started");
 assert(deriveMemberStatus({ ...facts, stored: "missing_session" }) === "disconnected", "a dead binding reads disconnected");
 assert(deriveMemberStatus({ ...facts, stored: "missing_session", pendingApproval: true }) === "disconnected", "…and an approval cannot outrank it");

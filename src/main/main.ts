@@ -9,6 +9,7 @@ import { installCrashHandlers } from "./crashHandler";
 import { getPublicSettings, getSettings, updateSettings } from "./settings";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
+import { launchCliContinuation } from "./cliContinuationLauncher";
 import { WorkspaceManager } from "./workspaceManager";
 import { createEngineHost } from "./engine/engineHost";
 import type { EngineRegistry } from "./engine/engineRegistry";
@@ -590,6 +591,7 @@ ${body}
     updater: updateService,
     mobileLink,
     approvals,
+    launchCliContinuation: ({ target, location }) => launchCliContinuation({ target, location }),
   });
   mobileLink.setController(appController);
   automationApi = new AutomationApiServer({
@@ -1034,6 +1036,8 @@ function registerIpc(): void {
   handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
   handle("party:transcript:image", async (event, file: string) => controller().getTranscriptImage(senderWorkspace(event), file));
   handle("party:harness-original", async (event, name: string) => controller().getHarnessOriginal(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:cli-continuation", async (event, name: string, action: "inspect" | "launch") =>
+    controller().continueMemberInCli(senderWorkspace(event), name, action, senderWindowId(event)));
 }
 
 /**

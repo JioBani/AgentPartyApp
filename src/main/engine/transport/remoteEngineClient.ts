@@ -226,6 +226,10 @@ export class RemoteEngineClient implements EngineConnection {
   getMemberTranscript(name: string, partyId?: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name, partyId); }
   getTranscriptImage(file: string) { return this.call<Result<"getTranscriptImage">>("getTranscriptImage", file); }
   getHarnessOriginal(name: string, partyId?: string) { return this.call<Result<"getHarnessOriginal">>("getHarnessOriginal", name, partyId); }
+  getCliContinuationTarget(name: string, partyId?: string) { return this.call<Result<"getCliContinuationTarget">>("getCliContinuationTarget", name, partyId); }
+  beginCliContinuation(name: string, partyId?: string) { return this.call<Result<"beginCliContinuation">>("beginCliContinuation", name, partyId); }
+  recordCliContinuationProcess(name: string, handoffId: string, process: { terminalPid: number; host: "local" | "wsl"; distro?: string }, partyId?: string) { return this.call<Result<"recordCliContinuationProcess">>("recordCliContinuationProcess", name, handoffId, process, partyId); }
+  finishCliContinuation(name: string, handoffId: string, partyId?: string) { return this.call<Result<"finishCliContinuation">>("finishCliContinuation", name, handoffId, partyId); }
   saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string) { return this.call<Result<"saveMemberTranscript">>("saveMemberTranscript", name, save, partyId); }
   getPartyLayout(partyId?: string) { return this.call<Result<"getPartyLayout">>("getPartyLayout", partyId); }
   setPartyLayout(layout: unknown, partyId?: string) { return this.call<Result<"setPartyLayout">>("setPartyLayout", layout, partyId); }
