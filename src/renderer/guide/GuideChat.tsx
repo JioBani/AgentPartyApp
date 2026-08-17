@@ -75,7 +75,7 @@ export function GuideChat({
   const transcript = <Transcript view={memberView} density="wide" actions={actions} />;
 
   const composer = (
-    <div className="guide-composer-wrap" style={sheet ? { width: "100%", maxWidth: "none", padding: "10px 12px 12px" } : undefined}>
+    <div className="guide-composer-wrap">
       {sheet ? null : (
         <p className="guide-composer-note">
           <Info size={12} />
@@ -110,7 +110,9 @@ export function GuideChat({
   return (
     <div className={sheet ? "guide-ask-chat" : "guide-chat"}>
       {sheet ? (
-        <div className="guide-ask-body">{transcript}</div>
+        // Nothing asked yet = nothing to show. An empty scroll area here left a
+        // blank strip above the composer that looked like a broken panel.
+        empty ? null : <div className="guide-ask-body">{transcript}</div>
       ) : (
         <div className="guide-chat-scroll">
           <div className="guide-chat-col">
@@ -143,7 +145,9 @@ export function GuideChat({
           </div>
         </div>
       )}
-      <div className="guide-composer-band">{composer}</div>
+      {/* The ask sheet IS a panel already — putting the floating island inside it
+          would draw a box inside a box. Only the full-screen chat gets the band. */}
+      {sheet ? composer : <div className="guide-composer-band">{composer}</div>}
       {modelOpen ? (
         <GuideModelModal
           routes={routes}
