@@ -9,9 +9,9 @@
 
 | 분류 | Claude Code | Codex |
 |---|---|---|
-| 실제 실행과 피드백까지 확인 | `/context`, `/usage`, `/goal`, `/compact` | `/compact` |
+| 실제 실행과 의도한 결과·피드백까지 확인 | `/context`, `/goal`, `/compact` | `/compact` |
 | SDK/프로토콜상 실행 가능, 명령별 제품 E2E 미완료 | 22개 네이티브 명령과 동적으로 발견된 Claude 스킬·MCP prompt | 없음 |
-| 실행되지만 피드백이 불충분 | `/clear` | 현재 확정된 항목 없음 |
+| 호출은 되지만 결과·피드백이 불충분 | `/usage`, `/clear` | 현재 확정된 항목 없음 |
 | 실행되지 않음 | SDK `system/init`에 없는 CLI 전용 명령. 대표적으로 `/model`, `/permissions`, `/mcp`, `/status` | `/compact`를 제외한 현재 Codex TUI slash command 전체 |
 | 잘못된 문법으로 노출 | 없음 | 발견된 스킬 21개와 플러그인 9개를 `/name`으로 노출 |
 | AgentParty가 만든 가짜 명령 | 4개 | 2개 |
@@ -42,13 +42,14 @@
 - AgentParty 팔레트에는 있지만 실행 action 또는 RPC가 없다.
 - 스킬·플러그인의 네이티브 invocation 문법이나 구조화 metadata를 사용하지 않는다.
 
-### C. 실행되지만 피드백이 불충분한 명령
+### C. 호출은 되지만 결과·피드백이 불충분한 명령
 
-백엔드 상태는 바뀌지만 사용자가 성공 여부나 변경 결과를 확인하기 어렵다.
+SDK 호출이나 백엔드 상태 변경은 발생하지만 사용자가 기대한 결과를 얻었는지 확인하기 어렵다.
 
 - transcript에는 일반적인 `turn complete`만 남는다.
 - SDK 컨텍스트는 초기화됐지만 기존 AgentParty transcript는 그대로 남는다.
 - 결과가 SDK `result` 필드에만 있고 renderer가 해당 내용을 표시하지 않는다.
+- 명령 이름은 사용량·상태 조회를 암시하지만, 실제 결과에는 사용률·한도·리셋 시각 같은 핵심 정보가 없다.
 
 ### D. 그 외
 
@@ -65,7 +66,6 @@
 | 명령 | 실측 결과 | 사용자 피드백 |
 |---|---|---|
 | `/context` | SDK가 실제 context usage를 계산 | 모델, 총 토큰, 도구·MCP·memory·skill별 사용량이 assistant 메시지로 표시됨 |
-| `/usage` | 구독 사용량 분석 실행 | 최근 24시간·7일 사용 특성이 assistant 메시지로 표시됨 |
 | `/goal` | 현재 goal 조회 | goal이 없다는 상태와 사용법이 assistant 메시지로 표시됨 |
 | `/compact` | Claude SDK compaction 실행 | `compact_state` 카드로 running/done/failed가 표시됨 |
 
@@ -77,7 +77,7 @@
 
 `/batch`, `/claude-api`, `/code-review`, `/config`, `/debug`, `/deep-research`, `/design-sync`, `/fewer-permission-prompts`, `/heapdump`, `/init`, `/insights`, `/loop`, `/reload-skills`, `/review`, `/run`, `/run-skill-generator`, `/schedule`, `/security-review`, `/simplify`, `/team-onboarding`, `/usage-credits`, `/verify`
 
-별도 분류된 `/clear`를 포함하면 현재 공식 명령표와 SDK 목록의 교집합은 27개다.
+별도 분류된 `/usage`, `/clear`를 포함하면 현재 공식 명령표와 SDK 목록의 교집합은 27개다.
 
 동적으로 `system/init`에 포함되는 사용자·프로젝트 스킬, 플러그인 스킬, `/mcp__<server>__<prompt>`도 Claude SDK의 정식 slash-command 경로를 사용한다. 따라서 목록에 보고된 항목은 구조상 정상 실행 경로를 가진다.
 
@@ -129,9 +129,22 @@ Claude Agent SDK는 터미널 없이 동작 가능한 명령만 `system/init`에
 
 공식 명령표에는 총 106개 행이 있으며, 현재 SDK 목록과 겹치지 않는 행은 79개다. 위 목록에서는 제거된 `/vim`, `/ultraplan`을 별도로 제외했다. 또한 계정·플랫폼·feature flag에 따라 CLI 자체에서도 숨겨지는 조건부 명령이 포함되어 있으므로, 모든 사용자가 CLI에서 항상 77개를 본다는 뜻은 아니다.
 
-## 5. 실행되지만 사용자 피드백이 불충분한 명령
+## 5. 호출은 되지만 결과·사용자 피드백이 불충분한 명령
 
-### 5.1 Claude Code `/clear` — 확정
+### 5.1 Claude Code `/usage` — 호출 성공만 확인, 실사용 판정 실패
+
+`/usage`를 Claude SDK에 보내면 오류 없이 assistant 메시지가 반환된다. 그러나 실측된 내용은 최근 24시간·7일의 사용 **특성에 관한 서술형 분석**이었다. 다음과 같이 사용자가 사용량 명령에서 기대하는 핵심 정보는 확인되지 않았다.
+
+- 현재 5시간·주간 사용률 또는 남은 한도
+- 각 한도의 리셋 시각
+- 한도 초과 또는 임박 여부
+- 수치가 어느 계정·구독을 기준으로 하는지
+
+따라서 “응답이 보인다”는 것은 확인됐지만, Claude Code 네이티브 `/usage`와 동등하게 사용할 수 있다고 보기는 어렵다. 이 감사에서는 `/usage`를 정상 명령에서 제외하고 **호출은 되지만 결과가 불충분한 명령**으로 판정한다.
+
+AgentParty에는 별도의 account-global usage meter와 `GET /api/usage` 경로가 있으므로, `/usage`를 지원하려면 같은 authoritative snapshot을 보여 주는 전용 action으로 연결하거나 사용자에게 해당 화면을 명확히 안내해야 한다.
+
+### 5.2 Claude Code `/clear` — 확정
 
 `/clear`는 SDK 내부 conversation context를 초기화한다. 실측 결과도 성공 result를 반환했다. 그러나 assistant 내용은 `(no content)`뿐이었다.
 
@@ -147,11 +160,11 @@ Claude Agent SDK는 터미널 없이 동작 가능한 명령만 `system/init`에
 - 이전 transcript와 새 conversation을 구분하는 명확한 boundary
 - 이전 session ID 또는 resume 가능 여부 안내
 
-### 5.2 Claude SDK `result`만 반환하는 명령 — 구조적 위험
+### 5.3 Claude SDK `result`만 반환하는 명령 — 구조적 위험
 
 Claude adapter는 `turn_complete.result`를 이벤트에 담지만 transcript reducer는 실제 result 문자열을 표시하지 않고 `turn complete` 상태만 추가한다.
 
-`/context`, `/usage`, `/goal`은 동일 내용을 assistant snapshot으로도 보내므로 현재 화면에서 보인다. 하지만 미래 명령이나 특정 조건의 명령이 assistant snapshot 없이 `result`만 반환하면 실행 결과가 사라진다.
+`/context`, `/goal`은 동일 내용을 assistant snapshot으로도 보내므로 현재 화면에서 보인다. `/usage`도 assistant 메시지는 보이지만, 앞 절처럼 필요한 사용량 수치가 충분하지 않다. 미래 명령이나 특정 조건의 명령이 assistant snapshot 없이 `result`만 반환하면 실행 결과 자체가 사라진다.
 
 따라서 다음 회귀 테스트가 필요하다.
 
@@ -159,7 +172,7 @@ Claude adapter는 `turn_complete.result`를 이벤트에 담지만 transcript re
 - 실패가 아닌 안내 메시지가 result에만 있는 fixture
 - 명령별 state change와 사용자-visible feedback을 함께 검증
 
-### 5.3 Codex
+### 5.4 Codex
 
 현재 감사에서 “네이티브 동작은 실행됐으나 피드백만 없는” Codex slash command는 확정되지 않았다.
 
