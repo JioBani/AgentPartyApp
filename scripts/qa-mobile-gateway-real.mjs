@@ -43,7 +43,7 @@ const phone = P.identityFromSeeds(new Uint8Array(32).fill(81), new Uint8Array(32
 
 let seq = 0;
 /** A gateway with `paired` trusted phones and no network. */
-async function gateway({ paired = 1 } = {}) {
+async function gateway({ paired = 1, enabled = false, signalingUrl = "wss://unused.example/v1/ws" } = {}) {
   const dir = path.join(outDir, `real-gw-${++seq}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
@@ -84,10 +84,9 @@ async function gateway({ paired = 1 } = {}) {
       },
       log: () => {},
       onSecurityWarning: (w) => warnings.push(w),
-      // enabled:false — identity, trust store and event bridge load, no socket.
       readSettings: () => ({
-        enabled: false,
-        signalingUrl: "wss://unused.example/v1/ws",
+        enabled,
+        signalingUrl,
         pushUrl: "",
         deviceName: "QA Desktop",
         natMappingEnabled: false,
@@ -99,6 +98,34 @@ async function gateway({ paired = 1 } = {}) {
   });
   await instance.start();
   return { instance, warnings, dir };
+}
+
+function fakeLiveSession(device) {
+  let closeCalls = 0;
+  let disposeCalls = 0;
+  const sessionId = "qa-live-session";
+  return {
+    sessionId,
+    live: {
+      sessionId,
+      device,
+      transport: {
+        kind: "webrtc",
+        state: "connected",
+        queuedBytes: () => 0,
+        selectedCandidatePair: () => undefined,
+        close: () => { closeCalls += 1; },
+      },
+      secure: { close: () => { closeCalls += 1; } },
+      rpc: {
+        activity: { inFlight: 0, lastRequestAt: undefined, lastRequestMethod: undefined },
+        dispose: () => { disposeCalls += 1; },
+      },
+      startedAt: Date.now(),
+      ownEph: { publicKey: new Uint8Array(32), privateKey: new Uint8Array(32) },
+    },
+    closed: () => closeCalls + disposeCalls,
+  };
 }
 
 console.log("RealMobileGateway assertions:");
@@ -219,12 +246,47 @@ console.log("RealMobileGateway assertions:");
     `the override survives the restart that a settings change triggers (${g.instance.getStatus().signalingUrl})`,
   );
 
+  // Naming the already-persisted URL still means "leave the run override".
+  // Comparing only previous/next settings misses this because those values are
+  // equal even though the effective signaling target changes.
+  await g.instance.updateSettings({ signalingUrl: "wss://unused.example/v1/ws" });
+  assert(
+    g.instance.getStatus().signalingUrl === "wss://unused.example/v1/ws",
+    `an explicit patch leaves the override even when the persisted value is unchanged (${g.instance.getStatus().signalingUrl})`,
+  );
+
   // But naming the URL explicitly is the caller asking for that one.
   await g.instance.updateSettings({ signalingUrl: "wss://chosen.example/v1/ws" });
   assert(
     g.instance.getStatus().signalingUrl === "wss://chosen.example/v1/ws",
     `an explicit signalingUrl patch wins over the override (${g.instance.getStatus().signalingUrl})`,
   );
+  await g.instance.stop();
+}
+
+// --- 04: changing signaling preserves the established WebRTC session -------
+{
+  const g = await gateway({
+    paired: 1,
+    enabled: true,
+    signalingUrl: "ws://127.0.0.1:9/v1/ws",
+  });
+  const session = fakeLiveSession(g.instance.pairing.devices()[0]);
+  // TypeScript `private` is intentionally inspected here: the regression was
+  // in lifecycle orchestration, and a fake entry makes the old stop() path
+  // observably close the same objects a real WebRTC session owns.
+  g.instance.sessions.set(session.sessionId, session.live);
+  g.instance.eventBridge.attach({ sessionId: session.sessionId, deliver: () => {} });
+  g.instance.emit("qa.before-signaling-change", { n: 1 });
+  const seqBefore = g.instance.getStatus().events.seq;
+
+  await g.instance.updateSettings({ signalingUrl: "ws://127.0.0.1:10/v1/ws" });
+
+  const status = g.instance.getStatus();
+  assert(status.sessions.some((item) => item.sessionId === session.sessionId), "a signaling URL change keeps the live session");
+  assert(session.closed() === 0, "the live transport, secure session and RPC server are not closed");
+  assert(status.events.seq === seqBefore, "the event bridge and its rewind cursor survive the signaling reconnect");
+  assert(status.signalingUrl === "ws://127.0.0.1:10/v1/ws", `sys.info/status now read the replacement signaling URL (${status.signalingUrl})`);
   await g.instance.stop();
 }
 

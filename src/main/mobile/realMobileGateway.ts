@@ -51,7 +51,7 @@ import type {
   PushPayload,
 } from "./mobileGateway";
 import { PushError } from "./mobileGateway";
-import { PairingService } from "./pairingService";
+import { PairingService, type PairingTransport } from "./pairingService";
 import { RpcServer } from "./rpcServer";
 import { SecureSession, newSessionEphemeral } from "./secureSession";
 import { SignalingClient, signalingEndpoint, type SignalingPhase } from "./signalingClient";
@@ -161,12 +161,7 @@ export class RealMobileGateway implements MobileGateway {
 
     // Completed here so the socket, the QR's host and the status all describe
     // the same endpoint (01 §2.1).
-    const signalingUrls = this.signalingUrls();
-    const signaling = new SignalingClient({
-      urls: signalingUrls,
-      identity: identityStore.identity,
-      log: this.deps.log,
-    });
+    const signaling = this.createSignalingClient(identityStore);
     this.signaling = signaling;
 
     this.pairingService = new PairingService({
@@ -174,7 +169,11 @@ export class RealMobileGateway implements MobileGateway {
       log: this.deps.log,
       signalingHost: () => hostOf(this.effectiveSignalingUrl()),
       desktopName: () => this.settings.deviceName,
-      transport: signaling,
+      // The signaling socket may be replaced while an already-established
+      // WebRTC session stays alive (04 "signaling address changes"). Keep the
+      // pairing service on a stable delegate so an open QR is re-registered on
+      // the replacement socket rather than the stopped one.
+      transport: this.pairingTransport(),
       pairingTtlMs: this.resolvePairingTtl(options.pairingTtlMs),
       onStateChange: (state) => {
         this.pairingStream.set(state);
@@ -212,12 +211,30 @@ export class RealMobileGateway implements MobileGateway {
     });
     this.refreshNatMapping();
 
+    this.startSignaling(signaling);
+    this.publish();
+  }
+
+  private createSignalingClient(identityStore: IdentityStore): SignalingClient {
+    return new SignalingClient({
+      urls: this.signalingUrls(),
+      identity: identityStore.identity,
+      log: this.deps.log,
+    });
+  }
+
+  private startSignaling(signaling: SignalingClient): void {
     signaling.start({
       onRelay: (from, kind, box) => this.onRelay(from, kind, box),
       onPairJoin: (tokenHash, blob1) => this.pairingService?.handlePairJoin(tokenHash, blob1),
       onPairDone: (tokenHash, blob3) => this.pairingService?.handlePairDone(tokenHash, blob3),
       onPairClosed: (tokenHash, reason) => this.pairingService?.handlePairClosed(tokenHash, reason),
       onPhaseChange: (phase, detail) => {
+        // A stopped socket reports `idle` synchronously, but late callbacks
+        // from it must never overwrite the replacement socket's live status.
+        if (this.signaling !== signaling) {
+          return;
+        }
         const reconnected = phase === "connected" && this.signalingPhase !== "connected";
         if (phase === "connected") {
           this.signalingEverConnected = true;
@@ -233,7 +250,36 @@ export class RealMobileGateway implements MobileGateway {
         this.publish();
       },
     });
+  }
+
+  /** Replaces only rendezvous signaling; WebRTC, secure/RPC and event state live on. */
+  private reconnectSignaling(): void {
+    const identityStore = this.requireIdentity();
+    this.signaling?.stop();
+    const signaling = this.createSignalingClient(identityStore);
+    this.signaling = signaling;
+    this.signalingEverConnected = false;
+    this.signalingError = undefined;
+    if (this.settings.enabled) {
+      this.startSignaling(signaling);
+    } else {
+      this.signalingPhase = "idle";
+    }
     this.publish();
+  }
+
+  private pairingTransport(): PairingTransport {
+    const current = (): SignalingClient => {
+      if (!this.signaling) {
+        throw new Error("mobile gateway: signaling is not available");
+      }
+      return this.signaling;
+    };
+    return {
+      openPairing: (tokenHash, expiresAt) => current().openPairing(tokenHash, expiresAt),
+      acceptPairing: (tokenHash, blob2) => current().acceptPairing(tokenHash, blob2),
+      cancelPairing: (tokenHash) => current().cancelPairing(tokenHash),
+    };
   }
 
   async stop(): Promise<void> {
@@ -437,24 +483,30 @@ export class RealMobileGateway implements MobileGateway {
     this.settings = { ...previous, ...patch };
     this.deps.writeSettings(this.settings);
 
-    const restart =
-      previous.enabled !== this.settings.enabled || previous.signalingUrl !== this.settings.signalingUrl;
-    if (restart) {
-      // The run's start options must survive a settings-driven restart. Calling
-      // start() bare dropped them, so toggling `enabled` silently moved a QA
-      // run off its `--signaling` target and onto the persisted URL — the phone
-      // then paired with a different server than the one under test.
-      //
-      // An explicit `signalingUrl` patch is the one thing that DOES override
-      // the override: the caller just asked for that URL by name.
-      const next = { ...this.startOptions };
-      if (patch.signalingUrl !== undefined) {
-        delete next.signalingUrl;
-      }
+    // The run's start options survive settings-driven lifecycle changes. An
+    // explicit URL patch is the exception: the caller asked for that address,
+    // so it replaces a QA start override instead of being hidden behind it.
+    const hadStartSignalingOverride = this.startOptions.signalingUrl !== undefined;
+    const next = { ...this.startOptions };
+    if (patch.signalingUrl !== undefined) {
+      delete next.signalingUrl;
+    }
+    this.startOptions = next;
+
+    const enabledChanged = previous.enabled !== this.settings.enabled;
+    const signalingTargetChanged =
+      previous.signalingUrl !== this.settings.signalingUrl ||
+      (patch.signalingUrl !== undefined && hadStartSignalingOverride);
+    if (enabledChanged) {
+      // Turning the entire mobile link off is a real gateway stop and therefore
+      // ends sessions. A URL-only change below is deliberately not this path.
       await this.stop();
       if (this.settings.enabled) {
         await this.start(next);
       }
+    } else if (signalingTargetChanged && this.startPromise) {
+      await this.startPromise;
+      this.reconnectSignaling();
     }
     this.publish();
     return this.settings;
