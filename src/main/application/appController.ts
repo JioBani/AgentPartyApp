@@ -50,6 +50,8 @@ import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
 import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
 import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
+import { cliContinuationArgv, formatCliContinuationCommand, type CliContinuationAction, type CliContinuationDetails, type CliContinuationResult } from "../../shared/cliContinuation";
+import { processExists } from "../../core/processTree";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -92,6 +94,8 @@ export interface AppControllerDeps {
    * RPC by the desktop that owns the window.
    */
   approvals?: ApprovalIndex;
+  /** Opens an interactive CLI in the desktop user's default terminal. Desktop-only. */
+  launchCliContinuation?: (input: { target: CliContinuationDetails; location: ReturnType<typeof parseWorkspaceLocation> }) => Promise<number>;
 }
 
 /**
@@ -143,6 +147,9 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  */
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
+
+  /** One poller per persisted handoff, including handoffs recovered after an app restart. */
+  private readonly cliContinuationWatchers = new Set<string>();
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -335,7 +342,10 @@ export class AppController {
       },
       logs: { logFilePath: getLogFilePath() },
       runtime: { appRoot: AppController.APP_ROOT },
-      party: await engine.listParty(await this.pinnedPartyForWindow(workspacePath, windowId)),
+      party: await this.listPartyWithCliReconciled(
+        workspacePath,
+        await this.pinnedPartyForWindow(workspacePath, windowId),
+      ),
       windows: this.deps.windowRegistry.list(),
       // Carried in the state a rewinding phone receives, so an approval raised
       // while it was outside the ring buffer is restored without a second call
@@ -555,7 +565,12 @@ export class AppController {
   }
 
   async updateMobileSettings(patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> {
-    return { ok: true, settings: await this.mobile().updateSettings(patch) };
+    const settings = await this.mobile().updateSettings(patch);
+    const publicSettings = getPublicSettings();
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("settings:update", publicSettings);
+    }
+    return { ok: true, settings };
   }
 
   listMobileDevices(): { ok: true; devices: TrustedDevice[] } {
@@ -1177,7 +1192,10 @@ export class AppController {
   // A member tool can pass its spawning `partyId` explicitly; it wins over a
   // later desktop selection so the member never crosses party boundaries.
   async listPartyMembers(workspacePath: string, windowId?: string, partyId?: string): Promise<ReturnType<PartyApplicationService["list"]>> {
-    return this.engineFor(workspacePath).listParty(partyId || await this.pinnedPartyForWindow(workspacePath, windowId));
+    return this.listPartyWithCliReconciled(
+      workspacePath,
+      partyId || await this.pinnedPartyForWindow(workspacePath, windowId),
+    );
   }
 
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
@@ -1484,6 +1502,141 @@ export class AppController {
   /** Where the harness keeps its own untrimmed copy of a member's conversation. */
   getHarnessOriginal(workspacePath: string, name: string, windowId?: string) {
     return this.engineFor(workspacePath).getHarnessOriginal(name, this.partyForWindow(windowId));
+  }
+
+  /**
+   * Inspects or transfers a member's native harness thread to an external CLI.
+   * `inspect` is read-only; `launch` closes the app-owned adapter first so two
+   * processes never write the same conversation concurrently.
+   */
+  async continueMemberInCli(
+    workspacePath: string,
+    name: string,
+    action: CliContinuationAction,
+    windowId?: string,
+  ): Promise<CliContinuationResult> {
+    if (action !== "inspect" && action !== "launch") {
+      throw new Error(`Unknown CLI continuation action '${String(action)}'.`);
+    }
+    const engine = this.engineFor(workspacePath);
+    const partyId = this.partyForWindow(windowId);
+    const resolved = action === "launch"
+      ? await engine.beginCliContinuation(name, partyId)
+      : await engine.getCliContinuationTarget(name, partyId);
+    if (!resolved.supported) {
+      return { ok: true, supported: false, member: name, reason: resolved.reason, launched: false };
+    }
+    const location = parseWorkspaceLocation(workspacePath);
+    const argv = cliContinuationArgv(resolved.target, location.host);
+    const details: CliContinuationDetails = {
+      ok: true,
+      supported: true,
+      member: name,
+      ...resolved.target,
+      cwd: location.path,
+      host: location.host.kind,
+      ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      command: formatCliContinuationCommand(argv, location.host.kind === "wsl" ? "bash" : "powershell"),
+      launched: false,
+      // Resume protocols restore model context, but none of the adapters replay
+      // turns created by a different interactive process into the UI event feed.
+      transcriptSync: "not-automatic",
+    };
+    if (action === "inspect") {
+      return details;
+    }
+    const handoffId = "handoffId" in resolved ? String(resolved.handoffId || "") : "";
+    if (!handoffId) {
+      throw new Error("CLI handoff did not return an ownership id.");
+    }
+    if (!this.deps.launchCliContinuation) {
+      await engine.finishCliContinuation(name, handoffId, partyId);
+      throw new Error("CLI 터미널 실행은 데스크톱 앱 프로세스에서만 사용할 수 있습니다.");
+    }
+    // The engine has synchronously terminated its whole harness process tree.
+    // Publish the disabled tab before the terminal appears, then give the OS a
+    // short lock-release boundary before another process claims the thread.
+    await this.broadcastParty(workspacePath);
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    let terminalPid: number;
+    try {
+      terminalPid = await this.deps.launchCliContinuation({ target: details, location });
+      await engine.recordCliContinuationProcess(name, handoffId, {
+        terminalPid,
+        host: location.host.kind,
+        ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      }, partyId);
+    } catch (error) {
+      await engine.finishCliContinuation(name, handoffId, partyId).catch(() => undefined);
+      await this.broadcastParty(workspacePath);
+      const message = error instanceof Error ? error.message : String(error);
+      log("error", "cli-continuation", "default terminal launch failed", { workspacePath, member: name, error: message });
+      throw new Error(`기본 터미널을 열지 못했습니다. 멤버는 앱에서 다시 사용할 수 있습니다: ${message}`);
+    }
+    await this.broadcastParty(workspacePath);
+    this.watchCliContinuation(workspacePath, name, handoffId, terminalPid, partyId);
+    return { ...details, launched: true, terminalPid };
+  }
+
+  private watchCliContinuation(
+    workspacePath: string,
+    name: string,
+    handoffId: string,
+    terminalPid: number,
+    partyId?: string,
+  ): void {
+    const watcherKey = `${workspacePath}\u0000${partyId || ""}\u0000${name}\u0000${handoffId}`;
+    if (this.cliContinuationWatchers.has(watcherKey)) return;
+    this.cliContinuationWatchers.add(watcherKey);
+    const timer = setInterval(() => {
+      if (processExists(terminalPid)) return;
+      clearInterval(timer);
+      // Let the harness release its on-disk writer lock after its terminal host
+      // exits before the UI becomes messageable again.
+      setTimeout(() => {
+        void this.engineFor(workspacePath).finishCliContinuation(name, handoffId, partyId)
+          .then(() => this.broadcastParty(workspacePath))
+          .catch((error) => log("warn", "cli-continuation", "could not release completed handoff", {
+            workspacePath,
+            member: name,
+            handoffId,
+            error: String(error),
+          }))
+          .finally(() => this.cliContinuationWatchers.delete(watcherKey));
+      }, 350);
+    }, 500);
+    timer.unref?.();
+  }
+
+  /**
+   * Re-arms persisted CLI ownership after an app restart and releases stale
+   * handoffs whose terminal has already exited. A no-PID handoff is the narrow
+   * begin-to-spawn window; only treat it as stale after a generous grace period.
+   */
+  private async listPartyWithCliReconciled(
+    workspacePath: string,
+    partyId?: string,
+  ): Promise<ReturnType<PartyApplicationService["list"]>> {
+    const engine = this.engineFor(workspacePath);
+    let listing = await engine.listParty(partyId);
+    let changed = false;
+    for (const member of listing.members) {
+      const handoff = member.externalCli;
+      if (!handoff?.handoffId) continue;
+      const pid = Number(handoff.terminalPid);
+      if (Number.isInteger(pid) && pid > 0 && processExists(pid)) {
+        this.watchCliContinuation(workspacePath, member.name, handoff.handoffId, pid, member.partyId || partyId);
+        continue;
+      }
+      const ageMs = Date.now() - Date.parse(String(handoff.startedAt || ""));
+      if ((!Number.isInteger(pid) || pid <= 0) && (!Number.isFinite(ageMs) || ageMs < 30_000)) {
+        continue;
+      }
+      await engine.finishCliContinuation(member.name, handoff.handoffId, member.partyId || partyId);
+      changed = true;
+    }
+    if (changed) listing = await engine.listParty(partyId);
+    return listing;
   }
 
   /** One screenshot a transcript references, as a data URL (its bytes live out-of-line). */
@@ -2018,6 +2171,8 @@ export class AppController {
     this.requireQa();
     const result = await (async (): Promise<unknown> => {
       switch (action) {
+        case "methods":
+          return { methods: this.mobile().registeredMethods() };
         case "lock-set": {
           const kind = body?.kind === "pattern" ? "pattern" : body?.kind === "pin" ? "pin" : undefined;
           if (!kind) {

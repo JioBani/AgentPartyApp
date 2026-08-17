@@ -232,7 +232,7 @@ export interface PartyMember {
    * wakes it — which `closed` (an explicit "do not wake me") is not, and which
    * `missing_session` (something died unexpectedly) cannot promise.
    */
-  status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping";
+  status: "idle" | "opened" | "running" | "closed" | "missing_session" | "sleeping" | "external_cli";
   /**
    * The status the member LIST shows, derived from {@link status} plus the live
    * session (`shared/memberDisplayStatus`). View-only: attached on read and
@@ -261,6 +261,18 @@ export interface PartyMember {
    * member — or reopening the app — resumes that thread and keeps model context.
    */
   harnessSessionId?: string;
+  /**
+   * The native conversation is temporarily owned by an interactive CLI.
+   * Kept independently from `status` so closing the tab can remain an explicit
+   * closed state without letting a message start a competing writer.
+   */
+  externalCli?: {
+    handoffId: string;
+    startedAt: string;
+    host?: "local" | "wsl";
+    distro?: string;
+    terminalPid?: number;
+  };
   model?: string;
   effort?: string;
   /** Reasoning/thinking mode (adaptive | enabled | disabled); persisted for resume. */
@@ -366,6 +378,15 @@ export interface PartyCommandResult {
    * `shared/messageQueue.ts`.
    */
   queued?: boolean;
+  /**
+   * Id of the row this send parked, set whenever {@link queued} is true.
+   *
+   * The caller must never re-derive it from {@link queue}: an interrupt / "지금
+   * 바로 처리" send parks at the FRONT, so "the last item" is somebody else's
+   * waiting message — Ctrl+Enter used to pick that one and send it instead,
+   * leaving the message the user just typed sitting in the queue.
+   */
+  queuedItemId?: string;
   /** Queue snapshot after the command, so a queue mutation needs no follow-up read. */
   queue?: MemberQueueState;
 }

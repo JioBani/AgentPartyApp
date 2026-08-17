@@ -3,6 +3,7 @@ import {
   buildPalette,
   detectTrigger,
   filterCommands,
+  groupByCategory,
   type DiscoveredCommand,
   type PaletteCommand,
   type PaletteRun,
@@ -25,6 +26,10 @@ export interface CommandPaletteState {
   activeIndex: number;
   setActiveIndex: (index: number) => void;
   apply: (command: PaletteCommand) => void;
+  /** Exact disabled slash command currently typed, including when it has args. */
+  blocked?: { trigger: string; reason: string };
+  /** App action represented by the first token, even after arguments close the palette. */
+  typedAction?: Extract<PaletteRun, { type: "action" }>["action"];
   /** Feed the composer's keydown here first; returns true if it consumed the key. */
   handleKeyDown: (event: KeyboardEvent) => boolean;
 }
@@ -38,7 +43,13 @@ export interface CommandPaletteState {
 export function useCommandPalette({ runtime, discovered, draft, setDraft, onAction }: UseCommandPaletteOptions): CommandPaletteState {
   const palette = useMemo(() => buildPalette(runtime, discovered), [runtime, discovered]);
   const trigger = useMemo(() => detectTrigger(draft, palette.prefixes), [draft, palette]);
-  const matches = useMemo(() => (trigger ? filterCommands(palette.commands, trigger.query) : []), [trigger, palette]);
+  const matches = useMemo(() => {
+    if (!trigger) return [];
+    // CommandPalette renders category groups in CATEGORY_ORDER. Own that same
+    // flattened order here so hover, preview and keyboard selection all address
+    // the row the user actually sees at a given index.
+    return groupByCategory(filterCommands(palette.commands, trigger.query)).flatMap((group) => group.items);
+  }, [trigger, palette]);
 
   const [dismissed, setDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -56,8 +67,20 @@ export function useCommandPalette({ runtime, discovered, draft, setDraft, onActi
   }, [trigger]);
 
   const open = Boolean(trigger) && !dismissed && matches.length > 0;
+  const firstToken = draft.trim().split(/\s+/, 1)[0];
+  const typedCommand = palette.commands.find((command) => command.trigger === firstToken);
+  const blockedCommand = typedCommand?.disabledReason ? typedCommand : undefined;
+  const blocked = blockedCommand?.disabledReason
+    ? { trigger: blockedCommand.trigger, reason: blockedCommand.disabledReason }
+    : undefined;
+  const typedAction = !blocked && typedCommand?.run.type === "action" ? typedCommand.run.action : undefined;
 
   function apply(command: PaletteCommand) {
+    // Disabled rows stay visible so the user can read why AgentParty cannot run
+    // them, but neither mouse nor Enter may turn them back into a model prompt.
+    if (command.disabledReason) {
+      return;
+    }
     if (command.run.type === "action") {
       onAction(command.run.action);
       setDraft("");
@@ -96,5 +119,5 @@ export function useCommandPalette({ runtime, discovered, draft, setDraft, onActi
     }
   }
 
-  return { open, matches, activeIndex, setActiveIndex, apply, handleKeyDown };
+  return { open, matches, activeIndex, setActiveIndex, apply, blocked, typedAction, handleKeyDown };
 }

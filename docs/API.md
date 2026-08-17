@@ -1389,9 +1389,14 @@ Sends a user turn. `attachments` is an optional array of provider-neutral images
 ```
 
 If the member is **busy**, the message is not delivered — it is parked on that
-member's message queue and the response carries `"queued": true` plus the
-resulting `queue`. It is handed over when the member next goes idle. Callers must
-honour the flag: a queued message has NOT been seen by the agent yet.
+member's message queue and the response carries `"queued": true`, the resulting
+`queue`, and `"queuedItemId"` — the id of the row this call parked. It is handed
+over when the member next goes idle. Callers must honour the flag: a queued
+message has NOT been seen by the agent yet.
+
+Address that row by `queuedItemId`, never by position: with `interrupt` the row
+is parked at the **front**, so "the last item" is a different sender's waiting
+message (the composer's Ctrl+Enter used to deliver that one instead).
 
 Optional `interrupt: true` stops the member's in-flight turn and parks the
 message at the **front** of the app queue so the idle drain handles it next
@@ -1473,10 +1478,18 @@ believing it stopped a message the agent is already answering. Merging across
 senders is refused for the same reason (it would forge attribution), as is
 enqueueing past the 20-item limit.
 
-**Merging.** With `merge` on (the default), a send folds the **leading run** —
-the consecutive items at the front that share one sender — into a single turn,
-joined by a blank line, verbatim and in order. A different sender ends the run
-and stays queued. With `merge` off, exactly one item goes per turn.
+**Merging.** With `merge` on (the default), a send delivers the **whole queue as
+one turn**: nothing is held back for a second turn, and the recipient answers
+once having read everything that was waiting. Inside that turn the items are
+folded per author — consecutive same-sender rows become one block, joined by a
+blank line, verbatim and in order — and each member's block travels in its own
+`<channel>` envelope. So a different sender ends a merge BLOCK, never the
+delivery: merging across senders is the one thing never done, because a member's
+words folded into the user's would not be merged but misattributed. With `merge`
+off, exactly one item goes per turn.
+
+A cut-in row (`interrupt`) sets the ORDER — it is parked at the front — and
+nothing else; it no longer splits the delivery.
 
 ### `POST /api/sessions/:id/close`
 
@@ -2260,6 +2273,77 @@ directory from the ABSOLUTE cwd (every character outside `[a-zA-Z0-9]` becomes
 `-`), so **moving the project folder orphans the history** — the new path maps
 to a different, empty directory. Report that rather than a path leading nowhere.
 
+### `POST /api/party/members/:name/cli-continuation`
+
+Inspects or transfers a member's harness-owned conversation to its ordinary
+interactive CLI. This is desktop-local and is not published to the mobile RPC
+catalog.
+
+Read-only inspection uses `{ "action": "inspect" }` and returns the cwd and
+copyable command:
+
+```json
+{
+  "ok": true,
+  "supported": true,
+  "member": "impl",
+  "harness": "codex",
+  "sessionId": "019f…",
+  "cwd": "C:\\Project\\App",
+  "host": "local",
+  "command": "codex resume 019f…",
+  "launched": false,
+  "transcriptSync": "not-automatic"
+}
+```
+
+For WSL, `cwd` is the distro-native POSIX path and the response also includes
+`"host":"wsl"` and `"distro":"Ubuntu-22.04"`. The displayed command is the
+command to run inside that distro; `{ "action": "launch" }` wraps it with
+`wsl.exe -d <distro> --cd <cwd>` automatically and opens the configured default
+terminal.
+
+The launch action refuses a busy turn, synchronously terminates the complete
+AgentParty-owned harness process tree, marks the member `external_cli`, then
+opens the CLI. The member's tab stays visible but disabled; its close button is
+still available. A successful launch returns `launched:true` and `terminalPid`
+for diagnostics, and the party member carries:
+
+```json
+{
+  "status": "external_cli",
+  "externalCli": {
+    "handoffId": "…",
+    "startedAt": "2026-08-18T00:00:00.000Z",
+    "host": "local",
+    "terminalPid": 12345
+  }
+}
+```
+
+AgentParty polls that process and automatically releases ownership when it
+exits. App restart re-arms the watcher from the persisted PID, or clears a stale
+handoff whose process is already gone. Closing the disabled tab keeps
+`externalCli` until the process exits and leaves the member `closed` afterward.
+A launch failure is visible and releases ownership so the member is immediately
+usable again.
+
+While `externalCli` is present, user sends, queue delivery, session
+start/resume/respawn, compact, bind, interrupt, and force-stop are rejected before
+they can reach the harness. A member-to-member send returns a persisted
+`partyMessage.error` of `target_member_in_external_cli` instead of waking,
+queueing, or racing the external writer.
+
+Only a harness's native provider is transferable (`claude-code` + Anthropic,
+`codex` + OpenAI, `cursor` + Cursor, `grok` + xAI). Cross-harness and app-router
+sessions return `supported:false` with a reason because an ordinary CLI cannot
+recreate their private routing settings.
+
+External CLI turns are written to the harness's own history, but the current
+AgentParty adapters do not replay another process's old turns into their event
+stream. Resuming in the app therefore preserves model context but does not yet
+backfill those turns into the visible transcript.
+
 ### `GET /api/party/layout`
 
 The workbench tab layout for the calling window's party: which members are open,
@@ -2627,21 +2711,33 @@ capabilities listed elsewhere in this document by their `<domain>.<verb>` names
 — `GET /api/spec` → `methods` is the authoritative list for this build, and
 `AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
 
-The endpoints below manage the link itself. The app runs the **real** gateway by
-default: it opens a signalling socket and speaks WebRTC to a phone. The
-in-memory mock is an explicit QA opt-in, selected only by
-`AGENTPARTY_MOBILE_PIPE=mock`, and it opens no socket.
+The feature ships **disabled by default** (`mobile.enabled: false`). In that
+state the app does not start the gateway, open a signalling socket, register
+phone RPC handlers, subscribe to gateway events, or show the `모바일 연결`
+settings tab. This is a deployment gate, not a removed feature.
+
+`GET /api/mobile/settings` and `POST /api/mobile/settings` remain available as
+the management surface. Enable deliberately with
+`POST /api/mobile/settings` + `{ "enabled": true }`; the settings tab appears
+immediately. Every other `/api/mobile/*` endpoint fails with an explicit
+`모바일 연결이 비활성화되어 있습니다` error while the gate is off. Disabling it
+again stops the gateway and removes its handlers/subscriptions and tab.
+
+Once enabled, the app runs the **real** gateway by default: it opens a
+signalling socket and speaks WebRTC to a phone. The in-memory mock is an
+explicit QA opt-in, selected only by `AGENTPARTY_MOBILE_PIPE=mock`, and it opens
+no socket.
 
 There is no fallback between them. If the real gateway fails to start, the link
 stays down and the error is reported — it does not quietly become the mock,
 because a QA run that believed it was exercising the real pipe would prove
 nothing.
 
-`GET /api/mobile/status` tells you which state you are in: `running` is whether
-a gateway is up at all, and `signaling` is that gateway's own connection to the
-signalling server (`connected`, `backoff`, `disabled`, …). The mock reports
-`running` without ever reaching a server, so `signaling` is the field that
-distinguishes a real link from a simulated one.
+After enablement, `GET /api/mobile/status` tells you which state you are in:
+`running` is whether a gateway is up at all, and `signaling` is that gateway's
+own connection to the signalling server (`connected`, `backoff`, `disabled`,
+…). The mock reports `running` without ever reaching a server, so `signaling`
+is the field that distinguishes a real link from a simulated one.
 
 In a headless engine process (a WSL distro's engine server) these endpoints
 fail with an explicit message rather than reporting an empty device list —
@@ -2756,6 +2852,8 @@ POST takes a partial patch and returns the accepted settings, which are
 persisted to `settings.json`. Changing `enabled` or `signalingUrl` reconnects.
 The URLs are **not** validated on write — an unreachable server must show up as
 a visible connection failure in `status.signaling`, not be silently replaced.
+These are the only mobile endpoints callable while `enabled` is false, because
+they are the switch used to opt in without editing the file by hand.
 
 ### QA flow
 
@@ -3132,6 +3230,7 @@ the same desktop lock use case as the settings UI in QA/development builds.
 There is intentionally no release `/api/mobile/lock/*` endpoint.
 
 ```text
+methods                                                 list currently registered pipe/RPC methods
 scan         {deviceName?, deviceId?}              the phone scans the open QR
 fail-pairing {error}                               fail it the way a bad code would
 connect      {deviceId?, transport?, workspaces?}  a trusted phone dials in → {sessionId}

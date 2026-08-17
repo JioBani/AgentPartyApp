@@ -589,15 +589,20 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   tabRequest?: { tab: RuntimeTabId; harness?: HarnessId; seq: number };
 }) {
   const [tab, setTab] = useState<RuntimeTabId>("general");
+  const mobileEnabled = settings.mobile?.enabled === true;
+  const visibleTabs = mobileEnabled ? RUNTIME_TABS : RUNTIME_TABS.filter((entry) => entry.id !== "mobile");
   // Which harness the 하네스 기본값 tab is showing. Starts on the harness new
   // members are created with, since that is the one whose defaults matter.
   const [harnessTab, setHarnessTab] = useState<HarnessId>(settings.selectedHarnessId);
   useEffect(() => {
     if (tabRequest && tabRequest.seq > 0) {
-      setTab(tabRequest.tab);
+      setTab(tabRequest.tab === "mobile" && !mobileEnabled ? "general" : tabRequest.tab);
       if (tabRequest.harness) setHarnessTab(tabRequest.harness);
     }
-  }, [tabRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabRequest?.seq, mobileEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!mobileEnabled && tab === "mobile") setTab("general");
+  }, [mobileEnabled, tab]);
   const [copied, setCopied] = useState(false);
   // Which staged-save cards currently hold edits the user has not committed. Only
   // the staged cards (per-harness, Discord) can be dirty — every other control on
@@ -620,7 +625,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   return (
     <>
       <div className="set-tabs" role="tablist" aria-label="런타임 설정">
-        {RUNTIME_TABS.map((entry) => {
+        {visibleTabs.map((entry) => {
           const active = entry.id === tab;
           const badge = badges[entry.id];
           return (
@@ -811,11 +816,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </div>
 
         {/* Mobile link — pairing a phone to this desktop, and why it may not connect. */}
-        <div className="set-tab-panel" hidden={tab !== "mobile"}>
-        <SubtreeVisibility visible={tab === "mobile"}>
-          <MobileLinkCard active={tab === "mobile"} />
-        </SubtreeVisibility>
-        </div>
+        {mobileEnabled && (
+          <div className="set-tab-panel" hidden={tab !== "mobile"}>
+          <SubtreeVisibility visible={tab === "mobile"}>
+            <MobileLinkCard active={tab === "mobile"} />
+          </SubtreeVisibility>
+          </div>
+        )}
 
         {/* Environment — readiness, not build facts: what still needs doing. */}
         <div className="set-tab-panel" hidden={tab !== "environment"}>

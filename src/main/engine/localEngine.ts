@@ -148,6 +148,22 @@ export class LocalEngine implements EngineConnection {
     return this.party.getHarnessOriginal(name, partyId);
   }
 
+  async getCliContinuationTarget(name: string, partyId?: string) {
+    return this.party.getCliContinuationTarget(name, partyId);
+  }
+
+  async beginCliContinuation(name: string, partyId?: string) {
+    return this.party.beginCliContinuation(name, partyId);
+  }
+
+  async recordCliContinuationProcess(name: string, handoffId: string, process: { terminalPid: number; host: "local" | "wsl"; distro?: string }, partyId?: string) {
+    return this.party.recordCliContinuationProcess(name, handoffId, process, partyId);
+  }
+
+  async finishCliContinuation(name: string, handoffId: string, partyId?: string) {
+    return this.party.finishCliContinuation(name, handoffId, partyId);
+  }
+
   async saveMemberTranscript(name: string, save: TranscriptSave, partyId?: string): Promise<TranscriptSaveResult> {
     return this.party.saveMemberTranscript(name, save, partyId);
   }

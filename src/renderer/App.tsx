@@ -1156,7 +1156,7 @@ export function App() {
       // asking for a tab you are already on must still move the screen there.
       setRuntimeTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
     },
-    async sendMessage(name, text, attachments) {
+    async sendMessage(name, text, attachments, options) {
       // Optimistic echo when the member already has a live session (instant feel);
       // for a not-yet-started member the echo is appended once the shared send
       // path returns its session id below.
@@ -1170,9 +1170,11 @@ export function App() {
       // user turn. UI and agents go through the identical AppController method.
       // `interrupt` is the composer's preference: OFF queues behind the member's
       // in-flight turn, ON stops it so this message is handled now. The backend
-      // never interrupts a compaction, and an idle member is unaffected.
+      // never interrupts a compaction, and an idle member is unaffected. A
+      // caller may override it for one send (Ctrl/Cmd+Enter's "지금 보내기"),
+      // which is why this is `??` and not an `||` on a boolean.
       const result = await window.agentParty.sendMemberMessage(name, text, attachments, {
-        interrupt: state.settings.composer?.interruptOnSend === true,
+        interrupt: options?.interrupt ?? state.settings.composer?.interruptOnSend === true,
       });
       await applyPartyResult(result, false);
       if (result.queued) {
@@ -1234,7 +1236,7 @@ export function App() {
       // not just "has a sessionId": that status is the app's own statement that
       // the binding is DEAD, so the member does need starting again.
       const boundElsewhere = Boolean(member?.sessionId) && member?.status !== "missing_session";
-      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping") {
+      if (sessionIdFor(name) || boundElsewhere || member?.status === "closed" || member?.status === "sleeping" || member?.externalCli) {
         return;
       }
       void ensureSession(name, { auto: true }).then((result) => {
@@ -1501,7 +1503,7 @@ export function App() {
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
           {/* Renders only while a phone is connected — see MobileDrivingPill. */}
-          <span className="no-drag"><MobileDrivingPill /></span>
+          {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
         </div>
         <div className="window-controls">
           <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
@@ -1576,6 +1578,8 @@ export function App() {
                   setSidebarOpen(open);
                   try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
                 }}
+                onOpenUsage={() => setCurrentView("usage")}
+                onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
             </>
           ) : (

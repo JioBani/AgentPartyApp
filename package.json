@@ -72,6 +72,7 @@
     "test:e2e:transcript-render": "npm run build && node scripts/e2e-transcript-render.mjs",
     "test:e2e:message-queue": "npm run build && node scripts/e2e-message-queue.mjs",
     "test:e2e:mobile-link": "npm run build && node scripts/e2e-mobile-link.mjs",
+    "test:e2e:mobile-default-off": "npm run build && node scripts/e2e-mobile-default-off.mjs",
     "test:e2e:member-interrupt-default": "npm run build && node scripts/e2e-member-interrupt-default.mjs",
     "qa:queue-design": "npm run build && node scripts/qa-queue-design.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
@@ -200,6 +201,8 @@
     "test:e2e:catalog-list": "npm run build && node scripts/e2e-model-catalog-list.mjs",
     "test:catalog-list": "node scripts/qa-model-catalog-list.mjs",
     "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs",
+    "test:cli-continuation": "npm run build && node scripts/qa-cli-continuation.mjs",
+    "test:e2e:cli-continuation": "npm run build && node scripts/e2e-cli-continuation.mjs && node scripts/e2e-cli-continuation-wsl.mjs",
     "test:e2e:mobile-device": "npm run build && node scripts/e2e-mobile-device.mjs",
     "test:e2e:mobile-link-device": "npm run build && node scripts/e2e-mobile-link-device.mjs",
     "test:e2e:mobile-connection-lock-device": "npm run build && node scripts/e2e-mobile-connection-lock-device.mjs"

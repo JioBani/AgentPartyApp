@@ -138,27 +138,38 @@ export function mergeOn(state: MemberQueueState): boolean {
 }
 
 /**
- * The leading run: from the front, every consecutive item with the SAME sender
- * and the SAME cut-in flag. This — not the whole queue — is the merge unit,
- * because merging a member's message into the user's would forge attribution,
- * and merging a cut-in row into ordinary waiting rows would make "지금 바로
- * 처리" deliver the waiting pile in the same turn. `[urgent, waiting]` with
- * the same sender still leaves `waiting` for the next turn.
+ * Consecutive same-sender runs, in queue order.
+ *
+ * A sender change ends a MERGE UNIT, not the delivery: everything waiting goes
+ * out in ONE turn, and each run inside it keeps its own attribution. Merging
+ * across senders is the one thing that is never done — a member's words folded
+ * into the user's are not merged but misattributed — and that is the whole
+ * reason the turn is a list of runs rather than one string.
+ *
+ * The cut-in flag deliberately does NOT split a run. It orders the queue (a
+ * cut-in row is parked at the front) and nothing else; once the whole queue
+ * leaves together, treating it as a merge boundary would only split one
+ * person's words for no reason the reader could see.
+ */
+export function senderRuns(items: QueuedMessage[]): QueuedMessage[][] {
+  const runs: QueuedMessage[][] = [];
+  for (const item of items) {
+    const current = runs[runs.length - 1];
+    if (current && (current[0].from ?? null) === (item.from ?? null)) {
+      current.push(item);
+      continue;
+    }
+    runs.push([item]);
+  }
+  return runs;
+}
+
+/**
+ * The first same-sender run. Only a rendering aid now (the queue's first block);
+ * delivery takes the whole queue — see {@link takeNext}.
  */
 export function leadRun(items: QueuedMessage[]): QueuedMessage[] {
-  if (!items.length) {
-    return [];
-  }
-  const sender = items[0].from ?? null;
-  const cutIn = Boolean(items[0].cutIn);
-  const run: QueuedMessage[] = [];
-  for (const item of items) {
-    if ((item.from ?? null) !== sender || Boolean(item.cutIn) !== cutIn) {
-      break;
-    }
-    run.push(item);
-  }
-  return run;
+  return senderRuns(items)[0] || [];
 }
 
 /** True when the queue holds more than one distinct sender (drives the "같은 것끼리만" hint). */
@@ -323,29 +334,58 @@ export function mergeInto(state: MemberQueueState, sourceId: string, targetId: s
   return ok({ ...state, items });
 }
 
-/** What a dequeue hands to the harness: one turn, plus how many items it came from. */
-export interface DequeuedTurn {
-  text: string;
-  attachments?: ImageAttachment[];
+/** One same-sender block of a dequeued turn — the merge unit, with its author. */
+export interface DequeuedBlock {
+  /** Member name that wrote these, or null for the user. */
   from: string | null;
+  /** The run's messages, merged verbatim in order. */
+  text: string;
+  /** Items folded into this block. */
+  count: number;
+  attachments?: ImageAttachment[];
+}
+
+/** What a dequeue hands to the harness: ONE turn, as its ordered author blocks. */
+export interface DequeuedTurn {
+  /**
+   * Every item that left, in order, folded into same-sender blocks. A list
+   * rather than a string because the caller renders each block with its own
+   * attribution (a member's block travels in its channel envelope), which is
+   * what lets one turn carry several authors without forging any of them.
+   */
+  blocks: DequeuedBlock[];
+  /** Every attachment that left, flattened in order. */
+  attachments?: ImageAttachment[];
   /** Item count folded into this turn (>1 renders the "N건 합쳐서 보냄" badge). */
   count: number;
 }
 
+function blockOf(run: QueuedMessage[]): DequeuedBlock {
+  return { from: run[0].from ?? null, text: mergeTexts(run), count: run.length, attachments: mergeAttachments(run) };
+}
+
 /**
- * Takes what should go out next. With merge ON the whole leading run leaves as
- * one turn; with it OFF exactly one item does. Either way the returned state is
- * what remains — the caller sends `turn` and persists `state` together, so a
- * crash between the two can only ever re-send, never silently swallow.
+ * Takes what should go out next.
+ *
+ * With merge ON that is the WHOLE queue, as one turn: a member waiting behind
+ * the user (or the other way round) was never a reason to make the recipient
+ * answer twice, and holding the rest back meant the second half arrived after a
+ * reply written without it. Merging still stops at a sender change — the turn
+ * carries the runs separately (see {@link senderRuns}) — so nothing is ever
+ * attributed to the wrong author. With merge OFF exactly one item leaves.
+ *
+ * Either way the returned state is what remains: the caller sends `turn` and
+ * persists `state` together, so a crash between the two can only ever re-send,
+ * never silently swallow.
  */
 export function takeNext(state: MemberQueueState): QueueResult<{ state: MemberQueueState; turn: DequeuedTurn }> {
   if (!state.items.length) {
     return fail("empty_queue");
   }
-  const run = mergeOn(state) ? leadRun(state.items) : state.items.slice(0, 1);
+  const taken = mergeOn(state) ? state.items : state.items.slice(0, 1);
   return ok({
-    state: { ...state, items: state.items.slice(run.length) },
-    turn: { text: mergeTexts(run), attachments: mergeAttachments(run), from: run[0].from ?? null, count: run.length },
+    state: { ...state, items: state.items.slice(taken.length) },
+    turn: { blocks: senderRuns(taken).map(blockOf), attachments: mergeAttachments(taken), count: taken.length },
   });
 }
 
@@ -356,10 +396,7 @@ export function takeItem(state: MemberQueueState, id: string): QueueResult<{ sta
     return fail(removal.reason);
   }
   const { state: next, removed } = removal.value;
-  return ok({
-    state: next,
-    turn: { text: removed.text, attachments: removed.attachments, from: removed.from ?? null, count: 1 },
-  });
+  return ok({ state: next, turn: { blocks: [blockOf([removed])], attachments: removed.attachments, count: 1 } });
 }
 
 export function clearQueue(state: MemberQueueState): MemberQueueState {

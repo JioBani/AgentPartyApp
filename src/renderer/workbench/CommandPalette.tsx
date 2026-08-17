@@ -69,12 +69,14 @@ export function CommandPalette({ commands, activeIndex, onHover, onSelect }: Com
                     key={command.id}
                     role="option"
                     aria-selected={isActive}
+                    aria-disabled={Boolean(command.disabledReason)}
+                    title={command.disabledReason}
                     className={"wb-cmd-row" + (isActive ? " is-active" : "") + (command.badges?.includes("disabled") ? " is-disabled" : "")}
                     onMouseEnter={() => onHover(index)}
                     onMouseDown={(e) => {
                       // Keep textarea focus; fire before blur.
                       e.preventDefault();
-                      onSelect(command);
+                      if (!command.disabledReason) onSelect(command);
                     }}
                   >
                     <Icon size={14} className="wb-cmd-icon" />

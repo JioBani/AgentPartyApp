@@ -214,6 +214,19 @@ export const partyRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.getHarnessOriginal(ctx.workspace, text(p.name), ctx.windowId),
   },
   {
+    // Desktop-local takeover: inspect returns cwd+command; launch closes the
+    // app adapter and opens that command in the user's default terminal.
+    name: "member.cliContinuation",
+    http: "POST /api/party/members/:name/cli-continuation",
+    remote: false,
+    handler: (p, ctx) => ctx.controller.continueMemberInCli(
+      ctx.workspace,
+      text(p.name),
+      text(p.action, "inspect") as "inspect" | "launch",
+      ctx.windowId,
+    ),
+  },
+  {
     // Party-wide conveniences, routed through the same action dispatch with the
     // "*" member name.
     name: "party.broadcast",

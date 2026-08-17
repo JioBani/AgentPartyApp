@@ -9,6 +9,7 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessForRuntime } from "../../shared/types";
 import { CommandPalette } from "./CommandPalette";
 import { useCommandPalette } from "./useCommandPalette";
+import type { PaletteAction } from "./paletteModel";
 import {
   DEFAULT_MAX_IMAGES_PER_TURN,
   DEFAULT_MAX_IMAGE_BYTES,
@@ -28,7 +29,7 @@ import {
   serializeDraft,
   setCaret,
 } from "./composerDraft";
-import { sendsOnEnter } from "../../shared/composerSettings";
+import { sendsImmediately, sendsOnEnter } from "../../shared/composerSettings";
 import { useComposerPrefs } from "../app/composerPrefs";
 import { usePartyMembers } from "../app/partyMemberPrefs";
 import { useModelRoutes } from "../app/modelRoutePrefs";
@@ -52,6 +53,15 @@ interface ComposerProps {
   view: MemberView;
   density: PanelDensity;
   actions: WorkbenchActions;
+  commandUi: {
+    openRuntime: () => void;
+    openPermissions: () => void;
+    openMcp: () => void;
+    openStatus: () => void;
+    openUsage: () => void;
+    openSessions: () => void;
+    openAutoCompact: () => void;
+  };
 }
 
 /**
@@ -84,7 +94,7 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
-export function Composer({ view, density, actions }: ComposerProps) {
+export function Composer({ view, density, actions, commandUi }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -124,17 +134,27 @@ export function Composer({ view, density, actions }: ComposerProps) {
   const maxImages = view.vision?.maxImages ?? DEFAULT_MAX_IMAGES_PER_TURN;
   const maxBytes = view.vision?.maxBytesPerImage ?? DEFAULT_MAX_IMAGE_BYTES;
 
+  function runPaletteAction(action: PaletteAction) {
+    if (action === "compact") actions.compact(view.name);
+    else if (action === "restart") actions.restart(view.name);
+    else if (action === "interrupt") actions.interrupt(view.name);
+    else if (action === "runtime") commandUi.openRuntime();
+    else if (action === "permissions") commandUi.openPermissions();
+    else if (action === "mcp") commandUi.openMcp();
+    else if (action === "status") commandUi.openStatus();
+    else if (action === "usage") commandUi.openUsage();
+    else if (action === "sessions") commandUi.openSessions();
+    else if (action === "auto-compact") commandUi.openAutoCompact();
+    else if (action === "environment") actions.openEnvironmentSettings();
+  }
+
   // Command/skill palette — harness-aware (`/` for claude-code/codex, etc.).
   const palette = useCommandPalette({
     runtime: harness,
     discovered: view.session?.snapshot.slashCommands,
     draft,
     setDraft,
-    onAction: (action) => {
-      if (action === "compact") actions.compact(view.name);
-      else if (action === "restart") actions.restart(view.name);
-      else if (action === "interrupt") actions.interrupt(view.name);
-    },
+    onAction: runPaletteAction,
   });
 
   // --- `:m` members / `:a` models -----------------------------------------
@@ -292,6 +312,9 @@ export function Composer({ view, density, actions }: ComposerProps) {
     const text = serializeDraft(root);
     renderedRef.current = text;
     setDraft(text);
+    if (attachError) {
+      setAttachError("");
+    }
     syncCaret();
   }
 
@@ -684,10 +707,19 @@ export function Composer({ view, density, actions }: ComposerProps) {
 
   /**
    * `bypassQueue` is Ctrl/Cmd+Enter — already this app's universal "send now".
-   * With a busy member that now also means "do not wait your turn": the message
-   * is parked like any other (so it is never lost if the delivery fails) and
-   * then immediately handed over, which is exactly what the row's 지금 보내기
-   * does. An idle member is unaffected; nothing was queued to skip.
+   * With a busy member that also means "do not wait your turn". An idle member
+   * is unaffected; nothing was queued to skip.
+   *
+   * ONE call, not park-then-deliver. This used to send normally and then chase
+   * the parked row with a second `sendItem`, which is the same operation the
+   * backend already performs for `interrupt` — and the two-step version got it
+   * wrong three ways: it addressed the row BY POSITION (`items.at(-1)`), so an
+   * interrupt-on-send park, which lands at the FRONT, made it grab a different
+   * sender's waiting message and deliver that one while the message just typed
+   * stayed in the queue; a member that went idle in the gap between the two
+   * calls delivered the row on its own, and the follow-up then failed with "이미
+   * 대기열에 없습니다", reporting a delivered message as still waiting; and it
+   * stopped the turn even mid-COMPACTION, which the single path refuses to do.
    */
   function submit(event?: FormEvent, bypassQueue = false) {
     event?.preventDefault();
@@ -698,25 +730,29 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (!text && attachments.length === 0) {
       return;
     }
+    if (palette.blocked) {
+      setAttachError(`${palette.blocked.trigger}: ${palette.blocked.reason}`);
+      return;
+    }
+    if (palette.typedAction) {
+      runPaletteAction(palette.typedAction);
+      setDraft("");
+      knownRefs.current = [];
+      setAttachments([]);
+      setAttachError("");
+      return;
+    }
     const images = attachments.length ? attachments : undefined;
     setDraft("");
     knownRefs.current = [];
     setAttachments([]);
     setAttachError("");
-    void (async () => {
-      const result = await actions.sendMessage(view.name, text, images);
-      if (!bypassQueue || !result?.queued) {
-        return;
-      }
-      const parked = result.queue?.items?.at(-1);
-      if (parked) {
-        await actions.runQueueCommand(view.name, { action: "sendItem", itemId: parked.id });
-      }
-    })().catch((error) => {
-      // The message is still in the queue if this failed — say so rather than
-      // leaving the user thinking Ctrl+Enter did nothing.
-      setAttachError(`지금 보내기에 실패했습니다 (메시지는 대기열에 있습니다): ${error instanceof Error ? error.message : String(error)}`);
-    });
+    // `interrupt: true` only when the gesture asked for it; otherwise the send
+    // keeps whatever the composer setting says (App resolves that).
+    void actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined)
+      .catch((error) => {
+        setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      });
   }
 
   /**
@@ -753,9 +789,13 @@ export function Composer({ view, density, actions }: ComposerProps) {
     if (event.key !== "Enter") {
       return;
     }
-    if (sendsOnEnter(prefs.sendKey, { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey })) {
+    const modifiers = { ctrlOrMeta: event.ctrlKey || event.metaKey, shift: event.shiftKey };
+    if (sendsOnEnter(prefs.sendKey, modifiers)) {
       event.preventDefault();
-      submit(undefined, event.ctrlKey || event.metaKey);
+      // NOT "was Ctrl held": under the default send key Ctrl+Enter IS the send
+      // key, so reading the modifier alone made every ordinary send stop the
+      // member's turn. See `sendsImmediately`.
+      submit(undefined, sendsImmediately(prefs.sendKey, modifiers));
       return;
     }
     if (!multiline) {

@@ -40,6 +40,7 @@ export class MobileLinkService {
   private controller: AppController | undefined;
   private unsubscribeStatus: (() => void) | undefined;
   private unregister: Array<() => void> = [];
+  private bindingsActive = false;
 
   constructor(private readonly deps: MobileLinkDeps) {}
 
@@ -53,22 +54,25 @@ export class MobileLinkService {
   }
 
   async start(): Promise<void> {
-    this.registerMethods();
-    this.deps.gateway.setSnapshotProvider((context) => this.snapshot(context));
-    this.unsubscribeStatus = this.deps.gateway.status$.subscribe(this.deps.onStatus);
-    await this.deps.gateway.start(this.deps.startOptions?.());
+    if (!this.isEnabled()) {
+      log("info", "mobile", "mobile link disabled; gateway was not started");
+      return;
+    }
+    this.activateBindings();
+    try {
+      await this.deps.gateway.start(this.deps.startOptions?.());
+    } catch (error) {
+      this.deactivateBindings();
+      throw error;
+    }
     log("info", "mobile", "mobile link started", {
       methods: this.unregister.length,
-      enabled: this.deps.gateway.getSettings().enabled,
+      enabled: true,
     });
   }
 
   async stop(): Promise<void> {
-    this.unsubscribeStatus?.();
-    this.unsubscribeStatus = undefined;
-    for (const off of this.unregister.splice(0)) {
-      off();
-    }
+    this.deactivateBindings();
     await this.deps.gateway.stop();
   }
 
@@ -81,6 +85,7 @@ export class MobileLinkService {
    * is safe on the broadcast hot path.
    */
   publish(channel: string, payload: unknown, workspacePath?: string): void {
+    if (!this.bindingsActive) return;
     this.deps.gateway.emit(channel, payload, workspacePath ? { workspacePath } : undefined);
   }
 
@@ -89,12 +94,14 @@ export class MobileLinkService {
    * building a phone-shaped payload that nobody would receive.
    */
   hasSessions(): boolean {
+    if (!this.bindingsActive) return false;
     return this.deps.gateway.getStatus().sessions.length > 0;
   }
 
   // --- surface published through AppController ----------------------------
 
   async openPairing(): Promise<{ qr: string; expiresAt: number }> {
+    this.requireEnabled();
     const session = await this.deps.gateway.pairing.openQr();
     // The confirmation code and the outcome arrive later; the pairing screen
     // (and QA) read them from `getStatus().pairing`, which the pipe keeps
@@ -106,43 +113,57 @@ export class MobileLinkService {
   }
 
   confirmPairing(): Promise<void> {
+    this.requireEnabled();
     return this.deps.gateway.pairing.confirm();
   }
 
   cancelPairing(): Promise<void> {
+    this.requireEnabled();
     return this.deps.gateway.pairing.cancel();
   }
 
   devices(): TrustedDevice[] {
+    this.requireEnabled();
     return this.deps.gateway.pairing.devices();
   }
 
   revokeDevice(deviceId: string): Promise<void> {
+    this.requireEnabled();
     return this.deps.gateway.pairing.revoke(deviceId);
   }
 
   renameDevice(deviceId: string, name: string): Promise<void> {
+    this.requireEnabled();
     return this.deps.gateway.pairing.rename(deviceId, name);
   }
 
   disconnectSession(sessionId: string, reason?: string): Promise<void> {
+    this.requireEnabled();
     return this.deps.gateway.disconnect(sessionId, reason);
   }
 
   connectionLockStatus(): MobileConnectionLockStatus {
+    this.requireEnabled();
     return this.deps.gateway.connectionLock.status();
   }
 
   configureConnectionLock(kind: MobileConnectionLockKind, secret: string): Promise<MobileConnectionLockStatus> {
+    this.requireEnabled();
     return this.deps.gateway.connectionLock.configure(kind, secret);
   }
 
   clearConnectionLock(): Promise<MobileConnectionLockStatus> {
+    this.requireEnabled();
     return this.deps.gateway.connectionLock.clear();
   }
 
   status(): GatewayStatus {
+    this.requireEnabled();
     return this.deps.gateway.getStatus();
+  }
+
+  isEnabled(): boolean {
+    return this.deps.gateway.getSettings().enabled;
   }
 
   settings(): MobileSettings {
@@ -150,12 +171,22 @@ export class MobileLinkService {
   }
 
   async updateSettings(patch: Partial<MobileSettings>): Promise<MobileSettings> {
-    const settings = await this.deps.gateway.updateSettings(patch);
+    const enabling = !this.isEnabled() && patch.enabled === true;
+    if (enabling) this.activateBindings();
+    let settings: MobileSettings;
+    try {
+      settings = await this.deps.gateway.updateSettings(patch);
+    } catch (error) {
+      if (enabling) this.deactivateBindings();
+      throw error;
+    }
     this.deps.persistSettings(settings);
+    if (!settings.enabled) this.deactivateBindings();
     return settings;
   }
 
   diagnostics(): Promise<NatDiagnostics> {
+    this.requireEnabled();
     return this.deps.gateway.diagnostics();
   }
 
@@ -172,7 +203,33 @@ export class MobileLinkService {
     return controls;
   }
 
+  /** QA visibility into whether app RPC handlers are attached to the pipe. */
+  registeredMethods(): string[] {
+    return this.deps.gateway.registeredMethods();
+  }
+
   // --- internals ----------------------------------------------------------
+
+  private requireEnabled(): void {
+    if (!this.isEnabled() || !this.bindingsActive) {
+      throw new Error("모바일 연결이 비활성화되어 있습니다. POST /api/mobile/settings에 {\"enabled\":true}를 보내 먼저 활성화하세요.");
+    }
+  }
+
+  private activateBindings(): void {
+    if (this.bindingsActive) return;
+    this.registerMethods();
+    this.deps.gateway.setSnapshotProvider((context) => this.snapshot(context));
+    this.unsubscribeStatus = this.deps.gateway.status$.subscribe(this.deps.onStatus);
+    this.bindingsActive = true;
+  }
+
+  private deactivateBindings(): void {
+    this.unsubscribeStatus?.();
+    this.unsubscribeStatus = undefined;
+    for (const off of this.unregister.splice(0)) off();
+    this.bindingsActive = false;
+  }
 
   /**
    * Publishes the capability table to the phone. Every entry that is not marked
