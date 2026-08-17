@@ -52,6 +52,10 @@ interface ComposerProps {
   view: MemberView;
   density: PanelDensity;
   actions: WorkbenchActions;
+  /** Show the permission control beside Send. The guide window turns this off:
+   *  its session runs on a fixed permission set the user must not change
+   *  (F-15 §6-2), and a control that cannot be honoured must not be shown. */
+  permission?: boolean;
 }
 
 /**
@@ -84,7 +88,7 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
-export function Composer({ view, density, actions }: ComposerProps) {
+export function Composer({ view, density, actions, permission: showPermission = true }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -976,7 +980,7 @@ export function Composer({ view, density, actions }: ComposerProps) {
           <div className="wb-composer-actions">
             {stopBeside}
             {labeled}
-            {permission}
+            {showPermission ? permission : null}
           </div>
         </div>
       </div>

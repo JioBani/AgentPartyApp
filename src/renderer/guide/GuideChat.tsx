@@ -85,7 +85,7 @@ export function GuideChat({
       {error || view.error || routesError ? (
         <div className="wb-inline-note is-warning" role="alert">{error || view.error || routesError}</div>
       ) : null}
-      <Composer view={memberView} density="wide" actions={actions} />
+      <Composer view={memberView} density="wide" actions={actions} permission={false} />
       <div className="guide-composer-meta">
         {/* The workbench keeps this pill in the panel header, which the guide has
             no room for — so the guide's own meta row carries it. Without it the
@@ -143,7 +143,7 @@ export function GuideChat({
           </div>
         </div>
       )}
-      {composer}
+      <div className="guide-composer-band">{composer}</div>
       {modelOpen ? (
         <GuideModelModal
           routes={routes}
