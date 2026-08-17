@@ -72,7 +72,10 @@ export function GuideChat({
     }
   }
 
-  const transcript = <Transcript view={memberView} density="wide" actions={actions} />;
+  // `detail="answers"`: this is a guide, not a workbench. The tool calls here are
+  // the guide reading its own knowledge files, and the status lines are harness
+  // plumbing — both pushed the answer the user asked for off the screen.
+  const transcript = <Transcript view={memberView} density="wide" actions={actions} detail="answers" />;
 
   const composer = (
     <div className="guide-composer-wrap">
@@ -112,12 +115,10 @@ export function GuideChat({
       {sheet ? (
         // Nothing asked yet = nothing to show. An empty scroll area here left a
         // blank strip above the composer that looked like a broken panel.
-        empty ? null : <div className="guide-ask-body">{transcript}</div>
-      ) : (
+        empty ? null : transcript
+      ) : empty ? (
         <div className="guide-chat-scroll">
           <div className="guide-chat-col">
-            {empty ? (
-              <>
                 <div className="guide-hero">
                   <h1>무엇이 궁금한가요?</h1>
                   <p>이 앱에 대해 물어보세요. 처음이라면 움직이는 화면으로 한 바퀴 보는 편이 빠릅니다.</p>
@@ -138,12 +139,14 @@ export function GuideChat({
                     <button key={text} type="button" className="guide-suggest" onClick={() => void send(text)}>{text}</button>
                   ))}
                 </div>
-              </>
-            ) : (
-              transcript
-            )}
           </div>
         </div>
+      ) : (
+        // NOT wrapped in a scroll container. `Transcript` scrolls itself and
+        // pins to the bottom as a reply streams in; nesting it inside another
+        // scroller left that logic driving an element that never scrolls, so
+        // the answer grew off the bottom of the screen.
+        transcript
       )}
       {/* The ask sheet IS a panel already — putting the floating island inside it
           would draw a box inside a box. Only the full-screen chat gets the band. */}

@@ -224,12 +224,20 @@
   }
 .guide-ask-head strong { font-size: var(--font-title); color: var(--text-0); }
 .guide-ask-head .guide-spacer { flex: 1; }
-.guide-ask-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable both-edges; padding: 12px 12px 0; }
 /* 시트 자체가 이미 패널이다 — 안에 컴포저 섬을 또 띄우면 상자 안의 상자가 된다.
    그래서 시트에서는 테두리 없이, 대화와 같은 폭의 가운데 칸으로만 둔다. */
 .guide-ask-chat { display: flex; flex-direction: column; min-height: 0; }
 .guide-ask-chat .guide-composer-wrap { margin: 0 auto; padding: 10px 12px 12px; }
-.guide-ask-body > * { width: min(680px, 100%); margin: 0 auto; }
+
+/* 대화는 **자기가** 스크롤한다. 바깥에 스크롤 컨테이너를 하나 더 두면
+   Transcript 의 "바닥에 붙어 따라가기"가 절대 안 움직이는 요소를 붙잡게 되어,
+   답이 흐르는 동안 화면 아래로 자라 나간다. 가운데 칸은 블록마다 준다. */
+.guide-chat > .wb-transcript, .guide-ask-chat > .wb-transcript {
+    scrollbar-gutter: stable both-edges;
+  }
+.guide-chat > .wb-transcript > *, .guide-ask-chat > .wb-transcript > * {
+    width: min(680px, 100%); align-self: center;
+  }
 .guide-attach {
     display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
     border-radius: var(--radius-badge); border: var(--border-width) solid var(--border);
