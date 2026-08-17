@@ -81,7 +81,8 @@ export interface AppControllerDeps {
    * has no window to navigate and must fail out loud if something asks for it.
    */
   guide?: {
-    open: () => Promise<GuideScreenInfo>;
+    /** `windowId` names WHICH window shows it; omitted means the focused one. */
+    open: (windowId?: string) => Promise<GuideScreenInfo>;
     close: () => GuideScreenInfo;
     setSlide: (index: number) => Promise<GuideScreenInfo>;
     get: () => GuideScreenInfo;
@@ -713,16 +714,16 @@ export class AppController {
    * rail's 가이드 button and as POST /api/guide/open, so a user and an agent
    * land identically — including the account gate below. Touches no party store.
    */
-  async openGuideScreen(): Promise<GuideScreenInfo> {
+  async openGuideScreen(windowId?: string): Promise<GuideScreenInfo> {
     const auth = await this.listAuthProviders();
     if (!hasConnectedAccount(auth)) {
-      const focused = this.deps.windowRegistry.resolve();
-      if (focused) {
-        this.navigate(focused.id, "auth");
+      const target = this.deps.windowRegistry.resolve(windowId);
+      if (target) {
+        this.navigate(target.id, "auth");
       }
       throw new Error("연결된 계정이 없습니다. 인증 화면에서 계정을 연결한 뒤 다시 열어 주세요.");
     }
-    return this.requireGuide().open();
+    return this.requireGuide().open(windowId);
   }
 
   closeGuideScreen(): GuideScreenInfo {

@@ -2212,18 +2212,30 @@ is that window, not a separate one.
 The screen reports its own state back to main, so navigating away from the guide
 in the UI is reflected here rather than leaving a stale `open: true`.
 
+**More than one window may show the guide at once.** `id` names the one a
+command acts on — the window that most recently opened it. Chat updates are
+pushed to **every** window showing the guide, so the other one is never frozen
+mid-turn. The conversation itself is a single session shared by all of them
+(there is one guide, not one per window).
+
 ### `POST /api/guide/open`
 
-Navigates the focused app window to the guide screen (focusing and restoring it
-first). Returns the same payload as `GET /api/guide`. Starts on the landing
-chat; the presentation starts at slide 0.
+Navigates an app window to the guide screen (focusing and restoring it first).
+Returns the same payload as `GET /api/guide`. Starts on the landing chat; the
+presentation starts at slide 0.
+
+The guide is per-window, so **which** window matters: address one with
+`?window=win-3` or the `X-AgentParty-Window` header, exactly like the other
+window-scoped routes. Without one it lands on the focused window. An id that
+names no window is an error, not a fallback to whatever is focused.
 
 Errors when no account is connected — the window is sent to 인증 instead (§8).
 
 ### `POST /api/guide/close`
 
-Leaves the guide screen and returns that window to the Workbench. Returns
-`{ open: false, … }`.
+Leaves the guide screen and returns that window to the Workbench. Acts on the
+window `GET /api/guide` names, not on all of them — if another window is still
+showing the guide, the reply reports **that** window rather than `open: false`.
 
 ### `POST /api/guide/slide`
 

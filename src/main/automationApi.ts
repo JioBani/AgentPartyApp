@@ -180,7 +180,7 @@ export class AutomationApiServer {
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/open") {
-        sendJson(res, 200, await c.openGuideScreen());
+        sendJson(res, 200, await c.openGuideScreen(windowId));
         return;
       }
       if (method === "POST" && url.pathname === "/api/guide/close") {

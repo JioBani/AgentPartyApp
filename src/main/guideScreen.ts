@@ -20,41 +20,61 @@ import { getLogFilePath, log } from "./logger";
 const NOT_OPEN = "가이드 화면이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.";
 
 export class GuideScreenHost {
-  /** The window that last reported the guide on screen. */
-  private viewer: WebContents | undefined;
+  /**
+   * Every window currently showing the guide. More than one is legal — the same
+   * guide can be open in two windows — and chat updates must reach ALL of them,
+   * or the one that is not `primary` shows a conversation frozen mid-turn.
+   */
+  private viewers = new Set<WebContents>();
+  /** The one a command acts on: the window that most recently opened the guide. */
+  private primary: WebContents | undefined;
   private slide = 0;
   private presenting = false;
   private showing = false;
   private ipcReady = false;
 
   constructor(private readonly deps: {
-    /** The app window a fresh `open()` should navigate — normally the focused one. */
-    targetWindow: () => BrowserWindow | undefined;
+    /** The app window `open()` should navigate. No id = the focused one. */
+    targetWindow: (windowId?: string) => BrowserWindow | undefined;
   }) {}
 
   get(): GuideScreenInfo {
     return this.info();
   }
 
-  /** Guide chat updates go to the window actually showing the guide. */
+  /** Guide chat updates go to EVERY window showing the guide. */
   send(channel: string, payload: unknown): void {
-    if (this.viewer && !this.viewer.isDestroyed()) {
-      this.viewer.send(channel, payload);
+    for (const contents of this.liveViewers()) {
+      contents.send(channel, payload);
     }
   }
 
-  async open(): Promise<GuideScreenInfo> {
+  /** Drops closed windows on the way past — nothing else prunes the set. */
+  private liveViewers(): WebContents[] {
+    for (const contents of [...this.viewers]) {
+      if (contents.isDestroyed()) {
+        this.viewers.delete(contents);
+      }
+    }
+    if (this.primary?.isDestroyed()) {
+      this.primary = undefined;
+    }
+    return [...this.viewers];
+  }
+
+  async open(windowId?: string): Promise<GuideScreenInfo> {
     this.ensureIpc();
-    const window = this.deps.targetWindow();
+    const window = this.deps.targetWindow(windowId);
     if (!window || window.isDestroyed()) {
-      throw new Error("가이드를 열 앱 창이 없습니다.");
+      throw new Error(windowId ? `창 '${windowId}' 을(를) 찾지 못했습니다.` : "가이드를 열 앱 창이 없습니다.");
     }
     if (window.isMinimized()) {
       window.restore();
     }
     window.focus();
     window.webContents.send("nav:set", { view: "guide" });
-    this.viewer = window.webContents;
+    this.viewers.add(window.webContents);
+    this.primary = window.webContents;
     await this.waitForScreen(window.webContents);
     this.showing = true;
     log("info", "guide", "guide screen opened", { id: this.viewerId(), slide: this.slide });
@@ -75,13 +95,15 @@ export class GuideScreenHost {
     throw new Error("가이드 화면에 .guide-window 가 나타나지 않았습니다.");
   }
 
+  /** Leaves the guide in the window a command would act on, not in all of them. */
   close(): GuideScreenInfo {
-    const contents = this.viewer;
+    const contents = this.primary;
     if (contents && !contents.isDestroyed()) {
       contents.send("nav:set", { view: "workbench" });
+      this.viewers.delete(contents);
     }
-    this.viewer = undefined;
-    this.showing = false;
+    this.primary = [...this.liveViewers()].pop();
+    this.showing = Boolean(this.primary);
     this.presenting = false;
     this.slide = 0;
     return this.info();
@@ -151,15 +173,16 @@ export class GuideScreenHost {
   }
 
   private requireViewer(): WebContents {
-    if (!this.showing || !this.viewer || this.viewer.isDestroyed()) {
+    this.liveViewers();
+    if (!this.showing || !this.primary) {
       throw new Error(NOT_OPEN);
     }
-    return this.viewer;
+    return this.primary;
   }
 
   private info(): GuideScreenInfo {
     const meta = GUIDE_SLIDES[this.slide];
-    const open = this.showing && Boolean(this.viewer && !this.viewer.isDestroyed());
+    const open = this.showing && Boolean(this.primary && !this.primary.isDestroyed());
     return {
       open,
       presenting: open && this.presenting,
@@ -175,7 +198,7 @@ export class GuideScreenHost {
 
   /** The window showing the guide, named the way WindowRegistry names it. */
   private viewerId(): string {
-    const window = this.viewer && !this.viewer.isDestroyed() ? BrowserWindow.fromWebContents(this.viewer) : undefined;
+    const window = this.primary && !this.primary.isDestroyed() ? BrowserWindow.fromWebContents(this.primary) : undefined;
     return window ? `win-${window.id}` : "";
   }
 
@@ -192,14 +215,16 @@ export class GuideScreenHost {
         return;
       }
       if (!payload.open) {
-        if (this.viewer === event.sender) {
-          this.viewer = undefined;
-          this.showing = false;
+        this.viewers.delete(event.sender);
+        if (this.primary === event.sender) {
+          this.primary = [...this.liveViewers()].pop();
+          this.showing = Boolean(this.primary);
           this.presenting = false;
         }
         return;
       }
-      this.viewer = event.sender;
+      this.viewers.add(event.sender);
+      this.primary = event.sender;
       this.showing = true;
       this.presenting = Boolean(payload.presenting);
       try {

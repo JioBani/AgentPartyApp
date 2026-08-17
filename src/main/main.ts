@@ -116,6 +116,22 @@ function workspaceFromArgv(argv: string[]): string | undefined {
   return location;
 }
 
+/** The guide screen host, or an explicit error — never a silent no-op. */
+function requireGuideScreen(): GuideScreenHost {
+  if (!guideScreen) {
+    throw new Error("가이드 화면 호스트가 아직 없습니다.");
+  }
+  return guideScreen;
+}
+
+/** The guide chat host, or an explicit error — never a silent no-op. */
+function requireGuideChat(): GuideChatHost {
+  if (!guideChat) {
+    throw new Error("가이드 채팅이 아직 없습니다.");
+  }
+  return guideChat;
+}
+
 /** The Discord bridge, or an explicit error — never a silent no-op. */
 function requireBridge(): DiscordBridgeService {
   if (!discordBridge) {
@@ -489,7 +505,7 @@ ${body}
 
   windowRegistry = new WindowRegistry();
   guideScreen = new GuideScreenHost({
-    targetWindow: () => registry().resolve()?.window,
+    targetWindow: (windowId) => registry().resolve(windowId)?.window,
   });
   guideChat = new GuideChatHost({
     sessionManager,
@@ -556,99 +572,28 @@ ${body}
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
+    // One line per capability. The previous form repeated the same null check
+    // eight times, which is how `open` came to DROP its `windowId` argument
+    // without TypeScript noticing — a shorter parameter list satisfies a longer
+    // signature, so the knob existed and did nothing.
     guide: {
-      open: () => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.open();
-      },
-      close: () => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.close();
-      },
-      setSlide: (index) => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.setSlide(index);
-      },
-      get: () => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.get();
-      },
-      capture: (outputPath) => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.capture(outputPath);
-      },
-      inspect: () => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.inspect();
-      },
-      setAsk: (open) => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.setAsk(open);
-      },
-      click: (selector) => {
-        if (!guideScreen) {
-          throw new Error("가이드 화면 호스트가 아직 없습니다.");
-        }
-        return guideScreen.click(selector);
-      },
+      open: (windowId) => requireGuideScreen().open(windowId),
+      close: () => requireGuideScreen().close(),
+      setSlide: (index) => requireGuideScreen().setSlide(index),
+      get: () => requireGuideScreen().get(),
+      capture: (outputPath) => requireGuideScreen().capture(outputPath),
+      inspect: () => requireGuideScreen().inspect(),
+      setAsk: (open) => requireGuideScreen().setAsk(open),
+      click: (selector) => requireGuideScreen().click(selector),
     },
     guideChat: {
-      knowledgePath: () => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.knowledgePath();
-      },
-      settings: () => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.getSettings();
-      },
-      updateSettings: (patch) => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.updateSettings(patch);
-      },
-      view: (kind) => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.view(kind);
-      },
-      send: (kind, text, viewing) => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.send(kind, text, viewing);
-      },
-      reset: (kind) => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.reset(kind);
-      },
-      compact: (kind) => {
-        if (!guideChat) {
-          throw new Error("가이드 채팅이 아직 없습니다.");
-        }
-        return guideChat.compact(kind);
-      },
+      knowledgePath: () => requireGuideChat().knowledgePath(),
+      settings: () => requireGuideChat().getSettings(),
+      updateSettings: (patch) => requireGuideChat().updateSettings(patch),
+      view: (kind) => requireGuideChat().view(kind),
+      send: (kind, text, viewing) => requireGuideChat().send(kind, text, viewing),
+      reset: (kind) => requireGuideChat().reset(kind),
+      compact: (kind) => requireGuideChat().compact(kind),
     },
   });
   automationApi = new AutomationApiServer({
