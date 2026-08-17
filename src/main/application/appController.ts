@@ -49,7 +49,7 @@ import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
 import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
-import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
+import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -605,6 +605,21 @@ export class AppController {
 
   async getMobileDiagnostics(): Promise<{ ok: true; diagnostics: NatDiagnostics }> {
     return { ok: true, diagnostics: await this.mobile().diagnostics() };
+  }
+
+  getMobileConnectionLock(): { ok: true; lock: MobileConnectionLockStatus } {
+    return { ok: true, lock: this.mobile().connectionLockStatus() };
+  }
+
+  async configureMobileConnectionLock(
+    kind: MobileConnectionLockKind,
+    secret: string,
+  ): Promise<{ ok: true; lock: MobileConnectionLockStatus }> {
+    return { ok: true, lock: await this.mobile().configureConnectionLock(kind, secret) };
+  }
+
+  async clearMobileConnectionLock(): Promise<{ ok: true; lock: MobileConnectionLockStatus }> {
+    return { ok: true, lock: await this.mobile().clearConnectionLock() };
   }
 
   /**
@@ -2001,33 +2016,42 @@ export class AppController {
    */
   async qaMobileSimulate(action: string, body: any): Promise<{ ok: true; action: string; result: unknown }> {
     this.requireQa();
-    const mock = this.mobile().mockControls();
     const result = await (async (): Promise<unknown> => {
       switch (action) {
+        case "lock-set": {
+          const kind = body?.kind === "pattern" ? "pattern" : body?.kind === "pin" ? "pin" : undefined;
+          if (!kind) {
+            throw new Error("lock-set requires kind 'pin' or 'pattern'.");
+          }
+          return this.configureMobileConnectionLock(kind, String(body?.secret ?? ""));
+        }
+        case "lock-clear":
+          return this.clearMobileConnectionLock();
         case "scan":
+          const mock = this.mobile().mockControls();
           mock.scanQr({ deviceName: body?.deviceName, deviceId: body?.deviceId });
           return this.mobile().status().pairing;
         case "fail-pairing":
-          mock.failPairing(String(body?.error || "QA induced pairing failure"));
+          this.mobile().mockControls().failPairing(String(body?.error || "QA induced pairing failure"));
           return this.mobile().status().pairing;
         case "connect":
-          return { sessionId: mock.connect({ deviceId: body?.deviceId, transport: body?.transport, workspaces: body?.workspaces }) };
+          return { sessionId: this.mobile().mockControls().connect({ deviceId: body?.deviceId, transport: body?.transport, workspaces: body?.workspaces }) };
         case "subscribe":
-          mock.subscribe(String(body?.sessionId || ""), Array.isArray(body?.workspaces) ? body.workspaces : []);
+          this.mobile().mockControls().subscribe(String(body?.sessionId || ""), Array.isArray(body?.workspaces) ? body.workspaces : []);
           return { sessionId: body?.sessionId, workspaces: body?.workspaces };
         case "request":
-          return mock.request(String(body?.method || ""), body?.params, body?.sessionId ? { sessionId: String(body.sessionId) } : undefined);
+          return this.mobile().mockControls().request(String(body?.method || ""), body?.params, body?.sessionId ? { sessionId: String(body.sessionId) } : undefined);
         case "delivered":
-          return { events: mock.deliveredTo(String(body?.sessionId || "")) };
+          return { events: this.mobile().mockControls().deliveredTo(String(body?.sessionId || "")) };
         case "emitted":
-          return { events: mock.emitted() };
+          return { events: this.mobile().mockControls().emitted() };
         case "snapshot":
-          return mock.snapshot(body?.sessionId ? String(body.sessionId) : undefined);
+          return this.mobile().mockControls().snapshot(body?.sessionId ? String(body.sessionId) : undefined);
         case "diagnostics":
-          mock.setDiagnostics(body?.reason, body?.patch);
+          this.mobile().mockControls().setDiagnostics(body?.reason, body?.patch);
           return { reason: body?.reason };
         case "reset":
-          mock.reset();
+          this.mobile().mockControls().reset();
           return { reset: true };
         default:
           throw new Error(`Unknown mobile simulator action '${action}'.`);

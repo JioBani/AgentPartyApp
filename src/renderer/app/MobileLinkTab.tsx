@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { AlertTriangle, Check, Info as InfoIcon, Link2Off, MonitorSmartphone, QrCode, RefreshCw, Server, Smartphone, Trash2, X } from "lucide-react";
-import type { DiagnosticReason, GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
+import { AlertTriangle, Check, Info as InfoIcon, KeyRound, Link2Off, LockKeyhole, MonitorSmartphone, QrCode, RefreshCw, Server, Smartphone, Trash2, X } from "lucide-react";
+import type { DiagnosticReason, GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 import { ipcErrorMessage } from "./ipcError";
 
 /**
@@ -206,13 +206,20 @@ export function MobileLinkCard({ active }: { active: boolean }) {
                   disabled={Boolean(busy)}
                   onClick={() => void run(session.sessionId, () => window.agentParty.disconnectMobileSession(session.sessionId))}
                 >
-                  <Link2Off size={14} /> 끊기
+                  <Link2Off size={14} /> 연결 끊기
                 </button>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      <ConnectionLockCard
+        lock={status?.connectionLock}
+        busy={Boolean(busy)}
+        onSet={(kind, secret) => run("connection-lock", () => window.agentParty.configureMobileConnectionLock(kind, secret))}
+        onClear={() => run("connection-lock", () => window.agentParty.clearMobileConnectionLock())}
+      />
 
       <PairingCard
         pairing={pairing}
@@ -257,6 +264,130 @@ export function MobileLinkCard({ active }: { active: boolean }) {
 
       <ServerCard settings={settings} busy={Boolean(busy)} onSave={(patch) => void run("settings", () => window.agentParty.updateMobileSettings(patch))} />
     </>
+  );
+}
+
+function ConnectionLockCard({ lock, busy, onSet, onClear }: {
+  lock: MobileConnectionLockStatus | undefined;
+  busy: boolean;
+  onSet: (kind: MobileConnectionLockKind, secret: string) => Promise<void>;
+  onClear: () => Promise<void>;
+}) {
+  const [kind, setKind] = useState<MobileConnectionLockKind>("pin");
+  const [secret, setSecret] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [validation, setValidation] = useState("");
+  const [clearArmed, setClearArmed] = useState(false);
+  const valid = kind === "pin"
+    ? /^\d{6}$/.test(secret)
+    : /^[0-8]{6,9}$/.test(secret) && new Set(secret).size === secret.length;
+
+  async function save() {
+    if (!valid) {
+      setValidation(kind === "pin" ? "PIN은 숫자 6자리여야 합니다." : "패턴은 서로 다른 점 6~9개를 이어야 합니다.");
+      return;
+    }
+    if (secret !== confirmation) {
+      setValidation(kind === "pin" ? "PIN 확인 값이 다릅니다." : "패턴 확인 값이 다릅니다.");
+      return;
+    }
+    setValidation("");
+    await onSet(kind, secret);
+    setSecret("");
+    setConfirmation("");
+  }
+
+  function selectKind(next: MobileConnectionLockKind) {
+    setKind(next);
+    setSecret("");
+    setConfirmation("");
+    setValidation("");
+  }
+
+  return (
+    <section className="set-card mob-lock-card">
+      <div className="set-card-label">연결 잠금</div>
+      <div className="set-inline-note is-soft">
+        <LockKeyhole size={14} />
+        <span>새로 연결할 때마다 이 PC에서 정한 PIN 또는 패턴을 폰에 입력해야 합니다. 입력값은 폰에 저장되지 않습니다.</span>
+      </div>
+      <div className="mob-lock-status">
+        <span className={"set-dot " + (lock?.configured ? "is-success" : "is-idle")} />
+        <b>{lock?.configured ? `${lock.kind === "pin" ? "6자리 PIN" : "패턴"} 사용 중` : "사용 안 함"}</b>
+      </div>
+      <div className="mob-lock-kind" role="radiogroup" aria-label="연결 잠금 방식">
+        <button type="button" className={kind === "pin" ? "is-active" : ""} onClick={() => selectKind("pin")}>6자리 PIN</button>
+        <button type="button" className={kind === "pattern" ? "is-active" : ""} onClick={() => selectKind("pattern")}>패턴</button>
+      </div>
+      {kind === "pin" ? (
+        <div className="set-card-fields mob-lock-fields">
+          <label className="set-field">
+            <span className="set-field-label">새 PIN</span>
+            <div className="set-input"><KeyRound size={14} /><input aria-label="새 PIN" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={secret} onChange={(event) => setSecret(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+          </label>
+          <label className="set-field">
+            <span className="set-field-label">PIN 확인</span>
+            <div className="set-input"><KeyRound size={14} /><input aria-label="PIN 확인" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+          </label>
+        </div>
+      ) : (
+        <div className="mob-pattern-pair">
+          <PatternInput label="새 패턴" value={secret} onChange={setSecret} />
+          <PatternInput label="패턴 확인" value={confirmation} onChange={setConfirmation} />
+        </div>
+      )}
+      {validation && <div className="set-inline-note is-error" role="alert"><AlertTriangle size={14} /><span>{validation}</span></div>}
+      <div className="set-diag-actions">
+        <button type="button" className="set-btn-accent" disabled={busy || !valid || secret !== confirmation} onClick={() => void save()}>
+          <Check size={14} /> {lock?.configured ? "잠금 변경" : "잠금 설정"}
+        </button>
+        {lock?.configured && (
+          <button type="button" className={"set-btn-soft" + (clearArmed ? " is-armed" : "")} disabled={busy} onClick={() => clearArmed ? void onClear() : setClearArmed(true)} onBlur={() => setClearArmed(false)}>
+            <X size={14} /> {clearArmed ? "정말 해제" : "잠금 해제"}
+          </button>
+        )}
+        <span className="set-save-hint">변경하거나 해제하면 현재 폰 연결이 모두 종료됩니다.</span>
+      </div>
+    </section>
+  );
+}
+
+function PatternInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [drawing, setDrawing] = useState(false);
+  useEffect(() => {
+    const stop = () => setDrawing(false);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, []);
+
+  const add = (index: number) => {
+    const point = String(index);
+    if (value.includes(point) || value.length >= 9) return;
+    onChange(value + point);
+  };
+
+  return (
+    <div className="mob-pattern-field">
+      <div className="set-field-label">{label} <span>{value.length}/9</span></div>
+      <div className="mob-pattern-grid" onPointerLeave={() => setDrawing(false)}>
+        {Array.from({ length: 9 }, (_, index) => (
+          <button
+            type="button"
+            key={index}
+            aria-label={`${index + 1}번 점`}
+            aria-pressed={value.includes(String(index))}
+            className={value.includes(String(index)) ? "is-selected" : ""}
+            onPointerDown={(event) => { event.preventDefault(); setDrawing(true); add(index); }}
+            onPointerEnter={() => { if (drawing) add(index); }}
+          ><span>{value.indexOf(String(index)) >= 0 ? value.indexOf(String(index)) + 1 : ""}</span></button>
+        ))}
+      </div>
+      <button type="button" className="mob-pattern-reset" disabled={!value} onClick={() => onChange("")}>다시 그리기</button>
+    </div>
   );
 }
 
@@ -433,7 +564,7 @@ function DeviceRow({ device, busy, onRename, onRevoke }: {
         onClick={() => (armed ? onRevoke() : setArmed(true))}
         onBlur={() => setArmed(false)}
       >
-        <Trash2 size={14} /> {armed ? "정말 폐기" : "폐기"}
+        <Trash2 size={14} /> {armed ? "정말 삭제" : "기기 삭제"}
       </button>
     </div>
   );

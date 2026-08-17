@@ -5,6 +5,8 @@ import {
   type DiagnosticReason,
   type GatewayStatus,
   type MobilePlatform,
+  type MobileConnectionLockKind,
+  type MobileConnectionLockStatus,
   type MobileSettings,
   type NatDiagnostics,
   type PairingState,
@@ -24,6 +26,7 @@ import type {
   RequestContext,
 } from "./mobileGateway";
 import { MutableValueStream } from "./valueStream";
+import { assertSecret } from "./connectionLockStore";
 
 /**
  * In-memory {@link MobileGateway} with no sockets, no crypto and no phone.
@@ -107,6 +110,7 @@ class MockGateway implements MockMobileGateway {
   private snapshotProvider: MobileSnapshotProvider | undefined;
   private diagnosticsResult: NatDiagnostics;
   private running = false;
+  private lockStatus: MobileConnectionLockStatus = { configured: false, kind: null };
   private seq = 0;
   private counter = 0;
   private pendingPairing: { resolve: (device: TrustedDevice) => void; reject: (error: Error) => void } | undefined;
@@ -262,6 +266,23 @@ class MockGateway implements MockMobileGateway {
       }
       this.devicesById.set(deviceId, { ...device, name });
       this.publish();
+    },
+  };
+
+  connectionLock = {
+    status: (): MobileConnectionLockStatus => ({ ...this.lockStatus }),
+    configure: async (kind: MobileConnectionLockKind, secret: string): Promise<MobileConnectionLockStatus> => {
+      assertSecret(kind, secret);
+      this.lockStatus = { configured: true, kind };
+      this.sessions.clear();
+      this.publish();
+      return { ...this.lockStatus };
+    },
+    clear: async (): Promise<MobileConnectionLockStatus> => {
+      this.lockStatus = { configured: false, kind: null };
+      this.sessions.clear();
+      this.publish();
+      return { ...this.lockStatus };
     },
   };
 
@@ -500,6 +521,7 @@ class MockGateway implements MockMobileGateway {
         deviceName: session.deviceName,
         transport: session.transport,
         state: "connected",
+        lockAuthenticated: true,
         startedAt: session.startedAt,
         lastDeliveredSeq: session.lastDeliveredSeq,
         subscribedWorkspaces: [...session.workspaces],
@@ -515,6 +537,7 @@ class MockGateway implements MockMobileGateway {
         candidatePair: undefined,
       })),
       trustedDeviceCount: this.devicesById.size,
+      connectionLock: { ...this.lockStatus },
       pairing: this.pairingStream.current,
       events: {
         seq: this.seq,

@@ -1,4 +1,4 @@
-import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
+import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
 import type { MethodContext, MethodParams } from "./api/methodRegistry";
 import { methodRoutes } from "./api/methodRoutes";
 import type { AppController } from "./application/appController";
@@ -127,6 +127,18 @@ export class MobileLinkService {
 
   disconnectSession(sessionId: string, reason?: string): Promise<void> {
     return this.deps.gateway.disconnect(sessionId, reason);
+  }
+
+  connectionLockStatus(): MobileConnectionLockStatus {
+    return this.deps.gateway.connectionLock.status();
+  }
+
+  configureConnectionLock(kind: MobileConnectionLockKind, secret: string): Promise<MobileConnectionLockStatus> {
+    return this.deps.gateway.connectionLock.configure(kind, secret);
+  }
+
+  clearConnectionLock(): Promise<MobileConnectionLockStatus> {
+    return this.deps.gateway.connectionLock.clear();
   }
 
   status(): GatewayStatus {

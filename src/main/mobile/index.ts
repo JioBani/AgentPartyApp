@@ -6,6 +6,7 @@ import { RealMobileGateway } from "./realMobileGateway";
 export type { MobileGateway } from "./mobileGateway";
 export type {
   MobileEventScope,
+  MobileConnectionLockApi,
   MobileGatewayStartOptions,
   MobilePairingApi,
   MobilePushApi,

@@ -47,7 +47,7 @@ const SESSION = "s-1";
 let idSeq = 0;
 const req = (m, p) => ({ k: "req", id: `r-${++idSeq}`, m, ...(p === undefined ? {} : { p }) });
 
-function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1", bridgeOverride } = {}) {
+function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1", bridgeOverride, lockState, unlock } = {}) {
   const bridge = bridgeOverride ?? new EventBridge({ bootId });
   const sent = [];
   const nonConforming = [];
@@ -80,15 +80,65 @@ function harness({ handlers = new Map(), snapshotProvider, bootId = "boot-1", br
     appVersion: "0.2.0",
     signalingUrl: () => "wss://sig.test/v1/ws",
     registerPush: (deviceId, platform, handle) => pushes.push({ deviceId, platform, handle }),
+    lockState,
+    unlock,
     log: () => {},
     now: () => 1_700_000_000_000,
     newId: () => "grp-1",
   });
+  server.begin();
 
   return { server, bridge, sent, closes, pushes, handlers, nonConforming, last: () => sent.at(-1) };
 }
 
 console.log("RpcServer assertions:");
+
+// --- 01 §5.1a connection lock ---------------------------------------------
+{
+  let handlerCalls = 0;
+  const handlers = new Map([
+    ["private.method", async () => { handlerCalls += 1; return { private: true }; }],
+  ]);
+  const challenge = (error) => ({
+    k: "ctl", c: "lock", required: true, kind: "pin",
+    attemptsLeft: error ? 9 : 10, lockedUntil: null,
+    ...(error ? { error } : {}),
+  });
+  const h = harness({
+    handlers,
+    snapshotProvider: () => ({ secret: "state" }),
+    lockState: () => challenge(),
+    unlock: (_deviceId, secret) => secret === "123456"
+      ? { unlocked: true, state: { k: "ctl", c: "lock", required: false, kind: null, attemptsLeft: 10, lockedUntil: null } }
+      : { unlocked: false, state: challenge("bad_secret") },
+  });
+
+  assert(h.sent[0]?.c === "lock", "ctl.lock is the first secure-session frame");
+  h.server.handle(req("private.method"));
+  await tick();
+  assert(h.last().e?.code === "locked", "a pre-auth request receives a same-id locked response");
+  assert(handlerCalls === 0, "a pre-auth request never reaches its handler");
+
+  const beforeEvent = h.sent.length;
+  h.bridge.publish("private.event", { text: "must not leave" });
+  assert(h.sent.length === beforeEvent, "no event is delivered before authentication");
+  assert(h.bridge.window().seq === 1, "the withheld event is still retained for resume");
+
+  h.server.handle({ k: "ctl", c: "subscribe", workspaces: ["C:/a"] });
+  assert(h.last().c === "lock", "a pre-auth subscribe is refused by re-sending ctl.lock");
+  h.server.handle({ k: "ctl", c: "ping" });
+  assert(h.last().c === "pong", "ctl.ping remains available while locked");
+
+  h.server.handle({ k: "ctl", c: "unlock", secret: "000000" });
+  assert(h.last().error === "bad_secret" && h.last().attemptsLeft === 9,
+    "a wrong unlock returns the desktop-owned remaining count");
+  h.server.handle({ k: "ctl", c: "unlock", secret: "123456" });
+  assert(h.last().c === "unlocked", "the correct secret opens only this session");
+
+  h.server.handle(req("private.method"));
+  await tick();
+  assert(h.last().ok === true && handlerCalls === 1, "requests reach handlers after unlock");
+}
 
 // --- reserved methods answered by the pipe ---------------------------------
 {

@@ -474,7 +474,7 @@ export class WebrtcTransport implements Transport {
   private adoptChannel(channel: NativeDataChannel): void {
     this.channel = channel;
 
-    channel.onOpen(() => {
+    const flushPending = () => {
       for (const frame of this.pending.splice(0)) {
         channel.sendMessageBinary(frame);
       }
@@ -482,7 +482,9 @@ export class WebrtcTransport implements Transport {
       // `queuedBytes()` reads directly — leaving the count here would double it.
       this.pendingBytes = 0;
       this.setState("connected", {});
-    });
+    };
+
+    channel.onOpen(flushPending);
 
     channel.onMessage((message) => {
       if (typeof message === "string") {
@@ -505,8 +507,11 @@ export class WebrtcTransport implements Transport {
     channel.onClosed(() => this.close("상대가 연결을 닫았습니다."));
 
     if (channel.isOpen()) {
-      channel.onOpen(() => undefined);
-      this.setState("connected", {});
+      // The native channel may already be open when it is handed to us. The
+      // mandatory first ctl.lock frame is queued before that hand-off, so only
+      // setting the state here strands the frame forever and the phone times
+      // out waiting for it. Use the exact same flush path as the callback.
+      flushPending();
     }
   }
 

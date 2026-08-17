@@ -21,6 +21,8 @@ import {
   MOBILE_SIGNALING_FALLBACKS,
   MOBILE_STUN_SERVERS,
   type GatewayStatus,
+  type MobileConnectionLockKind,
+  type MobileConnectionLockStatus,
   type MobilePlatform,
   type MobileSessionStatus,
   type MobileSettings,
@@ -31,6 +33,7 @@ import {
   type ValueStream,
 } from "../../shared/mobileProtocol";
 import { NatDiagnosticsProbe } from "./diagnostics";
+import { ConnectionLockStore } from "./connectionLockStore";
 import { EventBridge } from "./eventBridge";
 import { IdentityStore } from "./identityStore";
 import { NatMapper } from "./natMapper";
@@ -84,6 +87,7 @@ export class RealMobileGateway implements MobileGateway {
   private readonly pairingStream: MutableValueStream<PairingState>;
 
   private identityStore: IdentityStore | undefined;
+  private connectionLockStore: ConnectionLockStore | undefined;
   private signaling: SignalingClient | undefined;
   private pairingService: PairingService | undefined;
   private eventBridge: EventBridge | undefined;
@@ -121,6 +125,7 @@ export class RealMobileGateway implements MobileGateway {
       portMapping: () => this.natMapper?.current(),
     });
     this.pairing = this.buildPairingApi();
+    this.connectionLock = this.buildConnectionLockApi();
     this.push = this.buildPushApi();
   }
 
@@ -146,6 +151,12 @@ export class RealMobileGateway implements MobileGateway {
       onSecurityWarning: this.deps.onSecurityWarning,
     });
     this.identityStore = identityStore;
+    this.connectionLockStore = await ConnectionLockStore.open({
+      userDataPath: this.deps.userDataPath,
+      secretCipher: this.deps.secretCipher,
+      log: this.deps.log,
+      onSecurityWarning: this.deps.onSecurityWarning,
+    });
     this.eventBridge = new EventBridge({ bootId: this.bootId });
 
     // Completed here so the socket, the QR's host and the status all describe
@@ -285,6 +296,30 @@ export class RealMobileGateway implements MobileGateway {
 
   readonly pairing: MobilePairingApi;
   readonly push: MobilePushApi;
+  readonly connectionLock: {
+    status(): MobileConnectionLockStatus;
+    configure(kind: MobileConnectionLockKind, secret: string): Promise<MobileConnectionLockStatus>;
+    clear(): Promise<MobileConnectionLockStatus>;
+  };
+
+  private buildConnectionLockApi(): RealMobileGateway["connectionLock"] {
+    return {
+      status: (): MobileConnectionLockStatus =>
+        this.connectionLockStore?.status() ?? { configured: false, kind: null },
+      configure: async (kind, secret): Promise<MobileConnectionLockStatus> => {
+        this.requireConnectionLock().configure(kind, secret);
+        this.endAllSessions("데스크톱 연결 잠금이 변경되었습니다. 다시 연결해 주세요.");
+        this.publish();
+        return this.requireConnectionLock().status();
+      },
+      clear: async (): Promise<MobileConnectionLockStatus> => {
+        this.requireConnectionLock().clear();
+        this.endAllSessions("데스크톱 연결 잠금이 해제되었습니다. 다시 연결해 주세요.");
+        this.publish();
+        return this.requireConnectionLock().status();
+      },
+    };
+  }
 
   private buildPairingApi(): MobilePairingApi {
     // `state$` is built here rather than in a field initializer: inside a
@@ -316,6 +351,7 @@ export class RealMobileGateway implements MobileGateway {
     revoke: async (deviceId: string): Promise<void> => {
       const store = this.requireIdentity();
       store.revokeDevice(deviceId);
+      this.connectionLockStore?.forgetDevice(deviceId);
       this.refreshNatMapping();
       for (const session of [...this.sessions.values()]) {
         if (session.device.deviceId === deviceId) {
@@ -571,6 +607,8 @@ export class RealMobileGateway implements MobileGateway {
       appVersion: this.deps.appVersion,
       signalingUrl: () => this.effectiveSignalingUrl(),
       registerPush: (deviceId, platform, handle) => store.setPushHandle(deviceId, platform, handle, Date.now()),
+      lockState: (deviceId) => this.requireConnectionLock().stateFor(deviceId),
+      unlock: (deviceId, secret) => this.requireConnectionLock().verify(deviceId, secret),
       log: this.deps.log,
     });
 
@@ -585,6 +623,7 @@ export class RealMobileGateway implements MobileGateway {
       onPayload: (payload) => rpc.handle(payload),
       onFatal: (reason) => this.endSession(sessionId, reason),
     });
+    rpc.begin();
 
     transport.onStateChange((state, detail) => {
       if (state === "closed") {
@@ -660,6 +699,12 @@ export class RealMobileGateway implements MobileGateway {
     this.publish();
   }
 
+  private endAllSessions(reason: string): void {
+    for (const sessionId of [...this.sessions.keys()]) {
+      this.endSession(sessionId, reason);
+    }
+  }
+
   /**
    * Validates a development QR lifetime. Anything above the protocol default
    * is capped and surfaced: the QR is the pairing capability, so a long window
@@ -728,6 +773,13 @@ export class RealMobileGateway implements MobileGateway {
       throw new Error("mobile gateway: start() has not completed");
     }
     return this.eventBridge;
+  }
+
+  private requireConnectionLock(): ConnectionLockStore {
+    if (!this.connectionLockStore) {
+      throw new Error("mobile gateway: connection lock store is not loaded");
+    }
+    return this.connectionLockStore;
   }
 
   private requirePairing(): PairingService {
@@ -826,6 +878,7 @@ export class RealMobileGateway implements MobileGateway {
       signalingError: this.signalingError,
       sessions: [...this.sessions.values()].map((session) => this.sessionStatus(session)),
       trustedDeviceCount: this.identityStore?.devices().length ?? 0,
+      connectionLock: this.connectionLockStore?.status() ?? { configured: false, kind: null },
       pairing: this.pairingStream.current,
       events: window,
       lastDiagnostics: this.lastDiagnostics,
@@ -842,6 +895,7 @@ export class RealMobileGateway implements MobileGateway {
       deviceName: session.device.name,
       transport: session.transport.kind,
       state: session.transport.state,
+      lockAuthenticated: session.rpc.authenticated,
       startedAt: session.startedAt,
       lastDeliveredSeq: bridge?.lastDeliveredSeqOf(session.sessionId) ?? 0,
       subscribedWorkspaces: bridge?.subscriptionOf(session.sessionId) ?? [],

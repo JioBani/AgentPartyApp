@@ -377,6 +377,12 @@ function fakeNative(script = {}) {
     state.channelOpen = true;
     state.fire.open?.();
   };
+  // libdatachannel can hand the desktop a channel whose open event already
+  // fired. This is the race exercised by the mandatory first ctl.lock frame.
+  state.adoptAlreadyOpenChannel = () => {
+    state.channelOpen = true;
+    state.fire.dataChannel?.(state.channel);
+  };
   return { native, state };
 }
 
@@ -567,6 +573,26 @@ const signedOffer = (sdp) => P.buildSdpPayload({ sessionId: SESSION, sdp }, phon
     transport.queuedBytes() === 0,
     `once flushed they are counted by the stack instead, not twice (${transport.queuedBytes()})`,
   );
+  transport.close();
+}
+
+// --- frames also flush when the adopted channel is already open ------------
+{
+  const { native, state } = fakeNative();
+  const transport = new WebrtcTransport({
+    sessionId: SESSION,
+    identity: desktopIdentity,
+    peerSigPk: phoneIdentity.sigPk,
+    iceServers: [],
+    log: () => {},
+    loadNative: () => native,
+    sendSdp: () => {},
+    sendIce: () => {},
+  });
+  transport.send(Buffer.from("mandatory-first-frame"));
+  state.adoptAlreadyOpenChannel();
+  assert(state.sent.length === 1, "a frame queued before an already-open channel is adopted is flushed immediately");
+  assert(transport.queuedBytes() === 0, "the already-open adoption path clears its pending-byte count");
   transport.close();
 }
 

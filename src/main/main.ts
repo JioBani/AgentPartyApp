@@ -914,6 +914,12 @@ function registerIpc(): void {
   handle("mobile:renameDevice", async (_event, deviceId: string, name: string) => controller().renameMobileDevice(String(deviceId || ""), String(name || "")));
   handle("mobile:disconnectSession", async (_event, sessionId: string) => controller().disconnectMobileSession(String(sessionId || ""), "desktop"));
   handle("mobile:diagnostics", async () => controller().getMobileDiagnostics());
+  // Connection-lock setup is intentionally IPC-only in release builds. The
+  // HTTP equivalent exists exclusively under /api/qa/mobile/* when QA is on.
+  handle("mobile:lockStatus", async () => controller().getMobileConnectionLock());
+  handle("mobile:lockSet", async (_event, kind: "pin" | "pattern", secret: string) =>
+    controller().configureMobileConnectionLock(kind, String(secret ?? "")), { redactArgs: [1] });
+  handle("mobile:lockClear", async () => controller().clearMobileConnectionLock());
 
   handle("discord:get", async () => controller().discordStatus());
   handle("discord:update", async (_event, patch) => controller().updateDiscordSettings(patch as any));
@@ -1045,9 +1051,13 @@ function optionalArg<T>(value: T | null | undefined): T | undefined {
   return value === null ? undefined : value;
 }
 
-function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown): void {
+function handle(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<unknown> | unknown,
+  options: { redactArgs?: readonly number[] } = {},
+): void {
   ipcMain.handle(channel, async (event, ...args) => {
-    log("info", "ipc", channel, { args: summarizeIpcArgs(args) });
+    log("info", "ipc", channel, { args: summarizeIpcArgs(args, options.redactArgs) });
     try {
       return await listener(event, ...args);
     } catch (error) {
@@ -1069,8 +1079,9 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
  * Diagnostic value (which channel, arg shapes, sizes) is preserved; the raw
  * request/response content lives in the per-session RawLogger, not here.
  */
-function summarizeIpcArgs(args: unknown[]): unknown[] {
-  return args.map((arg) => describeForLog(arg, 0));
+function summarizeIpcArgs(args: unknown[], redactArgs: readonly number[] = []): unknown[] {
+  const redacted = new Set(redactArgs);
+  return args.map((arg, index) => redacted.has(index) ? "[redacted]" : describeForLog(arg, 0));
 }
 
 const LOG_MAX_STRING = 200;

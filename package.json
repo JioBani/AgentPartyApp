@@ -177,6 +177,7 @@
     "test:mobile-pairing": "node scripts/qa-mobile-pairing.mjs",
     "test:mobile-webrtc": "node scripts/qa-mobile-webrtc.mjs",
     "test:mobile-rpc": "node scripts/qa-mobile-rpc.mjs",
+    "test:mobile-connection-lock": "node scripts/qa-mobile-connection-lock.mjs",
     "mobile:gateway": "node scripts/mobile-gateway-cli.mjs",
     "test:mobile-diagnostics": "node scripts/qa-mobile-diagnostics.mjs",
     "test:mobile-natmapper": "node scripts/qa-mobile-natmapper.mjs",
@@ -200,7 +201,8 @@
     "test:catalog-list": "node scripts/qa-model-catalog-list.mjs",
     "test:api-doc-coverage": "node scripts/qa-api-doc-coverage.mjs",
     "test:e2e:mobile-device": "npm run build && node scripts/e2e-mobile-device.mjs",
-    "test:e2e:mobile-link-device": "npm run build && node scripts/e2e-mobile-link-device.mjs"
+    "test:e2e:mobile-link-device": "npm run build && node scripts/e2e-mobile-link-device.mjs",
+    "test:e2e:mobile-connection-lock-device": "npm run build && node scripts/e2e-mobile-connection-lock-device.mjs"
   },
   "build": {
     "appId": "party.agentparty.desktop",

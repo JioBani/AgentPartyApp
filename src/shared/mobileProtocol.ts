@@ -119,6 +119,13 @@ export type TransportKind = "lanDirect" | "directViaRendezvous" | "userRelay";
 
 export type TransportState = "connecting" | "connected" | "reconnecting" | "closed";
 
+export type MobileConnectionLockKind = "pin" | "pattern";
+
+export interface MobileConnectionLockStatus {
+  configured: boolean;
+  kind: MobileConnectionLockKind | null;
+}
+
 export type SignalingState = "disabled" | "connecting" | "authenticating" | "connected" | "backoff" | "failed";
 
 /** A live phone session as the desktop sees it. */
@@ -128,6 +135,8 @@ export interface MobileSessionStatus {
   deviceName: string;
   transport: TransportKind;
   state: TransportState;
+  /** True only after this secure session has passed the desktop connection lock. */
+  lockAuthenticated: boolean;
   startedAt: number;
   /** Last event `seq` acknowledged as delivered to this session. */
   lastDeliveredSeq: number;
@@ -200,6 +209,7 @@ export interface GatewayStatus {
   signalingError: string | undefined;
   sessions: MobileSessionStatus[];
   trustedDeviceCount: number;
+  connectionLock: MobileConnectionLockStatus;
   pairing: PairingState;
   /** Ring buffer window, mirrored in `sys.info`. */
   events: { seq: number; minSeq: number; maxSeq: number; count: number };

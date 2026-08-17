@@ -3097,9 +3097,11 @@ Body is a partial report; `{ "reset": true }` puts the real probe back.
 
 ### `POST /api/qa/mobile/:action`
 
-Drives the **phone side** of the mock mobile gateway — the only way an HTTP
-caller can act as the phone. Fails loudly on the real gateway rather than
-no-opping, so a QA run cannot pass while having exercised nothing.
+Most actions drive the **phone side** of the mock mobile gateway — the only way
+an HTTP caller can act as the phone. They fail loudly on the real gateway rather
+than no-op. `lock-set` and `lock-clear` are the deliberate exception: they call
+the same desktop lock use case as the settings UI in QA/development builds.
+There is intentionally no release `/api/mobile/lock/*` endpoint.
 
 ```text
 scan         {deviceName?, deviceId?}              the phone scans the open QR
@@ -3112,7 +3114,12 @@ emitted      {}                                    every event emitted, pre-filt
 snapshot     {sessionId?}                          invoke the resume snapshot provider
 diagnostics  {reason, patch?}                      set what a diagnostics run reports
 reset        {}                                    clear sessions, devices, events, pairing
+lock-set     {kind:"pin"|"pattern", secret}        configure the desktop connection lock
+lock-clear   {}                                    remove the desktop connection lock
 ```
+
+`lock-set` never returns, logs, or persists `secret` in plaintext. PIN is six
+ASCII digits. Pattern is 6–9 unique row-major points `0..8`, without separators.
 
 `request` runs the **registered handler**, so an e2e can prove a phone's
 `party.list` and a local `GET /api/party` answer identically. See

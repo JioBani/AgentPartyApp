@@ -88,6 +88,7 @@ async function main() {
 
     await specPublishesBothTransports();
     await linkIsOffUntilEnabled();
+    await connectionLockStaysOnTheDesktop();
     await pairingRoundTrip();
     await phoneDialsIn();
     await phoneAndHttpShareOneHandler();
@@ -138,6 +139,33 @@ async function linkIsOffUntilEnabled() {
   const enabled = (await post("/api/mobile/settings", { enabled: true })).settings;
   assert(enabled.enabled === true, "the user turns it on in 설정 → 모바일 연결");
   assert((await get("/api/mobile/status")).status.running === true, "the gateway comes up");
+}
+
+/** Connection-lock setup is a desktop setting, never a phone/release API. */
+async function connectionLockStaysOnTheDesktop() {
+  console.log("\n[connection lock] QA can drive the desktop-only setup path");
+  const initial = (await get("/api/mobile/status")).status.connectionLock;
+  assert(initial?.configured === false && initial?.kind === null, "a fresh desktop has no connection lock");
+
+  const configured = await post("/api/qa/mobile/lock-set", { kind: "pin", secret: "314159" });
+  assert(configured.result?.lock?.configured === true && configured.result?.lock?.kind === "pin",
+    "the QA-only route configures a six-digit PIN through the app controller");
+  const status = (await get("/api/mobile/status")).status.connectionLock;
+  assert(status?.configured === true && status?.kind === "pin", "the running app reports the configured lock");
+
+  const spec = await get("/api/spec");
+  assert(!spec.endpoints.some((endpoint) => /\/api\/mobile\/lock/i.test(endpoint)),
+    "release automation publishes no connection-lock setup endpoint");
+  const releaseAttempt = await fetch(base + "/api/mobile/lock/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "pin", secret: "314159" }),
+  });
+  assert(releaseAttempt.status === 404, "an unlisted release lock-set route is actually unreachable");
+
+  const cleared = await post("/api/qa/mobile/lock-clear", {});
+  assert(cleared.result?.lock?.configured === false && cleared.result?.lock?.kind === null,
+    "the QA-only route clears the desktop lock through the same controller use case");
 }
 
 /** QR → phone scans → confirmation code → user confirms → trusted device. */
@@ -330,10 +358,19 @@ async function approvalsAnswerByIdAlone() {
  */
 async function theTabRendersWhatTheApiReports() {
   console.log("\n[ui] 설정 → 모바일 연결 renders the live state");
+  await post("/api/qa/mobile/lock-set", { kind: "pattern", secret: "012345" });
   await post("/api/navigation", { view: "runtime", tab: "mobile" });
   await delay(500);
   const active = await measure(".set-tab.is-active");
   assert(active?.text === "모바일 연결", `the tab is open (${active?.text})`);
+  const lockCard = await measure(".mob-lock-card");
+  assert(String(lockCard?.text || "").includes("패턴 사용 중"),
+    `the desktop-only lock status is visible in the real renderer (${lockCard?.text || "missing"})`);
+  await post("/api/qa/mobile/lock-clear", {});
+  await delay(250);
+  const clearedLockCard = await measure(".mob-lock-card");
+  assert(String(clearedLockCard?.text || "").includes("사용 안 함"),
+    "clearing the lock is reflected without reloading the settings tab");
 
   await post("/api/mobile/pair/open");
   await delay(400);

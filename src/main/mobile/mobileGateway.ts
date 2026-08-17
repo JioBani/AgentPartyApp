@@ -1,5 +1,7 @@
 import type {
   GatewayStatus,
+  MobileConnectionLockKind,
+  MobileConnectionLockStatus,
   MobilePlatform,
   MobileSettings,
   NatDiagnostics,
@@ -81,6 +83,9 @@ export interface MobileGateway {
 
   pairing: MobilePairingApi;
 
+  /** Desktop-owned lock configuration. Secrets are accepted only here and are never readable back. */
+  connectionLock: MobileConnectionLockApi;
+
   // -- sessions -------------------------------------------------------------
 
   /**
@@ -115,6 +120,12 @@ export interface MobileGateway {
   diagnostics(): Promise<NatDiagnostics>;
 
   push: MobilePushApi;
+}
+
+export interface MobileConnectionLockApi {
+  status(): MobileConnectionLockStatus;
+  configure(kind: MobileConnectionLockKind, secret: string): Promise<MobileConnectionLockStatus>;
+  clear(): Promise<MobileConnectionLockStatus>;
 }
 
 export interface MobileGatewayStartOptions {

@@ -11,6 +11,7 @@ import {
   type RpcEnvelope,
   type RpcEvent,
   type RpcRequest,
+  type CtlLock,
 } from "@agentparty/protocol";
 import { WORKSPACE_PARAM_FIELD } from "../../shared/mobileProtocol";
 import { ChunkAssembler, needsChunking, splitEnvelope } from "./chunking";
@@ -59,6 +60,10 @@ export interface RpcServerDeps {
   signalingUrl: () => string;
   /** Stores a push handle when the phone registers one (01 §7). */
   registerPush: (deviceId: string, platform: "android" | "ios", handle: string) => void;
+  /** Current persistent lock state for this device. */
+  lockState?: (deviceId: string) => CtlLock;
+  /** Verifies one actual user submission. The implementation must never log `secret`. */
+  unlock?: (deviceId: string, secret: string) => { unlocked: boolean; state: CtlLock };
   log: MobileGatewayDeps["log"];
   now?: () => number;
   /** Fresh id per outgoing chunk group. */
@@ -85,6 +90,8 @@ export class RpcServer {
   private lastRequestAt: number | undefined;
   private lastRequestMethod: string | undefined;
   private closed = false;
+  private begun = false;
+  private lockAuthenticated = false;
 
   private readonly now: () => number;
   private readonly newId: () => string;
@@ -102,8 +109,28 @@ export class RpcServer {
     };
   }
 
+  get authenticated(): boolean {
+    return this.lockAuthenticated;
+  }
+
+  /** Sends the mandatory first secure-session frame. Safe to call once. */
+  begin(): void {
+    if (this.begun || this.closed) {
+      return;
+    }
+    this.begun = true;
+    const state = this.currentLockState();
+    this.lockAuthenticated = !state.required;
+    this.write(state);
+  }
+
   /** Delivers one desktop→phone event, chunking if it is oversize. */
   deliver(event: RpcEvent): void {
+    if (!this.lockAuthenticated) {
+      // EventBridge already retained this event in its ring buffer. Delivery is
+      // deferred until the phone authenticates and explicitly resumes.
+      return;
+    }
     if (this.resumeGate) {
       this.resumeGate.queued.push(event);
       return;
@@ -132,6 +159,10 @@ export class RpcServer {
 
     switch (envelope.k) {
       case "req":
+        if (!this.lockAuthenticated) {
+          this.write(errResponse(envelope.id, "locked", "연결 잠금을 먼저 해제해야 합니다."));
+          return;
+        }
         void this.dispatch(envelope);
         return;
       case "ctl":
@@ -253,6 +284,20 @@ export class RpcServer {
   // -- control --------------------------------------------------------------
 
   private control(envelope: Extract<RpcEnvelope, { k: "ctl" }>): void {
+    if (envelope.c === "ping") {
+      this.write({ k: "ctl", c: "pong", ts: this.now() });
+      return;
+    }
+    if (!this.lockAuthenticated) {
+      if (envelope.c === "unlock") {
+        this.tryUnlock((envelope as { secret: string }).secret);
+        return;
+      }
+      // subscribe/resume have no request id and therefore no response envelope
+      // in which to carry `locked`; the complete lock state is their refusal.
+      this.write(this.currentLockState());
+      return;
+    }
     switch (envelope.c) {
       case "subscribe": {
         const workspaces = this.deps.eventBridge.setSubscription(
@@ -265,8 +310,9 @@ export class RpcServer {
       case "resume":
         this.resume(envelope as { bootId?: string | null; lastSeq?: number | null });
         return;
-      case "ping":
-        this.write({ k: "ctl", c: "pong", ts: this.now() });
+      case "unlock":
+        // Already authenticated: never verify or consume another attempt.
+        this.write({ k: "ctl", c: "unlocked" });
         return;
       case "chunk":
         this.assemble(envelope as unknown as { id: string; i: number; n: number; data: string });
@@ -275,6 +321,32 @@ export class RpcServer {
         // `subscribed`/`resumed`/`snapshot`/`pong` are desktop→phone only.
         this.deps.log("warn", "mobile rpc: unexpected control command", { c: envelope.c });
     }
+  }
+
+  private tryUnlock(secret: string): void {
+    const verify = this.deps.unlock;
+    if (!verify) {
+      this.fail("연결 잠금 검증기가 구성되지 않았습니다.");
+      return;
+    }
+    const result = verify(this.deps.link.deviceId, secret);
+    if (!result.unlocked) {
+      this.write(result.state);
+      return;
+    }
+    this.lockAuthenticated = true;
+    this.write({ k: "ctl", c: "unlocked" });
+  }
+
+  private currentLockState(): CtlLock {
+    return this.deps.lockState?.(this.deps.link.deviceId) ?? {
+      k: "ctl",
+      c: "lock",
+      required: false,
+      kind: null,
+      attemptsLeft: 10,
+      lockedUntil: null,
+    };
   }
 
   /**

@@ -5,7 +5,7 @@ import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
-import type { GatewayStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
+import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
 import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
 
 const api = {
@@ -55,6 +55,14 @@ const api = {
   disconnectMobileSession: (sessionId: string): Promise<{ ok: true; status: GatewayStatus }> =>
     ipcRenderer.invoke("mobile:disconnectSession", sessionId),
   runMobileDiagnostics: (): Promise<{ ok: true; diagnostics: NatDiagnostics }> => ipcRenderer.invoke("mobile:diagnostics"),
+  getMobileConnectionLock: (): Promise<{ ok: true; lock: MobileConnectionLockStatus }> =>
+    ipcRenderer.invoke("mobile:lockStatus"),
+  configureMobileConnectionLock: (
+    kind: MobileConnectionLockKind,
+    secret: string,
+  ): Promise<{ ok: true; lock: MobileConnectionLockStatus }> => ipcRenderer.invoke("mobile:lockSet", kind, secret),
+  clearMobileConnectionLock: (): Promise<{ ok: true; lock: MobileConnectionLockStatus }> =>
+    ipcRenderer.invoke("mobile:lockClear"),
   getDiscordStatus: () => ipcRenderer.invoke("discord:get"),
   updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
