@@ -169,8 +169,34 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
     <div className="guide-window">
       {/* The app titlebar already names the screen and carries the theme toggle
           and window controls, so this row keeps only what is the guide's own:
-          whether the current surface spends tokens, and the language. */}
+          where you are, what it costs, and the language. */}
       <div className="guide-topbar">
+        {/* The two halves of the guide, always both reachable. The offer card on
+            the empty landing disappears as soon as you ask something, and the
+            deck had no way back at all — so the switch lives here instead. */}
+        <div className="wb-segmented guide-mode">
+          <button
+            type="button"
+            className={"wb-segment" + (mode === "chat" ? " is-active" : "")}
+            title="가이드에게 물어보기"
+            onClick={() => { setMode("chat"); setTocOpen(false); setAskOpen(false); }}
+          >
+            <MessageSquare size={13} />
+            물어보기
+          </button>
+          <button
+            type="button"
+            className={"wb-segment" + (mode === "deck" ? " is-active" : "")}
+            title="앱을 움직여 보여주는 프레젠테이션"
+            // Re-applies the CURRENT slide, so leaving to ask a question and
+            // coming back puts you where you were rather than at the start.
+            onClick={() => apply(index)}
+          >
+            <Play size={13} />
+            가이드 보기
+          </button>
+        </div>
+        <span className="guide-spacer" />
         <span
           className={"guide-cost " + (paid ? "is-paid" : "is-free")}
           title={paid ? "채팅은 선택한 모델의 비용이 발생한다" : "프레젠테이션은 AI를 쓰지 않는다"}
@@ -178,7 +204,6 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
           <DollarSign size={11} />
           {paid ? "채팅은 비용이 발생" : "AI 사용 안 함"}
         </span>
-        <span className="guide-spacer" />
         <GuideLanguage onError={setError} />
       </div>
 

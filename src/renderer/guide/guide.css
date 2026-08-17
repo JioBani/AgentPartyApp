@@ -26,6 +26,13 @@
     background: var(--bg-2);
   }
 .guide-window .wb-assistant-head strong, .guide-window .wb-user-who { white-space: nowrap; }
+/* 워크벤치 세그먼트는 폼 안에서 칸을 균등 분배하려고 flex:1 이다. 여기서는
+   툴바 위 두 칸이라 글자만큼만 차지해야 한다. */
+.guide-topbar .wb-segment {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; font-size: var(--font-body-sm); font-family: inherit; cursor: pointer;
+  }
+.guide-topbar .guide-spacer { flex: 1; }
 .guide-lang {
     height: 22px; padding: 0 6px; border-radius: var(--radius-pill);
     border: var(--border-width) solid var(--border); background: var(--bg-2);
