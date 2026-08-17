@@ -50,9 +50,10 @@ mobile-pipe, 앱 UI·핸들러는 desktop-app, 시그널링 서버는 server**�
 ## 2. 현재 위치
 
 - 워크트리 `C:\Project\AgentPartyApp-wt-mobile-pipe`, 브랜치 `mobile-pipe`
+- 통합 기준은 `mobile-link`(`6d92680`에서 분기). 사용자 지시 전까지 `master`로 역병합 금지
 - 원 저장소 `C:\Project\AgentPartyApp`
-- HEAD: 이 문서 커밋. 직전 `a7d282c`(state 노트) ← `f2187f7`(시그널링 주소 폴백)
-  ← `a8b2185`(`sys.info`의 signalingUrl)
+- 최신 구현: `fix(mobile): preserve sessions across signaling changes`. 그 아래에 이 문서와
+  state 포인터 커밋이 있다
 - 작업 트리 clean, 진행 중인 수정 없음
 - **검증 상태: `typecheck` 통과, 모바일 테스트 14/14 통과**
 
@@ -274,6 +275,10 @@ develop의 "추가 다듬기 중단" 지시로 손대지 않았다.
   판정에 이 사실이 쓰였고, 원인은 데스크톱 핸들러 측(04 §3 위반)으로 확정됐다.
 - **`getStatus().signalingUrl`은 설정값이 아니라 지금 붙어 있는 주소다.** 폴백으로
   옮겨간 데스크톱이 자기가 *있는* 곳을 보고해야 폰이 낡은 주소로 갱신되지 않는다.
+- **`updateSettings({signalingUrl})`은 signaling client만 교체한다.** 진행 중 WebRTC,
+  SecureSession/RPC, EventBridge와 seq는 유지한다(04 `f3bc008`). 전체 `stop()`은
+  `enabled` 변경처럼 모바일 링크 자체를 끄는 수명주기에만 쓴다. `PairingService`는 현재
+  signaling을 바라보는 위임 transport를 써야 열린 QR도 새 소켓에 재등록된다.
 - **start 오버라이드(`--signaling`)는 목록을 대체하고 저장되지 않는다.** QA용 로컬
   서버를 가리킨 실행이 공용 서버로 조용히 폴백해 다른 것을 테스트하면 안 되고, 그
   URL이 사용자 설정에 남아도 안 된다.
