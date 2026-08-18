@@ -596,23 +596,24 @@ ${body}
   const pipe = loadMobilePipe();
   if (!isMobilePipe(pipe)) {
     log("warn", "mobile", "mobile link unavailable in this build", { reason: pipe.reason });
+  } else {
+    mobileLink = new MobileLinkService({
+      gateway: pipe.createMobileGateway(mobilePipeOptions()),
+      // QA points the link at a locally running signaling server without editing
+      // code. A per-run override: the pipe does not write it back to settings.
+      startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
+        ? { signalingUrl: process.env.AGENTPARTY_MOBILE_SIGNALING_URL }
+        : undefined),
+      defaultWorkspace: () => registry().resolve()?.workspacePath || defaultWorkspace(),
+      automationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
+      onStatus: (status) => {
+        for (const entry of registry().all()) {
+          entry.window.webContents.send("mobile:status", status);
+        }
+      },
+      persistSettings: (mobile) => { updateSettings({ mobile }); },
+    });
   }
-  mobileLink = !isMobilePipe(pipe) ? undefined : new MobileLinkService({
-    gateway: pipe.createMobileGateway(mobilePipeOptions()),
-    // QA points the link at a locally running signaling server without editing
-    // code. A per-run override: the pipe does not write it back to settings.
-    startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
-      ? { signalingUrl: process.env.AGENTPARTY_MOBILE_SIGNALING_URL }
-      : undefined),
-    defaultWorkspace: () => registry().resolve()?.workspacePath || defaultWorkspace(),
-    automationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
-    onStatus: (status) => {
-      for (const entry of registry().all()) {
-        entry.window.webContents.send("mobile:status", status);
-      }
-    },
-    persistSettings: (mobile) => { updateSettings({ mobile }); },
-  });
 
   appController = new AppController({
     sessionManager,
