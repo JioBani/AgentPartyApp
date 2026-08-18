@@ -670,13 +670,15 @@ export class AppController {
 
   /**
    * The mobile link, or a hard error. Absent in the headless WSL engine, which
-   * has no identity store and no user to confirm a pairing code — saying so is
-   * better than answering with an empty device list that reads as "not paired".
+   * has no identity store and no user to confirm a pairing code, and in a build
+   * whose optional mobile pipe was left out (`src/main/mobilePipe.ts`) — saying
+   * so is better than answering with an empty device list that reads as "not
+   * paired".
    */
   private mobile(): MobileLinkService {
     const link = this.deps.mobileLink;
     if (!link) {
-      throw new Error("이 프로세스는 모바일 연결을 제공하지 않습니다 (데스크톱 앱에서만 사용할 수 있습니다).");
+      throw new Error("이 프로세스는 모바일 연결을 제공하지 않습니다 — 이 빌드에 모바일 파이프가 없거나(@agentparty/protocol 미설치), 데스크톱 앱이 아닌 프로세스입니다. 정확한 이유는 앱 로그의 mobile 항목에 있습니다.");
     }
     return link;
   }

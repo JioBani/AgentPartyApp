@@ -9,9 +9,10 @@
  * Usage:  node scripts/package-win.mjs   (or double-click package-win.cmd)
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MOBILE_PIPE_PACKAGE, mainTsconfig, mobilePipeNotice } from "./mobile-pipe.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -20,16 +21,57 @@ const localTool = (name) =>
   path.join(projectRoot, "node_modules", ".bin", isWin ? `${name}.cmd` : name);
 
 const requiredBuildTools = ["tsc", "vite", "electron-builder"];
-const missingBuildTools = () =>
-  requiredBuildTools.filter((name) => !existsSync(localTool(name)));
+
+/**
+ * Dependencies a build is allowed to be missing. `@agentparty/protocol` is a
+ * local-path package from the AgentPartyServer repo, so npm cannot fetch it and
+ * a machine without that checkout builds the app without the mobile pipe (see
+ * `mobile-pipe.mjs`). Announced, never silent — but not a reason to stop.
+ */
+const optionalPackages = new Set([MOBILE_PIPE_PACKAGE]);
+
+/**
+ * What counts as installed: every required package.json dependency resolves to
+ * a folder in node_modules, and every build tool has its .bin shim. Checking
+ * only the shims misses a dependency that was added to package.json but never
+ * installed — the build then dies deep inside tsc ("Cannot find module ...")
+ * instead of here, where it can just be installed.
+ *
+ * existsSync follows symlinks, so a `file:` dependency whose target directory
+ * is gone counts as missing too.
+ */
+function missingInstalls() {
+  const pkg = JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+  const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  const missingPackages = declared.filter(
+    (name) => !optionalPackages.has(name) && !existsSync(path.join(projectRoot, "node_modules", ...name.split("/"))),
+  );
+  const missingTools = requiredBuildTools.filter((name) => !existsSync(localTool(name)));
+  return [...new Set([...missingPackages, ...missingTools])];
+}
+
+const summarize = (names, max = 6) =>
+  names.length <= max ? names.join(", ") : `${names.slice(0, max).join(", ")} 외 ${names.length - max}개`;
+
+/** Local-path dependencies npm cannot fetch: say where they were supposed to be. */
+function localPathHints(names) {
+  const pkg = JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+  const specs = { ...pkg.dependencies, ...pkg.devDependencies };
+  return names
+    .filter((name) => typeof specs[name] === "string" && specs[name].startsWith("file:"))
+    .map((name) => {
+      const target = path.resolve(projectRoot, specs[name].slice("file:".length));
+      return `  - ${name} → ${target} (이 경로가 없습니다. 해당 저장소를 받아 빌드한 뒤 다시 실행하세요)`;
+    });
+}
 
 // Each step is a discrete command. Weights approximate relative duration so the
 // bar advances at a believable pace.
 const steps = [
   { name: "타입 체크 (renderer)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.json", "--noEmit"] },
-  { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json", "--noEmit"] },
+  { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", mainTsconfig(), "--noEmit"] },
   { name: "렌더러 빌드 (vite)", weight: 3, cmd: localTool("vite"), args: ["build"] },
-  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json"] },
+  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: localTool("tsc"), args: ["-p", mainTsconfig()] },
   { name: "엔진 서버 번들", weight: 1, cmd: process.execPath, args: ["scripts/build-engine-server.mjs"] },
   { name: "Windows 패키징 (electron-builder)", weight: 6, cmd: localTool("electron-builder"), args: ["--win", "--x64"] },
 ];
@@ -97,17 +139,26 @@ function runStep(step, baseFraction, stepFraction) {
 async function main() {
   console.log(bold("\n  AgentParty · Windows 패키징\n"));
 
-  // node_modules can exist while empty or only partially installed. Verify the
-  // actual local build tools instead of treating the directory as sufficient.
-  const missingTools = missingBuildTools();
-  if (missingTools.length > 0) {
-    console.log(dim(`  빌드 도구 누락 (${missingTools.join(", ")}) → npm install 실행 중...\n`));
+  // node_modules can exist while empty, stale, or only partially installed.
+  // Verify what package.json actually declares instead of treating the
+  // directory as sufficient.
+  // A reduced build must never be a quiet one: say so before the bar starts.
+  const pipeNotice = mobilePipeNotice();
+  if (pipeNotice) console.log(dim(`  ${pipeNotice}\n`));
+
+  const missing = missingInstalls();
+  if (missing.length > 0) {
+    console.log(dim(`  의존성 누락 (${summarize(missing)}) → npm install 실행 중...\n`));
     await runStep({ name: "의존성 설치", cmd: npmCmd, args: ["install"] }, 0, 0);
     process.stdout.write("\n");
 
-    const stillMissing = missingBuildTools();
+    const stillMissing = missingInstalls();
     if (stillMissing.length > 0) {
-      throw new Error(`npm install 후에도 빌드 도구를 찾을 수 없습니다: ${stillMissing.join(", ")}`);
+      const hints = localPathHints(stillMissing);
+      throw new Error(
+        `npm install 후에도 없는 패키지: ${summarize(stillMissing)}` +
+          (hints.length > 0 ? `\n${hints.join("\n")}` : ""),
+      );
     }
   }
 
@@ -153,6 +204,12 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(red("\n예상치 못한 오류:"), e);
+  // runStep rejects with { code, output } rather than an Error; print the child
+  // output as text so a failed npm install is readable instead of inspected.
+  console.error(red(bold("\n  ✖ 패키징 중단")));
+  if (e instanceof Error) console.error(e.message);
+  else if (e?.output?.trim()) console.error(e.output.trim());
+  else console.error(e);
+  process.stdout.write("\n");
   process.exit(1);
 });

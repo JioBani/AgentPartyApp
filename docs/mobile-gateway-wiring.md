@@ -25,6 +25,35 @@ esbuild로 파이프 모듈을 번들할 때는 `@agentparty/protocol`·`ws`·`n
 **`external`로 두어야 한다**. libsodium은 WASM이라 번들되면 난수원을 잃고
 `No secure random number generator found`로 죽고, `node-datachannel`은 네이티브라 번들할 수 없다.
 
+## 패키지가 없을 때 — 파이프는 선택 사항이다
+
+`@agentparty/protocol`은 로컬 경로 의존성이라 npm이 레지스트리에서 받아올 수 없다(그래서
+`optionalDependencies`에 있다). 서버 저장소가 없는 PC에서는 **파이프를 뺀 빌드**가 만들어지고,
+앱의 나머지 기능은 그대로 동작한다.
+
+| 무엇 | 어디 |
+|---|---|
+| 있는지 판정 · tsconfig 선택 | `scripts/mobile-pipe.mjs` (tsc는 `scripts/tsc-main.mjs`를 거친다) |
+| 파이프를 뺀 컴파일 | `tsconfig.main.no-mobile.json` — `src/main/mobile/**`를 컴파일 루트에서 제외 |
+| 런타임 로딩 | `src/main/mobilePipe.ts` — `require("./mobile")`, 실패하면 이유를 로그로 남기고 링크를 만들지 않는다 |
+
+그래서 지켜야 할 규칙 둘:
+
+- **앱 코드는 `./mobile` 배럴에서 값을 import하지 않는다.** 배럴은 구현을, 구현은 프로토콜
+  패키지를 끌고 온다. 앱이 타입으로 쓰는 계약은 전부 `./mobile/mobileGateway`에 있고, 그
+  파일만이 파이프에서 유일하게 프로토콜 패키지를 쓰지 않는다. 앱에 새 계약을 노출할 때도
+  거기에 둔다. (`MockControls`가 이벤트 목록을 `unknown[]`으로 두는 이유도 같다 — 봉투 타입의
+  정본은 계속 패키지다.)
+- **폴백은 없다.** 파이프가 없으면 `MobileLinkService`를 아예 만들지 않고, 모바일 라우트·IPC는
+  이유를 담은 에러로 답한다. 목으로 조용히 대체하면 폰이 절대 완료할 수 없는 QR을 띄우게 된다.
+
+파이프가 필요해지면 서버 저장소를 받아 위 §의존성대로 빌드하고 `npm install`을 다시 돌리면
+된다. 그때부터 `tsconfig.main.json`이 선택되어 파이프가 다시 포함된다.
+
+파이프를 뺀 빌드의 동작은 `npm run test:e2e:mobile-pipe-absent`가 실제 앱을 띄워 확인한다
+(패키지가 있는 PC에서는 그 사실을 알리고 건너뛴다). 반대로 파이프 자체를 검증하는
+`npm run test:mobile-*`는 패키지가 있어야 돈다.
+
 ## 현재 상태
 
 | 산출물 | 상태 |

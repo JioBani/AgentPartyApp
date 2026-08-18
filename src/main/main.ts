@@ -35,7 +35,8 @@ import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
-import { createMobileGateway, type CreateMobileGatewayOptions } from "./mobile";
+import type { CreateMobileGatewayOptions } from "./mobile/mobileGateway";
+import { isMobilePipe, loadMobilePipe } from "./mobilePipe";
 import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
@@ -587,8 +588,17 @@ ${body}
   // The mobile link. Built before the controller (which takes it as a
   // dependency) and handed the controller straight after, the same two-step the
   // Discord bridge uses.
-  mobileLink = new MobileLinkService({
-    gateway: createMobileGateway(mobilePipeOptions()),
+  //
+  // The pipe is optional: a build without `@agentparty/protocol` leaves it out
+  // entirely. Then there is no link at all, every mobile route answers with the
+  // reason, and the rest of the app runs — rather than the whole process
+  // failing to start over a feature the user may not be using.
+  const pipe = loadMobilePipe();
+  if (!isMobilePipe(pipe)) {
+    log("warn", "mobile", "mobile link unavailable in this build", { reason: pipe.reason });
+  }
+  mobileLink = !isMobilePipe(pipe) ? undefined : new MobileLinkService({
+    gateway: pipe.createMobileGateway(mobilePipeOptions()),
     // QA points the link at a locally running signaling server without editing
     // code. A per-run override: the pipe does not write it back to settings.
     startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
@@ -645,7 +655,7 @@ ${body}
       compact: (kind) => requireGuideChat().compact(kind),
     },
   });
-  mobileLink.setController(appController);
+  mobileLink?.setController(appController);
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
     controller: appController,
@@ -674,7 +684,7 @@ ${body}
   // After the automation API binds: the link publishes the same capability
   // table, and `app.spec` reports the live base URL. A failure here is surfaced,
   // not swallowed — a phone that cannot pair must not look merely idle.
-  await mobileLink.start().catch((error: unknown) => {
+  await mobileLink?.start().catch((error: unknown) => {
     log("error", "mobile", "mobile link failed to start", { error: error instanceof Error ? error.message : String(error) });
   });
   // Only now — the first check pushes a status, and before a window exists it
