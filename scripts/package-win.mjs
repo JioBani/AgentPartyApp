@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { MOBILE_PIPE_PACKAGE, mainTsconfig, mobilePipeNotice } from "./mobile-pipe.mjs";
+import { MOBILE_PIPE_PACKAGE, mainTsconfig, mobilePipeNotice, pruneBrokenPipeLink } from "./mobile-pipe.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -160,6 +160,14 @@ async function main() {
           (hints.length > 0 ? `\n${hints.join("\n")}` : ""),
       );
     }
+  }
+
+  // After the install (which recreates it) and before electron-builder, whose
+  // `@electron/rebuild` stats every node_modules entry and cannot survive a link
+  // that points at nothing.
+  const pruned = pruneBrokenPipeLink();
+  if (pruned) {
+    console.log(dim(`  끊어진 링크 정리: ${pruned}\n`));
   }
 
   const totalWeight = steps.reduce((a, s) => a + s.weight, 0);

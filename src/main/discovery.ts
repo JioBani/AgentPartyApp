@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseWorkspaceLocation } from "../shared/workspaceLocation";
+import { parseWorkspaceLocation, wslUncPath } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 
@@ -28,8 +28,7 @@ function instancesDir(workspace: string): string {
   const loc = parseWorkspaceLocation(workspace);
   if (loc.host.kind === "wsl") {
     // Windows UNC view of the distro path — the same ext4 dir the shim sees.
-    const rel = loc.path.replace(/^\/+/, "").replace(/\//g, "\\");
-    return path.win32.join(`\\\\wsl$\\${loc.host.distro}`, rel, ROOT_DIR, INSTANCES_DIR);
+    return path.win32.join(wslUncPath(loc.host.distro, loc.path), ROOT_DIR, INSTANCES_DIR);
   }
   return path.join(loc.path, ROOT_DIR, INSTANCES_DIR);
 }

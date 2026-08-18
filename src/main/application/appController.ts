@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isLaunchable, normalizeLocalFileTarget } from "../../shared/localFiles";
+import { isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -2032,11 +2032,21 @@ export class AppController {
     // `\C:\...`, which can never exist. Restore the drive spelling before the
     // generic absolute/relative decision. POSIX/WSL paths are left untouched.
     value = normalizeLocalFileTarget(value, process.platform);
+    const workspace = (this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined)
+      || getSettings().workspacePath
+      || process.cwd();
+    // A WSL window's links point INTO the distro, whose files Windows reaches
+    // only through `\\wsl$\<distro>\...`. Ask which host owns the path before
+    // the platform-shaped absolute/relative decision below: `path.isAbsolute`
+    // reads `/home/...` on Windows as the C: drive root.
+    const hosted = localFileHostPath(value, workspace, process.platform);
+    if (hosted !== value) {
+      return hosted;
+    }
     if (path.isAbsolute(value)) {
       return path.normalize(value);
     }
-    const workspace = this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined;
-    return path.resolve(workspace || getSettings().workspacePath || process.cwd(), value);
+    return path.resolve(parseWorkspaceLocation(workspace).path || process.cwd(), value);
   }
 
   /**
