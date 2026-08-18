@@ -22,6 +22,8 @@ import type {
   MobilePushApi,
   MobileRequestHandler,
   MobileSnapshotProvider,
+  MockControls,
+  MockMobileGatewayOptions,
   PairingSession,
   RequestContext,
 } from "./mobileGateway";
@@ -41,38 +43,18 @@ import { assertSecret } from "./connectionLockStore";
  * is what a real phone would do, expressed as direct calls.
  */
 export interface MockMobileGateway extends MobileGateway {
-  mock: MockControls;
+  mock: MockPhoneControls;
 }
 
-export interface MockControls {
-  /** Stands in for the phone scanning the open QR. Moves pairing to `awaitingConfirm`. */
-  scanQr(options?: { deviceName?: string; deviceId?: string }): void;
-  /** Fails the pairing the way a bad code or expiry would. */
-  failPairing(error: string): void;
-  /** Connects a trusted device, returning the new session id. */
-  connect(options?: { deviceId?: string; transport?: TransportKind; workspaces?: string[] }): string;
-  /** 01 §5.2 — replaces a session's workspace subscription set. */
-  subscribe(sessionId: string, workspaces: string[]): void;
-  /** Dispatches a request exactly as an incoming envelope would. */
-  request(method: string, params?: unknown, options?: { sessionId?: string }): Promise<unknown>;
-  /** Invokes the registered snapshot provider, as an out-of-window `resume` would. */
-  snapshot(sessionId?: string): Promise<unknown>;
-  /** Events the app has emitted, in order, after workspace filtering is applied. */
+/**
+ * {@link MockControls} at the pipe's own resolution: the two event lists the
+ * app only forwards as JSON are `RpcEvent[]` here, which is what the mock
+ * actually holds and what pipe-side QA asserts on. Extending rather than
+ * restating keeps one source of truth for the surface itself.
+ */
+export interface MockPhoneControls extends MockControls {
   deliveredTo(sessionId: string): RpcEvent[];
-  /** Every event emitted, regardless of subscription. */
   emitted(): RpcEvent[];
-  /** Sets what {@link MobileGateway.diagnostics} will report. */
-  setDiagnostics(reason: DiagnosticReason, patch?: Partial<NatDiagnostics>): void;
-  /** Clears sessions, devices, events and pairing without restarting. */
-  reset(): void;
-}
-
-export interface MockMobileGatewayOptions {
-  settings?: Partial<MobileSettings>;
-  /** Devices present before any pairing happens (QA fixtures). */
-  devices?: TrustedDevice[];
-  /** Fixed confirmation code so UI tests can assert on it. */
-  confirmCode?: string;
 }
 
 interface MockSession {

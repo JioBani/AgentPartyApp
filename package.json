@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\"",
     "dev:renderer": "vite --host 127.0.0.1",
-    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
-    "build": "npm run typecheck && vite build && tsc -p tsconfig.main.json && node scripts/build-engine-server.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "dev:main": "node scripts/tsc-main.mjs --watch --preserveWatchOutput",
+    "build": "npm run typecheck && vite build && node scripts/tsc-main.mjs && node scripts/build-engine-server.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && node scripts/tsc-main.mjs --noEmit",
     "test:e2e": "npm run build && node scripts/e2e-smoke.js",
     "test:e2e:live-codex": "npm run build && node scripts/e2e-live-codex.mjs",
     "test:e2e:cursor": "npm run build && node scripts/e2e-cursor.mjs",
@@ -73,6 +73,7 @@
     "test:e2e:message-queue": "npm run build && node scripts/e2e-message-queue.mjs",
     "test:e2e:mobile-link": "npm run build && node scripts/e2e-mobile-link.mjs",
     "test:e2e:mobile-default-off": "npm run build && node scripts/e2e-mobile-default-off.mjs",
+    "test:e2e:mobile-pipe-absent": "npm run build && node scripts/e2e-mobile-pipe-absent.mjs",
     "test:e2e:member-interrupt-default": "npm run build && node scripts/e2e-member-interrupt-default.mjs",
     "qa:queue-design": "npm run build && node scripts/qa-queue-design.mjs",
     "test:subagents": "node scripts/qa-subagents.mjs",
@@ -269,8 +270,10 @@
       "include": "build/installer.nsh"
     }
   },
+  "optionalDependencies": {
+    "@agentparty/protocol": "file:../AgentPartyServer/packages/protocol"
+  },
   "dependencies": {
-    "@agentparty/protocol": "file:../AgentPartyServer/packages/protocol",
     "@anthropic-ai/claude-agent-sdk": "^0.3.186",
     "@vitejs/plugin-react": "^4.5.2",
     "electron-updater": "^6.8.9",

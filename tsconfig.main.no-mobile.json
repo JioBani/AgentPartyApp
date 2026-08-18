@@ -1,0 +1,14 @@
+{
+  // The main build WITHOUT the optional mobile pipe, used when
+  // `@agentparty/protocol` (a local-path package from the AgentPartyServer
+  // repo) is not installed. `scripts/mobile-pipe.mjs` chooses between this and
+  // tsconfig.main.json; nothing should point at it by hand.
+  //
+  // `exclude` only drops these files as compilation ROOTS. `mobileGateway.ts`
+  // is still compiled, because `src/main/mobileLink.ts` imports its contracts —
+  // and it is the one file in the pipe that does not touch the protocol
+  // package. The implementations have no importer left, so they are never
+  // resolved, never type-checked and never emitted.
+  "extends": "./tsconfig.main.json",
+  "exclude": ["src/main/mobile/**"]
+}

@@ -2723,6 +2723,13 @@ immediately. Every other `/api/mobile/*` endpoint fails with an explicit
 `모바일 연결이 비활성화되어 있습니다` error while the gate is off. Disabling it
 again stops the gateway and removes its handlers/subscriptions and tab.
 
+A build can also be produced **without the mobile pipe at all**: it needs
+`@agentparty/protocol`, an optional local-path package (see
+`docs/mobile-gateway-wiring.md` §패키지가 없을 때). There *every* `/api/mobile/*`
+endpoint — `settings` included — fails with `…모바일 파이프가 없거나…` whatever
+the gate says, and the exact cause is in the app log under `mobile`. Treat that
+error as "this build has no mobile link", not as a transient failure.
+
 Once enabled, the app runs the **real** gateway by default: it opens a
 signalling socket and speaks WebRTC to a phone. The in-memory mock is an
 explicit QA opt-in, selected only by `AGENTPARTY_MOBILE_PIPE=mock`, and it opens

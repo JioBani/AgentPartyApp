@@ -3,7 +3,11 @@ import type { MethodContext, MethodParams } from "./api/methodRegistry";
 import { methodRoutes } from "./api/methodRoutes";
 import type { AppController } from "./application/appController";
 import { log } from "./logger";
-import type { MobileGateway, MobileGatewayStartOptions, MockControls, MockMobileGateway, RequestContext, SnapshotContext } from "./mobile";
+// From the pipe's contract file, never its barrel: the barrel pulls in the
+// implementations, which need `@agentparty/protocol`. Importing the contract
+// directly is what lets this file compile in a build without that package
+// (`docs/mobile-gateway-wiring.md` §패키지가 없을 때).
+import type { MobileGateway, MobileGatewayStartOptions, MockControls, RequestContext, SnapshotContext } from "./mobile/mobileGateway";
 
 export interface MobileLinkDeps {
   /** The pipe. Built by `createMobileGateway` in main.ts — real unless a QA run
@@ -196,7 +200,7 @@ export class MobileLinkService {
    * would report green on a link it never exercised.
    */
   mockControls(): MockControls {
-    const controls = (this.deps.gateway as Partial<MockMobileGateway>).mock;
+    const controls = (this.deps.gateway as { mock?: MockControls }).mock;
     if (!controls) {
       throw new Error("모바일 파이프가 목이 아닙니다 — 폰 시뮬레이터를 사용할 수 없습니다.");
     }

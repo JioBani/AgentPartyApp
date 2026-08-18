@@ -1,20 +1,35 @@
-import type { MobileSettings } from "../../shared/mobileProtocol";
-import type { MobileGateway } from "./mobileGateway";
-import { createMockMobileGateway, type MockMobileGateway, type MockMobileGatewayOptions } from "./mockMobileGateway";
+import { createMockMobileGateway } from "./mockMobileGateway";
+import type { MockMobileGateway } from "./mockMobileGateway";
+import type { CreateMobileGatewayOptions, MobileGateway } from "./mobileGateway";
 import { RealMobileGateway } from "./realMobileGateway";
+
+/**
+ * The pipe's construction point.
+ *
+ * Only this file and the implementations under it need `@agentparty/protocol`.
+ * The contracts the host app types against live in `./mobileGateway`, and the
+ * app reaches this module through `src/main/mobilePipe.ts` at RUNTIME — so a
+ * build without the protocol package still compiles and runs, with the mobile
+ * link reported as unavailable (`docs/mobile-gateway-wiring.md` §패키지가 없을 때).
+ */
 
 export type { MobileGateway } from "./mobileGateway";
 export type {
-  MobileEventScope,
+  CreateMobileGatewayOptions,
   MobileConnectionLockApi,
+  MobileEventScope,
+  MobileGatewayDeps,
   MobileGatewayStartOptions,
   MobilePairingApi,
   MobilePushApi,
   MobileRequestHandler,
   MobileSnapshotProvider,
+  MockControls,
+  MockMobileGatewayOptions,
   PairingSession,
   PushPayload,
   RequestContext,
+  SecretCipher,
   SnapshotContext,
 } from "./mobileGateway";
 export { createMockMobileGateway } from "./mockMobileGateway";
@@ -25,72 +40,7 @@ export { createMockMobileGateway } from "./mockMobileGateway";
  */
 export { RpcError } from "./rpcServer";
 export { RealMobileGateway } from "./realMobileGateway";
-export type { MockControls, MockMobileGateway, MockMobileGatewayOptions } from "./mockMobileGateway";
-
-/**
- * Everything the real pipe needs from the host app. Kept to primitives and
- * narrow function types so `src/main/mobile/` stays testable without Electron
- * and portable across Windows/macOS/Linux (06 §데스크톱).
- */
-export interface MobileGatewayDeps {
-  /** Directory for the identity blob and trust store (Electron `userData`). */
-  userDataPath: string;
-  /**
-   * OS keychain wrapper, normally Electron's `safeStorage`. When encryption is
-   * unavailable (a Linux box with no libsecret/kwallet), the pipe stores the
-   * identity unencrypted **and** reports it through `onSecurityWarning` — it
-   * does not fail silently and does not pretend to be encrypted (06).
-   */
-  secretCipher: SecretCipher;
-  /** Structured logger; the pipe never writes to the console directly. */
-  log: (level: "debug" | "info" | "warn" | "error", message: string, detail?: Record<string, unknown>) => void;
-  /** Surfaces a degraded-security condition to the user (AGENTS.md). */
-  onSecurityWarning: (warning: { code: string; message: string }) => void;
-  /** Persisted settings, owned by the app's settings store. */
-  readSettings: () => MobileSettings;
-  writeSettings: (settings: MobileSettings) => void;
-  /** Default `deviceName` when the user has not set one (e.g. the hostname). */
-  defaultDeviceName: string;
-  /** App version reported in `sys.info`. */
-  appVersion: string;
-  /**
-   * Supplies the `node-datachannel` module. Electron main is CommonJS, where
-   * the pipe requires it itself, so this is normally omitted. A host that
-   * bundles the pipe to ESM MUST provide it: an external `require` left in ESM
-   * output fails with "Dynamic require ... is not supported", which looks like
-   * a missing install but is not.
-   */
-  loadWebrtcModule?: () => unknown;
-}
-
-/**
- * Structurally identical to Electron's `safeStorage`, so it can be passed
- * straight through. The API is string-oriented, so the pipe base64-encodes key
- * bytes before handing them over rather than inventing a Buffer variant that
- * the platform does not offer.
- */
-export interface SecretCipher {
-  isEncryptionAvailable(): boolean;
-  encryptString(plaintext: string): Buffer;
-  decryptString(ciphertext: Buffer): string;
-}
-
-export interface CreateMobileGatewayOptions {
-  /**
-   * `"mock"` selects the in-memory simulator. There is no automatic fallback:
-   * asking for `"real"` and getting a mock would hide a broken pipe behind a
-   * UI that looks connected.
-   */
-  implementation: "real" | "mock";
-  deps?: MobileGatewayDeps;
-  /**
-   * Seeds the mock's settings and fixtures at construction, so the caller does
-   * not have to follow `createMobileGateway` with an `updateSettings()` call
-   * that the real gateway would not need (it reads {@link
-   * MobileGatewayDeps.readSettings} itself). Ignored by the real gateway.
-   */
-  mock?: MockMobileGatewayOptions;
-}
+export type { MockMobileGateway, MockPhoneControls } from "./mockMobileGateway";
 
 /**
  * Single construction point for the mobile pipe.
