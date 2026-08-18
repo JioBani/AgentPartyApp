@@ -83,6 +83,20 @@ export function isWslLocation(loc: WorkspaceLocation): boolean {
   return loc.host.kind === "wsl";
 }
 
+/**
+ * The Windows UNC view of a path inside a distro: `\\wsl$\<distro>\home\me\a.md`.
+ *
+ * This is how Windows — Explorer, `node:fs`, `shell.openPath` — reaches a file
+ * that lives on the distro's ext4. Windows 11 also serves `\\wsl.localhost\`,
+ * but `\\wsl$\` works on every version that has WSL2 and is the spelling the
+ * rest of the app already uses (discovery), so there is ONE spelling here
+ * instead of two that could resolve differently.
+ */
+export function wslUncPath(distro: string, posixPath: string): string {
+  const rel = String(posixPath || "").replace(/^\/+/, "").replace(/\//g, "\\");
+  return path.win32.join(`\\\\wsl$\\${distro}`, rel);
+}
+
 export function workspaceLocationsEqual(a: WorkspaceLocation, b: WorkspaceLocation): boolean {
   return workspaceLocationKey(a) === workspaceLocationKey(b);
 }

@@ -15,6 +15,8 @@
  * test can agree on the policy without duplicating the list.
  */
 
+import { parseWorkspaceLocation, wslUncPath } from "./workspaceLocation";
+
 /**
  * Extensions that are executed rather than viewed when "opened".
  *
@@ -53,6 +55,60 @@ export function normalizeLocalFileTarget(value: string, platform: string): strin
     return input;
   }
   return input.slice(1);
+}
+
+/**
+ * Where a link's target actually lives, as a path THIS host can open.
+ *
+ * The case this exists for: a member working in a WSL workspace writes
+ * `/home/me/proj/설계.md`. That file is on the distro's ext4, but the desktop
+ * runs on Windows, where `path.isAbsolute` reads a leading slash as the current
+ * drive's root and turns it into `\home\me\proj\설계.md` — `C:\home\...`, which
+ * can never exist. The window's workspace is what says otherwise: its host owns
+ * the link, so the path is resolved in POSIX space and addressed through the
+ * distro's UNC view.
+ *
+ * `workspace` is the serialized location of the window the link was clicked in
+ * (`wsl+<distro>:/p` for WSL). Returns the path unchanged whenever no host
+ * translation applies, so a local workspace behaves exactly as before.
+ *
+ * Pure: `platform` and `workspace` are arguments so this is testable off the
+ * machine it describes. The caller still handles `file://` URLs and percent
+ * decoding — this only decides which host a plain path belongs to.
+ */
+export function localFileHostPath(value: string, workspace: string, platform: string): string {
+  const input = String(value || "");
+  // A link may name a distro outright (`wsl+Ubuntu:/home/a`, `\\wsl$\Ubuntu\home\a`);
+  // that wins over the window, which is only the default host.
+  const target = parseWorkspaceLocation(input);
+  if (target.host.kind === "wsl") {
+    return platform === "win32" ? wslUncPath(target.host.distro, target.path) : target.path;
+  }
+  const home = parseWorkspaceLocation(String(workspace || ""));
+  // Only the Windows desktop needs the translation. The same controller runs
+  // headless INSIDE the distro, where `/home/...` is already native and a UNC
+  // path would be meaningless.
+  if (home.host.kind !== "wsl" || platform !== "win32" || isWindowsDrivePath(input)) {
+    return input;
+  }
+  const posix = input.replace(/\\/g, "/");
+  const absolute = posix.startsWith("/") ? posix : joinPosix(home.path || "/", posix);
+  return wslUncPath(home.host.distro, absolute);
+}
+
+/**
+ * `<base>/<relative>` with `.`/`..` applied. Hand-rolled rather than
+ * `path.posix.join` so this module stays free of platform-shaped surprises when
+ * bundled for the renderer or a test.
+ */
+function joinPosix(base: string, relative: string): string {
+  const parts: string[] = [];
+  for (const segment of `${base}/${relative}`.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") parts.pop();
+    else parts.push(segment);
+  }
+  return `/${parts.join("/")}`;
 }
 
 /** The lowercase extension of a path, without the dot ("" when there is none). */

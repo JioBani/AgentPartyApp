@@ -558,8 +558,17 @@ A relative path resolves against the **calling window's workspace** — not the
 app bundle — so the same string a member wrote in a message resolves the way the
 user reads it. `file://` URLs and absolute paths are taken as given. On Windows,
 markdown/URL-shaped drive paths such as `/C:/work/report.html` are restored to
-`C:\work\report.html` before resolution; POSIX/WSL absolute paths and UNC paths
-are left unchanged.
+`C:\work\report.html` before resolution; UNC paths are left unchanged.
+
+**A window on a WSL workspace resolves into that distro.** Its members write
+POSIX paths (`/home/me/proj/설계.md`), and those files live on the distro's ext4,
+so the path is resolved in POSIX space and returned as the Windows UNC view —
+`\\wsl$\<distro>\home\me\proj\설계.md` — which is what `shell.openPath` and
+Explorer can actually reach. Without this a leading `/` reads as the C: drive
+root on Windows and the answer is `No such file: '\home\me\…'`. A Windows drive
+path stays Windows even in a WSL window, and a path that names its own distro
+(`wsl+<distro>:/p`) is honoured over the window's. Inside the headless WSL engine
+the same POSIX path is already native and is left alone.
 
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:
