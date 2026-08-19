@@ -2997,6 +2997,22 @@ cost copy, and the 「질문하기」 FAB are present, their boxes/styles, FAB
 contrast under both `light` and `dark`, and any `[[slide:N]]` missing/link
 nodes. A missing selector is `{ present: false }`, never a guessed zero box.
 
+### `POST /api/guide/stage/measure`
+
+Body `{ "selector": ".some-stage-element" }`. Measures every matching element
+inside the presentation iframe and returns `{ ok, selector, count, elements }`;
+each element contains spotlight geometry expressed in the stage catalog's
+1440x942 percentage coordinate system. The presentation must be open. A blank
+or invalid selector, a missing iframe, and a selector with no matches are
+reported as errors rather than empty successful results.
+
+### `POST /api/guide/click`
+
+Body `{ "selector": ".guide-control" }`. Clicks the first matching element in
+the live guide screen and returns `{ ok: true, selector }`. The guide must be
+open, and a selector that matches no element is an error. This is the automation
+equivalent of the same user-visible click and does not use a separate QA path.
+
 ### `POST /api/guide/ask`
 
 Body `{ "open": true }`. Opens or closes the presentation 「질문하기」 panel —
