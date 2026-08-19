@@ -22,6 +22,7 @@ import type {
   MobilePushApi,
   MobileRequestHandler,
   MobileSnapshotProvider,
+  MockControls,
   MockMobileGatewayOptions,
   PairingSession,
   RequestContext,
