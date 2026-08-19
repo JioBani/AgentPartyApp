@@ -4,10 +4,12 @@ import {
   UPDATE_FEED,
   compareVersions,
   initialUpdateStatus,
+  normalizeUpdateChannel,
   releaseNotesToMarkdown,
   releaseTagUrl,
   versionFromTag,
   type ReleaseSummary,
+  type UpdateChannel,
   type UpdateStatus,
 } from "../shared/appUpdate";
 
@@ -35,6 +37,8 @@ interface AutoUpdaterLike extends EventEmitter {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
   allowDowngrade: boolean;
+  allowPrerelease: boolean;
+  channel: string | null;
   setFeedURL(options: unknown): void;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
@@ -46,6 +50,12 @@ export interface UpdateServiceDeps {
   getVersion: () => string;
   /** False for `npm start` / `vite` dev runs — self-update is impossible there. */
   isPackaged: () => boolean;
+  /** Persisted machine-global release stream. */
+  getChannel?: () => UpdateChannel;
+  /** Called before a channel switch becomes active. A write failure is surfaced. */
+  persistChannel?: (channel: UpdateChannel) => void;
+  /** Test seam: production lazily requires electron-updater instead. */
+  updaterFactory?: () => AutoUpdaterLike;
   /** How often to re-check while the app stays open. 0 disables the timer. */
   checkIntervalHours?: number;
 }
@@ -83,6 +93,7 @@ export function describeUpdateError(detail: string): string {
 
 export class UpdateService extends EventEmitter {
   private status: UpdateStatus;
+  private channel: UpdateChannel;
   private updater: AutoUpdaterLike | undefined;
   private timer: NodeJS.Timeout | undefined;
   private inFlight: Promise<UpdateStatus> | undefined;
@@ -94,11 +105,41 @@ export class UpdateService extends EventEmitter {
 
   constructor(private readonly deps: UpdateServiceDeps) {
     super();
-    this.status = initialUpdateStatus(deps.getVersion());
+    this.channel = normalizeUpdateChannel(deps.getChannel?.());
+    this.status = initialUpdateStatus(deps.getVersion(), this.channel);
   }
 
   getStatus(): UpdateStatus {
     return { ...this.status };
+  }
+
+  getChannel(): UpdateChannel {
+    return this.channel;
+  }
+
+  /**
+   * Changes the release stream, persists it, reconfigures the existing updater,
+   * and performs one settled check so UI and API callers see the same outcome.
+   */
+  async setChannel(channel: UpdateChannel): Promise<UpdateStatus> {
+    if (channel === this.channel) {
+      return this.getStatus();
+    }
+    if (this.inFlight || this.status.state === "downloading") {
+      throw new Error("업데이트 확인 또는 다운로드가 진행 중일 때는 채널을 바꿀 수 없습니다.");
+    }
+    this.stop();
+    this.deps.persistChannel?.(channel);
+    this.channel = channel;
+    this.mocked = false;
+    this.status = initialUpdateStatus(this.deps.getVersion(), channel);
+    if (this.updater) {
+      this.configureUpdater(this.updater);
+    }
+    this.emit("status", this.getStatus());
+    const result = await this.check();
+    this.armTimer();
+    return result;
   }
 
   /**
@@ -115,11 +156,7 @@ export class UpdateService extends EventEmitter {
       return;
     }
     void this.check();
-    const hours = this.deps.checkIntervalHours ?? DEFAULT_CHECK_INTERVAL_HOURS;
-    if (hours > 0) {
-      this.timer = setInterval(() => { void this.check(); }, hours * 60 * 60 * 1000);
-      this.timer.unref?.();
-    }
+    this.armTimer();
   }
 
   stop(): void {
@@ -201,7 +238,7 @@ export class UpdateService extends EventEmitter {
     if (!patch) {
       this.mocked = false;
       this.mockedReleases = undefined;
-      this.status = initialUpdateStatus(this.deps.getVersion());
+      this.status = initialUpdateStatus(this.deps.getVersion(), this.channel);
       this.emit("status", this.getStatus());
       // Back to the real thing — including the periodic check the mock stopped,
       // and the honest "this build cannot self-update" when that is the case.
@@ -237,11 +274,11 @@ export class UpdateService extends EventEmitter {
    */
   async listReleases(refresh = false): Promise<ReleaseSummary[]> {
     if (this.mockedReleases) {
-      return this.mockedReleases;
+      return this.releasesForChannel(this.mockedReleases);
     }
     const fresh = this.releaseCache && Date.now() - this.releaseCache.at < RELEASE_CACHE_MS;
     if (fresh && !refresh) {
-      return this.releaseCache!.releases;
+      return this.releasesForChannel(this.releaseCache!.releases);
     }
     const url = `https://api.github.com/repos/${UPDATE_FEED.owner}/${UPDATE_FEED.repo}/releases?per_page=50`;
     let response: Response;
@@ -284,7 +321,7 @@ export class UpdateService extends EventEmitter {
       });
     this.releaseCache = { at: Date.now(), releases };
     log("info", "update", "release list loaded", { count: releases.length });
-    return releases;
+    return this.releasesForChannel(releases);
   }
 
   /** Non-empty when this build cannot self-update, explaining why. */
@@ -305,7 +342,17 @@ export class UpdateService extends EventEmitter {
     // Lazy + `require`: pulling electron-updater at module load would break the
     // QA scripts that import this file outside Electron.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { autoUpdater } = require("electron-updater") as { autoUpdater: AutoUpdaterLike };
+    const autoUpdater = this.deps.updaterFactory
+      ? this.deps.updaterFactory()
+      : (require("electron-updater") as { autoUpdater: AutoUpdaterLike }).autoUpdater;
+    this.configureUpdater(autoUpdater);
+    this.wireUpdater(autoUpdater);
+    this.updater = autoUpdater;
+    return autoUpdater;
+  }
+
+  /** Applies a channel without recreating the singleton autoUpdater. */
+  private configureUpdater(autoUpdater: AutoUpdaterLike): void {
     autoUpdater.autoDownload = false;
     // Installing quits the app, which kills every running member — so it happens
     // only when the user asks. Left on (the electron-updater default), a
@@ -315,10 +362,15 @@ export class UpdateService extends EventEmitter {
     // Lets a BAD release be recalled: unpublish it and `latest.yml` points back
     // at the good version, which every installed app then moves to. Without
     // this, an app that already took the bad build stays on it forever.
+    autoUpdater.allowPrerelease = this.channel === "beta";
+    autoUpdater.channel = this.channel === "beta" ? "beta" : "latest";
     autoUpdater.allowDowngrade = true;
     // Set explicitly rather than relying on the generated app-update.yml, so the
     // feed has exactly one source of truth (shared/appUpdate.ts).
     autoUpdater.setFeedURL({ ...UPDATE_FEED });
+  }
+
+  private wireUpdater(autoUpdater: AutoUpdaterLike): void {
     autoUpdater.on("checking-for-update", () => this.patch({ state: "checking" }));
     autoUpdater.on("update-available", (info: { version?: string; releaseNotes?: unknown; releaseDate?: string }) => {
       const version = String(info?.version || "");
@@ -362,8 +414,21 @@ export class UpdateService extends EventEmitter {
       log("info", "update", "update downloaded", { version: this.status.latestVersion });
     });
     autoUpdater.on("error", (error: unknown) => this.fail(error));
-    this.updater = autoUpdater;
-    return autoUpdater;
+  }
+
+  private releasesForChannel(releases: ReleaseSummary[]): ReleaseSummary[] {
+    return this.channel === "beta" ? [...releases] : releases.filter((release) => !release.prerelease);
+  }
+
+  private armTimer(): void {
+    if (this.blockedReason()) {
+      return;
+    }
+    const hours = this.deps.checkIntervalHours ?? DEFAULT_CHECK_INTERVAL_HOURS;
+    if (hours > 0) {
+      this.timer = setInterval(() => { void this.check(); }, hours * 60 * 60 * 1000);
+      this.timer.unref?.();
+    }
   }
 
   private fail(error: unknown): void {
@@ -376,7 +441,7 @@ export class UpdateService extends EventEmitter {
   }
 
   private patch(patch: Partial<UpdateStatus>): void {
-    const next: UpdateStatus = { ...this.status, ...patch, currentVersion: this.deps.getVersion() };
+    const next: UpdateStatus = { ...this.status, ...patch, channel: this.channel, currentVersion: this.deps.getVersion() };
     // A reason belongs to the state that produced it. Carrying `error` or
     // `disabledReason` into a later state would leave the UI explaining a
     // failure that is no longer true.

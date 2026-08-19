@@ -577,6 +577,8 @@ ${body}
   updateService = new UpdateService({
     getVersion: () => app.getVersion(),
     isPackaged: () => app.isPackaged,
+    getChannel: () => getSettings().updateChannel,
+    persistChannel: (channel) => { updateSettings({ updateChannel: channel }); },
   });
   updateService.on("status", (status: unknown) => {
     for (const entry of registry().all()) {
@@ -997,6 +999,8 @@ function registerIpc(): void {
   // App self-update — the same controller methods as GET /api/update and
   // POST /api/update/{check,download,install}.
   handle("update:get", async () => controller().getUpdateStatus());
+  handle("update:channel:get", async () => controller().getUpdateChannel());
+  handle("update:channel:set", async (_event, channel: unknown) => controller().setUpdateChannel(channel));
   handle("update:versions", async (_event, options: { refresh?: boolean } = {}) => controller().listReleaseVersions(options || {}));
   handle("update:check", async () => controller().checkForUpdate());
   handle("update:download", async () => controller().downloadUpdate());

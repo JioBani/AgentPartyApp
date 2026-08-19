@@ -24,6 +24,7 @@ export const initialState: InitialAppState = {
   ok: true,
   settings: {
     workspacePath: "",
+    updateChannel: "stable",
     claudeExecutablePath: "",
     cursorExecutablePath: "",
     claudeSafeMode: false,

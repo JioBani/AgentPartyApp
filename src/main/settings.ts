@@ -16,6 +16,7 @@ import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favo
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
 import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
+import { DEFAULT_UPDATE_CHANNEL, normalizeUpdateChannel } from "../shared/appUpdate";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -48,6 +49,7 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
 
 const defaults: AppSettings = {
   workspacePath: process.cwd(),
+  updateChannel: DEFAULT_UPDATE_CHANNEL,
   claudeExecutablePath: "",
   cursorExecutablePath: "",
   claudeSafeMode: false,
@@ -201,11 +203,12 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
   const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
   const mobile = normalizeMobileSettings(withRuntimeOverrides.mobile);
+  const updateChannel = normalizeUpdateChannel(withRuntimeOverrides.updateChannel);
   // Drops overrides for sections the app no longer has, and no-op entries (text
   // identical to the built-in), so a stale file cannot make a member session
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

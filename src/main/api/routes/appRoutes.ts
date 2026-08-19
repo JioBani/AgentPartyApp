@@ -60,6 +60,16 @@ export const appRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.getUpdateStatus(),
   },
   {
+    name: "update.channel.get",
+    http: "GET /api/update/channel",
+    handler: (_p, ctx) => ctx.controller.getUpdateChannel(),
+  },
+  {
+    name: "update.channel.set",
+    http: "POST /api/update/channel",
+    handler: (p, ctx) => ctx.controller.setUpdateChannel(text(p.channel)),
+  },
+  {
     // Release history for the 버전 tab. `refresh` bypasses the 10-minute cache
     // that keeps us inside GitHub's anonymous rate limit.
     name: "update.versions",

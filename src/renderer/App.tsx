@@ -1734,7 +1734,7 @@ export function App() {
 
       {updateModalOpen && (
         <UpdateModal
-          status={updateStatus || { state: "idle", currentVersion: "" }}
+          status={updateStatus || { state: "idle", channel: "stable", currentVersion: "" }}
           onCheck={async () => { const res = await window.agentParty.checkForUpdate(); setUpdateStatus(res.update); }}
           onDownload={async () => { const res = await window.agentParty.downloadUpdate(); setUpdateStatus(res.update); }}
           onInstall={async () => { await window.agentParty.installUpdate(); }}

@@ -26,6 +26,7 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
     ok: true,
     settings: {
       workspacePath: "C:\\Guide\\demo-workspace",
+      updateChannel: "stable",
       claudeExecutablePath: "",
       cursorExecutablePath: "",
       claudeSafeMode: false,
@@ -179,15 +180,19 @@ export function createFakeAgentParty(): FakeAgentParty {
       ok: true as const,
       update: current().update ?? {
         state: "disabled" as const,
+        channel: "stable" as const,
         currentVersion: "guide",
         disabledReason: "가이드 무대는 업데이트를 다루지 않습니다.",
       },
     }),
+    getUpdateChannel: () => Promise.resolve({ ok: true as const, channel: current().update?.channel || "stable" as const }),
+    setUpdateChannel: () => refused(),
     listUpdateVersions: () => Promise.resolve({ ok: true as const, releases: [] }),
     checkForUpdate: () => Promise.resolve({
       ok: true as const,
       update: current().update ?? {
         state: "disabled" as const,
+        channel: "stable" as const,
         currentVersion: "guide",
         disabledReason: "가이드 무대는 업데이트를 다루지 않습니다.",
       },

@@ -227,6 +227,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
     ok: true,
     settings: {
       workspacePath: WORKSPACE,
+      updateChannel: "stable",
       claudeExecutablePath: "",
       cursorExecutablePath: "",
       claudeSafeMode: false,

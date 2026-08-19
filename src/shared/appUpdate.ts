@@ -13,6 +13,27 @@ export const UPDATE_FEED = {
   repo: "AgentParty-releases",
 } as const;
 
+/** Update audience selected by the user. Beta also receives newer stable builds. */
+export type UpdateChannel = "stable" | "beta";
+export const DEFAULT_UPDATE_CHANNEL: UpdateChannel = "stable";
+
+export function isUpdateChannel(value: unknown): value is UpdateChannel {
+  return value === "stable" || value === "beta";
+}
+
+/** Strict at the API edge: a typo must not silently move somebody to stable. */
+export function requireUpdateChannel(value: unknown): UpdateChannel {
+  if (!isUpdateChannel(value)) {
+    throw new Error(`업데이트 채널은 'stable' 또는 'beta'여야 합니다 (받은 값: ${String(value)}).`);
+  }
+  return value;
+}
+
+/** Stored settings from an older build have no channel and therefore stay stable. */
+export function normalizeUpdateChannel(value: unknown): UpdateChannel {
+  return isUpdateChannel(value) ? value : DEFAULT_UPDATE_CHANNEL;
+}
+
 /**
  * Where the update stands right now.
  *
@@ -39,6 +60,8 @@ export interface UpdateProgress {
 
 export interface UpdateStatus {
   state: UpdateState;
+  /** Release stream this check/download belongs to. */
+  channel: UpdateChannel;
   /** Version this process is running. */
   currentVersion: string;
   /** Version offered by the feed, once a check has seen one. */
@@ -95,7 +118,32 @@ export function compareVersions(a: string, b: string): number {
   if (!right.pre) {
     return -1;
   }
-  return left.pre > right.pre ? 1 : -1;
+  const leftIds = left.pre.split(".");
+  const rightIds = right.pre.split(".");
+  for (let i = 0; i < Math.max(leftIds.length, rightIds.length); i += 1) {
+    const l = leftIds[i];
+    const r = rightIds[i];
+    if (l === r) {
+      continue;
+    }
+    if (l === undefined) {
+      return -1;
+    }
+    if (r === undefined) {
+      return 1;
+    }
+    const lNumeric = /^\d+$/.test(l);
+    const rNumeric = /^\d+$/.test(r);
+    if (lNumeric && rNumeric) {
+      return Number(l) > Number(r) ? 1 : -1;
+    }
+    // SemVer: numeric identifiers have lower precedence than non-numeric ones.
+    if (lNumeric !== rNumeric) {
+      return lNumeric ? -1 : 1;
+    }
+    return l > r ? 1 : -1;
+  }
+  return 0;
 }
 
 /**
@@ -134,8 +182,8 @@ export function releasesUrl(): string {
   return `https://github.com/${UPDATE_FEED.owner}/${UPDATE_FEED.repo}/releases`;
 }
 
-export function initialUpdateStatus(currentVersion: string): UpdateStatus {
-  return { state: "idle", currentVersion };
+export function initialUpdateStatus(currentVersion: string, channel: UpdateChannel = DEFAULT_UPDATE_CHANNEL): UpdateStatus {
+  return { state: "idle", channel, currentVersion };
 }
 
 /**

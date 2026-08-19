@@ -16,6 +16,7 @@ import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyPrimerSettings } from "./partyPrimer";
+import type { UpdateChannel } from "./appUpdate";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -62,6 +63,8 @@ export interface DefaultMemberProfile extends HarnessDefaults {
 
 export interface AppSettings {
   workspacePath: string;
+  /** Stable by default; beta opts into GitHub prereleases. */
+  updateChannel: UpdateChannel;
   /** Claude Code executable override (Claude-harness infrastructure). */
   claudeExecutablePath: string;
   /** Cursor Agent executable/bundle override. Empty = auto-discover official install. */

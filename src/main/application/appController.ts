@@ -44,7 +44,7 @@ import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
-import { initialUpdateStatus, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
+import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
@@ -135,6 +135,8 @@ export interface AppControllerDeps {
  */
 export interface UpdateController {
   getStatus(): UpdateStatus;
+  getChannel(): UpdateChannel;
+  setChannel(channel: UpdateChannel): Promise<UpdateStatus>;
   listReleases(refresh?: boolean): Promise<ReleaseSummary[]>;
   check(): Promise<UpdateStatus>;
   download(): Promise<UpdateStatus>;
@@ -527,6 +529,16 @@ export class AppController {
     return { ok: true, update: this.updater().getStatus() };
   }
 
+  getUpdateChannel(): { ok: true; channel: UpdateChannel } {
+    return { ok: true, channel: this.updater().getChannel() };
+  }
+
+  async setUpdateChannel(value: unknown): Promise<{ ok: true; channel: UpdateChannel; update: UpdateStatus }> {
+    const channel = requireUpdateChannel(value);
+    const update = await this.updater().setChannel(channel);
+    return { ok: true, channel, update };
+  }
+
   /**
    * Published release history, newest first — the 설정 → 버전 tab's list. Kept
    * separate from {@link getUpdateStatus}: that one is "what should I do now",
@@ -684,6 +696,9 @@ export class AppController {
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
+    if (Object.prototype.hasOwnProperty.call(patch || {}, "updateChannel")) {
+      throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 탭에서 변경하세요.");
+    }
     const previous = getSettings();
     updateSettings(patch || {});
     this.deps.onSettingsChanged();

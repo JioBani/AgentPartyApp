@@ -4,7 +4,7 @@ import type { EnvironmentReport } from "../shared/environment";
 import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
-import type { ReleaseSummary, UpdateStatus } from "../shared/appUpdate";
+import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
 import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
 import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
 import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
@@ -72,6 +72,9 @@ const api = {
   refreshUsageLimits: () => ipcRenderer.invoke("usage:refresh"),
   /** Where the app update stands. Kept live by `onUpdateStatus`. */
   getUpdateStatus: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:get"),
+  getUpdateChannel: (): Promise<{ ok: true; channel: UpdateChannel }> => ipcRenderer.invoke("update:channel:get"),
+  setUpdateChannel: (channel: UpdateChannel): Promise<{ ok: true; channel: UpdateChannel; update: UpdateStatus }> =>
+    ipcRenderer.invoke("update:channel:set", channel),
   /** Published release history, newest first — the 설정 → 버전 tab's list. */
   listUpdateVersions: (options?: { refresh?: boolean }): Promise<{ ok: true; releases: ReleaseSummary[] }> =>
     ipcRenderer.invoke("update:versions", options || {}),

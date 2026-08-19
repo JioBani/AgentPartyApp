@@ -13,6 +13,15 @@ Windows 배포본을 준비하고 `JioBani/AgentParty-releases`에 공개할 때
 - 기존 `master` 체크아웃을 직접 수정하지 않는다. 릴리스 전용 worktree와 브랜치를 사용한다.
 - 토큰은 파일, 명령 출력, 릴리스 본문에 남기지 않는다.
 
+### 베타 채널 릴리스
+
+- 버전과 태그는 `0.3.0-beta.1`, `v0.3.0-beta.1` 같은 SemVer prerelease 형식이다.
+- GitHub 릴리스는 draft 검증 후 **prerelease**로 공개한다.
+- 생성된 `beta.yml`, 설치본, blockmap을 함께 올리고 `latest.yml`로 바꾸지 않는다.
+- 공개 후 `beta.yml`과 설치본의 익명 다운로드가 HTTP 200인지 확인한다.
+- 안정 채널에는 prerelease가 보이지 않고, 베타 채널에는 이후 더 최신인 정식
+  릴리스도 보이는지 채널별로 확인한다.
+
 ## 1. 사전 확인
 
 두 저장소가 최신이고 예상하지 않은 변경이 없는지 확인한다.

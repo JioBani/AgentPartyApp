@@ -5,7 +5,7 @@ import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
 import { ipcErrorMessage } from "./ipcError";
 import { openUpdateDialog } from "./updateDialog";
-import { UPDATE_FEED, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
+import { UPDATE_FEED, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
 import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -1212,6 +1212,7 @@ function VersionsCard({ active }: { active: boolean }) {
   const [listError, setListError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [changingChannel, setChangingChannel] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   /** Versions whose notes are expanded, by version string. */
   const [openNotes, setOpenNotes] = useState<Set<string>>(new Set());
@@ -1255,6 +1256,23 @@ function VersionsCard({ active }: { active: boolean }) {
     }
   }
 
+  async function changeChannel(channel: UpdateChannel) {
+    if (channel === (status?.channel || "stable")) {
+      return;
+    }
+    setChangingChannel(true);
+    setListError("");
+    try {
+      const res = await window.agentParty.setUpdateChannel(channel);
+      setStatus(res.update);
+      await loadReleases(true);
+    } catch (error) {
+      setListError(ipcErrorMessage(error));
+    } finally {
+      setChangingChannel(false);
+    }
+  }
+
   function toggleNotes(version: string) {
     setOpenNotes((current) => {
       const next = new Set(current);
@@ -1268,6 +1286,7 @@ function VersionsCard({ active }: { active: boolean }) {
   }
 
   const current = status?.currentVersion || "";
+  const channel = status?.channel || "stable";
   // "설치됨" is derived from the version this window reports, not only from the
   // flag the list carries — the two cards must never disagree on screen.
   const isCurrent = (release: ReleaseSummary) => (current ? release.version === current : Boolean(release.current));
@@ -1281,6 +1300,41 @@ function VersionsCard({ active }: { active: boolean }) {
         <InfoIcon size={14} />
         <span>설치된 버전과 <b>배포된 모든 버전의 변경 내역</b>을 봅니다. 새 버전 설치는 제목 표시줄의 업데이트 배지에서도 할 수 있습니다.</span>
       </div>
+
+      <section className="set-card set-update-channel-card" data-ver="channel-card">
+        <div className="set-card-label">업데이트 채널<span className="set-card-sub">이 PC에 저장됩니다</span></div>
+        <div className="set-update-channel-options" role="radiogroup" aria-label="업데이트 채널">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={channel === "stable"}
+            className={`set-update-channel-option${channel === "stable" ? " is-active" : ""}`}
+            data-ver="channel-stable"
+            disabled={changingChannel}
+            onClick={() => void changeChannel("stable")}
+          >
+            <span>안정 채널</span>
+            <small>검증을 마친 정식 릴리스만 받습니다.</small>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={channel === "beta"}
+            className={`set-update-channel-option${channel === "beta" ? " is-active" : ""}`}
+            data-ver="channel-beta"
+            disabled={changingChannel}
+            onClick={() => void changeChannel("beta")}
+          >
+            <span><FlaskConical size={13} /> 베타 채널</span>
+            <small>시험 기능이 포함된 prerelease와 이후 정식 릴리스를 받습니다.</small>
+          </button>
+        </div>
+        <div className="set-update-channel-note">
+          {changingChannel ? <><RefreshCw size={12} className="wb-spin" /> 채널을 저장하고 업데이트를 확인하는 중…</> :
+            channel === "beta" ? <><FlaskConical size={12} /> 베타 빌드는 예상하지 못한 문제가 있을 수 있습니다.</> :
+              <><ShieldCheck size={12} /> 안정 채널이 기본값입니다.</>}
+        </div>
+      </section>
 
       <section className="set-card">
         <div className="set-card-label">설치된 버전<span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>

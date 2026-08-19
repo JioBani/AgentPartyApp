@@ -246,6 +246,7 @@ renderer on the `update:status` channel.
   "ok": true,
   "update": {
     "state": "available",
+    "channel": "stable",
     "currentVersion": "0.1.0",
     "latestVersion": "0.2.0",
     "releaseNotes": "- 업데이트 알림 추가\n",
@@ -278,12 +279,35 @@ Releases are read from the **public** repo `JioBani/AgentParty-releases`
 (`src/shared/appUpdate.ts` is the single source for that address, and matches
 `build.publish` in package.json), so no token ships in the app.
 
+### `GET /api/update/channel`
+
+Returns `{ "ok": true, "channel": "stable" | "beta" }`. The selection is
+machine-global and persisted in `settings.json`; existing installations and
+invalid legacy values normalize to `stable`.
+
+### `POST /api/update/channel`
+
+Body `{ "channel": "stable" | "beta" }`. Persists the selection, reconfigures
+the same `electron-updater` instance used by the UI, and performs one update
+check before returning `{ ok, channel, update }`. `beta` accepts GitHub
+prereleases from tags such as `v0.3.0-beta.1` and their `beta.yml` metadata; it
+also receives a newer stable release. `stable` only accepts published stable
+releases and uses `latest.yml`. Unknown values and changes attempted during an
+active check/download are errors, never silent fallback to the stable channel.
+
+The Settings > Runtime > Versions selector calls this same AppController method
+through IPC. The generic `POST /api/settings` route refuses `updateChannel` so
+it cannot persist a channel change without reconfiguring the running updater.
+
 ### `GET /api/update/versions`
 
 Every published release, newest first — what 설정 → **버전** tab lists. Read from
 the public GitHub releases API with no token, and cached for 10 minutes because
 unauthenticated GitHub allows 60 requests/hour per IP. `?refresh=1` bypasses the
 cache.
+
+The list follows the selected channel: stable hides prereleases; beta includes
+prereleases and stable releases. Switching channels refreshes this list.
 
 ```json
 {
