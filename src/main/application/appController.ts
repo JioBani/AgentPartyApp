@@ -5,12 +5,12 @@ import { fileURLToPath } from "node:url";
 import { isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
-import { probeEnvironment, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
+import { probeEnvironment, probeNativeCliAuthentication, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
 import { GALLERY_ENVIRONMENT_REPORT } from "../../shared/environmentGallery";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -183,6 +183,9 @@ export class AppController {
 
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
   private readonly cliContinuationWatchers = new Set<string>();
+
+  /** Last explicit native-login proof per workspace/provider/host. */
+  private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; check: EnvironmentReport["checks"][number]; distro?: string }>();
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -810,7 +813,81 @@ export class AppController {
       codexCliAuthState(),
       this.engineFor(workspacePath).getClaudeNativeAuth(forceClaude),
     ]);
-    return withClaudeNativeAuth(withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex), claude);
+    const state = withClaudeNativeAuth(withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex), claude);
+    return this.withNativeCliTestState(state, workspacePath);
+  }
+
+  private nativeCliAuthTestKey(workspacePath: string, provider: NativeCliAuthProvider, host: NativeCliAuthHost): string {
+    return `${workspaceKey(workspacePath)}:${provider}:${host}`;
+  }
+
+  /** Applies the last button-driven proof without rerunning WSL during a routine auth refresh. */
+  private withNativeCliTestState(states: AuthProviderState[], workspacePath: string): AuthProviderState[] {
+    return states.map((state) => {
+      const action = state.action;
+      if (action?.type !== "nativeCliTest") return state;
+      const tested = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, action.provider, action.host));
+      if (!tested) return state;
+      const firstFailure = tested.check.steps?.find((step) => step.status === "failed");
+      const usable = tested.check.status === "ok" || tested.check.status === "warn";
+      const status: AuthProviderState["status"] = usable
+        ? "available"
+        : tested.check.status === "missing"
+          ? "missing"
+          : tested.check.status === "unknown"
+            ? "unknown"
+            : "invalid";
+      const commandStep = firstFailure
+        || [...(tested.check.steps || [])].reverse().find((step) => Boolean(step.command));
+      return {
+        ...state,
+        status,
+        authenticated: usable,
+        source: tested.check.path || state.source,
+        detail: firstFailure
+          ? `${firstFailure.label} 단계 실패: ${firstFailure.detail}`
+          : tested.check.detail,
+        host: tested.check.host?.label || state.host,
+        workspace: tested.check.host?.workspace || state.workspace,
+        command: commandStep?.command || state.command,
+        test: {
+          checkedAt: tested.checkedAt,
+          steps: tested.check.steps || [],
+        },
+      };
+    });
+  }
+
+  /**
+   * Executes one native CLI until login/runtime readiness is proven or one
+   * named stage fails. UI, IPC, and HTTP all call this exact method.
+   */
+  async testNativeCliAuth(
+    provider: NativeCliAuthProvider,
+    host: NativeCliAuthHost,
+    workspacePath = getSettings().workspacePath || process.cwd(),
+    distro?: string,
+  ): Promise<NativeCliAuthTestResult> {
+    const tested = await probeNativeCliAuthentication({ provider, host, workspacePath, distro });
+    const checkedAt = new Date().toISOString();
+    this.nativeCliAuthTests.set(this.nativeCliAuthTestKey(workspacePath, provider, host), {
+      checkedAt,
+      check: tested.check,
+      distro: tested.distro,
+    });
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(
+      await this.authStateWithCli(workspacePath),
+      await this.getSubscriptionStatus(),
+    ));
+    return {
+      ok: tested.check.status === "ok" || tested.check.status === "warn",
+      provider,
+      host,
+      ...(tested.distro ? { distro: tested.distro } : {}),
+      checkedAt,
+      check: tested.check,
+      auth,
+    };
   }
 
   async listAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {

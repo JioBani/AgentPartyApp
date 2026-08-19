@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
@@ -852,6 +852,12 @@ export function App() {
     const auth = await actions.clear();
     setApiKeyDrafts((current) => ({ ...current, [providerId]: "" }));
     setState((current) => ({ ...current, auth }));
+  }
+
+  async function testNativeCliAuth(provider: NativeCliAuthProvider, host: NativeCliAuthHost): Promise<NativeCliAuthTestResult> {
+    const result = await window.agentParty.testNativeCliAuth(provider, host);
+    setState((current) => ({ ...current, auth: result.auth }));
+    return result;
   }
 
   async function refreshParty() {
@@ -1746,6 +1752,7 @@ export function App() {
                   onSave={saveApiKey}
                   onTest={testApiKey}
                   onClear={clearApiKey}
+                  onTestNativeCli={testNativeCliAuth}
                   onConnectSubscription={connectSubscription}
                   onDisconnectSubscription={disconnectSubscription}
                 />

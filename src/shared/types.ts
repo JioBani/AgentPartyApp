@@ -18,6 +18,7 @@ import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyPrimerSettings } from "./partyPrimer";
 import type { UpdateChannel } from "./appUpdate";
 import type { AppLocale } from "./appLocale";
+import type { EnvironmentCheck, EnvironmentProbeStep } from "./environment";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -207,8 +208,10 @@ export interface AuthProviderState {
   id: string;
   label: string;
   kind: "subscription" | "apiKey";
-  status: "available" | "configured" | "missing" | "pending" | "valid" | "invalid" | "network_error";
+  status: "available" | "configured" | "missing" | "pending" | "unknown" | "valid" | "invalid" | "network_error";
   description: string;
+  /** Which Authentication section owns this row. */
+  surface?: "native-cli" | "cross-harness";
   source?: string;
   maskedValue?: string;
   detail?: string;
@@ -226,12 +229,39 @@ export interface AuthProviderState {
    * "인증 대기 중" with nothing to click.
    */
   authUrl?: string;
-  /** Optional action rendered by Authentication and exposed over automation. */
-  action?: {
-    type: "subscriptionOAuth";
-    provider: "codex" | "claude";
-    label: string;
+  /** Most recent real CLI execution proof shown under a native-login row. */
+  test?: {
+    checkedAt: string;
+    steps: EnvironmentProbeStep[];
   };
+  /** Optional action rendered by Authentication and exposed over automation. */
+  action?:
+    | {
+        type: "subscriptionOAuth";
+        provider: "codex" | "claude";
+        label: string;
+      }
+    | {
+        type: "nativeCliTest";
+        provider: NativeCliAuthProvider;
+        host: "windows" | "wsl";
+        label: string;
+      };
+}
+
+export type NativeCliAuthProvider = "claude" | "codex" | "cursor" | "grok";
+export type NativeCliAuthHost = "windows" | "wsl";
+
+/** Result shared by the Authentication button, IPC, and local automation API. */
+export interface NativeCliAuthTestResult {
+  ok: boolean;
+  provider: NativeCliAuthProvider;
+  host: NativeCliAuthHost;
+  distro?: string;
+  checkedAt: string;
+  check: EnvironmentCheck;
+  /** Full refreshed provider list, exactly as rendered after the test. */
+  auth: AuthProviderState[];
 }
 
 export interface PartyMember {

@@ -959,6 +959,15 @@ function registerIpc(): void {
   handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)));
   handle("auth:clearOpenRouterKey", async (event) => controller().clearOpenRouterKey(senderWorkspace(event)));
   handle("auth:testOpenRouterKey", async (event) => controller().testOpenRouterKey(senderWorkspace(event)));
+  handle("auth:testNativeCli", async (event, provider: string, host: string) => {
+    if (provider !== "codex" && provider !== "claude" && provider !== "cursor" && provider !== "grok") {
+      throw new Error(`Unsupported native CLI provider '${provider}'.`);
+    }
+    if (host !== "windows" && host !== "wsl") {
+      throw new Error(`Unsupported native CLI host '${host}'.`);
+    }
+    return controller().testNativeCliAuth(provider, host, senderWorkspace(event));
+  });
   handle("auth:loginSubscription", async (event, provider: string) => {
     if (provider !== "codex" && provider !== "claude") {
       throw new Error(`Unsupported subscription provider '${provider}'.`);

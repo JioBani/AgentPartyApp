@@ -76,10 +76,10 @@ try {
   const initial = await getJson(`${baseUrl}/api/state`);
   const connectedBridge = initial.auth.find((item) => item.id === "codex-bridge");
   assert(connectedBridge?.status === "available", "real app sees the isolated Codex bridge account");
-  assert(connectedBridge?.label === "Claude Code용 GPT 연결", "real Authentication screen names the bridge by its purpose");
+  assert(connectedBridge?.label === "Codex", "real Authentication screen names the cross-harness row by provider");
   assert(
-    connectedBridge?.detail === "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
-    "real Authentication screen explains when the bridge is needed",
+    connectedBridge?.detail === "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
+    "real Authentication screen explains the cross-harness proxy boundary",
   );
   assert(initial.auth.find((item) => item.id === "codex"), "native Codex remains a separate Authentication card");
 

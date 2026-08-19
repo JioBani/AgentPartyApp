@@ -158,6 +158,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     setOpenRouterKey: () => refused(),
     clearOpenRouterKey: () => refused(),
     testOpenRouterKey: () => refused(),
+    testNativeCliAuth: () => refused(),
     loginSubscription: () => refused(),
     disconnectSubscription: () => refused(),
     listModels: () => Promise.resolve({

@@ -69,6 +69,7 @@
     "test:e2e:packaged-release": "node scripts/e2e-packaged-release.mjs",
     "test:e2e:environment-precision": "npm run build && node scripts/e2e-environment-precision.mjs",
     "test:e2e:claude-auth-separation": "npm run build && node scripts/e2e-claude-auth-separation.mjs",
+    "test:e2e:native-cli-auth": "npm run build && node scripts/e2e-native-cli-auth.mjs",
     "test:qa:environment": "npm run build && node scripts/qa-environment-recovery.mjs",
     "test:environment-precision": "node scripts/qa-environment-precision.mjs",
     "test:claude-auth-separation": "node scripts/qa-claude-auth-separation.mjs",

@@ -14,7 +14,7 @@ await build({
   logLevel: "silent",
 });
 
-const { codexCliAuthenticatedFrom, withCodexCliAuth, withSubscriptionProxyAuth } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
+const { codexCliAuthenticatedFrom, getAuthState, withCodexCliAuth, withSubscriptionProxyAuth } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
 const base = [{
   id: "claude",
   label: "Claude",
@@ -59,11 +59,13 @@ assert(ready.find((item) => item.id === "openrouter")?.kind === "apiKey", "OpenR
 assert(!ready.some((item) => item.id.startsWith("cross-")), "internal cross-route accounts are not exposed as extra rows");
 assert(ready.find((item) => item.id === "codex")?.description === "native", "native Codex card is preserved instead of replaced by bridge state");
 assert(ready.find((item) => item.id === "codex-bridge")?.status === "available", "Codex bridge has its own status row");
-assert(ready.find((item) => item.id === "codex-bridge")?.label === "Claude Code용 GPT 연결", "Codex bridge card names the workflow it serves");
+assert(ready.find((item) => item.id === "codex-bridge")?.label === "Codex", "Codex proxy uses the provider name inside the cross-harness section");
 assert(
-  ready.find((item) => item.id === "codex-bridge")?.detail === "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
-  "Codex bridge card explains that native Codex login is separate",
+  ready.find((item) => item.id === "codex-bridge")?.detail === "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
+  "Codex proxy card explains the cross-harness workflow",
 );
+assert(ready.find((item) => item.id === "codex-bridge")?.surface === "cross-harness", "Codex proxy is assigned to the bottom cross-harness section");
+assert(ready.at(-2)?.id === "claude" && ready.at(-1)?.id === "codex-bridge", "cross-harness proxies are returned after native and API-key rows");
 assert(ready.find((item) => item.id === "codex-bridge")?.action?.label === "다시 연결", "connected bridge keeps an explicit reauthentication action");
 assert(ready.find((item) => item.id === "claude")?.action?.provider === "claude", "Claude row owns the shared Claude login action");
 
@@ -73,6 +75,13 @@ const nativeSignedIn = withCodexCliAuth(nativeSignedOut, { authenticated: true }
 assert(nativeSignedIn.find((item) => item.id === "codex")?.status === "available", "native Codex signed-in state is restored independently");
 assert(codexCliAuthenticatedFrom("Not authenticated") === false, "negative login status is not mistaken for the word authenticated");
 assert(codexCliAuthenticatedFrom("Logged in using ChatGPT") === true, "ChatGPT CLI login status is recognized");
+
+const nativeCards = getAuthState().filter((item) => item.action?.type === "nativeCliTest");
+assert(
+  nativeCards.map((item) => item.id).join(",") === "claude-native,claude-native-wsl,codex,codex-wsl,cursor,cursor-wsl,grok,grok-wsl",
+  "Authentication exposes every CLI subscription as an ordered Windows/WSL pair",
+);
+assert(nativeCards.filter((item) => item.action.host === "wsl").every((item) => item.status === "unknown"), "WSL cards stay 확인 필요 until an explicit test boots the distro");
 
 const pending = withSubscriptionProxyAuth(base, status({
   authentication: { claude: { status: "pending", detail: "approve" } },

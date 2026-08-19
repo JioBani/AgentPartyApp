@@ -850,13 +850,21 @@ Cursor `cursorPolicy` mirrors Cursor CLI's separate controls:
 ### `GET /api/auth`
 
 Lists every credential provider (subscriptions and API keys) with its status,
-masked value, and where the credential came from.
+masked value, and where the credential came from. Native CLI rows use
+`surface: "native-cli"`; local subscription-proxy rows use
+`surface: "cross-harness"`, which the desktop renders last under
+**교차 하네스 연결**.
 
 Claude is deliberately two cards. `claude-native` is the login used by a
 `claude-code` runtime member on the workspace's actual engine host; `claude` is
 the CLIProxyAPI subscription bridge used only for routed Claude models. Each
 native card includes `host`, host-native `workspace`, and a token-free `command`.
-One card being connected never changes the other card's status.
+One card being connected never changes the other card's status. The native CLI
+surface groups one card per CLI provider, with independent Windows and
+default-WSL rows inside it. The stable row ids are `claude-native` /
+`claude-native-wsl`, `codex` / `codex-wsl`, `cursor` / `cursor-wsl`, and `grok` /
+`grok-wsl`. WSL remains `status: "unknown"` until its own test is requested,
+because an implicit check would boot the distribution.
 
 ### `GET /api/auth/native/claude`
 
@@ -875,10 +883,56 @@ GPT models routed through the Claude Code harness. AgentParty never reads or
 copies the bridge's rotating OAuth refresh token into native Codex
 `auth.json`; each native Windows/WSL host must own its own `codex login`.
 
-The Authentication screen labels `codex-bridge` as `Claude Code용 GPT 연결`
-and explains: `Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다.
-Codex 하네스의 로그인과는 별도입니다.` The internal id stays stable for
-automation clients.
+The Authentication screen labels the two cross-harness proxy rows simply
+`Claude` and `Codex`. Their stable automation ids remain `claude` and
+`codex-bridge`; these rows are separate from every Windows/WSL native CLI login.
+
+### `POST /api/auth/native/:provider/test`
+
+Runs the selected CLI through the same executable and runtime probes used by
+the Environment screen. `:provider` is `claude`, `codex`, `cursor`, or `grok`;
+the JSON body must
+contain `host: "windows" | "wsl"`. An optional `distro` selects a particular WSL
+distribution; otherwise the `*` default reported by `wsl.exe -l -v` is used. If
+that marker cannot be read, the first usable distribution is selected and that
+fallback is stated in the returned distribution step rather than hidden.
+
+The command is really executed. The result checks workspace/distribution
+selection, executable discovery, version, authentication, and the harness's
+runtime boundary where applicable. It returns every structured step, including
+the first failed stage, exact token-free command/cwd, failure kind/code, and raw
+diagnostic output. It never reads or returns OAuth token contents. `ok` is true
+only when the CLI is usable; an authentication or runtime failure still returns
+HTTP success with `ok: false` so clients can render the diagnostic result.
+Claude uses `auth status`, Codex uses `login status` plus app-server
+initialization, Cursor uses `status --format json`, and Grok lets the official
+CLI validate its own rotating credential with the read-only `grok models`
+command. None of these tests sends a model prompt.
+
+```json
+{
+  "host": "wsl"
+}
+```
+
+```json
+{
+  "ok": false,
+  "provider": "codex",
+  "host": "wsl",
+  "distro": "Ubuntu",
+  "checkedAt": "2026-08-20T12:00:00.000Z",
+  "check": {
+    "status": "missing",
+    "detail": "WSL 안에 Codex CLI가 없습니다.",
+    "steps": [
+      { "id": "distribution", "status": "ok", "detail": "기본 배포판 Ubuntu를 선택했습니다." },
+      { "id": "executable", "status": "failed", "failureKind": "not-found", "detail": "WSL의 PATH에서 Codex를 찾지 못했습니다." }
+    ]
+  },
+  "auth": [{ "id": "codex-wsl", "status": "missing" }]
+}
+```
 
 ### `POST /api/auth/deepseek`
 

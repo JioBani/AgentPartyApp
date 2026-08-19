@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { EnvironmentReport } from "../shared/environment";
-import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import type { NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
@@ -36,6 +36,8 @@ const api = {
   setOpenRouterKey: (value: string) => ipcRenderer.invoke("auth:setOpenRouterKey", value),
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
+  testNativeCliAuth: (provider: NativeCliAuthProvider, host: NativeCliAuthHost): Promise<NativeCliAuthTestResult> =>
+    ipcRenderer.invoke("auth:testNativeCli", provider, host),
   loginSubscription: (provider: "codex" | "claude") => ipcRenderer.invoke("auth:loginSubscription", provider),
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),

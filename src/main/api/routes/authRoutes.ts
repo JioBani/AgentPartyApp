@@ -1,8 +1,10 @@
-import { ApiError, flag, text, type MethodRoute } from "../methodRegistry";
+import { ApiError, flag, optText, text, type MethodRoute } from "../methodRegistry";
 
 /** Providers whose subscription login/disconnect this app can drive. */
 const LOGIN_PROVIDERS = ["codex", "claude"] as const;
 const DISCONNECT_PROVIDERS = ["codex", "claude", "cursor"] as const;
+const NATIVE_PROVIDERS = ["claude", "codex", "cursor", "grok"] as const;
+const NATIVE_HOSTS = ["windows", "wsl"] as const;
 
 function provider<T extends string>(value: unknown, allowed: readonly T[]): T {
   const name = text(value);
@@ -25,6 +27,16 @@ export const authRoutes: MethodRoute[] = [
     name: "auth.nativeClaude",
     http: "GET /api/auth/native/claude",
     handler: (p, ctx) => ctx.controller.getNativeClaudeAuth(ctx.workspace, flag(p.refresh)),
+  },
+  {
+    name: "auth.testNativeCli",
+    http: "POST /api/auth/native/:provider/test",
+    handler: (p, ctx) => ctx.controller.testNativeCliAuth(
+      provider(p.provider, NATIVE_PROVIDERS),
+      provider(p.host, NATIVE_HOSTS),
+      ctx.workspace,
+      optText(p.distro),
+    ),
   },
   {
     name: "auth.setDeepseekKey",

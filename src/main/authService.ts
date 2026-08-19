@@ -7,7 +7,7 @@ import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthS
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
 import { codexExecutable, resolveCodexExecutable } from "../core/codexExec";
-import { probeCommand } from "../core/commandProbe";
+import { isFile, probeCommand, resolveOnPath } from "../core/commandProbe";
 import type { ClaudeNativeAuthState } from "../core/claudeNativeAuth";
 
 const CURSOR_AUTH_TTL_MS = 30_000;
@@ -17,6 +17,7 @@ let codexAuthCache: { at: number; value: CodexCliAuthStatus } | undefined;
 export interface CodexCliAuthStatus {
   /** Undefined when the CLI could not provide a recognizable login status. */
   authenticated?: boolean;
+  status?: "authenticated" | "unauthenticated" | "missing" | "error";
   detail?: string;
 }
 
@@ -35,6 +36,18 @@ export async function codexCliAuthState(force = false): Promise<CodexCliAuthStat
   }
   const executable = codexExecutable(getSettings().codexExecutablePath);
   const resolved = resolveCodexExecutable(executable);
+  const executableExists = isFile(resolved.command)
+    || Boolean(resolveOnPath(resolved.command))
+    || Boolean(resolved.argsPrefix[0] && isFile(resolved.argsPrefix[0]));
+  if (!executableExists) {
+    const value: CodexCliAuthStatus = {
+      authenticated: false,
+      status: "missing",
+      detail: `Codex CLI 실행 파일을 찾지 못했습니다: ${executable}`,
+    };
+    codexAuthCache = { at: Date.now(), value };
+    return value;
+  }
   const result = await probeCommand(
     resolved.command,
     [...resolved.argsPrefix, "login", "status"],
@@ -44,6 +57,13 @@ export async function codexCliAuthState(force = false): Promise<CodexCliAuthStat
   const authenticated = codexCliAuthenticatedFrom(output);
   const value: CodexCliAuthStatus = {
     authenticated,
+    status: authenticated === true
+      ? "authenticated"
+      : authenticated === false
+        ? "unauthenticated"
+        : result.failureKind === "spawn" && result.failureCode === "ENOENT"
+          ? "missing"
+          : "error",
     ...(authenticated === undefined && output ? { detail: output } : {}),
   };
   codexAuthCache = { at: Date.now(), value };
@@ -53,10 +73,28 @@ export async function codexCliAuthState(force = false): Promise<CodexCliAuthStat
 /** Overlays the native CLI login without reading or copying its OAuth tokens. */
 export function withCodexCliAuth(states: AuthProviderState[], auth: CodexCliAuthStatus): AuthProviderState[] {
   return states.map((state) => {
-    if (state.id !== "codex" || auth.authenticated === undefined) return state;
-    return auth.authenticated
-      ? { ...state, status: "available", detail: "The native Codex CLI is signed in. Codex owns and refreshes this credential on this execution host." }
-      : { ...state, status: "invalid", detail: "The native Codex CLI is signed out on this execution host. Run `codex login` there; AgentParty does not copy bridge refresh tokens into Codex." };
+    if (state.id !== "codex") return state;
+    const status = auth.status || (auth.authenticated === true ? "authenticated" : auth.authenticated === false ? "unauthenticated" : undefined);
+    if (!status) return state;
+    if (status === "authenticated") {
+      return {
+        ...state,
+        status: "available",
+        authenticated: true,
+        detail: "Windows의 Codex CLI 로그인은 유효합니다. 이 자격 증명은 Codex CLI가 직접 소유하고 갱신합니다.",
+      };
+    }
+    if (status === "missing") {
+      return { ...state, status: "missing", authenticated: false, detail: auth.detail || "Windows에서 Codex CLI를 찾지 못했습니다." };
+    }
+    return {
+      ...state,
+      status: "invalid",
+      authenticated: false,
+      detail: auth.detail || (status === "unauthenticated"
+        ? "Windows의 Codex CLI가 로그인되어 있지 않습니다. `codex login`을 실행하세요."
+        : "Windows의 Codex CLI 로그인 상태를 확인하지 못했습니다."),
+    };
   });
 }
 
@@ -95,12 +133,14 @@ export function withCursorCliAuth(states: AuthProviderState[], auth: CursorAgent
     if (auth.authenticated) {
       return {
         ...state,
+        authenticated: true,
         detail: `Cursor CLI 로그인됨${auth.email ? ` (${auth.email})` : ""}. Auto는 플랜 호환이며 Grok 4.5는 플랜에 따라 사용 가능합니다.`,
       };
     }
     return {
       ...state,
       status: "invalid",
+      authenticated: false,
       detail: "Cursor CLI가 설치되어 있지만 로그인되어 있지 않습니다. 터미널에서 `cursor-agent login`을 실행하세요.",
     };
   });
@@ -136,33 +176,83 @@ export function getAuthState(): AuthProviderState[] {
   return [
     {
       id: "claude-native",
-      label: "Claude Code · 네이티브 로그인",
+      label: "Claude",
       kind: "subscription",
       status: "missing",
       authenticated: false,
-      description: "Claude Code 런타임 멤버가 실행 호스트에서 직접 사용하는 로그인입니다.",
+      surface: "native-cli",
+      description: "Windows에서 Claude CLI를 실행하고 로그인 상태를 확인합니다.",
       source: undefined,
-      detail: "실행 호스트의 네이티브 Claude Code 로그인 상태를 확인 중입니다.",
+      detail: "Windows의 Claude CLI 로그인 상태를 확인 중입니다.",
+      host: "Windows",
+      command: "claude auth status",
+      action: { type: "nativeCliTest", provider: "claude", host: "windows", label: "연결 테스트" },
+    },
+    {
+      id: "claude-native-wsl",
+      label: "Claude - WSL",
+      kind: "subscription",
+      status: "unknown",
+      authenticated: false,
+      surface: "native-cli",
+      description: "기본 WSL 배포판에서 Claude CLI를 실행하고 로그인 상태를 확인합니다.",
+      detail: "연결 테스트를 누르면 기본 WSL 배포판을 시작해 실제 CLI와 로그인을 확인합니다.",
+      host: "WSL · 기본 배포판",
+      action: { type: "nativeCliTest", provider: "claude", host: "wsl", label: "연결 테스트" },
     },
     {
       id: "codex",
       label: "Codex",
       kind: "subscription",
-      status: "available",
-      description: "Uses the local Codex CLI login or CODEX_API_KEY for Codex app-server.",
-      source: "Codex CLI login",
-      detail: "AgentParty delegates Codex auth to the local codex CLI.",
+      status: "missing",
+      authenticated: false,
+      surface: "native-cli",
+      description: "Windows에서 Codex CLI를 실행하고 로그인 상태를 확인합니다.",
+      source: "Codex CLI",
+      detail: "Windows의 Codex CLI 로그인 상태를 확인 중입니다.",
+      host: "Windows",
+      command: "codex login status",
+      action: { type: "nativeCliTest", provider: "codex", host: "windows", label: "연결 테스트" },
+    },
+    {
+      id: "codex-wsl",
+      label: "Codex - WSL",
+      kind: "subscription",
+      status: "unknown",
+      authenticated: false,
+      surface: "native-cli",
+      description: "기본 WSL 배포판에서 Codex CLI를 실행하고 로그인 상태를 확인합니다.",
+      detail: "연결 테스트를 누르면 기본 WSL 배포판을 시작해 실제 CLI와 로그인을 확인합니다.",
+      host: "WSL · 기본 배포판",
+      action: { type: "nativeCliTest", provider: "codex", host: "wsl", label: "연결 테스트" },
     },
     {
       id: "cursor",
       label: "Cursor",
       kind: "subscription",
+      surface: "native-cli",
       status: cursorSource ? "available" : "missing",
+      authenticated: cursorSource ? undefined : false,
       description: "Uses the account signed in to Cursor Agent CLI.",
       source: cursorSource,
+      host: "Windows",
+      command: "cursor-agent status --format json",
+      action: { type: "nativeCliTest", provider: "cursor", host: "windows", label: "연결 테스트" },
       detail: cursorSource
         ? "Cursor CLI is installed. Auto is plan-compatible; named-model access (Grok 4.5) depends on the signed-in Cursor plan."
         : cursorError,
+    },
+    {
+      id: "cursor-wsl",
+      label: "Cursor - WSL",
+      kind: "subscription",
+      surface: "native-cli",
+      status: "unknown",
+      authenticated: false,
+      description: "기본 WSL 배포판에서 Cursor Agent CLI를 실행하고 로그인 상태를 확인합니다.",
+      detail: "연결 테스트를 누르면 기본 WSL 배포판을 시작해 실제 CLI와 로그인을 확인합니다.",
+      host: "WSL · 기본 배포판",
+      action: { type: "nativeCliTest", provider: "cursor", host: "wsl", label: "연결 테스트" },
     },
     {
       // One credential, two consumers: the Grok Build harness runs the CLI with
@@ -172,14 +262,31 @@ export function getAuthState(): AuthProviderState[] {
       id: "grok",
       label: "Grok",
       kind: "subscription",
+      surface: "native-cli",
       status: grokLogin.ok ? "available" : "missing",
+      authenticated: grokLogin.ok,
       description: "Uses the account signed in to the Grok Build CLI, for both the Grok Build harness and Grok models on other harnesses.",
       source: grokLogin.ok ? (grokCli ? `Grok Build CLI (${grokCli})` : "Grok Build CLI login") : undefined,
+      host: "Windows",
+      command: "grok models",
+      action: { type: "nativeCliTest", provider: "grok", host: "windows", label: "연결 테스트" },
       detail: grokLogin.ok
         ? `Signed in${grokLogin.email ? ` as ${grokLogin.email}` : ""}. AgentParty reads this credential and never refreshes it — the CLI owns that.`
         : grokCli
           ? `Grok Build is installed at ${grokCli} but not signed in. Run \`grok login\`.`
           : "Grok Build is not installed. Install it with `irm https://x.ai/cli/install.ps1 | iex`, then run `grok login`.",
+    },
+    {
+      id: "grok-wsl",
+      label: "Grok - WSL",
+      kind: "subscription",
+      surface: "native-cli",
+      status: "unknown",
+      authenticated: false,
+      description: "기본 WSL 배포판에서 Grok Build CLI를 실행하고 로그인 상태를 확인합니다.",
+      detail: "연결 테스트를 누르면 기본 WSL 배포판을 시작해 실제 CLI와 로그인을 확인합니다.",
+      host: "WSL · 기본 배포판",
+      action: { type: "nativeCliTest", provider: "grok", host: "wsl", label: "연결 테스트" },
     },
     {
       id: "openrouter",
@@ -218,16 +325,17 @@ export function withSubscriptionProxyAuth(
       provider: "claude",
       id: "claude",
       label: "Claude",
-      description: "Connect Claude for Claude models routed through the local subscription bridge.",
+      description: "다른 하네스에서 Claude 구독 모델을 사용할 때 연결하는 로컬 프록시입니다.",
     },
     {
       provider: "codex",
       id: "codex-bridge",
-      label: "Claude Code용 GPT 연결",
-      description: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
+      label: "Codex",
+      description: "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
     },
   ];
   return [
+    ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && !state.id.startsWith("cross-")),
     ...subscriptionProviders.map(({ provider, id, label, description }): AuthProviderState => {
       const providerStatus = subscriptions[provider];
       const authentication = subscriptions.authentication?.[provider];
@@ -246,7 +354,7 @@ export function withSubscriptionProxyAuth(
       const detail = providerStatus.available && credentialReady
         ? provider === "codex"
           ? description
-          : "Claude Code subscription bridge is connected."
+          : "Claude 구독 프록시가 연결되었습니다."
         : authentication?.detail
           || ((subscriptions.service?.status === "error" || !subscriptions.ok) ? subscriptions.service?.detail || subscriptions.detail : undefined)
           || providerStatus.credential?.detail
@@ -257,6 +365,7 @@ export function withSubscriptionProxyAuth(
         id,
         label,
         kind: "subscription",
+        surface: "cross-harness",
         status,
         authenticated: providerStatus.available && credentialReady,
         description,
@@ -270,7 +379,6 @@ export function withSubscriptionProxyAuth(
         },
       };
     }),
-    ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && !state.id.startsWith("cross-")),
   ];
 }
 
