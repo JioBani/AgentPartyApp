@@ -8,6 +8,7 @@ import {
   GUIDE_STAGE_STAGED,
   type GuideStageMessage,
 } from "../../shared/guideStage";
+import { localized } from "../i18n/I18nProvider";
 
 /**
  * The stage: the REAL workbench, running against a fake bridge, in an iframe.
@@ -67,7 +68,7 @@ export function GuideStage({ snapshot, generation, onStaged }: {
 
   return (
     <>
-      <iframe ref={frameRef} className="guide-stage-frame" src={STAGE_URL} title="가이드 무대" />
+      <iframe ref={frameRef} className="guide-stage-frame" src={STAGE_URL} title={localized("STR-1300")} />
       {failure?.generation === generation && <div className="guide-stage-error">{failure.text}</div>}
     </>
   );

@@ -2,6 +2,7 @@ import { Activity, X } from "lucide-react";
 import { harnessForRuntime, harnessLabel } from "../../shared/types";
 import { statusLabel } from "./memberStatus";
 import type { MemberView } from "./types";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 function tokens(value: number | undefined): string {
   if (value == null) return "—";
@@ -24,14 +25,14 @@ export function SessionStatusModal({ view, onClose }: { view: MemberView; onClos
   ];
   return (
     <div className="wb-modal-scrim">
-      <div className="wb-modal wb-modal-sm wb-command-modal" role="dialog" aria-modal="true" aria-label="세션 상태">
+      <div className="wb-modal wb-modal-sm wb-command-modal" role="dialog" aria-modal="true" aria-label={localized("STR-2126")}>
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <Activity size={16} />
-            <strong>세션 상태</strong>
+            <strong><LocalizedText id="STR-2127" /></strong>
             <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}><span className="wb-dot" /> {view.name}</span>
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-2128")} onClick={onClose}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-command-status-grid">
           {rows.map(([label, value]) => (
@@ -39,7 +40,7 @@ export function SessionStatusModal({ view, onClose }: { view: MemberView; onClos
           ))}
         </div>
         <footer className="wb-modal-foot wb-modal-foot-end">
-          <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}>닫기</button>
+          <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}><LocalizedText id="STR-2129" /></button>
         </footer>
       </div>
     </div>

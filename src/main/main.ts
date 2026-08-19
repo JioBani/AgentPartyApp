@@ -928,6 +928,9 @@ function registerIpc(): void {
 
   handle("settings:update", async (_event, patch) => controller().updateSettings(patch || {}));
 
+  // Same controller method as POST /api/settings/locale.
+  handle("locale:set", async (_event, locale) => controller().setLocale(locale));
+
   // Same controller method as `POST /api/party/primer` — the UI and the
   // automation API must never take different routes to the same setting.
   handle("party:primer:save", async (_event, patch) => controller().savePartyPrimerSection(patch || {}));

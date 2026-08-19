@@ -5,6 +5,7 @@ import {
   type CursorApprovalMode,
   type CursorPolicy,
 } from "../../shared/cursorPolicy";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 const MODE_LABELS: Record<CursorAgentMode, string> = {
   agent: "Agent",
@@ -65,7 +66,7 @@ export function CursorPermissionControl({
   const title = `Mode: ${MODE_LABELS[draft.mode]} · Approval: ${APPROVAL_LABELS[draft.approval]}`;
   const fields = (
     <>
-      <div className="wb-codex-perm-head">Cursor mode &amp; approvals</div>
+      <div className="wb-codex-perm-head"><LocalizedText id="STR-1634" /></div>
       <div className="wb-axis-grid">
         <label className="wb-field-inline">
           <span>Mode</span>
@@ -74,21 +75,21 @@ export function CursorPermissionControl({
           </select>
         </label>
         <label className="wb-field-inline">
-          <span>Approval mode</span>
+          <span><LocalizedText id="STR-1635" /></span>
           <select value={draft.approval} onChange={(event) => update({ ...draft, approval: event.target.value as CursorApprovalMode })}>
             {(Object.keys(APPROVAL_LABELS) as CursorApprovalMode[]).map((mode) => <option key={mode} value={mode}>{APPROVAL_LABELS[mode]}</option>)}
           </select>
         </label>
       </div>
-      {draft.mode === "ask" && <div className="wb-axis-warn">Ask is read-only exploration.</div>}
-      {draft.mode === "plan" && <div className="wb-axis-warn">Plan analyzes and proposes a plan without edits.</div>}
-      {unrestricted && <div className="wb-axis-warn">Run Everything force-allows tools unless explicitly denied.</div>}
+      {draft.mode === "ask" && <div className="wb-axis-warn"><LocalizedText id="STR-1636" /></div>}
+      {draft.mode === "plan" && <div className="wb-axis-warn"><LocalizedText id="STR-1637" /></div>}
+      {unrestricted && <div className="wb-axis-warn"><LocalizedText id="STR-1638" /></div>}
     </>
   );
 
   if (variant === "inline") {
     return (
-      <div className="wb-codex-perm-menu is-inline" role="group" aria-label="Cursor mode and approvals">
+      <div className="wb-codex-perm-menu is-inline" role="group" aria-label={localized("STR-1639")}>
         {fields}
       </div>
     );
@@ -106,7 +107,7 @@ export function CursorPermissionControl({
         <ChevronDown size={11} className="wb-pill-caret" />
       </button>
       {open && (
-        <div className="wb-dd-menu drop-up align-right wb-codex-perm-menu" role="dialog" aria-label="Cursor mode and approvals">
+        <div className="wb-dd-menu drop-up align-right wb-codex-perm-menu" role="dialog" aria-label={localized("STR-1641")}>
           {fields}
         </div>
       )}

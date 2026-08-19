@@ -6,6 +6,7 @@ import { findEnvironmentCheck } from "../../shared/environment";
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "./EnvironmentRemedies";
 import type { WorkbenchActions } from "./actions";
 import type { MemberView } from "./types";
+import { LocalizedText } from "../i18n/I18nProvider";
 
 type EnvironmentTranscriptBlock = Extract<TranscriptBlock, { kind: "environment" }>;
 
@@ -69,7 +70,7 @@ export function EnvironmentBlock({ block, view, actions }: {
           check; when a check phrases it the same way, one line is enough. */}
       {!resolved && detail !== block.text && <div className="wb-env-detail">{detail}</div>}
       {!resolved && Boolean(check?.steps?.length) && <EnvironmentProbeSteps steps={check?.steps || []} />}
-      {resolved && lastUserText && <div className="wb-env-detail">보내지 못한 메시지는 자동 전송하지 않았습니다. 아래 버튼으로 다시 보내세요.</div>}
+      {resolved && lastUserText && <div className="wb-env-detail"><LocalizedText id="STR-1644" /></div>}
 
       <div className="wb-env-actions">
         {!resolved && (
@@ -86,12 +87,12 @@ export function EnvironmentBlock({ block, view, actions }: {
             data-env-remedy="retry"
             onClick={() => void actions.sendMessage(view.name, lastUserText)}
           >
-            <RefreshCw size={14} /> 메시지 다시 보내기
+            <RefreshCw size={14} />  <LocalizedText id="STR-1645" />
           </button>
         )}
         {showOpenEnvironment && (
           <button type="button" className="set-btn-soft" data-env-remedy="open-environment" onClick={actions.openEnvironmentSettings}>
-            <ShieldCheck size={14} /> 환경 탭 열기
+            <ShieldCheck size={14} />  <LocalizedText id="STR-1646" />
           </button>
         )}
         <button type="button" className="set-link-btn wb-env-recheck" data-env-remedy="recheck" disabled={loading} onClick={() => void load(true)}>

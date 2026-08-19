@@ -7,6 +7,7 @@ import { fmtActive, fmtBucketLabel, fmtRate, fmtTokens, fmtTokensAxis, INTERVAL_
 import {
   cellTint, effortHeight, effortMix, fmtCost, fmtMoneyAxis, modelColor, modelLabel, modelTier, tierBars,
 } from "./usageCost";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * Token Usage dashboard — cost-first (design_handoff_token_usage-new). Renders the
@@ -244,8 +245,8 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {compare &&<div style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 32, padding: "0 12px", background: "var(--accent-dim)", border: "1px solid var(--accent-bd)", borderRadius: 9, fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}><span className="wb-mono" style={{ color: "var(--text-1)" }}>A</span> 현재 <span style={{ color: "var(--text-3)" }}>vs</span> <span className="wb-mono" style={{ color: "var(--text-1)" }}>B</span> 직전 구간</div>}
-        <button onClick={() => setCompare((v) => !v)} title="구간 비교" style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 32, padding: "0 13px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: compare ? "var(--accent-dim)" : "var(--bg-2)", border: `1px solid ${compare ? "var(--accent-bd)" : "var(--border)"}`, color: compare ? "var(--accent)" : "var(--text-1)" }}>비교 모드</button>
+        {compare &&<div style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 32, padding: "0 12px", background: "var(--accent-dim)", border: "1px solid var(--accent-bd)", borderRadius: 9, fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}><span className="wb-mono" style={{ color: "var(--text-1)" }}>A</span>  <LocalizedText id="STR-1385" /> <span style={{ color: "var(--text-3)" }}>vs</span> <span className="wb-mono" style={{ color: "var(--text-1)" }}>B</span>  <LocalizedText id="STR-1384" /></div>}
+        <button onClick={() => setCompare((v) => !v)} title={localized("STR-1386")} style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 32, padding: "0 13px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: compare ? "var(--accent-dim)" : "var(--bg-2)", border: `1px solid ${compare ? "var(--accent-bd)" : "var(--border)"}`, color: compare ? "var(--accent)" : "var(--text-1)" }}><LocalizedText id="STR-1387" /></button>
       </div>
 
       {compare && !isEmpty && <CompareCard a={agg} b={aggPrev} rangeLabel={range.label} />}
@@ -256,11 +257,11 @@ export function TokenUsageView({ usage, parties, onOpenMemberChat }: TokenUsageV
           <section style={{ position: "relative", background: "var(--bg-2)", border: "1px solid var(--live-bd)", borderRadius: 14, padding: "15px 19px", display: "flex", flexDirection: "column", gap: 11, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(120deg,var(--live-dim),transparent 55%)", pointerEvents: "none" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-              <span style={cardLabel}>한도 소진율</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "var(--live)", fontWeight: 600 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--live)" }} />실측 · Claude</span>
+              <span style={cardLabel}><LocalizedText id="STR-1388" /></span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "var(--live)", fontWeight: 600 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--live)" }} /><LocalizedText id="STR-1389" /></span>
             </div>
-            <GaugeRow label="5시간" pct={fiveH?.utilization} reset={resetIn(fiveH?.resetsAt)} accent />
-            <GaugeRow label="주간" pct={weekly?.utilization} reset={resetIn(weekly?.resetsAt)} />
+            <GaugeRow label={localized("STR-1390")} pct={fiveH?.utilization} reset={resetIn(fiveH?.resetsAt)} accent />
+            <GaugeRow label={localized("STR-1391")} pct={weekly?.utilization} reset={resetIn(weekly?.resetsAt)} />
           </section>
 
           {/* c. 타임라인 — 비용(막대) × 컨텍스트 보유(점선) */}
@@ -407,11 +408,11 @@ function TimelineSection(props: {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={sectionTitle}>타임라인 — 비용(막대) × 컨텍스트 보유(점선)</span>
+            <span style={sectionTitle}><LocalizedText id="STR-1400" /></span>
             <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{props.chartRangeLabel}</span>
             {props.isLive
-              ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--live)", fontWeight: 600 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--live)" }} />실시간</span>
-              : <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600, background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 6, padding: "1px 6px" }}>과거 구간</span>}
+              ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--live)", fontWeight: 600 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--live)" }} /><LocalizedText id="STR-1401" /></span>
+              : <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600, background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 6, padding: "1px 6px" }}><LocalizedText id="STR-1402" /></span>}
           </div>
           <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>{readout}</span>
         </div>
@@ -424,9 +425,9 @@ function TimelineSection(props: {
             </button>
             {props.scopeMenuOpen && (
               <div style={{ position: "absolute", top: 34, right: 0, zIndex: 20, width: 230, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 20px 50px -14px rgba(0,0,0,.55)", padding: 6 }}>
-                <input autoFocus value={scopeQuery} onChange={(e) => setScopeQuery(e.target.value)} placeholder="파티 이름·#id 검색" style={{ width: "100%", height: 30, padding: "0 9px", marginBottom: 5, background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-0)", outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box" }} />
+                <input autoFocus value={scopeQuery} onChange={(e) => setScopeQuery(e.target.value)} placeholder={localized("STR-1403")} style={{ width: "100%", height: 30, padding: "0 9px", marginBottom: 5, background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-0)", outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box" }} />
                 <div style={{ maxHeight: 240, overflow: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-                  {!scopeQuery.trim() && <button onClick={() => props.onScope("all")} style={menuItem(props.scope === "all")}>전체 (활성 파티)</button>}
+                  {!scopeQuery.trim() && <button onClick={() => props.onScope("all")} style={menuItem(props.scope === "all")}><LocalizedText id="STR-1404" /></button>}
                   {props.parties.filter((p) => !scopeQuery.trim() || p.name.toLowerCase().includes(scopeQuery.toLowerCase()) || p.id.includes(scopeQuery)).map((p) => (
                     <button key={p.id} data-tu="scope-party" data-pid={p.id} onClick={() => props.onScope(p.id)} style={menuItem(props.scope === p.id)}>
                       <span style={{ width: 9, height: 9, borderRadius: 3, background: colorForKey(p.name), flex: "none" }} />{p.name}<span className="wb-mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-3)" }}>#{p.id.slice(-4)}</span>
@@ -439,7 +440,7 @@ function TimelineSection(props: {
           {allSeries.map((s) => {
             const off = isHidden(s.key);
             return (
-              <button key={s.key} data-tu="legend" data-key={s.key} title={off ? "클릭해서 다시 표시" : "클릭해서 숨김"} onClick={() => props.onToggleSeries(s.key)} onMouseEnter={() => props.setHover(s.key)} onMouseLeave={() => props.setHover(null)}
+              <button key={s.key} data-tu="legend" data-key={s.key} title={off ? localized("STR-1405") : localized("STR-1406")} onClick={() => props.onToggleSeries(s.key)} onMouseEnter={() => props.setHover(s.key)} onMouseLeave={() => props.setHover(null)}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", fontFamily: "var(--font-sans)", opacity: off ? 0.4 : (hover && hover !== s.key ? 0.45 : 1) }}>
                 <span style={{ width: 10, height: 10, borderRadius: 3, background: off ? "var(--border-strong)" : s.color, flex: "none" }} />
                 <span style={{ fontSize: 11.5, fontWeight: 500, color: "var(--text-1)", textDecoration: off ? "line-through" : "none" }}>{s.name}</span>
@@ -447,29 +448,29 @@ function TimelineSection(props: {
             );
           })}
           <button onClick={() => props.setCtxOn(!ctxOn)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", background: ctxOn ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${ctxOn ? "var(--accent-bd)" : "var(--border)"}`, color: ctxOn ? "var(--accent)" : "var(--text-2)" }}>
-            <span style={{ width: 16, height: 0, borderTop: `2px dashed ${ctxOn ? "var(--accent)" : "var(--text-3)"}`, flex: "none" }} />컨텍스트 보유 (k)
+            <span style={{ width: 16, height: 0, borderTop: `2px dashed ${ctxOn ? "var(--accent)" : "var(--text-3)"}`, flex: "none" }} /><LocalizedText id="STR-1407" />
           </button>
         </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-        <span style={miniLabel}>간격</span>
+        <span style={miniLabel}><LocalizedText id="STR-1408" /></span>
         <div style={{ ...pillGroup, background: "var(--bg-1)" }}>
           {INTERVAL_PRESETS.map((iv) => <button key={iv.key} data-tu="interval" data-iv={iv.key} onClick={() => props.onInterval(iv.key)} style={{ ...segBtnSmall(interval.minutes === iv.minutes), fontFamily: "var(--font-mono)" }}>{iv.label}</button>)}
         </div>
-        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>봉 <b style={{ color: "var(--text-2)", fontWeight: 600 }}>{props.visibleBars}개</b> · 좌우 드래그=시간 이동 · 휠=봉 개수(범위) 조절 (주식 차트처럼)</span>
+        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}><LocalizedText id="STR-1410" /> <b style={{ color: "var(--text-2)", fontWeight: 600 }}>{props.visibleBars}개</b>  <LocalizedText id="STR-1409" /></span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => props.onPan(null)} disabled={props.isLive} title="가장 최근 구간으로" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 11px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: props.isLive ? "default" : "pointer", fontFamily: "var(--font-sans)", background: props.isLive ? "var(--bg-1)" : "var(--accent-dim)", border: `1px solid ${props.isLive ? "var(--border)" : "var(--accent-bd)"}`, color: props.isLive ? "var(--text-3)" : "var(--accent)", opacity: props.isLive ? 0.6 : 1 }}>지금으로<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M13 6l6 6-6 6M5 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+        <button onClick={() => props.onPan(null)} disabled={props.isLive} title={localized("STR-1411")} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 11px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: props.isLive ? "default" : "pointer", fontFamily: "var(--font-sans)", background: props.isLive ? "var(--bg-1)" : "var(--accent-dim)", border: `1px solid ${props.isLive ? "var(--border)" : "var(--accent-bd)"}`, color: props.isLive ? "var(--text-3)" : "var(--accent)", opacity: props.isLive ? 0.6 : 1 }}><LocalizedText id="STR-1412" /><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M13 6l6 6-6 6M5 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
       </div>
 
       <TimelineChart series={series} buckets={buckets} ctxOn={ctxOn} interval={interval} hover={hover} hoverBucket={hoverBucket} setHoverBucket={props.setHoverBucket} chartEnd={props.chartEnd} liveEnd={props.liveEnd} onPan={props.onPan} visibleBars={props.visibleBars} onZoom={props.onZoom} />
 
       {/* d. 모델·effort 레인 (파티 선택 시) */}
       {props.scope === "all" ? (
-        <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>모델·effort 타임라인은 파티를 선택하면 멤버별로 표시됩니다.</div>
+        <div style={{ fontSize: 10.5, color: "var(--text-3)" }}><LocalizedText id="STR-1413" /></div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-3)" }}>모델·effort 타임라인 <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-3)" }}>색=멤버 · 농도=effort · 세로선=변경 지점</span></div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-3)" }}><LocalizedText id="STR-1414" /> <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-3)" }}><LocalizedText id="STR-1415" /></span></div>
           {series.filter((s) => s.key !== REST_KEY).map((s) => <ModelEffortRane key={s.key} s={s} />)}
         </div>
       )}
@@ -640,7 +641,7 @@ function CompareCard({ a, b, rangeLabel }: { a: TokenUsageAggregate | null; b: T
   ];
   return (
     <div style={{ background: "var(--bg-2)", border: "1px solid var(--accent-bd)", borderRadius: 14, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span style={sectionTitle}>구간 비교 — A 현재 vs B 직전</span><span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{rangeLabel}</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span style={sectionTitle}><LocalizedText id="STR-1420" /></span><span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{rangeLabel}</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {rows.map((r) => {
           const delta = r.av != null && r.bv != null && r.bv !== 0 ? (r.av - r.bv) / r.bv * 100 : undefined;
@@ -655,7 +656,7 @@ function CompareCard({ a, b, rangeLabel }: { a: TokenUsageAggregate | null; b: T
           );
         })}
       </div>
-      {lowSample && <div style={{ fontSize: 10.5, color: "var(--live)" }}>⚠ 표본이 적어(A {a.recordCount}턴 · B {b?.recordCount ?? 0}턴) 델타는 노이즈일 수 있습니다 — 신뢰 판단은 표본이 쌓인 뒤에.</div>}
+      {lowSample && <div style={{ fontSize: 10.5, color: "var(--live)" }}><LocalizedText id="STR-1422" /> {a.recordCount}<LocalizedText id="STR-1423" /> {b?.recordCount ?? 0}<LocalizedText id="STR-1424" /></div>}
     </div>
   );
 }
@@ -682,18 +683,18 @@ function Catalog(props: {
   return (
     <section style={{ ...cardSection, gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={sectionTitle}>카탈로그</span>
-        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>파티·멤버를 클릭해 그래프에서 켜고 끕니다 · 비용 우선 · ↑입력 ↓출력 · 이름이 같아도 #id·기간으로 분리</span>
+        <span style={sectionTitle}><LocalizedText id="STR-1425" /></span>
+        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}><LocalizedText id="STR-1426" /></span>
         <div style={{ flex: 1 }} />
         <div style={{ position: "relative" }}>
           <button onClick={() => { props.setPickerOpen(!props.pickerOpen); setPq(""); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, fontWeight: 600, color: "var(--text-1)", cursor: "pointer" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" strokeLinecap="round" /></svg>이전 파티 검색{pinnedCount > 0 && <span className="wb-mono" style={{ fontSize: 9.5, background: "var(--accent)", color: "var(--accent-fg)", borderRadius: 8, padding: "0 5px" }}>{pinnedCount}</span>}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" strokeLinecap="round" /></svg><LocalizedText id="STR-1427" />{pinnedCount > 0 && <span className="wb-mono" style={{ fontSize: 9.5, background: "var(--accent)", color: "var(--accent-fg)", borderRadius: 8, padding: "0 5px" }}>{pinnedCount}</span>}
           </button>
           {props.pickerOpen && (
             <div style={{ position: "absolute", top: 32, right: 0, zIndex: 30, width: 280, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 20px 50px -14px rgba(0,0,0,.55)", padding: 8 }}>
-              <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder="지운 파티 이름·#id 검색" style={{ width: "100%", height: 30, padding: "0 9px", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-0)", outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box" }} />
+              <input autoFocus value={pq} onChange={(e) => setPq(e.target.value)} placeholder={localized("STR-1428")} style={{ width: "100%", height: 30, padding: "0 9px", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11.5, color: "var(--text-0)", outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box" }} />
               <div style={{ maxHeight: 220, overflow: "auto", marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
-                {archMatches.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)", padding: "10px 4px" }}>보관된 파티가 없습니다.</span>}
+                {archMatches.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)", padding: "10px 4px" }}><LocalizedText id="STR-1429" /></span>}
                 {archMatches.map((p) => (
                   <button key={p.id} onClick={() => props.onPinArchived(p.id)} style={{ display: "flex", alignItems: "center", gap: 7, height: 32, padding: "0 8px", borderRadius: 7, border: "none", cursor: "pointer", background: archPinned[p.id] ? "var(--accent-dim)" : "transparent", fontFamily: "var(--font-sans)", textAlign: "left" }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: colorForKey(p.name), flex: "none" }} />
@@ -709,7 +710,7 @@ function Catalog(props: {
         </div>
       </div>
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
-        {shown.length === 0 && <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>아직 없음</span>}
+        {shown.length === 0 && <span style={{ fontSize: 11.5, color: "var(--text-3)" }}><LocalizedText id="STR-1430" /></span>}
         {shown.map((p) => {
           const off = hiddenParties[p.id];
           return (
@@ -720,7 +721,7 @@ function Catalog(props: {
                   <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-0)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: off ? "line-through" : "none" }}>{p.name}</span>
                     <span className="wb-mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>#{p.id.slice(-4)}</span>
-                    {p.status === "archived" && <span style={{ fontSize: 8.5, fontWeight: 700, color: "var(--text-2)", background: "var(--bg-3)", padding: "1px 4px", borderRadius: 3 }}>보관</span>}
+                    {p.status === "archived" && <span style={{ fontSize: 8.5, fontWeight: 700, color: "var(--text-2)", background: "var(--bg-3)", padding: "1px 4px", borderRadius: 3 }}><LocalizedText id="STR-1431" /></span>}
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flex: "none" }}>
@@ -744,7 +745,7 @@ function Catalog(props: {
           );
         })}
       </div>
-      <span style={{ fontSize: 10.5, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 14, height: 2, background: "var(--text-0)", flex: "none" }} />Claude 5시간 소진률(실측) · 지운 파티는 <b style={{ color: "var(--text-2)", fontWeight: 600 }}>이전 파티 검색</b>으로 다시 추가</span>
+      <span style={{ fontSize: 10.5, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 14, height: 2, background: "var(--text-0)", flex: "none" }} /><LocalizedText id="STR-1434" /> <b style={{ color: "var(--text-2)", fontWeight: 600 }}><LocalizedText id="STR-1433" /></b><LocalizedText id="STR-1432" /></span>
     </section>
   );
 }
@@ -836,12 +837,13 @@ function BucketCostTable(props: {
   return (
     <section style={{ ...cardSection, gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={sectionTitle}>봉별 실제 수치</span>
+        <span style={sectionTitle}><LocalizedText id="STR-1436" /></span>
         <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{props.rangeLabel} · {props.scopeLabel}</span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setFoldIdle((v) => !v)} title="전 멤버가 유휴인 구간을 접어서 표시" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: foldIdle ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${foldIdle ? "var(--accent-bd)" : "var(--border)"}`, color: foldIdle ? "var(--accent)" : "var(--text-2)" }}>
+        <button onClick={() => setFoldIdle((v) => !v)} title={localized("STR-1437")} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-sans)", background: foldIdle ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${foldIdle ? "var(--accent-bd)" : "var(--border)"}`, color: foldIdle ? "var(--accent)" : "var(--text-2)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M8 7l-4 5 4 5M16 7l4 5-4 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          유휴 접기{foldIdle && idleFolded > 0 ? ` · ${idleFolded}` : ""}
+
+          <LocalizedText id="STR-1438" />{foldIdle && idleFolded > 0 ? ` · ${idleFolded}` : ""}
         </button>
         <div style={{ ...pillGroup, background: "var(--bg-1)", borderRadius: 8 }}>
           {[{ k: "cost", l: "비용" }, { k: "pct", l: "한도 %" }].map((d) => <button key={d.k} onClick={() => props.setDataMode(d.k as "cost" | "pct")} style={segBtnSmall(dataMode === d.k)}>{d.l}</button>)}
@@ -849,10 +851,10 @@ function BucketCostTable(props: {
       </div>
       <div ref={scrollRef} data-tu="bucket-scroll" style={{ maxHeight: 288, overflow: "auto", border: "1px solid var(--border-subtle)", borderRadius: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, position: "sticky", top: 0, zIndex: 3, background: "var(--bg-3)", borderBottom: "1px solid var(--border)" }}>
-          <span style={{ position: "sticky", left: 0, zIndex: 5, background: "var(--bg-3)", padding: "8px 11px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>시각</span>
+          <span style={{ position: "sticky", left: 0, zIndex: 5, background: "var(--bg-3)", padding: "8px 11px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)", borderRight: "1px solid var(--border)" }}><LocalizedText id="STR-1442" /></span>
           {displayCols.map((c, ci) => c.kind === "b"
             ? <span key={ci} className="wb-mono" style={{ padding: "8px 8px", fontSize: 10.5, fontWeight: 700, textAlign: "right", color: "var(--text-2)" }}>{times[c.i]}</span>
-            : <span key={ci} className="wb-mono" title={`${times[c.from]} – ${times[c.to]} · ${c.count}개 봉 전원 유휴`} style={{ padding: "8px 2px", fontSize: 9.5, fontWeight: 700, textAlign: "center", color: "var(--text-3)", background: "var(--bg-2)", borderLeft: "1px dashed var(--border)", borderRight: "1px dashed var(--border)" }}>⋯{c.count}</span>)}
+            : <span key={ci} className="wb-mono" title={localized("STR-1443", [times[c.from], times[c.to], c.count])} style={{ padding: "8px 2px", fontSize: 9.5, fontWeight: 700, textAlign: "center", color: "var(--text-3)", background: "var(--bg-2)", borderLeft: "1px dashed var(--border)", borderRight: "1px dashed var(--border)" }}>⋯{c.count}</span>)}
         </div>
         {series.filter((s) => s.key !== REST_KEY).map((s) => (
           <div key={s.key} style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-2)", borderBottom: "1px solid var(--border-subtle)" }}>
@@ -873,22 +875,23 @@ function BucketCostTable(props: {
               return (
                 <span key={ci} className="wb-mono" style={{ position: "relative", padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: v > 0 ? "var(--text-0)" : "var(--text-3)", overflow: "visible" }}>
                   {v > 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${fillH}%`, background: cellTint(md?.model), zIndex: 0 }} />}
-                  {chg && <button title="모델·effort 변경" onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPin({ x: r.left, y: r.bottom + 4, series: s.name, time: times[i], prev: chg.prev, next: chg.next }); }} style={{ position: "absolute", left: 3, top: 3, zIndex: 2, width: 17, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 4, cursor: "pointer", padding: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--live)" strokeWidth={2.4}><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
-                  <span style={{ position: "relative", zIndex: 1 }} title={u ? `${u}턴은 모델 단가가 카탈로그에 없어 비용을 계산할 수 없습니다.` : undefined}>{dataMode === "cost" ? (v > 0 ? fmtCost(v, "$") + (u ? "+?" : "") : u ? "?" : fmtCost(v, "$")) : (bucketTotals[i] > 0 ? `${Math.round(v / bucketTotals[i] * 100)}%` : u ? "?" : "0%")}</span>
+                  {chg && <button title={localized("STR-1444")} onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPin({ x: r.left, y: r.bottom + 4, series: s.name, time: times[i], prev: chg.prev, next: chg.next }); }} style={{ position: "absolute", left: 3, top: 3, zIndex: 2, width: 17, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 4, cursor: "pointer", padding: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--live)" strokeWidth={2.4}><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
+                  <span style={{ position: "relative", zIndex: 1 }} title={u ? localized("STR-1445", [u]) : undefined}>{dataMode === "cost" ? (v > 0 ? fmtCost(v, "$") + (u ? "+?" : "") : u ? "?" : fmtCost(v, "$")) : (bucketTotals[i] > 0 ? `${Math.round(v / bucketTotals[i] * 100)}%` : u ? "?" : "0%")}</span>
                 </span>
               );
             })}
           </div>
         ))}
         <div style={{ display: "grid", gridTemplateColumns: gridTpl, ...rowW, background: "var(--bg-1)" }}>
-          <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}>합계</span>
+          <span style={{ position: "sticky", left: 0, zIndex: 4, background: "var(--bg-1)", padding: "6px 11px", fontSize: 11, fontWeight: 700, color: "var(--text-0)", borderRight: "1px solid var(--border)" }}><LocalizedText id="STR-1447" /></span>
           {displayCols.map((c, ci) => c.kind === "b"
-            ? <span key={ci} className="wb-mono" title={bucketUnpriced[c.i] ? `${bucketUnpriced[c.i]}턴은 모델 단가가 없어 합계에서 빠져 있습니다.` : undefined} style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(bucketTotals[c.i], "$") + (bucketUnpriced[c.i] ? "+?" : "") : "100%"}</span>
+            ? <span key={ci} className="wb-mono" title={bucketUnpriced[c.i] ? localized("STR-1448", [bucketUnpriced[c.i]]) : undefined} style={{ padding: "6px 8px", fontSize: 10.5, textAlign: "right", color: "var(--text-0)", fontWeight: 600 }}>{dataMode === "cost" ? fmtCost(bucketTotals[c.i], "$") + (bucketUnpriced[c.i] ? "+?" : "") : "100%"}</span>
             : <span key={ci} style={{ background: "var(--bg-1)", borderLeft: "1px dashed var(--border-subtle)", borderRight: "1px dashed var(--border-subtle)" }} />)}
         </div>
       </div>
       <span style={{ fontSize: 10.5, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        가로축 = 시간 봉(차트와 동일) · 배경=모델색, 채움 높이=effort · <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 15, height: 12, background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 3, flex: "none" }} />= 모델·effort 변경 봉 (클릭)</span> · <span style={{ fontWeight: 600, color: "var(--text-2)" }}>⋯N</span> = 전원 유휴 N봉 접힘
+
+        <LocalizedText id="STR-1452" /> <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 15, height: 12, background: "var(--live-dim)", border: "1px solid var(--live-bd)", borderRadius: 3, flex: "none" }} /><LocalizedText id="STR-1450" /></span> · <span style={{ fontWeight: 600, color: "var(--text-2)" }}>⋯N</span>  <LocalizedText id="STR-1451" />
         {["opus", "sonnet", "gpt-5", "haiku"].map((m) => <span key={m} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: modelColor(m), flex: "none" }} />{m}</span>)}
       </span>
       {pin && (
@@ -939,14 +942,14 @@ function WhoTable(props: {
   return (
     <section style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px 10px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span style={sectionTitle}>누가 — 파티 ▸ 멤버</span><span style={{ fontSize: 10.5, color: "var(--text-3)" }}>소진 많은 순</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span style={sectionTitle}><LocalizedText id="STR-1463" /></span><span style={{ fontSize: 10.5, color: "var(--text-3)" }}><LocalizedText id="STR-1464" /></span></div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-2)" }}>{filtered.length}개 파티 · 활성 {nActive}</span>
+          <span className="wb-mono" style={{ fontSize: 10.5, color: "var(--text-2)" }}>{filtered.length}<LocalizedText id="STR-1465" /> {nActive}</span>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 9px", background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: 8 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" strokeLinecap="round" /></svg>
-            <input value={props.tableQuery} onChange={(e) => props.setTableQuery(e.target.value)} placeholder="파티 이름·#id 검색" style={{ background: "transparent", border: "none", outline: "none", fontSize: 11, color: "var(--text-0)", width: 130, fontFamily: "var(--font-sans)" }} />
+            <input value={props.tableQuery} onChange={(e) => props.setTableQuery(e.target.value)} placeholder={localized("STR-1466")} style={{ background: "transparent", border: "none", outline: "none", fontSize: 11, color: "var(--text-0)", width: 130, fontFamily: "var(--font-sans)" }} />
           </div>
-          <button onClick={() => props.setShowArchived(!props.showArchived)} style={{ height: 28, padding: "0 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", background: props.showArchived ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${props.showArchived ? "var(--accent-bd)" : "var(--border)"}`, color: props.showArchived ? "var(--accent)" : "var(--text-2)" }}>보관 파티 포함</button>
+          <button onClick={() => props.setShowArchived(!props.showArchived)} style={{ height: 28, padding: "0 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", background: props.showArchived ? "var(--accent-dim)" : "var(--bg-1)", border: `1px solid ${props.showArchived ? "var(--accent-bd)" : "var(--border)"}`, color: props.showArchived ? "var(--accent)" : "var(--text-2)" }}><LocalizedText id="STR-1467" /></button>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: cols, padding: "0 18px 8px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10.5, fontWeight: 600, letterSpacing: 0.3, textTransform: "uppercase", color: "var(--text-3)" }}>
@@ -1006,7 +1009,7 @@ function WhoTable(props: {
         })}
       </div>
       <div style={{ padding: "9px 18px", display: "flex", alignItems: "center", gap: 10, fontSize: 10.5, color: "var(--text-3)", flexWrap: "wrap" }}>
-        <span>↑ 입력 · ↓ 출력 · 비용 ≈ 리스트 단가 환산</span><span style={{ fontStyle: "italic" }}>기울임·~ 열은 추정값 (멤버별 한도 배분 근사) — 실측 아님</span><span>지운 파티는 보관으로 남고 · 이름 같아도 #id·기간으로 분리</span>
+        <span><LocalizedText id="STR-1470" /></span><span style={{ fontStyle: "italic" }}><LocalizedText id="STR-1471" /></span><span><LocalizedText id="STR-1472" /></span>
       </div>
     </section>
   );
@@ -1048,27 +1051,27 @@ function MemberDrillIn(props: { drill: { partyId: string; member: string; color:
   return (
     <div style={{ ...dashboardRoot, gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <button onClick={props.onBack} title="대시보드로" style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-2)", cursor: "pointer" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+        <button onClick={props.onBack} title={localized("STR-1473")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-2)", cursor: "pointer" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 11 }}>
           <span style={{ width: 12, height: 12, borderRadius: 4, background: drill.color, flex: "none" }} /><span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-0)" }}>{drill.member}</span><span className="wb-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>#{drill.partyId.slice(-4)}</span>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <DrillStat label="환산 비용" value={fmtRowCost(costRow)} sub={`↑${fmtTokens(io.inTok)} ↓${fmtTokens(io.outTok)}`} title={unpricedHint(costRow)} />
-          <DrillStat label="지배 모델" value={dom ? `${modelLabel(dom.model)} ${dom.effort || ""}` : "—"} sub={dom ? tierBars(dom.model) : ""} />
-          <DrillStat label="캐시 적중" value={row?.cacheHitRate == null ? "—" : `${Math.round(row.cacheHitRate * 100)}%`} color={(row?.cacheHitRate ?? 1) < 0.5 ? "var(--live)" : undefined} />
-          <DrillStat label="활성 시간" value={fmtActive(row?.activeMs || 0)} />
+          <DrillStat label={localized("STR-1474")} value={fmtRowCost(costRow)} sub={`↑${fmtTokens(io.inTok)} ↓${fmtTokens(io.outTok)}`} title={unpricedHint(costRow)} />
+          <DrillStat label={localized("STR-1475")} value={dom ? `${modelLabel(dom.model)} ${dom.effort || ""}` : "—"} sub={dom ? tierBars(dom.model) : ""} />
+          <DrillStat label={localized("STR-1476")} value={row?.cacheHitRate == null ? "—" : `${Math.round(row.cacheHitRate * 100)}%`} color={(row?.cacheHitRate ?? 1) < 0.5 ? "var(--live)" : undefined} />
+          <DrillStat label={localized("STR-1477")} value={fmtActive(row?.activeMs || 0)} />
         </div>
         <div style={{ flex: 1 }} />
-        <button onClick={props.onOpenChat} style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 38, padding: "0 15px", background: "var(--accent)", border: "none", borderRadius: 10, color: "var(--accent-fg)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>이 세션 대화로 이동</button>
+        <button onClick={props.onOpenChat} style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 38, padding: "0 15px", background: "var(--accent)", border: "none", borderRadius: 10, color: "var(--accent-fg)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><LocalizedText id="STR-1478" /></button>
       </div>
 
       {/* 모델·effort 구간 */}
       <section style={cardSection}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={sectionTitle}>모델·effort 구간</span><span style={{ fontSize: 11.5, color: "var(--text-2)" }}>세션이 (모델×effort) 구간들의 합임을 보여줍니다 · 칸 너비=턴 수, 농도=effort.</span></div>
-        {segs.length === 0 ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "16px 0", textAlign: "center" }}>아직 없음</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={sectionTitle}><LocalizedText id="STR-1479" /></span><span style={{ fontSize: 11.5, color: "var(--text-2)" }}><LocalizedText id="STR-1480" /></span></div>
+        {segs.length === 0 ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "16px 0", textAlign: "center" }}><LocalizedText id="STR-1481" /></div> : (
           <div style={{ display: "flex", height: 30, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
             {segs.map((sg, i) => { const tot = segs.reduce((a, x) => a + x.n, 0) || 1; return (
-              <div key={i} title={`${modelLabel(sg.model)} ${sg.effort || ""} · ${sg.n}턴`} style={{ width: `${sg.n / tot * 100}%`, background: effortMix(drill.color, sg.effort), borderLeft: i > 0 ? "1.5px solid var(--bg-2)" : "none", display: "flex", alignItems: "center", paddingLeft: 8, minWidth: 0, overflow: "hidden" }}>
+              <div key={i} title={localized("STR-1482", [modelLabel(sg.model), sg.effort || "", sg.n])} style={{ width: `${sg.n / tot * 100}%`, background: effortMix(drill.color, sg.effort), borderLeft: i > 0 ? "1.5px solid var(--bg-2)" : "none", display: "flex", alignItems: "center", paddingLeft: 8, minWidth: 0, overflow: "hidden" }}>
                 {sg.n / tot > 0.1 && <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{modelLabel(sg.model)} {sg.effort}</span>}
               </div>); })}
           </div>
@@ -1077,14 +1080,14 @@ function MemberDrillIn(props: { drill: { partyId: string; member: string; color:
 
       {/* 컨텍스트 곡선 */}
       <section style={cardSection}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={sectionTitle}>세션 내 컨텍스트 증가 곡선</span><span style={{ fontSize: 11.5, color: "var(--text-2)" }}>기울기가 곧 비용입니다. 세로선은 compact 지점 — 끊긴 뒤 캐시가 다시 쌓입니다.</span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={sectionTitle}><LocalizedText id="STR-1484" /></span><span style={{ fontSize: 11.5, color: "var(--text-2)" }}><LocalizedText id="STR-1483" /></span></div>
         <ContextCurve turns={turns} color={drill.color} />
       </section>
 
       {/* 비싼 턴 */}
       <section style={{ ...cardSection, padding: "14px 18px 16px" }}>
-        <span style={sectionTitle}>비싼 턴</span>
-        {turns === null ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "24px 0", textAlign: "center" }}>불러오는 중…</div> : turns.length === 0 ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "24px 0", textAlign: "center" }}>이전 incarnation · 아직 없음</div> : <ExpensiveTurns turns={turns} />}
+        <span style={sectionTitle}><LocalizedText id="STR-1485" /></span>
+        {turns === null ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "24px 0", textAlign: "center" }}><LocalizedText id="STR-1486" /></div> : turns.length === 0 ? <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "24px 0", textAlign: "center" }}><LocalizedText id="STR-1487" /></div> : <ExpensiveTurns turns={turns} />}
       </section>
     </div>
   );
@@ -1101,9 +1104,9 @@ function segments(turns: TurnUsageRecord[]): Array<{ model?: string; effort?: st
 }
 
 function ContextCurve({ turns, color }: { turns: TurnUsageRecord[] | null; color: string }) {
-  if (turns === null) return <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>불러오는 중…</div>;
+  if (turns === null) return <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}><LocalizedText id="STR-1488" /></div>;
   const withCtx = turns.filter((t) => typeof t.tokens.context === "number");
-  if (!withCtx.length) return <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}>아직 없음 — 컨텍스트 점유 값이 보고되지 않았습니다.</div>;
+  if (!withCtx.length) return <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "40px 0", textAlign: "center" }}><LocalizedText id="STR-1489" /></div>;
   const W = 1000, H = 220, x0 = 44, x1 = 980, y0 = 12, y1 = 180;
   const N = withCtx.length; const maxC = Math.max(...withCtx.map((t) => t.tokens.context || 0), 1) * 1.1;
   const ux = (i: number) => (N === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * i / (N - 1));
@@ -1125,14 +1128,14 @@ function ExpensiveTurns({ turns }: { turns: TurnUsageRecord[] }) {
   const maxOut = Math.max(...top.map((x) => x.t.tokens.output || 0), 1);
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "34px 1fr 120px 120px 80px", padding: "0 4px 7px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)" }}><span>#</span><span>trigger · 모델</span><span style={{ textAlign: "right" }}>시각</span><span style={{ textAlign: "right" }}>출력</span><span style={{ textAlign: "right" }}>비용</span></div>
+      <div style={{ display: "grid", gridTemplateColumns: "34px 1fr 120px 120px 80px", padding: "0 4px 7px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-3)" }}><span>#</span><span><LocalizedText id="STR-1493" /></span><span style={{ textAlign: "right" }}><LocalizedText id="STR-1491" /></span><span style={{ textAlign: "right" }}><LocalizedText id="STR-1492" /></span><span style={{ textAlign: "right" }}><LocalizedText id="STR-1490" /></span></div>
       {top.map(({ t, cost }, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "34px 1fr 120px 120px 80px", alignItems: "center", padding: "10px 4px", borderBottom: "1px solid var(--border-subtle)" }}>
           <span className="wb-mono" style={{ fontSize: 12, color: "var(--text-3)" }}>{i + 1}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-1)", background: "var(--bg-3)", padding: "1px 6px", borderRadius: 4, flex: "none" }}>{t.trigger}</span><span style={{ fontSize: 12, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelLabel(t.model)} {t.effort || ""}</span></div>
           <span className="wb-mono" style={{ textAlign: "right", fontSize: 11.5, color: "var(--text-2)" }}>{new Date(t.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14 }}><div style={{ ...barTrack, height: 6 }}><div style={{ height: "100%", width: `${(t.tokens.output || 0) / maxOut * 100}%`, background: modelColor(t.model), borderRadius: 3 }} /></div></div>
-          <span className="wb-mono" style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, color: cost === undefined ? "var(--text-3)" : "var(--text-0)" }} title={cost === undefined ? `${t.model || "모델 미상"}의 단가가 카탈로그에 없어 비용을 계산할 수 없습니다.` : undefined}>{cost === undefined ? "알 수 없음" : fmtCost(cost)}</span>
+          <span className="wb-mono" style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, color: cost === undefined ? "var(--text-3)" : "var(--text-0)" }} title={cost === undefined ? localized("STR-1494", [t.model || localized("STR-1495")]) : undefined}>{cost === undefined ? "알 수 없음" : fmtCost(cost)}</span>
         </div>
       ))}
     </>
@@ -1168,7 +1171,7 @@ function EmptyState() {
   return (
     <section style={{ background: "var(--bg-2)", border: "1px dashed var(--border)", borderRadius: 14, padding: 18, display: "flex", alignItems: "center", gap: 14 }}>
       <span style={{ width: 40, height: 40, flex: "none", borderRadius: 11, background: "var(--bg-3)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-3)" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>아직 없음</span><span style={{ fontSize: 11.5, color: "var(--text-3)" }}>이 구간에 기록된 턴이 없습니다. 값을 <b style={{ color: "var(--text-2)" }}>지어내지 않고</b> "아직 없음"으로 둡니다.</span></div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}><LocalizedText id="STR-1501" /></span><span style={{ fontSize: 11.5, color: "var(--text-3)" }}><LocalizedText id="STR-1502" /> <b style={{ color: "var(--text-2)" }}><LocalizedText id="STR-1503" /></b>  <LocalizedText id="STR-1500" /></span></div>
     </section>
   );
 }

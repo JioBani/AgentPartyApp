@@ -45,7 +45,7 @@ function fill(el: Element, text: string): void {
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (!setter) {
-    throw new Error("value setter 를 찾지 못했습니다.");
+    throw new Error("value setter를 찾을 수 없습니다.");
   }
   setter.call(el, text);
   el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -77,7 +77,7 @@ export async function runStageSteps(steps: readonly GuideStageStep[]): Promise<s
   for (const step of steps) {
     const target = await waitFor(step.selector);
     if (!target) {
-      return [`무대 연출 실패: '${step.selector}' 가 나타나지 않았습니다 (${step.do}).`];
+      return [`가이드 화면 실행 실패: '${step.selector}'이(가) 표시되지 않았습니다(${step.do}).`];
     }
     try {
       if (step.do === "click") {

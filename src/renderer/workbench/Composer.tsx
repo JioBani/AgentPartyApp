@@ -48,6 +48,7 @@ import {
 } from "./completionModel";
 import { HarnessIcon } from "./HarnessIcon";
 import { queryVariants } from "./hangulKeys";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface ComposerProps {
   view: MemberView;
@@ -827,7 +828,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
         suppressContentEditableWarning
         role="textbox"
         aria-multiline={multiline}
-        aria-label={`${view.name}에게 보낼 메시지`}
+        aria-label={localized("STR-1592", [view.name])}
         data-placeholder={placeholder}
         // What this editor would actually SEND, with every chip expanded to the
         // full path it stands for. The screen deliberately shows a short name
@@ -857,7 +858,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       query={chain?.query}
       // The heading and this hint are the whole discovery story for `:a`: the
       // list explains itself at the one moment the user is looking at it.
-      hint={chain ? "↑↓ · Enter 다음 · → 끝" : "↑↓ · Enter"}
+      hint={chain ? localized("STR-1593") : "↑↓ · Enter"}
       sections={sections}
       activeIndex={activeIndex}
       onHover={setActiveIndex}
@@ -878,8 +879,8 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     <div className="wb-attachments">
       {attachments.map((image, index) => (
         <div className="wb-attachment" key={`${image.name || "img"}-${index}`} title={image.name}>
-          <img src={imageDataUrl(image)} alt={image.name || "attached image"} />
-          <button type="button" className="wb-attachment-x" title="제거" onClick={() => removeAttachment(index)}><X size={11} /></button>
+          <img src={imageDataUrl(image)} alt={image.name || localized("STR-1594")} />
+          <button type="button" className="wb-attachment-x" title={localized("STR-1595")} onClick={() => removeAttachment(index)}><X size={11} /></button>
         </div>
       ))}
     </div>
@@ -888,7 +889,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   const attachHint = attachError ? (
     <div className="wb-attach-hint is-error">{attachError}</div>
   ) : imageBlocked ? (
-    <div className="wb-attach-hint"><ImageOff size={12} /> 이 모델은 이미지를 지원하지 않습니다</div>
+    <div className="wb-attach-hint"><ImageOff size={12} />  <LocalizedText id="STR-1596" /></div>
   ) : null;
 
   const stopLabel = forceStop ? "강제 종료" : "Stop";
@@ -908,7 +909,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   // `busy` alone and a compacting member is not busy. The compact card
   // deliberately carries no cancel of its own — this is where stopping lives.
   const stopBeside = (view.busy || view.compacting || interrupting) && !forceStop ? (
-    <button type="button" className="wb-composer-stop" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+    <button type="button" className="wb-composer-stop" title={interrupting ? localized("STR-1599") : localized("STR-1600")} onClick={onStop}>
       <CircleStop size={14} /> {interrupting ? "중단 중" : "Stop"}
     </button>
   ) : null;
@@ -924,7 +925,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     <button type="button" className="wb-send-labeled is-stop" title={stopLabel} onClick={onStop}>{stopLabel} <CircleStop size={14} /></button>
   ) : (
     <button type="submit" className={"wb-send-labeled" + (queueing ? " is-queueing" : "")} title={sendTitle} disabled={!canSend}>
-      {queueing ? <>대기열에 추가 <ArrowDownToLine size={14} /></> : <>Send <Send size={14} /></>}
+      {queueing ? <><LocalizedText id="STR-1605" /> <ArrowDownToLine size={14} /></> : <>Send <Send size={14} /></>}
     </button>
   );
   // Permission control next to Send: Codex members get the two-axis
@@ -980,7 +981,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
           {editor("wb-composer-input", false, queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`)}
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
           {stopBeside && (
-            <button type="button" className="wb-composer-stop is-icon" title={interrupting ? "중단하는 중…" : "진행 중인 턴 중단"} onClick={onStop}>
+            <button type="button" className="wb-composer-stop is-icon" title={interrupting ? localized("STR-1608") : localized("STR-1609")} onClick={onStop}>
               <CircleStop size={14} />
             </button>
           )}
@@ -1015,7 +1016,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
             {/* This button existed but did nothing. It is the entry point for
                 anyone who does not know the `@` shortcut, so it types the `@`
                 at the caret and lets the popover open exactly as typing would. */}
-            <button type="button" className="wb-icon-btn" title="멤버 멘션" aria-label="멤버 멘션" onClick={insertMentionTrigger}><AtSign size={14} /></button>
+            <button type="button" className="wb-icon-btn" title={localized("STR-1613")} aria-label={localized("STR-1613")} onClick={insertMentionTrigger}><AtSign size={14} /></button>
           </div>
           <div className="wb-composer-actions">
             {stopBeside}

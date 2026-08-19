@@ -101,6 +101,16 @@ export const appRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.updateSettings(p),
   },
   {
+    name: "locale.get",
+    http: "GET /api/settings/locale",
+    handler: (_p, ctx) => ctx.controller.getLocale(),
+  },
+  {
+    name: "locale.set",
+    http: "POST /api/settings/locale",
+    handler: (p, ctx) => ctx.controller.setLocale(p.locale),
+  },
+  {
     name: "appearance.fonts",
     http: "GET /api/appearance/fonts",
     handler: (p, ctx) => ctx.controller.getFontCatalog(ctx.windowId, optText(p.q)),

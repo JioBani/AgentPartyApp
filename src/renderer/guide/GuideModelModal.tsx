@@ -4,6 +4,7 @@ import { ModelCatalogModal, type ModelCatalogValue } from "../workbench/ModelCat
 import type { RouteLike } from "../workbench/routes";
 import type { GuideChatSettings } from "../../shared/guideChat";
 import type { EffortSetting, HarnessId } from "../../shared/types";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * Model settings for the guide — the WORKBENCH catalog with the harness row
@@ -53,10 +54,10 @@ export function GuideModelModal({
     return (
       <div className="wb-modal-scrim is-dim" onClick={onClose}>
         <div className="wb-modal wb-modal-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-          <div className="wb-modal-head"><div className="wb-modal-title"><strong>모델 설정</strong></div></div>
+          <div className="wb-modal-head"><div className="wb-modal-title"><strong><LocalizedText id="STR-1295" /></strong></div></div>
           <div className="wb-modal-body-col"><div className="wb-inline-note is-warning">{error}</div></div>
           <div className="wb-modal-foot wb-modal-foot-end">
-            <div className="wb-modal-actions"><button type="button" className="ghost-btn" onClick={onClose}>닫기</button></div>
+            <div className="wb-modal-actions"><button type="button" className="ghost-btn" onClick={onClose}><LocalizedText id="STR-1296" /></button></div>
           </div>
         </div>
       </div>
@@ -65,11 +66,11 @@ export function GuideModelModal({
 
   return (
     <ModelCatalogModal
-      title="모델 설정"
+      title={localized("STR-1297")}
       icon={<SlidersHorizontal size={16} />}
       subtitle={
         <span className="wb-modal-target" style={{ ["--member" as string]: "var(--accent)" }}>
-          <span className="wb-dot" /> 가이드
+          <span className="wb-dot" />  <LocalizedText id="STR-1298" />
         </span>
       }
       routes={routes}

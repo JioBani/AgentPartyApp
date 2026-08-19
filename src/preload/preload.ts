@@ -23,6 +23,7 @@ const api = {
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   getInitialState: () => ipcRenderer.invoke("app:getInitialState"),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
+  setLocale: (locale: string) => ipcRenderer.invoke("locale:set", locale),
   /** Edits ONE section of the member primer (Settings → 런타임 → 파티 프롬프트). */
   savePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:save", patch),
   /** Translates (or clears the translation of) one primer section. */

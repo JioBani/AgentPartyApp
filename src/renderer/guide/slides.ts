@@ -39,7 +39,7 @@ import {
 // review comment are all written as the real thing would arrive — a test that
 // fails first, an edit that is actually an edit, a review that has a finding.
 
-const TASK = "src/auth/login.ts 에 로그인 5회 실패하면 15분 잠그고 429 로 응답하게 해 줘. 테스트도 같이.";
+const TASK = "src/auth/login.ts에서 로그인 5회 실패 시 15분 동안 로그인을 제한하고 상태 코드 429로 응답하도록 수정해 주세요. 관련 테스트도 함께 수정해 주세요.";
 
 const LOGIN_BEFORE = `  const user = await findUser(email);
   if (!user || !(await verify(password, user.hash))) {
@@ -68,7 +68,7 @@ const ASKED: TranscriptBlock[] = [
 
 const REPLIED: TranscriptBlock[] = [
   ...ASKED,
-  { id: "b2", kind: "assistant", text: "먼저 login.ts 와 로그인 테스트를 읽고, 지금 동작을 확인하겠습니다.", at: "10:02" },
+  { id: "b2", kind: "assistant", text: "먼저 login.ts와 로그인 테스트를 확인하여 현재 동작을 파악하겠습니다.", at: "10:02" },
 ];
 
 const RAN_TOOL: TranscriptBlock[] = [
@@ -76,7 +76,7 @@ const RAN_TOOL: TranscriptBlock[] = [
   {
     id: "b3", kind: "tool", name: "Read", status: "ok",
     input: { file_path: "src/auth/login.ts" },
-    result: "68 lines · POST /login 핸들러 하나, 시도 횟수를 세는 코드는 없음",
+    result: "68줄 · POST /login 핸들러 1개, 로그인 시도 횟수 집계 기능 없음",
     durationMs: 140, at: "10:03",
   },
   {
@@ -86,7 +86,7 @@ const RAN_TOOL: TranscriptBlock[] = [
     result: "FAIL test/auth/login.spec.ts\n  ● 5회 실패하면 잠긴다\n    expected 429, received 200\n  ● 잠금 후 15분 뒤 풀린다\n    expected 200, received 200 (잠금 없음)\n\nTests: 2 failed, 6 passed, 8 total",
     at: "10:03",
   },
-  { id: "b5", kind: "assistant", text: "잠금 로직이 아예 없어서 두 개가 떨어집니다. login.ts 에 시도 카운터와 429 응답을 넣겠습니다.", at: "10:03" },
+  { id: "b5", kind: "assistant", text: "잠금 기능이 구현되어 있지 않아 테스트 2개가 실패합니다. login.ts에 시도 횟수 집계와 429 응답을 추가하겠습니다.", at: "10:03" },
 ];
 
 const ASKED_APPROVAL: TranscriptBlock[] = [
@@ -122,7 +122,7 @@ const APPLIED: TranscriptBlock[] = [
     result: "PASS test/auth/login.spec.ts\n\nTests: 8 passed, 8 total",
     at: "10:05",
   },
-  { id: "b9", kind: "assistant", text: "5회 실패 후 15분 잠금 + 429 로 고쳤고, 테스트 8개 모두 통과합니다.", at: "10:05" },
+  { id: "b9", kind: "assistant", text: "로그인 5회 실패 시 15분 동안 제한하고 429로 응답하도록 수정했습니다. 테스트 8개도 모두 통과했습니다.", at: "10:05" },
 ];
 
 // --- 멤버끼리 주고받은 말 ----------------------------------------------------
@@ -130,15 +130,15 @@ const APPLIED: TranscriptBlock[] = [
 // 사용자가 친 한 줄이 원인으로 같은 화면에 남는다. 채널 메시지는 양쪽 대화에
 // 각각 한 번씩 — 그게 이 슬라이드가 보여 주려는 것이다.
 
-const HANDOFF = "src/auth/login.ts 의 로그인 시도 제한 변경을 리뷰해 줘. 5회 실패 시 15분 잠금, 429 응답이고 테스트는 통과했어.";
-const FINDING = "429 는 맞는데 Retry-After 헤더가 없다. 클라이언트가 언제 다시 시도할지 알 수 없으니 응답 헤더에 남은 잠금 초를 넣어라.";
+const HANDOFF = "src/auth/login.ts의 로그인 시도 제한 변경을 검토해 주세요. 5회 실패 시 15분 잠금, 429 응답이며 테스트는 통과했습니다.";
+const FINDING = "429 응답은 적절하지만 Retry-After 헤더가 없습니다. 클라이언트가 재시도 시점을 확인할 수 있도록 응답 헤더에 남은 제한 시간을 초 단위로 추가하세요.";
 
 const MAIN_CHANNEL: TranscriptBlock[] = [
   ...APPLIED,
-  { id: "c0", kind: "user", text: "reviewer 에게 이 변경 리뷰를 부탁하고, 지적받은 건 그대로 반영해 줘.", at: "10:12" },
+  { id: "c0", kind: "user", text: "reviewer에게 변경 사항 검토를 요청하고, 검토 의견을 반영해 주세요.", at: "10:12" },
   { id: "c1", kind: "channel", direction: "out", from: "main", to: "reviewer", text: HANDOFF, state: "ok", at: "10:12" },
   { id: "c2", kind: "channel", direction: "in", from: "reviewer", to: "main", text: FINDING, state: "ok", at: "10:14" },
-  { id: "c3", kind: "assistant", text: "Retry-After 를 추가하겠습니다.", at: "10:14" },
+  { id: "c3", kind: "assistant", text: "Retry-After 헤더를 추가하겠습니다.", at: "10:14" },
 ];
 
 const REVIEWER_CHANNEL: TranscriptBlock[] = [
@@ -149,18 +149,18 @@ const REVIEWER_CHANNEL: TranscriptBlock[] = [
     result: "76 lines · attemptsOf / recordFailure 추가됨",
     durationMs: 130, at: "10:13",
   },
-  { id: "r3", kind: "assistant", text: "잠금 자체는 맞게 들어갔습니다. 헤더 하나가 빠졌습니다.", at: "10:13" },
+  { id: "r3", kind: "assistant", text: "잠금 기능은 정상적으로 구현되었으나 응답 헤더가 누락되었습니다.", at: "10:13" },
   { id: "r4", kind: "channel", direction: "out", from: "reviewer", to: "main", text: FINDING, state: "ok", at: "10:14" },
 ];
 
 /** 게이트를 켠 뒤. reviewer 가 impl 에게 중계하려다 규칙에 걸린 기록. */
 const REVIEWER_GATED: TranscriptBlock[] = [
   ...REVIEWER_CHANNEL,
-  { id: "g0", kind: "channel", direction: "out", from: "reviewer", to: "impl", text: "main 이 말한 잠금 변경 건, 대신 전달합니다.", state: "failed", at: "10:31" },
+  { id: "g0", kind: "channel", direction: "out", from: "reviewer", to: "impl", text: "main에서 요청한 잠금 변경 사항을 전달합니다.", state: "failed", at: "10:31" },
   {
     id: "g1", kind: "gate", gate: "rejected", to: "impl", from: "reviewer",
-    rule: "받은 말을 대신 옮기지 말고, 할 말이 있는 멤버에게 직접 말하세요.",
-    reason: "다른 멤버의 말을 중계하는 메시지입니다. 담당 멤버에게 직접 말하세요.",
+    rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요.",
+    reason: "다른 멤버의 메시지를 중계한 내용입니다. 담당 멤버에게 직접 메시지를 보내세요.",
     at: "10:31",
   },
 ];
@@ -168,7 +168,7 @@ const REVIEWER_GATED: TranscriptBlock[] = [
 /** 사용자가 시켜서 main 이 멤버를 하나 만든 기록. */
 const MAIN_CREATED_IMPL: TranscriptBlock[] = [
   ...MAIN_CHANNEL,
-  { id: "m0", kind: "user", text: "구현만 전담할 impl 멤버를 하나 만들어 줘. Claude Code sonnet 이면 돼.", at: "10:20" },
+  { id: "m0", kind: "user", text: "구현을 전담할 impl 멤버를 생성해 주세요. Claude Code Sonnet을 사용하면 됩니다.", at: "10:20" },
   {
     id: "m1", kind: "tool", name: "mcp__agentparty-app__member-create", status: "ok",
     input: { name: "impl", role: "구현 전담", harness: "claude-code", model: "sonnet" },
@@ -176,7 +176,7 @@ const MAIN_CREATED_IMPL: TranscriptBlock[] = [
     durationMs: 1800, at: "10:20",
   },
   { id: "m2", kind: "partyAction", action: "create", member: "impl", role: "구현 전담", model: "sonnet", harness: "claude-code", state: "ok", at: "10:20" },
-  { id: "m3", kind: "assistant", text: "impl 을 만들었습니다. 바로 말을 걸 수 있고, 제가 대신 시킬 수도 있습니다.", at: "10:20" },
+  { id: "m3", kind: "assistant", text: "impl 멤버를 생성했습니다. 직접 메시지를 보내거나 이 멤버에게 작업을 위임할 수 있습니다.", at: "10:20" },
 ];
 
 // --- the worlds those beats live in -----------------------------------------
@@ -391,7 +391,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     sessions: PAIR_SESSIONS,
     transcripts: { main: MAIN_CREATED_IMPL, reviewer: REVIEWER_CHANNEL },
     panels: twoPanels,
-    gate: { enabled: true, rule: "받은 말을 대신 옮기지 말고, 할 말이 있는 멤버에게 직접 말하세요." },
+    gate: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." },
     extras: { qaOpenGate: { kind: "party", member: "" } },
   }),
 
@@ -401,7 +401,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     sessions: PAIR_SESSIONS,
     transcripts: { main: MAIN_CREATED_IMPL, reviewer: REVIEWER_GATED },
     panels: twoPanels,
-    gate: { enabled: true, rule: "받은 말을 대신 옮기지 말고, 할 말이 있는 멤버에게 직접 말하세요." },
+    gate: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." },
   }),
 
   // 22 — 입력창 옆 권한 메뉴를 연 상태.

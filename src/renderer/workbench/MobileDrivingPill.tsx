@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Link2Off, Smartphone } from "lucide-react";
 import type { GatewayStatus } from "../../shared/mobileProtocol";
 import { ipcErrorMessage } from "../app/ipcError";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * Titlebar indicator for "a phone is connected to this desktop" (04 §성능·안전).
@@ -43,11 +44,11 @@ export function MobileDrivingPill() {
       <button
         type="button"
         className="wb-mobile-pill is-error"
-        title={`폰 연결 상태를 확인하지 못했습니다 — ${error} · 눌러서 다시 확인`}
+        title={localized("STR-1840", [error])}
         onClick={probe}
       >
         <AlertTriangle size={13} />
-        <span>폰 상태 확인 불가</span>
+        <span><LocalizedText id="STR-1841" /></span>
       </button>
     );
   }
@@ -82,8 +83,8 @@ export function MobileDrivingPill() {
       type="button"
       className={"wb-mobile-pill" + (busy ? " is-live" : "")}
       title={busy
-        ? `${active.deviceName}이(가) 조작 중${active.lastRequestMethod ? ` — ${active.lastRequestMethod}` : ""} · 눌러서 즉시 끊기`
-        : `${active.deviceName} 연결됨 · 눌러서 즉시 끊기`}
+        ? localized("STR-1843", [active.deviceName, active.lastRequestMethod ? ` — ${active.lastRequestMethod}` : ""])
+        : localized("STR-1844", [active.deviceName])}
       disabled={Boolean(cutting)}
       onClick={() => void cut()}
     >

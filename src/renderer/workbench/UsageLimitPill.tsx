@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, RefreshCw, Settings } from "lucide-react";
 import { buildUsageView, type UsageLimitsSnapshot, type UsageProviderId } from "../../shared/usageLimits";
 import { HarnessIcon } from "./HarnessIcon";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** The harness whose official mark represents each usage provider. */
 const PROVIDER_HARNESS: Record<UsageProviderId, string> = {
@@ -76,7 +77,7 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
       <button
         type="button"
         className="usage-pill"
-        title="사용 한도 (계정 · provider별)"
+        title={localized("STR-2277")}
         style={{ borderColor: triggerBorder }}
         onClick={() => setOpen((v) => !v)}
       >
@@ -94,10 +95,10 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
       </button>
 
       {open && (
-        <div className="usage-pop" role="dialog" aria-label="사용 한도">
+        <div className="usage-pop" role="dialog" aria-label={localized("STR-2278")}>
           <div className="usage-pop-header">
-            <span className="usage-pop-title">사용 한도</span>
-            <span className="usage-pop-scope wb-mono">계정 · provider별</span>
+            <span className="usage-pop-title"><LocalizedText id="STR-2279" /></span>
+            <span className="usage-pop-scope wb-mono"><LocalizedText id="STR-2280" /></span>
           </div>
           {view.rows.map((row, index) => (
             <div key={row.key} className={"usage-row" + (index > 0 ? " divided" : "")}>
@@ -126,7 +127,8 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
             </button>
             <button type="button" className="usage-settings-btn" onClick={() => { setOpen(false); onOpenSettings(); }}>
               <Settings size={12} />
-              Settings에서 상세 보기
+
+              <LocalizedText id="STR-2283" />
             </button>
           </div>
         </div>

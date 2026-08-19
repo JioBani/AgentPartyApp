@@ -6,6 +6,7 @@ import { CopyButton } from "./copy";
 import { reportNotice } from "../app/appNotice";
 import { ipcErrorMessage } from "../app/ipcError";
 import { isWindowsDrivePath } from "../../shared/localFiles";
+import { localized, useI18n } from "../i18n/I18nProvider";
 
 /**
  * Renders model-authored text as GitHub-flavored markdown (headings, lists,
@@ -21,6 +22,7 @@ import { isWindowsDrivePath } from "../../shared/localFiles";
  * carry a copy control for the target URL; so does every fenced code block.
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  useI18n(); // Keep localized link/code attributes live when the locale changes.
   return (
     <div className="wb-md">
       <ReactMarkdown
@@ -60,7 +62,7 @@ function MarkdownPre({ children, ...props }: { children?: ReactNode } & Record<s
   return (
     <pre {...props}>
       {children}
-      {code && <CopyButton text={code} title="코드 복사" className="wb-md-pre-copy" />}
+      {code && <CopyButton text={code} title={localized("STR-1679")} className="wb-md-pre-copy" />}
     </pre>
   );
 }
@@ -177,7 +179,7 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
       >
         {children}
       </a>
-      {copyable && <CopyButton text={copyable} title={target ? "링크 복사" : "경로 복사"} className="wb-md-link-copy" />}
+      {copyable && <CopyButton text={copyable} title={target ? localized("STR-1682") : localized("STR-1681")} className="wb-md-link-copy" />}
       {/* A file has a second thing you may want: the folder it sits in. Opening
           and revealing are different intents — "read this" vs "where is it" —
           so revealing gets its own control rather than being the fallback you
@@ -186,8 +188,8 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
         <button
           type="button"
           className="wb-md-link-reveal"
-          title="파일 탐색기에서 보기"
-          aria-label="파일 탐색기에서 보기"
+          title={localized("STR-1683")}
+          aria-label={localized("STR-1684")}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

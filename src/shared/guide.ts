@@ -18,12 +18,12 @@ import type { TokenUsageAggregate, TurnUsageRecord } from "./tokenUsage";
 /** Chapter titles in the table of contents (§2-3). Not the slide list.
  *  Titles, blurbs and boundaries come from the design canon (guide.html SCENES). */
 export const GUIDE_SCENES = [
-  { id: "connect", title: "계정을 연결한다", blurb: "구독 · API 키", from: 0 },
-  { id: "party", title: "팀을 꾸린다", blurb: "작업공간 · 파티 · 멤버 만들기", from: 3 },
-  { id: "work", title: "일을 시킨다", blurb: "입력창 · 실행 · 승인 · 대기열", from: 10 },
-  { id: "talk", title: "서로 이야기하게 한다", blurb: "패널 · 채널 · Message Gate", from: 16 },
-  { id: "control", title: "돌아가는 방식을 바꾼다", blurb: "권한 · 모델 · MCP · 재시작", from: 22 },
-  { id: "cost", title: "얼마나 쓰는지 본다", blurb: "컨텍스트 · 남은 한도", from: 28 },
+  { id: "connect", title: "계정 연결", blurb: "구독 · API 키", from: 0 },
+  { id: "party", title: "협업 구성", blurb: "작업공간·파티·멤버 생성", from: 3 },
+  { id: "work", title: "작업 요청", blurb: "입력창 · 실행 · 승인 · 대기열", from: 10 },
+  { id: "talk", title: "멤버 간 협업 설정", blurb: "패널 · 채널 · Message Gate", from: 16 },
+  { id: "control", title: "실행 방식 설정", blurb: "권한 · 모델 · MCP · 재시작", from: 22 },
+  { id: "cost", title: "사용량 확인", blurb: "컨텍스트 · 남은 한도", from: 28 },
 ] as const;
 
 export type GuideSceneId = (typeof GUIDE_SCENES)[number]["id"];
@@ -53,192 +53,192 @@ export const GUIDE_SLIDES = [
   // --- 계정을 연결한다 ---
   {
     id: "auth", scene: "connect", caption: "bottom-right",
-    title: "먼저 쓸 계정을 연결한다",
-    text: "왼쪽 세로 막대의 열쇠 아이콘(인증)을 누릅니다. 구독 카드의 「구독 연결」 을 누르면 됩니다 — 둘 다 필요하지는 않고, 쓸 것만 연결하세요.",
+    title: "사용할 계정 연결",
+    text: "왼쪽 탐색 메뉴에서 열쇠 아이콘(인증)을 선택합니다. 구독 카드에서 「구독 연결」을 선택하세요. 모든 구독을 연결할 필요는 없으며 사용할 계정만 연결하면 됩니다",
     spot: { left: "5%", top: "15.87%", width: "50%", height: "19.3%" },
   },
   {
     id: "authpending", scene: "connect", caption: "bottom-right",
-    title: "브라우저에서 로그인하면 연결된다",
-    text: "누르면 브라우저가 열리고 카드는 「인증 대기 중」 이 됩니다. 기본 브라우저에 그 계정이 없으면, 함께 뜨는 주소를 복사해 다른 브라우저에 붙여 넣으세요.",
+    title: "브라우저에서 로그인하여 연결",
+    text: "「구독 연결」을 선택하면 브라우저가 열리고 카드에 「인증 대기 중」 상태가 표시됩니다. 기본 브라우저에 해당 계정이 로그인되어 있지 않으면 함께 표시되는 주소를 복사하여 다른 브라우저에서 여세요",
     spot: { left: "5%", top: "27.24%", width: "50%", height: "9.26%" },
   },
   {
     id: "authdone", scene: "connect", caption: "bottom-right",
-    title: "연결되면 「사용 가능」 으로 바뀐다",
-    text: "이제 그 계정의 모델을 멤버에게 붙일 수 있습니다. 아래 API 키 칸은 구독이 아닌 모델(OpenRouter · DeepSeek)을 쓸 때만 채우면 됩니다.",
+    title: "연결 완료 후 「사용 가능」 상태로 변경",
+    text: "연결된 계정의 모델을 멤버에 지정할 수 있습니다. API 키 입력란은 구독이 아닌 OpenRouter·DeepSeek 모델을 사용할 때만 입력합니다",
     spot: { left: "5%", top: "18.68%", width: "50%", height: "7.71%" },
   },
 
   // --- 팀을 꾸린다 ---
   {
     id: "workspace", scene: "party", caption: "bottom",
-    title: "일할 폴더를 고른다",
-    text: "오른쪽 위 「작업공간」 을 누르고 프로젝트 폴더를 고르세요. 멤버들은 이 폴더 안에서 파일을 읽고 고칩니다.",
+    title: "작업공간 선택",
+    text: "오른쪽 상단의 「작업공간」을 선택하고 프로젝트 폴더를 지정하세요. 멤버는 이 폴더에서 파일을 읽고 수정합니다",
     spot: { left: "92.49%", top: "5.1%", width: "6.12%", height: "3.29%" },
   },
   {
     id: "newparty", scene: "party", caption: "bottom-right",
-    title: "Parties 의 + 를 누르면 이 창이 뜬다",
-    text: "이름을 적고 「파티 만들기」. 메시지 게이트는 꺼진 채로 시작해도 되고, 나중에 언제든 켤 수 있습니다.",
+    title: "Parties의 +를 선택하여 파티 생성 창 열기",
+    text: "파티 이름을 입력하고 「파티 만들기」를 선택합니다. Message Gate는 끈 상태로 시작한 후 필요할 때 켤 수 있습니다",
     spot: { left: "33.33%", top: "34.55%", width: "33.33%", height: "30.89%" },
   },
   {
     id: "partyready", scene: "party", caption: "bottom-right",
-    title: "파티가 생기면 main 이 함께 만들어진다",
-    text: "파티는 하나의 팀이고, main 은 처음부터 있는 멤버입니다. 이름을 클릭하면 오른쪽에 그 멤버와의 대화창이 열립니다.",
+    title: "파티 생성 시 main 멤버 자동 생성",
+    text: "파티는 함께 작업하는 멤버의 모음이며 main은 기본으로 생성되는 멤버입니다. 멤버 이름을 선택하면 오른쪽에 대화창이 열립니다",
     spot: { left: "4.31%", top: "37.45%", width: "14.93%", height: "4.03%" },
   },
   {
     id: "wizardname", scene: "party", caption: "bottom-right",
-    title: "Members 의 + → 이름과 설명을 적는다",
-    text: "설명은 그 멤버가 자기 역할로 전달받습니다. 여기서 바로 「기본 설정으로 만들기」 를 눌러 나머지를 건너뛸 수도 있습니다.",
+    title: "Members의 + 선택 후 이름과 설명 입력",
+    text: "입력한 설명은 멤버의 역할로 전달됩니다. 「기본 설정으로 만들기」를 선택하면 나머지 설정 단계를 건너뛸 수 있습니다",
     spot: { left: "30.56%", top: "25.96%", width: "38.89%", height: "48.09%" },
   },
   {
     id: "wizardmodel", scene: "party", caption: "bottom-right",
-    title: "「변경」 을 누르면 모델 목록이 열린다",
-    text: "하네스(Claude Code · Codex · Cursor)를 고르고 그 안에서 모델을 고릅니다. 한 파티에 서로 다른 하네스를 섞어도 됩니다.",
+    title: "「변경」을 선택하여 모델 목록 열기",
+    text: "하네스(Claude Code·Codex·Cursor)를 선택한 후 해당 하네스에서 사용할 모델을 선택합니다. 하나의 파티에서 서로 다른 하네스를 함께 사용할 수 있습니다",
     spot: { left: "15.35%", top: "12.48%", width: "23.89%", height: "75.69%" },
   },
   {
     id: "wizardpermission", scene: "party", caption: "bottom-right",
-    title: "마지막으로 처음 권한을 정한다",
-    text: "Codex 는 샌드박스와 승인 두 축, Claude Code 는 한 가지 모드입니다. 만든 뒤에도 대화창 옆에서 언제든 바꿀 수 있습니다.",
+    title: "초기 권한 설정",
+    text: "Codex는 샌드박스와 승인 정책을 각각 설정하고 Claude Code는 하나의 권한 모드를 선택합니다. 멤버 생성 후에도 대화창에서 변경할 수 있습니다",
     spot: { left: "30.56%", top: "23.3%", width: "38.89%", height: "53.4%" },
   },
   {
     id: "membersopen", scene: "party", caption: "bottom",
-    title: "이름을 클릭하면 탭으로 열린다",
-    text: "연 멤버는 위쪽에 탭으로 쌓입니다. 탭의 X 는 화면만 닫는 게 아니라 그 멤버의 세션도 끝내니, 잠깐 비울 거면 그냥 두세요.",
+    title: "멤버 이름을 선택하여 탭 열기",
+    text: "열린 멤버는 상단에 탭으로 표시됩니다. 탭의 X를 선택하면 탭뿐 아니라 해당 멤버의 세션도 종료됩니다. 세션을 유지하려면 탭을 닫지 마세요",
     spot: { left: "21.11%", top: "14.65%", width: "77.99%", height: "4.03%" },
   },
 
   // --- 일을 시킨다 ---
   {
     id: "composer", scene: "work", caption: "top",
-    title: "시킬 일을 입력창에 적는다",
-    text: "쓰고 Ctrl+Enter 로 보냅니다. 이미지·파일은 끌어다 놓고, m: 을 치면 다른 멤버를 이름으로 끼워 넣을 수 있습니다.",
+    title: "입력창에 작업 내용 작성",
+    text: "메시지를 작성하고 Ctrl+Enter로 전송합니다. 이미지·파일은 드래그하여 첨부하고, m:을 입력하여 다른 멤버를 멘션할 수 있습니다",
     spot: { left: "21.11%", top: "86.73%", width: "77.99%", height: "11.89%" },
   },
   {
     id: "running", scene: "work", caption: "top",
-    title: "보내면 Send 자리가 Stop 으로 바뀐다",
-    text: "잘못 시켰다 싶으면 Stop 을 누르세요. 지금 턴만 끊고 대화는 그대로 남습니다. 왼쪽 목록의 그 멤버도 「작업 중」 으로 바뀝니다.",
+    title: "메시지 전송 후 Send 버튼이 Stop으로 변경",
+    text: "작업을 잘못 요청한 경우 Stop을 선택하여 현재 턴만 중단할 수 있습니다. 대화 기록은 유지됩니다. 작업 중에는 왼쪽 목록의 해당 멤버에도 「작업 중」 상태가 표시됩니다",
     spot: { left: "21.11%", top: "86.52%", width: "77.99%", height: "12.1%" },
   },
   {
     id: "tools", scene: "work", caption: "top",
-    title: "무엇을 실행했는지 그대로 보인다",
-    text: "도구 상자를 클릭하면 명령 원문과 종료 코드, 걸린 시간이 나옵니다. 여기서는 테스트가 exit 1 로 떨어진 것까지 감추지 않고 보여 줍니다.",
+    title: "도구 실행 내역 확인",
+    text: "도구 실행 항목을 선택하면 명령 원문, 종료 코드, 소요 시간이 표시됩니다. 테스트가 종료 코드 1로 실패한 경우에도 결과를 그대로 표시합니다",
     spot: { left: "22.22%", top: "35.48%", width: "75.14%", height: "43.45%" },
   },
   {
     id: "approval", scene: "work", caption: "top",
-    title: "파일을 고치기 전에 멈추고 물어본다",
-    text: "무엇이 어떻게 바뀌는지 카드 안에 그대로 나옵니다. 「이번만 허용」 을 누를 때까지 멤버는 기다리고, 왼쪽 이름에는 승인 배지가 붙습니다.",
+    title: "파일 수정 전 승인 요청",
+    text: "승인 카드에서 변경 내용을 확인할 수 있습니다. 사용자가 「이번만 허용」을 선택할 때까지 멤버는 대기하며, 왼쪽 멤버 이름에 승인 배지가 표시됩니다",
     spot: { left: "22.22%", top: "36.06%", width: "75.14%", height: "48.99%" },
   },
   {
     id: "applied", scene: "work", caption: "top",
-    title: "허용하면 반영하고 다시 돌린다",
-    text: "고친 내용과 다시 돌린 테스트가 차례로 남습니다. 이번엔 exit 0 — 무엇을 근거로 「됐다」 고 하는지 확인할 수 있습니다.",
+    title: "승인 후 변경 적용 및 테스트 재실행",
+    text: "수정 내용과 재실행한 테스트 결과가 순서대로 표시됩니다. 종료 코드 0을 포함한 성공 근거를 직접 확인할 수 있습니다",
     spot: { left: "22.22%", top: "39.9%", width: "75.14%", height: "39.09%" },
   },
   {
     id: "queue", scene: "work", caption: "top",
-    title: "도는 중에 더 시키면 줄을 선다",
-    text: "지금 턴을 방해하지 않고 순서대로 들어갑니다. 기다리는 메시지는 취소하거나 먼저 처리할 수 있고, 다른 멤버가 보낸 것도 같은 줄에 섭니다.",
+    title: "작업 중 추가 메시지는 대기열에 등록",
+    text: "추가 메시지는 현재 턴을 중단하지 않고 순서대로 대기열에 등록됩니다. 대기 메시지는 취소하거나 우선 처리할 수 있으며, 다른 멤버가 보낸 메시지도 동일한 대기열에 포함됩니다",
     spot: { left: "21.88%", top: "70.59%", width: "76.46%", height: "16.14%" },
   },
 
   // --- 서로 이야기하게 한다 ---
   {
     id: "panels", scene: "talk", caption: "bottom-left",
-    title: "탭을 오른쪽 끝으로 끌면 둘로 나뉜다",
-    text: "두 멤버를 나란히 두고 볼 수 있습니다. 이 배치는 파티별로 기억됐다가 다시 열 때 그대로 돌아옵니다.",
+    title: "탭을 오른쪽 끝으로 드래그하여 패널 분할",
+    text: "두 멤버를 나란히 표시할 수 있습니다. 패널 배치는 파티별로 저장되며 다시 열 때 복원됩니다",
     spot: { left: "60.38%", top: "14.23%", width: "38.78%", height: "84.5%" },
   },
   {
     id: "channel", scene: "talk", caption: "bottom",
-    title: "멤버끼리 말하게 하려면 그렇게 시키면 된다",
-    text: "「reviewer 에게 리뷰를 부탁해」 라고 친 한 줄과, 그 결과로 main 이 보낸 메시지가 함께 남습니다. 따로 켤 설정은 없습니다.",
+    title: "멤버 간 작업 요청",
+    text: "입력창에 「reviewer에게 리뷰를 요청해」라고 작성하면 main이 reviewer에게 메시지를 보냅니다. 별도의 설정은 필요하지 않습니다",
     spot: { left: "22.22%", top: "59.91%", width: "35.8%", height: "19.04%" },
   },
   {
     id: "channelin", scene: "talk", caption: "bottom-left",
-    title: "받은 쪽에도 같은 말이 남는다",
-    text: "오른쪽 reviewer 의 대화에 방향 표시와 함께 들어와 있고, 답장은 다시 main 에게 돌아갑니다. 누가 무엇을 말했는지 양쪽에서 확인됩니다.",
+    title: "수신 멤버의 대화에도 메시지 기록",
+    text: "오른쪽 reviewer 대화에 방향 표시와 함께 메시지가 표시되고, 답변은 다시 main에게 전달됩니다. 발신자와 메시지 내용을 양쪽 대화에서 확인할 수 있습니다",
     spot: { left: "61.56%", top: "24.63%", width: "36.42%", height: "30.3%" },
   },
   {
     id: "membercreate", scene: "talk", caption: "bottom-right",
-    title: "멤버를 만드는 일도 시킬 수 있다",
-    text: "「impl 멤버를 만들어 줘」 라고 하면 main 이 도구를 써서 만듭니다. 왼쪽 목록에 바로 나타나고, 곧장 말을 걸 수 있습니다.",
+    title: "AI를 통한 멤버 생성",
+    text: "「impl 멤버를 만들어 줘」라고 요청하면 main이 도구를 사용해 멤버를 생성합니다. 생성된 멤버는 왼쪽 목록에 즉시 표시되며 바로 메시지를 보낼 수 있습니다",
     spot: { left: "4.31%", top: "46.36%", width: "14.93%", height: "4.03%" },
   },
   {
     id: "gate", scene: "talk", caption: "bottom-right",
-    title: "오가는 말에 규칙을 걸어 둔다",
-    text: "파티를 우클릭 → 「메시지 게이트 설정」. 여기 적은 규칙을 리뷰어 모델이 전달 직전에 심사합니다.",
-    spot: { left: "25%", top: "13.42%", width: "50%", height: "73.17%" },
+    title: "멤버 간 메시지 규칙 설정",
+    text: "파티를 마우스 오른쪽 버튼으로 선택한 후 「Message Gate 설정」을 선택합니다. 입력한 규칙에 따라 리뷰어 모델이 메시지 전달 직전에 검사합니다",
+    spot: { left: "25%", top: "13.42%", width: "50%", height: "72.5%" },
   },
   {
     id: "gateblocked", scene: "talk", caption: "bottom",
-    title: "규칙을 어기면 전달되지 않는다",
-    text: "막힌 메시지는 사유와 함께 남습니다. 정말 보내야 하는 경우 멤버가 강제로 보낼 수 있고, 그때도 「강제」 표시가 남습니다.",
+    title: "규칙 위반 메시지 차단",
+    text: "차단된 메시지는 사유와 함께 기록됩니다. 반드시 전달해야 하는 경우 멤버가 강제 전송할 수 있으며, 이 경우 「강제」 표시가 기록됩니다",
     spot: { left: "61.56%", top: "66.8%", width: "36.42%", height: "6.36%" },
   },
 
   // --- 돌아가는 방식을 바꾼다 ---
   {
     id: "permission", scene: "control", caption: "top",
-    title: "권한은 입력창 옆에서 바꾼다",
-    text: "기본은 「Default」 — 파일을 고칠 때마다 물어봅니다. 승인 누르기가 번거로우면 올리고, 위험한 작업을 앞두고 있으면 내리세요. 멤버마다 따로 정해집니다.",
+    title: "멤버별 권한 변경",
+    text: "기본값은 「Default」이며 파일 수정 시마다 승인을 요청합니다. 작업 특성에 따라 권한 수준을 조정할 수 있으며 멤버별로 저장됩니다",
     spot: { left: "45.73%", top: "67.09%", width: "12.5%", height: "26.22%" },
   },
   {
     id: "model", scene: "control", caption: "bottom-left",
-    title: "모델과 추론 강도를 바꾼다",
-    text: "헤더의 모델 칩을 누르면 이 멤버의 모델 · 추론 강도를 바로 고를 수 있습니다. 강도를 올리면 더 오래 생각하고 그만큼 더 씁니다.",
+    title: "모델 및 추론 강도 변경",
+    text: "헤더의 모델 칩을 선택하여 멤버의 모델과 추론 강도를 변경할 수 있습니다. 추론 강도가 높을수록 처리 시간과 사용량이 증가할 수 있습니다",
     spot: { left: "40.76%", top: "55.92%", width: "42.36%", height: "7.06%" },
   },
   {
     id: "mcp", scene: "control", caption: "top",
-    title: "붙어 있는 MCP 서버를 확인한다",
-    text: "⋯ → 「MCP 서버」. 어떤 서버에 붙었고 어떤 도구가 늘었는지, 못 붙은 서버는 왜인지 나옵니다. 재연결과 인증도 여기서 합니다.",
+    title: "연결된 MCP 서버 확인",
+    text: "⋯ → 「MCP 서버」에서 연결 상태, 제공되는 도구, 연결 실패 사유를 확인할 수 있습니다. 재연결과 인증도 이 화면에서 수행합니다",
     spot: { left: "27.57%", top: "37.58%", width: "44.86%", height: "37.18%" },
   },
   {
     id: "respawn", scene: "control", caption: "bottom-left",
-    title: "이상하면 세션 재시작",
-    text: "⋯ → 「세션 재시작」. 대화는 그대로 두고 하네스만 다시 띄웁니다. MCP 서버나 설정을 바꾼 뒤 적용할 때도 이걸 씁니다.",
+    title: "문제 발생 시 세션 재시작",
+    text: "⋯ → 「세션 재시작」을 선택하면 대화를 유지한 채 하네스를 다시 시작합니다. MCP 서버나 설정 변경 사항을 적용할 때도 사용합니다",
     spot: { left: "45.45%", top: "22.98%", width: "13.89%", height: "11.78%" },
   },
   {
     id: "hardrestart", scene: "control", caption: "bottom-right",
-    title: "처음부터 다시 하려면 하드 리스타트",
-    text: "왼쪽 멤버를 우클릭. 「하드 리스타트」 는 대화 맥락까지 버리고 새로 시작합니다 — 지금까지의 대화가 사라지니, 헷갈릴 때만 쓰세요.",
+    title: "대화 맥락 초기화 — 하드 리스타트",
+    text: "왼쪽 멤버를 마우스 오른쪽 버튼으로 선택하고 「하드 리스타트」를 선택합니다. 기존 대화 맥락이 초기화되므로 필요한 경우에만 사용하세요",
     spot: { left: "11.81%", top: "39.49%", width: "9.72%", height: "10.93%" },
   },
   {
     id: "runtime", scene: "control", caption: "bottom-right",
-    title: "전체 기본값은 런타임 설정에서",
-    text: "자동 압축 임계값, 유휴 슬립, 입력창 동작, 글꼴처럼 앱 전체에 걸리는 것들이 모여 있습니다. 하네스별 기본 모델도 여기서 정합니다.",
+    title: "앱 전체 기본값 설정",
+    text: "자동 압축 임계값, 유휴 슬립, 입력창 동작, 글꼴 등 앱 전체 설정을 관리합니다. 하네스별 기본 모델도 이 화면에서 지정합니다",
     spot: { left: "3.61%", top: "15.23%", width: "95.76%", height: "5.31%" },
   },
 
   // --- 얼마나 쓰는지 본다 ---
   {
     id: "context", scene: "cost", caption: "bottom",
-    title: "대화가 차면 눌러서 줄인다",
-    text: "도넛은 그 멤버의 대화가 얼마나 찼는지입니다. 클릭하면 지금 압축하거나, 몇 % 에서 자동으로 줄일지 정할 수 있습니다.",
+    title: "컨텍스트 사용량 확인 및 압축",
+    text: "도넛 차트는 해당 멤버의 컨텍스트 사용량을 표시합니다. 차트를 선택하여 즉시 압축하거나 자동 압축 임계값을 설정할 수 있습니다",
     spot: { left: "21.18%", top: "34.89%", width: "57.64%", height: "30.23%" },
   },
   {
     id: "limit", scene: "cost", caption: "bottom",
-    title: "남은 한도는 늘 위에 있다",
-    text: "구독의 남은 한도가 제목 표시줄에 붙어 있습니다. 여기까지가 한 바퀴입니다 — 이제 폴더를 고르고 파티를 하나 만들어 보세요.",
+    title: "사용 한도 확인",
+    text: "구독 사용 한도는 제목 표시줄에서 확인할 수 있습니다. 기본 안내가 완료되었습니다. 작업공간을 선택하고 파티를 생성해 보세요",
     spot: { left: "69.5%", top: "9.02%", width: "29.12%", height: "2.76%" },
   },
 ] as const satisfies ReadonlyArray<{
@@ -339,17 +339,17 @@ export interface GuideInspect {
 export function guideSlideAt(index: number): (typeof GUIDE_SLIDES)[number] {
   const slide = GUIDE_SLIDES[index];
   if (!slide) {
-    throw new Error(`가이드 슬라이드 ${index} 은(는) 없습니다 (0…${GUIDE_SLIDE_COUNT - 1}).`);
+    throw new Error(`가이드 슬라이드 ${index}은(는) 없습니다(0…${GUIDE_SLIDE_COUNT - 1})`);
   }
   return slide;
 }
 
 export function clampGuideSlide(index: number): number {
   if (!Number.isInteger(index)) {
-    throw new Error(`가이드 슬라이드 번호는 정수여야 합니다 (받은 값: ${String(index)}).`);
+    throw new Error(`가이드 슬라이드 번호는 정수여야 합니다(입력값: ${String(index)})`);
   }
   if (index < 0 || index >= GUIDE_SLIDE_COUNT) {
-    throw new Error(`가이드 슬라이드 ${index} 은(는) 없습니다 (0…${GUIDE_SLIDE_COUNT - 1}).`);
+    throw new Error(`가이드 슬라이드 ${index}은(는) 없습니다(0…${GUIDE_SLIDE_COUNT - 1})`);
   }
   return index;
 }
@@ -357,7 +357,7 @@ export function clampGuideSlide(index: number): number {
 export function firstSlideOfScene(scene: GuideSceneId): number {
   const index = GUIDE_SLIDES.findIndex((slide) => slide.scene === scene);
   if (index < 0) {
-    throw new Error(`가이드 장면 '${scene}' 이(가) 없습니다.`);
+    throw new Error(`가이드 장면 '${scene}'이(가) 없습니다`);
   }
   return index;
 }
@@ -366,7 +366,7 @@ export function sceneOf(index: number): (typeof GUIDE_SCENES)[number] {
   const slide = guideSlideAt(index);
   const scene = GUIDE_SCENES.find((item) => item.id === slide.scene);
   if (!scene) {
-    throw new Error(`가이드 슬라이드 ${slide.id} 의 장면 '${slide.scene}' 이(가) 없습니다.`);
+    throw new Error(`가이드 슬라이드 ${slide.id}에 장면 '${slide.scene}'이(가) 없습니다`);
   }
   return scene;
 }
@@ -376,7 +376,7 @@ export function sceneOf(index: number): (typeof GUIDE_SCENES)[number] {
 export function sceneRange(scene: GuideSceneId): { from: number; to: number } {
   const at = GUIDE_SCENES.findIndex((item) => item.id === scene);
   if (at < 0) {
-    throw new Error(`가이드 장면 '${scene}' 이(가) 없습니다.`);
+    throw new Error(`가이드 장면 '${scene}'이(가) 없습니다`);
   }
   const next = GUIDE_SCENES[at + 1];
   return { from: GUIDE_SCENES[at].from + 1, to: next ? next.from : GUIDE_SLIDE_COUNT };

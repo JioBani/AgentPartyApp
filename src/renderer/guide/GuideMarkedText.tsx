@@ -2,6 +2,7 @@ import { AlertTriangle, Play } from "lucide-react";
 import { Markdown } from "../workbench/Markdown";
 import { parseGuideSlideMarkers } from "../../shared/guideChat";
 import { GUIDE_SLIDE_COUNT, sceneOf } from "../../shared/guide";
+import { LocalizedText } from "../i18n/I18nProvider";
 
 /**
  * Assistant text with `[[slide:N]]` turned into a button that jumps to that
@@ -30,7 +31,8 @@ export function GuideMarkedText({
               onClick={() => onOpenSlide?.(part.index as number)}
             >
               <Play size={12} />
-              슬라이드 {part.index + 1} · {scene.title}
+
+              <LocalizedText id="STR-1267" /> {part.index + 1} · {scene.title}
             </button>
           );
         }
@@ -38,7 +40,8 @@ export function GuideMarkedText({
           return (
             <span key={at} className="guide-marker-miss">
               <AlertTriangle size={12} />
-              슬라이드 {String(part.index)} 은(는) 없습니다 (0…{GUIDE_SLIDE_COUNT - 1})
+
+              <LocalizedText id="STR-1268" /> {String(part.index)}  <LocalizedText id="STR-1269" />{GUIDE_SLIDE_COUNT - 1})
             </span>
           );
         }

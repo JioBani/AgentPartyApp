@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowDownToLine, ExternalLink, PackageCheck, RefreshCw, RotateCw, X } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { formatBytes, releasesUrl, type UpdateStatus } from "../../shared/appUpdate";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface UpdateModalProps {
   status: UpdateStatus;
@@ -54,14 +55,14 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <PackageCheck size={16} />
-            <strong>앱 업데이트</strong>
+            <strong><LocalizedText id="STR-2252" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title="닫기" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-2253")} onClick={onClose}><X size={16} /></button>
         </header>
 
         <div className="wb-modal-body-col">
           <div className="wb-update-versions">
-            <span className="wb-mono">현재 {status.currentVersion || "확인 중"}</span>
+            <span className="wb-mono"><LocalizedText id="STR-2254" /> {status.currentVersion || "확인 중"}</span>
             {status.latestVersion && status.latestVersion !== status.currentVersion && (
               <>
                 <span className="wb-update-arrow">→</span>
@@ -76,12 +77,12 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
               <span>{status.disabledReason || "이 빌드에서는 자동 업데이트를 사용할 수 없습니다."}</span>
             </div>
           )}
-          {status.state === "up-to-date" && <div className="wb-update-note">최신 버전을 사용 중입니다.</div>}
-          {status.state === "checking" && <div className="wb-update-note">업데이트 확인 중…</div>}
+          {status.state === "up-to-date" && <div className="wb-update-note"><LocalizedText id="STR-2257" /></div>}
+          {status.state === "checking" && <div className="wb-update-note"><LocalizedText id="STR-2258" /></div>}
           {status.state === "error" && (
             <div className="wb-update-note is-error">
               <AlertTriangle size={13} />
-              <span>업데이트 확인에 실패했습니다: {status.error}</span>
+              <span><LocalizedText id="STR-2259" /> {status.error}</span>
             </div>
           )}
           {error && (
@@ -107,8 +108,7 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
             <div className="wb-update-note is-warn">
               <AlertTriangle size={13} />
               <span>
-                <strong>이전 버전으로 되돌립니다.</strong> 배포자가 최신 릴리스를 회수했을 때 나타납니다.
-                최신 버전에서 만든 설정이나 데이터는 되돌아가지 않으며, 옛 버전이 읽지 못할 수 있습니다.
+                <strong><LocalizedText id="STR-2261" /></strong>  <LocalizedText id="STR-2260" />
               </span>
             </div>
           )}
@@ -116,19 +116,19 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
           {status.state === "downloaded" && (
             <div className="wb-update-note is-ready">
               <PackageCheck size={13} />
-              <span>다운로드 완료. 설치하면 앱이 재시작되고 <strong>실행 중인 모든 멤버가 종료</strong>됩니다.</span>
+              <span><LocalizedText id="STR-2262" /> <strong><LocalizedText id="STR-2264" /></strong><LocalizedText id="STR-2263" /></span>
             </div>
           )}
 
           {status.releaseNotes && (
             <div className="wb-update-notes">
-              <div className="wb-update-notes-head">변경 사항{status.releaseDate ? ` · ${status.releaseDate.slice(0, 10)}` : ""}</div>
+              <div className="wb-update-notes-head"><LocalizedText id="STR-2265" />{status.releaseDate ? ` · ${status.releaseDate.slice(0, 10)}` : ""}</div>
               <div className="wb-update-notes-body"><Markdown text={status.releaseNotes} /></div>
             </div>
           )}
 
           {status.checkedAt && (
-            <div className="wb-update-checked">마지막 확인 {new Date(status.checkedAt).toLocaleString()}</div>
+            <div className="wb-update-checked"><LocalizedText id="STR-2266" /> {new Date(status.checkedAt).toLocaleString()}</div>
           )}
         </div>
 
@@ -141,11 +141,11 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
             className="wb-btn"
             onClick={() => void window.agentParty.openExternal(status.releaseUrl || releasesUrl())}
           >
-            <ExternalLink size={13} /> 릴리스 페이지
+            <ExternalLink size={13} />  <LocalizedText id="STR-2267" />
           </button>
           <div className="wb-update-actions">
             <button type="button" className="wb-btn" disabled={busy || status.state === "checking" || status.state === "downloading"} onClick={() => void run(onCheck)}>
-              <RefreshCw size={13} className={status.state === "checking" ? "wb-spin" : undefined} /> 다시 확인
+              <RefreshCw size={13} className={status.state === "checking" ? "wb-spin" : undefined} />  <LocalizedText id="STR-2268" />
             </button>
             {status.state === "available" && (
               <button type="button" className="wb-btn wb-btn-accent" disabled={busy} onClick={() => void run(onDownload)}>
@@ -155,15 +155,15 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
             {status.state === "downloaded" && (
               confirmInstall ? (
                 <button type="button" className="wb-btn wb-btn-accent" disabled={busy} onClick={() => void run(onInstall)}>
-                  <RotateCw size={13} /> 정말 재시작할까요?
+                  <RotateCw size={13} />  <LocalizedText id="STR-2271" />
                 </button>
               ) : (
                 <button type="button" className="wb-btn wb-btn-accent" disabled={busy} onClick={() => setConfirmInstall(true)}>
-                  <RotateCw size={13} /> 재시작하여 설치
+                  <RotateCw size={13} />  <LocalizedText id="STR-2272" />
                 </button>
               )
             )}
-            <button type="button" className="wb-btn" onClick={onClose}>닫기</button>
+            <button type="button" className="wb-btn" onClick={onClose}><LocalizedText id="STR-2273" /></button>
           </div>
         </footer>
       </div>

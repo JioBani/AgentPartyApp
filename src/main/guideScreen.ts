@@ -17,7 +17,7 @@ import { BrowserWindow, ipcMain, type WebContents } from "electron";
 import { clampGuideSlide, GUIDE_SLIDE_COUNT, GUIDE_SLIDES, sceneOf, type GuideInspect, type GuideScreenInfo } from "../shared/guide";
 import { getLogFilePath, log } from "./logger";
 
-const NOT_OPEN = "가이드 화면이 열려 있지 않습니다. POST /api/guide/open 으로 먼저 여세요.";
+const NOT_OPEN = "가이드 화면이 열려 있지 않습니다. POST /api/guide/open으로 먼저 여세요.";
 
 /** One measured element, already in `GUIDE_SLIDES` spot units. */
 interface StageSpot {
@@ -72,7 +72,7 @@ export class GuideScreenHost {
     this.ensureIpc();
     const window = this.deps.targetWindow(windowId);
     if (!window || window.isDestroyed()) {
-      throw new Error(windowId ? `창 '${windowId}' 을(를) 찾지 못했습니다.` : "가이드를 열 앱 창이 없습니다.");
+      throw new Error(windowId ? `창 '${windowId}'을(를) 찾을 수 없습니다.` : "가이드를 열 앱 창이 없습니다.");
     }
     if (window.isMinimized()) {
       window.restore();
@@ -98,7 +98,7 @@ export class GuideScreenHost {
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new Error("가이드 화면에 .guide-window 가 나타나지 않았습니다.");
+    throw new Error("가이드 화면에 .guide-window가 표시되지 않았습니다.");
   }
 
   /** Leaves the guide in the window a command would act on, not in all of them. */
@@ -124,10 +124,10 @@ export class GuideScreenHost {
     const result = await contents
       .executeJavaScript(`(${GUIDE_INSPECT_SCRIPT})()`)
       .catch((error: unknown) => {
-        throw new Error(`가이드 inspect 실패: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`가이드 inspect에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`);
       });
     if (!result || result.error) {
-      throw new Error(String(result?.error || "가이드 inspect 가 값을 반환하지 않았습니다."));
+      throw new Error(String(result?.error || "가이드 inspect가 값을 반환하지 않았습니다."));
     }
     return result as GuideInspect;
   }
@@ -137,7 +137,7 @@ export class GuideScreenHost {
     const image = await contents.capturePage();
     const size = image.getSize();
     if (size.width < 2 || size.height < 2) {
-      throw new Error(`가이드 화면 캡처가 비었습니다 (${size.width}×${size.height}).`);
+      throw new Error(`가이드 화면 캡처 결과가 비어 있습니다(${size.width}×${size.height}).`);
     }
     const buffer = image.toPNG();
     const dest = outputPath?.trim()
@@ -181,18 +181,18 @@ export class GuideScreenHost {
     const contents = this.requireViewer();
     const frame = contents.mainFrame.frames.find((child) => child.url.includes("/guide/stage/"));
     if (!frame) {
-      throw new Error("무대 iframe 을 찾지 못했습니다. 프레젠테이션이 열려 있어야 합니다.");
+      throw new Error("무대 iframe을 찾을 수 없습니다. 프레젠테이션이 열려 있어야 합니다.");
     }
     const result = (await frame
       .executeJavaScript(`(${STAGE_MEASURE_SCRIPT})(${JSON.stringify(selector)})`)
       .catch((error: unknown) => {
-        throw new Error(`무대 계측 실패: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`무대 계측에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`);
       })) as { error?: string; count?: number; elements?: StageSpot[] };
     if (result?.error) {
       throw new Error(String(result.error));
     }
     if (!result?.count) {
-      throw new Error(`무대에서 '${selector}' 를 찾지 못했습니다.`);
+      throw new Error(`무대에서 '${selector}'을(를) 찾을 수 없습니다.`);
     }
     return { ok: true, selector, count: result.count, elements: result.elements || [] };
   }
@@ -205,7 +205,7 @@ export class GuideScreenHost {
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) { return false; } el.click(); return true; })()`,
     );
     if (!hit) {
-      throw new Error(`가이드 화면에서 '${selector}' 를 찾지 못했습니다.`);
+      throw new Error(`가이드 화면에서 '${selector}'을(를) 찾을 수 없습니다.`);
     }
     return { ok: true, selector };
   }

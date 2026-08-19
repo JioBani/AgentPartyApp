@@ -459,6 +459,25 @@ why. On success the response carries the image actually written —
 
 ## Settings
 
+### `GET /api/settings/locale`
+
+Returns the language used by the desktop UI: `{"locale":"ko"}` or
+`{"locale":"en"}`.
+
+### `POST /api/settings/locale`
+
+Changes the desktop UI language through the same `AppController.setLocale`
+method used by the language picker in Settings → Runtime → General.
+
+```json
+{ "locale": "en" }
+```
+
+The change is persisted and pushed to every open window immediately. Supported
+values are `ko` and `en`; any other value returns an error instead of silently
+falling back. `POST /api/settings` accepts the same `locale` field and applies
+the same validation.
+
 ### `POST /api/settings`
 
 Updates app settings.

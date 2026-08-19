@@ -15,6 +15,7 @@ import { WorkingDots } from "./StatusIndicator";
 import { harnessLabel } from "./harnessLabel";
 import { HarnessIcon } from "./HarnessIcon";
 import { MessageGateIcon } from "./MessageGateIcon";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 export interface CreateMemberInput {
   name: string;
@@ -96,20 +97,20 @@ function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep
         type="button"
         className="wb-ctx-item"
         disabled={!view?.session}
-        title="하네스를 그 자리에서 재시작합니다(대화 맥락 초기화, 세션 유지)"
+        title={localized("STR-2047")}
         onClick={run(() => onRestart(name))}
       >
-        <RotateCcw size={13} /> 하드 리스타트
+        <RotateCcw size={13} />  <LocalizedText id="STR-2048" />
       </button>
       {/* Idle sleep. The pin applies to any member, session or not; 재우기/깨우기
           is offered in whichever direction this member can actually go. */}
       <button
         type="button"
         className={"wb-ctx-item" + (keepAwake ? " is-on" : "")}
-        title="켜면 이 멤버는 유휴 슬립에서 제외되어 프로세스가 계속 떠 있습니다"
+        title={localized("STR-2049")}
         onClick={run(() => onSetKeepAwake(name, !keepAwake))}
       >
-        <Pin size={13} /> 계속 켜두기
+        <Pin size={13} />  <LocalizedText id="STR-2050" />
         {keepAwake && <Check size={13} className="wb-ctx-check" />}
       </button>
       {view?.status === "closed" ? (
@@ -120,34 +121,34 @@ function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep
         <button
           type="button"
           className="wb-ctx-item"
-          title="닫힌 멤버의 세션을 다시 시작하고 대화를 이어받습니다"
+          title={localized("STR-2051")}
           onClick={run(() => onWake(name))}
         >
-          <Play size={13} /> 세션 시작
+          <Play size={13} />  <LocalizedText id="STR-2052" />
         </button>
       ) : view?.status === "sleeping" ? (
         <button
           type="button"
           className="wb-ctx-item"
-          title="프로세스를 다시 띄우고 대화를 이어받습니다"
+          title={localized("STR-2053")}
           onClick={run(() => onWake(name))}
         >
-          <Sun size={13} /> 지금 깨우기
+          <Sun size={13} />  <LocalizedText id="STR-2054" />
         </button>
       ) : (
         <button
           type="button"
           className="wb-ctx-item"
           disabled={!view?.session || keepAwake}
-          title="대화는 두고 하네스 프로세스만 반납합니다. 다음 메시지에 다시 깨어납니다"
+          title={localized("STR-2055")}
           onClick={run(() => onSleep(name))}
         >
-          <Moon size={13} /> 지금 재우기
+          <Moon size={13} />  <LocalizedText id="STR-2056" />
         </button>
       )}
       {name !== "main" && (
         <button type="button" className="wb-ctx-item is-danger" onClick={run(() => onRemove(name))}>
-          <Trash2 size={13} /> 삭제하기
+          <Trash2 size={13} />  <LocalizedText id="STR-2057" />
         </button>
       )}
     </>
@@ -205,14 +206,14 @@ export function PartySidebar(props: PartySidebarProps) {
       <header className="wb-sidebar-head">
         <Users size={16} />
         <span className="wb-sidebar-party" title={activePartyName}>{activePartyName}</span>
-        <button type="button" className="wb-icon-btn" title="파티 패널 접기" onClick={onCollapse}><ChevronsLeft size={16} /></button>
+        <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={onCollapse}><ChevronsLeft size={16} /></button>
       </header>
 
       <section className="wb-sidebar-section">
         <div className="wb-section-label">Parties <span className="wb-mono">{parties.length}</span></div>
         <form className="wb-new-party" onSubmit={submit}>
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="새 파티 이름…" />
-          <button type="button" className="wb-icon-btn is-accent" title="새 파티 만들기 (메시지 게이트 옵션)" onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={localized("STR-2059")} />
+          <button type="button" className="wb-icon-btn is-accent" title={localized("STR-2060")} onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
         </form>
         <div className="wb-party-list">
           {parties.map((party) => {
@@ -246,9 +247,9 @@ export function PartySidebar(props: PartySidebarProps) {
 
       <section className="wb-sidebar-section wb-members-section">
         <div className="wb-section-label">
-          <span>Members</span>
-          {!creating && <span className="wb-hint">클릭해 패널로 열기</span>}
-          <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? "취소" : "멤버 추가"} onClick={() => setCreating((value) => !value)}>
+          <span><LocalizedText id="STR-2061" /></span>
+          {!creating && <span className="wb-hint"><LocalizedText id="STR-2062" /></span>}
+          <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? localized("STR-2064") : localized("STR-2063")} onClick={() => setCreating((value) => !value)}>
             {creating ? <X size={14} /> : <Plus size={15} />}
           </button>
         </div>
@@ -266,7 +267,7 @@ export function PartySidebar(props: PartySidebarProps) {
         )}
 
         <div className="wb-member-list">
-          {views.length === 0 && <div className="wb-empty">No members</div>}
+          {views.length === 0 && <div className="wb-empty"><LocalizedText id="STR-2065" /></div>}
           {views.map((view) => {
             const removable = view.name !== "main";
             return (
@@ -295,12 +296,12 @@ export function PartySidebar(props: PartySidebarProps) {
                 <span className="wb-harness-chip" title={harnessLabel(view.member.runtime)} aria-label={harnessLabel(view.member.runtime)}>
                   <HarnessIcon harness={view.member.runtime} />
                 </span>
-                {view.pendingApproval && <span className="wb-member-badge">승인</span>}
+                {view.pendingApproval && <span className="wb-member-badge"><LocalizedText id="STR-2066" /></span>}
                 {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
                 {/* A running turn is motion, not the grey word "working" that
                     read as a label and was easy to miss down the list. */}
                 {!view.pendingApproval && (view.status === "working"
-                  ? <WorkingDots label="작업 중" />
+                  ? <WorkingDots label={localized("STR-2067")} />
                   : <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>)}
               </div>
             );
@@ -331,18 +332,18 @@ export function PartySidebar(props: PartySidebarProps) {
               <button
                 type="button"
                 className="wb-ctx-item"
-                title="이 파티를 새 창에서 엽니다 (같은 프로세스 · 세션 공유)"
+                title={localized("STR-2068")}
                 onClick={() => { onOpenPartyInNewWindow(menu.partyId); setMenu(null); }}
               >
-                <ExternalLink size={13} /> 새 창에서 열기
+                <ExternalLink size={13} />  <LocalizedText id="STR-2069" />
               </button>
               <button
                 type="button"
                 className="wb-ctx-item"
-                title="이 파티의 멤버 간 메시지 게이트 규칙을 설정합니다"
+                title={localized("STR-2070")}
                 onClick={() => { onSelectParty(menu.partyId); onOpenPartyGate(menu.partyId); setMenu(null); }}
               >
-                <MessageGateIcon size={13} className="wb-gate-accent" /> 메시지 게이트 설정
+                <MessageGateIcon size={13} className="wb-gate-accent" />  <LocalizedText id="STR-2071" />
               </button>
               {confirmParty ? (
                 <button
@@ -350,7 +351,7 @@ export function PartySidebar(props: PartySidebarProps) {
                   className="wb-ctx-item is-danger"
                   onClick={() => { onRemoveParty(menu.partyId); setMenu(null); }}
                 >
-                  <Trash2 size={13} /> 파티와 모든 멤버 삭제 · 한 번 더 클릭
+                  <Trash2 size={13} />  <LocalizedText id="STR-2072" />
                 </button>
               ) : (
                 <button
@@ -358,7 +359,7 @@ export function PartySidebar(props: PartySidebarProps) {
                   className="wb-ctx-item is-danger"
                   onClick={() => setConfirmParty(true)}
                 >
-                  <Trash2 size={13} /> 파티 삭제…
+                  <Trash2 size={13} />  <LocalizedText id="STR-2073" />
                 </button>
               )}
             </>
@@ -401,17 +402,17 @@ function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: strin
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <Users size={16} />
-            <strong>새 파티</strong>
+            <strong><LocalizedText id="STR-2075" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-2076")} onClick={onCancel}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-gate-modal-body">
-          <div className="wb-modal-label">파티 이름</div>
+          <div className="wb-modal-label"><LocalizedText id="STR-2077" /></div>
           <input
             className="wb-gate-name-input"
             value={name}
             autoFocus
-            placeholder="새 파티 이름…"
+            placeholder={localized("STR-2078")}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") create(); }}
           />
@@ -420,17 +421,17 @@ function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: strin
               <span className="wb-gate-toggle-text">
                 <span className="wb-gate-tile"><MessageGateIcon size={17} /></span>
                 <span>
-                  <strong>메시지 게이트 사용</strong>
-                  <small>멤버 간 메시지를 전달 전에 리뷰어가 심사합니다. 기본은 꺼짐.</small>
+                  <strong><LocalizedText id="STR-2079" /></strong>
+                  <small><LocalizedText id="STR-2080" /></small>
                 </span>
               </span>
               <input type="checkbox" className="wb-switch" checked={gateOn} onChange={(event) => setGateOn(event.target.checked)} />
             </label>
             {gateOn && (
               <>
-                <div className="wb-modal-label">통신 규칙 · 파티 전역</div>
+                <div className="wb-modal-label"><LocalizedText id="STR-2081" /></div>
                 <textarea className="wb-gate-textarea" rows={4} value={rule} onChange={(event) => setRule(event.target.value)} />
-                <div className="wb-gate-note">리뷰어는 설정 → Runtime의 게이트 기본 모델을 사용합니다. 멤버별로 재정의할 수 있어요.</div>
+                <div className="wb-gate-note"><LocalizedText id="STR-2082" /></div>
               </>
             )}
           </div>
@@ -438,8 +439,8 @@ function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: strin
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}>Cancel</button>
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>파티 만들기</button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-2083" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}><LocalizedText id="STR-2084" /></button>
           </div>
         </footer>
       </div>

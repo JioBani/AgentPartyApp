@@ -69,7 +69,7 @@ export function resolveGuideModel(settings: GuideChatSettings): { model: string;
   const model = settings.model || fallback?.model;
   const effort = settings.effort || fallback?.effort || "medium";
   if (!model) {
-    throw new Error(`${settings.harnessId} 는 기본 모델이 없습니다. 가이드에서 모델을 고르세요.`);
+    throw new Error(`${settings.harnessId}에는 기본 모델이 없습니다. 가이드에서 모델을 선택하세요.`);
   }
   return { model, effort };
 }

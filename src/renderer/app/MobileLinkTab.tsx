@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { AlertTriangle, Check, Info as InfoIcon, KeyRound, Link2Off, LockKeyhole, MonitorSmartphone, QrCode, RefreshCw, Server, Smartphone, Trash2, X } from "lucide-react";
 import type { DiagnosticReason, GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 import { ipcErrorMessage } from "./ipcError";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * 설정 → 모바일 연결 (04 §4).
@@ -156,10 +157,10 @@ export function MobileLinkCard({ active }: { active: boolean }) {
   return (
     <>
       <section className="set-card">
-        <div className="set-card-label">연결 상태</div>
+        <div className="set-card-label"><LocalizedText id="STR-0893" /></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
-          <span>폰의 AgentParty 앱이 이 PC에 <b>직접</b> 연결됩니다. 대화 내용은 중계 서버를 지나지 않고, 서버는 두 기기가 서로를 찾도록 주소만 이어줍니다.</span>
+          <span><LocalizedText id="STR-0896" /> <b><LocalizedText id="STR-0895" /></b>  <LocalizedText id="STR-0894" /></span>
         </div>
         {error && <div className="set-inline-note is-error" role="alert"><AlertTriangle size={14} /><span>{error}</span></div>}
         <div className="set-router-row">
@@ -182,9 +183,9 @@ export function MobileLinkCard({ active }: { active: boolean }) {
             onClick={() => void run("enabled", () => window.agentParty.updateMobileSettings({ enabled: !settings?.enabled }))}
           >
             <span className={"set-switch" + (settings?.enabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-            <span className="set-toggle-label">모바일 연결 사용</span>
+            <span className="set-toggle-label"><LocalizedText id="STR-0900" /></span>
           </button>
-          <span className="set-save-hint">끄면 이 PC는 시그널링 서버에 접속하지 않고, 연결된 폰은 즉시 끊깁니다.</span>
+          <span className="set-save-hint"><LocalizedText id="STR-0901" /></span>
         </div>
         {status && status.sessions.length > 0 && (
           <div className="set-link-list">
@@ -206,7 +207,7 @@ export function MobileLinkCard({ active }: { active: boolean }) {
                   disabled={Boolean(busy)}
                   onClick={() => void run(session.sessionId, () => window.agentParty.disconnectMobileSession(session.sessionId))}
                 >
-                  <Link2Off size={14} /> 연결 끊기
+                  <Link2Off size={14} />  <LocalizedText id="STR-0908" />
                 </button>
               </div>
             ))}
@@ -236,9 +237,9 @@ export function MobileLinkCard({ active }: { active: boolean }) {
       />
 
       <section className="set-card">
-        <div className="set-card-label">연결된 폰</div>
+        <div className="set-card-label"><LocalizedText id="STR-0910" /></div>
         {devices.length === 0 ? (
-          <div className="set-inline-note is-soft mob-empty"><InfoIcon size={14} /><span>아직 등록된 폰이 없습니다. 위에서 QR을 발행해 폰의 AgentParty 앱으로 스캔하세요.</span></div>
+          <div className="set-inline-note is-soft mob-empty"><InfoIcon size={14} /><span><LocalizedText id="STR-0911" /></span></div>
         ) : (
           <div className="set-link-list">
             {devices.map((device) => (
@@ -306,34 +307,34 @@ function ConnectionLockCard({ lock, busy, onSet, onClear }: {
 
   return (
     <section className="set-card mob-lock-card">
-      <div className="set-card-label">연결 잠금</div>
+      <div className="set-card-label"><LocalizedText id="STR-0916" /></div>
       <div className="set-inline-note is-soft">
         <LockKeyhole size={14} />
-        <span>새로 연결할 때마다 이 PC에서 정한 PIN 또는 패턴을 폰에 입력해야 합니다. 입력값은 폰에 저장되지 않습니다.</span>
+        <span><LocalizedText id="STR-0917" /></span>
       </div>
       <div className="mob-lock-status">
         <span className={"set-dot " + (lock?.configured ? "is-success" : "is-idle")} />
         <b>{lock?.configured ? `${lock.kind === "pin" ? "6자리 PIN" : "패턴"} 사용 중` : "사용 안 함"}</b>
       </div>
-      <div className="mob-lock-kind" role="radiogroup" aria-label="연결 잠금 방식">
-        <button type="button" className={kind === "pin" ? "is-active" : ""} onClick={() => selectKind("pin")}>6자리 PIN</button>
-        <button type="button" className={kind === "pattern" ? "is-active" : ""} onClick={() => selectKind("pattern")}>패턴</button>
+      <div className="mob-lock-kind" role="radiogroup" aria-label={localized("STR-0922")}>
+        <button type="button" className={kind === "pin" ? "is-active" : ""} onClick={() => selectKind("pin")}><LocalizedText id="STR-0923" /></button>
+        <button type="button" className={kind === "pattern" ? "is-active" : ""} onClick={() => selectKind("pattern")}><LocalizedText id="STR-0924" /></button>
       </div>
       {kind === "pin" ? (
         <div className="set-card-fields mob-lock-fields">
           <label className="set-field">
-            <span className="set-field-label">새 PIN</span>
-            <div className="set-input"><KeyRound size={14} /><input aria-label="새 PIN" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={secret} onChange={(event) => setSecret(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+            <span className="set-field-label"><LocalizedText id="STR-0925" /></span>
+            <div className="set-input"><KeyRound size={14} /><input aria-label={localized("STR-0926")} type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={secret} onChange={(event) => setSecret(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
           </label>
           <label className="set-field">
-            <span className="set-field-label">PIN 확인</span>
-            <div className="set-input"><KeyRound size={14} /><input aria-label="PIN 확인" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+            <span className="set-field-label"><LocalizedText id="STR-0927" /></span>
+            <div className="set-input"><KeyRound size={14} /><input aria-label={localized("STR-0928")} type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
           </label>
         </div>
       ) : (
         <div className="mob-pattern-pair">
-          <PatternInput label="새 패턴" value={secret} onChange={setSecret} />
-          <PatternInput label="패턴 확인" value={confirmation} onChange={setConfirmation} />
+          <PatternInput label={localized("STR-0929")} value={secret} onChange={setSecret} />
+          <PatternInput label={localized("STR-0930")} value={confirmation} onChange={setConfirmation} />
         </div>
       )}
       {validation && <div className="set-inline-note is-error" role="alert"><AlertTriangle size={14} /><span>{validation}</span></div>}
@@ -346,7 +347,7 @@ function ConnectionLockCard({ lock, busy, onSet, onClear }: {
             <X size={14} /> {clearArmed ? "정말 해제" : "잠금 해제"}
           </button>
         )}
-        <span className="set-save-hint">변경하거나 해제하면 현재 폰 연결이 모두 종료됩니다.</span>
+        <span className="set-save-hint"><LocalizedText id="STR-0935" /></span>
       </div>
     </section>
   );
@@ -378,7 +379,7 @@ function PatternInput({ label, value, onChange }: { label: string; value: string
           <button
             type="button"
             key={index}
-            aria-label={`${index + 1}번 점`}
+            aria-label={localized("STR-0936", [index + 1])}
             aria-pressed={value.includes(String(index))}
             className={value.includes(String(index)) ? "is-selected" : ""}
             onPointerDown={(event) => { event.preventDefault(); setDrawing(true); add(index); }}
@@ -386,7 +387,7 @@ function PatternInput({ label, value, onChange }: { label: string; value: string
           ><span>{value.indexOf(String(index)) >= 0 ? value.indexOf(String(index)) + 1 : ""}</span></button>
         ))}
       </div>
-      <button type="button" className="mob-pattern-reset" disabled={!value} onClick={() => onChange("")}>다시 그리기</button>
+      <button type="button" className="mob-pattern-reset" disabled={!value} onClick={() => onChange("")}><LocalizedText id="STR-0937" /></button>
     </div>
   );
 }
@@ -429,32 +430,32 @@ function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onCon
 
   return (
     <section className="set-card">
-      <div className="set-card-label">폰 연결하기</div>
+      <div className="set-card-label"><LocalizedText id="STR-0938" /></div>
       {phase === "failed" && pairing?.error && (
         <div className="set-inline-note is-error" role="alert"><AlertTriangle size={14} /><span>{pairing.error}</span></div>
       )}
       {phase === "expired" && (
-        <div className="set-inline-note is-warn"><AlertTriangle size={14} /><span>QR이 만료되었습니다(2분). 다시 발행하세요.</span></div>
+        <div className="set-inline-note is-warn"><AlertTriangle size={14} /><span><LocalizedText id="STR-0939" /></span></div>
       )}
       {phase === "completed" && (
-        <div className="set-inline-note is-success"><Check size={14} /><span>폰이 등록되었습니다.</span></div>
+        <div className="set-inline-note is-success"><Check size={14} /><span><LocalizedText id="STR-0940" /></span></div>
       )}
       {!open && linkDown && (
         <div className="set-inline-note is-warn" role="alert">
           <AlertTriangle size={14} />
           <span>
-            서버에 연결돼 있지 않습니다(재시도 중). 지금 발행하면 폰이
-            {signalingUrl ? ` ${signalingUrl} 주소를` : " 이 주소를"} 저장합니다.
-            주소가 잘못돼 있으면 그 폰은 연결되지 않습니다. 연결이 돌아온 뒤 발행하는 편이 안전합니다.
+
+            <LocalizedText id="STR-0941" />
+            {signalingUrl ? ` ${signalingUrl} 주소를` : " 이 주소를"}  <LocalizedText id="STR-0944" />
           </span>
         </div>
       )}
       {!open ? (
         <div className="set-diag-actions">
           <button type="button" className="set-btn-accent" disabled={Boolean(busy)} onClick={onOpen}>
-            <QrCode size={14} /> QR 발행
+            <QrCode size={14} />  <LocalizedText id="STR-0945" />
           </button>
-          <span className="set-save-hint">폰의 AgentParty 앱에서 “PC 연결”을 눌러 스캔하세요. QR은 2분간 한 번만 쓸 수 있습니다.</span>
+          <span className="set-save-hint"><LocalizedText id="STR-0946" /></span>
         </div>
       ) : (
         <div className="mob-pair">
@@ -462,29 +463,29 @@ function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onCon
           <div className="mob-pair-side">
             {phase === "awaitingScan" ? (
               <>
-                <div className="mob-pair-step">폰에서 이 QR을 스캔하세요.</div>
+                <div className="mob-pair-step"><LocalizedText id="STR-0947" /></div>
                 <ExpiryCountdown expiresAt={qr?.expiresAt || pairing?.expiresAt} />
               </>
             ) : (
               <>
                 <div className="mob-pair-step">
-                  <b>{pairing?.peerName || "폰"}</b>이 스캔했습니다. 폰 화면의 숫자와 아래 숫자가 같은지 확인하세요.
+                  <b>{pairing?.peerName || "폰"}</b><LocalizedText id="STR-0948" />
                 </div>
-                <div className="mob-code wb-mono" aria-label="확인 코드">{pairing?.code}</div>
+                <div className="mob-code wb-mono" aria-label={localized("STR-0949")}>{pairing?.code}</div>
                 <div className="set-inline-note is-warn">
                   <AlertTriangle size={14} />
-                  <span>숫자가 다르면 <b>취소</b>하세요. 다른 기기가 끼어든 것입니다.</span>
+                  <span><LocalizedText id="STR-0950" /> <b><LocalizedText id="STR-0951" /></b><LocalizedText id="STR-0952" /></span>
                 </div>
               </>
             )}
             <div className="set-diag-actions">
               {phase === "awaitingConfirm" && (
                 <button type="button" className="set-btn-accent" disabled={Boolean(busy)} onClick={onConfirm}>
-                  <Check size={14} /> 일치
+                  <Check size={14} />  <LocalizedText id="STR-0953" />
                 </button>
               )}
               <button type="button" className="set-btn-soft" disabled={Boolean(busy)} onClick={onCancel}>
-                <X size={14} /> 취소
+                <X size={14} />  <LocalizedText id="STR-0954" />
               </button>
             </div>
           </div>
@@ -514,7 +515,7 @@ function QrImage({ text }: { text: string }) {
     return (
       <div className="mob-qr is-error" role="alert">
         <AlertTriangle size={16} />
-        <span>QR을 그리지 못했습니다: {failure}</span>
+        <span><LocalizedText id="STR-0955" /> {failure}</span>
         <code className="mob-qr-fallback">{text}</code>
       </div>
     );
@@ -530,7 +531,7 @@ function ExpiryCountdown({ expiresAt }: { expiresAt: number | undefined }) {
   }, []);
   if (!expiresAt) return null;
   const left = Math.max(0, Math.round((expiresAt - now) / 1000));
-  return <div className="mob-expiry wb-mono">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")} 남음</div>;
+  return <div className="mob-expiry wb-mono">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}  <LocalizedText id="STR-0956" /></div>;
 }
 
 function DeviceRow({ device, busy, onRename, onRevoke }: {
@@ -551,11 +552,11 @@ function DeviceRow({ device, busy, onRename, onRevoke }: {
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={() => { if (name.trim() && name !== device.name) onRename(name.trim()); }}
-          aria-label="폰 이름"
+          aria-label={localized("STR-0957")}
         />
       </div>
       <span className="set-link-meta wb-mono">
-        {device.push ? "알림 등록됨 · " : ""}마지막 접속 {formatWhen(device.lastSeenAt)}
+        {device.push ? "알림 등록됨 · " : ""}<LocalizedText id="STR-0958" /> {formatWhen(device.lastSeenAt)}
       </span>
       <button
         type="button"
@@ -574,11 +575,11 @@ function DiagnosticsCard({ diagnostics, busy, onRun }: { diagnostics: NatDiagnos
   const guidance = diagnostics ? REASON_GUIDANCE[diagnostics.reason] || REASON_GUIDANCE.unknown : undefined;
   return (
     <section className="set-card">
-      <div className="set-card-label">연결 진단</div>
+      <div className="set-card-label"><LocalizedText id="STR-0962" /></div>
       {!diagnostics ? (
         <div className="set-inline-note is-soft">
           <InfoIcon size={14} />
-          <span>폰이 다른 네트워크에서 연결되지 않을 때, 원인이 이 PC의 인터넷 회선인지 확인합니다.</span>
+          <span><LocalizedText id="STR-0963" /></span>
         </div>
       ) : (
         <>
@@ -588,11 +589,11 @@ function DiagnosticsCard({ diagnostics, busy, onRun }: { diagnostics: NatDiagnos
           </div>
           <div className="set-inline-note"><InfoIcon size={14} /><span>{guidance!.next}</span></div>
           <div className="set-diag-row">
-            <span className="set-diag-key">바깥 주소</span>
+            <span className="set-diag-key"><LocalizedText id="STR-0964" /></span>
             <span className="set-diag-value wb-mono">{diagnostics.wanAddress || "확인되지 않음"}{diagnostics.wanIsPrivate ? " (사설)" : ""}</span>
           </div>
           <div className="set-diag-row">
-            <span className="set-diag-key">포트 매핑</span>
+            <span className="set-diag-key"><LocalizedText id="STR-0967" /></span>
             <span className="set-diag-value wb-mono">
               {diagnostics.portMapping
                 ? `${diagnostics.portMapping.via} · ${diagnostics.portMapping.externalAddress || "?"}:${diagnostics.portMapping.externalPort}`
@@ -639,31 +640,31 @@ function ServerCard({ settings, busy, onSave }: { settings: MobileSettings | und
 
   return (
     <section className="set-card">
-      <div className="set-card-label">서버</div>
+      <div className="set-card-label"><LocalizedText id="STR-0971" /></div>
       <div className="set-inline-note is-soft">
         <InfoIcon size={14} />
-        <span>기본값은 운영자 서버입니다. 직접 띄운 서버를 쓰려면 주소를 바꾸세요 — 이 서버는 주소를 이어줄 뿐 대화 내용을 볼 수 없습니다.</span>
+        <span><LocalizedText id="STR-0972" /></span>
       </div>
       <div className="set-card-fields">
         <label className="set-field">
-          <span className="set-field-label">시그널링 서버</span>
+          <span className="set-field-label"><LocalizedText id="STR-0973" /></span>
           <div className="set-input">
             <Server size={14} />
             <input placeholder="wss://sig.agentparty.app" value={signalingUrl} onChange={(event) => setSignalingUrl(event.target.value)} />
           </div>
         </label>
         <label className="set-field">
-          <span className="set-field-label">푸시 서버</span>
+          <span className="set-field-label"><LocalizedText id="STR-0974" /></span>
           <div className="set-input">
             <Server size={14} />
             <input placeholder="https://push.agentparty.app" value={pushUrl} onChange={(event) => setPushUrl(event.target.value)} />
           </div>
         </label>
         <label className="set-field">
-          <span className="set-field-label">이 PC 이름</span>
+          <span className="set-field-label"><LocalizedText id="STR-0975" /></span>
           <div className="set-input">
             <MonitorSmartphone size={14} />
-            <input placeholder="폰의 기기 목록에 이 이름으로 보입니다" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} />
+            <input placeholder={localized("STR-0976")} value={deviceName} onChange={(event) => setDeviceName(event.target.value)} />
           </div>
         </label>
       </div>
@@ -675,9 +676,9 @@ function ServerCard({ settings, busy, onSave }: { settings: MobileSettings | und
           onClick={() => onSave({ natMappingEnabled: !settings?.natMappingEnabled })}
         >
           <span className={"set-switch" + (settings?.natMappingEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-          <span className="set-toggle-label">공유기 포트 자동 열기</span>
+          <span className="set-toggle-label"><LocalizedText id="STR-0977" /></span>
         </button>
-        <span className="set-save-hint">UPnP/NAT-PMP로 포트를 열어 직결 성공률을 높입니다.</span>
+        <span className="set-save-hint"><LocalizedText id="STR-0978" /></span>
       </div>
       <div className="set-diag-actions">
         <button
@@ -692,7 +693,7 @@ function ServerCard({ settings, busy, onSave }: { settings: MobileSettings | und
         >
           <Check size={14} /> {saved ? "저장됨" : "저장"}
         </button>
-        <span className="set-save-hint">저장하면 시그널링 연결이 새 주소로 다시 맺어집니다.</span>
+        <span className="set-save-hint"><LocalizedText id="STR-0981" /></span>
       </div>
     </section>
   );

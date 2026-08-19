@@ -5,6 +5,7 @@ import type { RouteLike } from "./routes";
 import { GateReviewerControl } from "./GateReviewerControl";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { effectiveGate, type GateMode, type GateReviewer, type MemberGateOverride, type PartyGate } from "../../shared/messageGate";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface MessageGateModalProps {
   view: MemberView;
@@ -77,13 +78,13 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <MessageGateIcon size={16} className="wb-gate-accent" />
-            <strong>Message Gate</strong>
+            <strong><LocalizedText id="STR-1786" /></strong>
             <span className="wb-modal-target" style={{ ["--member" as string]: view.color }}>
-              <span className="wb-dot" /> <span className="wb-mono">{view.name} · 메시지 전달 전 심사</span>
+              <span className="wb-dot" /> <span className="wb-mono">{view.name}  <LocalizedText id="STR-1787" /></span>
             </span>
             {overridden && <span className="wb-gate-overridden"><Pencil size={11} /> Overridden</span>}
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-1788")} onClick={onClose}><X size={16} /></button>
         </header>
 
         <div className="wb-modal-body wb-gate-modal-body">
@@ -101,17 +102,17 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
             ))}
           </div>
           {mode === "inherit" && (
-            <div className="wb-gate-caption">파티 기본값을 따릅니다 · 현재 <b className={partyOn ? "wb-gate-accent" : ""}>{partyOn ? "On" : "Off"}</b></div>
+            <div className="wb-gate-caption"><LocalizedText id="STR-1790" /> <b className={partyOn ? "wb-gate-accent" : ""}>{partyOn ? "On" : "Off"}</b></div>
           )}
 
           <div className="wb-gate-block">
             <div className="wb-gate-block-head">
-              <strong>통신 규칙</strong>
-              <span className="wb-gate-hint">리뷰어가 이 규칙으로 심사합니다</span>
+              <strong><LocalizedText id="STR-1793" /></strong>
+              <span className="wb-gate-hint"><LocalizedText id="STR-1794" /></span>
               <span className="wb-flex-spacer" />
               {overridden && (
-                <button type="button" className="wb-gate-reset" onClick={resetToParty} title="파티 전역 규칙으로 되돌립니다">
-                  <Undo2 size={12} /> 전역 규칙으로 되돌리기
+                <button type="button" className="wb-gate-reset" onClick={resetToParty} title={localized("STR-1795")}>
+                  <Undo2 size={12} />  <LocalizedText id="STR-1796" />
                 </button>
               )}
             </div>
@@ -119,27 +120,27 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
               className="wb-gate-textarea"
               rows={4}
               value={text}
-              placeholder="예: 간결하게 보내세요. 오케스트레이터를 거치지 말고 담당 멤버에게 직접 소통하세요."
+              placeholder={localized("STR-1797")}
               onChange={(event) => setText(event.target.value)}
             />
             {emptyWhileOn && (
-              <div className="wb-gate-warn">규칙이 비어 있어 <b>심사가 실행되지 않습니다</b>. 게이트는 켜져 있지만 모든 메시지가 그대로 전송됩니다.</div>
+              <div className="wb-gate-warn"><LocalizedText id="STR-1798" /> <b><LocalizedText id="STR-1799" /></b>. 게이트는 켜져 있지만 모든 메시지가 그대로 전송됩니다.</div>
             )}
             {effectivelyOff && (
-              <div className="wb-gate-note">게이트가 꺼져 있어 이 멤버의 메시지는 심사 없이 전송됩니다.</div>
+              <div className="wb-gate-note"><LocalizedText id="STR-1800" /></div>
             )}
           </div>
 
           <div className="wb-gate-block">
             <label className="wb-gate-toggle-row">
               <span className="wb-gate-toggle-text">
-                <strong>리뷰어 모델 지정</strong>
-                <small>끄면 설정 → Runtime의 게이트 기본 모델을 사용합니다.</small>
+                <strong><LocalizedText id="STR-1801" /></strong>
+                <small><LocalizedText id="STR-1802" /></small>
               </span>
               <input type="checkbox" className="wb-switch" checked={reviewerSet} onChange={(event) => setReviewerSet(event.target.checked)} />
             </label>
             {!reviewerSet ? (
-              <div className="wb-gate-default-chip wb-mono">설정 기본값 사용 · {gateDefaults.model} · {gateDefaults.effort}</div>
+              <div className="wb-gate-default-chip wb-mono"><LocalizedText id="STR-1803" /> {gateDefaults.model} · {gateDefaults.effort}</div>
             ) : (
               <GateReviewerControl routes={routes} reviewer={reviewer} onChange={setReviewer} modelLabel="모델" effortLabel="effort" />
             )}
@@ -148,11 +149,11 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
 
         <footer className="wb-modal-foot">
           <span className={"wb-dirty-note" + (dirty ? " is-dirty" : "")}>
-            {dirty ? <><Clock size={12} /> 변경됨 — Apply 시 적용됩니다</> : "변경 사항 없음"}
+            {dirty ? <><Clock size={12} />  <LocalizedText id="STR-1806" /></> : "변경 사항 없음"}
           </span>
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!dirty} onClick={apply}>Apply</button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onClose}><LocalizedText id="STR-1807" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!dirty} onClick={apply}><LocalizedText id="STR-1808" /></button>
           </div>
         </footer>
       </div>

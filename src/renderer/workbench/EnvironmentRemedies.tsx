@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, CircleDashed, Copy, RefreshCw, Settings2, XCircle } from "lucide-react";
 import type { EnvironmentProbeStep, EnvironmentRemedy } from "../../shared/environment";
 import { ipcErrorMessage } from "../app/ipcError";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * The buttons that get a user out of a failed environment check.
@@ -95,7 +96,7 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
       {settings && button(settings)}
       {more.length > 0 && (
         <details className="set-env-more">
-          <summary>다른 방법</summary>
+          <summary><LocalizedText id="STR-1651" /></summary>
           <div className="set-env-more-actions">{more.map(button)}</div>
         </details>
       )}
@@ -109,7 +110,7 @@ export function EnvironmentRawDetail({ raw }: { raw: string }) {
   return (
     <div className="set-env-raw">
       <button type="button" className="set-link-btn" onClick={() => setOpen((value) => !value)}>
-        <ChevronDown size={12} /> 자세히
+        <ChevronDown size={12} />  <LocalizedText id="STR-1652" />
       </button>
       {open && <pre className="set-diag-report wb-mono">{raw}</pre>}
     </div>
@@ -120,7 +121,7 @@ export function EnvironmentRawDetail({ raw }: { raw: string }) {
 export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[] }) {
   if (!steps.length) return null;
   return (
-    <div className="set-env-steps" aria-label="실행 검증 단계">
+    <div className="set-env-steps" aria-label={localized("STR-3216")}>
       {steps.map((step) => (
         <div className={`set-env-step is-${step.status}`} key={step.id} data-env-step={step.id} data-status={step.status}>
           <span className="set-env-step-icon" aria-hidden="true">

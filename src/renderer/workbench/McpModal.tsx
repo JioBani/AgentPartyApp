@@ -4,6 +4,7 @@ import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../../shared/mcp";
 import { harnessForRuntime, harnessLabel } from "../../shared/types";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface McpModalProps {
   view: MemberView;
@@ -154,7 +155,7 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
         <header className="mcp-head">
           <span className="mcp-head-icon"><Plug size={16} /></span>
           <div className="mcp-head-title">
-            <span className="mcp-head-name">MCP 서버</span>
+            <span className="mcp-head-name"><LocalizedText id="STR-1696" /></span>
             <span className="mcp-head-sub">
               <span className="mcp-mem-dot" style={{ background: view.color }} />
               <span className="mcp-mem-name">{view.name}</span>
@@ -163,10 +164,10 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
             </span>
           </div>
           <div className="mcp-head-actions">
-            <button type="button" className="mcp-btn-soft" title="모두 재연결" onClick={() => void reconnectAll()} disabled={loading || !anyReconnectable}>
-              <RotateCcw size={13} className={busy.size > 1 ? "wb-spin" : undefined} /> 모두 재연결
+            <button type="button" className="mcp-btn-soft" title={localized("STR-1697")} onClick={() => void reconnectAll()} disabled={loading || !anyReconnectable}>
+              <RotateCcw size={13} className={busy.size > 1 ? "wb-spin" : undefined} />  <LocalizedText id="STR-1698" />
             </button>
-            <button type="button" className="mcp-icon-btn" title="닫기" onClick={onClose}><X size={15} /></button>
+            <button type="button" className="mcp-icon-btn" title={localized("STR-1699")} onClick={onClose}><X size={15} /></button>
           </div>
         </header>
 
@@ -186,12 +187,12 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
             {authInfo.url ? (
               <>
                 <span className="wb-mono mcp-auth-url">{authInfo.url}</span>
-                <button type="button" className="mcp-btn-accent" onClick={() => void window.agentParty.openExternal(authInfo.url!)}><ExternalLink size={12} /> 브라우저에서 열기</button>
+                <button type="button" className="mcp-btn-accent" onClick={() => void window.agentParty.openExternal(authInfo.url!)}><ExternalLink size={12} />  <LocalizedText id="STR-1700" /></button>
               </>
             ) : (
               <span>{authInfo.note || "인증 URL을 받지 못했습니다."}</span>
             )}
-            <button type="button" className="mcp-icon-btn mcp-inline-close" title="닫기" onClick={() => setAuthInfo(null)}><X size={13} /></button>
+            <button type="button" className="mcp-icon-btn mcp-inline-close" title={localized("STR-1702")} onClick={() => setAuthInfo(null)}><X size={13} /></button>
           </div>
         )}
 
@@ -199,10 +200,10 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
         <div className="mcp-controls">
           <div className="mcp-search">
             <Search size={14} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="서버 검색…" />
-            {query && <button type="button" className="mcp-search-clear" title="지우기" onClick={() => setQuery("")}><X size={10} /></button>}
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={localized("STR-1703")} />
+            {query && <button type="button" className="mcp-search-clear" title={localized("STR-1704")} onClick={() => setQuery("")}><X size={10} /></button>}
           </div>
-          <button type="button" className="mcp-icon-btn mcp-refresh" title="새로고침" onClick={() => void load()} disabled={loading || busy.size > 0}>
+          <button type="button" className="mcp-icon-btn mcp-refresh" title={localized("STR-1705")} onClick={() => void load()} disabled={loading || busy.size > 0}>
             <RotateCcw size={15} className={loading ? "wb-spin" : undefined} />
           </button>
         </div>
@@ -221,17 +222,17 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
         {/* list */}
         <div className="mcp-list">
           {loading && !snapshot ? (
-            <div className="mcp-empty">불러오는 중…</div>
+            <div className="mcp-empty"><LocalizedText id="STR-1706" /></div>
           ) : filtered.length === 0 ? (
             <div className="mcp-empty">
               <Search size={24} />
               {servers.length === 0 ? (
                 <>
-                  <span>연결된 MCP 서버가 없습니다</span>
+                  <span><LocalizedText id="STR-1707" /></span>
                   <small>{(snapshot?.harness || fallbackHarness) === "codex" ? "~/.codex/config.toml 의 [mcp_servers.*] 에 서버를 추가하면 표시됩니다." : ".mcp.json 또는 사용자 설정에 MCP 서버를 추가하면 표시됩니다."}</small>
                 </>
               ) : (
-                <span>조건에 맞는 서버가 없습니다</span>
+                <span><LocalizedText id="STR-1709" /></span>
               )}
             </div>
           ) : (
@@ -253,15 +254,15 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
         {/* footer */}
         <footer className="mcp-foot">
           <div className="mcp-foot-stats wb-mono">
-            <span>{counts.total}개 서버</span>
+            <span>{counts.total}<LocalizedText id="STR-1710" /></span>
             <span className="mcp-sep" />
-            <span className="mcp-stat"><span className="mcp-dot is-success" />연결 {counts.connected}</span>
-            <span className="mcp-stat"><span className="mcp-dot is-danger" />실패 {counts.failed}</span>
-            <span className="mcp-stat"><span className="mcp-dot is-live" />인증 {counts["needs-auth"]}</span>
+            <span className="mcp-stat"><span className="mcp-dot is-success" /><LocalizedText id="STR-1711" /> {counts.connected}</span>
+            <span className="mcp-stat"><span className="mcp-dot is-danger" /><LocalizedText id="STR-1712" /> {counts.failed}</span>
+            <span className="mcp-stat"><span className="mcp-dot is-live" /><LocalizedText id="STR-1713" /> {counts["needs-auth"]}</span>
             <span className="mcp-sep" />
-            <span>도구 {counts.tools}개</span>
+            <span><LocalizedText id="STR-1714" /> {counts.tools}개</span>
           </div>
-          <button type="button" className="mcp-btn-soft" onClick={onClose}>닫기</button>
+          <button type="button" className="mcp-btn-soft" onClick={onClose}><LocalizedText id="STR-1715" /></button>
         </footer>
       </div>
     </div>
@@ -303,25 +304,25 @@ function McpServerCard({ server, busy, expanded, onToggleExpanded, onReconnect, 
         <div className="mcp-context is-error"><AlertTriangle size={13} /><span className="wb-mono">{server.error}</span></div>
       )}
       {server.state === "needs-auth" && (
-        <div className="mcp-context is-auth"><Lock size={13} /><span>로그인이 필요합니다 · 도구를 사용하려면 인증하세요</span></div>
+        <div className="mcp-context is-auth"><Lock size={13} /><span><LocalizedText id="STR-1716" /></span></div>
       )}
 
       <div className="mcp-card-foot">
         <button type="button" className={"mcp-tools" + (hasTools ? "" : " is-empty")} onClick={hasTools ? onToggleExpanded : undefined} disabled={!hasTools}>
           <ChevronRight size={12} className={"mcp-caret" + (expanded ? " is-open" : "") + (hasTools ? "" : " is-hidden")} />
           <Wrench size={12} />
-          <span>도구</span>
+          <span><LocalizedText id="STR-1717" /></span>
           <span className={"wb-mono mcp-tool-count" + (server.tools.length ? "" : " is-zero")}>{server.tools.length}</span>
         </button>
         <div className="mcp-actions">
           {disabled ? (
             server.canToggle && (
-              <button type="button" className="mcp-btn-accent" onClick={onToggleEnabled} disabled={busy}><Power size={13} /> 활성화</button>
+              <button type="button" className="mcp-btn-accent" onClick={onToggleEnabled} disabled={busy}><Power size={13} />  <LocalizedText id="STR-1718" /></button>
             )
           ) : (
             <>
               {server.canAuthenticate && (
-                <button type="button" className="mcp-btn-accent" onClick={onAuthenticate} disabled={busy}><KeyRound size={13} /> 인증하기</button>
+                <button type="button" className="mcp-btn-accent" onClick={onAuthenticate} disabled={busy}><KeyRound size={13} />  <LocalizedText id="STR-1719" /></button>
               )}
               {server.canReconnect && (
                 <button type="button" className="mcp-btn-soft" onClick={onReconnect} disabled={busy}>
@@ -329,7 +330,7 @@ function McpServerCard({ server, busy, expanded, onToggleExpanded, onReconnect, 
                 </button>
               )}
               {server.canToggle && (
-                <button type="button" className="mcp-icon-btn mcp-disable" title="비활성화" onClick={onToggleEnabled} disabled={busy}><Power size={14} /></button>
+                <button type="button" className="mcp-icon-btn mcp-disable" title={localized("STR-1722")} onClick={onToggleEnabled} disabled={busy}><Power size={14} /></button>
               )}
             </>
           )}
@@ -342,7 +343,7 @@ function McpServerCard({ server, busy, expanded, onToggleExpanded, onReconnect, 
             {chips.map((tool) => (
               <span key={tool.name} className="wb-mono mcp-tool-chip" title={tool.description}>{tool.name}</span>
             ))}
-            {more > 0 && <span className="mcp-tool-chip is-more">+{more}개 더</span>}
+            {more > 0 && <span className="mcp-tool-chip is-more">+{more}<LocalizedText id="STR-1723" /></span>}
           </div>
         </div>
       )}

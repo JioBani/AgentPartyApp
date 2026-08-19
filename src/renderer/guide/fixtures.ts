@@ -201,8 +201,8 @@ export const MCP_SERVERS: McpServerSnapshot = {
 /** 멤버가 도는 동안 쌓인 대기 메시지 — 내가 친 것 하나, reviewer 가 보낸 것 하나. */
 export const QUEUE: MemberQueueState = {
   items: [
-    { id: "q1", from: null, at: "10:21", text: "테스트도 같이 고쳐 줘. login.spec.ts 가 실패 케이스를 아직 200 으로 기대하고 있어." },
-    { id: "q2", from: "reviewer", at: "10:22", text: "429 응답에 Retry-After 헤더도 넣어 주세요. 클라이언트가 재시도 간격을 못 정합니다." },
+    { id: "q1", from: null, at: "10:21", text: "테스트도 함께 수정해 주세요. login.spec.ts의 실패 사례가 아직 상태 코드 200을 기대하고 있습니다." },
+    { id: "q2", from: "reviewer", at: "10:22", text: "429 응답에 Retry-After 헤더도 추가해 주세요. 현재 클라이언트에서 재시도 간격을 결정할 수 없습니다." },
   ],
 };
 
@@ -226,6 +226,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
   return {
     ok: true,
     settings: {
+      locale: "ko",
       workspacePath: WORKSPACE,
       updateChannel: "stable",
       claudeExecutablePath: "",

@@ -20,11 +20,13 @@ import { DEFAULT_FONT_SETTINGS } from "../../../shared/appFonts";
 import { DEFAULT_COMPOSER_SETTINGS } from "../../../shared/composerSettings";
 import { DEFAULT_IDLE_SLEEP } from "../../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../../shared/memberMessaging";
+import type { AppLocale } from "../../../shared/appLocale";
 
 export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
   state: {
     ok: true,
     settings: {
+      locale: "ko",
       workspacePath: "C:\\Guide\\demo-workspace",
       updateChannel: "stable",
       claudeExecutablePath: "",
@@ -139,6 +141,12 @@ export function createFakeAgentParty(): FakeAgentParty {
     updateSettings: async (patch) => {
       // In-memory only. Font-zoom writes here; it must not reach real settings.
       const next = { ...current().state.settings, ...(patch as object) };
+      snapshot = { ...current(), state: { ...current().state, settings: next } };
+      return next;
+    },
+    setLocale: async (locale) => {
+      if (locale !== "ko" && locale !== "en") throw new Error(`Unsupported locale: ${locale}`);
+      const next = { ...current().state.settings, locale: locale as AppLocale };
       snapshot = { ...current(), state: { ...current().state, settings: next } };
       return next;
     },

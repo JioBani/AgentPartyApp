@@ -10,11 +10,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+const { parseCsv } = require("./i18n-csv.cjs");
 
 const root = path.resolve(process.argv[2] || process.cwd());
 const output = path.resolve(root, process.argv[3] || "docs/user-facing-strings-excel.csv");
 
-const SOURCE_ROOTS = ["src/renderer", "src/shared", "src/core", "src/main"];
+const SOURCE_ROOTS = ["src/renderer", "src/shared", "src/core", "src/main", "src/preload"];
 const GUIDE_ROOT = "guide/knowledge";
 const CATALOG_FILE = "src/shared/modelCatalog.json";
 
@@ -51,6 +52,12 @@ const BACKEND_PRESENTATION_FILES = new Set([
   "src/shared/partyPrimer.ts",
   "src/shared/transcriptEvents.ts",
   "src/shared/usageLimits.ts",
+]);
+
+const GENERATED_I18N_FILES = new Set([
+  "src/renderer/i18n/auditKoMessages.ts",
+  "src/renderer/i18n/messages.ts",
+  "src/shared/nonRendererKoMessages.ts",
 ]);
 
 const rows = [];
@@ -118,6 +125,7 @@ function add(row) {
 }
 
 function auditTypeScript(relativeFile) {
+  if (GENERATED_I18N_FILES.has(relativeFile)) return;
   const absolute = path.join(root, relativeFile);
   const source = fs.readFileSync(absolute, "utf8");
   const sourceFile = ts.createSourceFile(
@@ -161,9 +169,13 @@ function auditTypeScript(relativeFile) {
           line: lineOf(sourceFile, node),
           text,
         });
-      } else if (backendPresentation && hasHumanText(text)) {
+      } else if ((backendPresentation || /[\uac00-\ud7a3]/u.test(text)) && hasHumanText(text)) {
         add({
-          surface: relativeFile.startsWith("src/shared/") ? "shared-presentation" : "backend-message",
+          surface: relativeFile.startsWith("src/shared/")
+            ? "shared-presentation"
+            : relativeFile.startsWith("src/renderer/")
+              ? "renderer-candidate"
+              : "backend-message",
           confidence: "medium",
           kind: ts.isTemplateExpression(node) ? "template" : "literal",
           file: relativeFile,
@@ -201,7 +213,7 @@ function auditGuideMarkdown() {
       }
       const text = original
         .replace(/^#{1,6}\s+/, "")
-        .replace(/^[-*>|]\s?/, "")
+        .replace(/^(?:[-*>]\s+|\|\s?)/, "")
         .replace(/\|/g, " ")
         .trim();
       if (!inFence && hasHumanText(text)) {
@@ -288,28 +300,65 @@ function csv(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-const header = ["id", "surface", "confidence", "kind", "file", "line", "pointer", "text"];
+function stableKey(row) {
+  return [row.kind, row.file, row.pointer || "", row.text].join("\0");
+}
+
+const existingSource = fs.existsSync(output) ? fs.readFileSync(output, "utf8") : "";
+const existingRows = existingSource ? parseCsv(existingSource) : [];
+const existingHeaders = existingSource
+  ? existingSource.replace(/^\uFEFF/, "").slice(0, existingSource.indexOf("\n")).match(/"([^"]+)"/g)?.map((value) => value.slice(1, -1)) || []
+  : [];
+const existingQueues = new Map();
+const suggestedQueues = new Map();
+for (const row of existingRows) {
+  const key = stableKey(row);
+  if (!existingQueues.has(key)) existingQueues.set(key, []);
+  existingQueues.get(key).push(row);
+  if (row.suggested_text_ko) {
+    const suggestedKey = stableKey({ ...row, text: row.suggested_text_ko });
+    if (!suggestedQueues.has(suggestedKey)) suggestedQueues.set(suggestedKey, []);
+    suggestedQueues.get(suggestedKey).push(row);
+  }
+}
+let nextId = existingRows.reduce((max, row) => Math.max(max, Number.parseInt(row.id?.replace(/^STR-/, ""), 10) || 0), 0) + 1;
+const matchedIds = new Set();
+function takeUnmatched(queue, key) {
+  const candidates = queue.get(key) || [];
+  while (candidates.length && matchedIds.has(candidates[0].id)) candidates.shift();
+  return candidates.shift();
+}
+const audited = unique.map((row) => {
+  const key = stableKey(row);
+  let previous = takeUnmatched(existingQueues, key) || takeUnmatched(suggestedQueues, key);
+  let correctedLegacyMarkdown = false;
+  if (!previous && row.kind === "markdown" && row.text.startsWith("**")) {
+    previous = takeUnmatched(existingQueues, stableKey({ ...row, text: row.text.slice(1) }));
+    correctedLegacyMarkdown = Boolean(previous);
+  }
+  const id = previous?.id || `STR-${String(nextId++).padStart(4, "0")}`;
+  matchedIds.add(id);
+  return { ...previous, ...row, text: correctedLegacyMarkdown ? row.text : previous?.text || row.text, id };
+});
+// Extracted call sites no longer contain their original literal. Retain their
+// stable catalog rows so copy editing and generated IDs never break.
+const retained = existingRows.filter((row) => !matchedIds.has(row.id));
+const outputRows = [...retained, ...audited].sort((left, right) => left.id.localeCompare(right.id));
+const requiredHeader = ["id", "surface", "confidence", "kind", "file", "line", "pointer", "text"];
+const header = [...requiredHeader, ...existingHeaders.filter((name) => !requiredHeader.includes(name))];
 const lines = [header.map(csv).join(",")];
-unique.forEach((row, index) => {
-  lines.push([
-    `STR-${String(index + 1).padStart(4, "0")}`,
-    row.surface,
-    row.confidence,
-    row.kind,
-    row.file,
-    row.line,
-    row.pointer || "",
-    row.text,
-  ].map(csv).join(","));
+outputRows.forEach((row) => {
+  lines.push(header.map((name) => csv(row[name] || "")).join(","));
 });
 
 fs.mkdirSync(path.dirname(output), { recursive: true });
 // Excel on Korean Windows otherwise guesses CP949 and renders UTF-8 Korean as
 // mojibake. The BOM is intentional and remains valid UTF-8 for other readers.
-fs.writeFileSync(output, `\uFEFF${lines.join("\n")}\n`, "utf8");
+fs.writeFileSync(output, `\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
 
 const counts = unique.reduce((all, row) => {
   all[row.surface] = (all[row.surface] || 0) + 1;
   return all;
 }, {});
-console.log(JSON.stringify({ output, total: unique.length, counts }, null, 2));
+const existingIds = new Set(existingRows.map((row) => row.id));
+console.log(JSON.stringify({ output, total: outputRows.length, audited: unique.length, retained: retained.length, added: audited.filter((row) => !existingIds.has(row.id)).length, counts }, null, 2));

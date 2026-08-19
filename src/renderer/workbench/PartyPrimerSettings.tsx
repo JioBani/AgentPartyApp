@@ -10,6 +10,7 @@ import {
   type PartyPrimerSettings as PartyPrimerSettingsValue,
 } from "../../shared/partyPrimer";
 import { SubtreeVisibility } from "./SubtreeVisibility";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 export interface PartyPrimerSectionPatch {
   section: PartyPrimerSectionId;
@@ -97,26 +98,26 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
         <div className="set-primer-brief-top">
           <div className="set-primer-total">
             <span className="set-primer-total-num wb-mono">{totals.tokens.toLocaleString()}</span>
-            <span className="set-primer-total-unit">토큰<small>추정</small></span>
+            <span className="set-primer-total-unit"><LocalizedText id="STR-2009" /><small><LocalizedText id="STR-2008" /></small></span>
           </div>
           <dl className="set-primer-facts">
             <div className="set-primer-fact">
-              <dt>켜진 섹션</dt>
+              <dt><LocalizedText id="STR-2010" /></dt>
               <dd className="wb-mono">{totals.enabledSections}/{totals.totalSections}</dd>
             </div>
             <div className="set-primer-fact">
-              <dt>길이</dt>
+              <dt><LocalizedText id="STR-2011" /></dt>
               <dd className="wb-mono">{totals.characters.toLocaleString()}자</dd>
             </div>
             <div className="set-primer-fact">
-              <dt>꺼둔 섹션</dt>
+              <dt><LocalizedText id="STR-2012" /></dt>
               <dd className="wb-mono">{totals.disabledTokens > 0 ? `−${totals.disabledTokens.toLocaleString()} 토큰` : "없음"}</dd>
             </div>
           </dl>
         </div>
 
         <div className="set-primer-delivery">
-          <div className="set-primer-delivery-label">프롬프트가 들어가는 시점</div>
+          <div className="set-primer-delivery-label"><LocalizedText id="STR-2015" /></div>
           {PARTY_PRIMER_DELIVERY.map((entry) => (
             <div className="set-primer-delivery-row" key={entry.harness}>
               <span className="set-primer-delivery-harness">{entry.label}</span>
@@ -129,21 +130,22 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
 
         <ul className="set-primer-notes">
           <li>
-            <b>이미 실행 중인 멤버는 시작할 때 받은 프롬프트를 유지</b>합니다. 여기서 바꾼 내용은 다음에 시작·재개하는 세션부터 적용됩니다.
-            바꾸지 않은 섹션은 앱이 갱신될 때 함께 최신 내용을 따라갑니다.
+            <b><LocalizedText id="STR-2016" /></b><LocalizedText id="STR-2017" />
           </li>
           <li>
-            토큰 수는 <b>추정치</b>입니다(한글 1.6자·그 외 3.8자 ≈ 1토큰). 앱에 각 모델의 토크나이저가 없고 제공자마다 계산이 달라 실제 청구값과는 차이가 납니다.
+
+            <LocalizedText id="STR-2020" /> <b><LocalizedText id="STR-2019" /></b><LocalizedText id="STR-2018" />
           </li>
           <li>
-            문구 안의 <code className="wb-mono">{PARTY_PRIMER_VARIABLES.join(" ")}</code> 는 세션이 시작될 때 그 멤버의 파티·이름·역할로 치환됩니다.
+
+            <LocalizedText id="STR-2022" /> <code className="wb-mono">{PARTY_PRIMER_VARIABLES.join(" ")}</code>  <LocalizedText id="STR-2021" />
           </li>
         </ul>
       </section>
 
       {/* Section tabs attached to their panel — one tabbed surface, not a strip
           of pills floating above a separate card. */}
-      <div className="set-primer-tabs" role="tablist" aria-label="프롬프트 섹션">
+      <div className="set-primer-tabs" role="tablist" aria-label={localized("STR-2023")}>
         {sections.map((section) => {
           const draft = drafts[section.id];
           const changed = typeof draft === "string" && draft !== section.text;
@@ -158,8 +160,8 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
             >
               <span className="set-primer-tab-name">{section.title}</span>
               <span className="set-primer-tab-tokens wb-mono">{section.tokens.toLocaleString()}</span>
-              {changed && <span className="set-primer-tab-dot" title="저장되지 않은 변경" />}
-              {!changed && section.translation?.stale && <span className="set-primer-tab-dot is-stale" title="번역이 원문보다 오래됨" />}
+              {changed && <span className="set-primer-tab-dot" title={localized("STR-2024")} />}
+              {!changed && section.translation?.stale && <span className="set-primer-tab-dot is-stale" title={localized("STR-2025")} />}
             </button>
           );
         })}
@@ -176,18 +178,18 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
               <section className={"set-primer-section" + (section.enabled ? "" : " is-off")}>
                 <div className="set-primer-head">
                   <span className="set-primer-name">{section.title}</span>
-                  {section.customized && <span className="set-primer-badge is-edited">수정됨</span>}
-                  {changed && <span className="set-primer-badge is-dirty">저장 안 됨</span>}
-                  {section.required && <span className="set-primer-badge">필수</span>}
-                  {!section.enabled && <span className="set-primer-badge is-off">꺼짐</span>}
-                  {section.translation?.stale && <span className="set-primer-badge is-stale">번역 오래됨</span>}
+                  {section.customized && <span className="set-primer-badge is-edited"><LocalizedText id="STR-2026" /></span>}
+                  {changed && <span className="set-primer-badge is-dirty"><LocalizedText id="STR-2027" /></span>}
+                  {section.required && <span className="set-primer-badge"><LocalizedText id="STR-2028" /></span>}
+                  {!section.enabled && <span className="set-primer-badge is-off"><LocalizedText id="STR-2029" /></span>}
+                  {section.translation?.stale && <span className="set-primer-badge is-stale"><LocalizedText id="STR-2030" /></span>}
                   <span className="set-primer-gap" />
-                  <span className="set-primer-tokens wb-mono">{section.tokens.toLocaleString()} 토큰</span>
+                  <span className="set-primer-tokens wb-mono">{section.tokens.toLocaleString()}  <LocalizedText id="STR-2031" /></span>
                   <button
                     type="button"
                     className="set-toggle"
                     disabled={section.required}
-                    title={section.required ? "이 섹션은 멤버가 자기 정체성과 툴을 아는 근거라 끌 수 없습니다." : "이 섹션을 프롬프트에서 빼거나 다시 넣습니다."}
+                    title={section.required ? localized("STR-2032") : localized("STR-2033")}
                     onClick={() => onSave({ section: section.id, enabled: !section.enabled })}
                   >
                     <span className={"set-switch" + (section.enabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
@@ -214,7 +216,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                         }
                       }}
                     >
-                      <RotateCcw size={13} />기본값으로
+                      <RotateCcw size={13} /><LocalizedText id="STR-2034" />
                     </button>
                     {/* Translating the STAGED text would file a Korean reading of
                         something no member is being told, so it waits for 저장. */}
@@ -222,7 +224,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                       type="button"
                       className="set-btn-soft"
                       disabled={translating !== null || changed}
-                      title={changed ? "먼저 저장한 뒤 번역하세요." : "구독 모델로 이 섹션을 한국어로 번역합니다."}
+                      title={changed ? localized("STR-2036") : localized("STR-2035")}
                       onClick={() => void runTranslate(section.id)}
                     >
                       <Languages size={13} />
@@ -230,7 +232,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                     </button>
                     <span className="set-primer-gap" />
                     {changed && (
-                      <button type="button" className="set-btn-soft" onClick={() => clearDraft(section.id)}>편집 취소</button>
+                      <button type="button" className="set-btn-soft" onClick={() => clearDraft(section.id)}><LocalizedText id="STR-2040" /></button>
                     )}
                     <button
                       type="button"
@@ -241,7 +243,8 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                         clearDraft(section.id);
                       }}
                     >
-                      저장
+
+                      <LocalizedText id="STR-2041" />
                     </button>
                   </div>
 
@@ -255,7 +258,7 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                   {section.translation && (
                     <div className={"set-primer-tr" + (section.translation.stale ? " is-stale" : "")}>
                       <div className="set-primer-tr-head">
-                        <span className="set-primer-tr-label">한국어 번역</span>
+                        <span className="set-primer-tr-label"><LocalizedText id="STR-2042" /></span>
                         <span className="set-primer-tr-meta wb-mono">
                           {section.translation.model}
                           {section.translation.at ? ` · ${new Date(section.translation.at).toLocaleString()}` : ""}
@@ -267,13 +270,14 @@ export function PartyPrimerSettings({ settings, onSave, onTranslate, onDirtyChan
                           disabled={translating !== null}
                           onClick={() => void runTranslate(section.id, true)}
                         >
-                          번역 삭제
+
+                          <LocalizedText id="STR-2043" />
                         </button>
                       </div>
                       {section.translation.stale && (
                         <div className="set-primer-tr-stale">
                           <AlertTriangle size={13} />
-                          <span>이 번역 이후 원문이 바뀌었습니다. 아래 내용은 현재 멤버가 받는 프롬프트와 다를 수 있으니 <b>다시 번역</b>하세요.</span>
+                          <span><LocalizedText id="STR-2045" /> <b><LocalizedText id="STR-2044" /></b><LocalizedText id="STR-2046" /></span>
                         </div>
                       )}
                       <pre className="set-primer-tr-text">{section.translation.text}</pre>

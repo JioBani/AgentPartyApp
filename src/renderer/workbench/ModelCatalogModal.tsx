@@ -11,6 +11,7 @@ import { CostMeter, PerfMeter, type RouteEntry } from "./modelMeters";
 import { buildCatalogView, catalogCountLabel, initialProvOpen } from "./modelCatalogGroups";
 import { toggleFavoriteModelId, useFavoriteModels } from "../app/favoriteModelPrefs";
 import { HARNESS_IDS, harnessLabel } from "../../shared/types";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -370,14 +371,14 @@ export function ModelCatalogModal({
             <strong>{title}</strong>
             {subtitle}
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-1863")} onClick={onClose}><X size={16} /></button>
         </header>
 
         <div className="wb-modal-body">
           <section className="wb-model-list">
             {config.harness && (
               <div className="wb-model-list-harness">
-                <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note"> · 잠금 (턴 시작됨)</span>}</div>
+                <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note">  <LocalizedText id="STR-1864" /></span>}</div>
                 <div className="wb-harness-strip" ref={moreRef}>
                   {primaryHarnesses.map((choice) => {
                     const locked = harnessLocked && choice.id !== currentHarness;
@@ -397,7 +398,7 @@ export function ModelCatalogModal({
                   {overflowHarnesses.length > 0 && (
                     <button
                       type="button"
-                      title="다른 하네스"
+                      title={localized("STR-1865")}
                       aria-haspopup="menu"
                       aria-expanded={moreOpen}
                       className={"wb-harness-more" + (selectedOverflow ? " is-active" : "")}
@@ -409,7 +410,7 @@ export function ModelCatalogModal({
                   )}
                   {moreOpen && (
                     <div className="wb-harness-menu" role="menu">
-                      <div className="wb-harness-menu-label">다른 하네스</div>
+                      <div className="wb-harness-menu-label"><LocalizedText id="STR-1867" /></div>
                       {overflowHarnesses.map((choice) => {
                         const locked = harnessLocked && choice.id !== currentHarness;
                         return (
@@ -448,12 +449,12 @@ export function ModelCatalogModal({
                   type="text"
                   className="wb-model-search-input"
                   value={query}
-                  aria-label="모델 검색"
-                  placeholder="모델·제공자 검색"
+                  aria-label={localized("STR-1868")}
+                  placeholder={localized("STR-1869")}
                   onChange={(event) => setQuery(event.target.value)}
                 />
                 {query && (
-                  <button type="button" className="wb-model-search-clear" title="검색 지우기" aria-label="검색 지우기" onClick={clearQuery}>
+                  <button type="button" className="wb-model-search-clear" title={localized("STR-1870")} aria-label={localized("STR-1870")} onClick={clearQuery}>
                     <X size={10} />
                   </button>
                 )}
@@ -466,8 +467,8 @@ export function ModelCatalogModal({
               {catalog.groups.length === 0 && (
                 <div className="wb-model-empty">
                   <Search size={20} className="wb-model-empty-icon" aria-hidden="true" />
-                  <p>&quot;{query.trim()}&quot;와 일치하는 모델이 없습니다</p>
-                  <button type="button" className="wb-model-empty-btn" onClick={clearQuery}>검색 지우기</button>
+                  <p>&quot;{query.trim()}<LocalizedText id="STR-1871" /></p>
+                  <button type="button" className="wb-model-empty-btn" onClick={clearQuery}><LocalizedText id="STR-1872" /></button>
                 </div>
               )}
 
@@ -476,7 +477,7 @@ export function ModelCatalogModal({
                   {group.kind === "favorites" ? (
                     <div className="wb-model-fav-head">
                       <Star size={12} className="wb-model-fav-icon" aria-hidden="true" />
-                      <span className="wb-model-fav-label">즐겨찾기</span>
+                      <span className="wb-model-fav-label"><LocalizedText id="STR-1873" /></span>
                       <span className="wb-mono">{group.entries.length}</span>
                       <span className="wb-model-fav-rule" />
                     </div>
@@ -491,7 +492,7 @@ export function ModelCatalogModal({
                       <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider!] }} />
                       <span className="wb-model-provider-name">{group.label}</span>
                       <span className="wb-mono">{group.entries.length}</span>
-                      {!group.open && group.hasSelected && <span className="wb-model-inuse">사용 중</span>}
+                      {!group.open && group.hasSelected && <span className="wb-model-inuse"><LocalizedText id="STR-1874" /></span>}
                       {!group.open && <span className="wb-model-preview wb-mono">{group.preview}</span>}
                     </button>
                   )}
@@ -542,8 +543,8 @@ export function ModelCatalogModal({
                         <button
                           type="button"
                           className={"wb-model-star" + (starred ? " is-on" : "")}
-                          title={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
-                          aria-label={starred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+                          title={starred ? localized("STR-1877") : localized("STR-1878")}
+                          aria-label={starred ? localized("STR-1879") : localized("STR-1880")}
                           aria-pressed={starred}
                           onClick={(event) => { event.stopPropagation(); void toggleFavorite(entry); }}
                         >
@@ -584,7 +585,7 @@ export function ModelCatalogModal({
                     <button
                       type="button"
                       className={"wb-detail-fav" + (selectedStarred ? " is-on" : "")}
-                      title={selectedStarred ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+                      title={selectedStarred ? localized("STR-1881") : localized("STR-1882")}
                       aria-pressed={selectedStarred}
                       onClick={() => void toggleFavorite(selected)}
                     >
@@ -622,21 +623,21 @@ export function ModelCatalogModal({
                     </div>
                   </div>
                   <div className="wb-stat-cell">
-                    <div className="wb-modal-label">이미지 입력</div>
+                    <div className="wb-modal-label"><LocalizedText id="STR-1886" /></div>
                     <VisionTag image={capabilities.vision?.image} />
                   </div>
                 </div>
 
                 {hasRunSettings && (
                   <div className="wb-detail-rule">
-                    <span>실행 설정</span>
+                    <span><LocalizedText id="STR-1887" /></span>
                     <i />
                   </div>
                 )}
 
                 {config.effort && effortCap?.supported && effortCap.options.length > 0 && (
                   <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>Effort</strong> <span>추론 강도 · 높일수록 느리고 정확합니다</span></div>
+                    <div className="wb-detail-section-head"><strong>Effort</strong> <span><LocalizedText id="STR-1888" /></span></div>
                     <div className="wb-segmented">
                       {effortCap.options.map((option) => (
                         <button type="button" key={option.id} className={"wb-segment" + (option.id === effort ? " is-active" : "")} onClick={() => setEffort(option.id)}>
@@ -649,7 +650,7 @@ export function ModelCatalogModal({
 
                 {config.serviceTier && serviceTierCap?.supported && serviceTierCap.options.length > 0 && (
                   <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>Service mode</strong> <span>Cursor Grok serving speed</span></div>
+                    <div className="wb-detail-section-head"><strong><LocalizedText id="STR-1890" /></strong> <span><LocalizedText id="STR-1889" /></span></div>
                     <div className="wb-segmented">
                       {serviceTierCap.options.map((option) => (
                         <button type="button" key={option.id} className={"wb-segment" + (option.id === serviceTier ? " is-active" : "")} onClick={() => setServiceTier(option.id)}>
@@ -662,7 +663,7 @@ export function ModelCatalogModal({
 
                 {config.thinking && thinkingCap?.supported && thinkingCap.modes && thinkingCap.modes.length > 0 && (
                   <div className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong><Lightbulb size={14} /> Thinking</strong> <span>추론 모드 · 필요할 때만 길게 생각합니다</span></div>
+                    <div className="wb-detail-section-head"><strong><Lightbulb size={14} /> Thinking</strong> <span><LocalizedText id="STR-1891" /></span></div>
                     <div className="wb-segmented">
                       {thinkingCap.modes.map((mode) => (
                         <button type="button" key={mode.id} className={"wb-segment" + (mode.id === thinkingMode ? " is-active" : "")} onClick={() => setThinkingMode(mode.id)}>
@@ -672,7 +673,7 @@ export function ModelCatalogModal({
                     </div>
                     {showBudget && thinkingCap.budget && (
                       <label className="wb-budget">
-                        <span className="wb-budget-head">Thinking budget <span className="wb-mono">{budget.toLocaleString()} tok</span></span>
+                        <span className="wb-budget-head"><LocalizedText id="STR-1892" /> <span className="wb-mono">{budget.toLocaleString()} tok</span></span>
                         <input
                           type="range"
                           min={thinkingCap.budget.min ?? 1024}
@@ -690,7 +691,7 @@ export function ModelCatalogModal({
                   <label className="wb-toggle-card">
                     <span className="wb-toggle-text">
                       <SlidersHorizontal size={17} />
-                      <span><strong>Debug logging</strong><small>원시 하네스 이벤트를 로그로 남깁니다.</small></span>
+                      <span><strong><LocalizedText id="STR-1894" /></strong><small><LocalizedText id="STR-1893" /></small></span>
                     </span>
                     <input type="checkbox" className="wb-switch" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
                   </label>
@@ -703,22 +704,22 @@ export function ModelCatalogModal({
                   <AutoCompactEditor
                     setting={compact}
                     contextWindow={contextWindow}
-                    title="Auto-compact · 임계치 초과 시 압축"
+                    title={localized("STR-1895")}
                     onChange={setCompact}
                   />
                 )}
 
                 {config.outboundInterrupt && (
                   <label className="wb-detail-section">
-                    <div className="wb-detail-section-head"><strong>멤버 메시지 인터럽트</strong><span>이 멤버가 보내는 메시지의 기본 동작</span></div>
+                    <div className="wb-detail-section-head"><strong><LocalizedText id="STR-1896" /></strong><span><LocalizedText id="STR-1897" /></span></div>
                     <select
                       className="set-select"
                       value={outboundInterrupt === undefined ? "inherit" : outboundInterrupt ? "interrupt" : "queue"}
                       onChange={(event) => setOutboundInterrupt(event.target.value === "inherit" ? undefined : event.target.value === "interrupt")}
                     >
-                      <option value="inherit">Runtime 기본값 따름</option>
-                      <option value="interrupt">항상 인터럽트</option>
-                      <option value="queue">대기열로 전송</option>
+                      <option value="inherit"><LocalizedText id="STR-1901" /></option>
+                      <option value="interrupt"><LocalizedText id="STR-1902" /></option>
+                      <option value="queue"><LocalizedText id="STR-1903" /></option>
                     </select>
                   </label>
                 )}
@@ -733,7 +734,7 @@ export function ModelCatalogModal({
             {dirty ? "적용하지 않은 변경 사항" : "변경 사항 없음"}
           </span>
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onClose}><LocalizedText id="STR-1906" /></button>
             <button type="button" className="wb-btn wb-btn-accent" disabled={!dirty} onClick={apply}>{applyLabel}</button>
           </div>
         </footer>
