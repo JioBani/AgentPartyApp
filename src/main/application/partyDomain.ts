@@ -3,10 +3,11 @@ import { harnessDefaultsOf, harnessForRuntime, isPermissionModeSetting } from ".
 import { DEFAULT_CODEX_POLICY, requireCodexPolicy } from "../../shared/codexPolicy";
 import { cursorPolicyOf, requireCursorPolicy } from "../../shared/cursorPolicy";
 
-export function createPartyDefinition(name: string, now = new Date().toISOString()): PartyDefinition {
+export function createPartyDefinition(name: string, groupId?: string, now = new Date().toISOString()): PartyDefinition {
   return {
     id: `party-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name,
+    groupId,
     createdAt: now,
     updatedAt: now,
   };
@@ -62,6 +63,10 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     cursorPolicy: harnessId === "cursor"
       ? cursorPolicyOf(requestedCursorPolicy || profile.cursorPolicy, input.permissionMode || profile.permissionMode)
       : undefined,
+    // Fixed for the member's life. Stored verbatim rather than normalized so a
+    // WSL location keeps the distro the caller chose; `parseMemberLocation` is
+    // the one place that interprets it.
+    location: input.location ? String(input.location).trim() || undefined : undefined,
     createdAt: now,
     updatedAt: now,
   };

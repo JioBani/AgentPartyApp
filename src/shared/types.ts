@@ -429,11 +429,29 @@ export interface CreatePartyInput {
   name: string;
   /** Optional initial Message Gate for the new party (default: off, no rule). */
   gate?: PartyGate;
+  /** Which party group to file it under; default group when omitted. */
+  groupId?: string;
+  /**
+   * Serialized execution location for the `main` member created alongside.
+   *
+   * The PARTY has no cwd — this belongs to `main` (README §7). Omitted only by
+   * callers that predate the field; those fall back to the workspace the party
+   * is being created in, which is where `main` would have run anyway.
+   */
+  location?: string;
 }
 
 export interface CreateMemberInput {
   partyId?: string;
   name: string;
+  /**
+   * Serialized execution location (`C:\proj` or `wsl+Ubuntu:/srv`), fixed for
+   * the member's life. Optional on the type so a caller that omits it is
+   * rejected with a reason rather than silently given the app's own cwd.
+   */
+  location?: string;
+  /** Also store this location as its environment's default cwd. */
+  saveAsDefault?: boolean;
   requirement: string;
   role?: string;
   initialTask?: string;

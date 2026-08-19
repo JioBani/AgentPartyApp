@@ -124,6 +124,8 @@ export interface EngineConnection {
   // per-window fact the desktop passes in via `partyId`. When omitted (HTTP with
   // no window, or first load), the engine falls back to its advisory hint.
   listParty(viewPartyId?: string): Promise<PartyListing>;
+  /** Every party WITH every member — what the app-global registry counts from. */
+  listAllParties(): Promise<ReturnType<PartyApplicationService["listAll"]>>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;

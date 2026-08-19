@@ -27,7 +27,7 @@ import {
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
 import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
-import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
+import type { PartyGroup, PartySummary, RegisteredParty } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { parseMemberLocation } from "../../shared/memberLocation";
 import { DEFAULT_PARTY_GROUP_ID } from "../../shared/partyGroups";
@@ -80,6 +80,8 @@ interface WorkbenchProps {
   onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
   /** App-global party groups, in display order. */
   groups: PartyGroup[];
+  /** Every party the app knows, from the global registry (not just this workspace). */
+  registeredParties: RegisteredParty[];
   cwdPrefs: CwdPreferences;
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
@@ -156,7 +158,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, groups, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -601,20 +603,49 @@ export function Workbench(props: WorkbenchProps) {
    * answers for all of them lands with the group backend. Showing a fabricated
    * count would be worse than showing none.
    */
-  const partySummaries = useMemo<PartySummary[]>(() => parties.map((party) => {
-    const loaded = party.id === activePartyId;
-    const members = loaded ? views : [];
-    return {
-      id: party.id,
-      groupId: party.groupId ?? DEFAULT_PARTY_GROUP_ID,
-      name: party.name,
-      memberCount: loaded ? memberCountByParty[party.id] || 0 : undefined,
-      runningCount: workingByParty[party.id] || 0,
-      windowsCount: members.filter((view) => envOfMember(view) === "windows").length,
-      wslCount: members.filter((view) => envOfMember(view) === "wsl").length,
-      updatedAt: party.updatedAt,
-    };
-  }), [parties, views, activePartyId, workingByParty, memberCountByParty]);
+  /**
+   * The list the sidebar draws: the app-global registry, with THIS window's live
+   * numbers laid over the party it actually has open.
+   *
+   * The registry is the only source that knows a party this window never
+   * opened — including ones in other workspaces, which is what makes the list
+   * independent of where the app was launched. The overlay exists because the
+   * registry is refreshed on party changes, not on every turn: "running 2" has
+   * to move the moment a member starts working, and only this window sees that.
+   */
+  const partySummaries = useMemo<PartySummary[]>(() => {
+    const live = new Map(parties.map((party) => [party.id, party] as const));
+    const merged: PartySummary[] = registeredParties.map((entry) => {
+      const loaded = entry.id === activePartyId;
+      const members = loaded ? views : [];
+      return {
+        ...entry,
+        name: live.get(entry.id)?.name ?? entry.name,
+        memberCount: loaded ? memberCountByParty[entry.id] || 0 : entry.memberCount,
+        runningCount: loaded ? workingByParty[entry.id] || 0 : entry.runningCount,
+        windowsCount: loaded ? members.filter((view) => envOfMember(view) === "windows").length : entry.windowsCount,
+        wslCount: loaded ? members.filter((view) => envOfMember(view) === "wsl").length : entry.wslCount,
+      };
+    });
+    // A party this workspace has but the registry has not caught up with yet
+    // (the refresh is a round trip) still belongs in the list.
+    const known = new Set(merged.map((entry) => entry.id));
+    for (const party of parties) {
+      if (!known.has(party.id)) {
+        merged.push({
+          id: party.id,
+          groupId: party.groupId ?? DEFAULT_PARTY_GROUP_ID,
+          name: party.name,
+          memberCount: party.id === activePartyId ? memberCountByParty[party.id] || 0 : undefined,
+          runningCount: workingByParty[party.id] || 0,
+          windowsCount: 0,
+          wslCount: 0,
+          updatedAt: party.updatedAt,
+        });
+      }
+    }
+    return merged;
+  }, [registeredParties, parties, views, activePartyId, workingByParty, memberCountByParty]);
 
   return (
     <div className="wb-root">

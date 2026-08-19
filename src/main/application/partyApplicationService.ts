@@ -428,11 +428,24 @@ export class PartyApplicationService {
     return this.view(this.readState(), viewPartyId);
   }
 
+  /**
+   * Every party in this workspace WITH every member, not just the viewed one.
+   *
+   * `list` deliberately returns one party's members — that is what a window
+   * renders. The app-global registry needs the other answer: refreshing it from
+   * the view reported every unselected party as having zero members, which is a
+   * false statement about parties that were simply not open.
+   */
+  listAll(): { parties: PartyDefinition[]; members: PartyMember[] } {
+    const state = this.readState();
+    return { parties: state.parties, members: state.members };
+  }
+
   createParty(input: CreatePartyInput): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const name = String(input.name || "").trim() || "New Party";
-    const party = createPartyDefinition(name);
+    const party = createPartyDefinition(name, input.groupId);
     // Optional initial Message Gate from the new-party flow (default: off).
     const partyGate = normalizePartyGate(input.gate);
     if (partyGate) {
@@ -441,7 +454,15 @@ export class PartyApplicationService {
     state.parties.push(party);
     this.lastHint = party.id;
     // `main` is born from the default creation profile (harness/model/reasoning).
-    const main = buildPartyMember({ partyId: party.id, name: "main", requirement: "Primary user-facing agent for this party." }, getSettings());
+    // `main`'s cwd, not the party's. A caller that predates the field gets the
+    // workspace it is creating in — the directory `main` would have used anyway —
+    // rather than an empty location that would look like a deliberate choice.
+    const main = buildPartyMember({
+      partyId: party.id,
+      name: "main",
+      requirement: "Primary user-facing agent for this party.",
+      location: input.location || workspace,
+    }, getSettings());
     state.members.push(main);
     this.writeRoleFile(workspace, main);
     this.persistParty(workspace, state, party.id);
@@ -476,7 +497,11 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, input.partyId);
-    const member = buildPartyMember({ ...input, partyId: party.id }, getSettings());
+    // Same fallback as `main`: a caller with no opinion (the agent-facing
+    // member-create tool) gets the workspace it is creating in, which is where
+    // that member would have run before locations existed. An empty location
+    // would instead read as "the user chose nowhere".
+    const member = buildPartyMember({ ...input, partyId: party.id, location: input.location || workspace }, getSettings());
     this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);

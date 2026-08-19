@@ -151,6 +151,20 @@ export function createFakeAgentParty(): FakeAgentParty {
       return next;
     },
     chooseWorkspace: () => refused(),
+    // The guide stage is a demo of the app, not the app: it has no group
+    // registry and no filesystem, so these answer empty rather than pretending.
+    listPartyGroups: () => Promise.resolve({ ok: true as const, groups: [], parties: [], conflicts: undefined }),
+    switchWorkspace: () => refused(),
+    createPartyGroup: () => refused(),
+    movePartyToGroup: () => refused(),
+    getCwdPreferences: () => Promise.resolve({ ok: true as const, preferences: { windowsRecent: [], wslRecent: [] } }),
+    setDefaultCwd: () => refused(),
+    clearDefaultCwd: () => refused(),
+    removeRecentCwd: () => refused(),
+    checkCwd: () => refused(),
+    listWslDistros: () => Promise.resolve({ ok: true as const, distros: [] }),
+    browseCwd: () => refused(),
+    listMemberLocations: () => Promise.resolve({ ok: true as const, members: [] }),
     listAuth: () => Promise.resolve(current().state.auth),
     setDeepseekKey: () => refused(),
     clearDeepseekKey: () => refused(),

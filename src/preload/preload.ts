@@ -29,6 +29,20 @@ const api = {
   /** Translates (or clears the translation of) one primer section. */
   translatePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:translate", patch),
   chooseWorkspace: () => ipcRenderer.invoke("workspace:choose"),
+  // 파티 그룹 · 멤버 실행 위치(cwd). Each is the same AppController method the
+  // HTTP route calls, so the UI and an agent drive one implementation.
+  listPartyGroups: () => ipcRenderer.invoke("partyGroups:list"),
+  switchWorkspace: (workspacePath: string) => ipcRenderer.invoke("workspace:switch", workspacePath),
+  createPartyGroup: (name: string) => ipcRenderer.invoke("partyGroups:create", name),
+  movePartyToGroup: (partyId: string, groupId: string) => ipcRenderer.invoke("partyGroups:move", partyId, groupId),
+  getCwdPreferences: (options?: { check?: boolean }) => ipcRenderer.invoke("cwd:preferences", options),
+  setDefaultCwd: (location: unknown) => ipcRenderer.invoke("cwd:setDefault", location),
+  clearDefaultCwd: (env: string) => ipcRenderer.invoke("cwd:clearDefault", env),
+  removeRecentCwd: (location: unknown) => ipcRenderer.invoke("cwd:removeRecent", location),
+  checkCwd: (location: unknown) => ipcRenderer.invoke("cwd:check", location),
+  listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
+  browseCwd: (env: string) => ipcRenderer.invoke("cwd:browse", env),
+  listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),
   clearDeepseekKey: () => ipcRenderer.invoke("auth:clearDeepseekKey"),

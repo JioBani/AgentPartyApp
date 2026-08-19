@@ -14,7 +14,7 @@ import { fontStackFor, normalizeFontSettings, type FontSettings } from "../share
 import { publishFontProbe } from "./app/fontProbe";
 import { reportNotice, useNoticeSink } from "./app/appNotice";
 import type { CreatePartyInput } from "./workbench/PartySidebar";
-import { DEFAULT_PARTY_GROUP_ID, type PartyGroup } from "../shared/partyGroups";
+import { DEFAULT_PARTY_GROUP_ID, type PartyGroup, type RegisteredParty } from "../shared/partyGroups";
 import { EMPTY_CWD_PREFERENCES, memberLocationsEqual, parseMemberLocation, serializeMemberLocation, type CwdPreferences, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../shared/memberLocation";
 import { useUpdateDialogSink } from "./app/updateDialog";
 import type { MemberMessagingSettings } from "../shared/memberMessaging";
@@ -201,33 +201,57 @@ export function App() {
   }, []);
 
   /**
-   * Party groups and cwd preferences.
+   * Party groups and cwd preferences — app-global, so they are read from their
+   * own registry rather than from the workspace snapshot.
    *
-   * The store behind these lands with step 2 of the feature; until then the app
-   * shows the one default group every party falls back into, and no remembered
-   * cwds. The three mutating actions below say plainly that they are not wired
-   * yet instead of appearing to work — a folder picker that silently returned
-   * nothing is exactly the failure this project keeps banning.
+   * Re-read on every party change: creating, deleting or moving a party is what
+   * changes the counts the sidebar draws, and the registry is the one place that
+   * knows them for a party this window has not opened.
    */
-  const partyGroups = useMemo<PartyGroup[]>(() => state.party.groups?.length
-    ? state.party.groups
-    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default", createdAt: "", updatedAt: "" }],
-    [state.party.groups]);
-  const cwdPrefs: CwdPreferences = state.settings.cwdPreferences ?? EMPTY_CWD_PREFERENCES;
+  const [groupState, setGroupState] = useState<{ groups: PartyGroup[]; parties: RegisteredParty[] }>(
+    () => ({ groups: [], parties: [] }),
+  );
+  const [cwdPrefs, setCwdPrefs] = useState<CwdPreferences>(EMPTY_CWD_PREFERENCES);
 
-  const NOT_WIRED = "파티 그룹·작업 위치 백엔드는 아직 연결되지 않았습니다 (기능 구현 단계에서 이어집니다).";
+  const refreshGroups = useCallback(async () => {
+    try {
+      const result = await window.agentParty.listPartyGroups();
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("파티 그룹 목록을 읽지 못했습니다")(error);
+    }
+  }, []);
+
+  const refreshCwdPreferences = useCallback(async (check?: boolean) => {
+    try {
+      const result = await window.agentParty.getCwdPreferences(check ? { check: true } : undefined);
+      setCwdPrefs(result.preferences);
+    } catch (error) {
+      noticeOnFailure("작업 위치 설정을 읽지 못했습니다")(error);
+    }
+  }, []);
+
+  useEffect(() => { void refreshGroups(); void refreshCwdPreferences(); }, [refreshGroups, refreshCwdPreferences]);
+  // The party list changing is the only thing that moves these numbers.
+  useEffect(() => { void refreshGroups(); }, [refreshGroups, state.party.parties, state.party.members]);
+
+  /**
+   * The default group always exists in the registry; this fallback covers only
+   * the first render, before the first read lands, so the sidebar never draws a
+   * list with no folder at all.
+   */
+  const partyGroups = groupState.groups.length
+    ? groupState.groups
+    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default" as const, createdAt: "", updatedAt: "" }];
 
   const activePartyName = state.party.parties?.find((party) => party.id === state.party.currentPartyId)?.name ?? "";
-  const memberLocations = useMemo<MemberLocationRow[]>(
-    () => (state.party.members || [])
-      .filter((member) => Boolean(member.location))
-      .map((member) => ({
-        member: member.name,
-        partyName: activePartyName,
-        location: parseMemberLocation(member.location as string),
-      })),
-    [state.party.members, activePartyName],
-  );
+  const [memberLocations, setMemberLocations] = useState<MemberLocationRow[]>([]);
+  useEffect(() => {
+    void window.agentParty.listMemberLocations()
+      .then((result) => setMemberLocations(result.members || []))
+      .catch(noticeOnFailure("멤버 실행 위치를 읽지 못했습니다"));
+  }, [state.party.members, state.settings.workspacePath]);
+
   /** Members sitting on each environment's default cwd — counted, never guessed. */
   const cwdDefaultUsage = useMemo<Partial<Record<ExecutionEnv, number>>>(() => {
     const tally: Partial<Record<ExecutionEnv, number>> = {};
@@ -241,17 +265,55 @@ export function App() {
   }, [memberLocations, cwdPrefs]);
 
   async function createPartyGroup(name: string) {
-    reportNotice(`${NOT_WIRED} — 그룹 "${name}" 은 만들어지지 않았습니다.`);
+    try {
+      const result = await window.agentParty.createPartyGroup(name);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("파티 그룹을 만들지 못했습니다")(error);
+    }
   }
 
-  async function movePartyToGroup(_partyId: string, _groupId: string) {
-    reportNotice(`${NOT_WIRED} — 파티는 옮겨지지 않았습니다.`);
+  async function movePartyToGroup(partyId: string, groupId: string) {
+    try {
+      const result = await window.agentParty.movePartyToGroup(partyId, groupId);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("파티를 옮기지 못했습니다")(error);
+    }
   }
 
+  /**
+   * Opens the real folder picker and hands back a location only when it is
+   * usable. A path that failed its check is reported with the reason and NOT
+   * returned, so it cannot be stored as the member's cwd.
+   */
   const browseCwd = useCallback(async (env: ExecutionEnv): Promise<MemberExecutionLocation | null> => {
-    reportNotice(`${NOT_WIRED} — ${env === "wsl" ? "WSL" : "Windows"} 폴더 선택기를 열 수 없습니다.`);
-    return null;
+    try {
+      const result = await window.agentParty.browseCwd(env);
+      if (result.cancelled || !result.location) {
+        return null;
+      }
+      if (result.problem) {
+        reportNotice(`${result.problem.message}: ${result.location.cwd}`);
+        return null;
+      }
+      return result.location;
+    } catch (error) {
+      noticeOnFailure("폴더 선택기를 열지 못했습니다")(error);
+      return null;
+    }
   }, []);
+
+  const applyCwdPreferences = (result: { preferences: CwdPreferences }) => setCwdPrefs(result.preferences);
+
+  async function pickDefaultCwd(env: ExecutionEnv) {
+    const picked = await browseCwd(env);
+    if (!picked) {
+      return;
+    }
+    await window.agentParty.setDefaultCwd(picked).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd를 저장하지 못했습니다"));
+  }
+
   // The settings 진단 tab's "자세히" opens the same dialog the titlebar pill does.
   useUpdateDialogSink(useCallback(() => setUpdateModalOpen(true), []));
 
@@ -768,8 +830,23 @@ export function App() {
     }
   }
 
+  /**
+   * Switches to a party, following it to another workspace when it lives there.
+   *
+   * The list is app-global now, so a row in the sidebar may belong to a
+   * directory this window is not open on. Selecting it there would fail with
+   * "no such party" — the workspace moves first, and only then the selection.
+   */
   async function selectParty(partyId: string) {
     try {
+      // Always ask when the party names a home. Whether that is a real move is
+      // decided in the main process against the window's own workspace — this
+      // side's copy of the path can be a render behind, and comparing here sent
+      // `select` to the wrong workspace and failed with "does not exist".
+      const home = groupState.parties.find((entry) => entry.id === partyId)?.workspacePath;
+      if (home) {
+        await window.agentParty.switchWorkspace(home);
+      }
       const result = await window.agentParty.selectParty(partyId);
       await applyPartyResult(result);
     } catch (error) {
@@ -1695,6 +1772,7 @@ export function App() {
                 gateOpenRequest={gateOpenRequest}
                 actions={actions}
                 groups={partyGroups}
+                registeredParties={groupState.parties}
                 cwdPrefs={cwdPrefs}
                 now={nowTick}
                 onCreateParty={(input) => void createParty(input)}
@@ -1795,12 +1873,18 @@ export function App() {
                   cwdDefaultUsage={cwdDefaultUsage}
                   memberLocations={memberLocations}
                   now={nowTick}
-                  onPickDefaultCwd={(env) => void browseCwd(env)}
-                  onClearDefaultCwd={() => reportNotice(NOT_WIRED)}
-                  onPromoteRecentCwd={() => reportNotice(NOT_WIRED)}
-                  onRemoveRecentCwd={() => reportNotice(NOT_WIRED)}
-                  onRecheckRecentCwd={() => reportNotice(NOT_WIRED)}
-                  onCloneMember={() => reportNotice(NOT_WIRED)}
+                  onPickDefaultCwd={(env) => void pickDefaultCwd(env)}
+                  onClearDefaultCwd={(env) => void window.agentParty.clearDefaultCwd(env).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd를 지우지 못했습니다"))}
+                  onPromoteRecentCwd={(entry) => void window.agentParty.setDefaultCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd로 설정하지 못했습니다"))}
+                  onRemoveRecentCwd={(entry) => void window.agentParty.removeRecentCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("최근 목록에서 제거하지 못했습니다"))}
+                  // Re-checks EVERY remembered path, not just this row: the row's
+                  // own verdict is what the user asked about, and the others are
+                  // free once the distro has been woken.
+                  onRecheckRecentCwd={() => void refreshCwdPreferences(true)}
+                  onCloneMember={(row) => {
+                    setCurrentView("workbench");
+                    reportNotice(`${row.member} 의 설정으로 새 멤버를 만들려면 멤버 만들기에서 ${row.location.cwd} 를 고르세요.`);
+                  }}
                   tabRequest={runtimeTabRequest}
                 />
               )}

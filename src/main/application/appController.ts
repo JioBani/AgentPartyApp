@@ -22,6 +22,14 @@ import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
+import type { PartyDefinition, PartyMember } from "../../shared/types";
+import type { PartyGroup, RegisteredParty } from "../../shared/partyGroups";
+import { PartyGroupStore, type PartyGroupState } from "../partyGroupStore";
+import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration";
+import { PartyRepository } from "../partyRepository";
+import { parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
+import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
+import { checkCwd, locationFromPickedFolder, wslDistros } from "../cwdService";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -74,6 +82,12 @@ export interface AppControllerDeps {
    */
   getAppBuild?: () => { version: string; packaged: boolean };
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
+  /**
+   * Opens the platform folder picker, resolving to the chosen path or undefined
+   * when cancelled. Injected rather than imported so this controller still loads
+   * headless (the WSL remote engine has no dialog to open).
+   */
+  pickFolder?: (windowId: string | undefined, env: ExecutionEnv) => Promise<string | undefined>;
   onSettingsChanged: () => void;
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
@@ -180,6 +194,9 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  */
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
+
+  /** App-global party groups + the party summaries filed under them. */
+  private readonly partyGroups = new PartyGroupStore();
 
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
   private readonly cliContinuationWatchers = new Set<string>();
@@ -355,6 +372,10 @@ export class AppController {
   private static readonly APP_ROOT = typeof __dirname === "string" ? __dirname : process.cwd();
 
   async getState(workspacePath: string, windowId?: string): Promise<InitialAppState> {
+    // Boot is the first moment a workspace's parties can be registered, and this
+    // is the one call every window makes on open. Idempotent, so the repeat on
+    // every window costs a read and changes nothing.
+    this.migratePartyGroups([workspacePath]);
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
     const codexModels = await engine.listCodexModels();
@@ -1095,6 +1116,16 @@ export class AppController {
   /** Points a window at a different workspace and returns its fresh state. */
   async setWindowWorkspace(windowId: string | undefined, workspacePath: string): Promise<InitialAppState> {
     const entry = this.deps.windowRegistry.resolve(windowId);
+    // Already here: return the state without touching anything. The renderer
+    // asks for this switch whenever it selects a party that names a home
+    // workspace, and it cannot reliably tell "same place" — its copy of the
+    // path can be a render behind. Deciding it HERE, against the window the
+    // registry actually holds, is the only answer that cannot be stale; doing
+    // the full switch anyway would drop the window's active party on every
+    // ordinary party click.
+    if (entry && workspaceKey(entry.workspacePath) === workspaceKey(workspacePath)) {
+      return this.getState(entry.workspacePath, entry.id);
+    }
     if (entry) {
       this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
       // The window's active party belonged to the PREVIOUS workspace — drop it so
@@ -1106,6 +1137,10 @@ export class AppController {
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });
+    // A workspace this process had not seen may hold parties the registry does
+    // not know yet — registering them here is what makes the global list
+    // complete rather than "whatever happened to be open at boot".
+    this.migratePartyGroups([workspacePath]);
     return this.getState(workspacePath, entry?.id);
   }
 
@@ -1368,12 +1403,172 @@ export class AppController {
     );
   }
 
+  // ---------------------------------------------------------------- 파티 그룹
+  //
+  // The group registry is app-global (userData), so these are deliberately NOT
+  // workspace methods: the answer must be the same whichever directory the app
+  // was opened from, which is the entire point of the feature.
+
+  /**
+   * Registers pre-existing parties into the default group and backfills member
+   * cwds. Idempotent, so it runs on boot and again whenever a workspace this
+   * process had never seen is opened.
+   *
+   * Looks only at workspaces it is TOLD about (open windows + what the registry
+   * already knows). Scanning the disk for `.agent_party_app` folders would sweep
+   * up backups and other checkouts and present them as the user's parties.
+   */
+  migratePartyGroups(extraWorkspaces: string[] = []): MigrationReport {
+    const workspaces = [...new Set([
+      ...this.partyGroups.knownWorkspaces(),
+      ...this.deps.windowRegistry.all().map((entry) => entry.workspacePath),
+      ...extraWorkspaces.filter(Boolean),
+    ])];
+    return migratePartyGroups(workspaces, { repository: new PartyRepository(), store: this.partyGroups });
+  }
+
+  listPartyGroups(): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[]; conflicts: PartyGroupState["conflicts"] } {
+    const state = this.partyGroups.read();
+    return { ok: true, groups: state.groups, parties: state.parties, conflicts: state.conflicts };
+  }
+
+  createPartyGroup(name: string): { ok: true; group: PartyGroup; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const { state, group } = this.partyGroups.createGroup(name);
+    this.deps.onSettingsChanged();
+    return { ok: true, group, groups: state.groups, parties: state.parties };
+  }
+
+  movePartyToGroup(partyId: string, groupId: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const state = this.partyGroups.moveParty(partyId, groupId);
+    this.deps.onSettingsChanged();
+    return { ok: true, groups: state.groups, parties: state.parties };
+  }
+
+  /**
+   * Refreshes one workspace's parties in the global registry.
+   *
+   * Called after any change to a workspace's party list. Counts come from the
+   * state that was just written, so the sidebar can show them for a party it has
+   * not opened — which is what removes the "0 members" guess.
+   */
+  registerWorkspaceParties(workspacePath: string, parties: PartyDefinition[], members: PartyMember[]): void {
+    const now = new Date().toISOString();
+    const known = new Set(parties.map((party) => party.id));
+    for (const party of parties) {
+      const own = members.filter((member) => member.partyId === party.id);
+      const envs = own.map((member) => (member.location ? parseMemberLocation(member.location).env : undefined));
+      this.partyGroups.upsertParty({
+        id: party.id,
+        groupId: party.groupId || "",
+        name: party.name,
+        memberCount: own.length,
+        runningCount: own.filter((member) => member.status === "running").length,
+        windowsCount: envs.filter((env) => env === "windows").length,
+        wslCount: envs.filter((env) => env === "wsl").length,
+        updatedAt: party.updatedAt || now,
+        workspacePath,
+      });
+    }
+    // A party that vanished from ITS OWN workspace is gone; one registered
+    // against a different workspace is left alone, or opening workspace A would
+    // delete workspace B's parties from the list.
+    for (const registered of this.partyGroups.read().parties) {
+      if (registered.workspacePath === workspacePath && !known.has(registered.id)) {
+        this.partyGroups.removeParty(registered.id);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ 멤버 실행 위치
+
+  /** Default + recent cwds. `check: true` re-probes each entry (spawns wsl.exe). */
+  async getCwdPreferences(options?: { check?: boolean }): Promise<{ ok: true; preferences: CwdPreferences }> {
+    return { ok: true, preferences: options?.check ? await getCheckedCwdPreferences() : getCwdPreferences() };
+  }
+
+  async setDefaultCwd(location: MemberExecutionLocation): Promise<{ ok: true; preferences: CwdPreferences }> {
+    const preferences = await setDefaultCwd(location);
+    this.deps.onSettingsChanged();
+    return { ok: true, preferences };
+  }
+
+  clearDefaultCwd(env: ExecutionEnv): { ok: true; preferences: CwdPreferences } {
+    const preferences = clearDefaultCwd(env);
+    this.deps.onSettingsChanged();
+    return { ok: true, preferences };
+  }
+
+  removeRecentCwd(location: MemberExecutionLocation): { ok: true; preferences: CwdPreferences } {
+    const preferences = removeRecentCwd(location);
+    this.deps.onSettingsChanged();
+    return { ok: true, preferences };
+  }
+
+  /**
+   * Checks one location in the environment it belongs to.
+   *
+   * Returns the verdict rather than throwing: "왜 못 쓰는지" is the answer the
+   * picker wants to display, and an exception would make every caller invent
+   * its own wording for the same three failures.
+   */
+  async checkCwd(location: MemberExecutionLocation): Promise<{ ok: true; usable: boolean; problem?: CwdProblem; location: MemberExecutionLocation }> {
+    const result = await checkCwd(location);
+    return { ok: true, usable: !result.problem, problem: result.problem, location: result.location };
+  }
+
+  async listWslDistros(): Promise<{ ok: true; distros: string[]; error?: string }> {
+    const { names, error } = await wslDistros();
+    return { ok: true, distros: names, error };
+  }
+
+  /**
+   * Opens the platform folder picker and returns the location it produced.
+   *
+   * Resolves `{ ok: true, cancelled: true }` when the user closed the dialog —
+   * distinct from a failure, because the caller must leave the previous choice
+   * alone rather than clear it.
+   */
+  async browseCwd(env: ExecutionEnv, windowId?: string): Promise<{ ok: true; cancelled?: true; location?: MemberExecutionLocation; problem?: CwdProblem }> {
+    if (!this.deps.pickFolder) {
+      throw new Error("이 프로세스에서는 폴더 선택기를 열 수 없습니다.");
+    }
+    const folder = await this.deps.pickFolder(windowId, env);
+    if (!folder) {
+      return { ok: true, cancelled: true };
+    }
+    const location = locationFromPickedFolder(folder, env);
+    const { problem } = await checkCwd(location);
+    return { ok: true, location, problem };
+  }
+
+  /** Existing members' fixed locations, for the read-only settings list. */
+  async memberLocations(workspacePath: string): Promise<{ ok: true; members: MemberLocationRow[] }> {
+    // Whole workspace: the settings list is about members that EXIST, not about
+    // whichever party this window happens to be viewing.
+    const party = await this.engineFor(workspacePath).listAllParties();
+    const nameById = new Map((party.parties || []).map((entry: PartyDefinition) => [entry.id, entry.name] as const));
+    const members: MemberLocationRow[] = (party.members || [])
+      .filter((member: PartyMember) => Boolean(member.location))
+      .map((member: PartyMember) => ({
+        member: member.name,
+        partyName: nameById.get(member.partyId || "") || "",
+        location: parseMemberLocation(member.location as string),
+      }));
+    return { ok: true, members };
+  }
+
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
-    const result = await this.engineFor(workspacePath).createParty(input);
+    // `main` needs a cwd it can actually run in. Checked BEFORE the party is
+    // created, so a bad path leaves nothing half-made behind.
+    const location = await this.requireUsableLocation(input.location, workspacePath);
+    const result = await this.engineFor(workspacePath).createParty({ ...input, location: location.serialized });
     // The window that created the party switches to it (others are untouched).
     if (windowId && result.currentPartyId) {
       this.activePartyByWindow.set(windowId, result.currentPartyId);
     }
+    // Only a creation that SUCCEEDED puts the cwd in the recent list (README §6).
+    rememberCwd(location.location);
+    await this.syncPartyRegistry(workspacePath);
     await this.broadcastParty(workspacePath);
     return result;
   }
@@ -1395,13 +1590,58 @@ export class AppController {
         this.activePartyByWindow.delete(wid);
       }
     }
+    this.partyGroups.removeParty(partyId);
     await this.broadcastParty(workspacePath);
     return result;
   }
 
-  createPartyMember(workspacePath: string, input: CreateMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createMember"]>> {
+  async createPartyMember(workspacePath: string, input: CreateMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createMember"]>> {
+    const location = await this.requireUsableLocation(input.location, workspacePath);
     // The member lands in the party the renderer names, else the window's party.
-    return this.mutateParty(workspacePath, (engine) => engine.createMember({ ...input, partyId: input.partyId || this.partyForWindow(windowId) }));
+    const result = await this.mutateParty(workspacePath, (engine) => engine.createMember({
+      ...input,
+      location: location.serialized,
+      partyId: input.partyId || this.partyForWindow(windowId),
+    }));
+    rememberCwd(location.location);
+    if (input.saveAsDefault) {
+      // Best-effort: the member is already made, and failing to store a
+      // preference must not be reported as a failed creation. It is logged, not
+      // swallowed silently.
+      await setDefaultCwd(location.location).catch((error) => {
+        log("warn", "cwd", "could not save default cwd", { location: location.serialized, error: error instanceof Error ? error.message : String(error) });
+      });
+    }
+    await this.syncPartyRegistry(workspacePath);
+    return result;
+  }
+
+  /**
+   * Resolves the location a party/member will run in, or refuses with the reason.
+   *
+   * An omitted location falls back to the workspace — that is where the member
+   * would have run before locations existed, so agent-facing callers keep
+   * working. What never happens is a stated location being replaced by a
+   * working one: an unusable path is an error, not a redirect (README §12).
+   */
+  private async requireUsableLocation(value: string | undefined, workspacePath: string) {
+    const check = await checkCwd(parseMemberLocation(value || workspacePath));
+    if (check.problem) {
+      throw new Error(`실행 위치를 사용할 수 없습니다 — ${check.problem.message}: ${check.serialized}`);
+    }
+    return check;
+  }
+
+  /** Re-publishes one workspace's parties into the app-global registry. */
+  private async syncPartyRegistry(workspacePath: string): Promise<void> {
+    try {
+      // The WHOLE workspace, not the viewed party: counting from the view
+      // reported every unselected party as empty.
+      const state = await this.engineFor(workspacePath).listAllParties();
+      this.registerWorkspaceParties(workspacePath, state.parties || [], state.members || []);
+    } catch (error) {
+      log("warn", "party", "could not refresh the party group registry", { workspacePath, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {

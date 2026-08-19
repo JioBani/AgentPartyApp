@@ -1851,8 +1851,13 @@ merely waiting states something false.
 Creates a party, creates its `main` member, and attempts to init-start `main` so skills and slash commands can populate the palette before the first chat. Init failures are returned in the command message and logged instead of being hidden.
 
 ```json
-{ "name": "Feature QA" }
+{ "name": "Feature QA", "groupId": "default", "location": "wsl+Ubuntu-24.04:/home/dev/svc" }
 ```
+
+`location` is the cwd of the `main` member created alongside — the party itself
+owns none. It is checked in the environment it names BEFORE anything is created,
+so an unusable path returns an error and leaves nothing half-made. Omitted, it
+falls back to the request's workspace. `groupId` defaults to the default group.
 
 ### `POST /api/parties/:id/select`
 
@@ -1861,6 +1866,79 @@ Selects the active party for member creation and compatibility endpoints.
 ### `POST /api/parties/:id/delete`
 
 Permanently deletes a party: closes every live session it owns, drops its members and messages, and removes its on-disk storage. If the deleted party was active, focus falls to another party (or none, if it was the last one). Returns the refreshed party listing.
+
+## Party groups and member execution locations
+
+App-global, not workspace-scoped: the same groups and the same parties are
+returned whichever directory the app was launched from. See
+`docs/기획/파티 그룹 및 멤버별 작업공간/README.md`.
+
+A **location** is the existing serialized workspace form — `C:\Project\App`, or
+`wsl+Ubuntu-24.04:/home/dev/svc` — and is written in request bodies as
+`{ "env": "windows" | "wsl", "cwd": "...", "distro": "..." }` (`distro` required
+for `wsl`).
+
+### `GET /api/party-groups`
+
+Every group and every registered party. A party carries `workspacePath` (where
+its members and transcripts live), `memberCount`, `runningCount` and the
+`windowsCount`/`wslCount` split. Reading this never opens a party.
+
+### `POST /api/party-groups`
+
+Creates a user group. `{ "name": "결제 리팩터" }`. A duplicate name is refused.
+
+### `POST /api/parties/:id/group`
+
+Moves a party to another group. `{ "groupId": "..." }`. Members, sessions and
+transcripts are untouched — a group is a folder, not a location.
+
+### `POST /api/party-groups/migrate`
+
+Registers parties that predate groups, and gives members with no location the
+workspace their party was stored in. Idempotent — it runs at boot and on every
+workspace switch, and re-running reports `registered: 0, backfilled: 0`. Nothing
+moves on disk and no id changes; a party id claimed by two workspaces is
+reported in `conflicts` rather than merged.
+
+```json
+{ "ok": true, "workspaces": ["C:\proj"], "registered": 2, "backfilled": 3, "conflicts": [], "failures": [] }
+```
+
+### `GET /api/cwd/preferences`
+
+Default cwd per environment plus the ten most recent. `?check=1` re-probes every
+entry in its own environment (this can start a WSL distro), so the default is the
+cheap read.
+
+### `POST /api/cwd/default` · `POST /api/cwd/default/clear` · `POST /api/cwd/recent/remove`
+
+Set, clear and forget. Setting refuses a location that is not usable right now,
+with the reason — a default exists to be filled in without further thought.
+
+### `POST /api/cwd/check`
+
+Checks one location **in the environment it names**: `fs.stat` for Windows, a
+probe inside the distro for WSL. Returns `{ usable, problem }` rather than
+throwing, where `problem.kind` is one of `missing`, `denied`, `distro-missing`,
+`distro-unavailable`, `not-absolute`. That Windows can see `\wsl$\...` never
+counts as the distro being usable.
+
+### `GET /api/cwd/distros`
+
+Installed WSL distros, for the WSL side of the picker.
+
+### `POST /api/cwd/browse`
+
+Opens the real folder picker and returns the location it produced, already
+checked. `{ "cancelled": true }` when the dialog was closed — distinct from a
+failure, so the caller leaves the previous choice alone. Desktop only.
+
+### `GET /api/cwd/members`
+
+Existing members' fixed locations, read-only. There is deliberately no endpoint
+that CHANGES one: a member's cwd is fixed for its life, because the CLIs key
+session discovery, settings and conversation resume off it.
 
 ## AgentParty Members
 
@@ -1919,6 +1997,13 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
   "initialTask": "Inspect the current repo."
 }
 ```
+
+`location` fixes where the member runs, for its life — `"C:\Project\App"` or
+`"wsl+Ubuntu-24.04:/home/dev/svc"`. It is checked in that environment before the
+member is created, so an unusable path is refused with the reason instead of
+being replaced by a working one. Omitted, it falls back to the request's
+workspace, which is where a member would have run before locations existed.
+`saveAsDefault: true` also stores it as that environment's default cwd.
 
 Creation accepts the full runtime profile: `model`, `effort`, `reasoning`,
 `reasoningBudget`, and an explicit initial permission. Use `permissionMode` for

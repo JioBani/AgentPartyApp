@@ -53,6 +53,19 @@ export interface PartySummary {
 }
 
 /**
+ * One party as the app-global registry knows it: the summary plus where its
+ * detail lives.
+ *
+ * `workspacePath` is what keeps this change cheap: members, messages, layout and
+ * transcripts stay in that workspace's own `.agent_party_app/`, so grouping a
+ * party costs no id, no session and no conversation (README §10.5). Selecting a
+ * party from another workspace is a workspace switch, not a move.
+ */
+export interface RegisteredParty extends PartySummary {
+  workspacePath: string;
+}
+
+/**
  * Groups in display order with their parties already attached.
  *
  * Built by `groupParties` rather than by each caller, so the "a party whose
