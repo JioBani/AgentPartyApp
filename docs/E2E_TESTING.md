@@ -10,6 +10,33 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | **Integration** | real services + a fake boundary (e.g. fake SessionManager) | service wiring without a model call | `npm run test:party-bridge` |
 | **Full-process e2e** | the **real Electron app** + real engine + real model | end-to-end through the actual app, billed | manual (below) |
 
+### 파티 그룹 · 멤버 cwd — 수동 e2e 레시피
+
+기능 자체가 "앱을 어디서 띄웠는지와 무관"이라, 한 워크스페이스만 보는 검증은
+아무것도 증명하지 못한다. 실제로 확인한 순서:
+
+1. **마이그레이션 대상 만들기** — 격리 userData 와, `groupId` 도 `location` 도 없는
+   `.agent_party_app` 를 손으로 심은 워크스페이스. 앱을 그 위에서 띄우면 부팅
+   중에 마이그레이션이 돈다.
+2. **정본성 확인** — `parties.json` 의 파티 id 와 멤버 이름이 그대로인지,
+   `party.json` 의 멤버에 `location` 만 채워졌는지 본다. 옮겨진 파일은 없어야 한다.
+3. **멱등성** — `POST /api/party-groups/migrate` 를 두 번 더 호출해
+   `registered: 0, backfilled: 0` 인지 본다.
+4. **그룹** — 그룹을 만들고 파티를 옮긴 뒤 **앱을 재시작**한다. 이동이 살아남아야
+   한다(부팅 마이그레이션이 되돌리면 안 된다 — 실제로 되돌렸던 버그다).
+5. **cwd 무관** — 파티가 하나도 없는 다른 워크스페이스로 창을 옮긴다. 사이드바에
+   같은 그룹·파티가 그대로 보여야 하고, 파티를 클릭하면 원래 워크스페이스로
+   따라가 멤버가 열려야 한다.
+6. **실제 검증** — 진짜 배포판으로 `POST /api/cwd/check` 를 네 번: 있는 경로, 없는
+   경로, 없는 배포판, 상대 경로. 넷이 서로 다른 `problem.kind` 로 나와야 한다.
+7. **교차 환경** — 같은 파티에 Windows 멤버와 WSL 멤버를 만들고 사이드바가
+   `Win 1 · WSL 1` 로 읽히는지 본다.
+8. **대체 금지** — 없는 경로를 기본 cwd 로 설정해 본다. 거절되고 기존 기본값이
+   그대로 남아야 한다.
+
+`AGENTPARTY_QA=1` 로 띄우면 `/api/qa/input` 으로 마법사 입력까지 몰 수 있어
+멤버 만들기 2단계를 실제로 통과시켜 볼 수 있다.
+
 ### 디자인 목업 — `dist-renderer/preview/index.html`
 
 A page vite builds alongside the app and the guide stage, and that the app never
