@@ -75,6 +75,8 @@ export interface BuildMemberViewInput {
   seenCount: number;
   /** Persisted transcript restored from disk — shown when no live session is bound. */
   restored?: TranscriptBlock[];
+  /** False while a party switch deliberately stages this panel's DOM mount. */
+  transcriptReady?: boolean;
   /** Model routes, to resolve the effective model's vision (image) support. */
   routes?: RouteLike[];
   /** Global auto-compact default a member without its own setting inherits. */
@@ -149,7 +151,7 @@ export function thresholdWindowFor(view: MemberView): number | undefined {
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, routes, compactDefault, compacting }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, transcriptReady = true, routes, compactDefault, compacting }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
   const subagents = session ? (subagentsBySession?.[session.id] || []) : [];
   // A live session's transcript wins (it is seeded from the restored history on
@@ -166,7 +168,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     session,
     status,
     transcript,
-    transcriptLoading: restored === undefined,
+    transcriptLoading: restored === undefined || !transcriptReady,
     subagents,
     unread: Math.max(0, transcript.length - seenCount),
     pendingApproval: status === "approval",

@@ -1122,7 +1122,9 @@ function registerIpc(): void {
   // other windows on that party (see AppController.setPartyLayout).
   handle("party:layout:get", async (event) => controller().getPartyLayout(senderWorkspace(event), senderWindowId(event)));
   handle("party:layout:set", async (event, layout: unknown) => controller().setPartyLayout(senderWorkspace(event), layout, senderWindowId(event)));
-  handle("party:transcript:get", async (event, name: string) => controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event)));
+  handle("party:transcript:get", async (event, name: string, partyId?: string) => (
+    controller().getMemberTranscript(senderWorkspace(event), name, senderWindowId(event), partyId)
+  ));
   handle("party:transcript:save", async (event, name: string, save: TranscriptSave) => controller().saveMemberTranscript(senderWorkspace(event), name, save, senderWindowId(event)));
   handle("party:transcript:image", async (event, file: string) => controller().getTranscriptImage(senderWorkspace(event), file));
   handle("party:harness-original", async (event, name: string) => controller().getHarnessOriginal(senderWorkspace(event), name, senderWindowId(event)));

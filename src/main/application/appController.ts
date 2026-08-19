@@ -1665,8 +1665,8 @@ export class AppController {
     return this.deps.discord;
   }
 
-  getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {
-    return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
+  getMemberTranscript(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<unknown[]> {
+    return this.engineFor(workspacePath).getMemberTranscript(name, partyId || this.partyForWindow(windowId));
   }
 
   /** Where the harness keeps its own untrimmed copy of a member's conversation. */

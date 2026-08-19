@@ -82,9 +82,7 @@ interface WorkbenchProps {
   onSelectParty: (partyId: string) => void;
   onMemberOpened: (member: string) => void;
   /** Members frontmost in a panel — what the user is actually looking at. */
-  onVisibleMembersChange: (members: string[]) => void;
-  /** Every member with a tab here, frontmost or not: what this window must hold. */
-  onOpenMembersChange: (members: string[]) => void;
+  onVisibleMembersChange: (partyId: string, members: string[]) => void;
   onToggleSidebar: (open: boolean) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
@@ -143,7 +141,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -352,8 +350,12 @@ export function Workbench(props: WorkbenchProps) {
         onPersistLayout(layout);
       }
     }
-    onVisibleMembersChange(layout.panels.map((panel) => panel.active).filter(Boolean));
-    onOpenMembersChange(layout.panels.flatMap((panel) => panel.tabs));
+    const focused = layout.panels.find((panel) => panel.id === layout.focusedPanelId);
+    const visibleInRestoreOrder = [
+      ...(focused ? [focused] : []),
+      ...layout.panels.filter((panel) => panel !== focused),
+    ].map((panel) => panel.active).filter(Boolean);
+    onVisibleMembersChange(partyKey, visibleInRestoreOrder);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, partyKey]);
 
@@ -582,7 +584,11 @@ export function Workbench(props: WorkbenchProps) {
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
 
   return (
-    <div className="wb-root">
+    <div
+      className="wb-root"
+      data-party-id={partyKey}
+      data-layout-party={seededPartyRef.current === partyKey ? partyKey : ""}
+    >
       {sidebarOpen ? (
         <>
           <PartySidebar
