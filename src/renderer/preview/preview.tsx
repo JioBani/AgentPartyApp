@@ -156,9 +156,9 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
     id: "settings-workspace",
     title: "설정 · 작업 위치",
     note: "기본 cwd 2개 · 최근 cwd 환경별 목록 · 읽기 전용 멤버 목록.",
-    // The measure the settings screen gives this tab in the app (840px + the
-    // stage's own border), so the cards wrap exactly as they ship.
-    width: 842,
+    // The measure the settings screen gives this tab (the mockup's panel is
+    // 840px wide), so the cards and their notes wrap exactly as they ship.
+    width: 882,
     render: () => (
       <div className="set-page set-page-tabbed">
         <div className="set-tab-panel">
