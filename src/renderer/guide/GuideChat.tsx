@@ -11,10 +11,10 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
 /** Questions the guide can actually answer — no app-state questions on purpose,
  *  those belong to `문제 해결` (§6-2-1). */
 const SUGGESTS = [
-  "멤버끼리 메시지를 주고받게 하려면?",
-  "Message Gate 는 무엇을 막나요?",
-  "권한 승인 카드는 언제 뜨나요?",
-  "토큰 사용량은 어디서 보나요?",
+  "멤버 간 메시지 전송은 어떻게 설정하나요?",
+  "Message Gate는 어떤 메시지를 차단하나요?",
+  "권한 승인 카드는 언제 표시되나요?",
+  "토큰 사용량은 어디에서 확인하나요?",
 ];
 
 export function GuideChat({

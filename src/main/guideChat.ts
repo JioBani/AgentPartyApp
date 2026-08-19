@@ -217,7 +217,7 @@ export class GuideChatHost {
     }
     const errorEvent = events.find((event) => (event as { type?: string }).type === "error") as { text?: string; message?: string } | undefined;
     if (errorEvent) {
-      live.error = errorEvent.text || errorEvent.message || "가이드 세션이 오류를 냈습니다.";
+      live.error = errorEvent.text || errorEvent.message || "가이드 세션에서 오류가 발생했습니다.";
     }
     if (live === this.chatbot) {
       this.save();
@@ -304,7 +304,7 @@ function nowTime(): string {
 
 export function requireChatKind(value: unknown): GuideChatKind {
   if (!isGuideChatKind(value)) {
-    throw new Error("kind 는 chatbot 또는 slide 여야 합니다.");
+    throw new Error("kind는 chatbot 또는 slide여야 합니다.");
   }
   return value;
 }

@@ -26,7 +26,7 @@ export function guideMemberView(view: GuideChatView, settings: GuideChatSettings
     color: "var(--accent)",
     member: {
       name: GUIDE_MEMBER_NAME,
-      role: "이 앱에 대해 답합니다",
+      role: "AgentParty 사용 방법을 안내합니다",
       runtime: settings.harnessId,
       model: settings.model,
       status: view.busy ? "running" : "idle",

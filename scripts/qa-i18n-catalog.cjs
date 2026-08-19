@@ -37,7 +37,10 @@ try {
     row.confidence === "high" && row.file.startsWith("src/renderer/") && !row.file.startsWith("src/renderer/i18n/"),
   );
   if (directUi.length) throw new Error(`renderer still contains ${directUi.length} direct UI strings: ${directUi.map((row) => `${row.file}:${row.line}`).join(", ")}`);
-  const sourceSignatures = new Set(sourceRows.map(signature));
+  const sourceSignatures = new Set(sourceRows.flatMap((row) => [
+    signature(row),
+    row.suggested_text_ko ? signature({ ...row, text: row.suggested_text_ko }) : undefined,
+  ].filter(Boolean)));
   const missingKorean = freshRows.filter((row) =>
     /[\uac00-\ud7a3]/u.test(row.text)
     && !sourceSignatures.has(signature(row)),

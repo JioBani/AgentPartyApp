@@ -213,7 +213,7 @@ function auditGuideMarkdown() {
       }
       const text = original
         .replace(/^#{1,6}\s+/, "")
-        .replace(/^[-*>|]\s?/, "")
+        .replace(/^(?:[-*>]\s+|\|\s?)/, "")
         .replace(/\|/g, " ")
         .trim();
       if (!inFence && hasHumanText(text)) {
@@ -310,18 +310,35 @@ const existingHeaders = existingSource
   ? existingSource.replace(/^\uFEFF/, "").slice(0, existingSource.indexOf("\n")).match(/"([^"]+)"/g)?.map((value) => value.slice(1, -1)) || []
   : [];
 const existingQueues = new Map();
+const suggestedQueues = new Map();
 for (const row of existingRows) {
   const key = stableKey(row);
   if (!existingQueues.has(key)) existingQueues.set(key, []);
   existingQueues.get(key).push(row);
+  if (row.suggested_text_ko) {
+    const suggestedKey = stableKey({ ...row, text: row.suggested_text_ko });
+    if (!suggestedQueues.has(suggestedKey)) suggestedQueues.set(suggestedKey, []);
+    suggestedQueues.get(suggestedKey).push(row);
+  }
 }
 let nextId = existingRows.reduce((max, row) => Math.max(max, Number.parseInt(row.id?.replace(/^STR-/, ""), 10) || 0), 0) + 1;
 const matchedIds = new Set();
+function takeUnmatched(queue, key) {
+  const candidates = queue.get(key) || [];
+  while (candidates.length && matchedIds.has(candidates[0].id)) candidates.shift();
+  return candidates.shift();
+}
 const audited = unique.map((row) => {
-  const previous = existingQueues.get(stableKey(row))?.shift();
+  const key = stableKey(row);
+  let previous = takeUnmatched(existingQueues, key) || takeUnmatched(suggestedQueues, key);
+  let correctedLegacyMarkdown = false;
+  if (!previous && row.kind === "markdown" && row.text.startsWith("**")) {
+    previous = takeUnmatched(existingQueues, stableKey({ ...row, text: row.text.slice(1) }));
+    correctedLegacyMarkdown = Boolean(previous);
+  }
   const id = previous?.id || `STR-${String(nextId++).padStart(4, "0")}`;
   matchedIds.add(id);
-  return { ...previous, ...row, id };
+  return { ...previous, ...row, text: correctedLegacyMarkdown ? row.text : previous?.text || row.text, id };
 });
 // Extracted call sites no longer contain their original literal. Retain their
 // stable catalog rows so copy editing and generated IDs never break.

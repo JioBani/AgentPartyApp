@@ -33,7 +33,7 @@ function readRecord(): GuideOfferRecord | null {
     }
     const raw = JSON.parse(fs.readFileSync(offerPath(), "utf8")) as GuideOfferRecord;
     if (typeof raw?.shown !== "boolean") {
-      throw new Error("guide-offer.json 에 shown 이 없습니다.");
+      throw new Error("guide-offer.json에 shown 값이 없습니다.");
     }
     return { shown: raw.shown };
   } catch (error) {
