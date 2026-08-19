@@ -12,7 +12,7 @@ const path = require("node:path");
 const ts = require("typescript");
 
 const root = path.resolve(process.argv[2] || process.cwd());
-const output = path.resolve(root, process.argv[3] || "docs/user-facing-strings.csv");
+const output = path.resolve(root, process.argv[3] || "docs/user-facing-strings-excel.csv");
 
 const SOURCE_ROOTS = ["src/renderer", "src/shared", "src/core", "src/main"];
 const GUIDE_ROOT = "guide/knowledge";
@@ -304,7 +304,9 @@ unique.forEach((row, index) => {
 });
 
 fs.mkdirSync(path.dirname(output), { recursive: true });
-fs.writeFileSync(output, `${lines.join("\n")}\n`, "utf8");
+// Excel on Korean Windows otherwise guesses CP949 and renders UTF-8 Korean as
+// mojibake. The BOM is intentional and remains valid UTF-8 for other readers.
+fs.writeFileSync(output, `\uFEFF${lines.join("\n")}\n`, "utf8");
 
 const counts = unique.reduce((all, row) => {
   all[row.surface] = (all[row.surface] || 0) + 1;

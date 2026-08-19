@@ -1,4 +1,4 @@
-# 사용자 노출 문자열 전수 조사와 다국어화 가능성
+﻿# 사용자 노출 문자열 전수 조사와 다국어화 가능성
 
 조사 기준: 2026-08-19, `v0.2.1` 소스
 
@@ -16,7 +16,9 @@
 
 ## 수집 결과
 
-전체 목록: [`user-facing-strings.csv`](user-facing-strings.csv)
+전체 목록: [`user-facing-strings-excel.csv`](user-facing-strings-excel.csv)
+
+CSV는 한국어 Windows의 Excel에서 바로 열 수 있도록 UTF-8 BOM으로 생성한다.
 
 | 구분 | 위치 수 | 의미 |
 |---|---:|---|
