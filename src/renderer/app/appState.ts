@@ -5,6 +5,8 @@ import { DEFAULT_COMPOSER_SETTINGS } from "../../shared/composerSettings";
 import { DEFAULT_FONT_SETTINGS } from "../../shared/appFonts";
 import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
+import { DEFAULT_APP_LOCALE } from "../../shared/appLocale";
+import type { MessageKey } from "../i18n/messages";
 
 export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "runtime" | "automation";
 
@@ -23,6 +25,7 @@ export interface MemberRuntimeDraft {
 export const initialState: InitialAppState = {
   ok: true,
   settings: {
+    locale: DEFAULT_APP_LOCALE,
     workspacePath: "",
     claudeExecutablePath: "",
     cursorExecutablePath: "",
@@ -61,32 +64,32 @@ export const initialState: InitialAppState = {
   resumableSessions: [],
 };
 
-export function viewTitle(view: ViewId): string {
-  const titles: Record<ViewId, string> = {
-    workbench: "Workbench",
-    guide: "가이드",
-    sessions: "세션",
-    usage: "Token Usage",
-    auth: "인증",
-    runtime: "런타임",
-    automation: "자동화",
+export function viewTitle(view: ViewId, t: (key: MessageKey) => string): string {
+  const titles: Record<ViewId, MessageKey> = {
+    workbench: "view.workbench.title",
+    guide: "view.guide.title",
+    sessions: "view.sessions.title",
+    usage: "view.usage.title",
+    auth: "view.auth.title",
+    runtime: "view.runtime.title",
+    automation: "view.automation.title",
   };
-  return titles[view];
+  return t(titles[view]);
 }
 
-export function viewSubtitle(view: ViewId): string {
+export function viewSubtitle(view: ViewId, t: (key: MessageKey) => string): string {
   // Description only — the workspace path is surfaced as its own chip in the
   // screen header (matching the runtime design mockup), not crammed inline here.
-  const subtitles: Record<ViewId, string> = {
-    workbench: "패널과 탭으로 멤버 세션을 나누어 실행합니다.",
-    guide: "앱을 실제로 움직여 보여주고, 궁금한 것에 답합니다.",
-    sessions: "활성 세션을 열거나 이전 작업을 이어서 진행합니다.",
-    usage: "어디서 얼마나 타는지 몇 초 안에 알아채고, 원인까지 한 화면에서 내려갑니다.",
-    auth: "구독과 provider API 키를 관리합니다.",
-    runtime: "하네스, provider, 모델, 디버깅 기본값을 관리합니다.",
-    automation: "AI 자동화와 E2E 테스트용 로컬 API 및 로그를 확인합니다.",
+  const subtitles: Record<ViewId, MessageKey> = {
+    workbench: "view.workbench.subtitle",
+    guide: "view.guide.subtitle",
+    sessions: "view.sessions.subtitle",
+    usage: "view.usage.subtitle",
+    auth: "view.auth.subtitle",
+    runtime: "view.runtime.subtitle",
+    automation: "view.automation.subtitle",
   };
-  return subtitles[view];
+  return t(subtitles[view]);
 }
 
 export function displayPath(value: string | undefined): string {

@@ -33,6 +33,9 @@ import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily } from "../../shared/appFonts";
 import { enumerateLocalFonts, probeFonts } from "./fontProbe";
+import type { AppLocale } from "../../shared/appLocale";
+import { useI18n } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages";
 import { FontPicker } from "../workbench/FontPicker";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
@@ -158,6 +161,7 @@ function SetSectionHead({ label }: { label: string }) {
  * the un-settable ends (≤10% / ≥95%) painted as blocked zones.
  */
 function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSetting; onChange: (setting: AutoCompactSetting) => void }) {
+  const { t } = useI18n();
   const track = `linear-gradient(90deg,
     var(--danger-dim) 0 ${AUTO_COMPACT_FLOOR}%,
     var(--live) ${AUTO_COMPACT_FLOOR}% ${setting.at}%,
@@ -168,8 +172,8 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
       <label className="set-compact-toggle">
         <span className="set-compact-badge"><FoldVertical size={18} /></span>
         <span className="set-compact-copy">
-          <strong>컨텍스트 임계치 초과 시 자동 압축</strong>
-          <small>새 멤버는 이 기본값으로 생성됩니다. 멤버별로 런타임에서 개별 조정할 수 있습니다.</small>
+          <strong>{t("runtime.compact.enable")}</strong>
+          <small>{t("runtime.compact.help")}</small>
         </span>
         <input
           type="checkbox"
@@ -181,7 +185,7 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
       {setting.on && (
         <div className="set-compact-slider">
           <div className="set-compact-readout">
-            <span>기본 압축 임계치 · 컨텍스트 사용률</span>
+            <span>{t("runtime.compact.threshold")}</span>
             <strong className="wb-mono">{setting.at}%</strong>
           </div>
           <input
@@ -198,7 +202,7 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
             <span>{AUTO_COMPACT_GAUGE_MIN}%</span>
             <span>{AUTO_COMPACT_GAUGE_MAX}%</span>
           </div>
-          <div className="set-compact-limit">{AUTO_COMPACT_FLOOR}% 미만 · {AUTO_COMPACT_CEIL}% 초과는 설정할 수 없습니다.</div>
+          <div className="set-compact-limit">{t("runtime.compact.limit", { min: AUTO_COMPACT_FLOOR, max: AUTO_COMPACT_CEIL })}</div>
         </div>
       )}
     </div>
@@ -212,10 +216,6 @@ function SettingsAutoCompact({ setting, onChange }: { setting: AutoCompactSettin
  */
 const IDLE_SLEEP_PRESET_MINUTES = [1, 5, 15, 30, 60, 180];
 
-function idleSleepMinutesLabel(minutes: number): string {
-  return minutes < 60 ? `${minutes}분` : `${minutes / 60}시간`;
-}
-
 /**
  * The global idle-sleep block on the Settings → Runtime screen: whether a quiet
  * member's harness process is released, and how long "quiet" has to be.
@@ -226,6 +226,10 @@ function idleSleepMinutesLabel(minutes: number): string {
  * because a bare "5분 뒤 종료" would read as a promise the app deliberately breaks.
  */
 function SettingsIdleSleep({ setting, onChange }: { setting: IdleSleepSettings; onChange: (setting: IdleSleepSettings) => void }) {
+  const { t } = useI18n();
+  const durationLabel = (minutes: number) => minutes < 60
+    ? t("runtime.duration.minutes", { value: minutes })
+    : t("runtime.duration.hours", { value: minutes / 60 });
   const safe = sanitizeIdleSleep(setting);
   // A timeout set over HTTP need not be one of the presets. Show it as its own
   // chip instead of silently rounding — the screen must not misreport the value
@@ -238,8 +242,8 @@ function SettingsIdleSleep({ setting, onChange }: { setting: IdleSleepSettings; 
       <label className="set-compact-toggle">
         <span className="set-compact-badge"><Moon size={18} /></span>
         <span className="set-compact-copy">
-          <strong>유휴 멤버의 프로세스 내리기</strong>
-          <small>대화는 그대로 두고 하네스 프로세스만 반납해 메모리를 되찾습니다. 다음 메시지가 오면 대화를 이어서 다시 깨웁니다.</small>
+          <strong>{t("runtime.idle.enable")}</strong>
+          <small>{t("runtime.idle.help")}</small>
         </span>
         <input
           type="checkbox"
@@ -251,17 +255,16 @@ function SettingsIdleSleep({ setting, onChange }: { setting: IdleSleepSettings; 
       {safe.enabled && (
         <div className="set-compact-slider">
           <div className="set-compact-readout">
-            <span>이만큼 조용하면 내립니다</span>
-            <strong className="wb-mono">{idleSleepMinutesLabel(safe.timeoutMinutes)}</strong>
+            <span>{t("runtime.idle.threshold")}</span>
+            <strong className="wb-mono">{durationLabel(safe.timeoutMinutes)}</strong>
           </div>
           <Segmented
             value={String(safe.timeoutMinutes)}
-            options={choices.map((minutes) => ({ id: String(minutes), label: idleSleepMinutesLabel(minutes) }))}
+            options={choices.map((minutes) => ({ id: String(minutes), label: durationLabel(minutes) }))}
             onChange={(id) => onChange({ ...safe, timeoutMinutes: Number(id) })}
           />
           <div className="set-compact-limit">
-            턴이 진행 중이거나 승인 대기·압축 중이거나 백그라운드 작업·대기 메시지가 남아 있으면 내리지 않습니다.
-            멤버별로 계속 켜두려면 사이드바에서 멤버를 우클릭하세요. ({IDLE_SLEEP_MIN_MINUTES}분 ~ {IDLE_SLEEP_MAX_MINUTES / 60}시간)
+            {t("runtime.idle.limit", { min: IDLE_SLEEP_MIN_MINUTES, max: IDLE_SLEEP_MAX_MINUTES / 60 })}
           </div>
         </div>
       )}
@@ -550,19 +553,19 @@ function DiscordGlyph({ size = 14 }: { size?: number }) {
   );
 }
 
-const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: string; icon: ReactNode }> = [
-  { id: "general", label: "일반", icon: <Settings2 size={14} /> },
-  { id: "harness", label: "하네스 기본값", icon: <SquareTerminal size={14} /> },
-  { id: "environment", label: "환경", icon: <ShieldCheck size={14} /> },
-  { id: "primer", label: "파티 프롬프트", icon: <FileText size={14} /> },
-  { id: "gate", label: "Message Gate", icon: <MessageGateIcon size={14} /> },
-  { id: "discord", label: "Discord", icon: <DiscordGlyph size={14} /> },
-  { id: "mobile", label: "모바일 연결", icon: <Smartphone size={14} /> },
-  { id: "versions", label: "버전", icon: <PackageCheck size={14} /> },
-  { id: "diagnostics", label: "진단", icon: <ClipboardList size={14} /> },
+const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: MessageKey; icon: ReactNode }> = [
+  { id: "general", label: "runtime.tab.general", icon: <Settings2 size={14} /> },
+  { id: "harness", label: "runtime.tab.harness", icon: <SquareTerminal size={14} /> },
+  { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
+  { id: "primer", label: "runtime.tab.primer", icon: <FileText size={14} /> },
+  { id: "gate", label: "runtime.tab.gate", icon: <MessageGateIcon size={14} /> },
+  { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
+  { id: "mobile", label: "runtime.tab.mobile", icon: <Smartphone size={14} /> },
+  { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
+  { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveLocale, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -573,6 +576,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onToggleDebug: (enabled: boolean) => void;
+  onSaveLocale: (locale: AppLocale) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
@@ -588,6 +592,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
   tabRequest?: { tab: RuntimeTabId; harness?: HarnessId; seq: number };
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<RuntimeTabId>("general");
   const mobileEnabled = settings.mobile?.enabled === true;
   const visibleTabs = mobileEnabled ? RUNTIME_TABS : RUNTIME_TABS.filter((entry) => entry.id !== "mobile");
@@ -624,7 +629,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
 
   return (
     <>
-      <div className="set-tabs" role="tablist" aria-label="런타임 설정">
+      <div className="set-tabs" role="tablist" aria-label={t("runtime.tabs.label")}>
         {visibleTabs.map((entry) => {
           const active = entry.id === tab;
           const badge = badges[entry.id];
@@ -638,14 +643,14 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
               onClick={() => setTab(entry.id)}
             >
               <span className="set-tab-icon">{entry.icon}</span>
-              {entry.label}
+              {t(entry.label)}
               {Boolean(badge) && <span className="set-tab-badge wb-mono">{badge}</span>}
             </button>
           );
         })}
         <span className="set-tabs-gap" />
         {dirty && (
-          <span className="set-dirty-pill" role="status"><span className="set-dirty-dot" />저장되지 않은 변경</span>
+          <span className="set-dirty-pill" role="status"><span className="set-dirty-dot" />{t("runtime.unsaved")}</span>
         )}
       </div>
 
@@ -658,30 +663,45 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             silently, right after the strip told them there were unsaved changes. */}
         <div className="set-tab-panel" hidden={tab !== "general"}>
         <SubtreeVisibility visible={tab === "general"}>
-            {/* base harness */}
-            <section className="set-card">
-              <div className="set-card-label">기본 하네스</div>
+            <section className="set-card" data-settings-card="language">
+              <div className="set-card-label">{t("runtime.language.title")}</div>
               <div className="set-inline-note">
                 <InfoIcon size={14} />
-                <span>새 멤버는 각 하네스의 기본값으로 생성됩니다. <b>하네스 기본값</b> 탭에서 하네스별 기본값을 지정하세요.</span>
+                <span>{t("runtime.language.description")}</span>
+              </div>
+              <label className="set-field">
+                <span className="set-field-label">{t("runtime.language.label")}</span>
+                <select className="set-select" data-locale-select value={settings.locale} onChange={(event) => onSaveLocale(event.target.value as AppLocale)}>
+                  <option value="ko">{t("runtime.language.ko")}</option>
+                  <option value="en">{t("runtime.language.en")}</option>
+                </select>
+              </label>
+            </section>
+
+            {/* base harness */}
+            <section className="set-card">
+              <div className="set-card-label">{t("runtime.general.defaultHarness")}</div>
+              <div className="set-inline-note">
+                <InfoIcon size={14} />
+                <span>{t("runtime.general.defaultHarnessHelp")}</span>
               </div>
               <div className="set-router-row">
                 <span className="set-router-id"><span className="set-dot is-success" /> Router</span>
                 <span className="set-router-end">
-                  <span className="wb-mono">{router || "시작 중…"}</span>
-                  <button type="button" className="set-icon-btn" title="복사" onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
+                  <span className="wb-mono">{router || t("runtime.general.starting")}</span>
+                  <button type="button" className="set-icon-btn" title={t("runtime.general.copy")} onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
                 </span>
               </div>
               <div className="set-harness-pick">
                 <label className="set-field">
-                  <span className="set-field-label">새 멤버 기본 하네스</span>
+                  <span className="set-field-label">{t("runtime.general.newMemberHarness")}</span>
                   <select className="set-select" value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
                     {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
                   </select>
                 </label>
                 <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}>
                   <span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-                  <span className="set-toggle-label">디버그 로그</span>
+                  <span className="set-toggle-label">{t("runtime.general.debugLogs")}</span>
                 </button>
               </div>
             </section>
@@ -694,25 +714,25 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
 
             {/* idle sleep — release a quiet member's process, keep its conversation */}
             <section className="set-card">
-              <div className="set-card-label">유휴 슬립</div>
+              <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
               <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
             </section>
 
             {/* message input preferences (send key) */}
             <section className="set-card">
-              <div className="set-card-label">입력창</div>
+              <div className="set-card-label">{t("runtime.general.composer")}</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
             </section>
 
             <section className="set-card">
-              <div className="set-card-label">멤버 간 메시지</div>
+              <div className="set-card-label">{t("runtime.general.memberMessages")}</div>
               <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
                 <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
-                <span className="set-toggle-label">기본으로 진행 중인 턴 인터럽트</span>
+                <span className="set-toggle-label">{t("runtime.general.interruptOnSend")}</span>
               </button>
               <div className="set-inline-note">
                 <InfoIcon size={14} />
-                <span>멤버가 다른 멤버에게 보낼 때 <code>interrupt</code>를 생략하면 적용됩니다. 멤버별 설정과 호출에 직접 지정한 값이 이 기본값보다 우선합니다.</span>
+                <span>{t("runtime.general.interruptHelp")}</span>
               </div>
             </section>
         </SubtreeVisibility>
@@ -1464,9 +1484,9 @@ function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undef
   );
 }
 
-const SEND_KEY_LABELS: Record<ComposerSendKey, string> = {
-  "ctrl-enter": "Ctrl+Enter 로 전송 (Enter 는 줄바꿈)",
-  enter: "Enter 로 전송 (Shift+Enter 는 줄바꿈)",
+const SEND_KEY_LABELS: Record<ComposerSendKey, MessageKey> = {
+  "ctrl-enter": "runtime.composer.ctrlEnter",
+  enter: "runtime.composer.enter",
 };
 
 /**
@@ -1475,29 +1495,30 @@ const SEND_KEY_LABELS: Record<ComposerSendKey, string> = {
  * the composer on the next keystroke, so a staged "save" would only add a step.
  */
 function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings | undefined; onSave: (patch: Partial<ComposerSettings>) => void }) {
+  const { t } = useI18n();
   const sendKey = settings?.sendKey || "ctrl-enter";
   const interruptOnSend = settings?.interruptOnSend === true;
   return (
     <>
       <div className="set-inline-note">
         <InfoIcon size={14} />
-        <span>멤버에게 메시지를 보낼 때 쓰는 키입니다. 패널 폭과 관계없이 동일하게 동작합니다.</span>
+        <span>{t("runtime.composer.help")}</span>
       </div>
       <div className="set-harness-pick">
         <label className="set-field">
-          <span className="set-field-label">전송 키</span>
+          <span className="set-field-label">{t("runtime.composer.sendKey")}</span>
           <select className="set-select" value={sendKey} onChange={(event) => onSave({ sendKey: event.target.value as ComposerSendKey })}>
-            {COMPOSER_SEND_KEYS.map((id) => <option key={id} value={id}>{SEND_KEY_LABELS[id]}</option>)}
+            {COMPOSER_SEND_KEYS.map((id) => <option key={id} value={id}>{t(SEND_KEY_LABELS[id])}</option>)}
           </select>
         </label>
         <button type="button" className="set-toggle" onClick={() => onSave({ interruptOnSend: !interruptOnSend })}>
           <span className={"set-switch" + (interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
-          <span className="set-toggle-label">전송 시 진행 중인 턴 중단</span>
+          <span className="set-toggle-label">{t("runtime.composer.interrupt")}</span>
         </button>
       </div>
       <div className="set-inline-note">
         <InfoIcon size={14} />
-        <span>켜면 멤버가 작업 중이어도 즉시 중단하고 새 메시지를 처리합니다. 끄면(기본) 진행 중인 턴이 끝난 뒤에 처리됩니다. 압축 중에는 어느 쪽이든 중단하지 않습니다. 이 설정은 <b>이 입력창에만</b> 적용됩니다 — HTTP API 로 보내는 쪽은 호출할 때마다 직접 지정합니다.</span>
+        <span>{t("runtime.composer.interruptHelp")}</span>
       </div>
     </>
   );

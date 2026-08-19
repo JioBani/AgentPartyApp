@@ -16,6 +16,7 @@ import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favo
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
 import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
+import { DEFAULT_APP_LOCALE, normalizeAppLocale } from "../shared/appLocale";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -47,6 +48,7 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
 };
 
 const defaults: AppSettings = {
+  locale: DEFAULT_APP_LOCALE,
   workspacePath: process.cwd(),
   claudeExecutablePath: "",
   cursorExecutablePath: "",
@@ -205,7 +207,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // identical to the built-in), so a stale file cannot make a member session
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
-  return { ...withRuntimeOverrides, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

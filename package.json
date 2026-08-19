@@ -54,6 +54,7 @@
     "test:e2e:live-claude-opus-routing": "npm run build && node scripts/e2e-live-claude-opus-routing.mjs",
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:font-family": "npm run build && node scripts/e2e-font-family.mjs",
+    "test:e2e:locale": "npm run build && node scripts/e2e-locale.mjs",
     "test:e2e:codex-image-view": "npm run build && node scripts/e2e-codex-image-view.mjs",
     "test:e2e:external-links": "npm run build && node scripts/e2e-external-links.mjs",
     "test:e2e:composer-input": "npm run build && node scripts/e2e-composer-input.mjs",

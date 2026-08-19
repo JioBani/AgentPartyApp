@@ -226,6 +226,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
   return {
     ok: true,
     settings: {
+      locale: "ko",
       workspacePath: WORKSPACE,
       claudeExecutablePath: "",
       cursorExecutablePath: "",

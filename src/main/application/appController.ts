@@ -57,6 +57,7 @@ import { hasConnectedAccount } from "../../shared/guideAuth";
 import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shared/guideChat";
 import type { GuideOfferView } from "../../shared/guideOffer";
 import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
+import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -684,19 +685,22 @@ export class AppController {
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
+    const validatedPatch = Object.prototype.hasOwnProperty.call(patch || {}, "locale")
+      ? { ...patch, locale: requireAppLocale(patch?.locale) }
+      : patch;
     const previous = getSettings();
-    updateSettings(patch || {});
+    updateSettings(validatedPatch || {});
     this.deps.onSettingsChanged();
-    if (typeof patch?.debugEnabled === "boolean" && patch.debugEnabled !== previous.debugEnabled) {
-      this.deps.sessionManager.setDebugMode(patch.debugEnabled);
+    if (typeof validatedPatch?.debugEnabled === "boolean" && validatedPatch.debugEnabled !== previous.debugEnabled) {
+      this.deps.sessionManager.setDebugMode(validatedPatch.debugEnabled);
     }
     // Idle sleep is acted on by whichever host owns the sessions, which for a WSL
     // workspace is inside the distro — and that host reads a different
     // settings.json. Push the value instead of letting each engine look it up.
-    if (patch?.idleSleep) {
+    if (validatedPatch?.idleSleep) {
       void this.deps.engineRegistry.setIdleSleep(getSettings().idleSleep);
     }
-    if (patch?.memberMessaging) {
+    if (validatedPatch?.memberMessaging) {
       void this.deps.engineRegistry.setMemberMessaging(getSettings().memberMessaging);
     }
     const settings = getPublicSettings();
@@ -708,6 +712,14 @@ export class AppController {
       entry.window.webContents.send("settings:update", settings);
     }
     return settings;
+  }
+
+  getLocale(): { locale: AppLocale } {
+    return { locale: getSettings().locale };
+  }
+
+  setLocale(value: unknown): AppSettings {
+    return this.updateSettings({ locale: requireAppLocale(value) });
   }
 
   /**

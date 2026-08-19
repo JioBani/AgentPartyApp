@@ -16,6 +16,7 @@ import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyPrimerSettings } from "./partyPrimer";
+import type { AppLocale } from "./appLocale";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -61,6 +62,8 @@ export interface DefaultMemberProfile extends HarnessDefaults {
 }
 
 export interface AppSettings {
+  /** Language used by every user-facing app surface. */
+  locale: AppLocale;
   workspacePath: string;
   /** Claude Code executable override (Claude-harness infrastructure). */
   claudeExecutablePath: string;

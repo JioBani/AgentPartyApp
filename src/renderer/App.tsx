@@ -44,6 +44,8 @@ import { hasConnectedAccount } from "../shared/guideAuth";
 import { nextGuideOfferAction } from "../shared/guideOffer";
 import { GuideOfferDialog } from "./app/GuideOfferDialog";
 import { GuideView } from "./guide/GuideView";
+import { createI18n, I18nProvider } from "./i18n/I18nProvider";
+import type { AppLocale } from "../shared/appLocale";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -72,6 +74,7 @@ interface EnsureSessionResult {
 export function App() {
   const theme = useTheme();
   const [state, setState] = useState<InitialAppState>(initialState);
+  const { t } = useMemo(() => createI18n(state.settings.locale), [state.settings.locale]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [logsBySession, setLogsBySession] = useState<Record<string, TranscriptBlock[]>>({});
   // Subagents folded from `subagent` events, kept separate from the transcript so
@@ -930,6 +933,15 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  async function saveLocale(locale: AppLocale) {
+    try {
+      const settings = await window.agentParty.setLocale(locale);
+      setState((current) => ({ ...current, settings }));
+    } catch (error) {
+      setPartyNotice(t("runtime.language.saveError", { error: ipcErrorMessage(error) }));
+    }
+  }
+
   /**
    * Persisting this also pushes the new policy to every engine (local and WSL),
    * so turning sleep off stops the sweep on members this window is not showing.
@@ -1488,13 +1500,13 @@ export function App() {
   // doctor will add "문제 해결" on the same rail; keep this list a flat append,
   // no new abstraction.
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
-    { id: "workbench", label: "Workbench", icon: <Sparkles size={18} /> },
-    { id: "guide", label: "가이드", icon: <BookOpen size={18} /> },
-    { id: "sessions", label: "세션", icon: <History size={18} /> },
-    { id: "usage", label: "Token Usage", icon: <BarChart3 size={18} /> },
-    { id: "auth", label: "인증", icon: <KeyRound size={18} /> },
-    { id: "runtime", label: "런타임", icon: <SlidersHorizontal size={18} /> },
-    { id: "automation", label: "자동화", icon: <Settings size={18} /> },
+    { id: "workbench", label: viewTitle("workbench", t), icon: <Sparkles size={18} /> },
+    { id: "guide", label: viewTitle("guide", t), icon: <BookOpen size={18} /> },
+    { id: "sessions", label: viewTitle("sessions", t), icon: <History size={18} /> },
+    { id: "usage", label: viewTitle("usage", t), icon: <BarChart3 size={18} /> },
+    { id: "auth", label: viewTitle("auth", t), icon: <KeyRound size={18} /> },
+    { id: "runtime", label: viewTitle("runtime", t), icon: <SlidersHorizontal size={18} /> },
+    { id: "automation", label: viewTitle("automation", t), icon: <Settings size={18} /> },
   ];
 
   const isDark = theme.themeId === "dark";
@@ -1537,11 +1549,12 @@ export function App() {
   );
 
   return (
+    <I18nProvider locale={state.settings.locale}>
     <div className="app-shell">
       <div className="app-titlebar">
         <div className="titlebar-drag">
-          <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView)}</small></div>
-          <button type="button" className="titlebar-action no-drag" title="테마 전환" onClick={theme.cycleTheme}>
+          <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>
+          <button type="button" className="titlebar-action no-drag" title={t("shell.theme")} onClick={theme.cycleTheme}>
             {isDark ? <Moon size={14} /> : <Sun size={14} />}
           </button>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
@@ -1550,14 +1563,14 @@ export function App() {
           {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
         </div>
         <div className="window-controls">
-          <button type="button" className="window-button" title="최소화" onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
-          <button type="button" className="window-button" title="최대화" onClick={() => window.agentParty.maximizeWindow()}><Maximize2 size={14} /></button>
-          <button type="button" className="window-button close" title="닫기" onClick={() => window.agentParty.closeWindow()}><X size={16} /></button>
+          <button type="button" className="window-button" title={t("shell.minimize")} onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
+          <button type="button" className="window-button" title={t("shell.maximize")} onClick={() => window.agentParty.maximizeWindow()}><Maximize2 size={14} /></button>
+          <button type="button" className="window-button close" title={t("shell.close")} onClick={() => window.agentParty.closeWindow()}><X size={16} /></button>
         </div>
       </div>
 
       <div className="app-body">
-        <nav className="nav-rail" aria-label="기본 탐색">
+        <nav className="nav-rail" aria-label={t("shell.navigation")}>
           <div className="nav-items">
             {navItems.map((item) => (
               <button key={item.id} data-view={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => { if (item.id === "guide") void openGuide(); else setCurrentView(item.id); }} title={item.label}>
@@ -1566,7 +1579,7 @@ export function App() {
             ))}
           </div>
           <div className="nav-spacer" />
-          <div className="nav-avatar" title="계정">JD</div>
+          <div className="nav-avatar" title={t("shell.account")}>JD</div>
         </nav>
 
         <main className="program-main">
@@ -1574,17 +1587,17 @@ export function App() {
             <>
               <header className="screen-header">
                 <div className="screen-title">
-                  <h1>Workbench</h1>
+                  <h1>{viewTitle("workbench", t)}</h1>
                   <span className="wb-mono screen-repo">
                     {state.workspace?.kind === "wsl" && (
                       <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>
                     )}
-                    {state.workspace?.path || displayPath(state.settings.workspacePath) || "작업공간 없음"}
+                    {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
                   </span>
-                  <p>멤버를 탭으로 열고 패널을 나누어 여러 세션을 한 화면에서 관리합니다.</p>
+                  <p>{t("shell.workbenchDescription")}</p>
                 </div>
                 <div className="screen-actions">
-                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> 작업공간</button>
+                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> {t("shell.workspace")}</button>
                   {usagePill}
                 </div>
               </header>
@@ -1634,20 +1647,20 @@ export function App() {
             <>
               <header className="screen-header">
                 <div className="screen-title">
-                  <h1>{viewTitle(currentView)}</h1>
-                  <p>{viewSubtitle(currentView)}</p>
+                  <h1>{viewTitle(currentView, t)}</h1>
+                  <p>{viewSubtitle(currentView, t)}</p>
                   <div className="screen-chips">
                     <span className="screen-chip">
                       <FolderOpen size={13} />
                       <span className="wb-mono">
                         {state.workspace?.kind === "wsl" && <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>}
-                        {state.workspace?.path || displayPath(state.settings.workspacePath) || "작업공간 없음"}
+                        {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
                       </span>
                     </span>
                   </div>
                 </div>
                 <div className="screen-actions">
-                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> 작업공간</button>
+                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> {t("shell.workspace")}</button>
                   {usagePill}
                 </div>
               </header>
@@ -1686,6 +1699,7 @@ export function App() {
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onToggleDebug={toggleDebug}
+                  onSaveLocale={saveLocale}
                   onSaveExecutablePaths={saveExecutablePaths}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveIdleSleep={saveIdleSleep}
@@ -1745,10 +1759,11 @@ export function App() {
       {partyNotice && (
         <div className="app-toast" role="status">
           <span>{partyNotice}</span>
-          <button type="button" className="app-toast-x" title="닫기" onClick={() => setPartyNotice("")}><X size={13} /></button>
+          <button type="button" className="app-toast-x" title={t("shell.close")} onClick={() => setPartyNotice("")}><X size={13} /></button>
         </div>
       )}
     </div>
+    </I18nProvider>
   );
 }
 
