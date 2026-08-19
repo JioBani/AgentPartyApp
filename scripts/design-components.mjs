@@ -193,7 +193,7 @@ export const COMPONENTS = [
     prompt: `도구 실행 하나. 접힌 상태에서도 **무엇을 했는지**(이름 + 인자 요약)는 보이고,
 긴 명령/출력은 미리보기만 인라인으로 둔 뒤 전체는 팝업에서 본다.
 \`Read\` 처럼 파일을 모델 컨텍스트로 읽는 도구는 결과가 이미지여도 그림을 그리지 않는다 —
-사용자가 보자고 한 게 아니기 때문. 보여주는 게 목적인 도구(\`image_view\`)는 그린다.`,
+사용자가 보자고 한 게 아니기 때문. 네이티브 \`image_view\`도 모델의 참고용이므로 펼칠 때만 그리고, 사용자 표시가 목적인 AgentParty \`attach-image\`만 즉시 그린다.`,
     variants: [v("완료", "workbench", ".wb-tool", { context: ".wb-transcript" })],
   },
   {

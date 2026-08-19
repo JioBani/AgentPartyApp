@@ -123,10 +123,15 @@ async function main() {
     const older = await post(`/api/measure${query}`, { selector: ".wb-transcript-older", limit: VISIBLE_PANELS });
     assert(rendered.count === VISIBLE_PANELS * 150, `all six panels retain the established 150-block tail (${rendered.count})`);
     assert(older.count === VISIBLE_PANELS, `all ${VISIBLE_PANELS} panels retain the older-history control`);
+    const imagesBeforeOpen = await post(`/api/measure${query}`, { selector: "details.wb-tool img.wb-tool-image", limit: 1 })
+      .catch(() => ({ count: 0 }));
+    assert(imagesBeforeOpen.count === 0, "image-heavy ordinary tool results mount no images during party switching");
 
     const openedTool = await post(`/api/capture${query}`, { path: shot, click: ".wb-tool:not([open]) > summary" });
     const toolBody = await post(`/api/measure${query}`, { selector: ".wb-tool[open] .wb-tool-result", limit: 1 });
     assert(openedTool.applied?.clicked && toolBody.count > 0, "a deferred collapsed tool body renders normally on first open");
+    const imageAfterOpen = await post(`/api/measure${query}`, { selector: ".wb-tool[open] img.wb-tool-image", limit: 1 });
+    assert(imageAfterOpen.count === 1, "opening an image-bearing tool mounts its image on demand");
 
     const capture = await post(`/api/capture${query}`, { path: shot, click: ".wb-transcript-older" });
     const expanded = await post(`/api/measure${query}`, { selector: ".wb-transcript > .wb-block", limit: 1 });
@@ -157,6 +162,17 @@ function seedStore() {
     updatedAt: "2026-01-01T00:00:00.000Z",
   }));
   fs.mkdirSync(storage, { recursive: true });
+  const imageFile = "perf-visual-check.png";
+  const imageBytes = Buffer.concat([
+    Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==", "base64"),
+    Buffer.alloc(128 * 1024),
+  ]);
+  fs.mkdirSync(path.join(storage, "images"), { recursive: true });
+  fs.writeFileSync(path.join(storage, "images", imageFile), imageBytes);
+  const storedImage = {
+    type: "image",
+    source: { type: "agentparty-file", file: imageFile, media_type: "image/png", bytes: imageBytes.byteLength },
+  };
   fs.writeFileSync(path.join(storage, ".gitignore"), "*\n");
   fs.writeFileSync(path.join(storage, "parties.json"), JSON.stringify({ version: 2, parties, lastActivePartyId: parties[0].id }, null, 2));
 
@@ -195,13 +211,14 @@ function seedStore() {
       const blocks = Array.from({ length: BLOCKS_PER_TRANSCRIPT }, (_, blockIndex) => {
         const common = { id: `${party.id}-${member.name}-${blockIndex}`, at: "12:00" };
         if (blockIndex % 2 === 0) {
+          const returnsImage = blockIndex % 4 === 2;
           return {
             ...common,
             kind: "tool",
-            name: "shell",
+            name: returnsImage ? "exec" : "shell",
             status: "completed",
-            input: { command: `echo ${party.id} ${member.name}` },
-            result: filler,
+            input: { command: returnsImage ? "tools.view_image(...)" : `echo ${party.id} ${member.name}` },
+            result: returnsImage ? [{ type: "text", text: filler }, storedImage] : filler,
           };
         }
         return {

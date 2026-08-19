@@ -1,9 +1,10 @@
 /*
  * Manual benchmark against a COPY of an existing workspace's AgentParty store.
  * Usage:
- *   node scripts/benchmark-party-switch-real-store.mjs <source-workspace> [installed-exe]
+ *   node scripts/benchmark-party-switch-real-store.mjs <source-workspace> [installed-exe] [--open]
  * Omitting installed-exe launches this worktree's build. The source is read-only;
- * all app writes land in an isolated temporary copy that is deleted afterward.
+ * all app writes land in an isolated temporary copy. `--open` leaves the real
+ * app and copy running for hands-on QA; ordinary benchmark runs delete the copy.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -14,7 +15,9 @@ import { firstBaseUrl } from "./lib/discovery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.resolve(process.argv[2] || "");
-const installedExe = process.argv[3] ? path.resolve(process.argv[3]) : "";
+const keepOpen = process.argv.includes("--open");
+const installedExeArg = process.argv.slice(3).find((value) => value !== "--open");
+const installedExe = installedExeArg ? path.resolve(installedExeArg) : "";
 if (!source || !fs.existsSync(path.join(source, ".agent_party_app", "parties.json"))) {
   throw new Error("Pass a workspace containing .agent_party_app as the first argument.");
 }
@@ -41,10 +44,11 @@ try {
     AGENTPARTY_USER_DATA: userData,
     AGENTPARTY_WINDOW_DISPLAY: "left",
   };
+  const processOptions = { stdio: keepOpen ? "ignore" : ["ignore", "ignore", "pipe"], windowsHide: true, detached: keepOpen, env };
   child = installedExe
-    ? spawn(installedExe, ["--workspace", fixture], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true, env })
-    : spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", "--", "--workspace", fixture], { cwd: root, stdio: ["ignore", "ignore", "pipe"], windowsHide: true, env });
-  child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+    ? spawn(installedExe, ["--workspace", fixture], processOptions)
+    : spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", "--", "--workspace", fixture], { ...processOptions, cwd: root });
+  child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
 
   base = await discover();
   const health = await get("/api/health");
@@ -52,6 +56,11 @@ try {
   const windowId = windows.find((item) => path.resolve(item.workspacePath || "") === fixture)?.id;
   if (!windowId) throw new Error(`No benchmark window for ${fixture}`);
   console.log(JSON.stringify({ build: installedExe || health.runtime?.appRoot, fixture, windowId }));
+
+  if (keepOpen) {
+    child.unref();
+    console.log(JSON.stringify({ qaOpen: true, source, workspaceCopy: fixture, userData, launcherPid: child.pid }));
+  } else {
 
   const catalog = JSON.parse(fs.readFileSync(path.join(fixture, ".agent_party_app", "parties.json"), "utf8"));
   const candidates = catalog.parties.map((party) => {
@@ -75,10 +84,13 @@ try {
   console.log(JSON.stringify({ samples }, null, 2));
   await post(`/api/window/close?window=${encodeURIComponent(windowId)}`, {}).catch(() => {});
   await waitForExit(child);
+  }
 } finally {
-  if (child && child.exitCode === null) killProcessTree(child.pid);
-  removeTempPath(fixture);
-  removeTempPath(userData);
+  if (!keepOpen) {
+    if (child && child.exitCode === null) killProcessTree(child.pid);
+    removeTempPath(fixture);
+    removeTempPath(userData);
+  }
 }
 
 function prepareOfflineCopy() {

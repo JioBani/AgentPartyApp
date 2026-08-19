@@ -10,7 +10,7 @@ import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../.
 import { harnessShort } from "./harnessLabel";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
-import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
+import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
 import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
@@ -26,8 +26,9 @@ interface TranscriptProps {
    * How much machinery this surface shows.
    *
    * `"full"` (workbench): watching what the agent actually ran IS the work, so
-   * tool boxes open on sight and every `spawned` / `requesting` / `turn complete`
-   * line is visible.
+   * text-only tool boxes open on sight and every `spawned` / `requesting` /
+   * `turn complete` line is visible. Images returned by ordinary tools stay
+   * collapsed until requested.
    *
    * `"answers"` (guide): the reader came for an answer, not to supervise an
    * agent. Tool boxes stay collapsed (they are the guide reading its own
@@ -36,8 +37,8 @@ interface TranscriptProps {
    * cost is shown as 쓴다/안 쓴다 and never as a number.
    *
    * Errors are NOT status: a real failure is its own block kind and shows in
-   * both modes. A picture result also opens in both — collapsed, it cannot be
-   * told apart from an image that failed to render.
+   * both modes. Every tool-returned image stays behind its tool disclosure;
+   * user attachments are separate message blocks and remain immediately visible.
    */
   detail?: "full" | "answers";
 }
@@ -592,19 +593,6 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
 }
 
 /**
- * Tools whose entire point is to put a picture in front of the user. Codex's
- * built-in image viewer is one: the model reads the file into its own context,
- * but what lands in the conversation is a picture, exactly like the party's
- * `attach-image`.
- *
- * Named here rather than inferred from "the result happens to contain an image",
- * because that also matches a `Read` of a .png or an MCP screenshot — cases
- * where the tool box (name, arguments, the fact that a tool ran) is the point
- * and the image is supporting evidence.
- */
-const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
-
-/**
  * The mirror case: tools that read a file INTO the model's context. When the
  * file happens to be a .png the harness returns the bytes, but the user did not
  * ask to look at anything — the agent did. Showing the picture there fills the
@@ -618,7 +606,7 @@ interface ToolPresentation {
   arg: string;
   fullInput: string;
   result: string;
-  images: DisplayImage[];
+  hasImages: boolean;
   meta: string;
   hasMore: boolean;
 }
@@ -628,6 +616,7 @@ interface ToolPresentation {
 // return does not stringify the same large tool results all over again. The
 // WeakMap releases entries with the transcript block; it is not a second store.
 const toolPresentations = new WeakMap<ToolTranscriptBlock, ToolPresentation>();
+const NO_TOOL_IMAGES: DisplayImage[] = [];
 
 function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
   const cached = toolPresentations.get(block);
@@ -635,45 +624,34 @@ function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
   const arg = summarizeArg(block.input);
   const fullInput = toolInputDetail(block.input);
   const result = block.output || formatResult(block.result);
-  const images = IMAGE_HIDDEN_TOOLS.has(block.name) ? [] : collectDisplayImages(block.result);
+  // Only answer WHETHER a collapsed tool has images here. Building DisplayImage
+  // objects for inline results duplicates the base64 as data URLs, while stored
+  // results would immediately start renderer -> main file reads when mounted.
+  const hasImages = !IMAGE_HIDDEN_TOOLS.has(block.name) && hasDisplayImages(block.result);
   const meta = toolMeta(block);
-  const presentation = { arg, fullInput, result, images, meta, hasMore: needsClip(fullInput) || needsClip(result) };
+  const presentation = { arg, fullInput, result, hasImages, meta, hasMore: needsClip(fullInput) || needsClip(result) };
   toolPresentations.set(block, presentation);
   return presentation;
 }
 
 function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; density: PanelDensity; detail: "full" | "answers" }) {
   const [full, setFull] = useState(false);
-  const { arg, fullInput, result, images, meta, hasMore } = toolPresentationFor(block);
+  const { arg, fullInput, result, hasImages, meta, hasMore } = toolPresentationFor(block);
   // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
   // command/result. The full command + output live in the "전체 보기" popup so a
   // long bash run never floods the transcript inline.
   const failed = block.status === "failed";
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
-  // A result that IS a picture opens by default at every density. Collapsed, the
-  // summary shows only a file path — indistinguishable from the image not being
-  // rendered at all, which was the reported bug for Codex's `image_view`. Text
-  // results keep the old rule: they read fine from the summary and would
-  // otherwise flood the transcript.
-  const openByDefault = images.length > 0 || (detail === "full" && density === "wide" && Boolean(result));
+  // Pictures returned by a tool are evidence the agent consumed, not a message
+  // to the user. Even a native image_view in a wide workbench stays collapsed.
+  const openByDefault = !hasImages && detail === "full" && density === "wide" && Boolean(result);
   const [open, setOpen] = useState(openByDefault);
   useEffect(() => {
     setOpen(openByDefault);
   }, [openByDefault]);
-
-  // A display tool that produced its picture renders as the same card as an
-  // attached image — no disclosure box, no `{"path": …}` dump. The tool ran to
-  // SHOW something; the mechanics are noise around it. The path stays as the
-  // caption so it is still clear what was opened.
-  if (IMAGE_DISPLAY_TOOLS.has(block.name) && images.length > 0) {
-    const shown = summarizeArg(block.input) || block.name;
-    return (
-      <div className="wb-block wb-attached-image">
-        {images.map((image) => <ToolImage key={image.key} image={image} />)}
-        <span className="wb-attached-image-caption wb-mono">{shown}</span>
-      </div>
-    );
-  }
+  // This is the lazy boundary: before a tool opens, no inline data URL
+  // is built and no ToolImage effect can ask the main process for stored bytes.
+  const images = hasImages && (open || full) ? collectDisplayImages(block.result) : NO_TOOL_IMAGES;
 
   return (
     <details

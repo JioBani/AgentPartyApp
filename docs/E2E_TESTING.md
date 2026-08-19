@@ -99,6 +99,8 @@ The benchmark copies only `.agent_party_app` into a guarded temporary directory,
 marks copied members sleeping, and launches the real app against that copy; the
 source workspace and its live parties are never written. Omitting `installed-exe`
 measures the current worktree build, while supplying it makes a baseline run.
+Add `--open` to leave that isolated sleeping-member copy open in the real app
+for hands-on QA; the command prints the copy and user-data paths for cleanup.
 
 `node scripts/qa-app-mcp-e2e.mjs` verifies the MCP status endpoint against the
 **real** harness adapters (billed — starts a live Claude + Codex member): creates
