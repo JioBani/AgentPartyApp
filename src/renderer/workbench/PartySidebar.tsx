@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Check, ChevronsLeft, ExternalLink, Moon, Pin, Play, Plus, RotateCcw, Sun, Trash2, Users, X } from "lucide-react";
-import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Check, ChevronsLeft, ExternalLink, FolderInput, Moon, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
+import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -16,6 +16,13 @@ import { harnessLabel } from "./harnessLabel";
 import { HarnessIcon } from "./HarnessIcon";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { PartyGroupList } from "./PartyGroupList";
+import { MoveGroupModal, NewGroupModal } from "./PartyGroupModals";
+import { CwdPicker, ENV_LABEL, EnvIcon } from "./CwdPicker";
+import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
+import { groupParties } from "../../shared/partyGroups";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
+import { checkLocationShape, parseMemberLocation, preferencesFor } from "../../shared/memberLocation";
 
 export interface CreateMemberInput {
   name: string;
@@ -29,16 +36,30 @@ export interface CreateMemberInput {
   permissionMode?: PermissionModeSetting;
   codexPolicy?: CodexPolicy;
   cursorPolicy?: CursorPolicy;
+  /**
+   * Where the member runs, fixed at creation. Required in practice — the wizard
+   * will not advance without one — but optional on the type so an automation
+   * caller that omits it is REJECTED with a reason rather than silently given
+   * whatever cwd the app happened to be launched from.
+   */
+  location?: MemberExecutionLocation;
+  /** Also store this location as the environment's default cwd. */
+  saveAsDefault?: boolean;
 }
 
 interface PartySidebarProps {
-  parties: PartyDefinition[];
+  /** App-global groups, in display order. */
+  groups: PartyGroup[];
+  /** One summary per party — never a definition, so the list stays cheap. */
+  partySummaries: PartySummary[];
+  /** Default + recent cwds, offered when creating a party or a member. */
+  cwdPrefs: CwdPreferences;
+  /** Frozen "now" for recency labels, so previews render deterministically. */
+  now: number;
   activePartyId?: string;
   activePartyName: string;
   views: MemberView[];
   openMembers: Set<string>;
-  workingByParty: Record<string, number>;
-  memberCountByParty: Record<string, number>;
   width: number;
   routes: RouteLike[];
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
@@ -47,7 +68,11 @@ interface PartySidebarProps {
   defaultProfile: DefaultMemberProfile;
   harnessDefaults: Record<string, HarnessDefaults>;
   onSelectParty: (partyId: string) => void;
-  onCreateParty: (name: string, gate?: PartyGate) => void;
+  onCreateParty: (input: CreatePartyInput) => void;
+  onCreateGroup: (name: string) => void;
+  onMovePartyToGroup: (partyId: string, groupId: string) => void;
+  /** Opens the platform folder picker; resolves null when the user cancelled. */
+  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
   onCreateMember: (input: CreateMemberInput) => void;
   onOpenMember: (member: string) => void;
   /** Hard restart (in-place harness restart); enabled only with a live session. */
@@ -67,6 +92,21 @@ interface PartySidebarProps {
   onCollapse: () => void;
 }
 
+/**
+ * Everything creating a party now needs.
+ *
+ * `location` is the cwd of the `main` member that is created alongside it — the
+ * party itself owns no directory (README §7). It travels in this payload rather
+ * than being resolved later, so the party and its first member are decided in
+ * one place instead of two that could disagree.
+ */
+export interface CreatePartyInput {
+  name: string;
+  groupId: string;
+  location: MemberExecutionLocation;
+  gate?: PartyGate;
+}
+
 /** The row the context menu was opened on, re-read live so its items reflect the
  *  member's current state rather than what it was at right-click time. */
 function memberOf(views: MemberView[], name: string): MemberView | undefined {
@@ -79,9 +119,11 @@ function memberOf(views: MemberView[], name: string): MemberView | undefined {
  * `view` is undefined only if the member vanished while the menu was open; the
  * items then read as unavailable rather than acting on a name that is gone.
  */
-function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep, onWake, onRemove, onDone }: {
+function MemberContextMenuItems({ name, view, location, onRestart, onSetKeepAwake, onSleep, onWake, onRemove, onDone }: {
   name: string;
   view: MemberView | undefined;
+  /** The member's fixed cwd, shown read-only above the actions. */
+  location?: MemberExecutionLocation;
   onRestart: (member: string) => void;
   onSetKeepAwake: (member: string, keepAwake: boolean) => void;
   onSleep: (member: string) => void;
@@ -93,6 +135,20 @@ function MemberContextMenuItems({ name, view, onRestart, onSetKeepAwake, onSleep
   const run = (action: () => void) => () => { action(); onDone(); };
   return (
     <>
+      {/* Where this member runs, stated before any action is offered. It is the
+          one property the menu cannot change, and a menu that showed only the
+          changeable things would leave "why can I not move it?" unanswered. */}
+      {location && (
+        <div className="wb-ctx-head">
+          <strong>{name}</strong>
+          <span className="wb-ctx-head-loc">
+            <EnvIcon env={location.env} />
+            {location.distro && <span className="wb-cwd-distro">{location.distro}</span>}
+            <span className="wb-mono">{location.cwd}</span>
+          </span>
+          <span><LocalizedText id="STR-3291" /></span>
+        </div>
+      )}
       <button
         type="button"
         className="wb-ctx-item"
@@ -162,14 +218,33 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { parties, activePartyId, activePartyName, views, openMembers, workingByParty, memberCountByParty, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
+  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  /** The party the 그룹으로 이동 dialog is open for. */
+  const [movingParty, setMovingParty] = useState<PartySummary | null>(null);
   // Right-click context menu, at the cursor, for a member or party row.
   const [menu, setMenu] = useState<CtxMenu | null>(null);
   // Arms the second, confirming click for the destructive party delete.
   const [confirmParty, setConfirmParty] = useState(false);
+  /**
+   * Which groups are expanded. Starts with every group open: a first run that
+   * hid the parties behind three closed folders would look like an empty app.
+   */
+  const [closedGroupIds, setClosedGroupIds] = useState<ReadonlySet<string>>(() => new Set());
+  const openGroupIds = useMemo(
+    () => new Set(groups.map((group) => group.id).filter((id) => !closedGroupIds.has(id))),
+    [groups, closedGroupIds],
+  );
+  const grouped = useMemo(() => groupParties(groups, partySummaries), [groups, partySummaries]);
+  const partyCountByGroup = useMemo(
+    () => Object.fromEntries(grouped.map((entry) => [entry.group.id, entry.parties.length])),
+    [grouped],
+  );
+  /** The group a new party lands in by default: the one being viewed (README §4.2). */
+  const activeGroupId = partySummaries.find((party) => party.id === activePartyId)?.groupId ?? groups[0]?.id ?? "";
 
   // Dismiss the context menu on any outside click, scroll, or Escape.
   useEffect(() => {
@@ -191,14 +266,35 @@ export function PartySidebar(props: PartySidebarProps) {
     };
   }, [menu]);
 
+  /**
+   * The one-line quick create. It still needs a cwd for the `main` member, so it
+   * only completes when a Windows default exists; otherwise it hands over to the
+   * full dialog rather than inventing a directory to run in.
+   */
   function submit(event: FormEvent) {
     event.preventDefault();
     const name = draft.trim();
     if (!name) {
       return;
     }
-    onCreateParty(name);
+    if (!cwdPrefs.windowsDefault) {
+      setNewPartyOpen(true);
+      return;
+    }
+    onCreateParty({ name, groupId: activeGroupId, location: cwdPrefs.windowsDefault });
     setDraft("");
+  }
+
+  function toggleGroup(groupId: string) {
+    setClosedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
   }
 
   return (
@@ -210,39 +306,30 @@ export function PartySidebar(props: PartySidebarProps) {
       </header>
 
       <section className="wb-sidebar-section">
-        <div className="wb-section-label">Parties <span className="wb-mono">{parties.length}</span></div>
+        {/* The hint is the whole point of the change: the list no longer depends
+            on which directory the app was launched from. */}
+        <div className="wb-section-label">
+          <span>Parties <span className="wb-mono">{partySummaries.length}</span></span>
+          <span className="wb-hint"><LocalizedText id="STR-3292" /></span>
+        </div>
         <form className="wb-new-party" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={localized("STR-2059")} />
           <button type="button" className="wb-icon-btn is-accent" title={localized("STR-2060")} onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
         </form>
-        <div className="wb-party-list">
-          {parties.map((party) => {
-            const working = workingByParty[party.id] || 0;
-            const count = memberCountByParty[party.id] || 0;
-            const active = party.id === activePartyId;
-            // Member/working counts are only known for the loaded (active) party;
-            // for others we show the name without inventing a count.
-            return (
-              <button
-                type="button"
-                key={party.id}
-                className={"wb-party-row" + (active ? " is-active" : "") + (menu?.kind === "party" && menu.partyId === party.id ? " is-menu" : "")}
-                onClick={() => onSelectParty(party.id)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setConfirmParty(false);
-                  setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
-                }}
-              >
-                <span className={"wb-live-dot" + (active && working > 0 ? " is-live" : "")} />
-                <span className="wb-party-name">{party.name}</span>
-                {active && <span className="wb-mono wb-party-sub">{count} members · {working} working</span>}
-                {active && <Check size={14} className="wb-party-check" />}
-              </button>
-            );
-          })}
-        </div>
+        <PartyGroupList
+          groups={grouped}
+          activePartyId={activePartyId}
+          openGroupIds={openGroupIds}
+          now={now}
+          menuPartyId={menu?.kind === "party" ? menu.partyId : undefined}
+          onToggleGroup={toggleGroup}
+          onSelectParty={onSelectParty}
+          onCreateGroup={() => setNewGroupOpen(true)}
+          onPartyContextMenu={(party, event) => {
+            setConfirmParty(false);
+            setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
+          }}
+        />
       </section>
 
       <section className="wb-sidebar-section wb-members-section">
@@ -261,6 +348,9 @@ export function PartySidebar(props: PartySidebarProps) {
             onRefreshCodexModels={onRefreshCodexModels}
             defaultProfile={defaultProfile}
             harnessDefaults={harnessDefaults}
+            cwdPrefs={cwdPrefs}
+            now={now}
+            onBrowseCwd={onBrowseCwd}
             onCancel={() => setCreating(false)}
             onCreate={(input) => { onCreateMember(input); setCreating(false); }}
           />
@@ -316,6 +406,10 @@ export function PartySidebar(props: PartySidebarProps) {
             <MemberContextMenuItems
               name={menu.name}
               view={memberOf(views, menu.name)}
+              location={(() => {
+                const stored = memberOf(views, menu.name)?.member.location;
+                return stored ? parseMemberLocation(stored) : undefined;
+              })()}
               onRestart={onRestartMember}
               onSetKeepAwake={onSetMemberKeepAwake}
               onSleep={onSleepMember}
@@ -345,6 +439,20 @@ export function PartySidebar(props: PartySidebarProps) {
               >
                 <MessageGateIcon size={13} className="wb-gate-accent" />  <LocalizedText id="STR-2071" />
               </button>
+              <button
+                type="button"
+                className="wb-ctx-item"
+                title={localized("STR-3293")}
+                onClick={() => {
+                  const party = partySummaries.find((entry) => entry.id === menu.partyId);
+                  if (party) {
+                    setMovingParty(party);
+                  }
+                  setMenu(null);
+                }}
+              >
+                <FolderInput size={13} />  <LocalizedText id="STR-3294" />
+              </button>
               {confirmParty ? (
                 <button
                   type="button"
@@ -370,8 +478,31 @@ export function PartySidebar(props: PartySidebarProps) {
       {newPartyOpen && (
         <NewPartyModal
           initialName={draft}
+          groups={groups}
+          initialGroupId={activeGroupId}
+          cwdPrefs={cwdPrefs}
+          now={now}
+          onBrowseCwd={onBrowseCwd}
+          onCreateGroup={() => { setNewPartyOpen(false); setNewGroupOpen(true); }}
           onCancel={() => setNewPartyOpen(false)}
-          onCreate={(name, gate) => { onCreateParty(name, gate); setDraft(""); setNewPartyOpen(false); }}
+          onCreate={(input) => { onCreateParty(input); setDraft(""); setNewPartyOpen(false); }}
+        />
+      )}
+
+      {newGroupOpen && (
+        <NewGroupModal
+          onCancel={() => setNewGroupOpen(false)}
+          onCreate={(name) => { onCreateGroup(name); setNewGroupOpen(false); }}
+        />
+      )}
+
+      {movingParty && (
+        <MoveGroupModal
+          party={movingParty}
+          groups={groups}
+          partyCountByGroup={partyCountByGroup}
+          onCancel={() => setMovingParty(null)}
+          onMove={(groupId) => { onMovePartyToGroup(movingParty.id, groupId); setMovingParty(null); }}
         />
       )}
     </aside>
@@ -379,21 +510,46 @@ export function PartySidebar(props: PartySidebarProps) {
 }
 
 /**
- * New-party creation modal (opened by the accent +). Name + an optional Message
- * Gate that is OFF by default — you can just enter a name and create. Closes ONLY
- * via Cancel — never an outside click.
+ * New-party creation modal (opened by the accent +).
+ *
+ * Three questions: what the party is called, which group it goes in, and where
+ * its `main` member will run. The party itself owns no directory — the cwd here
+ * belongs to `main`, and the hint says so, because "새 파티 · 경로" reads like
+ * the party has a workspace and that idea is exactly what this change removes.
+ *
+ * Closes ONLY via Cancel — never an outside click.
  */
-function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: string; onCancel: () => void; onCreate: (name: string, gate?: PartyGate) => void }) {
+export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, now, onBrowseCwd, onCreateGroup, onCancel, onCreate }: {
+  initialName: string;
+  groups: PartyGroup[];
+  initialGroupId: string;
+  cwdPrefs: CwdPreferences;
+  now: number;
+  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  /** Chosen from the group dropdown's last entry; hands over to the group dialog. */
+  onCreateGroup: () => void;
+  onCancel: () => void;
+  onCreate: (input: CreatePartyInput) => void;
+}) {
   const [name, setName] = useState(initialName);
+  const [groupId, setGroupId] = useState(initialGroupId || groups[0]?.id || "");
+  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(cwdPrefs.windowsDefault);
   const [gateOn, setGateOn] = useState(false);
   const [rule, setRule] = useState("간결하게 보내세요. 오케스트레이터를 거치지 말고 담당 멤버에게 직접 소통하세요.");
-  const canCreate = name.trim().length > 0;
+  // A party cannot be created without somewhere for `main` to run (README §7).
+  const locationProblem = location ? checkLocationShape(location) : undefined;
+  const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem;
 
   function create() {
-    if (!canCreate) {
+    if (!canCreate || !location) {
       return;
     }
-    onCreate(name.trim(), gateOn ? { enabled: true, rule } : undefined);
+    onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined });
+  }
+
+  function changeEnv(env: ExecutionEnv) {
+    const { fallback } = preferencesFor(cwdPrefs, env);
+    setLocation(fallback ?? { env, cwd: "" });
   }
 
   return (
@@ -416,6 +572,35 @@ function NewPartyModal({ initialName, onCancel, onCreate }: { initialName: strin
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") create(); }}
           />
+
+          <div className="wb-modal-label"><LocalizedText id="STR-3295" /></div>
+          <select
+            className="wb-wizard-input"
+            value={groupId}
+            onChange={(event) => {
+              if (event.target.value === "__new") {
+                onCreateGroup();
+                return;
+              }
+              setGroupId(event.target.value);
+            }}
+          >
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            <option value="__new">{localized("STR-3296")}</option>
+          </select>
+
+          <div className="wb-modal-label"><LocalizedText id="STR-3297" /></div>
+          <CwdPicker
+            value={location}
+            prefs={cwdPrefs}
+            now={now}
+            onChange={setLocation}
+            onChangeEnv={changeEnv}
+            onBrowse={() => { void onBrowseCwd(location?.env ?? "windows").then((picked) => { if (picked) setLocation(picked); }); }}
+            hint={<><LocalizedText id="STR-3299" /> <b>main</b> <LocalizedText id="STR-3298" /></>}
+          />
+          {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+
           <div className="wb-gate-block">
             <label className="wb-gate-toggle-row">
               <span className="wb-gate-toggle-text">

@@ -1,60 +1,19 @@
 import * as path from "node:path";
+import { parseWorkspaceLocation, serializeWorkspaceLocation, type WorkspaceLocation } from "./workspaceUri";
 
 /**
  * Where a workspace physically lives. A workspace is still a cwd directory, but
  * that directory may belong to a different host than the Electron UI (e.g. a WSL
- * distro). See the WSL remote-engine design. Until the remote engine lands, every location
- * is `{ kind: "local" }` and behavior is identical to a bare path string.
+ * distro). See the WSL remote-engine design.
+ *
+ * The type and its parser live in `workspaceUri.ts`, which has no Node import so
+ * the renderer can read the same strings. They are re-exported here because this
+ * module is what the main process already imports — moving the file must not
+ * become a rename across twenty call sites.
  */
-export type WorkspaceHost =
-  | { kind: "local" }
-  | { kind: "wsl"; distro: string };
+export type { WorkspaceHost, WorkspaceLocation } from "./workspaceUri";
+export { parseWorkspaceLocation, serializeWorkspaceLocation, isWslLocation } from "./workspaceUri";
 
-export interface WorkspaceLocation {
-  host: WorkspaceHost;
-  /** Host-native absolute path: win32 for local, posix for wsl. */
-  path: string;
-}
-
-/** `wsl+<distro>:<posix-abs-path>` — mirrors VS Code's `wsl+<distro>` authority. */
-const WSL_URI = /^wsl\+([^:]+):(.*)$/;
-/** Windows UNC view of a distro: `\\wsl$\<distro>\...` or `\\wsl.localhost\<distro>\...`. */
-const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\]+)\\?(.*)$/;
-
-/**
- * Parses a serialized location into a host + native path:
- * - `wsl+<distro>:/path` → that WSL location.
- * - a `\\wsl$\<distro>\...` / `\\wsl.localhost\...` UNC path → the same WSL
- *   location (so the Windows folder picker can choose a WSL folder).
- * - anything else → a local path, verbatim (existing Windows paths unchanged).
- */
-export function parseWorkspaceLocation(value: string): WorkspaceLocation {
-  const trimmed = value.trim();
-
-  const uri = WSL_URI.exec(trimmed);
-  if (uri) {
-    return { host: { kind: "wsl", distro: uri[1].trim() }, path: uri[2] || "/" };
-  }
-
-  const unc = WSL_UNC.exec(trimmed);
-  if (unc) {
-    const posixPath = `/${unc[2].replace(/\\/g, "/")}`.replace(/\/+$/, "") || "/";
-    return { host: { kind: "wsl", distro: unc[1].trim() }, path: posixPath };
-  }
-
-  return { host: { kind: "local" }, path: value };
-}
-
-/**
- * Serializes a location back to a string. Local locations serialize to their raw
- * path (backward compatible); WSL locations to the `wsl+<distro>:` URI.
- */
-export function serializeWorkspaceLocation(loc: WorkspaceLocation): string {
-  if (loc.host.kind === "wsl") {
-    return `wsl+${loc.host.distro}:${loc.path}`;
-  }
-  return loc.path;
-}
 
 /**
  * Stable identity used for caching/dedup (engine contexts, window grouping).
@@ -66,6 +25,9 @@ export function serializeWorkspaceLocation(loc: WorkspaceLocation): string {
  * mangled into backslashes. We therefore use the platform-default `path.resolve`
  * for local. WSL locations addressed from another host use the distro-qualified
  * posix form and never touch `path.resolve`.
+ *
+ * Stays HERE rather than in `workspaceUri.ts` because it needs `node:path`, and
+ * that import is exactly what the renderer must not pull in.
  */
 export function workspaceLocationKey(loc: WorkspaceLocation): string {
   if (loc.host.kind === "wsl") {
@@ -77,10 +39,6 @@ export function workspaceLocationKey(loc: WorkspaceLocation): string {
 /** Convenience: identity key straight from a serialized string. */
 export function workspaceKey(value: string): string {
   return workspaceLocationKey(parseWorkspaceLocation(value));
-}
-
-export function isWslLocation(loc: WorkspaceLocation): boolean {
-  return loc.host.kind === "wsl";
 }
 
 /**

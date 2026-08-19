@@ -12,6 +12,9 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessLabel } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
+import { CwdPicker } from "./CwdPicker";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
+import { checkLocationShape, preferencesFor } from "../../shared/memberLocation";
 
 /** Why this harness's permission axes matter, in the wizard's own voice. */
 const PERMISSION_HINTS: Record<HarnessId, string> = {
@@ -34,6 +37,24 @@ interface MemberWizardProps {
   defaultProfile: DefaultMemberProfile;
   /** Per-harness defaults — switching harness seeds THAT harness's default. */
   harnessDefaults: Record<string, HarnessDefaults>;
+  /** Default + recent cwds per environment, used to seed and offer the location. */
+  cwdPrefs: CwdPreferences;
+  /** Frozen "now" for the recency column, so previews render deterministically. */
+  now: number;
+  /**
+   * Opens the platform folder picker for one environment.
+   *
+   * Resolves to the chosen location, or `null` when the user cancelled — a
+   * distinction the wizard needs, because "cancelled" must leave the previous
+   * selection alone rather than clear it.
+   */
+  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  /**
+   * Which step to open on. Defaults to the first; the design preview uses it to
+   * show step 2 without clicking through, and a "이 설정으로 새 멤버" duplicate
+   * can land the user on the step it prefilled.
+   */
+  startStep?: number;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -92,13 +113,23 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, now, onBrowseCwd, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
-  const [stepIndex, setStepIndex] = useState(0);
+  const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
   const [pickerOpen, setPickerOpen] = useState(false);
   const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
   const [role, setRole] = useState("");
+  /**
+   * Where this member will run, forever. Seeded from the Windows default because
+   * this is a Windows app; an environment with no default starts EMPTY rather
+   * than borrowing the other environment's path, which would create the member
+   * somewhere the user never chose.
+   */
+  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(cwdPrefs.windowsDefault);
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  /** Steps already reached, so the rail can jump back to one without re-walking. */
+  const [maxStep, setMaxStep] = useState(startStep);
 
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
   const harnessEntries = useMemo(
@@ -186,10 +217,17 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const canCreate = NAME_PATTERN.test(name.trim());
   const step = STEPS[stepIndex].id;
   const isLastStep = stepIndex === STEPS.length - 1;
-  // Only the name gates progress, and only on the step that asks for it. The
-  // later steps are pre-seeded from the saved defaults, so there is nothing on
-  // them that can be left in an unusable state.
-  const canAdvance = step === "identity" ? canCreate : true;
+  /**
+   * A member cannot exist without a reachable cwd (README §5.1), so the runtime
+   * step gates on one being chosen and well-formed. This is shape only — whether
+   * the folder is actually there is decided in the environment it will run in,
+   * and a green button here never means the path was verified.
+   */
+  const locationProblem = location ? checkLocationShape(location) : undefined;
+  const hasLocation = Boolean(location?.cwd) && !locationProblem;
+  // Name gates the first step, location the second; the permission step is
+  // pre-seeded from the saved defaults and cannot be left unusable.
+  const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation : true;
 
   function goNext() {
     if (!canAdvance) {
@@ -199,7 +237,29 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
       create();
       return;
     }
-    setStepIndex((current) => Math.min(current + 1, STEPS.length - 1));
+    setStepIndex((current) => {
+      const next = Math.min(current + 1, STEPS.length - 1);
+      setMaxStep((seen) => Math.max(seen, next));
+      return next;
+    });
+  }
+
+  /**
+   * Switches environment, re-seeding the path from THAT environment's default.
+   *
+   * Carrying the Windows path across to WSL would produce `C:\Project` as a
+   * POSIX cwd — a value no distro can use, offered as if it were ready.
+   */
+  function changeEnv(env: ExecutionEnv) {
+    const { fallback } = preferencesFor(cwdPrefs, env);
+    setLocation(fallback ?? { env, cwd: "" });
+  }
+
+  async function browse() {
+    const picked = await onBrowseCwd(location?.env ?? "windows");
+    if (picked) {
+      setLocation(picked);
+    }
   }
 
   function create() {
@@ -218,6 +278,8 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
       permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,
       codexPolicy: executionHarness === "codex" ? codexPolicy : undefined,
       cursorPolicy: executionHarness === "cursor" ? cursorPolicy : undefined,
+      location,
+      saveAsDefault,
     });
   }
 
@@ -236,10 +298,18 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * choice they just made would be worse than no button at all.
    */
   function createWithDefaults() {
-    if (!canCreate) {
+    if (!canCreate || !cwdPrefs.windowsDefault) {
       return;
     }
-    onCreate({ name: name.trim(), requirement: role.trim(), runtime: defaultProfile.harness });
+    // The cwd is the one field the defaults CANNOT fill in silently: a member
+    // without one has nowhere to run. It is sent explicitly (and the button is
+    // hidden when no default exists) rather than left for the backend to guess.
+    onCreate({
+      name: name.trim(),
+      requirement: role.trim(),
+      runtime: defaultProfile.harness,
+      location: cwdPrefs.windowsDefault,
+    });
   }
 
   /** Takes the whole runtime choice back from the catalog in one go. */
@@ -291,20 +361,28 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             marks the current one leaves "how much is left" unanswered, which is
             the single thing a multi-step form owes the user. */}
         <ol className="wb-wizard-steps">
-          {STEPS.map((entry, index) => (
-            <li
-              key={entry.id}
-              className={
-                "wb-wizard-step" +
-                (index === stepIndex ? " is-current" : "") +
-                (index < stepIndex ? " is-done" : "")
-              }
-              aria-current={index === stepIndex ? "step" : undefined}
-            >
-              <span className="wb-wizard-step-n">{index + 1}</span>
-              <span className="wb-wizard-step-label">{entry.label}</span>
-            </li>
-          ))}
+          {STEPS.map((entry, index) => {
+            // Only a step already reached is a destination. Jumping FORWARD past
+            // an unmet requirement (no name, no cwd) would land on 만들기 with a
+            // form that cannot be submitted and no sign of why.
+            const reachable = index <= maxStep && index !== stepIndex;
+            return (
+              <li
+                key={entry.id}
+                className={
+                  "wb-wizard-step" +
+                  (index === stepIndex ? " is-current" : "") +
+                  (index < stepIndex ? " is-done" : "") +
+                  (reachable ? " is-nav" : "")
+                }
+                aria-current={index === stepIndex ? "step" : undefined}
+                onClick={reachable ? () => setStepIndex(index) : undefined}
+              >
+                <span className="wb-wizard-step-n">{index + 1}</span>
+                <span className="wb-wizard-step-label">{entry.label}</span>
+              </li>
+            );
+          })}
         </ol>
 
         <div className="wb-modal-body wb-wizard-body">
@@ -340,10 +418,15 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             {/* Names the defaults rather than just promising them: "기본 설정으로
                 만들기" is only a shortcut if the user can tell what it will make
                 without walking the steps to find out. */}
-            <p className="wb-wizard-default-note">
-              <Zap size={12} />
-              <span><LocalizedText id="STR-1755" /> <span className="wb-mono">{defaultSummary}</span>  <LocalizedText id="STR-1754" /></span>
-            </p>
+            {cwdPrefs.windowsDefault && (
+              <p className="wb-wizard-default-note">
+                <Zap size={12} />
+                <span>
+                  <LocalizedText id="STR-1755" /> <span className="wb-mono">{defaultSummary}</span>
+                  {" · "}<span className="wb-mono">{cwdPrefs.windowsDefault.cwd}</span>  <LocalizedText id="STR-1754" />
+                </span>
+              </p>
+            )}
             </>
             )}
 
@@ -384,6 +467,27 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             </section>
             )}
 
+            {/* The cwd sits with the runtime because they are one answer to
+                "what does this member run as": a harness and the directory it
+                runs in. Unlike everything else on this step it cannot be changed
+                afterwards, which is why it is marked 필수 and says so. */}
+            {step === "runtime" && (
+            <section className="wb-wizard-section">
+              <div className="wb-modal-label"><LocalizedText id="STR-3268" /> <span className="wb-wizard-optional"><LocalizedText id="STR-3269" /></span></div>
+              <CwdPicker
+                value={location}
+                prefs={cwdPrefs}
+                now={now}
+                onChange={setLocation}
+                onChangeEnv={changeEnv}
+                onBrowse={() => { void browse(); }}
+                saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
+                hint={localized("STR-3270")}
+              />
+              {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+            </section>
+            )}
+
             {step === "permission" && (
             <section className="wb-wizard-section">
               <div className="wb-modal-label"><LocalizedText id="STR-1763" /> <span className="wb-mono">{harnessLabel(executionHarness)}</span></div>
@@ -411,7 +515,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 <ChevronLeft size={14} />  <LocalizedText id="STR-1765" />
               </button>
             )}
-            {step === "identity" && (
+            {step === "identity" && cwdPrefs.windowsDefault && (
               <button
                 type="button"
                 className="wb-btn wb-btn-ghost"

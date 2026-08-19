@@ -10,6 +10,8 @@ import type { MemberQueueState } from "./messageQueue";
 import type { MemberStatus } from "./memberDisplayStatus";
 import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { PartyGroup } from "./partyGroups";
+import type { CwdPreferences } from "./memberLocation";
 import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
@@ -66,6 +68,13 @@ export interface AppSettings {
   /** Language used by every user-facing app surface. */
   locale: AppLocale;
   workspacePath: string;
+  /**
+   * Default and recent cwds offered when creating a party or a member
+   * (`shared/memberLocation.ts`). App-global, not per-workspace: the party list
+   * no longer depends on where the app was launched from, and neither should
+   * the directories it suggests.
+   */
+  cwdPreferences?: CwdPreferences;
   /** Stable by default; beta opts into GitHub prereleases. */
   updateChannel: UpdateChannel;
   /** Claude Code executable override (Claude-harness infrastructure). */
@@ -231,6 +240,17 @@ export interface PartyMember {
   partyId?: string;
   name: string;
   /**
+   * The directory this member runs in, and the environment that directory
+   * belongs to (`C:\Project\App`, or `wsl+Ubuntu-24.04:/srv/app`). Fixed at
+   * creation and never rewritten: the CLIs key session discovery, settings and
+   * conversation resume off the cwd, so changing it would detach the member
+   * from its own history.
+   *
+   * Optional only for members created before this field existed; those are
+   * backfilled from the workspace their party lived in (README §10).
+   */
+  location?: string;
+  /**
    * `sleeping` is the app's own doing, and that is what separates it from every
    * other non-running value: the member was idle long enough that its harness
    * process was released to reclaim memory, while the conversation itself is
@@ -344,6 +364,14 @@ export interface PartyMember {
 export interface PartyDefinition {
   id: string;
   name: string;
+  /**
+   * Which party group this party is filed under (`shared/partyGroups.ts`).
+   *
+   * Optional because parties created before groups existed have none; those are
+   * shown in the default group rather than hidden, so a missing value can never
+   * strand a party (README §4.1).
+   */
+  groupId?: string;
   createdAt: string;
   updatedAt: string;
   /**
@@ -514,7 +542,7 @@ export interface InitialAppState {
    * failure that made parallel worktrees silently test the wrong code.
    */
   runtime?: { appRoot: string };
-  party: { parties?: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
+  party: { parties?: PartyDefinition[]; groups?: PartyGroup[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
   windows?: WindowInfo[];
   /**
    * Approvals still waiting on an answer in this workspace.

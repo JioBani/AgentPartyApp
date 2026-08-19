@@ -5,9 +5,38 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 
 | Tier | What runs | Use for | Command |
 |---|---|---|---|
+| **디자인 목업** | the shipping components with fixture props, in a browser | reviewing a screen's LAYOUT against the design, including states that are expensive to produce for real | `npm run build` → open `dist-renderer/preview/index.html` |
 | **jsdom UI** | renderer logic in jsdom (no Electron) | render/layout/logic regressions, fast | `npm run test:ui` |
 | **Integration** | real services + a fake boundary (e.g. fake SessionManager) | service wiring without a model call | `npm run test:party-bridge` |
 | **Full-process e2e** | the **real Electron app** + real engine + real model | end-to-end through the actual app, billed | manual (below) |
+
+### 디자인 목업 — `dist-renderer/preview/index.html`
+
+A page vite builds alongside the app and the guide stage, and that the app never
+links to. It mounts the **real** components — `PartyGroupList`, `CwdPicker`,
+`MemberWizard`, `NewPartyModal`, `NewGroupModal`, `MoveGroupModal`,
+`WorkspaceCwdSettings` — with fixtures from `src/shared/partyGroupsGallery.ts`.
+
+It exists because these screens are otherwise expensive to look at: the recent-cwd
+list only shows its interesting states once a WSL distro will not start and a
+remembered folder has been deleted, and the party groups only read correctly with
+three groups and nine parties in them. Producing that by hand, repeatedly, is how
+a design stops being reviewed.
+
+Two rules make it worth trusting:
+
+- **The shipping components, never a copy.** A mockup that redraws the UI proves
+  nothing about the UI, and drifts at the first refactor. Everything on the page
+  is prop-driven, which is what makes fixture rendering possible at all.
+- **A frozen clock.** `GALLERY_NOW` is a fixed instant, so "2일 전" renders the
+  same today and next month. A preview whose text moves on its own cannot be
+  compared against yesterday's screenshot.
+
+Fidelity is checked by MEASUREMENT, not by eye: open the design mockup and the
+preview in headless Chrome, read `getBoundingClientRect` + `getComputedStyle` off
+the same selectors in both, and compare. The party-group and cwd surfaces were
+signed off that way — section, control, list, row, badge and hint boxes matched
+the mockup to the tenth of a pixel.
 
 ### What `test:ui` covers (jsdom suite — keep this current when adding scripts)
 

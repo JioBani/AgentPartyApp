@@ -57,6 +57,8 @@ Automation client
 | Renderer shell | `src/renderer/App.tsx`, `src/renderer/app/*` | App state, event reduction, navigation, and secondary views |
 | Workbench UI | `src/renderer/workbench/*` | Member panels, transcript, composer, approvals, gates, and runtime controls |
 | Usage UI | `src/renderer/usage/*` | Token aggregation presentation and cost formatting |
+| 디자인 목업 | `src/renderer/preview/*`, `src/shared/partyGroupsGallery.ts` | A built-but-unlinked page that renders the party-group and member-cwd screens from fixtures, so their design can be reviewed without creating a member or mounting a WSL distro |
+| 파티 그룹 · 멤버 cwd | `src/shared/partyGroups.ts`, `memberLocation.ts`, `workspaceUri.ts` | App-global party grouping and a member's immutable execution location (env + cwd), sharing one serializer with `WorkspaceLocation` |
 
 ## Main flows
 

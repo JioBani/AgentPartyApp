@@ -8964,3 +8964,55 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   max-width: 520px;
   line-height: 1.55;
 }
+
+
+/* ===================== 파티 그룹 · 멤버 실행 위치(cwd) =====================
+   claude.ai/design 목업(AgentParty Desktop · shared/mock.css)에서 그대로
+   내려온 규칙이다. 값은 손대지 않는다 — 여기서 숫자를 "정리"하면 목업과
+   앱이 갈라지고, 다음 핸드오프가 어느 쪽이 정본인지 알 수 없게 된다. */
+/* ── 새 기능 스타일 (파티 그룹 · 멤버 cwd). 앱에 되돌릴 때 함께 옮긴다. ── */
+.wb-group-row { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 6px; background: none; border: 0; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-group-row:hover { background: var(--bg-3); color: var(--text-1); }
+.wb-group-caret { flex: none; transition: transform var(--motion-fast); }
+.wb-party-group:not(.is-open) .wb-group-caret { transform: rotate(-90deg); }
+.wb-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.wb-group-count { color: var(--text-3); font-size: var(--font-micro); }
+.wb-group-badge { padding: 1px 5px; border: 1px solid var(--border-subtle); border-radius: var(--radius-badge); background: var(--bg-3); color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-medium); }
+.wb-group-parties { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 6px 8px; margin-left: 7px; border-left: 1px solid var(--border-subtle); }
+.wb-party-group:not(.is-open) .wb-group-parties { display: none; }
+.wb-group-add { display: flex; align-items: center; gap: 5px; width: 100%; padding: 5px 6px; margin-top: 4px; background: none; border: 1px dashed var(--border); border-radius: var(--radius-button); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
+.wb-group-add:hover { border-color: var(--accent-bd); color: var(--accent); }
+.wb-env-seg { display: flex; flex: none; gap: 4px; margin-top: 6px; padding: 3px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-button); }
+.wb-env-seg button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; height: 26px; background: none; border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-body); cursor: pointer; }
+.wb-env-seg button.is-active { background: var(--bg-2); border-color: var(--border); color: var(--text-0); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px var(--shadow); }
+.wb-cwd-field { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; min-height: var(--control-height); margin-top: 6px; padding: 4px 5px 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-input); color: var(--text-2); }
+.wb-cwd-path { flex: 1 1 90px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); font-size: var(--font-body); }
+.wb-cwd-distro { flex: none; padding: 1px 6px; border: 1px solid var(--accent-bd); border-radius: var(--radius-badge); background: var(--accent-dim); color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-cwd-browse { display: flex; flex: none; align-items: center; gap: 4px; height: 22px; padding: 0 7px; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-1); font-size: var(--font-caption); cursor: pointer; }
+.wb-cwd-browse:hover { border-color: var(--border-strong); color: var(--text-0); }
+.wb-cwd-list { flex: none; margin-top: 6px; overflow: hidden; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
+.wb-cwd-list-label { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
+.wb-cwd-list-label span { margin-left: auto; color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
+.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 5px 8px; background: none; border: 0; border-top: 1px solid var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-cwd-item:first-of-type { border-top: 0; }
+.wb-cwd-item:hover { background: var(--bg-3); }
+.wb-cwd-item.is-selected { background: var(--accent-dim); color: var(--text-0); }
+.wb-cwd-item.is-broken { color: var(--text-3); }
+.wb-cwd-item-path { flex: 1 1 80px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-cwd-pin { flex: none; color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-cwd-warn { display: flex; flex: none; align-items: center; gap: 3px; color: var(--danger); font-size: var(--font-micro); }
+.wb-cwd-save { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--text-1); font-size: var(--font-body-sm); cursor: pointer; }
+.wb-ctx-head { display: flex; flex-direction: column; gap: 2px; padding: 7px 9px; border-bottom: 1px solid var(--border-subtle); color: var(--text-3); font-size: var(--font-micro); }
+.wb-ctx-head strong { color: var(--text-0); font-size: var(--font-body-sm); }
+.wb-ctx-head .wb-ctx-head-loc { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: var(--font-caption); }
+.set-cwd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 7px 9px; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
+.set-cwd-row + .set-cwd-row { margin-top: 6px; }
+.set-cwd-row.is-broken { background: var(--danger-dim); border-color: var(--danger-bd); }
+.set-cwd-kind { display: flex; flex: none; align-items: center; gap: 5px; width: 84px; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .04em; }
+.set-cwd-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); font-size: var(--font-body); }
+.set-cwd-meta { flex: none; color: var(--text-3); font-size: var(--font-micro); }
+.set-cwd-actions { display: flex; flex: none; gap: 6px; }
+/* The mockup wires this with `data-open`; in the app a step is clickable only
+   once it has been visited, so the class carries the same affordance. */
+.wb-wizard-step.is-nav { cursor: pointer; }
+.set-cwd-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--font-caption); }

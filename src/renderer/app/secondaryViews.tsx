@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
@@ -27,6 +27,8 @@ import { PartyPrimerSettings, type PartyPrimerSectionPatch } from "../workbench/
 import type { PartyPrimerSectionId } from "../../shared/partyPrimer";
 import { Segmented } from "../workbench/Segmented";
 import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
+import { WorkspaceCwdSettings } from "./WorkspaceCwdSettings";
+import type { CwdPreferences, ExecutionEnv, MemberLocationRow, RecentCwd } from "../../shared/memberLocation";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
 import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
@@ -559,6 +561,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: MessageKey; icon: ReactNode
   { id: "general", label: "runtime.tab.general", icon: <Settings2 size={14} /> },
   { id: "harness", label: "runtime.tab.harness", icon: <SquareTerminal size={14} /> },
   { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
+  { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
   { id: "primer", label: "runtime.tab.primer", icon: <FileText size={14} /> },
   { id: "gate", label: "runtime.tab.gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
@@ -567,7 +570,7 @@ const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: MessageKey; icon: ReactNode
   { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveLocale, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, tabRequest }: {
+export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveLocale, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, cwdPrefs, cwdDefaultUsage, memberLocations, now, onPickDefaultCwd, onClearDefaultCwd, onPromoteRecentCwd, onRemoveRecentCwd, onRecheckRecentCwd, onCloneMember, tabRequest }: {
   routes: RouteLike[];
   harnesses: any[];
   router: string;
@@ -591,6 +594,20 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
   /** Executable overrides for the environment tab — one patch per field. */
   onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
+  /** 작업 위치 tab: the defaults and recents new members are seeded from. */
+  cwdPrefs: CwdPreferences;
+  /** How many existing members sit on each environment's default cwd. */
+  cwdDefaultUsage: Partial<Record<ExecutionEnv, number>>;
+  /** Existing members' fixed locations, listed read-only. */
+  memberLocations: MemberLocationRow[];
+  /** Frozen "now" for recency labels, so previews render deterministically. */
+  now: number;
+  onPickDefaultCwd: (env: ExecutionEnv) => void;
+  onClearDefaultCwd: (env: ExecutionEnv) => void;
+  onPromoteRecentCwd: (entry: RecentCwd) => void;
+  onRemoveRecentCwd: (entry: RecentCwd) => void;
+  onRecheckRecentCwd: (entry: RecentCwd) => void;
+  onCloneMember: (row: MemberLocationRow) => void;
   /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
   tabRequest?: { tab: RuntimeTabId; harness?: HarnessId; seq: number };
 }) {
@@ -847,6 +864,23 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         )}
 
         {/* Environment — readiness, not build facts: what still needs doing. */}
+        <div className="set-tab-panel" hidden={tab !== "workspace"}>
+        <SubtreeVisibility visible={tab === "workspace"}>
+            <WorkspaceCwdSettings
+              prefs={cwdPrefs}
+              defaultUsage={cwdDefaultUsage}
+              members={memberLocations}
+              now={now}
+              onPickDefault={onPickDefaultCwd}
+              onClearDefault={onClearDefaultCwd}
+              onPromoteRecent={onPromoteRecentCwd}
+              onRemoveRecent={onRemoveRecentCwd}
+              onRecheckRecent={onRecheckRecentCwd}
+              onCloneMember={onCloneMember}
+            />
+        </SubtreeVisibility>
+        </div>
+
         <div className="set-tab-panel" hidden={tab !== "environment"}>
         <SubtreeVisibility visible={tab === "environment"}>
           <EnvironmentCard active={tab === "environment"} settings={settings} onSaveExecutablePaths={onSaveExecutablePaths} />

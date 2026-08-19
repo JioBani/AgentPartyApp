@@ -26,7 +26,11 @@ import {
 } from "./layout";
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
-import { CreateMemberInput, PartySidebar } from "./PartySidebar";
+import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
+import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
+import { parseMemberLocation } from "../../shared/memberLocation";
+import { DEFAULT_PARTY_GROUP_ID } from "../../shared/partyGroups";
 import { RuntimeModal } from "./RuntimeModal";
 import { McpModal } from "./McpModal";
 import { MessageGateModal } from "./MessageGateModal";
@@ -69,7 +73,16 @@ interface WorkbenchProps {
   /** QA-driven "open a Message Gate modal" (member editor / party manager); applied on `nonce` change. */
   gateOpenRequest?: { kind: "member" | "party"; member: string; nonce: number } | null;
   actions: WorkbenchActions;
-  onCreateParty: (name: string, gate?: PartyGate) => void;
+  onCreateParty: (input: CreatePartyInput) => void;
+  onCreateGroup: (name: string) => void;
+  onMovePartyToGroup: (partyId: string, groupId: string) => void;
+  /** Opens the platform folder picker; resolves null when the user cancelled. */
+  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  /** App-global party groups, in display order. */
+  groups: PartyGroup[];
+  cwdPrefs: CwdPreferences;
+  /** Frozen "now" for recency labels, so previews render deterministically. */
+  now: number;
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
   /** Idle-sleep controls for one member (pin awake, sleep now, wake now). */
@@ -143,7 +156,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, groups, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -580,27 +593,52 @@ export function Workbench(props: WorkbenchProps) {
   const gateParty = partyGateTarget ? parties.find((party) => party.id === partyGateTarget) : undefined;
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
+  /**
+   * The list's own view of the parties.
+   *
+   * Counts come from the LOADED party's member views, so an unselected party
+   * reports 0 rather than a number nobody measured — the summary store that
+   * answers for all of them lands with the group backend. Showing a fabricated
+   * count would be worse than showing none.
+   */
+  const partySummaries = useMemo<PartySummary[]>(() => parties.map((party) => {
+    const members = party.id === activePartyId ? views : [];
+    return {
+      id: party.id,
+      groupId: party.groupId ?? DEFAULT_PARTY_GROUP_ID,
+      name: party.name,
+      memberCount: memberCountByParty[party.id] || 0,
+      runningCount: workingByParty[party.id] || 0,
+      windowsCount: members.filter((view) => envOfMember(view) === "windows").length,
+      wslCount: members.filter((view) => envOfMember(view) === "wsl").length,
+      updatedAt: party.updatedAt,
+    };
+  }), [parties, views, activePartyId, workingByParty, memberCountByParty]);
 
   return (
     <div className="wb-root">
       {sidebarOpen ? (
         <>
           <PartySidebar
-            parties={parties}
             activePartyId={activePartyId}
             activePartyName={activePartyName}
             views={views}
             openMembers={openMembers}
-            workingByParty={workingByParty}
-            memberCountByParty={memberCountByParty}
             width={sidebarWidth}
             routes={routes}
             codexModels={codexModels}
             onRefreshCodexModels={onRefreshCodexModels}
             defaultProfile={defaultProfile}
             harnessDefaults={harnessDefaults}
+            groups={groups}
+            partySummaries={partySummaries}
+            cwdPrefs={cwdPrefs}
+            now={now}
             onSelectParty={onSelectParty}
             onCreateParty={onCreateParty}
+            onCreateGroup={onCreateGroup}
+            onMovePartyToGroup={onMovePartyToGroup}
+            onBrowseCwd={onBrowseCwd}
             onCreateMember={handleCreateMember}
             onOpenMember={handleOpenMember}
             onRestartMember={(member) => actions.restart(member)}
@@ -777,6 +815,12 @@ function seedLayout(stored: WorkbenchLayout | undefined, views: MemberView[]): L
     return emptyLayout();
   }
   return openMember(emptyLayout(), first.name);
+}
+
+/** Which environment a member runs in, or undefined for one created before cwds. */
+function envOfMember(view: MemberView): ExecutionEnv | undefined {
+  const stored = view.member.location;
+  return stored ? parseMemberLocation(stored).env : undefined;
 }
 
 function aggregateByParty(views: MemberView[], parties: PartyDefinition[]): { workingByParty: Record<string, number>; memberCountByParty: Record<string, number> } {

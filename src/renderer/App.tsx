@@ -12,7 +12,10 @@ import type { PartyPrimerSectionId } from "../shared/partyPrimer";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import { publishFontProbe } from "./app/fontProbe";
-import { useNoticeSink } from "./app/appNotice";
+import { reportNotice, useNoticeSink } from "./app/appNotice";
+import type { CreatePartyInput } from "./workbench/PartySidebar";
+import { DEFAULT_PARTY_GROUP_ID, type PartyGroup } from "../shared/partyGroups";
+import { EMPTY_CWD_PREFERENCES, memberLocationsEqual, parseMemberLocation, serializeMemberLocation, type CwdPreferences, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../shared/memberLocation";
 import { useUpdateDialogSink } from "./app/updateDialog";
 import type { MemberMessagingSettings } from "../shared/memberMessaging";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
@@ -183,6 +186,72 @@ export function App() {
   // Lets a component too deep to hold notice state report one — today, a
   // transcript file link that could not be opened. See app/appNotice.ts.
   useNoticeSink(setPartyNotice);
+
+  /**
+   * The clock the sidebar's "3일 전" labels are measured against.
+   *
+   * Re-read on a minute, not on every render: without a tick the labels freeze
+   * at whatever the app was opened with, and with `Date.now()` inline they would
+   * make every render a different tree.
+   */
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  /**
+   * Party groups and cwd preferences.
+   *
+   * The store behind these lands with step 2 of the feature; until then the app
+   * shows the one default group every party falls back into, and no remembered
+   * cwds. The three mutating actions below say plainly that they are not wired
+   * yet instead of appearing to work — a folder picker that silently returned
+   * nothing is exactly the failure this project keeps banning.
+   */
+  const partyGroups = useMemo<PartyGroup[]>(() => state.party.groups?.length
+    ? state.party.groups
+    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default", createdAt: "", updatedAt: "" }],
+    [state.party.groups]);
+  const cwdPrefs: CwdPreferences = state.settings.cwdPreferences ?? EMPTY_CWD_PREFERENCES;
+
+  const NOT_WIRED = "파티 그룹·작업 위치 백엔드는 아직 연결되지 않았습니다 (기능 구현 단계에서 이어집니다).";
+
+  const activePartyName = state.party.parties?.find((party) => party.id === state.party.currentPartyId)?.name ?? "";
+  const memberLocations = useMemo<MemberLocationRow[]>(
+    () => (state.party.members || [])
+      .filter((member) => Boolean(member.location))
+      .map((member) => ({
+        member: member.name,
+        partyName: activePartyName,
+        location: parseMemberLocation(member.location as string),
+      })),
+    [state.party.members, activePartyName],
+  );
+  /** Members sitting on each environment's default cwd — counted, never guessed. */
+  const cwdDefaultUsage = useMemo<Partial<Record<ExecutionEnv, number>>>(() => {
+    const tally: Partial<Record<ExecutionEnv, number>> = {};
+    for (const row of memberLocations) {
+      const fallback = row.location.env === "wsl" ? cwdPrefs.wslDefault : cwdPrefs.windowsDefault;
+      if (fallback && memberLocationsEqual(fallback, row.location)) {
+        tally[row.location.env] = (tally[row.location.env] ?? 0) + 1;
+      }
+    }
+    return tally;
+  }, [memberLocations, cwdPrefs]);
+
+  async function createPartyGroup(name: string) {
+    reportNotice(`${NOT_WIRED} — 그룹 "${name}" 은 만들어지지 않았습니다.`);
+  }
+
+  async function movePartyToGroup(_partyId: string, _groupId: string) {
+    reportNotice(`${NOT_WIRED} — 파티는 옮겨지지 않았습니다.`);
+  }
+
+  const browseCwd = useCallback(async (env: ExecutionEnv): Promise<MemberExecutionLocation | null> => {
+    reportNotice(`${NOT_WIRED} — ${env === "wsl" ? "WSL" : "Windows"} 폴더 선택기를 열 수 없습니다.`);
+    return null;
+  }, []);
   // The settings 진단 tab's "자세히" opens the same dialog the titlebar pill does.
   useUpdateDialogSink(useCallback(() => setUpdateModalOpen(true), []));
 
@@ -681,9 +750,14 @@ export function App() {
     setState((current) => ({ ...current, party }));
   }
 
-  async function createParty(name?: string, gate?: PartyGate) {
+  async function createParty(input?: Partial<CreatePartyInput>) {
     try {
-      const result = await window.agentParty.createParty({ name: (name ?? "").trim() || "새 파티", gate });
+      const result = await window.agentParty.createParty({
+        name: (input?.name ?? "").trim() || "새 파티",
+        gate: input?.gate,
+        groupId: input?.groupId,
+        location: input?.location ? serializeMemberLocation(input.location) : undefined,
+      });
       await applyPartyResult(result);
       setCurrentView("workbench");
     } catch (error) {
@@ -1620,7 +1694,13 @@ export function App() {
                 subagentOpenRequest={subagentOpenRequest}
                 gateOpenRequest={gateOpenRequest}
                 actions={actions}
-                onCreateParty={(name, gate) => void createParty(name, gate)}
+                groups={partyGroups}
+                cwdPrefs={cwdPrefs}
+                now={nowTick}
+                onCreateParty={(input) => void createParty(input)}
+                onCreateGroup={(name) => void createPartyGroup(name)}
+                onMovePartyToGroup={(partyId, groupId) => void movePartyToGroup(partyId, groupId)}
+                onBrowseCwd={browseCwd}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
                 onSetMemberKeepAwake={(name, keepAwake) => void setMemberKeepAwake(name, keepAwake)}
@@ -1711,6 +1791,16 @@ export function App() {
                   onSaveMemberMessaging={saveMemberMessaging}
                   discord={discord}
                   onSaveDiscord={saveDiscordSettings}
+                  cwdPrefs={cwdPrefs}
+                  cwdDefaultUsage={cwdDefaultUsage}
+                  memberLocations={memberLocations}
+                  now={nowTick}
+                  onPickDefaultCwd={(env) => void browseCwd(env)}
+                  onClearDefaultCwd={() => reportNotice(NOT_WIRED)}
+                  onPromoteRecentCwd={() => reportNotice(NOT_WIRED)}
+                  onRemoveRecentCwd={() => reportNotice(NOT_WIRED)}
+                  onRecheckRecentCwd={() => reportNotice(NOT_WIRED)}
+                  onCloneMember={() => reportNotice(NOT_WIRED)}
                   tabRequest={runtimeTabRequest}
                 />
               )}
