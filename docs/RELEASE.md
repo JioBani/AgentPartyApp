@@ -39,6 +39,13 @@ Windows `.exe` 배포와 앱 내 자동 업데이트를 어떻게 내보내고, 
    버전 탭은 과거 릴리스 본문도 그대로 보여주므로, 나중에 본문을 고치면 앱에서도
    고쳐진 내용이 보인다.
 
+   Windows PowerShell 5.1에서 GitHub API로 한글 본문을 직접 올릴 때 JSON 문자열을
+   `Invoke-RestMethod -Body`에 그대로 넘기면 한글이 `?`로 손실될 수 있다. 반드시
+   JSON을 UTF-8 바이트로 인코딩하고 `application/json; charset=utf-8`을 지정한 뒤,
+   공개 API에서 본문을 다시 읽어 검증한다. 명령 예시는
+   [릴리스 체크리스트](./RELEASE_CHECKLIST.md#powershell에서-한글-릴리스-본문-올리기)를
+   따른다.
+
    ⚠️ 빈 저장소에는 태그를 만들 수 없어 게시가 422(`Repository is empty`)로
    거부된다. 릴리스 저장소에 커밋이 최소 하나는 있어야 한다.
 

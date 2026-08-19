@@ -172,6 +172,46 @@ npm run release:win
 - `AgentParty-<version>.exe`는 포터블 버전이며 자동 업데이트를 지원하지 않습니다.
 ```
 
+### PowerShell에서 한글 릴리스 본문 올리기
+
+Windows PowerShell 5.1의 `Invoke-RestMethod`에 JSON **문자열**을 `-Body`로 바로
+넘기면, 요청 본문이 UTF-8이 아닌 인코딩으로 전송되어 한글이 GitHub에 도착하기 전에
+`?`로 치환될 수 있다. `-ContentType application/json`만 지정하는 것으로는 충분하지
+않다. JSON을 명시적으로 UTF-8 바이트로 바꾸고 charset도 함께 선언한다.
+
+```powershell
+$payload = @{
+  name = "AgentParty v<version>"
+  body = $releaseNotes
+  draft = $true
+  prerelease = $false
+} | ConvertTo-Json
+
+$utf8Body = [Text.Encoding]::UTF8.GetBytes($payload)
+Invoke-RestMethod `
+  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/<release-id>" `
+  -Headers $headers `
+  -Method Patch `
+  -ContentType "application/json; charset=utf-8" `
+  -Body $utf8Body
+```
+
+본문을 올린 직후 GitHub API에서 다시 읽어 업로드 전 원문과 일치하는지 확인한다.
+줄바꿈 형식만 정규화하고 본문 문자는 그대로 비교한다. 이 검증이 실패하면
+publish하지 않는다.
+
+```powershell
+$saved = Invoke-RestMethod `
+  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/tags/v<version>" `
+  -Headers @{ "User-Agent" = "AgentParty-Release-Verify" }
+
+$expectedBody = ($releaseNotes -replace "`r`n", "`n").TrimEnd()
+$actualBody = ([string]$saved.body -replace "`r`n", "`n").TrimEnd()
+if ($actualBody -cne $expectedBody) {
+  throw "GitHub release body differs from the UTF-8 source"
+}
+```
+
 draft 상태에서 다음을 검증한다.
 
 - 태그와 릴리스 제목이 정확하다.
@@ -180,6 +220,7 @@ draft 상태에서 다음을 검증한다.
 - 다운로드한 `latest.yml`이 `<version>`과
   `AgentParty-Setup-<version>.exe`를 가리킨다.
 - 릴리스 본문에 내부 경로, 토큰, 개발자 전용 정보가 없다.
+- GitHub API에서 다시 읽은 본문이 업로드 전 UTF-8 원문과 일치한다.
 
 검증을 모두 통과한 경우에만 publish한다.
 
