@@ -28,6 +28,8 @@ import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
+import { createLatestMethodProxy } from "./workbench/stableActions";
+import { PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./workbench/transcriptScheduling";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
@@ -47,6 +49,8 @@ import { GuideView } from "./guide/GuideView";
 import { createI18n, I18nProvider } from "./i18n/I18nProvider";
 import type { AppLocale } from "../shared/appLocale";
 import { localized } from "./i18n/I18nProvider";
+import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
+import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -106,11 +110,11 @@ export function App() {
   // width is persisted separately in Workbench.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
   // The members whose tabs are FRONTMOST in a panel (drives unread counting).
-  const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
-  // Every member with a tab in this window, frontmost or not. A background tab
-  // is one click from being read, so its history must already be here — but a
-  // member with no tab at all is not this window's to hold.
-  const [openMembers, setOpenMembers] = useState<string[]>([]);
+  const [visibleMemberScope, setVisibleMemberScope] = useState<{ partyId: string; names: string[] }>({ partyId: "", names: [] });
+  // Transcript data and transcript DOM have separate lifecycles. The former is
+  // retained for fast tab reuse; the latter is revealed one visible panel per
+  // yield so a warm party switch cannot remount every cached card at once.
+  const [revealedMemberScope, setRevealedMemberScope] = useState<{ partyId: string; names: string[] }>({ partyId: "", names: [] });
   const [seenLengths, setSeenLengths] = useState<Record<string, number>>({});
   const [runtimeDrafts, setRuntimeDrafts] = useState<Record<string, MemberRuntimeDraft>>({});
   // Members with a compaction in flight (transient toolbar spinner).
@@ -254,6 +258,14 @@ export function App() {
   // a switch can outrun this reply, and applying the previous party's tabs to
   // the new one would silently reopen members from the party just left.
   const activePartyId = state.party.currentPartyId;
+  // A party switch leaves Workbench's previous layout mounted for one render.
+  // Scope its callbacks so same-named members (every party has `main`) cannot
+  // make the new party restore the old party's tabs before its layout arrives.
+  const visibleMembers = visibleMemberScope.partyId === activePartyId ? visibleMemberScope.names : [];
+  const revealedMembers = useMemo(
+    () => new Set(revealedMemberScope.partyId === activePartyId ? revealedMemberScope.names : []),
+    [activePartyId, revealedMemberScope],
+  );
   useEffect(() => {
     if (!activePartyId) {
       return;
@@ -268,6 +280,27 @@ export function App() {
     return () => { cancelled = true; };
   }, [activePartyId]);
 
+  // A restored transcript becomes renderable one panel at a time. This applies
+  // to both cold reads and cached warm returns; without the second case, going
+  // back to a six-panel party remounted all 900 cards in one blocking commit.
+  useEffect(() => {
+    const available = new Set(members
+      .filter((member) => restoredByMember[memberKey(member)] !== undefined)
+      .map((member) => member.name));
+    const nextName = nextTranscriptReveal(visibleMembers, revealedMembers, available);
+    if (!nextName || !activePartyId) return;
+
+    const timer = window.setTimeout(() => {
+      setRevealedMemberScope((current) => {
+        const names = current.partyId === activePartyId ? current.names : [];
+        return names.includes(nextName)
+          ? current
+          : { partyId: activePartyId, names: [...names, nextName] };
+      });
+    }, PROGRESSIVE_TRANSCRIPT_GAP_MS);
+    return () => clearTimeout(timer);
+  }, [activePartyId, members, restoredByMember, revealedMembers, visibleMembers]);
+
   const views = useMemo<MemberView[]>(
     () => members.map((member) => buildMemberView({
       member,
@@ -276,11 +309,12 @@ export function App() {
       subagentsBySession,
       seenCount: seenLengths[member.name] ?? 0,
       restored: restoredByMember[memberKey(member)],
+      transcriptReady: revealedMembers.has(member.name),
       routes,
       compactDefault: state.settings.compactDefault,
       compacting: compactingByMember[member.name],
     })),
-    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, routes, state.settings.compactDefault, compactingByMember],
+    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember],
   );
 
   // Auto-compaction trigger: when a member's live occupancy crosses its
@@ -360,16 +394,18 @@ export function App() {
       });
     });
     const offSnapshot = window.agentParty.onSnapshot((payload: any) => {
-      setState((current) => ({
-        ...current,
-        sessions: current.sessions.map((session) => (
-          session.id === payload.sessionId ? { ...session, snapshot: payload.snapshot } : session
-        )),
-      }));
+      setState((current) => {
+        const sessions = updateRendererSessionSnapshot(current.sessions, payload.sessionId, payload.snapshot);
+        return sessions === current.sessions ? current : { ...current, sessions };
+      });
     });
     const offSessions = window.agentParty.onSessions((payload) => {
-      const next = payload as SessionView[];
-      setState((current) => ({ ...current, sessions: next }));
+      const incoming = payload as SessionView[];
+      setState((current) => {
+        const sessions = mergeRendererSessions(current.sessions, incoming);
+        return sessions === current.sessions ? current : { ...current, sessions };
+      });
+      const next = incoming;
       setActiveSessionId((current) => (current && next.some((session) => session.id === current) ? current : next[0]?.id || ""));
     });
     const offPartyUpdate = window.agentParty.onPartyUpdate((payload) => {
@@ -491,27 +527,33 @@ export function App() {
    * member of the party made each window pay for the party's entire history —
    * and three windows on one party paid for it three times over.
    *
-   * A member qualifies when it has a TAB OPEN (the user can see it, or reach it
-   * by clicking a background tab in the same panel), or when it holds a LIVE
-   * SESSION. The second is not about display: events for a session whose
+   * A member qualifies when it is FRONTMOST in a panel or when it holds a LIVE
+   * SESSION. A background tab is restored when selected instead of competing
+   * with the visible party switch. The live-session case is not about display:
+   * events for a session whose
    * transcript has no owner queue in `pendingEventsBySessionRef` forever, so
    * skipping a live member's restore would trade bounded history for an
    * unbounded buffer.
    */
   const transcriptMembers = useMemo(() => {
-    const wanted = new Set(openMembers);
+    const wanted = new Set(visibleMembers);
     for (const member of members) {
       if (member.sessionId) {
         wanted.add(member.name);
       }
     }
     return wanted;
-  }, [openMembers, members]);
+  }, [visibleMembers, members]);
 
   // Restore each needed member's persisted transcript from disk once, so a
   // reopened app (or a closed member) shows its past conversation. Visible
-  // members are fetched FIRST so the panels on screen fill in immediately on a
-  // party switch; the rest follow, keeping a click to a background tab instant.
+  // members are fetched FIRST, one per event-loop yield, before any non-visible
+  // live sessions that still need an event/persistence owner.
+  // The old loop fired every IPC read at once; React then batched several large
+  // replies into one multi-panel commit. A six-panel/20-tab party consequently
+  // parsed all 27 MiB and mounted 900 cards before the loading layout could
+  // respond. Sequential restoration makes the focused panel usable first and
+  // lets the remaining panels fill without one long main-thread stall.
   // `restoredByMember[key]` stays UNDEFINED until the fetch settles — it is the
   // "restore completed" signal the save effect below gates on. The old version
   // wrote a `[]` sentinel up front, so a session whose first events arrived
@@ -521,19 +563,26 @@ export function App() {
   const [restoreRetryNonce, setRestoreRetryNonce] = useState(0);
   const restoreRequestedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const ordered = [...members].sort(
-      (a, b) => Number(!visibleMembers.includes(a.name)) - Number(!visibleMembers.includes(b.name)),
+    const wanted = members.filter((member) => transcriptMembers.has(member.name));
+    const readyButHidden = visibleMembers.some((name) => {
+      const member = members.find((candidate) => candidate.name === name);
+      return Boolean(member && restoredRef.current[memberKey(member)] !== undefined && !revealedMembers.has(name));
+    });
+    if (readyButHidden) return;
+    const member = nextTranscriptRestore(
+      wanted,
+      visibleMembers,
+      (candidate) => restoredRef.current[memberKey(candidate)] !== undefined,
+      (candidate) => restoreRequestedRef.current.has(memberKey(candidate)),
     );
-    for (const member of ordered) {
+    if (!member) return;
+
+    // A short task yield gives Chromium an opportunity to paint and service
+    // input before transcript parsing and the next React commit begin.
+    const timer = window.setTimeout(() => {
       const key = memberKey(member);
-      if (!transcriptMembers.has(member.name)) {
-        continue;
-      }
-      if (restoredRef.current[key] !== undefined || restoreRequestedRef.current.has(key)) {
-        continue;
-      }
       restoreRequestedRef.current.add(key);
-      void window.agentParty.getMemberTranscript?.(member.name)?.then((raw) => {
+      void window.agentParty.getMemberTranscript?.(member.name, member.partyId)?.then((raw) => {
         const blocks = Array.isArray(raw) ? normalizeTranscriptBlocks(raw as TranscriptBlock[]) : [];
         // Always record the result (even empty): it marks the restore as done.
         setRestoredByMember((current) => ({ ...current, [key]: blocks }));
@@ -544,8 +593,9 @@ export function App() {
         setPartyNotice(`'${member.name}' 대화 기록 복원 실패 — 다시 시도합니다.`);
         setTimeout(() => setRestoreRetryNonce((n) => n + 1), 2000);
       });
-    }
-  }, [members, visibleMembers, transcriptMembers, restoreRetryNonce]);
+    }, PROGRESSIVE_TRANSCRIPT_GAP_MS);
+    return () => clearTimeout(timer);
+  }, [members, visibleMembers, transcriptMembers, restoredByMember, revealedMembers, restoreRetryNonce]);
 
   // This is the single transition that makes a session transcript writable:
   // member identity is known AND its persisted transcript read has settled.
@@ -1470,6 +1520,18 @@ export function App() {
     },
   };
 
+  // The implementations above intentionally read the current render's state.
+  // Panels need a stable object identity, though: otherwise one streamed delta
+  // invalidates every memoized transcript even when only one member changed.
+  // Delegates are stable while each invocation still reaches today's closure.
+  const latestActionsRef = useRef(actions);
+  latestActionsRef.current = actions;
+  const stableActionsRef = useRef<WorkbenchActions | null>(null);
+  if (!stableActionsRef.current) {
+    stableActionsRef.current = createLatestMethodProxy(() => latestActionsRef.current);
+  }
+  const stableActions = stableActionsRef.current;
+
   /** Persists one harness's creation defaults (model/effort/reasoning/permission). */
   async function saveHarnessDefaults(harnessId: HarnessId, patch: Partial<HarnessDefaults>) {
     const current = state.settings.harnessDefaults[harnessId];
@@ -1619,7 +1681,7 @@ export function App() {
                 layoutRequest={layoutRequest}
                 subagentOpenRequest={subagentOpenRequest}
                 gateOpenRequest={gateOpenRequest}
-                actions={actions}
+                actions={stableActions}
                 onCreateParty={(name, gate) => void createParty(name, gate)}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
@@ -1630,8 +1692,7 @@ export function App() {
                 onOpenPartyInNewWindow={(partyId) => void openPartyInNewWindow(partyId)}
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
-                onVisibleMembersChange={setVisibleMembers}
-                onOpenMembersChange={setOpenMembers}
+                onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
                 onToggleSidebar={(open) => {
                   setSidebarOpen(open);
                   try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }

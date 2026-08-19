@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -10,12 +10,13 @@ import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../.
 import { harnessShort } from "./harnessLabel";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
-import { collectDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
+import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
 import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
-import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
+import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
 
 interface TranscriptProps {
   view: MemberView;
@@ -25,8 +26,9 @@ interface TranscriptProps {
    * How much machinery this surface shows.
    *
    * `"full"` (workbench): watching what the agent actually ran IS the work, so
-   * tool boxes open on sight and every `spawned` / `requesting` / `turn complete`
-   * line is visible.
+   * text-only tool boxes open on sight and every `spawned` / `requesting` /
+   * `turn complete` line is visible. Images returned by ordinary tools stay
+   * collapsed until requested.
    *
    * `"answers"` (guide): the reader came for an answer, not to supervise an
    * agent. Tool boxes stay collapsed (they are the guide reading its own
@@ -35,8 +37,8 @@ interface TranscriptProps {
    * cost is shown as 쓴다/안 쓴다 and never as a number.
    *
    * Errors are NOT status: a real failure is its own block kind and shows in
-   * both modes. A picture result also opens in both — collapsed, it cannot be
-   * told apart from an image that failed to render.
+   * both modes. Every tool-returned image stays behind its tool disclosure;
+   * user attachments are separate message blocks and remain immediately visible.
    */
   detail?: "full" | "answers";
 }
@@ -48,20 +50,33 @@ interface TranscriptProps {
 // a time, without disturbing scroll position. See docs research on tail-first
 // message rendering; this bounds the switch-time render cost to a constant.
 const TAIL_BLOCKS = 150;
+const INITIAL_PAINT_BLOCKS = 20;
 
-export function Transcript({ view, density, actions, detail = "full" }: TranscriptProps) {
+function TranscriptView({ view, density, actions, detail = "full" }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the view is pinned to the bottom (true unless the user scrolled up).
   const stickRef = useRef(true);
   const lastText = lastBlockText(view.transcript);
 
-  // How many trailing blocks to render. Reset to the tail whenever the panel
-  // shows a different member, so switching members always opens at the latest.
-  const [limit, setLimit] = useState(TAIL_BLOCKS);
-  useEffect(() => { setLimit(TAIL_BLOCKS); }, [view.name]);
+  // The history WINDOW remains 150 blocks. Its DOM mounts progressively: the
+  // newest 20 are enough to make the panel useful, while the offscreen prefix
+  // fills over the next frames. Panel keys reset both values for each concrete
+  // party/member identity, including same-named `main` members across parties.
+  const [historyLimit, setHistoryLimit] = useState(TAIL_BLOCKS);
+  const [mountedLimit, setMountedLimit] = useState(INITIAL_PAINT_BLOCKS);
   const total = view.transcript.length;
-  const hiddenCount = Math.max(0, total - limit);
-  const shown = hiddenCount > 0 ? view.transcript.slice(hiddenCount) : view.transcript;
+  const hiddenCount = Math.max(0, total - historyLimit);
+  const mountedCount = Math.min(total, mountedLimit);
+  const shown = mountedCount < total ? view.transcript.slice(total - mountedCount) : view.transcript;
+
+  useEffect(() => {
+    const target = Math.min(total, historyLimit);
+    if (view.transcriptLoading || mountedLimit >= target) return;
+    const timer = window.setTimeout(() => {
+      setMountedLimit((current) => nextTranscriptMountLimit(current, target));
+    }, PROGRESSIVE_TRANSCRIPT_GAP_MS);
+    return () => clearTimeout(timer);
+  }, [historyLimit, mountedLimit, total, view.transcriptLoading]);
 
   // Reveal an older page while keeping the viewport anchored: capture the scroll
   // offset from the bottom before prepending, then restore it after, so the
@@ -71,7 +86,10 @@ export function Transcript({ view, density, actions, detail = "full" }: Transcri
     const prevHeight = node?.scrollHeight ?? 0;
     const prevTop = node?.scrollTop ?? 0;
     stickRef.current = false;
-    setLimit((n) => n + TAIL_BLOCKS);
+    // Explicit history expansion keeps its established one-click behavior;
+    // only automatic first paint is progressive.
+    setHistoryLimit((n) => n + TAIL_BLOCKS);
+    setMountedLimit((n) => n + TAIL_BLOCKS);
     requestAnimationFrame(() => {
       const el = scrollRef.current;
       if (el) {
@@ -141,7 +159,43 @@ export function Transcript({ view, density, actions, detail = "full" }: Transcri
   );
 }
 
-function Block({ block, view, density, actions, detail }: { block: TranscriptBlock; view: MemberView; density: PanelDensity; actions: WorkbenchActions; detail: "full" | "answers" }) {
+/**
+ * A session event rebuilds the active member view, but it does not necessarily
+ * change this transcript. Keep an untouched panel out of React's block walk;
+ * the fields below are the complete set read by this component or its blocks.
+ */
+export const Transcript = memo(TranscriptView, (previous, next) => (
+  previous.actions === next.actions
+  && previous.density === next.density
+  && previous.detail === next.detail
+  && previous.view.name === next.view.name
+  && previous.view.status === next.view.status
+  && previous.view.busy === next.view.busy
+  && previous.view.transcriptLoading === next.view.transcriptLoading
+  && previous.view.transcript === next.view.transcript
+  && previous.view.model === next.view.model
+  && previous.view.member.runtime === next.view.member.runtime
+));
+
+interface BlockProps {
+  block: TranscriptBlock;
+  view: MemberView;
+  density: PanelDensity;
+  actions: WorkbenchActions;
+  detail: "full" | "answers";
+}
+
+/**
+ * Stream reducers retain object identity for every historical block and replace
+ * only the block receiving the delta. Respect that structural sharing here: a
+ * growing final answer should not rerun 149 unrelated cards and their derived
+ * previews on every frame.
+ */
+const Block = memo(function TranscriptBlock({ block, view, density, actions, detail }: BlockProps) {
+  // Most translated labels are context consumers themselves. A few attributes
+  // use `localized()` directly, so subscribe here to keep memoized cards live
+  // when the application locale changes.
+  useI18n();
   switch (block.kind) {
     case "user":
       return (
@@ -241,6 +295,35 @@ function Block({ block, view, density, actions, detail }: { block: TranscriptBlo
     default:
       return null;
   }
+}, sameBlockProps);
+
+/** Exported for the small structural-sharing regression; rendering stays here. */
+export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean {
+  if (previous.block !== next.block || previous.density !== next.density || previous.detail !== next.detail) {
+    return false;
+  }
+
+  // These cards name their owning member even when their immutable block did
+  // not change. Approval also shows the live runtime/model in its origin label.
+  if (previous.block.kind === "assistant" || previous.block.kind === "channel" || previous.block.kind === "gate") {
+    return previous.view.name === next.view.name;
+  }
+  if (previous.block.kind === "compact") {
+    return previous.view.name === next.view.name && previous.actions === next.actions;
+  }
+  if (previous.block.kind === "approval") {
+    return previous.view.name === next.view.name
+      && previous.view.model === next.view.model
+      && previous.view.member.runtime === next.view.member.runtime
+      && previous.actions === next.actions;
+  }
+  if (previous.block.kind === "environment") {
+    // The retry action derives the latest user turn from the whole transcript.
+    return previous.view.name === next.view.name
+      && previous.view.transcript === next.view.transcript
+      && previous.actions === next.actions;
+  }
+  return true;
 }
 
 const GATE_META = {
@@ -510,19 +593,6 @@ function PartyActionBlock({ block }: { block: Extract<TranscriptBlock, { kind: "
 }
 
 /**
- * Tools whose entire point is to put a picture in front of the user. Codex's
- * built-in image viewer is one: the model reads the file into its own context,
- * but what lands in the conversation is a picture, exactly like the party's
- * `attach-image`.
- *
- * Named here rather than inferred from "the result happens to contain an image",
- * because that also matches a `Read` of a .png or an MCP screenshot — cases
- * where the tool box (name, arguments, the fact that a tool ran) is the point
- * and the image is supporting evidence.
- */
-const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
-
-/**
  * The mirror case: tools that read a file INTO the model's context. When the
  * file happens to be a .png the harness returns the bytes, but the user did not
  * ask to look at anything — the agent did. Showing the picture there fills the
@@ -531,47 +601,64 @@ const IMAGE_DISPLAY_TOOLS = new Set(["image_view"]);
  */
 const IMAGE_HIDDEN_TOOLS = new Set(["Read", "read_file"]);
 
-function ToolBlock({ block, density, detail }: { block: Extract<TranscriptBlock, { kind: "tool" }>; density: PanelDensity; detail: "full" | "answers" }) {
-  const [full, setFull] = useState(false);
+type ToolTranscriptBlock = Extract<TranscriptBlock, { kind: "tool" }>;
+interface ToolPresentation {
+  arg: string;
+  fullInput: string;
+  result: string;
+  hasImages: boolean;
+  meta: string;
+  hasMore: boolean;
+}
+
+// Persisted blocks are immutable and retain identity across party switches.
+// Keep their JSON formatting/image discovery work with that identity so a warm
+// return does not stringify the same large tool results all over again. The
+// WeakMap releases entries with the transcript block; it is not a second store.
+const toolPresentations = new WeakMap<ToolTranscriptBlock, ToolPresentation>();
+const NO_TOOL_IMAGES: DisplayImage[] = [];
+
+function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
+  const cached = toolPresentations.get(block);
+  if (cached) return cached;
   const arg = summarizeArg(block.input);
+  const fullInput = toolInputDetail(block.input);
+  const result = block.output || formatResult(block.result);
+  // Only answer WHETHER a collapsed tool has images here. Building DisplayImage
+  // objects for inline results duplicates the base64 as data URLs, while stored
+  // results would immediately start renderer -> main file reads when mounted.
+  const hasImages = !IMAGE_HIDDEN_TOOLS.has(block.name) && hasDisplayImages(block.result);
+  const meta = toolMeta(block);
+  const presentation = { arg, fullInput, result, hasImages, meta, hasMore: needsClip(fullInput) || needsClip(result) };
+  toolPresentations.set(block, presentation);
+  return presentation;
+}
+
+function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; density: PanelDensity; detail: "full" | "answers" }) {
+  const [full, setFull] = useState(false);
+  const { arg, fullInput, result, hasImages, meta, hasMore } = toolPresentationFor(block);
   // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
   // command/result. The full command + output live in the "전체 보기" popup so a
   // long bash run never floods the transcript inline.
-  const fullInput = toolInputDetail(block.input);
-  // Command execution streams live output separately from its final result.
-  const result = block.output || formatResult(block.result);
-  // Screenshots render as images. They used to fall through to JSON.stringify
-  // and print a wall of base64 that showed the user nothing.
-  const images = IMAGE_HIDDEN_TOOLS.has(block.name) ? [] : collectDisplayImages(block.result);
   const failed = block.status === "failed";
-  // Provenance/exit/duration line for Codex items (shell exit code, mcp:<server>…).
-  const meta = toolMeta(block);
-  // Anything long enough that the inline view is only a preview → offer the popup.
-  const hasMore = needsClip(fullInput) || needsClip(result);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
-  // A result that IS a picture opens by default at every density. Collapsed, the
-  // summary shows only a file path — indistinguishable from the image not being
-  // rendered at all, which was the reported bug for Codex's `image_view`. Text
-  // results keep the old rule: they read fine from the summary and would
-  // otherwise flood the transcript.
-  const openByDefault = images.length > 0 || (detail === "full" && density === "wide" && Boolean(result));
-
-  // A display tool that produced its picture renders as the same card as an
-  // attached image — no disclosure box, no `{"path": …}` dump. The tool ran to
-  // SHOW something; the mechanics are noise around it. The path stays as the
-  // caption so it is still clear what was opened.
-  if (IMAGE_DISPLAY_TOOLS.has(block.name) && images.length > 0) {
-    const shown = summarizeArg(block.input) || block.name;
-    return (
-      <div className="wb-block wb-attached-image">
-        {images.map((image) => <ToolImage key={image.key} image={image} />)}
-        <span className="wb-attached-image-caption wb-mono">{shown}</span>
-      </div>
-    );
-  }
+  // Pictures returned by a tool are evidence the agent consumed, not a message
+  // to the user. Even a native image_view in a wide workbench stays collapsed.
+  const openByDefault = !hasImages && detail === "full" && density === "wide" && Boolean(result);
+  const [open, setOpen] = useState(openByDefault);
+  useEffect(() => {
+    setOpen(openByDefault);
+  }, [openByDefault]);
+  // This is the lazy boundary: before a tool opens, no inline data URL
+  // is built and no ToolImage effect can ask the main process for stored bytes.
+  const images = hasImages && (open || full) ? collectDisplayImages(block.result) : NO_TOOL_IMAGES;
 
   return (
-    <details className={"wb-block wb-tool density-" + density} open={openByDefault}>
+    <details
+      className={"wb-block wb-tool density-" + density}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>
         <ChevronRight size={13} className="wb-caret" />
         <span className={"wb-tool-check" + (failed ? " failed" : "")}><Check size={11} /></span>
@@ -584,17 +671,21 @@ function ToolBlock({ block, density, detail }: { block: Extract<TranscriptBlock,
           </button>
         )}
       </summary>
-      {meta && <div className="wb-tool-meta">{meta}</div>}
-      {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
-      {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
-      {images.map((image) => <ToolImage key={image.key} image={image} />)}
-      {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
+      {(open || full) && (
+        <>
+          {meta && <div className="wb-tool-meta">{meta}</div>}
+          {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
+          {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
+          {images.map((image) => <ToolImage key={image.key} image={image} />)}
+          {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
+        </>
+      )}
     </details>
   );
 }
 
 /** Compact meta line for a tool: cwd, exit code, duration. */
-function toolMeta(block: Extract<TranscriptBlock, { kind: "tool" }>): string {
+function toolMeta(block: ToolTranscriptBlock): string {
   const parts: string[] = [];
   if (block.cwd) {
     parts.push(`cwd ${block.cwd}`);
@@ -699,17 +790,39 @@ function DiagnosticBlock({ block }: { block: Extract<TranscriptBlock, { kind: "d
 const PREVIEW_LINES = 6;
 const PREVIEW_CHARS = 320;
 
-function needsClip(text: string): boolean {
-  return Boolean(text) && (text.length > PREVIEW_CHARS || text.split("\n").length > PREVIEW_LINES);
+export function needsClip(text: string): boolean {
+  if (!text) {
+    return false;
+  }
+  if (text.length > PREVIEW_CHARS) {
+    return true;
+  }
+  let newlines = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10 && ++newlines >= PREVIEW_LINES) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** The clipped preview of a longer text (first few lines / chars, trailing ellipsis). */
-function previewOf(text: string): string {
+export function previewOf(text: string): string {
   if (!needsClip(text)) {
     return text;
   }
-  const byLines = text.split("\n").slice(0, PREVIEW_LINES).join("\n");
-  const clipped = byLines.length > PREVIEW_CHARS ? byLines.slice(0, PREVIEW_CHARS) : byLines;
+  // Locate only the prefix we can show. `split("\n")` allocated an array for
+  // every line of multi-megabyte command output, twice per render, even though
+  // the card keeps at most six lines / 320 characters.
+  let end = Math.min(text.length, PREVIEW_CHARS);
+  let newlines = 0;
+  for (let index = 0; index < end; index += 1) {
+    if (text.charCodeAt(index) === 10 && ++newlines >= PREVIEW_LINES) {
+      end = index;
+      break;
+    }
+  }
+  const clipped = text.slice(0, end);
   return `${clipped.replace(/\s+$/, "")} …`;
 }
 
@@ -996,7 +1109,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
           aria-label={localized("STR-2213", [label])}
           onClick={() => setViewer(true)}
         >
-          <img className="wb-msg-image" src={src} alt={label} />
+          <img className="wb-msg-image" src={src} alt={label} loading="lazy" decoding="async" />
         </button>
         <div className="wb-msg-image-toolbar">
           {copyBtn}
@@ -1034,7 +1147,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
           }
         >
           <div className={"wb-image-viewer" + (fit ? " is-fit" : " is-actual")}>
-            <img src={src} alt={label} />
+            <img src={src} alt={label} decoding="async" />
           </div>
         </DetailModal>
       )}
@@ -1139,7 +1252,15 @@ function ToolImage({ image }: { image: DisplayImage }) {
   if (!dataUrl) {
     return <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" />  <LocalizedText id="STR-2224" /></div>;
   }
-  return <img className="wb-tool-image" src={dataUrl} alt={`${mediaType || "image"} · ${Math.round(bytes / 1024)} KB`} />;
+  return (
+    <img
+      className="wb-tool-image"
+      src={dataUrl}
+      alt={`${mediaType || "image"} · ${Math.round(bytes / 1024)} KB`}
+      loading="lazy"
+      decoding="async"
+    />
+  );
 }
 
 /** Full, scrollable view of a tool call's command + result (the "전체 보기" overlay). */

@@ -164,6 +164,27 @@ export function collectDisplayImages(value: unknown): DisplayImage[] {
   return found;
 }
 
+/**
+ * Whether a tool result contains at least one renderable image.
+ *
+ * This deliberately does not call {@link collectDisplayImages}: constructing an
+ * inline image's data URL duplicates its (often multi-megabyte) base64 string.
+ * Collapsed tool boxes only need this boolean so they can stay collapsed; the
+ * full display payload is built later, if the user opens the box.
+ */
+export function hasDisplayImages(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(hasDisplayImages);
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (isImageBlock(value)) {
+    return isRenderableImage(value);
+  }
+  return Object.values(value as Record<string, unknown>).some(hasDisplayImages);
+}
+
 /** True for a content block the UI renders as an image, not as text. */
 export function isRenderableImage(value: unknown): boolean {
   return isImageBlock(value) && (isStoredImageSource(value.source) || isBase64Source(value.source) || isMcpImageBlock(value));

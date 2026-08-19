@@ -177,7 +177,7 @@ const api = {
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
-  getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
+  getMemberTranscript: (name: string, partyId?: string) => ipcRenderer.invoke("party:transcript:get", name, partyId),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   /** Bytes for one screenshot a transcript references, fetched only when shown. */
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),

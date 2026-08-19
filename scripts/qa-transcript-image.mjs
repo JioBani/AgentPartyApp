@@ -45,7 +45,7 @@ const r = await build({
   entryPoints: [path.join(projectRoot, "src/renderer/workbench/Transcript.tsx")],
   bundle: true, format: "esm", platform: "browser", jsx: "automatic", loader: { ".css": "empty" },
   define: { "process.env.NODE_ENV": '"development"' },
-  external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false,
+  external: ["node:path", "react", "react-dom", "react-dom/client", "react/jsx-runtime"], write: false,
 });
 const bp = path.join(outDir, "transcript-image.mjs"); writeFileSync(bp, r.outputFiles[0].text);
 const { Transcript } = await import(pathToFileURL(bp).href);

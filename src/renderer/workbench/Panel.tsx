@@ -254,7 +254,12 @@ export function Panel(props: PanelProps) {
         </div>
       ) : view ? (
         <>
-          <Transcript view={view} density={density} actions={actions} />
+          <Transcript
+            key={`${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
+            view={view}
+            density={density}
+            actions={actions}
+          />
           <Composer
             view={view}
             density={density}
