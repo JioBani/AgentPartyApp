@@ -90,6 +90,14 @@ npm run package:win
 | `AgentParty <version>.exe` | `AgentParty-<version>.exe` | 포터블 실행본, 자동 업데이트 미지원 |
 | `latest.yml` | `latest.yml` | 최신 버전과 설치본 해시 메타데이터 |
 
+포터블 배포본 자체를 실행하는 자동화 QA는 다음 명령으로 실행한다. 실제 패키지의
+버전, 격리된 작업공간, Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면
+캡처를 함께 확인한다.
+
+```powershell
+npm run test:e2e:packaged-release
+```
+
 `latest.yml`의 `version`, 설치본 URL, SHA-512 값이 생성된 설치본과 일치해야 한다.
 
 ## 4. 실제 배포본 QA

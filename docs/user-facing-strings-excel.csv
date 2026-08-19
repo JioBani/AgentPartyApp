@@ -3490,3 +3490,40 @@ Tests: 8 passed, 8 total",""
 "STR-3384","backend-message","medium","template","src/main/environmentService.ts","1353","","${…} · Claude Code",""
 "STR-3385","backend-message","medium","literal","src/main/environmentService.ts","1379","","WSL 설치 명령 복사",""
 "STR-3386","backend-message","medium","literal","src/main/environmentService.ts","1383","","실행 파일",""
+"STR-3387","backend-message","medium","template","src/main/discordControl.ts","91","","알 수 없는 명령 `${…}` 입니다.
+
+${…}",""
+"STR-3388","backend-message","medium","template","src/main/discordControl.ts","260","","${…} **${…}** → <#${…}>
+이 스레드에 적은 글이 멤버에게 전달됩니다.",""
+"STR-3389","backend-message","medium","template","src/main/environmentService.ts","261","","이 PC에 Claude Code를 설치합니다.
+
+${…}",""
+"STR-3390","backend-message","medium","template","src/main/environmentService.ts","464","","이 PC에 Codex CLI를 설치합니다.
+
+${…}",""
+"STR-3391","backend-message","medium","template","src/main/environmentService.ts","669","","이 PC에 Cursor Agent CLI를 설치합니다.
+
+${…}",""
+"STR-3392","backend-message","medium","template","src/main/environmentService.ts","820","","이 PC에 Grok Build CLI를 설치합니다.
+
+${…}",""
+"STR-3393","renderer-candidate","medium","literal","src/renderer/guide/slides.ts","86","","FAIL test/auth/login.spec.ts
+ ● 5회 실패하면 잠긴다
+ expected 429, received 200
+ ● 잠금 후 15분 뒤 풀린다
+ expected 200, received 200 (잠금 없음)
+
+Tests: 2 failed, 6 passed, 8 total",""
+"STR-3394","renderer-candidate","medium","literal","src/renderer/guide/slides.ts","122","","PASS test/auth/login.spec.ts
+
+Tests: 8 passed, 8 total",""
+"STR-3395","shared-presentation","medium","literal","src/shared/subagentScenarios.ts","133","","19 const p = await verifyRefresh(token)
+20 // 만료 시 여기서 throw → 상위 500",""
+"STR-3396","shared-presentation","medium","literal","src/shared/subagentScenarios.ts","164","","조사 결과, 수능 영어는 절대평가라 개인별 ""백분위""가 아니라 **등급별 인원·비율**로 공표됩니다.
+
+| 시행 | 공식 명칭 |
+| --- | --- |
+| 2025년 6월 | 2026학년도 6월 모의평가 |
+| 2025년 11월 | 2026학년도 수능 |
+
+- 확인 대상: 한국교육과정평가원 https://www.kice.re.kr/",""

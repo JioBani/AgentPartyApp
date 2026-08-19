@@ -1,7 +1,7 @@
 {
   "name": "agentparty-app",
   "productName": "AgentParty",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "AgentParty desktop client for local multi-agent coding sessions.",
   "author": "AgentParty",
   "license": "UNLICENSED",
@@ -65,6 +65,7 @@
     "test:party-window-routing": "npm run build && node scripts/qa-party-window-routing.mjs",
     "test:e2e:permission-persist": "npm run build && node scripts/e2e-permission-persist.mjs",
     "test:e2e:permission-ui": "npm run build && node scripts/e2e-member-permission-ui.mjs",
+    "test:e2e:packaged-release": "node scripts/e2e-packaged-release.mjs",
     "test:e2e:environment-precision": "npm run build && node scripts/e2e-environment-precision.mjs",
     "test:e2e:claude-auth-separation": "npm run build && node scripts/e2e-claude-auth-separation.mjs",
     "test:qa:environment": "npm run build && node scripts/qa-environment-recovery.mjs",

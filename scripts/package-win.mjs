@@ -12,7 +12,13 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { MOBILE_PIPE_PACKAGE, mainTsconfig, mobilePipeNotice, pruneBrokenPipeLink } from "./mobile-pipe.mjs";
+import {
+  MOBILE_PIPE_PACKAGE,
+  mainTsconfig,
+  mobilePipeNotice,
+  pruneBrokenPipeLink,
+  pruneExternalPipeLinkForPackaging,
+} from "./mobile-pipe.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -67,7 +73,7 @@ function localPathHints(names) {
 
 // Each step is a discrete command. Weights approximate relative duration so the
 // bar advances at a believable pace.
-const steps = [
+const buildSteps = () => [
   { name: "타입 체크 (renderer)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.json", "--noEmit"] },
   { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", mainTsconfig(), "--noEmit"] },
   { name: "렌더러 빌드 (vite)", weight: 3, cmd: localTool("vite"), args: ["build"] },
@@ -139,6 +145,12 @@ function runStep(step, baseFraction, stepFraction) {
 async function main() {
   console.log(bold("\n  AgentParty · Windows 패키징\n"));
 
+  const externalPipe = pruneExternalPipeLinkForPackaging();
+  if (externalPipe) {
+    console.log(dim(`  외부 로컬 패키지 링크 제외: ${externalPipe.link} → ${externalPipe.target}`));
+    console.log(dim("  electron-builder는 앱 루트 밖의 파일을 패키징할 수 없어 모바일 연결을 뺀 배포본으로 진행합니다.\n"));
+  }
+
   // node_modules can exist while empty, stale, or only partially installed.
   // Verify what package.json actually declares instead of treating the
   // directory as sufficient.
@@ -170,6 +182,7 @@ async function main() {
     console.log(dim(`  끊어진 링크 정리: ${pruned}\n`));
   }
 
+  const steps = buildSteps();
   const totalWeight = steps.reduce((a, s) => a + s.weight, 0);
   let done = 0;
 

@@ -10,7 +10,7 @@
  * One place decides, so the type check, the compile and the packaging script
  * can never disagree about which build they are producing.
  */
-import { existsSync, lstatSync, rmSync, rmdirSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, rmSync, rmdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,6 +64,29 @@ export function pruneBrokenPipeLink() {
   // want: the scope dir is npm's, and it goes only when this link emptied it.
   try { rmdirSync(path.dirname(link)); } catch { /* still holds something: leave it */ }
   return link;
+}
+
+/**
+ * electron-builder refuses to package a live npm `file:` junction whose files
+ * resolve outside the application root. Remove only that junction (never its
+ * target) so a release build deterministically uses the no-mobile tsconfig.
+ */
+export function pruneExternalPipeLinkForPackaging() {
+  const link = pipeLink();
+  let entry;
+  let target;
+  try {
+    entry = lstatSync(link);
+    target = realpathSync(link);
+  } catch {
+    return null;
+  }
+  const relative = path.relative(projectRoot, target);
+  const outsideProject = relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+  if (!entry.isSymbolicLink() || !outsideProject) return null;
+  rmSync(link, { force: true });
+  try { rmdirSync(path.dirname(link)); } catch { /* another scoped package remains */ }
+  return { link, target };
 }
 
 /** The main-process tsconfig for this machine. */

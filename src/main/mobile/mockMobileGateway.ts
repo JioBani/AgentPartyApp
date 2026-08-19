@@ -22,7 +22,6 @@ import type {
   MobilePushApi,
   MobileRequestHandler,
   MobileSnapshotProvider,
-  MockControls,
   MockMobileGatewayOptions,
   PairingSession,
   RequestContext,
@@ -328,7 +327,7 @@ class MockGateway implements MockMobileGateway {
 
   // -- mock controls --------------------------------------------------------
 
-  mock: MockControls = {
+  mock: MockPhoneControls = {
     scanQr: (options): void => {
       const state = this.pairingStream.current;
       if (state.phase !== "awaitingScan") {

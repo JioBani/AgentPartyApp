@@ -1403,7 +1403,8 @@ export const auditKoMessages = {
   "STR-3213": "안정 채널이 기본값입니다.",
   "STR-3214": "FAIL test/auth/login.spec.ts\r\n ● 5회 실패하면 잠긴다\r\n expected 429, received 200\r\n ● 잠금 후 15분 뒤 풀린다\r\n expected 200, received 200 (잠금 없음)\r\n\r\nTests: 2 failed, 6 passed, 8 total",
   "STR-3216": "실행 검증 단계",
-  "STR-3338": "FAIL test/auth/login.spec.ts\n ● 5회 실패하면 잠긴다\n expected 429, received 200\n ● 잠금 후 15분 뒤 풀린다\n expected 200, received 200 (잠금 없음)\n\nTests: 2 failed, 6 passed, 8 total"
+  "STR-3338": "FAIL test/auth/login.spec.ts\r\n ● 5회 실패하면 잠긴다\r\n expected 429, received 200\r\n ● 잠금 후 15분 뒤 풀린다\r\n expected 200, received 200 (잠금 없음)\r\n\r\nTests: 2 failed, 6 passed, 8 total",
+  "STR-3393": "FAIL test/auth/login.spec.ts\n ● 5회 실패하면 잠긴다\n expected 429, received 200\n ● 잠금 후 15분 뒤 풀린다\n expected 200, received 200 (잠금 없음)\n\nTests: 2 failed, 6 passed, 8 total"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;
