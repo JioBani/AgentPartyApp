@@ -52,6 +52,7 @@ async function main() {
       "tencent/hy3",
       "poolside/laguna-xs-2.1",
       "nex-agi/nex-n2-mini",
+      "google/gemini-3.7-flash",
     ];
     for (const model of latestNonExcludedOpenRouterModels) {
       const codexRoute = models.modelRoutes.find((route) => route.harnessId === "codex" && route.modelProvider === "openrouter" && route.model === model);

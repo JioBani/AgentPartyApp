@@ -1180,6 +1180,9 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
   edit) and bills the configured **OpenRouter API key** (not the Codex
   subscription). Selecting one without an OpenRouter key configured fails
   explicitly at session start.
+  `Gemini 3.7 Flash` is exposed as `claude-gemini-3-7-flash` on Claude Code and
+  `google/gemini-3.7-flash` on Codex. Both routes use the configured OpenRouter
+  API key and expose low, medium, and high reasoning effort.
 - **Claude subscription models** are exposed as Codex routes with
   `"modelProvider": "claude-subscription"` and the exact CLIProxyAPI Claude
   model id. They use the local Claude OAuth credential rather than OpenRouter.

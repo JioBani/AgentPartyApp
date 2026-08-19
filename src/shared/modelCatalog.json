@@ -689,6 +689,34 @@
       }
     },
     {
+      "id": "Gemini 3.7 Flash",
+      "label": "Gemini 3.7 Flash",
+      "provider": "openrouter",
+      "runtimeModel": "claude-gemini-3-7-flash",
+      "orModelId": "google/gemini-3.7-flash",
+      "subscription": false,
+      "description": "Gemini 3.7 Flash on OpenRouter, optimized for fast agentic workflows, coding, and complex multi-step reasoning.",
+      "context": "1.05M",
+      "costTier": 1,
+      "inPerM": 0.375,
+      "outPerM": 1.875,
+      "ioPerM": 0.75,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "video": true
+      }
+    },
+    {
       "id": "Gemini 3.5 Flash",
       "label": "Gemini 3.5 Flash",
       "provider": "openrouter",
