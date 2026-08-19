@@ -36,7 +36,14 @@ export interface PartySummary {
   id: string;
   groupId: string;
   name: string;
-  memberCount: number;
+  /**
+   * Absent while nothing has counted this party yet.
+   *
+   * The summary store always fills it; the sidebar can only count the party it
+   * has loaded. `0` would be a claim — every party has at least `main` — so the
+   * line omits the clause rather than printing a number nobody measured.
+   */
+  memberCount?: number;
   /** Members with a running turn right now (0 when the party is not loaded). */
   runningCount: number;
   /** How the party's members split across execution environments. */
@@ -85,7 +92,9 @@ export function groupParties(groups: PartyGroup[], parties: PartySummary[]): Par
  * the split rather than printing `Win 0 · WSL 0`, which would read as a fact.
  */
 export function partySummaryLine(party: PartySummary, now: number): string {
-  const parts = [`${party.memberCount} ${party.memberCount === 1 ? "member" : "members"}`];
+  const parts = party.memberCount === undefined
+    ? []
+    : [`${party.memberCount} ${party.memberCount === 1 ? "member" : "members"}`];
   if (party.windowsCount > 0) {
     parts.push(`Win ${party.windowsCount}`);
   }

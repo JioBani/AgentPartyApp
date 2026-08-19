@@ -602,12 +602,13 @@ export function Workbench(props: WorkbenchProps) {
    * count would be worse than showing none.
    */
   const partySummaries = useMemo<PartySummary[]>(() => parties.map((party) => {
-    const members = party.id === activePartyId ? views : [];
+    const loaded = party.id === activePartyId;
+    const members = loaded ? views : [];
     return {
       id: party.id,
       groupId: party.groupId ?? DEFAULT_PARTY_GROUP_ID,
       name: party.name,
-      memberCount: memberCountByParty[party.id] || 0,
+      memberCount: loaded ? memberCountByParty[party.id] || 0 : undefined,
       runningCount: workingByParty[party.id] || 0,
       windowsCount: members.filter((view) => envOfMember(view) === "windows").length,
       wslCount: members.filter((view) => envOfMember(view) === "wsl").length,
