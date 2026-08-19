@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, Search } from "lucide-react";
 import { fontStackFor, matchesFontQuery, recommendedFor, type FontRole, type LocalFontFamily } from "../../shared/appFonts";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * One role's font picker: a trigger showing the current family, and a popover
@@ -96,14 +97,14 @@ export function FontPicker({ role, label, value, families, available, enumeratio
               value={query}
               data-font-search={role}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={`글꼴 이름 검색 · 설치 ${rows.filter((r) => r.installed !== false).length}개`}
+              placeholder={localized("STR-1654", [rows.filter((r) => r.installed !== false).length])}
             />
           </div>
-          {loading && <div className="set-font-status">설치된 글꼴을 읽는 중…</div>}
+          {loading && <div className="set-font-status"><LocalizedText id="STR-1655" /></div>}
           {enumerationError && (
             <div className="set-font-status is-error">
               <AlertTriangle size={13} />
-              <span>{enumerationError} 아래는 추천 글꼴만 표시한 것입니다.</span>
+              <span>{enumerationError}  <LocalizedText id="STR-1656" /></span>
             </div>
           )}
           <div className="set-font-list" role="listbox" aria-label={label}>
@@ -120,29 +121,30 @@ export function FontPicker({ role, label, value, families, available, enumeratio
                 <span className="set-font-row-check">{row.family === value && <Check size={13} />}</span>
                 <span className="set-font-row-body">
                   <span className="set-font-row-name" style={{ fontFamily: fontStackFor(row.family, role) }}>{row.label}</span>
-                  <span className="set-font-row-sample" style={{ fontFamily: fontStackFor(row.family, role) }}>다람쥐 헌 쳇바퀴 Sphinx 0123</span>
+                  <span className="set-font-row-sample" style={{ fontFamily: fontStackFor(row.family, role) }}><LocalizedText id="STR-1657" /></span>
                 </span>
                 <span className="set-font-row-tags">
-                  {row.recommended && <span className="set-font-tag is-reco">추천</span>}
-                  {row.installed === false && <span className="set-font-tag is-missing">미설치</span>}
-                  {row.installed === null && <span className="set-font-tag">확인 불가</span>}
+                  {row.recommended && <span className="set-font-tag is-reco"><LocalizedText id="STR-1658" /></span>}
+                  {row.installed === false && <span className="set-font-tag is-missing"><LocalizedText id="STR-1659" /></span>}
+                  {row.installed === null && <span className="set-font-tag"><LocalizedText id="STR-1660" /></span>}
                   {row.note && <span className="set-font-row-note">{row.note}</span>}
                 </span>
               </button>
             ))}
-            {!shown.length && <div className="set-font-status">‘{query}’ 와(과) 일치하는 글꼴이 없습니다.</div>}
+            {!shown.length && <div className="set-font-status">‘{query}<LocalizedText id="STR-1661" /></div>}
           </div>
-          {hidden > 0 && <div className="set-font-status">{hidden}개 더 있습니다 — 검색어를 좁혀 주세요.</div>}
+          {hidden > 0 && <div className="set-font-status">{hidden}<LocalizedText id="STR-1662" /></div>}
         </div>
       )}
 
-      <div className="set-font-preview" style={{ fontFamily: fontStackFor(value, role) }}>다람쥐 헌 쳇바퀴에 타고파 Sphinx of black quartz 0123</div>
+      <div className="set-font-preview" style={{ fontFamily: fontStackFor(value, role) }}><LocalizedText id="STR-1663" /></div>
       <div className="set-font-note">
         <span>{value ? (selected?.note || "설치된 글꼴") : "OS 의 기본 글꼴을 그대로 사용"}</span>
         {selectedMissing && (
           <span className="set-font-warn">
             <AlertTriangle size={13} />
-            이 컴퓨터에 설치되어 있지 않아 대체 글꼴로 표시됩니다.
+
+            <LocalizedText id="STR-1666" />
           </span>
         )}
       </div>

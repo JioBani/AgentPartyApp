@@ -4,6 +4,7 @@ import type { SubDetailView } from "./subagentModel";
 import { formatSubDuration } from "./subagentModel";
 import { Markdown } from "./Markdown";
 import { ExpandableText } from "./Transcript";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface SubagentDetailProps {
   detail: SubDetailView;
@@ -23,7 +24,7 @@ export function SubagentDetail({ detail, parentName, parentColor, density, onBac
   return (
     <div className="wb-subdetail">
       <div className="wb-subdetail-head">
-        <button type="button" className="wb-subdetail-back" title="세션으로 돌아가기" aria-label="세션으로 돌아가기" onClick={onBack}>
+        <button type="button" className="wb-subdetail-back" title={localized("STR-2130")} aria-label={localized("STR-2130")} onClick={onBack}>
           <ChevronLeft size={16} />
         </button>
         <span className="wb-subdetail-crumb">
@@ -45,11 +46,11 @@ export function SubagentDetail({ detail, parentName, parentColor, density, onBac
         <div className="wb-subdetail-task">
           <ListChecks size={13} className="wb-subdetail-task-ic" />
           <div className="wb-subdetail-task-body">
-            <span className="wb-subdetail-task-label">위임된 작업</span>
+            <span className="wb-subdetail-task-label"><LocalizedText id="STR-2131" /></span>
             {/* A delegated prompt is often hundreds of lines; rendering it whole
                 pushed the subagent's actual work off screen. Same preview +
                 "전체 보기" popup the transcript uses for long messages. */}
-            <span className="wb-subdetail-task-text"><ExpandableText text={detail.task} title="위임된 작업" /></span>
+            <span className="wb-subdetail-task-text"><ExpandableText text={detail.task} title={localized("STR-2132")} /></span>
           </div>
         </div>
       )}
@@ -72,7 +73,7 @@ export function SubagentDetail({ detail, parentName, parentColor, density, onBac
                 <span className="wb-typing-pill" style={{ ["--member" as string]: parentColor }}>
                   <span className="wb-typing-dots"><i /><i /><i /></span>
                 </span>
-                <span className="wb-typing-text">작업 중…</span>
+                <span className="wb-typing-text"><LocalizedText id="STR-2133" /></span>
               </div>
             );
           }

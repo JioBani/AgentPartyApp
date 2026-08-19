@@ -6,6 +6,7 @@ import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { harnessCapabilities } from "../../shared/harnessCapabilities";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
+import { localized } from "../i18n/I18nProvider";
 
 /**
  * What "permission" means for a member, across every harness.
@@ -93,7 +94,7 @@ export function HarnessPermissionControl({
       value={mode}
       options={PERMISSION_OPTIONS}
       onChange={(next) => onChange({ permissionMode: next as PermissionModeSetting })}
-      title="권한"
+      title={localized("STR-1678")}
       compact
       drop="up"
       align="right"

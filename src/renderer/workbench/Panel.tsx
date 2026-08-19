@@ -16,6 +16,7 @@ import { WorkingDots } from "./StatusIndicator";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
 import { CliContinuationModal } from "./CliContinuationModal";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface PanelProps {
   panel: PanelState;
@@ -143,7 +144,7 @@ export function Panel(props: PanelProps) {
                 other state is a stable fact and stays a label. */}
             {wide && (
               <span className={"wb-status-pill is-" + view.status}>
-                {view.status === "working" ? <WorkingDots label="작업 중" /> : statusLabel(view.status)}
+                {view.status === "working" ? <WorkingDots label={localized("STR-1963")} /> : statusLabel(view.status)}
               </span>
             )}
             {wide && (() => {
@@ -160,7 +161,7 @@ export function Panel(props: PanelProps) {
               type="button"
               className="wb-pill wb-model-pill"
               style={{ maxWidth: narrow ? 116 : 240 }}
-              title="모델 · 추론 설정"
+              title={localized("STR-1964")}
               onClick={() => onOpenRuntime(view.name)}
             >
               <span className="wb-mono">{modelLabel(view.model)}</span>
@@ -175,7 +176,7 @@ export function Panel(props: PanelProps) {
               <button
                 type="button"
                 className="wb-pill"
-                title="추론 강도 · Runtime 에서 변경"
+                title={localized("STR-1965")}
                 onClick={() => onOpenRuntime(view.name)}
               >
                 <span className="wb-mono">
@@ -196,7 +197,7 @@ export function Panel(props: PanelProps) {
               />
             )}
             <div className="wb-header-menu-wrap">
-              <button type="button" className="wb-header-more" title="더보기" onClick={() => setMenuOpen((open) => !open)}>
+              <button type="button" className="wb-header-more" title={localized("STR-1966")} onClick={() => setMenuOpen((open) => !open)}>
                 <MoreHorizontal size={15} />
               </button>
               {menuOpen && (
@@ -206,18 +207,18 @@ export function Panel(props: PanelProps) {
                     <button
                       type="button"
                       className="wb-menu-item"
-                      title="세션을 다시 시작합니다(대화 유지 · MCP/설정 적용)"
+                      title={localized("STR-1967")}
                       onClick={() => { setMenuOpen(false); actions.respawn(view.name); }}
                     >
-                      <RefreshCw size={14} /> 세션 재시작
+                      <RefreshCw size={14} />  <LocalizedText id="STR-1968" />
                     </button>
                     <button
                       type="button"
                       className="wb-menu-item"
-                      title="이 멤버가 보내는 메시지를 전달 전에 심사합니다"
+                      title={localized("STR-1969")}
                       onClick={() => { setMenuOpen(false); onOpenGate(view.name); }}
                     >
-                      <MessageGateIcon size={14} className="wb-gate-accent" /> Message Gate 설정
+                      <MessageGateIcon size={14} className="wb-gate-accent" />  <LocalizedText id="STR-1970" />
                     </button>
                     <button
                       type="button"
@@ -225,14 +226,14 @@ export function Panel(props: PanelProps) {
                       disabled={!view.session}
                       onClick={() => { setMenuOpen(false); onOpenMcp(view.name); }}
                     >
-                      <Plug size={14} /> MCP 서버
+                      <Plug size={14} />  <LocalizedText id="STR-1971" />
                     </button>
                     <button
                       type="button"
                       className="wb-menu-item"
                       onClick={() => { setMenuOpen(false); setCliContinuationOpen(true); }}
                     >
-                      <SquareTerminal size={14} /> CLI로 이어가기
+                      <SquareTerminal size={14} />  <LocalizedText id="STR-1972" />
                     </button>
                   </div>
                 </>
@@ -247,9 +248,9 @@ export function Panel(props: PanelProps) {
       {view && cliOwned ? (
         <div className="wb-external-cli-state" role="status">
           <SquareTerminal size={28} />
-          <strong>외부 CLI에서 작업 중</strong>
-          <span>이 멤버의 대화는 현재 터미널 프로세스가 사용하고 있습니다.</span>
-          <small>CLI를 종료하면 이 탭이 자동으로 다시 활성화됩니다. 탭의 × 버튼으로 닫는 것은 가능합니다.</small>
+          <strong><LocalizedText id="STR-1973" /></strong>
+          <span><LocalizedText id="STR-1974" /></span>
+          <small><LocalizedText id="STR-1975" /></small>
         </div>
       ) : view ? (
         <>
@@ -270,7 +271,7 @@ export function Panel(props: PanelProps) {
           />
         </>
       ) : (
-        <div className="wb-panel-empty">No member in this panel.</div>
+        <div className="wb-panel-empty"><LocalizedText id="STR-1976" /></div>
       )}
 
       {detail && view && (
@@ -283,7 +284,7 @@ export function Panel(props: PanelProps) {
 
       {dropTarget && (
         <div className="wb-drop-overlay">
-          <span>여기에 놓기</span>
+          <span><LocalizedText id="STR-1977" /></span>
         </div>
       )}
     </div>

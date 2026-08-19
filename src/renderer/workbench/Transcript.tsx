@@ -15,6 +15,7 @@ import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface TranscriptProps {
   view: MemberView;
@@ -115,18 +116,19 @@ export function Transcript({ view, density, actions, detail = "full" }: Transcri
       {view.transcriptLoading ? (
         <div className="wb-transcript-empty wb-transcript-loading" role="status" aria-live="polite">
           <LoaderCircle size={17} className="wb-spin" />
-          <p>이전 대화를 불러오는 중입니다…</p>
-          <span>새 이벤트는 기존 대화와 합친 뒤 표시됩니다.</span>
+          <p><LocalizedText id="STR-2151" /></p>
+          <span><LocalizedText id="STR-2152" /></span>
         </div>
       ) : view.status === "not-started" && view.transcript.length === 0 && (
         <div className="wb-transcript-empty">
-          <p>Not started. The first message starts this member&apos;s session with the selected runtime.</p>
+          <p><LocalizedText id="STR-2153" /></p>
         </div>
       )}
       {!view.transcriptLoading && hiddenCount === 0 && isTranscriptAtCap(view.transcript) && <HarnessOriginalNote member={view.name} />}
       {!view.transcriptLoading && hiddenCount > 0 && (
         <button type="button" className="wb-transcript-older" onClick={showOlder}>
-          이전 대화 {Math.min(hiddenCount, TAIL_BLOCKS)}개 더 보기 · {hiddenCount}개 숨김
+
+          <LocalizedText id="STR-2156" /> {Math.min(hiddenCount, TAIL_BLOCKS)}<LocalizedText id="STR-2154" /> {hiddenCount}<LocalizedText id="STR-2155" />
         </button>
       )}
       {!view.transcriptLoading && shown.map((block) => (
@@ -149,11 +151,11 @@ function Block({ block, view, density, actions, detail }: { block: TranscriptBlo
                 way to tell that the message reached the agent LATER than it was
                 typed — which is what makes the surrounding order read correctly. */}
             {block.fromQueue && (
-              <span className="wb-user-origin" title="대기열에서 순서가 되어 전송된 메시지">
-                <AlignLeft size={9} /> 대기열에서 전송됨
+              <span className="wb-user-origin" title={localized("STR-2157")}>
+                <AlignLeft size={9} />  <LocalizedText id="STR-2158" />
               </span>
             )}
-            {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}건 합쳐서 보냄</span>}
+            {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2159" /></span>}
             {/* A member's message keeps its author here too: the queue row named
                 who was asking, and dropping that on delivery would make the
                 conversation read as though the user had typed it. */}
@@ -172,7 +174,7 @@ function Block({ block, view, density, actions, detail }: { block: TranscriptBlo
           {/* Mentions and dropped paths were chips while being typed, so they are
               drawn the same way here — a sent message should look like what was
               composed, not like raw `@name` and an absolute path. */}
-          {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title="보낸 메시지" chips /></div>}
+          {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title={localized("STR-2160")} chips /></div>}
         </div>
       );
     case "reasoning":
@@ -191,7 +193,7 @@ function Block({ block, view, density, actions, detail }: { block: TranscriptBlo
             {block.at && <span className="wb-mono wb-time">{block.at}</span>}
             {/* Copies the reply's markdown SOURCE — that is what the user pastes
                 back into an editor or another member, not the rendered HTML. */}
-            {block.text && <CopyButton text={block.text} title="응답 전체 복사" className="wb-assistant-copy" />}
+            {block.text && <CopyButton text={block.text} title={localized("STR-2161")} className="wb-assistant-copy" />}
           </div>
           <div className="wb-assistant-body"><Markdown text={block.text} /></div>
         </div>
@@ -349,7 +351,7 @@ function CompactBlock({ block, view, actions }: { block: Extract<TranscriptBlock
         {running && <span className="wb-compact-elapsed wb-mono">{elapsed}</span>}
         {duration && <span className="wb-compact-dur wb-mono">{duration}</span>}
         {block.state === "failed" && (
-          <button type="button" className="wb-compact-retry" onClick={() => actions.compact(view.name)}>다시 시도</button>
+          <button type="button" className="wb-compact-retry" onClick={() => actions.compact(view.name)}><LocalizedText id="STR-2174" /></button>
         )}
       </div>
       {running && <div className="wb-compact-bar"><span /></div>}
@@ -375,7 +377,7 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
         <span className="wb-gate-route wb-mono">{(block.from || view.name)} → {block.to}</span>
         <span className="wb-gate-passnote">{meta.note}</span>
         {block.reason && (
-          <button type="button" className="wb-gate-caret" onClick={() => setOpen((v) => !v)} title={open ? "접기" : "펼치기"}>
+          <button type="button" className="wb-gate-caret" onClick={() => setOpen((v) => !v)} title={open ? localized("STR-2177") : localized("STR-2178")}>
             <ChevronRight size={13} className={"wb-caret" + (open ? " is-open" : "")} />
           </button>
         )}
@@ -414,15 +416,15 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
             because in scrollback it is what explains why replies above it do
             not answer it. */}
         {block.fromQueue && (
-          <span className="wb-user-origin" title="대기열에서 순서가 되어 전송된 메시지">
-            <AlignLeft size={9} /> 대기열에서 전송됨
+          <span className="wb-user-origin" title={localized("STR-2181")}>
+            <AlignLeft size={9} />  <LocalizedText id="STR-2182" />
           </span>
         )}
-        {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}건 합쳐서 보냄</span>}
+        {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2183" /></span>}
         {block.at && <span className="wb-mono wb-time">{block.at}</span>}
       </div>
       {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
-      {failed && <div className="wb-channel-failed">전달 실패{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
+      {failed && <div className="wb-channel-failed"><LocalizedText id="STR-2185" />{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
     </div>
   );
 }
@@ -465,15 +467,15 @@ function AttachedImageBlock({ block }: { block: Extract<TranscriptBlock, { kind:
     return (
       <div className="wb-block wb-attached-image is-failed">
         <ImageOff size={13} />
-        <span>이미지를 붙이지 못했습니다{block.origin ? ` — ${block.origin}` : ""}</span>
+        <span><LocalizedText id="STR-2187" />{block.origin ? ` — ${block.origin}` : ""}</span>
         {block.error && <span className="wb-attached-image-error">{block.error}</span>}
       </div>
     );
   }
   return (
     <div className="wb-block wb-attached-image">
-      {loadError && <div className="wb-tool-image-missing"><ImageOff size={13} /> 이미지를 불러오지 못했습니다 — {loadError}</div>}
-      {!loadError && !src && <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" /> 이미지 여는 중…</div>}
+      {loadError && <div className="wb-tool-image-missing"><ImageOff size={13} />  <LocalizedText id="STR-2188" /> {loadError}</div>}
+      {!loadError && !src && <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" />  <LocalizedText id="STR-2189" /></div>}
       {!loadError && src && (
         <>
           <ImageFigure src={src} label={label} copySource={() => imageBytesFrom(src)} />
@@ -577,7 +579,7 @@ function ToolBlock({ block, density, detail }: { block: Extract<TranscriptBlock,
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}
         {hasMore && (
-          <button type="button" className="wb-tool-expand" title="전체 보기" aria-label="전체 보기" onClick={openFull}>
+          <button type="button" className="wb-tool-expand" title={localized("STR-2194")} aria-label={localized("STR-2194")} onClick={openFull}>
             <Maximize2 size={12} />
           </button>
         )}
@@ -619,7 +621,7 @@ function PlanBlock({ block }: { block: Extract<TranscriptBlock, { kind: "plan" }
     <div className="wb-block wb-plan">
       <div className="wb-plan-head">
         <ListChecks size={14} />
-        <strong>계획</strong>
+        <strong><LocalizedText id="STR-2195" /></strong>
         {block.steps.length > 0 && <span className="wb-plan-count">{done}/{block.steps.length}</span>}
       </div>
       {block.steps.length > 0 ? (
@@ -645,8 +647,8 @@ function FileChangeBlock({ block, density }: { block: Extract<TranscriptBlock, {
     <div className={"wb-block wb-filechange density-" + density}>
       <div className="wb-filechange-head">
         <FileDiff size={14} />
-        <strong>파일 변경</strong>
-        <span className="wb-chip">{block.changes.length}개 파일</span>
+        <strong><LocalizedText id="STR-2196" /></strong>
+        <span className="wb-chip">{block.changes.length}<LocalizedText id="STR-2197" /></span>
         <span className="wb-diff-stat"><span className="wb-diff-add">+{total.added}</span> <span className="wb-diff-del">-{total.removed}</span></span>
         {block.status && <span className="wb-mono wb-filechange-status">{block.status}</span>}
       </div>
@@ -761,7 +763,7 @@ function AnsweredQuestion({ questions, answers, density }: { questions: ParsedQu
   return (
     <div className={"wb-block wb-approval wb-question is-resolved is-answered density-" + density}>
       <Check size={14} />
-      <span className="wb-approval-resolved-label">답변함</span>
+      <span className="wb-approval-resolved-label"><LocalizedText id="STR-2198" /></span>
       <span className="wb-answered-rows" ref={rowsRef}>
         {rows.map((row, index) => (
           <span className="wb-answered-row" key={index}>
@@ -771,12 +773,12 @@ function AnsweredQuestion({ questions, answers, density }: { questions: ParsedQu
         ))}
       </span>
       {clipped && (
-        <button type="button" className="wb-answered-expand" title="전체 보기" onClick={() => setFull(true)}>
+        <button type="button" className="wb-answered-expand" title={localized("STR-2199")} onClick={() => setFull(true)}>
           <Maximize2 size={12} />
         </button>
       )}
       {full && (
-        <DetailModal title="답변한 내용" onClose={() => setFull(false)}>
+        <DetailModal title={localized("STR-2200")} onClose={() => setFull(false)}>
           <div className="wb-answered-full">
             {rows.map((row, index) => (
               <div className="wb-answered-full-row" key={index}>
@@ -804,8 +806,8 @@ export function ExpandableText({ text, title, markdown, chips }: { text: string;
     <>
       {body(shown)}
       {clip && (
-        <button type="button" className="wb-expand-inline" title="전체 보기" onClick={() => setFull(true)}>
-          <Maximize2 size={11} /> 전체 보기
+        <button type="button" className="wb-expand-inline" title={localized("STR-2201")} onClick={() => setFull(true)}>
+          <Maximize2 size={11} />  <LocalizedText id="STR-2202" />
         </button>
       )}
       {full && (
@@ -858,7 +860,7 @@ function DetailModal({ title, onClose, actions, wide, children }: {
           <span className="wb-mono wb-tool-name">{title}</span>
           <div className="wb-tool-modal-actions">
             {actions}
-            <button type="button" className="wb-icon-btn" title="닫기" aria-label="닫기" onClick={onClose}><X size={15} /></button>
+            <button type="button" className="wb-icon-btn" title={localized("STR-2203")} aria-label={localized("STR-2203")} onClick={onClose}><X size={15} /></button>
           </div>
         </div>
         <div className="wb-tool-modal-body">{children}</div>
@@ -884,7 +886,7 @@ function MsgImage({ image }: { image: ImageAttachment }) {
   return (
     <ImageFigure
       src={imageDataUrl(image)}
-      label={image.name || "이미지"}
+      label={image.name || localized("STR-2205")}
       copySource={async () => ({ dataBase64: image.dataBase64!, mediaType: image.mediaType })}
     />
   );
@@ -990,8 +992,8 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
         <button
           type="button"
           className="wb-msg-image-hit"
-          title={`${label} — 클릭하면 크게 보기`}
-          aria-label={`${label} 크게 보기`}
+          title={localized("STR-2212", [label])}
+          aria-label={localized("STR-2213", [label])}
           onClick={() => setViewer(true)}
         >
           <img className="wb-msg-image" src={src} alt={label} />
@@ -1001,8 +1003,8 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
           <button
             type="button"
             className="wb-icon-btn"
-            title="크게 보기"
-            aria-label="크게 보기"
+            title={localized("STR-2214")}
+            aria-label={localized("STR-2215")}
             onClick={() => setViewer(true)}
           >
             <Maximize2 size={13} />
@@ -1020,8 +1022,8 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
               <button
                 type="button"
                 className="wb-icon-btn"
-                title={fit ? "실제 크기로 보기" : "화면에 맞추기"}
-                aria-label={fit ? "실제 크기로 보기" : "화면에 맞추기"}
+                title={fit ? localized("STR-2216") : localized("STR-2217")}
+                aria-label={fit ? localized("STR-2218") : localized("STR-2219")}
                 data-image-zoom={fit ? "fit" : "actual"}
                 onClick={() => setFit((current) => !current)}
               >
@@ -1081,19 +1083,19 @@ function HarnessOriginalNote({ member }: { member: string }) {
     <div className="wb-transcript-origin">
       <Info size={13} />
       <div>
-        <div>여기부터 앞의 기록은 이 창의 보관 한도를 넘어 지워졌습니다.</div>
+        <div><LocalizedText id="STR-2220" /></div>
         {original.exists ? (
           <div className="wb-transcript-origin-path">
             <span className="wb-mono">{original.path}</span>
             {typeof original.bytes === "number" && <span> · {formatBytes(original.bytes)}</span>}
-            <CopyButton text={original.path} title="경로 복사" />
+            <CopyButton text={original.path} title={localized("STR-2221")} />
           </div>
         ) : (
           // Claude Code keys its directory on the absolute cwd, so a moved
           // project folder orphans the history. Say that instead of printing a
           // path that leads nowhere.
           <div className="wb-transcript-origin-path">
-            {original.harness} 원본을 찾지 못했습니다. 작업 폴더를 옮겼다면 하네스 기록은 이전 경로에 남아 있습니다.
+            {original.harness}  <LocalizedText id="STR-2222" />
           </div>
         )}
       </div>
@@ -1132,10 +1134,10 @@ function ToolImage({ image }: { image: DisplayImage }) {
   const bytes = image.kind === "inline" ? image.bytes : image.source.bytes;
   const mediaType = image.kind === "inline" ? image.mediaType : image.source.media_type;
   if (error) {
-    return <div className="wb-tool-image-missing"><ImageOff size={13} /> 이미지를 불러오지 못했습니다 — {error}</div>;
+    return <div className="wb-tool-image-missing"><ImageOff size={13} />  <LocalizedText id="STR-2223" /> {error}</div>;
   }
   if (!dataUrl) {
-    return <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" /> 이미지 여는 중…</div>;
+    return <div className="wb-tool-image-missing"><LoaderCircle size={13} className="wb-spin" />  <LocalizedText id="STR-2224" /></div>;
   }
   return <img className="wb-tool-image" src={dataUrl} alt={`${mediaType || "image"} · ${Math.round(bytes / 1024)} KB`} />;
 }
@@ -1211,7 +1213,7 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
           <>
             {filePath && (
               <div className="wb-approval-file">
-                <span className="wb-approval-file-kind">수정</span>
+                <span className="wb-approval-file-kind"><LocalizedText id="STR-2227" /></span>
                 <span className="wb-approval-file-path">{shortPath(filePath)}</span>
               </div>
             )}
@@ -1223,11 +1225,11 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
             a 76px label column holding a single item with empty space beside it.
             The harnesses send different data, so they get different bodies. */}
         {block.blockedPath && <div className="wb-approval-path">{block.blockedPath}</div>}
-        {block.agentID && <div className="wb-approval-path">서브에이전트 {block.agentID}</div>}
+        {block.agentID && <div className="wb-approval-path"><LocalizedText id="STR-2228" /> {block.agentID}</div>}
       </div>
       <div className="wb-approval-actions">
-        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}>거부</button>
-        <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}>이번만 허용</button>
+        <button type="button" className="wb-btn wb-btn-ghost" onClick={() => actions.approve(view.name, block.requestId, "deny")}><LocalizedText id="STR-2229" /></button>
+        <button type="button" className="wb-btn wb-btn-member" onClick={() => decide()}><LocalizedText id="STR-2230" /></button>
         {/* States what gets stored, not that the asking stops. Measured: a later
             turn can still be held up by a separate gate (a write outside the
             allowed directories), and THAT one is only ever grantable for the
@@ -1237,10 +1239,10 @@ function ClaudeApprovalBlock({ block, view, density, actions }: { block: Extract
           <button
             type="button"
             className={"wb-btn wb-btn-soft wb-btn-widest" + (ruleAddsInformation(rule.hint, command) ? " wb-btn-rule" : "")}
-            title={`'${rule.hint}' 규칙을 저장합니다. 다른 이유(경로 등)로는 다시 물을 수 있습니다.`}
+            title={localized("STR-2231", [rule.hint])}
             onClick={() => decide("always")}
           >
-            <span>항상 허용</span>
+            <span><LocalizedText id="STR-2232" /></span>
             {ruleAddsInformation(rule.hint, command) && <span className="wb-btn-rule-hint">{rule.hint}</span>}
           </button>
         )}
@@ -1333,7 +1335,7 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
       <ResolvedApproval
         block={block}
         density={density}
-        summary={codex.commandDisplay || codex.command || codex.edits?.map((edit) => edit.path).join(", ") || block.title || "요청"}
+        summary={codex.commandDisplay || codex.command || codex.edits?.map((edit) => edit.path).join(", ") || block.title || localized("STR-2235")}
         scope="이번만"
       />
     );
@@ -1358,9 +1360,9 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
       )}
       <div className="wb-approval-meta">
         {codex.commandDisplay && codex.command !== codex.commandDisplay && (
-          <><span className="wb-mono">실행</span><span>{codex.command}</span></>
+          <><span className="wb-mono"><LocalizedText id="STR-2238" /></span><span>{codex.command}</span></>
         )}
-        {codex.cwd && <><span className="wb-mono">작업 폴더</span><span>{codex.cwd}</span></>}
+        {codex.cwd && <><span className="wb-mono"><LocalizedText id="STR-2239" /></span><span>{codex.cwd}</span></>}
       </div>
       {codex.diff && <DiffLines diff={codex.diff} />}
       {/* A file-change approval carries no diff of its own; these are joined from
@@ -1392,7 +1394,7 @@ function CodexApprovalBlock({ block, codex, view, density, actions }: { block: E
           >
             {decision === "always" && ruleAddsInformation(codex.alwaysHint, codex.commandDisplay || codex.command) ? (
               <>
-                <span>항상 허용</span>
+                <span><LocalizedText id="STR-2240" /></span>
                 <span className="wb-btn-rule-hint">{codex.alwaysHint}</span>
               </>
             ) : (
@@ -1479,7 +1481,7 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
           "답변 보내기 / 건너뛰기" rather than allow/deny. */}
       <div className="wb-approval-head">
         <ListChecks size={15} />
-        <strong>답을 기다리는 중</strong>
+        <strong><LocalizedText id="STR-2241" /></strong>
         {current.header && <span className="wb-chip">{current.header}</span>}
         <span className="wb-approval-head-spacer" />
         {multiple && <span className="wb-approval-origin">{clampedStep + 1} / {questions.length}</span>}
@@ -1487,7 +1489,7 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
       <div className="wb-question-item">
         <div className="wb-question-prompt">
           <span className="wb-question-text">{current.question}</span>
-          {current.multiSelect && <span className="wb-question-hint">복수 선택</span>}
+          {current.multiSelect && <span className="wb-question-hint"><LocalizedText id="STR-2242" /></span>}
         </div>
         <div className="wb-question-options">
           {current.options.map((opt, oi) => {
@@ -1527,8 +1529,8 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
                 {otherActive && (current.multiSelect ? <Check size={10} strokeWidth={3.4} /> : <span className="wb-question-mark-dot" />)}
               </span>
               <span className="wb-question-option-body">
-                <span className="wb-question-option-label">직접 입력</span>
-                <span className="wb-question-option-desc">원하는 답을 적습니다.</span>
+                <span className="wb-question-option-label"><LocalizedText id="STR-2243" /></span>
+                <span className="wb-question-option-desc"><LocalizedText id="STR-2244" /></span>
               </span>
             </button>
           )}
@@ -1537,7 +1539,7 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
               type={current.secret ? "password" : "text"}
               className="wb-question-other-input"
               autoFocus
-              placeholder="답을 입력하세요…"
+              placeholder={localized("STR-2245")}
               value={otherText[current.question] || ""}
               onChange={(event) => setOtherText((prev) => ({ ...prev, [current.question]: event.target.value }))}
               onKeyDown={(event) => { if (event.key === "Enter" && isLast && allAnswered) submit(); }}
@@ -1549,16 +1551,16 @@ function QuestionBlock({ block, questions, view, density, actions }: { block: Ex
         {/* How many are picked, on the left, so a multi-select says what state
             it is in without the user recounting the ticks. */}
         {current.multiSelect && currentPicked.length > 0 && (
-          <span className="wb-approval-actions-note">{currentPicked.length}개 선택됨</span>
+          <span className="wb-approval-actions-note">{currentPicked.length}<LocalizedText id="STR-2246" /></span>
         )}
-        <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => actions.approve(view.name, block.requestId, "deny")}>건너뛰기</button>
+        <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => actions.approve(view.name, block.requestId, "deny")}><LocalizedText id="STR-2247" /></button>
         {multiple && clampedStep > 0 && (
-          <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => setStep(clampedStep - 1)}>이전</button>
+          <button type="button" className="wb-btn wb-btn-ghost wb-btn-widest" onClick={() => setStep(clampedStep - 1)}><LocalizedText id="STR-2248" /></button>
         )}
         {isLast ? (
-          <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}>답변 보내기</button>
+          <button type="button" className="wb-btn wb-btn-member" disabled={!allAnswered} onClick={submit}><LocalizedText id="STR-2249" /></button>
         ) : (
-          <button type="button" className="wb-btn wb-btn-member" disabled={!isAnswered(current)} onClick={() => setStep(clampedStep + 1)}>다음</button>
+          <button type="button" className="wb-btn wb-btn-member" disabled={!isAnswered(current)} onClick={() => setStep(clampedStep + 1)}><LocalizedText id="STR-2250" /></button>
         )}
       </div>
     </div>
@@ -1595,7 +1597,7 @@ function TypingIndicator() {
   return (
     <div className="wb-block wb-typing">
       <span className="wb-typing-pill"><span className="wb-typing-dots"><i /><i /><i /></span></span>
-      <span className="wb-typing-text">작업 중…</span>
+      <span className="wb-typing-text"><LocalizedText id="STR-2251" /></span>
     </div>
   );
 }

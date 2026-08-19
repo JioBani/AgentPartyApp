@@ -40,6 +40,7 @@ import { FontPicker } from "../workbench/FontPicker";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 export function SessionsView({ sessions, resumable, resumableError, onOpen, onClose, onRefresh, onResume }: {
   sessions: SessionView[];
@@ -52,25 +53,25 @@ export function SessionsView({ sessions, resumable, resumableError, onOpen, onCl
 }) {
   return (
     <section className="legacy-view">
-      <div className="view-toolbar"><button className="ghost-btn" onClick={onRefresh}><RefreshCw size={15} /> 기록 새로고침</button></div>
+      <div className="view-toolbar"><button className="ghost-btn" onClick={onRefresh}><RefreshCw size={15} />  <LocalizedText id="STR-0986" /></button></div>
       <div className="split-grid">
         <section className="card">
-          <div className="card-title">활성 세션</div>
+          <div className="card-title"><LocalizedText id="STR-0987" /></div>
           <div className="row-list">
-            {sessions.length === 0 && <div className="empty">활성 세션이 없습니다</div>}
+            {sessions.length === 0 && <div className="empty"><LocalizedText id="STR-0988" /></div>}
             {sessions.map((session) => (
               <button key={session.id} className="list-row" onClick={() => onOpen(session.id)}>
                 <span><strong>{session.title || "Claude Code"}</strong><small>{session.snapshot.status || "idle"}</small></span>
-                <button type="button" className="row-x" title="닫기" onClick={(event) => { event.stopPropagation(); onClose(session.id); }}><X size={13} /></button>
+                <button type="button" className="row-x" title={localized("STR-0990")} onClick={(event) => { event.stopPropagation(); onClose(session.id); }}><X size={13} /></button>
               </button>
             ))}
           </div>
         </section>
         <section className="card">
-          <div className="card-title">이전 세션</div>
+          <div className="card-title"><LocalizedText id="STR-0991" /></div>
           <div className="row-list">
             {resumableError && <div className="soft-error">{resumableError}</div>}
-            {!resumableError && resumable.length === 0 && <div className="empty">이어갈 수 있는 세션이 없습니다</div>}
+            {!resumableError && resumable.length === 0 && <div className="empty"><LocalizedText id="STR-0992" /></div>}
             {resumable.map((session) => (
               <button className="list-row" key={session.sessionId} onClick={() => onResume(session.sessionId)}>
                 <span><strong>{session.customTitle || session.summary || session.firstPrompt || session.sessionId}</strong><small>{[session.lastModified ? new Date(session.lastModified).toLocaleString() : "", session.gitBranch].filter(Boolean).join(" - ")}</small></span>
@@ -120,7 +121,8 @@ function AuthUrlRow({ url }: { url: string }) {
   return (
     <div className="set-auth-url">
       <span className="set-auth-url-hint">
-        다른 브라우저에서 열려면 이 주소를 복사하세요
+
+        <LocalizedText id="STR-1000" />
       </span>
       <div className="set-auth-url-body">
         <input className="set-auth-url-input" value={url} readOnly onFocus={(event) => event.target.select()} />
@@ -319,7 +321,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
     <div className="set-page">
       {subscriptions.length > 0 && (
         <section className="set-section">
-          <SetSectionHead label="구독" />
+          <SetSectionHead label={localized("STR-1018")} />
           {subscriptions.map((provider) => {
             const disconnectable = provider.status === "available" ? disconnectableProviderOf(provider.id) : undefined;
             return (
@@ -375,7 +377,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
       )}
 
       <section className="set-section">
-        <SetSectionHead label="Provider API 키" />
+        <SetSectionHead label={localized("STR-1022")} />
         {apiKeys.map((provider) => (
           <div className="set-card" key={provider.id}>
             <div className="set-row set-row-flush">
@@ -388,7 +390,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
             </div>
             {provider.maskedValue && (
               <div className="set-key-current">
-                <span>현재 키</span>
+                <span><LocalizedText id="STR-1023" /></span>
                 <code className="wb-mono">{provider.maskedValue}</code>
               </div>
             )}
@@ -398,7 +400,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
                 <input
                   value={drafts[provider.id] || ""}
                   onChange={(event) => onDraft(provider.id, event.target.value)}
-                  placeholder={API_KEY_PLACEHOLDERS[provider.id] || `새 ${provider.label} API 키 입력`}
+                  placeholder={API_KEY_PLACEHOLDERS[provider.id] || localized("STR-1024", [provider.label])}
                   type="password"
                 />
               </div>
@@ -407,8 +409,8 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
                 className="set-btn-accent"
                 disabled={!(drafts[provider.id] || "").trim()}
                 onClick={() => onSave(provider.id)}
-              ><Check size={14} /> 저장</button>
-              <button type="button" className="set-btn-soft" onClick={() => onTest(provider.id)}><FlaskConical size={14} /> 테스트</button>
+              ><Check size={14} />  <LocalizedText id="STR-1025" /></button>
+              <button type="button" className="set-btn-soft" onClick={() => onTest(provider.id)}><FlaskConical size={14} />  <LocalizedText id="STR-1026" /></button>
               {provider.maskedValue && (
                 <button
                   type="button"
@@ -485,7 +487,7 @@ function DiscordBridgeCard({ status, onSave, onDirtyChange }: { status?: Discord
     <>
       <div className="set-inline-note">
         <InfoIcon size={14} />
-        <span>멤버가 디스코드 채널로 보고하고, 그 채널에서 받은 지시를 이어받습니다. 멤버에게 “디스코드 연결해”라고 말하면 채널이 만들어집니다.</span>
+        <span><LocalizedText id="STR-1038" /></span>
       </div>
       <div className="set-router-row">
         <span className="set-router-id"><span className={"set-dot " + dotClass} /> {connectionLabel}</span>
@@ -496,45 +498,45 @@ function DiscordBridgeCard({ status, onSave, onDirtyChange }: { status?: Discord
       {status?.error && <div className="set-inline-note" role="alert"><InfoIcon size={14} /><span>{status.error}</span></div>}
       <div className="set-card-fields">
       <label className="set-field">
-        <span className="set-field-label">이 PC 이름</span>
+        <span className="set-field-label"><LocalizedText id="STR-1039" /></span>
         <div className="set-input">
           <MonitorSmartphone size={14} />
-          <input placeholder="디스코드에서 이 PC의 카테고리 이름이 됩니다" value={desktopName} onChange={(event) => setDesktopName(event.target.value)} />
+          <input placeholder={localized("STR-1040")} value={desktopName} onChange={(event) => setDesktopName(event.target.value)} />
         </div>
       </label>
       <label className="set-field">
-        <span className="set-field-label">봇 토큰{status?.tokenMask ? ` (저장됨: ${status.tokenMask})` : ""}</span>
+        <span className="set-field-label"><LocalizedText id="STR-1042" />{status?.tokenMask ? ` (저장됨: ${status.tokenMask})` : ""}</span>
         <div className="set-input">
           <KeyRound size={14} />
           <input
             type="password"
-            placeholder={status?.tokenMask ? "변경할 때만 입력" : "Discord 개발자 포털 → Bot → Reset Token"}
+            placeholder={status?.tokenMask ? localized("STR-1043") : localized("STR-1044")}
             value={token}
             onChange={(event) => setToken(event.target.value)}
           />
         </div>
       </label>
       <label className="set-field">
-        <span className="set-field-label">서버(길드) ID</span>
+        <span className="set-field-label"><LocalizedText id="STR-1045" /></span>
         <div className="set-input">
-          <input placeholder="비워두면 자동 감지 (봇이 서버 1개일 때)" value={guildId} onChange={(event) => setGuildId(event.target.value)} />
+          <input placeholder={localized("STR-1046")} value={guildId} onChange={(event) => setGuildId(event.target.value)} />
         </div>
       </label>
       <label className="set-field">
-        <span className="set-field-label">허용 사용자 ID</span>
+        <span className="set-field-label"><LocalizedText id="STR-1047" /></span>
         <div className="set-input">
           <ShieldCheck size={14} />
-          <input placeholder="쉼표로 구분 · 비우면 아무도 멤버에게 말을 걸 수 없음" value={allowed} onChange={(event) => setAllowed(event.target.value)} />
+          <input placeholder={localized("STR-1048")} value={allowed} onChange={(event) => setAllowed(event.target.value)} />
         </div>
       </label>
       </div>
       <div className="set-inline-note is-warn">
         <ShieldCheck size={14} />
-        <span>여기 적힌 사용자만 멤버에게 지시할 수 있습니다. 멤버는 이 PC에서 파일을 고치고 명령을 실행하므로, 비워두면 인바운드는 전부 차단됩니다.</span>
+        <span><LocalizedText id="STR-1049" /></span>
       </div>
       <div className="set-harness-pick">
         <button type="button" className={"set-btn-accent" + (saved ? " is-saved" : "")} onClick={save}><Check size={14} /> {saved ? "저장됨" : "저장"}</button>
-        <span className="set-save-hint">저장하면 봇이 재연결됩니다.</span>
+        <span className="set-save-hint"><LocalizedText id="STR-1052" /></span>
       </div>
     </>
   );
@@ -742,13 +744,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         <SubtreeVisibility visible={tab === "harness"}>
             <div className="set-tab-note">
               <InfoIcon size={14} />
-              <span>여기서 정한 값은 해당 하네스로 만드는 새 멤버의 시작값입니다. 멤버별로 언제든 덮어쓸 수 있습니다.</span>
+              <span><LocalizedText id="STR-1080" /></span>
             </div>
             {/* One harness at a time. Side by side, the cards were a wall of
                 controls whose rows never lined up — each harness has different
                 axes (Codex sandbox × approval, Cursor mode × approval), so the
                 columns were the same width but never the same shape. */}
-            <div className="set-subtabs" role="tablist" aria-label="하네스">
+            <div className="set-subtabs" role="tablist" aria-label={localized("STR-1081")}>
               {HARNESS_IDS.map((id) => (
                 <button
                   type="button"
@@ -760,7 +762,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 >
                   <span className={"set-harness-icon is-" + id}><HarnessIcon harness={id} size={14} /></span>
                   {HARNESS_LABELS[id]}
-                  {dirtyCards[id] && <span className="set-subtab-dot" title="저장되지 않은 변경" />}
+                  {dirtyCards[id] && <span className="set-subtab-dot" title={localized("STR-1082")} />}
                 </button>
               ))}
             </div>
@@ -789,7 +791,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         <div className="set-tab-panel" hidden={tab !== "primer"}>
         <SubtreeVisibility visible={tab === "primer"}>
           <section className="set-card">
-            <div className="set-card-label">파티 프롬프트<span className="set-card-sub wb-mono">멤버 세션 시스템 프롬프트</span></div>
+            <div className="set-card-label"><LocalizedText id="STR-1084" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1083" /></span></div>
             <PartyPrimerSettings
               settings={settings.partyPrimer}
               onSave={onSavePartyPrimer}
@@ -804,7 +806,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         <div className="set-tab-panel" hidden={tab !== "gate"}>
         <SubtreeVisibility visible={tab === "gate"}>
           <section className="set-card">
-            <div className="set-card-label">Message Gate<span className="set-card-sub wb-mono">메시지 검문 · 리뷰어 기본값</span></div>
+            <div className="set-card-label"><LocalizedText id="STR-1086" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1085" /></span></div>
             <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
           </section>
         </SubtreeVisibility>
@@ -819,7 +821,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             </section>
             {bindingCount > 0 && (
               <section className="set-card">
-                <div className="set-card-label">연결된 멤버</div>
+                <div className="set-card-label"><LocalizedText id="STR-1087" /></div>
                 <div className="set-link-list">
                   {discord!.bindings.map((binding) => (
                     <div className="set-link-row" key={`${binding.member}:${binding.channelName}`}>
@@ -935,14 +937,14 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
     <>
       <div className="set-tab-note">
         <InfoIcon size={14} />
-        <span>멤버를 만들기 전에 <b>이 PC가 준비됐는지</b> 확인합니다. 문제가 있으면 그 자리에서 해결할 수 있습니다.</span>
+        <span><LocalizedText id="STR-1103" /> <b><LocalizedText id="STR-1104" /></b>  <LocalizedText id="STR-1105" /></span>
       </div>
 
       {loadError && (
         <div className="set-inline-note is-error">
           <AlertTriangle size={14} />
-          <span>환경을 점검하지 못했습니다: {loadError}</span>
-          <button type="button" className="set-link-btn" onClick={() => void load({ refresh: true })}><RefreshCw size={12} /> 다시 시도</button>
+          <span><LocalizedText id="STR-1106" /> {loadError}</span>
+          <button type="button" className="set-link-btn" onClick={() => void load({ refresh: true })}><RefreshCw size={12} />  <LocalizedText id="STR-1107" /></button>
         </div>
       )}
 
@@ -956,7 +958,7 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
               <div className="set-card-label">{group.label}<span className="set-card-sub wb-mono">{group.hint}</span></div>
               <div className="set-inline-note">
                 <InfoIcon size={14} />
-                <span>배포판을 점검하면 <b>해당 배포판이 시작됩니다</b>. 그래서 자동으로 하지 않습니다.</span>
+                <span><LocalizedText id="STR-1108" /> <b><LocalizedText id="STR-1109" /></b>. 그래서 자동으로 하지 않습니다.</span>
               </div>
               <div className="set-diag-actions">
                 <button type="button" className="set-btn-soft" data-env="check-wsl" disabled={wslLoading} onClick={() => void load({ refresh: true, includeWsl: true })}>
@@ -996,10 +998,10 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
       })}
 
       <section className="set-card">
-        <div className="set-card-label">실행 파일 경로<span className="set-card-sub wb-mono">비워두면 자동으로 찾습니다</span></div>
+        <div className="set-card-label"><LocalizedText id="STR-1115" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1114" /></span></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
-          <span>이미 설치했는데 위에서 <b>찾지 못했다고</b> 나오면, 실행 파일 경로를 직접 지정하세요.</span>
+          <span><LocalizedText id="STR-1117" /> <b><LocalizedText id="STR-1118" /></b>  <LocalizedText id="STR-1116" /></span>
         </div>
         {EXECUTABLE_FIELDS.map((entry) => (
           <ExecutablePathField
@@ -1019,7 +1021,7 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
         <button type="button" className="set-btn-accent" data-env="refresh" disabled={loading} onClick={() => void load({ refresh: true })}>
           <RefreshCw size={14} /> {loading ? "점검 중…" : "다시 점검"}
         </button>
-        {report?.expectedClaudeCli && <span className="set-save-hint">이 빌드가 기대하는 Claude Code: {report.expectedClaudeCli}</span>}
+        {report?.expectedClaudeCli && <span className="set-save-hint"><LocalizedText id="STR-1121" /> {report.expectedClaudeCli}</span>}
       </div>
     </>
   );
@@ -1077,13 +1079,13 @@ function ExecutablePathField({ field, label, value, onSave }: {
           <input
             data-env-field={field}
             value={draft}
-            placeholder="자동으로 찾기"
+            placeholder={localized("STR-1122")}
             spellCheck={false}
             onChange={(event) => setDraft(event.target.value)}
           />
         </span>
         <button type="button" className="set-btn-soft" disabled={!dirty} onClick={() => onSave(draft.trim())}>
-          <Check size={14} /> 적용
+          <Check size={14} />  <LocalizedText id="STR-1123" />
         </button>
       </span>
     </label>
@@ -1148,19 +1150,19 @@ function DiagnosticsCard({ active }: { active: boolean }) {
     <>
       <div className="set-tab-note">
         <InfoIcon size={14} />
-        <span>문제가 생겼을 때 <b>버전과 로그</b>를 함께 전달하면 원인을 훨씬 빨리 찾을 수 있습니다.</span>
+        <span><LocalizedText id="STR-1127" /> <b><LocalizedText id="STR-1128" /></b><LocalizedText id="STR-1126" /></span>
       </div>
 
       {loadError && (
         <div className="set-inline-note is-error">
           <AlertTriangle size={14} />
-          <span>진단 정보를 읽지 못했습니다: {loadError}</span>
-          <button type="button" className="set-link-btn" onClick={() => void load()}><RefreshCw size={12} /> 다시 시도</button>
+          <span><LocalizedText id="STR-1129" /> {loadError}</span>
+          <button type="button" className="set-link-btn" onClick={() => void load()}><RefreshCw size={12} />  <LocalizedText id="STR-1130" /></button>
         </div>
       )}
 
       <section className="set-card">
-        <div className="set-card-label">버전<span className="set-card-sub wb-mono">제보할 때 이 값을 함께 알려주세요</span></div>
+        <div className="set-card-label"><LocalizedText id="STR-1131" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1132" /></span></div>
         <DiagnosticsRow label="AgentParty" value={versionText} loading={loading} copiedId={copied} copyId="version" onCopy={copy} />
         {report?.versionError && (
           <div className="set-inline-note is-warn">
@@ -1169,17 +1171,17 @@ function DiagnosticsCard({ active }: { active: boolean }) {
           </div>
         )}
         <DiagnosticsRow label="OS" value={report ? `${report.os.platform} ${report.os.release} (${report.os.arch})` : ""} loading={loading} />
-        <DiagnosticsRow label="작업공간" value={report ? `${report.workspace.kind === "wsl" ? `WSL(${report.workspace.distro || "?"})` : "로컬"} · ${report.workspace.path}` : ""} loading={loading} />
-        <DiagnosticsRow label="앱 경로" value={report?.appRoot || ""} loading={loading} />
+        <DiagnosticsRow label={localized("STR-1134")} value={report ? `${report.workspace.kind === "wsl" ? `WSL(${report.workspace.distro || "?"})` : "로컬"} · ${report.workspace.path}` : ""} loading={loading} />
+        <DiagnosticsRow label={localized("STR-1135")} value={report?.appRoot || ""} loading={loading} />
       </section>
 
       <section className="set-card">
-        <div className="set-card-label">로그<span className="set-card-sub wb-mono">NDJSON · 실행할 때마다 새 파일</span></div>
-        <DiagnosticsRow label="파일" value={report?.logs.filePath || ""} loading={loading} copiedId={copied} copyId="logFile" onCopy={copy} />
+        <div className="set-card-label"><LocalizedText id="STR-1136" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1137" /></span></div>
+        <DiagnosticsRow label={localized("STR-1138")} value={report?.logs.filePath || ""} loading={loading} copiedId={copied} copyId="logFile" onCopy={copy} />
         <div className="set-diag-actions">
-          <button type="button" className="set-btn-soft" data-diag="open-logs" disabled={!report} onClick={() => void openLogFolder()}><FolderOpen size={14} /> 로그 폴더 열기</button>
+          <button type="button" className="set-btn-soft" data-diag="open-logs" disabled={!report} onClick={() => void openLogFolder()}><FolderOpen size={14} />  <LocalizedText id="STR-1139" /></button>
           <button type="button" className="set-btn-soft" data-diag="copy-log-folder" disabled={!report} onClick={() => copy("logFolder", report?.logs.folderPath || "")}>
-            {copied === "logFolder" ? <Check size={14} /> : <Copy size={14} />} 폴더 경로 복사
+            {copied === "logFolder" ? <Check size={14} /> : <Copy size={14} />}  <LocalizedText id="STR-1140" />
           </button>
         </div>
         {openError && (
@@ -1191,17 +1193,17 @@ function DiagnosticsCard({ active }: { active: boolean }) {
       </section>
 
       <section className="set-card">
-        <div className="set-card-label">진단 정보<span className="set-card-sub wb-mono">한 번에 복사해서 붙여넣기</span></div>
+        <div className="set-card-label"><LocalizedText id="STR-1141" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1142" /></span></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
-          <span>버전·OS·작업공간·로그 위치·인증 상태를 한 덩어리로 모은 것입니다. <b>비밀 키는 담기지 않습니다</b> — 그대로 붙여넣어도 안전합니다.</span>
+          <span><LocalizedText id="STR-1144" /> <b><LocalizedText id="STR-1145" /></b>  <LocalizedText id="STR-1143" /></span>
         </div>
         <pre className="set-diag-report wb-mono">{reportText || (loading ? "읽는 중…" : "—")}</pre>
         <div className="set-diag-actions">
           <button type="button" className="set-btn-accent" data-diag="copy-report" disabled={!report} onClick={() => copy("report", reportText)}>
-            {copied === "report" ? <Check size={14} /> : <Copy size={14} />} 진단 정보 복사
+            {copied === "report" ? <Check size={14} /> : <Copy size={14} />}  <LocalizedText id="STR-1147" />
           </button>
-          <button type="button" className="set-btn-soft" data-diag="refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={14} /> 새로고침</button>
+          <button type="button" className="set-btn-soft" data-diag="refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={14} />  <LocalizedText id="STR-1148" /></button>
         </div>
       </section>
     </>
@@ -1298,28 +1300,28 @@ function VersionsCard({ active }: { active: boolean }) {
     <>
       <div className="set-tab-note">
         <InfoIcon size={14} />
-        <span>설치된 버전과 <b>배포된 모든 버전의 변경 내역</b>을 봅니다. 새 버전 설치는 제목 표시줄의 업데이트 배지에서도 할 수 있습니다.</span>
+        <span><LocalizedText id="STR-1150" /> <b><LocalizedText id="STR-1149" /></b><LocalizedText id="STR-1151" /></span>
       </div>
 
       <section className="set-card">
-        <div className="set-card-label">설치된 버전<span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>
+        <div className="set-card-label"><LocalizedText id="STR-1152" /><span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>
         <div className="set-ver-current">
           <span className="wb-mono set-ver-badge">v{current || "?"}</span>
-          {upToDate && <span className="set-ver-tag is-ok">최신</span>}
+          {upToDate && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1153" /></span>}
           {status?.state === "available" && (
             <span className={status.downgrade ? "set-ver-tag is-warn" : "set-ver-tag is-new"}>
               v{status.latestVersion} {status.downgrade ? "로 되돌리기 가능" : "사용 가능"}
             </span>
           )}
-          {status?.state === "downloaded" && <span className="set-ver-tag is-new">v{status.latestVersion} 설치 준비됨</span>}
+          {status?.state === "downloaded" && <span className="set-ver-tag is-new">v{status.latestVersion}  <LocalizedText id="STR-1156" /></span>}
           {status?.state === "disabled" && <span className="set-ver-note">{status.disabledReason}</span>}
           {status?.state === "error" && <span className="set-ver-note is-error">{status.error}</span>}
         </div>
         <div className="set-diag-actions">
           <button type="button" className="set-btn-soft" data-ver="check" disabled={checking} onClick={() => void check()}>
-            <RefreshCw size={14} className={checking ? "wb-spin" : undefined} /> 업데이트 확인
+            <RefreshCw size={14} className={checking ? "wb-spin" : undefined} />  <LocalizedText id="STR-1157" />
           </button>
-          <button type="button" className="set-btn-soft" data-ver="open-dialog" onClick={openUpdateDialog}>업데이트 창 열기</button>
+          <button type="button" className="set-btn-soft" data-ver="open-dialog" onClick={openUpdateDialog}><LocalizedText id="STR-1158" /></button>
         </div>
       </section>
 
@@ -1327,12 +1329,12 @@ function VersionsCard({ active }: { active: boolean }) {
         <div className="set-inline-note is-error">
           <AlertTriangle size={14} />
           <span>{listError}</span>
-          <button type="button" className="set-link-btn" onClick={() => void loadReleases(true)}><RefreshCw size={12} /> 다시 시도</button>
+          <button type="button" className="set-link-btn" onClick={() => void loadReleases(true)}><RefreshCw size={12} />  <LocalizedText id="STR-1159" /></button>
         </div>
       )}
 
       <section className="set-card">
-        <div className="set-card-label">최신 버전<span className="set-card-sub wb-mono">{latest?.publishedAt ? new Date(latest.publishedAt).toLocaleDateString() : ""}</span></div>
+        <div className="set-card-label"><LocalizedText id="STR-1160" /><span className="set-card-sub wb-mono">{latest?.publishedAt ? new Date(latest.publishedAt).toLocaleDateString() : ""}</span></div>
         {!latest ? (
           <div className="set-ver-empty">{loading ? "불러오는 중…" : listError ? "목록을 불러오지 못했습니다." : "게시된 릴리스가 없습니다."}</div>
         ) : (
@@ -1340,14 +1342,14 @@ function VersionsCard({ active }: { active: boolean }) {
             <div className="set-ver-head">
               <span className="wb-mono set-ver-badge is-latest">v{latest.version}</span>
               {releaseTitle(latest) && <span className="set-ver-name">{releaseTitle(latest)}</span>}
-              {latest.prerelease && <span className="set-ver-tag">프리릴리스</span>}
-              {isCurrent(latest) && <span className="set-ver-tag is-ok">설치됨</span>}
+              {latest.prerelease && <span className="set-ver-tag"><LocalizedText id="STR-1164" /></span>}
+              {isCurrent(latest) && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1165" /></span>}
               <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(latest.url)}>
-                <ArrowRight size={12} /> 릴리스 페이지
+                <ArrowRight size={12} />  <LocalizedText id="STR-1166" />
               </button>
             </div>
             <div className="set-ver-notes">
-              {latest.notes ? <Markdown text={latest.notes} /> : <span className="set-ver-empty">변경 내역이 작성되지 않았습니다.</span>}
+              {latest.notes ? <Markdown text={latest.notes} /> : <span className="set-ver-empty"><LocalizedText id="STR-1167" /></span>}
             </div>
           </div>
         )}
@@ -1356,12 +1358,12 @@ function VersionsCard({ active }: { active: boolean }) {
       <section className="set-card">
         <button type="button" className="set-ver-toggle" data-ver="history-toggle" onClick={() => setShowHistory((v) => !v)}>
           <ChevronDown size={14} className={showHistory ? "set-ver-chev is-open" : "set-ver-chev"} />
-          <span>이전 버전 보기</span>
+          <span><LocalizedText id="STR-1168" /></span>
           <span className="set-card-sub wb-mono">{history.length}개</span>
         </button>
         {showHistory && (
           history.length === 0 ? (
-            <div className="set-ver-empty">이전 버전이 없습니다. 지금이 첫 릴리스입니다.</div>
+            <div className="set-ver-empty"><LocalizedText id="STR-1169" /></div>
           ) : (
             <ul className="set-ver-list">
               {history.map((release) => (
@@ -1370,15 +1372,15 @@ function VersionsCard({ active }: { active: boolean }) {
                     <ChevronDown size={13} className={openNotes.has(release.version) ? "set-ver-chev is-open" : "set-ver-chev"} />
                     <span className="wb-mono set-ver-badge">v{release.version}</span>
                     {releaseTitle(release) && <span className="set-ver-name">{releaseTitle(release)}</span>}
-                    {release.prerelease && <span className="set-ver-tag">프리릴리스</span>}
-                    {isCurrent(release) && <span className="set-ver-tag is-ok">설치됨</span>}
+                    {release.prerelease && <span className="set-ver-tag"><LocalizedText id="STR-1170" /></span>}
+                    {isCurrent(release) && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1171" /></span>}
                     <span className="set-ver-date wb-mono">{release.publishedAt ? new Date(release.publishedAt).toLocaleDateString() : ""}</span>
                   </button>
                   {openNotes.has(release.version) && (
                     <div className="set-ver-notes">
-                      {release.notes ? <Markdown text={release.notes} /> : <span className="set-ver-empty">변경 내역이 작성되지 않았습니다.</span>}
+                      {release.notes ? <Markdown text={release.notes} /> : <span className="set-ver-empty"><LocalizedText id="STR-1172" /></span>}
                       <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(release.url)}>
-                        <ArrowRight size={12} /> 릴리스 페이지
+                        <ArrowRight size={12} />  <LocalizedText id="STR-1173" />
                       </button>
                     </div>
                   )}
@@ -1407,7 +1409,7 @@ function DiagnosticsRow({ label, value, loading, copyId, copiedId, onCopy }: {
       <span className="set-diag-key">{label}</span>
       <span className="set-diag-value wb-mono">{value || (loading ? "읽는 중…" : "—")}</span>
       {copyId && onCopy && (
-        <button type="button" className="set-icon-btn" data-diag={`copy-${copyId}`} title="복사" disabled={!value} onClick={() => onCopy(copyId, value)}>
+        <button type="button" className="set-icon-btn" data-diag={`copy-${copyId}`} title={localized("STR-1071")} disabled={!value} onClick={() => onCopy(copyId, value)}>
           {copiedId === copyId ? <Check size={14} /> : <Copy size={13} />}
         </button>
       )}
@@ -1458,11 +1460,11 @@ function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undef
     <>
       <div className="set-inline-note">
         <InfoIcon size={14} />
-        <span>앱 전체에 즉시 적용됩니다. <b>UI 글꼴</b>은 화면 텍스트에, <b>코드 글꼴</b>은 코드·도구 출력·모노스페이스 표기에 쓰입니다. 글씨 <b>크기</b>는 대화 위에서 Ctrl+휠로 조절합니다.</span>
+        <span><LocalizedText id="STR-1177" /> <b><LocalizedText id="STR-1182" /></b><LocalizedText id="STR-1179" /> <b><LocalizedText id="STR-1180" /></b><LocalizedText id="STR-1178" /> <b><LocalizedText id="STR-1181" /></b><LocalizedText id="STR-1176" /></span>
       </div>
       <FontPicker
         role="sans"
-        label="UI 글꼴"
+        label={localized("STR-1183")}
         value={selection.sans}
         families={families}
         available={available}
@@ -1472,7 +1474,7 @@ function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undef
       />
       <FontPicker
         role="mono"
-        label="코드 글꼴"
+        label={localized("STR-1184")}
         value={selection.mono}
         families={families}
         available={available}
@@ -1536,13 +1538,13 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
     <div className="set-gate-defaults">
       <div className="set-inline-note">
         <MessageGateIcon size={14} />
-        <span>게이트가 켜진 멤버가 자체 리뷰어를 지정하지 않으면 이 기본 리뷰어로 메시지를 심사합니다. <b>저렴하고 빠른 모델(Haiku)</b>을 권장합니다. 하네스 없이 헤드리스로 실행됩니다.</span>
+        <span><LocalizedText id="STR-1193" /> <b><LocalizedText id="STR-1195" /></b><LocalizedText id="STR-1194" /></span>
       </div>
       <GateReviewerControl
         routes={routes}
         reviewer={reviewer}
         onChange={onSave}
-        badge={recommended ? <span className="set-reco-badge">권장</span> : undefined}
+        badge={recommended ? <span className="set-reco-badge"><LocalizedText id="STR-1196" /></span> : undefined}
       />
     </div>
   );
@@ -1624,11 +1626,11 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
     <section className="set-harness-card">
       <div className="set-harness-head">
         <span className={"set-harness-icon is-" + harnessId}><HarnessIcon harness={harnessId} size={15} /></span>
-        <span className="set-harness-title">{label} 기본값</span>
+        <span className="set-harness-title">{label}  <LocalizedText id="STR-1199" /></span>
       </div>
 
       <div className="set-field">
-        <span className="set-field-label">모델</span>
+        <span className="set-field-label"><LocalizedText id="STR-1200" /></span>
         <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
           <span className="wb-mono">{selectedRoute?.label || model}</span>
           <ChevronDown size={14} />
@@ -1637,13 +1639,13 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       </div>
       {effortOptions.length > 0 && (
         <div className="set-field">
-          <span className="set-field-label">추론 강도</span>
+          <span className="set-field-label"><LocalizedText id="STR-1201" /></span>
           <Segmented value={effort || ""} options={effortOptions.map((option) => ({ id: option.id, label: option.label }))} onChange={(id) => setEffort(id as HarnessDefaults["effort"])} />
         </div>
       )}
       {thinkingOptions.length > 0 && (
         <div className="set-field">
-          <span className="set-field-label">추론 모드</span>
+          <span className="set-field-label"><LocalizedText id="STR-1202" /></span>
           {/* An unset value still has to point at the mode the model will actually
               use — the same resolution the catalog modal shows — or the control
               renders with nothing selected and reads as broken. */}
@@ -1656,7 +1658,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       )}
       {catalogOpen && (
         <ModelCatalogModal
-          title={`${label} 기본 실행 구성`}
+          title={localized("STR-1203", [label])}
           icon={<SquareTerminal size={16} />}
           routes={routes}
           value={{
@@ -1679,12 +1681,13 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
         />
       )}
       {isCodex && codexModels?.status === "pending" && (
-        <div className="set-inline-note is-soft">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 계정의 전체 모델로 갱신됩니다.</div>
+        <div className="set-inline-note is-soft"><LocalizedText id="STR-1205" /></div>
       )}
       {isCodex && codexModels?.status === "error" && (
         <div className="set-inline-note is-error">
-          Codex 모델 목록을 불러오지 못해 기본 모델만 표시됩니다: {codexModels.error}
-          {onRefreshCodexModels && <button type="button" className="set-link-btn" onClick={onRefreshCodexModels}><RefreshCw size={12} /> 다시 시도</button>}
+
+          <LocalizedText id="STR-1206" /> {codexModels.error}
+          {onRefreshCodexModels && <button type="button" className="set-link-btn" onClick={onRefreshCodexModels}><RefreshCw size={12} />  <LocalizedText id="STR-1207" /></button>}
         </div>
       )}
 
@@ -1693,7 +1696,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
           axes a settings-only preset dropdown used to hide (Codex sandbox ×
           approval + Guardian, Cursor mode × approval). */}
       <div className="set-field">
-        <span className="set-field-label">초기 권한</span>
+        <span className="set-field-label"><LocalizedText id="STR-1208" /></span>
         <HarnessPermissionControl
           harnessId={harnessId}
           variant="inline"
@@ -1732,16 +1735,16 @@ export function AutomationView({ automationApi, logs, debugEnabled, fonts, onTog
   return (
     <section className="legacy-view narrow set-stack">
       <section className="card">
-        <div className="card-title">글꼴</div>
+        <div className="card-title"><LocalizedText id="STR-1211" /></div>
         <FontSettingsCard settings={fonts} onSave={onSaveFonts} />
       </section>
       <section className="card">
-        <div className="card-title">자동화 API</div>
+        <div className="card-title"><LocalizedText id="STR-1212" /></div>
         <Info label="API" value={automationApi?.baseUrl || ""} />
         <Info label="Spec" value={automationApi?.spec || ""} />
         <Info label="Logs" value={logs?.logFilePath || ""} />
-        <label className="toggle-line"><input type="checkbox" checked={debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} />디버그 로그</label>
-        <button className="ghost-btn" type="button" onClick={() => navigator.clipboard?.writeText(automationApi?.spec || "")}><Copy size={15} /> API 스펙 URL 복사</button>
+        <label className="toggle-line"><input type="checkbox" checked={debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} /><LocalizedText id="STR-1073" /></label>
+        <button className="ghost-btn" type="button" onClick={() => navigator.clipboard?.writeText(automationApi?.spec || "")}><Copy size={15} />  <LocalizedText id="STR-1214" /></button>
         <div className="api-hint wb-mono">{automationApi?.spec || "API 시작 중..."}</div>
       </section>
     </section>

@@ -6,6 +6,7 @@ import { MessageGateIcon } from "./MessageGateIcon";
 import { GateReviewerControl } from "./GateReviewerControl";
 import type { RouteLike } from "./routes";
 import { effectiveGate, type GateMode, type GateReviewer, type PartyGate } from "../../shared/messageGate";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface PartyGateModalProps {
   party: PartyDefinition;
@@ -77,12 +78,12 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <MessageGateIcon size={16} className="wb-gate-accent" />
-            <strong>Message Gate</strong>
-            <span className="wb-mono wb-modal-sub">파티 전역 · {party.name}</span>
+            <strong><LocalizedText id="STR-1984" /></strong>
+            <span className="wb-mono wb-modal-sub"><LocalizedText id="STR-1985" /> {party.name}</span>
             <span className="wb-flex-spacer" />
-            <span className="wb-gate-status-chip">{onCount} / {members.length}명 심사 중</span>
+            <span className="wb-gate-status-chip">{onCount} / {members.length}<LocalizedText id="STR-1986" /></span>
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-1987")} onClick={onClose}><X size={16} /></button>
         </header>
 
         <div className="wb-modal-body wb-gate-modal-body">
@@ -91,20 +92,20 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
               <span className="wb-gate-toggle-text">
                 <span className="wb-gate-tile"><MessageGateIcon size={17} /></span>
                 <span>
-                  <strong>파티 메시지 게이트 기본값</strong>
-                  <small>Inherit 상태인 멤버는 이 값을 따릅니다. 멤버가 On/Off로 직접 재정의할 수 있어요.</small>
+                  <strong><LocalizedText id="STR-1988" /></strong>
+                  <small><LocalizedText id="STR-1989" /></small>
                 </span>
               </span>
               <input type="checkbox" className="wb-switch" checked={enabled} onChange={(event) => toggleEnabled(event.target.checked)} />
             </label>
             {enabled && (
               <>
-                <div className="wb-modal-label">통신 규칙 · 전역</div>
+                <div className="wb-modal-label"><LocalizedText id="STR-1990" /></div>
                 <textarea
                   className="wb-gate-textarea"
                   rows={4}
                   value={rule}
-                  placeholder="예: 간결하게 보내세요. 오케스트레이터 round-trip보다 멤버 간 직접 메시지를 우선하세요."
+                  placeholder={localized("STR-1991")}
                   onChange={(event) => setRule(event.target.value)}
                   onBlur={commitRule}
                 />
@@ -116,8 +117,8 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
             <div className="wb-gate-block">
               <label className="wb-gate-toggle-row">
                 <span className="wb-gate-toggle-text">
-                  <strong>리뷰어 모델 지정 · 파티 전역</strong>
-                  <small>끄면 설정 → Runtime의 게이트 기본 모델을 사용합니다. 멤버가 따로 지정하면 그 값이 우선합니다.</small>
+                  <strong><LocalizedText id="STR-1992" /></strong>
+                  <small><LocalizedText id="STR-1993" /></small>
                 </span>
                 <input
                   type="checkbox"
@@ -127,7 +128,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
                 />
               </label>
               {!reviewer ? (
-                <div className="wb-gate-default-chip wb-mono">설정 기본값 사용 · {gateDefaults.model} · {gateDefaults.effort}</div>
+                <div className="wb-gate-default-chip wb-mono"><LocalizedText id="STR-1994" /> {gateDefaults.model} · {gateDefaults.effort}</div>
               ) : (
                 <GateReviewerControl routes={routes} reviewer={reviewer} onChange={applyReviewer} modelLabel="모델" effortLabel="effort" />
               )}
@@ -136,8 +137,8 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
 
           <div className="wb-gate-block">
             <div className="wb-gate-block-head">
-              <strong>멤버별 상태</strong>
-              <span className="wb-gate-hint wb-mono">Inherit / On / Off · 즉시 적용</span>
+              <strong><LocalizedText id="STR-1996" /></strong>
+              <span className="wb-gate-hint wb-mono"><LocalizedText id="STR-1997" /></span>
             </div>
             <div className="wb-gate-member-list">
               {members.map((view) => {
@@ -168,13 +169,13 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
                         <button
                           type="button"
                           className="wb-gate-accent-live wb-gate-clear-override"
-                          title="이 멤버의 규칙 오버라이드를 지우고 전역 규칙을 따르게 합니다"
+                          title={localized("STR-2001")}
                           onClick={() => onClearMemberRule(view.name)}
                         >
-                          <Undo2 size={10} /> 오버라이드
+                          <Undo2 size={10} />  <LocalizedText id="STR-2002" />
                         </button>
                       ) : (
-                        <span>전역 규칙</span>
+                        <span><LocalizedText id="STR-2003" /></span>
                       )}
                       <span className="wb-gate-member-reviewer">
                         {view.member.gate?.reviewer
@@ -184,7 +185,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
                             : `기본값 · ${gateDefaults.model}`}
                       </span>
                     </span>
-                    <button type="button" className="wb-btn wb-btn-ghost wb-gate-edit-btn" onClick={() => onOpenMemberGate(view.name)}>편집</button>
+                    <button type="button" className="wb-btn wb-btn-ghost wb-gate-edit-btn" onClick={() => onOpenMemberGate(view.name)}><LocalizedText id="STR-2006" /></button>
                   </div>
                 );
               })}
@@ -195,7 +196,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}>완료</button>
+            <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}><LocalizedText id="STR-2007" /></button>
           </div>
         </footer>
       </div>

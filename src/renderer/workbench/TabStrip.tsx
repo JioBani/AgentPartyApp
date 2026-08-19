@@ -5,6 +5,7 @@ import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
 import { HarnessIcon } from "./HarnessIcon";
 import { splitTabs } from "./tabOverflow";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface TabStripProps {
   panel: PanelState;
@@ -33,13 +34,13 @@ function TabMarkers({ view }: { view: MemberView }) {
   const queued = view.member.queue?.items.length || 0;
   return (
     <>
-      {view.pendingApproval && <span className="wb-tab-badge">승인</span>}
+      {view.pendingApproval && <span className="wb-tab-badge"><LocalizedText id="STR-2143" /></span>}
       {!view.pendingApproval && view.unread > 0 && <span className="wb-tab-unread">{view.unread}</span>}
       {/* A hidden member's queue is otherwise completely invisible: the panel
           that would show it sits behind another tab. Dashed, like every
           "not delivered yet" mark in the queue UI. */}
       {queued > 0 && (
-        <span className="wb-tab-queue" title={`대기열 ${queued}건 — 응답 완료 후 순서대로 전송`}>
+        <span className="wb-tab-queue" title={localized("STR-2144", [queued])}>
           <AlignLeft size={8} />{queued}
         </span>
       )}
@@ -97,7 +98,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
               onPointerDown={(event) => { if (!cliOwned) onTabPointerDown(member, event); }}
               onClick={() => { if (!cliOwned) onSelect(member); }}
               aria-disabled={cliOwned}
-              title={cliOwned ? `${member} · 외부 CLI에서 작업 중` : `${member} · ${harnessLabel(view.member.runtime)}`}
+              title={cliOwned ? localized("STR-2145", [member]) : `${member} · ${harnessLabel(view.member.runtime)}`}
             >
               <span className="wb-tab-accent" />
               <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
@@ -114,7 +115,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
               <button
                 type="button"
                 className="wb-tab-close"
-                title="Close tab"
+                title={localized("STR-2146")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -133,7 +134,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
           <button
             type="button"
             className={"wb-tab-overflow" + (overflowOpen ? " is-open" : "")}
-            title={`탭 ${hidden.length}개 더 보기`}
+            title={localized("STR-2147", [hidden.length])}
             onClick={() => setOverflowOpen((open) => !open)}
           >
             <span className="wb-tab-overflow-n">+{hidden.length}</span>
@@ -149,7 +150,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
               <div className="wb-menu-catcher" onClick={() => setOverflowOpen(false)} />
               <div className="wb-tab-overflow-menu" role="menu">
                 <div className="wb-tab-overflow-head">
-                  <AlignLeft size={11} /> 숨겨진 탭 {hidden.length}
+                  <AlignLeft size={11} />  <LocalizedText id="STR-2148" /> {hidden.length}
                 </div>
                 {hidden.map((member) => {
                   const view = views.get(member);
@@ -172,7 +173,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                       <button
                         type="button"
                         className="wb-tab-close"
-                        title="Close tab"
+                        title={localized("STR-2149")}
                         onClick={(event) => {
                           event.stopPropagation();
                           onClose(member);
@@ -183,7 +184,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                     </div>
                   );
                 })}
-                <div className="wb-tab-overflow-foot">선택한 탭은 맨 앞으로 이동합니다</div>
+                <div className="wb-tab-overflow-foot"><LocalizedText id="STR-2150" /></div>
               </div>
             </>
           )}

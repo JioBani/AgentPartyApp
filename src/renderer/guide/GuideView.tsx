@@ -21,6 +21,7 @@ import { slideAt } from "./slides";
 import { GuideChat } from "./GuideChat";
 import { GuideStage } from "./GuideStage";
 import "./guide.css";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** The stage renders the real workbench at a fixed 1440×942 (see
  *  `.guide-stage-app` / `.guide-stage-frame`) and scales the whole box down. The
@@ -228,28 +229,30 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
           <button
             type="button"
             className={"wb-segment" + (mode === "chat" ? " is-active" : "")}
-            title="가이드에게 물어보기"
+            title={localized("STR-1302")}
             onClick={() => { setMode("chat"); setTocOpen(false); setAskOpen(false); }}
           >
             <MessageSquare size={13} />
-            물어보기
+
+            <LocalizedText id="STR-1303" />
           </button>
           <button
             type="button"
             className={"wb-segment" + (mode === "deck" ? " is-active" : "")}
-            title="앱을 움직여 보여주는 프레젠테이션"
+            title={localized("STR-1304")}
             // Re-applies the CURRENT slide, so leaving to ask a question and
             // coming back puts you where you were rather than at the start.
             onClick={() => apply(index)}
           >
             <Play size={13} />
-            가이드 보기
+
+            <LocalizedText id="STR-1305" />
           </button>
         </div>
         <span className="guide-spacer" />
         <span
           className={"guide-cost " + (paid ? "is-paid" : "is-free")}
-          title={paid ? "채팅은 선택한 모델의 비용이 발생한다" : "프레젠테이션은 AI를 쓰지 않는다"}
+          title={paid ? localized("STR-1306") : localized("STR-1307")}
         >
           <DollarSign size={11} />
           {paid ? "채팅은 비용이 발생" : "AI 사용 안 함"}
@@ -274,14 +277,15 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
               <div className="guide-deck-top">
                 <button type="button" className="ghost-btn" onClick={() => { setTocOpen((open) => !open); setAskOpen(false); }} aria-expanded={tocOpen}>
                   <Menu size={14} />
-                  목차
+
+                  <LocalizedText id="STR-1310" />
                 </button>
                 <span className="guide-scene">
-                  <span className="guide-scene-index">장면 {sceneNumberOf(index)} / {GUIDE_SCENES.length}</span>
+                  <span className="guide-scene-index"><LocalizedText id="STR-1311" /> {sceneNumberOf(index)} / {GUIDE_SCENES.length}</span>
                   <span>{scene.title}</span>
                 </span>
                 <span className="guide-spacer" />
-                <span className="guide-count">슬라이드 {index + 1} / {GUIDE_SLIDE_COUNT}</span>
+                <span className="guide-count"><LocalizedText id="STR-1312" /> {index + 1} / {GUIDE_SLIDE_COUNT}</span>
               </div>
 
               <div className="guide-progress">
@@ -290,7 +294,7 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
                     key={at}
                     type="button"
                     className={"guide-progress-seg" + (at < index ? " is-seen" : "") + (at === index ? " is-current" : "")}
-                    title={`슬라이드 ${at + 1}`}
+                    title={localized("STR-1313", [at + 1])}
                     onClick={() => apply(at)}
                   />
                 ))}
@@ -324,22 +328,23 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
               </div>
 
               <div className="guide-deck-bottom">
-                <button type="button" className="guide-nav-btn" title="이전 (←)" disabled={index <= 0} onClick={() => apply(index - 1)}>
+                <button type="button" className="guide-nav-btn" title={localized("STR-1314")} disabled={index <= 0} onClick={() => apply(index - 1)}>
                   <ChevronLeft size={15} />
                 </button>
                 <button
                   type="button"
                   className="guide-nav-btn"
-                  title="다음 (→)"
+                  title={localized("STR-1315")}
                   onClick={() => (index >= GUIDE_SLIDE_COUNT - 1 ? setMode("end") : apply(index + 1))}
                 >
                   <ChevronRight size={15} />
                 </button>
-                <span className="guide-hint">← → 로 한 단계씩 · Home 처음으로</span>
+                <span className="guide-hint"><LocalizedText id="STR-1316" /></span>
                 <span className="guide-spacer" />
                 <button type="button" className="guide-ask-fab" onClick={() => { setAskOpen((open) => !open); setTocOpen(false); }}>
                   <MessageSquare size={14} />
-                  질문하기
+
+                  <LocalizedText id="STR-1317" />
                 </button>
               </div>
             </div>
@@ -366,14 +371,15 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
             {askOpen ? (
               <div className="guide-ask-sheet">
                 <div className="guide-ask-head">
-                  <strong>질문하기</strong>
+                  <strong><LocalizedText id="STR-1318" /></strong>
                   <span className="guide-attach">
                     <Play size={10} />
-                    슬라이드 {index + 1} · {scene.title}
+
+                    <LocalizedText id="STR-1319" /> {index + 1} · {scene.title}
                   </span>
                   <span className="guide-spacer" />
-                  <span className="guide-cost is-paid"><DollarSign size={11} />여기서부터 비용 발생</span>
-                  <button type="button" className="wb-icon-btn" title="접기" onClick={() => setAskOpen(false)}><X size={14} /></button>
+                  <span className="guide-cost is-paid"><DollarSign size={11} /><LocalizedText id="STR-1320" /></span>
+                  <button type="button" className="wb-icon-btn" title={localized("STR-1321")} onClick={() => setAskOpen(false)}><X size={14} /></button>
                 </div>
                 <GuideChat
                   kind="slide"
@@ -388,19 +394,20 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
 
         {mode === "end" ? (
           <div className="guide-end">
-            <h2>여기까지입니다</h2>
+            <h2><LocalizedText id="STR-1322" /></h2>
             <p>
-              이제 직접 해 볼 차례입니다. 하다가 막히면 왼쪽 메뉴의 <strong>문제 해결</strong>,
-              사용법이 궁금하면 언제든 이 가이드를 다시 열면 됩니다.
+
+              <LocalizedText id="STR-1325" /> <strong><LocalizedText id="STR-1324" /></strong><LocalizedText id="STR-1323" />
             </p>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <button type="button" className="ghost-btn" onClick={() => apply(0)}>다시 보기</button>
+              <button type="button" className="ghost-btn" onClick={() => apply(0)}><LocalizedText id="STR-1326" /></button>
               <button type="button" className="accent-btn" onClick={onLeave}>
-                작업공간으로
+
+                <LocalizedText id="STR-1327" />
                 <ArrowRight size={14} />
               </button>
             </div>
-            <p className="guide-hint">완료 표시는 두지 않습니다 — 다시 열면 처음부터입니다.</p>
+            <p className="guide-hint"><LocalizedText id="STR-1328" /></p>
           </div>
         ) : null}
       </div>
@@ -421,7 +428,7 @@ function GuideLanguage({ onError }: { onError: (message: string) => void }) {
   return (
     <select
       className="guide-lang"
-      aria-label="가이드 언어"
+      aria-label={localized("STR-1329")}
       value={language}
       onChange={(event) => {
         const next = event.target.value;
@@ -432,8 +439,8 @@ function GuideLanguage({ onError }: { onError: (message: string) => void }) {
         void window.agentPartyGuide.updateChatSettings({ language: "ko" }).catch((caught) => onError(String(caught)));
       }}
     >
-      <option value="ko">한국어</option>
-      <option value="en" disabled>English (준비 중)</option>
+      <option value="ko"><LocalizedText id="STR-1330" /></option>
+      <option value="en" disabled><LocalizedText id="STR-1331" /></option>
     </select>
   );
 }

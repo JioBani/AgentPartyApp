@@ -8,6 +8,7 @@ import {
   SandboxMode,
   codexPresetOf,
 } from "../../shared/codexPolicy";
+import { LocalizedText } from "../i18n/I18nProvider";
 
 const SANDBOX_SHORT: Record<SandboxMode, string> = { "read-only": "read", "workspace-write": "write", "danger-full-access": "full" };
 const APPROVAL_SHORT: Record<ApprovalPolicy, string> = { untrusted: "untrusted", "on-request": "ask", never: "never" };
@@ -104,11 +105,11 @@ export function CodexPermissionControl({
           </select>
         </label>
       </div>
-      {draft.sandbox === "danger-full-access" && <div className="wb-axis-warn">Full access removes the sandbox — Codex can touch anything.</div>}
+      {draft.sandbox === "danger-full-access" && <div className="wb-axis-warn"><LocalizedText id="STR-1567" /></div>}
       <label className="wb-toggle-card wb-codex-guardian">
         <span className="wb-toggle-text">
           <ShieldCheck size={15} />
-          <span><strong>Guardian</strong><small>위험 행동 사전 심사</small></span>
+          <span><strong>Guardian</strong><small><LocalizedText id="STR-1568" /></small></span>
         </span>
         <input type="checkbox" className="wb-switch" checked={draft.guardian} onChange={(event) => update({ ...draft, guardian: event.target.checked })} />
       </label>

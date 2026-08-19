@@ -5,6 +5,7 @@ import { ModelCatalogModal } from "./ModelCatalogModal";
 import { Segmented } from "./Segmented";
 import type { RouteLike } from "./routes";
 import type { GateReviewer } from "../../shared/messageGate";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
  * The models a gate reviewer can run on.
@@ -77,9 +78,9 @@ export function GateReviewerControl({
       )}
       {catalogOpen && (
         <ModelCatalogModal
-          title="게이트 리뷰어 모델"
+          title={localized("STR-1671")}
           icon={<MessageGateIcon size={16} />}
-          subtitle={<span className="wb-mono wb-modal-sub">헤드리스 · 하네스 없음</span>}
+          subtitle={<span className="wb-mono wb-modal-sub"><LocalizedText id="STR-1672" /></span>}
           routes={models}
           value={{ model: reviewer.model, effort: reviewer.effort }}
           config={{ effort: true }}

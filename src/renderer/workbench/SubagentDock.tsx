@@ -1,5 +1,6 @@
 import { ChevronRight, GitBranch } from "lucide-react";
 import type { SubDockView } from "./subagentModel";
+import { LocalizedText } from "../i18n/I18nProvider";
 
 interface SubagentDockProps {
   view: SubDockView;
@@ -20,7 +21,7 @@ export function SubagentDock({ view, onToggle, onOpen }: SubagentDockProps) {
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}>
         <ChevronRight size={11} className={"wb-subdock-caret" + (view.expanded ? " is-open" : "")} />
         <GitBranch size={13} className="wb-subdock-branch" />
-        <span className="wb-subdock-label">서브에이전트</span>
+        <span className="wb-subdock-label"><LocalizedText id="STR-2134" /></span>
         <span className="wb-subdock-count">{view.count}</span>
         <div className="wb-subdock-dots">
           {view.dots.map((dot, i) => (

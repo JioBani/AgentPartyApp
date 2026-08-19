@@ -6,6 +6,7 @@ import { DEFAULT_AUTO_COMPACT } from "../../shared/autoCompact";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import { thresholdWindowFor } from "./memberStatus";
 import { harnessForRuntime, harnessLabel } from "../../shared/types";
+import { localized } from "../i18n/I18nProvider";
 
 interface RuntimeModalProps {
   view: MemberView;
@@ -58,7 +59,7 @@ export function RuntimeModal({ view, routes, debugEnabled, actions, onClose }: R
 
   return (
     <ModelCatalogModal
-      title="Runtime"
+      title={localized("STR-2118")}
       icon={<SlidersHorizontal size={16} />}
       subtitle={
         <>

@@ -15,6 +15,7 @@ import {
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { thresholdWindowFor } from "./memberStatus";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 // The Auto-compact dialog's threshold slider band — the SAME settable range as the
 // Runtime modal's editor (10–95, step 1), so the two entry points never disagree.
@@ -72,7 +73,7 @@ export function AutoCompactEditor({ setting, contextWindow, title = "임계치 �
       <label className="wb-toggle-card">
         <span className="wb-toggle-text">
           <ChevronsDownUp size={17} />
-          <span><strong>{title}</strong><small>끄면 수동 압축만 사용합니다.</small></span>
+          <span><strong>{title}</strong><small><LocalizedText id="STR-1529" /></small></span>
         </span>
         <input
           type="checkbox"
@@ -84,7 +85,7 @@ export function AutoCompactEditor({ setting, contextWindow, title = "임계치 �
       {setting.on && (
         <div className="wb-compact-slider">
           <div className="wb-compact-readout">
-            <span>압축 임계치 · 컨텍스트 사용률</span>
+            <span><LocalizedText id="STR-1530" /></span>
             <span className="wb-compact-num">
               <input
                 type="number"
@@ -99,7 +100,7 @@ export function AutoCompactEditor({ setting, contextWindow, title = "임계치 �
               />
               <span className="wb-mono">%</span>
             </span>
-            {tokens != null && <span className="wb-mono wb-compact-tokens">≈ {Math.round(tokens / 1000)}K 토큰</span>}
+            {tokens != null && <span className="wb-mono wb-compact-tokens">≈ {Math.round(tokens / 1000)}<LocalizedText id="STR-1531" /></span>}
           </div>
           <input
             type="range"
@@ -115,7 +116,7 @@ export function AutoCompactEditor({ setting, contextWindow, title = "임계치 �
             <span>{AUTO_COMPACT_GAUGE_MIN}%</span>
             <span>{AUTO_COMPACT_GAUGE_MAX}%</span>
           </div>
-          <div className="wb-compact-limit">{AUTO_COMPACT_FLOOR}% 미만 · {AUTO_COMPACT_CEIL}% 초과는 설정할 수 없습니다.</div>
+          <div className="wb-compact-limit">{AUTO_COMPACT_FLOOR}<LocalizedText id="STR-1532" /> {AUTO_COMPACT_CEIL}<LocalizedText id="STR-1533" /></div>
         </div>
       )}
     </div>
@@ -189,16 +190,16 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
               <span className="wb-dot" /> {view.name}
             </span>
           </div>
-          <button type="button" className="wb-icon-btn" title="Close" onClick={onClose}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-1534")} onClick={onClose}><X size={16} /></button>
         </header>
 
         <div className="wb-compact-body">
           {/* Current-usage card */}
           <div className="wb-compact-usage">
             <div className="wb-compact-usage-row">
-              <span>현재 컨텍스트 사용량</span>
+              <span><LocalizedText id="STR-1535" /></span>
               <span className="wb-mono wb-compact-usage-val" style={{ color: usedCol }}>
-                {total ? <>{toK(used)} / {toK(total)}<span className="wb-compact-usage-pct"> · {pct}%</span></> : <>{toK(used)} 토큰</>}
+                {total ? <>{toK(used)} / {toK(total)}<span className="wb-compact-usage-pct"> · {pct}%</span></> : <>{toK(used)}  <LocalizedText id="STR-1536" /></>}
               </span>
             </div>
             {total != null && pct != null && (
@@ -208,7 +209,7 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
               </div>
             )}
             {local.on && total != null && (
-              <div className="wb-mono wb-compact-usage-cap">막대 위 세로선 = 자동 압축이 실행되는 임계치</div>
+              <div className="wb-mono wb-compact-usage-cap"><LocalizedText id="STR-1537" /></div>
             )}
           </div>
 
@@ -216,7 +217,7 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
           <label className="wb-toggle-card">
             <span className="wb-toggle-text">
               <ChevronsDownUp size={15} />
-              <span><strong>임계치 초과 시 자동 압축</strong><small>끄면 입력창의 압축 버튼으로 수동 실행만 됩니다.</small></span>
+              <span><strong><LocalizedText id="STR-1539" /></strong><small><LocalizedText id="STR-1538" /></small></span>
             </span>
             <input
               type="checkbox"
@@ -230,9 +231,9 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
           {local.on && (
             <div className="wb-compact-thcard">
               <div className="wb-compact-readout">
-                <span>압축 임계치 · 컨텍스트 사용률</span>
+                <span><LocalizedText id="STR-1540" /></span>
                 <strong className="wb-mono wb-compact-thval">
-                  {local.at}%{atTokens != null && <span className="wb-compact-thtokens"> · ≈ {toK(atTokens)} 토큰</span>}
+                  {local.at}%{atTokens != null && <span className="wb-compact-thtokens"> · ≈ {toK(atTokens)}  <LocalizedText id="STR-1541" /></span>}
                 </strong>
               </div>
               <input
@@ -260,9 +261,9 @@ export function CompactModal({ view, actions, onClose }: ModalProps) {
             disabled={!view.session || view.compacting}
             onClick={() => { actions.compact(view.name); onClose(); }}
           >
-            <FoldVertical size={14} className={"wb-compact-glyph" + (view.compacting ? " wb-spin" : "")} /> 지금 압축 실행
+            <FoldVertical size={14} className={"wb-compact-glyph" + (view.compacting ? " wb-spin" : "")} />  <LocalizedText id="STR-1542" />
           </button>
-          <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}>완료</button>
+          <button type="button" className="wb-btn wb-btn-accent" onClick={onClose}><LocalizedText id="STR-1543" /></button>
         </footer>
       </div>
     </div>

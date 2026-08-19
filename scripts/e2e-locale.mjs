@@ -98,6 +98,9 @@ async function main() {
     await request("POST", "/api/settings/locale", { locale: "ko" });
     await delay(300);
     assert(await measuredText(".titlebar-brand .brand-sub") === "런타임", "switching back to Korean updates the same screen");
+    await request("POST", "/api/navigation", { view: "workbench" });
+    await delay(300);
+    assert(await measuredText(".wb-workarea-empty p") === "왼쪽에서 멤버를 클릭해 패널로 열어 시작하세요.", "a CSV-backed workbench message renders from the Korean catalog");
     await request("POST", "/api/window/close", {});
   } catch (error) {
     console.error(error);

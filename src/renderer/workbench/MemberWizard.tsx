@@ -22,6 +22,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface MemberWizardProps {
   routes: RouteLike[];
@@ -281,9 +282,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <UserPlus size={16} />
-            <strong>새 멤버</strong>
+            <strong><LocalizedText id="STR-1744" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title="취소" onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-1745")} onClick={onCancel}><X size={16} /></button>
         </header>
 
         {/* Named, numbered, and showing which are done: a step rail that only
@@ -311,29 +312,29 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
             {step === "identity" && (
             <>
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">멤버 이름</div>
+              <div className="wb-modal-label"><LocalizedText id="STR-1746" /></div>
               <input
                 className="wb-wizard-input"
                 autoFocus
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Enter") goNext(); }}
-                placeholder="예: reviewer"
+                placeholder={localized("STR-1747")}
               />
-              <p className="wb-wizard-hint">영문으로 시작, 영문·숫자·_·- 만 사용. 파티 안에서 이 이름으로 메시지를 받습니다.</p>
-              {name.trim() && !NAME_PATTERN.test(name.trim()) && <p className="wb-wizard-error">이름 형식이 올바르지 않습니다.</p>}
+              <p className="wb-wizard-hint"><LocalizedText id="STR-1748" /></p>
+              {name.trim() && !NAME_PATTERN.test(name.trim()) && <p className="wb-wizard-error"><LocalizedText id="STR-1749" /></p>}
             </section>
 
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">설명 <span className="wb-wizard-optional">선택</span></div>
+              <div className="wb-modal-label"><LocalizedText id="STR-1751" /> <span className="wb-wizard-optional"><LocalizedText id="STR-1750" /></span></div>
               <textarea
                 className="wb-wizard-input wb-wizard-textarea"
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
-                placeholder="예: 백엔드 API를 리뷰하고 이슈를 보고하는 담당자"
+                placeholder={localized("STR-1752")}
                 rows={2}
               />
-              <p className="wb-wizard-hint">멤버가 자기 역할로 전달받습니다. 비워 두면 역할이 지정되지 않았다고 알려줍니다.</p>
+              <p className="wb-wizard-hint"><LocalizedText id="STR-1753" /></p>
             </section>
 
             {/* Names the defaults rather than just promising them: "기본 설정으로
@@ -341,14 +342,14 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 without walking the steps to find out. */}
             <p className="wb-wizard-default-note">
               <Zap size={12} />
-              <span>기본 설정: <span className="wb-mono">{defaultSummary}</span> · 권한은 하네스 기본값</span>
+              <span><LocalizedText id="STR-1755" /> <span className="wb-mono">{defaultSummary}</span>  <LocalizedText id="STR-1754" /></span>
             </p>
             </>
             )}
 
             {step === "runtime" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">하네스 · 모델 · 추론</div>
+              <div className="wb-modal-label"><LocalizedText id="STR-1757" /></div>
               {/* Harness, model and reasoning are one decision, so they are made
                   in the catalog — the same screen used to retune a member later,
                   rather than a second arrangement of the same controls. */}
@@ -360,21 +361,22 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 <span className="wb-mono wb-wizard-runtime-sub">
                   {reasoningSummary(effortCap?.supported ? effort : "", thinkingCap?.supported ? thinkingMode : "", showBudget ? budget : undefined)}
                 </span>
-                <span className="wb-wizard-runtime-change">변경</span>
+                <span className="wb-wizard-runtime-change"><LocalizedText id="STR-1759" /></span>
               </button>
               {/* Kept out of the catalog: discovery state belongs to the list the
                   wizard is seeding from, and staying silent about a half-loaded
                   Codex list would let someone pick from a fallback believing it
                   to be their account's models. */}
               {harness === "codex" && codexModels?.status === "pending" && (
-                <p className="wb-wizard-hint">Codex 계정 모델 목록을 불러오는 중입니다… 완료되면 목록이 갱신됩니다.</p>
+                <p className="wb-wizard-hint"><LocalizedText id="STR-1760" /></p>
               )}
               {harness === "codex" && codexModels?.status === "error" && (
                 <p className="wb-wizard-error">
-                  Codex 모델 목록을 불러오지 못했습니다: {codexModels.error}
+
+                  <LocalizedText id="STR-1761" /> {codexModels.error}
                   {onRefreshCodexModels && (
                     <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshCodexModels}>
-                      <RefreshCw size={13} /> 다시 시도
+                      <RefreshCw size={13} />  <LocalizedText id="STR-1762" />
                     </button>
                   )}
                 </p>
@@ -384,7 +386,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
             {step === "permission" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label">초기 권한 <span className="wb-mono">{harnessLabel(executionHarness)}</span></div>
+              <div className="wb-modal-label"><LocalizedText id="STR-1763" /> <span className="wb-mono">{harnessLabel(executionHarness)}</span></div>
               <HarnessPermissionControl
                 harnessId={executionHarness}
                 variant="inline"
@@ -402,11 +404,11 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         </div>
 
         <footer className="wb-modal-foot wb-wizard-foot">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}>취소</button>
+          <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-1764" /></button>
           <div className="wb-modal-actions">
             {stepIndex > 0 && (
               <button type="button" className="wb-btn wb-btn-ghost wb-wizard-back" onClick={() => setStepIndex((current) => current - 1)}>
-                <ChevronLeft size={14} /> 이전
+                <ChevronLeft size={14} />  <LocalizedText id="STR-1765" />
               </button>
             )}
             {step === "identity" && (
@@ -414,19 +416,20 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 type="button"
                 className="wb-btn wb-btn-ghost"
                 disabled={!canCreate}
-                title={`${defaultSummary} 로 바로 만듭니다`}
+                title={localized("STR-1766", [defaultSummary])}
                 onClick={createWithDefaults}
               >
-                <Zap size={14} /> 기본 설정으로 만들기
+                <Zap size={14} />  <LocalizedText id="STR-1767" />
               </button>
             )}
             {isLastStep ? (
               <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
-                <UserPlus size={14} /> 멤버 생성
+                <UserPlus size={14} />  <LocalizedText id="STR-1768" />
               </button>
             ) : (
               <button type="button" className="wb-btn wb-btn-accent" disabled={!canAdvance} onClick={goNext}>
-                다음 <ChevronRight size={14} />
+
+                <LocalizedText id="STR-1769" /> <ChevronRight size={14} />
               </button>
             )}
           </div>
@@ -434,7 +437,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
 
         {pickerOpen && (
           <ModelCatalogModal
-            title="실행 구성"
+            title={localized("STR-1770")}
             routes={routes}
             value={{
               model: selected?.route.model || "",

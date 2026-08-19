@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, RefreshCw, Settings2 } from "lucide-react";
 import type { EnvironmentRemedy } from "../../shared/environment";
 import { ipcErrorMessage } from "../app/ipcError";
+import { LocalizedText } from "../i18n/I18nProvider";
 
 /**
  * The buttons that get a user out of a failed environment check.
@@ -95,7 +96,7 @@ export function EnvironmentRemedyButtons({ remedies, onRepaired, onOpenEnvironme
       {settings && button(settings)}
       {more.length > 0 && (
         <details className="set-env-more">
-          <summary>다른 방법</summary>
+          <summary><LocalizedText id="STR-1651" /></summary>
           <div className="set-env-more-actions">{more.map(button)}</div>
         </details>
       )}
@@ -109,7 +110,7 @@ export function EnvironmentRawDetail({ raw }: { raw: string }) {
   return (
     <div className="set-env-raw">
       <button type="button" className="set-link-btn" onClick={() => setOpen((value) => !value)}>
-        <ChevronDown size={12} /> 자세히
+        <ChevronDown size={12} />  <LocalizedText id="STR-1652" />
       </button>
       {open && <pre className="set-diag-report wb-mono">{raw}</pre>}
     </div>

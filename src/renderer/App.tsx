@@ -46,6 +46,7 @@ import { GuideOfferDialog } from "./app/GuideOfferDialog";
 import { GuideView } from "./guide/GuideView";
 import { createI18n, I18nProvider } from "./i18n/I18nProvider";
 import type { AppLocale } from "../shared/appLocale";
+import { localized } from "./i18n/I18nProvider";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -1590,7 +1591,7 @@ export function App() {
                   <h1>{viewTitle("workbench", t)}</h1>
                   <span className="wb-mono screen-repo">
                     {state.workspace?.kind === "wsl" && (
-                      <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>
+                      <span className="host-badge" title={localized("STR-0819", [state.workspace.distro])}>WSL · {state.workspace.distro}</span>
                     )}
                     {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
                   </span>
@@ -1653,7 +1654,7 @@ export function App() {
                     <span className="screen-chip">
                       <FolderOpen size={13} />
                       <span className="wb-mono">
-                        {state.workspace?.kind === "wsl" && <span className="host-badge" title={`WSL distro: ${state.workspace.distro}`}>WSL · {state.workspace.distro}</span>}
+                        {state.workspace?.kind === "wsl" && <span className="host-badge" title={localized("STR-0825", [state.workspace.distro])}>WSL · {state.workspace.distro}</span>}
                         {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
                       </span>
                     </span>

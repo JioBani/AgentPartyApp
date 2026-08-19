@@ -8,6 +8,8 @@
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
+    "i18n:sync": "node scripts/sync-i18n-catalog.cjs",
+    "test:i18n": "node scripts/qa-i18n-catalog.cjs",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\"",
     "dev:renderer": "vite --host 127.0.0.1",
     "dev:main": "node scripts/tsc-main.mjs --watch --preserveWatchOutput",

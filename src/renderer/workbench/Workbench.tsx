@@ -36,6 +36,7 @@ import { CompactModal } from "./AutoCompactEditor";
 import { PermissionModal } from "./PermissionModal";
 import { SessionStatusModal } from "./SessionStatusModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface WorkbenchProps {
   parties: PartyDefinition[];
@@ -612,10 +613,10 @@ export function Workbench(props: WorkbenchProps) {
             onOpenPartyInNewWindow={onOpenPartyInNewWindow}
             onCollapse={() => onToggleSidebar(false)}
           />
-          <div className="wb-sidebar-resize" title="사이드바 너비 조정" onPointerDown={onSidebarResizeDown} />
+          <div className="wb-sidebar-resize" title={localized("STR-2289")} onPointerDown={onSidebarResizeDown} />
         </>
       ) : (
-        <button type="button" className="wb-sidebar-reopen" title="파티 패널 열기" onClick={() => onToggleSidebar(true)}>
+        <button type="button" className="wb-sidebar-reopen" title={localized("STR-2290")} onClick={() => onToggleSidebar(true)}>
           <PanelLeftOpen size={16} />
         </button>
       )}
@@ -623,7 +624,7 @@ export function Workbench(props: WorkbenchProps) {
       <div className={"wb-workarea" + (drag ? " is-dragging" : "")} ref={workAreaRef}>
         {layout.panels.length === 0 && (
           <div className="wb-workarea-empty">
-            <p>왼쪽에서 멤버를 클릭해 패널로 열어 시작하세요.</p>
+            <p><LocalizedText id="STR-2291" /></p>
           </div>
         )}
         {layout.panels.map((panel, index) => (
@@ -672,7 +673,7 @@ export function Workbench(props: WorkbenchProps) {
         ))}
         {drag && (
           <div className={"wb-newpanel-zone" + (drag.overNew ? " is-over" : "")} data-drop-newpanel="1">
-            <span>여기에 놓아 새 패널 만들기</span>
+            <span><LocalizedText id="STR-2292" /></span>
           </div>
         )}
       </div>

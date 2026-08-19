@@ -6,6 +6,7 @@ import { guideActions, guideCommandUi, guideMemberView } from "./guideMemberView
 import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shared/guideChat";
 import { GuideModelModal } from "./GuideModelModal";
 import { guideModelLabel, useGuideRoutes } from "./guideRoutes";
+import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** Questions the guide can actually answer — no app-state questions on purpose,
  *  those belong to `문제 해결` (§6-2-1). */
@@ -82,7 +83,8 @@ export function GuideChat({
       {sheet ? null : (
         <p className="guide-composer-note">
           <Info size={12} />
-          여기서부터는 선택한 모델의 비용이 발생합니다.
+
+          <LocalizedText id="STR-1256" />
         </p>
       )}
       {error || view.error || routesError ? (
@@ -93,17 +95,18 @@ export function GuideChat({
         {/* The workbench keeps this pill in the panel header, which the guide has
             no room for — so the guide's own meta row carries it. Without it the
             model catalog has no entry point at all. */}
-        <button type="button" className="wb-pill wb-dd-trigger" title="모델 설정 · 카탈로그 열기" onClick={() => setModelOpen(true)}>
+        <button type="button" className="wb-pill wb-dd-trigger" title={localized("STR-1257")} onClick={() => setModelOpen(true)}>
           <span className="wb-dd-ic"><Cpu size={13} /></span>
           <span className="wb-mono">{label} · effort {settings.effort || "medium"}</span>
         </button>
         <span className="guide-spacer" />
         {sheet ? null : empty ? (
-          <span>지식 정본 <span className="wb-mono">guide/knowledge/</span> 를 읽고 답합니다</span>
+          <span><LocalizedText id="STR-1259" /> <span className="wb-mono">guide/knowledge/</span>  <LocalizedText id="STR-1258" /></span>
         ) : (
           <button type="button" className="ghost-btn" onClick={() => void reset()}>
             <RotateCcw size={13} />
-            새로 시작하기
+
+            <LocalizedText id="STR-1260" />
           </button>
         )}
       </div>
@@ -120,20 +123,21 @@ export function GuideChat({
         <div className="guide-chat-scroll">
           <div className="guide-chat-col">
                 <div className="guide-hero">
-                  <h1>무엇이 궁금한가요?</h1>
-                  <p>이 앱에 대해 물어보세요. 처음이라면 움직이는 화면으로 한 바퀴 보는 편이 빠릅니다.</p>
+                  <h1><LocalizedText id="STR-1261" /></h1>
+                  <p><LocalizedText id="STR-1262" /></p>
                 </div>
                 <div className="guide-offer-card">
                   <div>
-                    <strong>가이드 보기</strong>
-                    <small>앱을 실제로 움직여 보여줍니다 · 장면 4개 · 슬라이드 10장</small>
+                    <strong><LocalizedText id="STR-1263" /></strong>
+                    <small><LocalizedText id="STR-1264" /></small>
                   </div>
                   <button type="button" className="accent-btn" onClick={onStart}>
                     <Play size={14} />
-                    처음부터 보기
+
+                    <LocalizedText id="STR-1265" />
                   </button>
                 </div>
-                <p className="guide-section-label">이런 걸 물어봅니다</p>
+                <p className="guide-section-label"><LocalizedText id="STR-1266" /></p>
                 <div className="guide-suggests">
                   {SUGGESTS.map((text) => (
                     <button key={text} type="button" className="guide-suggest" onClick={() => void send(text)}>{text}</button>

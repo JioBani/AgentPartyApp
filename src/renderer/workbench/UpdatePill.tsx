@@ -1,5 +1,6 @@
 import { ArrowDownToLine, Download, History, RefreshCw, RotateCw } from "lucide-react";
 import { hasActionableUpdate, updatePillLabel, type UpdateStatus } from "../../shared/appUpdate";
+import { localized } from "../i18n/I18nProvider";
 
 interface UpdatePillProps {
   status: UpdateStatus | undefined;
@@ -33,10 +34,10 @@ export function UpdatePill({ status, onOpen }: UpdatePillProps) {
       type="button"
       className={`wb-update-pill is-${status.state}${status.downgrade ? " is-downgrade" : ""}`}
       title={status.state === "downloaded"
-        ? `버전 ${status.latestVersion || ""} 설치 준비 완료 — 눌러서 설치`
+        ? localized("STR-2274", [status.latestVersion || ""])
         : status.downgrade
-          ? `이전 버전 ${status.latestVersion || ""} 으로 되돌릴 수 있습니다 (현재 ${status.currentVersion})`
-          : `새 버전 ${status.latestVersion || ""} 사용 가능 (현재 ${status.currentVersion})`}
+          ? localized("STR-2275", [status.latestVersion || "", status.currentVersion])
+          : localized("STR-2276", [status.latestVersion || "", status.currentVersion])}
       onClick={onOpen}
     >
       {icon}
