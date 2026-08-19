@@ -328,7 +328,11 @@ class MockGateway implements MockMobileGateway {
 
   // -- mock controls --------------------------------------------------------
 
-  mock: MockControls = {
+  // `MockPhoneControls`, not `MockControls`: the narrower of the two is what
+  // `MockMobileGateway.mock` promises, and annotating the wider one here made
+  // this class fail to implement its own interface — which is why `npm run
+  // build` stopped at typecheck.
+  mock: MockPhoneControls = {
     scanQr: (options): void => {
       const state = this.pairingStream.current;
       if (state.phase !== "awaitingScan") {
