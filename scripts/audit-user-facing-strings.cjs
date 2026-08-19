@@ -337,7 +337,7 @@ outputRows.forEach((row) => {
 fs.mkdirSync(path.dirname(output), { recursive: true });
 // Excel on Korean Windows otherwise guesses CP949 and renders UTF-8 Korean as
 // mojibake. The BOM is intentional and remains valid UTF-8 for other readers.
-fs.writeFileSync(output, `\uFEFF${lines.join("\n")}\n`, "utf8");
+fs.writeFileSync(output, `\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
 
 const counts = unique.reduce((all, row) => {
   all[row.surface] = (all[row.surface] || 0) + 1;

@@ -8,11 +8,17 @@
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const { parseCsv } = require("./i18n-csv.cjs");
+const copyRows = parseCsv(fs.readFileSync(path.join(root, "docs/user-facing-strings-excel.csv"), "utf8"));
+const emptyWorkbenchCopy = copyRows.find((row) => row.id === "STR-2291");
+const expectedEmptyWorkbenchCopy = emptyWorkbenchCopy?.suggested_text_ko || emptyWorkbenchCopy?.text;
 const workspace = path.join(os.tmpdir(), "agentparty-locale-ws");
 const userData = path.join(os.tmpdir(), "agentparty-locale-ud");
 const port = Number(process.env.AGENTPARTY_LOCALE_PORT || "") || 48961;
@@ -100,7 +106,7 @@ async function main() {
     assert(await measuredText(".titlebar-brand .brand-sub") === "런타임", "switching back to Korean updates the same screen");
     await request("POST", "/api/navigation", { view: "workbench" });
     await delay(300);
-    assert(await measuredText(".wb-workarea-empty p") === "왼쪽에서 멤버를 클릭해 패널로 열어 시작하세요.", "a CSV-backed workbench message renders from the Korean catalog");
+    assert(await measuredText(".wb-workarea-empty p") === expectedEmptyWorkbenchCopy, "a CSV-backed workbench message renders from the Korean catalog");
     await request("POST", "/api/window/close", {});
   } catch (error) {
     console.error(error);
