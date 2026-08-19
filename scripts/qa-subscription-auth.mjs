@@ -51,6 +51,11 @@ assert(ready.find((item) => item.id === "openrouter")?.kind === "apiKey", "OpenR
 assert(!ready.some((item) => item.id.startsWith("cross-")), "internal cross-route accounts are not exposed as extra rows");
 assert(ready.find((item) => item.id === "codex")?.description === "native", "native Codex card is preserved instead of replaced by bridge state");
 assert(ready.find((item) => item.id === "codex-bridge")?.status === "available", "Codex bridge has its own status row");
+assert(ready.find((item) => item.id === "codex-bridge")?.label === "Claude Code용 GPT 연결", "Codex bridge card names the workflow it serves");
+assert(
+  ready.find((item) => item.id === "codex-bridge")?.detail === "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
+  "Codex bridge card explains that native Codex login is separate",
+);
 assert(!ready.find((item) => item.id === "codex-bridge")?.action, "connected bridge has no redundant login action");
 assert(ready.find((item) => item.id === "claude")?.action?.provider === "claude", "Claude row owns the shared Claude login action");
 

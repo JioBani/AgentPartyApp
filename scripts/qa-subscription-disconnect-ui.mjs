@@ -38,7 +38,7 @@ const { AuthView } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
 let disconnected = 0;
 const auth = [
   { id: "codex", label: "Codex", kind: "subscription", status: "available", description: "native" },
-  { id: "codex-bridge", label: "Codex bridge", kind: "subscription", status: "available", description: "connected" },
+  { id: "codex-bridge", label: "Claude Code용 GPT 연결", kind: "subscription", status: "available", description: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다." },
   { id: "openrouter", label: "OpenRouter", kind: "apiKey", status: "missing", description: "optional" },
 ];
 const rootNode = createRoot(document.getElementById("root"));

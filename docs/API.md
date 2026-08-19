@@ -773,6 +773,11 @@ GPT models routed through the Claude Code harness. AgentParty never reads or
 copies the bridge's rotating OAuth refresh token into native Codex
 `auth.json`; each native Windows/WSL host must own its own `codex login`.
 
+The Authentication screen labels `codex-bridge` as `Claude Code용 GPT 연결`
+and explains: `Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다.
+Codex 하네스의 로그인과는 별도입니다.` The internal id stays stable for
+automation clients.
+
 ### `POST /api/auth/deepseek`
 
 Stores a DeepSeek API key (DeepSeek's own API, used by the DeepSeek V4 models).

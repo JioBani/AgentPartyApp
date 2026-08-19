@@ -74,7 +74,13 @@ child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 try {
   const baseUrl = await waitForApi();
   const initial = await getJson(`${baseUrl}/api/state`);
-  assert(initial.auth.find((item) => item.id === "codex-bridge")?.status === "available", "real app sees the isolated Codex bridge account");
+  const connectedBridge = initial.auth.find((item) => item.id === "codex-bridge");
+  assert(connectedBridge?.status === "available", "real app sees the isolated Codex bridge account");
+  assert(connectedBridge?.label === "Claude Code용 GPT 연결", "real Authentication screen names the bridge by its purpose");
+  assert(
+    connectedBridge?.detail === "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
+    "real Authentication screen explains when the bridge is needed",
+  );
   assert(initial.auth.find((item) => item.id === "codex"), "native Codex remains a separate Authentication card");
 
   await postJson(`${baseUrl}/api/navigation`, { view: "auth" });
@@ -89,8 +95,10 @@ try {
   const result = await response.json();
   assert(result.ok && result.status === "disconnected", "AppController reports Codex disconnected");
   assert(result.removedCredentials === 1, "exactly one Codex credential was disconnected");
-  assert(result.auth.find((item) => item.id === "codex-bridge")?.status === "missing", "UI auth state now offers a new Codex bridge connection");
-  assert(result.auth.find((item) => item.id === "codex-bridge")?.action?.provider === "codex", "Codex bridge can immediately connect a different account");
+  const disconnectedBridge = result.auth.find((item) => item.id === "codex-bridge");
+  assert(disconnectedBridge?.status === "missing", "UI auth state now offers a new Codex bridge connection");
+  assert(disconnectedBridge?.detail === connectedBridge.detail, "disconnected bridge keeps the same purpose explanation");
+  assert(disconnectedBridge?.action?.provider === "codex", "Codex bridge can immediately connect a different account");
   assert(!fs.existsSync(codexCredential), "Codex credential left the active bridge directory");
   assert(fs.readFileSync(path.join(nativeCodexHome, "auth.json"), "utf8") === nativeCredential, "bridge disconnect leaves the native Codex credential byte-identical");
   assert(fs.existsSync(claudeCredential), "unrelated Claude credential was untouched");

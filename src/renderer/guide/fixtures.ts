@@ -138,7 +138,7 @@ function subscription(input: {
 /** Nothing connected yet — both cards offer 구독 연결. */
 export const AUTH_NONE: AuthProviderState[] = [
   subscription({ id: "claude", label: "Claude", provider: "claude", status: "missing", detail: "Claude Code 구독 브리지를 연결하세요.", actionLabel: "구독 연결" }),
-  subscription({ id: "codex-bridge", label: "Codex bridge", provider: "codex", status: "missing", detail: "Claude Code 하네스에서 GPT 모델을 쓸 때만 연결하면 됩니다.", actionLabel: "구독 연결" }),
+  subscription({ id: "codex-bridge", label: "Claude Code용 GPT 연결", provider: "codex", status: "missing", detail: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.", actionLabel: "구독 연결" }),
   ...API_KEY_PROVIDERS,
 ];
 
@@ -150,14 +150,14 @@ export const AUTH_PENDING: AuthProviderState[] = [
     actionLabel: "인증 대기 중",
     authUrl: "https://claude.ai/oauth/authorize?client_id=agentparty&code_challenge=8f2c…",
   }),
-  subscription({ id: "codex-bridge", label: "Codex bridge", provider: "codex", status: "missing", detail: "Claude Code 하네스에서 GPT 모델을 쓸 때만 연결하면 됩니다.", actionLabel: "구독 연결" }),
+  subscription({ id: "codex-bridge", label: "Claude Code용 GPT 연결", provider: "codex", status: "missing", detail: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.", actionLabel: "구독 연결" }),
   ...API_KEY_PROVIDERS,
 ];
 
 /** 승인 후. Claude 는 연결됨, Codex 는 네이티브 로그인으로 이미 사용 가능. */
 export const AUTH_READY: AuthProviderState[] = [
   subscription({ id: "claude", label: "Claude", provider: "claude", status: "available", detail: "Claude Code 구독 브리지가 연결되었습니다." }),
-  subscription({ id: "codex-bridge", label: "Codex bridge", provider: "codex", status: "available", detail: "Codex 브리지가 연결되어 GPT 모델을 쓸 수 있습니다." }),
+  subscription({ id: "codex-bridge", label: "Claude Code용 GPT 연결", provider: "codex", status: "available", detail: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다." }),
   { ...API_KEY_PROVIDERS[0], status: "configured", maskedValue: "sk-or-v1-…7d21" },
   API_KEY_PROVIDERS[1],
 ];

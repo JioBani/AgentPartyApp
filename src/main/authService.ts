@@ -207,8 +207,8 @@ export function withSubscriptionProxyAuth(
     {
       provider: "codex",
       id: "codex-bridge",
-      label: "Codex bridge",
-      description: "Connect Codex for GPT models used from the Claude Code harness. Native Codex login stays separate.",
+      label: "Claude Code용 GPT 연결",
+      description: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
     },
   ];
   return [
@@ -226,12 +226,12 @@ export function withSubscriptionProxyAuth(
               : "missing";
       const detail = providerStatus.available
         ? provider === "codex"
-          ? "Codex bridge is connected for GPT models on the Claude Code harness. It does not modify native Codex login."
+          ? description
           : "Claude Code subscription bridge is connected."
         : authentication?.detail
           || ((subscriptions.service?.status === "error" || !subscriptions.ok) ? subscriptions.service?.detail || subscriptions.detail : undefined)
           || (provider === "codex"
-            ? "Connect the Codex bridge only when using GPT models from the Claude Code harness."
+            ? description
             : "Connect the Claude Code subscription bridge.");
       return {
         id,
