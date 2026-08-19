@@ -1038,8 +1038,8 @@ function registerIpc(): void {
   handle("diagnostics:openLogFolder", async () => controller().openLogFolder());
   // Environment readiness — the same controller methods as GET /api/environment
   // and POST /api/environment/repair.
-  handle("environment:get", async (_event, options: { refresh?: boolean; includeWsl?: boolean } = {}) => controller().getEnvironment(options));
-  handle("environment:repair", async (_event, repairId: string) => controller().repairEnvironment(String(repairId || "")));
+  handle("environment:get", async (event, options: { refresh?: boolean; includeWsl?: boolean } = {}) => controller().getEnvironment(senderWorkspace(event), options));
+  handle("environment:repair", async (event, repairId: string) => controller().repairEnvironment(senderWorkspace(event), String(repairId || "")));
   handle("shell:openExternal", async (_event, target: string) => {
     if (/^https?:\/\//i.test(String(target || ""))) {
       await shell.openExternal(String(target));

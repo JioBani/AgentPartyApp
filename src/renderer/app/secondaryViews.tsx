@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
-import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
+import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
 import { ipcErrorMessage } from "./ipcError";
 import { openUpdateDialog } from "./updateDialog";
 import { UPDATE_FEED, type ReleaseSummary, type UpdateStatus } from "../../shared/appUpdate";
@@ -1020,6 +1020,7 @@ function EnvironmentCheckRow({ check, onRepaired, onOpenExecutable }: {
       </div>
       <div className="set-env-detail">{check.detail}</div>
       {check.path && <div className="set-env-path wb-mono">{check.path}</div>}
+      {Boolean(check.steps?.length) && <EnvironmentProbeSteps steps={check.steps || []} />}
       {Boolean(check.remedies?.length) && (
         <div className="set-env-actions">
           {/* Same component the in-transcript blocker card uses, so a fix
@@ -1031,7 +1032,7 @@ function EnvironmentCheckRow({ check, onRepaired, onOpenExecutable }: {
           />
         </div>
       )}
-      {check.raw && <EnvironmentRawDetail raw={check.raw} />}
+      {check.raw && !check.steps?.some((step) => Boolean(step.raw)) && <EnvironmentRawDetail raw={check.raw} />}
     </div>
   );
 }

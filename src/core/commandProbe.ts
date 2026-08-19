@@ -20,6 +20,9 @@ export interface CommandProbeResult {
   /** Populated whenever `ok` is false: spawn error, timeout, or exit code. */
   error?: string;
   code?: number | null;
+  failureKind?: "spawn" | "timeout" | "exit";
+  failureCode?: string;
+  failureSyscall?: string;
 }
 
 export interface CommandProbeOptions {
@@ -57,7 +60,13 @@ export function probeCommand(
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish({ ok: false, stdout: "", stderr: "", error: `'${command}' 응답이 ${timeoutMs}ms 안에 없었습니다.` });
+      finish({
+        ok: false,
+        stdout: "",
+        stderr: "",
+        error: `'${command}' 응답이 ${timeoutMs}ms 안에 없었습니다. (cwd: ${options.cwd || process.cwd()})`,
+        failureKind: "timeout",
+      });
     }, timeoutMs);
 
     const out: Buffer[] = [];
@@ -65,7 +74,22 @@ export function probeCommand(
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
     child.on("error", (error) => {
-      finish({ ok: false, stdout: "", stderr: "", error: error instanceof Error ? error.message : String(error) });
+      const spawnError = error as NodeJS.ErrnoException;
+      const facts = [
+        spawnError.code ? `code=${spawnError.code}` : "",
+        spawnError.syscall ? `syscall=${spawnError.syscall}` : "",
+        `command=${command}`,
+        `cwd=${options.cwd || process.cwd()}`,
+      ].filter(Boolean).join(", ");
+      finish({
+        ok: false,
+        stdout: "",
+        stderr: "",
+        error: `${error instanceof Error ? error.message : String(error)} (${facts})`,
+        failureKind: "spawn",
+        failureCode: spawnError.code,
+        failureSyscall: spawnError.syscall,
+      });
     });
     child.on("close", (code) => {
       const stdout = decode(Buffer.concat(out));
@@ -75,7 +99,10 @@ export function probeCommand(
         stdout,
         stderr,
         code,
-        ...(code === 0 ? {} : { error: stderr.trim() || stdout.trim() || `'${command}' 종료 코드 ${code}` }),
+        ...(code === 0 ? {} : {
+          error: stderr.trim() || stdout.trim() || `'${command}' 종료 코드 ${code}`,
+          failureKind: "exit" as const,
+        }),
       });
     });
   });

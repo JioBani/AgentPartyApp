@@ -427,19 +427,19 @@ export class AppController {
    *
    * `includeWsl` is opt-in because probing a distro starts it.
    */
-  async getEnvironment(options: { refresh?: boolean; includeWsl?: boolean } = {}): Promise<EnvironmentReport> {
-    return probeEnvironment(options);
+  async getEnvironment(workspacePath: string, options: { refresh?: boolean; includeWsl?: boolean } = {}): Promise<EnvironmentReport> {
+    return probeEnvironment({ ...options, workspacePath });
   }
 
   /**
    * Applies one of the fixes {@link getEnvironment} offered. The caller passes
    * an id, never a command — see `runEnvironmentRepair`.
    */
-  async repairEnvironment(repairId: string): Promise<EnvironmentRepairResult> {
+  async repairEnvironment(workspacePath: string, repairId: string): Promise<EnvironmentRepairResult> {
     if (!repairId) {
       throw new Error("repairId가 필요합니다.");
     }
-    return runEnvironmentRepair(repairId);
+    return runEnvironmentRepair(repairId, workspacePath);
   }
 
   /**

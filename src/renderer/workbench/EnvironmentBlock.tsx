@@ -3,7 +3,7 @@ import { AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import type { TranscriptBlock } from "../../shared/transcript";
 import type { EnvironmentCheck } from "../../shared/environment";
 import { findEnvironmentCheck } from "../../shared/environment";
-import { EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "./EnvironmentRemedies";
+import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "./EnvironmentRemedies";
 import type { WorkbenchActions } from "./actions";
 import type { MemberView } from "./types";
 
@@ -68,6 +68,7 @@ export function EnvironmentBlock({ block, view, actions }: {
       {/* The heading is the thrown message and the detail comes from the live
           check; when a check phrases it the same way, one line is enough. */}
       {!resolved && detail !== block.text && <div className="wb-env-detail">{detail}</div>}
+      {!resolved && Boolean(check?.steps?.length) && <EnvironmentProbeSteps steps={check?.steps || []} />}
       {resolved && lastUserText && <div className="wb-env-detail">보내지 못한 메시지는 자동 전송하지 않았습니다. 아래 버튼으로 다시 보내세요.</div>}
 
       <div className="wb-env-actions">

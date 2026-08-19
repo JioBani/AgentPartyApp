@@ -43,7 +43,7 @@ export const appRoutes: MethodRoute[] = [
     // read the same report. `wsl` is opt-in because it boots distros.
     name: "environment.get",
     http: "GET /api/environment",
-    handler: (p, ctx) => ctx.controller.getEnvironment({
+    handler: (p, ctx) => ctx.controller.getEnvironment(ctx.workspace, {
       refresh: flag(p.refresh),
       includeWsl: flag(p.wsl),
     }),
@@ -51,7 +51,7 @@ export const appRoutes: MethodRoute[] = [
   {
     name: "environment.repair",
     http: "POST /api/environment/repair",
-    handler: (p, ctx) => ctx.controller.repairEnvironment(text(p.repairId)),
+    handler: (p, ctx) => ctx.controller.repairEnvironment(ctx.workspace, text(p.repairId)),
   },
   {
     // App self-update. Account-global like usage, so no window/workspace scope.

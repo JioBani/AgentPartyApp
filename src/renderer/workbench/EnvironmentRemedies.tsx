@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, RefreshCw, Settings2 } from "lucide-react";
-import type { EnvironmentRemedy } from "../../shared/environment";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronDown, CircleDashed, Copy, RefreshCw, Settings2, XCircle } from "lucide-react";
+import type { EnvironmentProbeStep, EnvironmentRemedy } from "../../shared/environment";
 import { ipcErrorMessage } from "../app/ipcError";
 
 /**
@@ -112,6 +112,30 @@ export function EnvironmentRawDetail({ raw }: { raw: string }) {
         <ChevronDown size={12} /> 자세히
       </button>
       {open && <pre className="set-diag-report wb-mono">{raw}</pre>}
+    </div>
+  );
+}
+
+/** Ordered proof of where a harness started and the exact boundary it hit. */
+export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[] }) {
+  if (!steps.length) return null;
+  return (
+    <div className="set-env-steps" aria-label="실행 검증 단계">
+      {steps.map((step) => (
+        <div className={`set-env-step is-${step.status}`} key={step.id} data-env-step={step.id} data-status={step.status}>
+          <span className="set-env-step-icon" aria-hidden="true">
+            {step.status === "ok" ? <CheckCircle2 size={14} /> : step.status === "failed" ? <XCircle size={14} /> : <CircleDashed size={14} />}
+          </span>
+          <span className="set-env-step-body">
+            <span className="set-env-step-head">
+              <b>{step.label}</b>
+              {step.durationMs !== undefined && <span className="wb-mono">{step.durationMs}ms</span>}
+            </span>
+            <span className="set-env-step-detail">{step.detail}</span>
+            {step.raw && <EnvironmentRawDetail raw={step.raw} />}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -54,6 +54,25 @@ export interface EnvironmentRemedy {
 
 export type EnvironmentGroup = "runtime" | "harness" | "wsl";
 
+export type EnvironmentProbeStepStatus = "ok" | "failed" | "skipped";
+
+/**
+ * One observable stage of a harness readiness check. Keeping this structured
+ * lets the settings UI and automation API name the exact boundary that failed
+ * instead of collapsing every child-process problem into "spawn UNKNOWN".
+ */
+export interface EnvironmentProbeStep {
+  /** Stable within one check: workspace, executable, version, auth, runtime. */
+  id: string;
+  label: string;
+  status: EnvironmentProbeStepStatus;
+  /** What was proven, or why this stage could not complete. */
+  detail: string;
+  durationMs?: number;
+  /** Untranslated OS/CLI evidence. Never populated with successful auth output. */
+  raw?: string;
+}
+
 export interface EnvironmentCheck {
   /** Stable id — also the de-dup key for the in-transcript blocker card. */
   id: string;
@@ -71,6 +90,8 @@ export interface EnvironmentCheck {
    * what a bug report needs.
    */
   raw?: string;
+  /** Ordered execution proof; the first failed stage is the root boundary. */
+  steps?: EnvironmentProbeStep[];
   remedies?: EnvironmentRemedy[];
 }
 
@@ -114,7 +135,14 @@ export function claudeCliVersionForSdk(sdkVersion: string | undefined): string |
 export function formatEnvironmentReport(report: EnvironmentReport): string {
   const lines = report.checks.map((check) => {
     const facts = [check.version, check.path].filter(Boolean).join(" @ ");
-    return `[${check.status}] ${check.label}${facts ? ` — ${facts}` : ""}\n    ${check.detail}`;
+    const steps = (check.steps || []).map((step) =>
+      `    - [${step.status}] ${step.label}: ${step.detail}`,
+    );
+    return [
+      `[${check.status}] ${check.label}${facts ? ` — ${facts}` : ""}`,
+      `    ${check.detail}`,
+      ...steps,
+    ].join("\n");
   });
   return [
     `환경 점검 ${report.checkedAt}`,

@@ -145,8 +145,10 @@ the same report the settings **런타임 → 환경** tab renders. Sibling of
 `/api/diagnostics` and deliberately separate: that one describes a build for a
 bug report, this one is a to-do list. No secrets: paths and versions only.
 
-Query: `?refresh=1` bypasses the 30s cache, `?wsl=1` also probes WSL distros
-(off by default because probing **starts** a distro).
+Query: `?refresh=1` bypasses the per-workspace 30s cache, `?wsl=1` also probes
+WSL distros (off by default because probing **starts** a distro). The target
+workspace comes from the calling window/API context; harness processes are
+started with that exact path as `cwd`.
 
 ```json
 {
@@ -168,6 +170,32 @@ Query: `?refresh=1` bypasses the 30s cache, `?wsl=1` also probes WSL distros
   ]
 }
 ```
+
+Claude and Codex checks additionally return ordered `steps`. A failed report
+therefore says both **where** it stopped and **why**, while `raw` retains the
+untranslated OS/CLI evidence:
+
+```json
+{
+  "id": "harness.codex",
+  "status": "error",
+  "detail": "app-server 초기화 단계에서 실패했습니다. Windows가 Codex 프로세스 생성을 거부했습니다.",
+  "steps": [
+    { "id": "workspace", "label": "작업공간", "status": "ok", "detail": "프로세스 작업 폴더로 접근할 수 있습니다: C:\\work" },
+    { "id": "executable", "label": "실행 파일", "status": "ok", "detail": "Codex 실행 경로: C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd" },
+    { "id": "version", "label": "버전 확인", "status": "ok", "detail": "codex-cli 0.145.0", "durationMs": 92 },
+    { "id": "authentication", "label": "로그인", "status": "ok", "detail": "Codex 계정 로그인이 유효합니다.", "durationMs": 81 },
+    { "id": "runtime", "label": "app-server 초기화", "status": "failed", "detail": "Windows가 Codex 프로세스 생성을 거부했습니다.", "raw": "spawn UNKNOWN (code=UNKNOWN, syscall=spawn, command=..., cwd=C:\\work)" }
+  ]
+}
+```
+
+The execution probes make no model request. Claude runs `--version` and
+`auth status` through the same resolved executable and real workspace. Codex
+runs `--version`, `login status`, then starts the same `app-server` transport as
+a member and completes its `initialize` handshake. This catches invalid cwd,
+unspawnable launchers, login failures, early exits, protocol errors and timeouts
+without spending provider tokens.
 
 `status` is `ok` | `warn` | `missing` | `error` | `unknown`; `missing` and
 `error` are what block work. `raw` carries the untranslated probe failure (CLI

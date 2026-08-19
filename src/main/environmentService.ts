@@ -9,12 +9,11 @@
  * source of truth, so the screen cannot claim a CLI the adapter would not find.
  *
  * Two deliberate restraints:
- *  - Login state for Claude/Codex belongs to the Authentication view (the
- *    subscription bridge owns it). Here we only report what a FILE can prove.
+ *  - Execution checks stop at local process/protocol initialization. They do
+ *    not send a model prompt or spend provider tokens.
  *  - WSL is never probed implicitly: a probe starts the distro. It runs only
  *    when the caller asks for it.
  */
-import * as os from "node:os";
 import * as path from "node:path";
 import { getSettings } from "./settings";
 import { log } from "./logger";
@@ -22,18 +21,30 @@ import { invalidateCursorAuthCache } from "./authService";
 import { claudeAgentSdkSpec, claudeSdkVersion, sdkPackageJsonCandidates } from "./claudeSdkVersion";
 import { firstLine, isFile, probeCommand, resolveOnPath } from "../core/commandProbe";
 import { resolveClaudeCli } from "../core/claudeCli";
-import { codexExecutable, resolveCodexExecutable } from "../core/codexExec";
+import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "../core/codexExec";
+import {
+  claudeLoggedIn,
+  codexRuntimeFailureReason,
+  commandFailureReason,
+  failedCommandStep,
+  probeClaudeCommand,
+  probeCodexAppServer,
+  probeLocalWorkspace,
+  skippedStep,
+  successfulStep,
+} from "../core/harnessExecutionProbe";
 import { resolveCursorAgentCommand, cursorAgentAuthStatus } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
 import { isEnvironmentBlockedError } from "../core/environmentError";
-import { claudeCliVersionForSdk, type EnvironmentCheck, type EnvironmentRemedy, type EnvironmentReport } from "../shared/environment";
+import { workspaceKey } from "../shared/workspaceLocation";
+import { claudeCliVersionForSdk, type EnvironmentCheck, type EnvironmentProbeStep, type EnvironmentRemedy, type EnvironmentReport } from "../shared/environment";
 
 const CACHE_TTL_MS = 30_000;
 /** A cold distro can take a while to boot before it answers anything. */
 const WSL_TIMEOUT_MS = 90_000;
 
-let cache: { at: number; report: EnvironmentReport } | undefined;
+const cache = new Map<string, { at: number; report: EnvironmentReport }>();
 
 /**
  * A fixed report standing in for the real probe (QA only).
@@ -55,19 +66,24 @@ export interface EnvironmentProbeOptions {
   refresh?: boolean;
   /** Probe WSL distros too. Off by default because it boots them. */
   includeWsl?: boolean;
+  /** Workspace whose real cwd will be used for harness process creation. */
+  workspacePath?: string;
 }
 
 export async function probeEnvironment(options: EnvironmentProbeOptions = {}): Promise<EnvironmentReport> {
   if (mockReport) {
     return mockReport;
   }
-  if (!options.refresh && !options.includeWsl && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-    return cache.report;
+  const workspacePath = options.workspacePath || getSettings().workspacePath || process.cwd();
+  const cacheKey = workspaceKey(workspacePath);
+  const cached = cache.get(cacheKey);
+  if (!options.refresh && !options.includeWsl && cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.report;
   }
   const sdkVersion = claudeSdkVersion();
   const checks = [
     ...(await runtimeChecks()),
-    ...(await harnessChecks(sdkVersion)),
+    ...(await harnessChecks(sdkVersion, workspacePath)),
     ...(options.includeWsl ? await wslChecks(sdkVersion) : []),
   ];
   const report: EnvironmentReport = {
@@ -76,14 +92,14 @@ export async function probeEnvironment(options: EnvironmentProbeOptions = {}): P
     checks,
   };
   if (!options.includeWsl) {
-    cache = { at: Date.now(), report };
+    cache.set(cacheKey, { at: Date.now(), report });
   }
   return report;
 }
 
 /** Drops the cached report (call after a repair changes the machine). */
 export function invalidateEnvironmentCache(): void {
-  cache = undefined;
+  cache.clear();
 }
 
 // ---------------------------------------------------------------- runtime
@@ -144,10 +160,10 @@ async function nodeCheck(): Promise<EnvironmentCheck> {
 
 // ---------------------------------------------------------------- harness
 
-async function harnessChecks(sdkVersion: string | undefined): Promise<EnvironmentCheck[]> {
+async function harnessChecks(sdkVersion: string | undefined, workspacePath: string): Promise<EnvironmentCheck[]> {
   return [
-    await claudeCheck(sdkVersion),
-    await codexCheck(),
+    await claudeCheck(sdkVersion, workspacePath),
+    await codexCheck(workspacePath),
     await cursorCheck(),
     await grokCheck(),
   ];
@@ -192,11 +208,13 @@ const CLAUDE_ORIGIN_LABEL = {
   sdk: "Agent SDK가 함께 설치한 실행 파일",
 } as const;
 
-async function claudeCheck(sdkVersion: string | undefined): Promise<EnvironmentCheck> {
+async function claudeCheck(sdkVersion: string | undefined, workspacePath: string): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const expected = claudeCliVersionForSdk(sdkVersion);
   const configured = String(settings.claudeExecutablePath || "").trim();
   const chosen = chooseClaudeCli(configured);
+  const workspace = probeLocalWorkspace(workspacePath);
+  const steps: EnvironmentProbeStep[] = [workspace.step];
 
   const remedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CLAUDE_INSTALL_COMMAND },
@@ -212,62 +230,176 @@ async function claudeCheck(sdkVersion: string | undefined): Promise<EnvironmentC
   ];
 
   if (!chosen) {
+    steps.push({ id: "executable", label: "실행 파일", status: "failed", detail: "Claude Code CLI를 찾지 못했습니다." });
+    steps.push(skippedStep("version", "버전 확인", "실행 파일"));
+    steps.push(skippedStep("runtime", "프로세스 실행", "실행 파일"));
+    steps.push(skippedStep("authentication", "로그인", "실행 파일"));
     return {
       id: "harness.claude-code",
       group: "harness",
       label: "Claude Code",
       status: "missing",
       detail: "Claude Code CLI를 찾지 못했습니다. Claude 하네스 멤버를 실행할 수 없습니다.",
+      steps,
       remedies,
     };
   }
 
-  // npm installs Claude Code as a .cmd shim on Windows. The shared resolver
-  // turns that shim into the package's cli.js because the Agent SDK cannot
-  // spawn .cmd directly; probe the same resolved entrypoint used by a member.
-  const isScript = /\.(?:[cm]?js)$/i.test(chosen.command);
-  const shell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(chosen.command);
-  const probe = isScript
-    // Match the Agent SDK, which invokes a configured JavaScript entrypoint
-    // with `node` (not Electron's process.execPath).
-    ? await probeCommand(resolveOnPath(process.platform === "win32" ? "node.exe" : "node") || "node", [chosen.command, "--version"])
-    : await probeCommand(chosen.command, ["--version"], { shell });
-  const version = probe.ok ? firstLine(probe.stdout) : undefined;
+  const executableExists = isFile(chosen.command) || Boolean(resolveOnPath(chosen.command));
+  steps.push({
+    id: "executable",
+    label: "실행 파일",
+    status: executableExists ? "ok" : "failed",
+    detail: executableExists ? `${chosen.origin}: ${chosen.command}` : `설정된 실행 파일을 찾을 수 없습니다: ${chosen.command}`,
+    ...(executableExists ? {} : { raw: `file not found: ${chosen.command}` }),
+  });
+
+  if (!executableExists) {
+    steps.push(skippedStep("version", "버전 확인", "실행 파일"));
+    steps.push(skippedStep("runtime", "프로세스 실행", "실행 파일"));
+    steps.push(skippedStep("authentication", "로그인", "실행 파일"));
+    return {
+      id: "harness.claude-code",
+      group: "harness",
+      label: "Claude Code",
+      status: "missing",
+      detail: `Claude Code 실행 파일을 찾을 수 없습니다: ${chosen.command}`,
+      path: chosen.command,
+      raw: `file not found: ${chosen.command}`,
+      steps,
+      remedies: configured
+        ? [...pathRemedies("claudeExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
+        : remedies,
+    };
+  }
+
+  if (!workspace.cwd) {
+    steps.push(skippedStep("version", "버전 확인", "작업공간"));
+    steps.push(skippedStep("runtime", "프로세스 실행", "작업공간"));
+    steps.push(skippedStep("authentication", "로그인", "작업공간"));
+    return {
+      id: "harness.claude-code",
+      group: "harness",
+      label: "Claude Code",
+      status: workspace.step.status === "failed" ? "error" : "warn",
+      detail: workspace.step.status === "failed"
+        ? "현재 작업공간을 사용할 수 없어 Claude 실행 검증을 중단했습니다."
+        : "현재 작업공간은 WSL에 있어 네이티브 Claude 실행 검증을 건너뛰었습니다. WSL 환경 점검을 실행하세요.",
+      path: chosen.command,
+      raw: workspace.step.raw,
+      steps,
+    };
+  }
+
+  const versionStartedAt = Date.now();
+  const versionProbe = await probeClaudeCommand(chosen.command, ["--version"], workspace.cwd);
+  if (!versionProbe.ok) {
+    steps.push(failedCommandStep("version", "버전 확인", "Claude Code", versionProbe, versionStartedAt));
+    steps.push(skippedStep("runtime", "프로세스 실행", "버전 확인"));
+    steps.push(skippedStep("authentication", "로그인", "버전 확인"));
+    return {
+      id: "harness.claude-code",
+      group: "harness",
+      label: "Claude Code",
+      status: "error",
+      detail: `버전 확인 단계에서 실패했습니다. ${commandFailureReason("Claude Code", versionProbe)}`,
+      path: chosen.command,
+      raw: versionProbe.error,
+      steps,
+      remedies: configured
+        ? [...pathRemedies("claudeExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
+        : remedies,
+    };
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt));
+
+  // `auth status` starts the same resolved Claude executable in the real cwd.
+  // It does not call a model, but proves process creation and account state.
+  const authStartedAt = Date.now();
+  const authProbe = await probeClaudeCommand(chosen.command, ["auth", "status"], workspace.cwd);
+  const processStarted = authProbe.failureKind !== "spawn" && authProbe.failureKind !== "timeout";
+  if (!processStarted) {
+    steps.push(failedCommandStep("runtime", "프로세스 실행", "Claude Code", authProbe, authStartedAt));
+    steps.push(skippedStep("authentication", "로그인", "프로세스 실행"));
+    return {
+      id: "harness.claude-code",
+      group: "harness",
+      label: "Claude Code",
+      status: "error",
+      detail: `프로세스 실행 단계에서 실패했습니다. ${commandFailureReason("Claude Code", authProbe)}`,
+      version,
+      path: chosen.command,
+      raw: authProbe.error,
+      steps,
+      remedies,
+    };
+  }
+  steps.push(successfulStep("runtime", "프로세스 실행", `현재 작업공간에서 Claude Code 프로세스를 생성했습니다.`, authStartedAt));
+  const signedIn = authProbe.ok && claudeLoggedIn(authProbe.stdout);
+  if (!signedIn) {
+    steps.push({
+      id: "authentication",
+      label: "로그인",
+      status: "failed",
+      detail: "Claude Code 로그인이 유효하지 않습니다.",
+      durationMs: Date.now() - authStartedAt,
+      raw: authProbe.error || authProbe.stderr.trim() || "claude auth status did not report loggedIn=true",
+    });
+    return {
+      id: "harness.claude-code",
+      group: "harness",
+      label: "Claude Code",
+      status: "missing",
+      detail: "프로세스는 실행됐지만 Claude Code 로그인 확인 단계에서 실패했습니다.",
+      version,
+      path: chosen.command,
+      raw: authProbe.error || authProbe.stderr.trim(),
+      steps,
+      remedies: [{ kind: "command", label: "로그인 명령 복사", command: "claude" }],
+    };
+  }
+  steps.push(successfulStep("authentication", "로그인", "Claude Code 계정 로그인이 유효합니다.", authStartedAt));
+
   const actual = version?.match(/\d+\.\d+\.\d+/)?.[0];
   const skewed = Boolean(expected && actual && expected !== actual);
   return {
     id: "harness.claude-code",
     group: "harness",
     label: "Claude Code",
-    status: !probe.ok ? "error" : skewed ? "warn" : "ok",
+    status: skewed ? "warn" : "ok",
     // Phrased as a labelled noun ("사용 중: …") rather than "<origin>을 사용합니다"
     // because the origins end in different syllables and would need different
     // Korean particles.
-    detail: !probe.ok
-      ? configured
-        ? `설정된 경로에서 Claude Code를 실행하지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
-        : "실행 파일은 찾았지만 버전을 확인하지 못했습니다."
-      : skewed
+    detail: skewed
         ? `사용 중: ${chosen.origin}. 이 빌드의 Agent SDK는 ${expected}과 짝을 이루는데 설치된 버전은 ${actual}입니다. 대부분 동작하지만 문제가 생기면 이 차이를 먼저 의심하세요.`
-        : `사용 중: ${chosen.origin}.`,
+        : `사용 중: ${chosen.origin}. 현재 작업공간에서 실행 및 로그인을 확인했습니다.`,
     version,
     path: chosen.command,
-    raw: probe.ok ? undefined : probe.error,
-    ...(probe.ok && !skewed ? {} : {
-      remedies: configured && !probe.ok
-        ? [...pathRemedies("claudeExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
-        : remedies,
-    }),
+    steps,
+    ...(skewed ? { remedies } : {}),
   };
 }
 
 const CODEX_INSTALL_COMMAND = "npm install -g @openai/codex";
 
-async function codexCheck(): Promise<EnvironmentCheck> {
+async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const configured = String(settings.codexExecutablePath || "").trim();
   const executable = codexExecutable(settings.codexExecutablePath);
   const resolved = resolveCodexExecutable(executable);
+  const reportedPath = resolveOnPath(executable) || executable;
+  const workspace = probeLocalWorkspace(workspacePath);
+  const executableExists = isFile(resolved.command)
+    || Boolean(resolveOnPath(resolved.command))
+    || Boolean(resolved.argsPrefix[0] && isFile(resolved.argsPrefix[0]));
+  const steps: EnvironmentProbeStep[] = [workspace.step, {
+    id: "executable",
+    label: "실행 파일",
+    status: executableExists ? "ok" : "failed",
+    detail: executableExists ? `Codex 실행 경로: ${reportedPath}` : `Codex 실행 파일을 찾을 수 없습니다: ${reportedPath}`,
+    ...(executableExists ? {} : { raw: `file not found: ${reportedPath}` }),
+  }];
   const remedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CODEX_INSTALL_COMMAND },
     {
@@ -281,50 +413,130 @@ async function codexCheck(): Promise<EnvironmentCheck> {
     { kind: "settings", label: "실행 파일 경로 지정", settingsField: "codexExecutablePath" },
   ];
 
-  const probe = await probeCommand(resolved.command, [...resolved.argsPrefix, "--version"], { shell: resolved.shell });
-  if (!probe.ok) {
+  if (!executableExists) {
+    steps.push(skippedStep("version", "버전 확인", "실행 파일"));
+    steps.push(skippedStep("authentication", "로그인", "실행 파일"));
+    steps.push(skippedStep("runtime", "app-server 초기화", "실행 파일"));
     return {
       id: "harness.codex",
       group: "harness",
       label: "Codex",
       status: "missing",
-      detail: configured
-        ? `설정된 경로에서 Codex CLI를 실행하지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
-        : "Codex CLI를 실행하지 못했습니다. Codex 하네스 멤버를 실행할 수 없습니다.",
-      // `resolved.command` can be the Node that runs an npm shim's entrypoint,
-      // which tells the user nothing. Report the launcher they configured.
-      path: resolveOnPath(executable) || executable,
-      raw: probe.error,
+      detail: `Codex 실행 파일을 찾을 수 없습니다: ${reportedPath}`,
+      path: reportedPath,
+      raw: `file not found: ${reportedPath}`,
+      steps,
       remedies: configured
         ? [...pathRemedies("codexExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
         : remedies,
     };
   }
 
-  const authFile = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "auth.json");
-  const signedIn = isFile(authFile);
+  if (!workspace.cwd) {
+    steps.push(skippedStep("version", "버전 확인", "작업공간"));
+    steps.push(skippedStep("authentication", "로그인", "작업공간"));
+    steps.push(skippedStep("runtime", "app-server 초기화", "작업공간"));
+    return {
+      id: "harness.codex",
+      group: "harness",
+      label: "Codex",
+      status: workspace.step.status === "failed" ? "error" : "warn",
+      detail: workspace.step.status === "failed"
+        ? "현재 작업공간을 사용할 수 없어 Codex 실행 검증을 중단했습니다."
+        : "현재 작업공간은 WSL에 있어 네이티브 Codex 실행 검증을 건너뛰었습니다. WSL 환경 점검을 실행하세요.",
+      path: reportedPath,
+      raw: workspace.step.raw,
+      steps,
+    };
+  }
+
+  const versionStartedAt = Date.now();
+  const codexEnv = {
+    ...process.env,
+    ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
+      ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
+      : {}),
+  };
+  const versionProbe = await probeCommand(
+    resolved.command,
+    [...resolved.argsPrefix, "--version"],
+    { shell: resolved.shell, cwd: workspace.cwd, env: codexEnv },
+  );
+  if (!versionProbe.ok) {
+    steps.push(failedCommandStep("version", "버전 확인", "Codex", versionProbe, versionStartedAt));
+    steps.push(skippedStep("authentication", "로그인", "버전 확인"));
+    steps.push(skippedStep("runtime", "app-server 초기화", "버전 확인"));
+    return {
+      id: "harness.codex",
+      group: "harness",
+      label: "Codex",
+      status: "error",
+      detail: `버전 확인 단계에서 실패했습니다. ${commandFailureReason("Codex", versionProbe)}`,
+      path: reportedPath,
+      raw: versionProbe.error,
+      steps,
+      remedies: configured
+        ? [...pathRemedies("codexExecutablePath"), ...remedies.filter((remedy) => remedy.kind !== "settings")]
+        : remedies,
+    };
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt));
+
+  const authStartedAt = Date.now();
+  const authProbe = await probeCommand(
+    resolved.command,
+    [...resolved.argsPrefix, "login", "status"],
+    { shell: resolved.shell, cwd: workspace.cwd, env: codexEnv },
+  );
+  const signedIn = authProbe.ok;
+  steps.push(signedIn
+    ? successfulStep("authentication", "로그인", "Codex 계정 로그인이 유효합니다.", authStartedAt)
+    : failedCommandStep("authentication", "로그인", "Codex 로그인 확인", authProbe, authStartedAt));
+
+  const runtimeStartedAt = Date.now();
+  const runtimeProbe = await probeCodexAppServer(
+    resolved,
+    [...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"'],
+    workspace.cwd,
+    codexEnv,
+  );
+  steps.push(runtimeProbe.ok
+    ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt)
+    : {
+        id: "runtime",
+        label: "app-server 초기화",
+        status: "failed",
+        detail: codexRuntimeFailureReason(runtimeProbe),
+        durationMs: Date.now() - runtimeStartedAt,
+        raw: runtimeProbe.error,
+      });
+
+  const loginRemedies: EnvironmentRemedy[] = [
+    { kind: "command", label: "로그인 명령 복사", command: "codex login" },
+    {
+      kind: "repair",
+      label: "로그인",
+      repairId: "harness.codex.login",
+      command: "codex login",
+      confirm: "Codex 로그인을 실행합니다. 브라우저가 열릴 수 있습니다.",
+    },
+  ];
   return {
     id: "harness.codex",
     group: "harness",
     label: "Codex",
-    status: signedIn ? "ok" : "missing",
-    detail: signedIn
-      ? "설치되어 있고 로그인되어 있습니다."
-      : `설치되어 있지만 로그인되어 있지 않습니다 (${authFile} 없음).`,
-    version: firstLine(probe.stdout),
-    path: resolveOnPath(executable) || executable,
-    ...(signedIn ? {} : {
-      remedies: [
-        { kind: "command", label: "로그인 명령 복사", command: "codex login" },
-        {
-          kind: "repair",
-          label: "로그인",
-          repairId: "harness.codex.login",
-          command: "codex login",
-          confirm: "Codex 로그인을 실행합니다. 브라우저가 열릴 수 있습니다.",
-        },
-      ],
-    }),
+    status: !runtimeProbe.ok ? "error" : signedIn ? "ok" : "missing",
+    detail: !runtimeProbe.ok
+      ? `app-server 초기화 단계에서 실패했습니다. ${codexRuntimeFailureReason(runtimeProbe)}`
+      : signedIn
+        ? "현재 작업공간에서 Codex app-server 실행과 로그인을 확인했습니다."
+        : "Codex app-server는 실행됐지만 로그인 확인 단계에서 실패했습니다.",
+    version,
+    path: reportedPath,
+    raw: !runtimeProbe.ok ? runtimeProbe.error : signedIn ? undefined : authProbe.error,
+    steps,
+    ...(!runtimeProbe.ok ? { remedies } : signedIn ? {} : { remedies: loginRemedies }),
   };
 }
 
@@ -507,9 +719,9 @@ const REPAIR_TIMEOUT_MS = 10 * 60_000;
  * built report. That is the whole security model — this endpoint can never run
  * a string that came from outside, only one this app authored.
  */
-export async function runEnvironmentRepair(repairId: string): Promise<EnvironmentRepairResult> {
+export async function runEnvironmentRepair(repairId: string, workspacePath?: string): Promise<EnvironmentRepairResult> {
   const wslDistro = repairId.startsWith("wsl.sdk.reinstall:") ? repairId.slice("wsl.sdk.reinstall:".length) : undefined;
-  const before = await probeEnvironment({ refresh: true, includeWsl: Boolean(wslDistro) });
+  const before = await probeEnvironment({ refresh: true, includeWsl: Boolean(wslDistro), workspacePath });
   const remedy = before.checks
     .flatMap((check) => check.remedies || [])
     .find((candidate) => candidate.kind === "repair" && candidate.repairId === repairId);
@@ -524,7 +736,7 @@ export async function runEnvironmentRepair(repairId: string): Promise<Environmen
 
   invalidateEnvironmentCache();
   invalidateCursorAuthCache();
-  const report = await probeEnvironment({ refresh: true, includeWsl: Boolean(wslDistro) });
+  const report = await probeEnvironment({ refresh: true, includeWsl: Boolean(wslDistro), workspacePath });
   if (!result.ok) {
     log("warn", "environment", "repair failed", { repairId, error: result.error });
   }
