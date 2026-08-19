@@ -212,6 +212,13 @@ export interface AuthProviderState {
   source?: string;
   maskedValue?: string;
   detail?: string;
+  /** Explicit authentication proof; avoids inferring login from labels/actions. */
+  authenticated?: boolean;
+  /** Execution host and location this credential belongs to. */
+  host?: string;
+  workspace?: string;
+  /** Read-only diagnostic or login command. Never contains a token. */
+  command?: string;
   /**
    * The pending OAuth URL, while a subscription login is waiting on the browser.
    * The bridge opens the SYSTEM DEFAULT browser, so this is what lets a user

@@ -331,6 +331,13 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
                 <div className="set-row-body">
                   <span className="set-row-name">{provider.label}</span>
                   <span className="set-row-desc">{provider.detail || provider.description}</span>
+                  {(provider.host || provider.workspace || provider.command) && (
+                    <span className="set-auth-context wb-mono">
+                      {provider.host && <span><b>host</b> {provider.host}</span>}
+                      {provider.workspace && <span><b>cwd</b> {provider.workspace}</span>}
+                      {provider.command && <span><b>command</b> {provider.command}</span>}
+                    </span>
+                  )}
                 </div>
                 {provider.action?.type === "subscriptionOAuth" && (
                   <button
@@ -1040,6 +1047,12 @@ function EnvironmentCheckRow({ check, onRepaired, onOpenExecutable }: {
         <span className="set-env-label">{check.label}</span>
         {check.version && <span className="set-env-version wb-mono">{check.version}</span>}
       </div>
+      {check.host && (
+        <div className="set-env-host">
+          <span className={`set-env-host-chip is-${check.host.kind}`}>{check.host.label}</span>
+          {check.host.workspace && <span className="wb-mono"><LocalizedText id="STR-1134" /> {check.host.workspace}</span>}
+        </div>
+      )}
       <div className="set-env-detail">{check.detail}</div>
       {check.path && <div className="set-env-path wb-mono">{check.path}</div>}
       {Boolean(check.steps?.length) && <EnvironmentProbeSteps steps={check.steps || []} />}

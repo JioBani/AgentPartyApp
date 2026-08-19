@@ -126,6 +126,39 @@ export function resolveClaudeCli(explicitPath?: string): ClaudeCliLocation | und
   return resolveHostClaudeCli();
 }
 
+/**
+ * Native Claude binary installed beside the Agent SDK. This is the adapter's
+ * final fallback in development and in the WSL engine, so diagnostics and auth
+ * preflight must be able to name the same file rather than checking PATH only.
+ */
+export function resolveSdkClaudeCli(): string | undefined {
+  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : "";
+  if (!arch) return undefined;
+  const executable = process.platform === "win32" ? "claude.exe" : "claude";
+  const platformPackage = `claude-agent-sdk-${process.platform}-${arch}`;
+  const roots = [process.cwd()];
+  if (typeof __dirname === "string") {
+    for (let directory = __dirname; ; ) {
+      roots.push(directory);
+      const parent = path.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  if (process.resourcesPath) {
+    roots.push(path.join(process.resourcesPath, "app.asar.unpacked"), path.join(process.resourcesPath, "app.asar"));
+  }
+  for (const root of [...new Set(roots)]) {
+    for (const candidate of [
+      path.join(root, "node_modules", "@anthropic-ai", "claude-agent-sdk", "node_modules", "@anthropic-ai", platformPackage, executable),
+      path.join(root, "node_modules", "@anthropic-ai", platformPackage, executable),
+    ]) {
+      if (isFile(candidate)) return path.normalize(candidate);
+    }
+  }
+  return undefined;
+}
+
 /** Where the official installer puts `claude` when PATH has not caught up. */
 function wellKnownPaths(): string[] {
   const home = os.homedir();

@@ -1,4 +1,4 @@
-import { ApiError, text, type MethodRoute } from "../methodRegistry";
+import { ApiError, flag, text, type MethodRoute } from "../methodRegistry";
 
 /** Providers whose subscription login/disconnect this app can drive. */
 const LOGIN_PROVIDERS = ["codex", "claude"] as const;
@@ -19,37 +19,42 @@ export const authRoutes: MethodRoute[] = [
   {
     name: "auth.get",
     http: "GET /api/auth",
-    handler: async (_p, ctx) => ({ providers: await ctx.controller.getAuthProviders() }),
+    handler: async (_p, ctx) => ({ providers: await ctx.controller.getAuthProviders(ctx.workspace) }),
+  },
+  {
+    name: "auth.nativeClaude",
+    http: "GET /api/auth/native/claude",
+    handler: (p, ctx) => ctx.controller.getNativeClaudeAuth(ctx.workspace, flag(p.refresh)),
   },
   {
     name: "auth.setDeepseekKey",
     http: "POST /api/auth/deepseek",
-    handler: (p, ctx) => ctx.controller.setDeepseekKey(text(p.key)),
+    handler: (p, ctx) => ctx.controller.setDeepseekKey(text(p.key), ctx.workspace),
   },
   {
     name: "auth.clearDeepseekKey",
     http: "DELETE /api/auth/deepseek",
-    handler: (_p, ctx) => ctx.controller.clearDeepseekKey(),
+    handler: (_p, ctx) => ctx.controller.clearDeepseekKey(ctx.workspace),
   },
   {
     name: "auth.testDeepseekKey",
     http: "POST /api/auth/deepseek/test",
-    handler: (_p, ctx) => ctx.controller.testDeepseekKey(),
+    handler: (_p, ctx) => ctx.controller.testDeepseekKey(ctx.workspace),
   },
   {
     name: "auth.setOpenRouterKey",
     http: "POST /api/auth/openrouter",
-    handler: (p, ctx) => ctx.controller.setOpenRouterKey(text(p.key)),
+    handler: (p, ctx) => ctx.controller.setOpenRouterKey(text(p.key), ctx.workspace),
   },
   {
     name: "auth.clearOpenRouterKey",
     http: "DELETE /api/auth/openrouter",
-    handler: (_p, ctx) => ctx.controller.clearOpenRouterKey(),
+    handler: (_p, ctx) => ctx.controller.clearOpenRouterKey(ctx.workspace),
   },
   {
     name: "auth.testOpenRouterKey",
     http: "POST /api/auth/openrouter/test",
-    handler: (_p, ctx) => ctx.controller.testOpenRouterKey(),
+    handler: (_p, ctx) => ctx.controller.testOpenRouterKey(ctx.workspace),
   },
   {
     name: "auth.subscriptions",
@@ -62,11 +67,11 @@ export const authRoutes: MethodRoute[] = [
     name: "auth.loginSubscription",
     http: "POST /api/auth/subscriptions/:provider/login",
     remote: false,
-    handler: (p, ctx) => ctx.controller.loginSubscriptionProvider(provider(p.provider, LOGIN_PROVIDERS)),
+    handler: (p, ctx) => ctx.controller.loginSubscriptionProvider(provider(p.provider, LOGIN_PROVIDERS), ctx.workspace),
   },
   {
     name: "auth.disconnectSubscription",
     http: "DELETE /api/auth/subscriptions/:provider",
-    handler: (p, ctx) => ctx.controller.disconnectSubscriptionProvider(provider(p.provider, DISCONNECT_PROVIDERS)),
+    handler: (p, ctx) => ctx.controller.disconnectSubscriptionProvider(provider(p.provider, DISCONNECT_PROVIDERS), ctx.workspace),
   },
 ];

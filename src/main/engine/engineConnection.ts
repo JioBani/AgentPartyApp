@@ -20,6 +20,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import type { CursorAgentStatus } from "../../core/cursorAgentCli";
+import type { ClaudeNativeAuthState } from "../../core/claudeNativeAuth";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { ApprovalDelivery } from "../../shared/approvals";
 
@@ -194,6 +195,9 @@ export interface EngineConnection {
    * distro: inspecting the Windows install answers for the wrong host.
    */
   getCursorStatus(): Promise<CursorAgentStatus>;
+
+  /** Native Claude login on this engine host (Windows, WSL distro, or Unix). */
+  getClaudeNativeAuth(force?: boolean): Promise<ClaudeNativeAuthState>;
 
   // --- Sessions (workspace-scoped) ---------------------------------------
   createSession(input?: CreateSessionInput | string): Promise<SessionView>;

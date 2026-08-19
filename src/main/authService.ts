@@ -8,6 +8,7 @@ import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
 import { codexExecutable, resolveCodexExecutable } from "../core/codexExec";
 import { probeCommand } from "../core/commandProbe";
+import type { ClaudeNativeAuthState } from "../core/claudeNativeAuth";
 
 const CURSOR_AUTH_TTL_MS = 30_000;
 let cursorAuthCache: { at: number; value: CursorAgentAuthStatus } | undefined;
@@ -105,6 +106,20 @@ export function withCursorCliAuth(states: AuthProviderState[], auth: CursorAgent
   });
 }
 
+/** Keeps the native Claude runtime login separate from the subscription bridge. */
+export function withClaudeNativeAuth(states: AuthProviderState[], auth: ClaudeNativeAuthState): AuthProviderState[] {
+  return states.map((state) => state.id !== "claude-native" ? state : {
+    ...state,
+    status: auth.status === "authenticated" ? "available" : auth.status === "missing" ? "missing" : "invalid",
+    authenticated: auth.authenticated,
+    source: auth.executable,
+    detail: auth.detail,
+    host: auth.host.label,
+    workspace: auth.workspace,
+    command: auth.authenticated ? auth.command : auth.loginCommand,
+  });
+}
+
 export function getAuthState(): AuthProviderState[] {
   const settings = getSettings();
   const openRouterKey = settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
@@ -120,13 +135,14 @@ export function getAuthState(): AuthProviderState[] {
   const grokLogin = grokSubscriptionAvailable();
   return [
     {
-      id: "claude",
-      label: "Claude",
+      id: "claude-native",
+      label: "Claude Code · 네이티브 로그인",
       kind: "subscription",
-      status: "available",
-      description: "Uses the Claude Code login and subscription managed by Claude Code.",
-      source: "Claude Code CLI login",
-      detail: "AgentParty delegates subscription auth to the local Claude Code harness.",
+      status: "missing",
+      authenticated: false,
+      description: "Claude Code 런타임 멤버가 실행 호스트에서 직접 사용하는 로그인입니다.",
+      source: undefined,
+      detail: "실행 호스트의 네이티브 Claude Code 로그인 상태를 확인 중입니다.",
     },
     {
       id: "codex",
@@ -215,21 +231,25 @@ export function withSubscriptionProxyAuth(
     ...subscriptionProviders.map(({ provider, id, label, description }): AuthProviderState => {
       const providerStatus = subscriptions[provider];
       const authentication = subscriptions.authentication?.[provider];
-      const status: AuthProviderState["status"] = providerStatus.available
+      const credentialReady = providerStatus.credential?.status === "ready";
+      const status: AuthProviderState["status"] = providerStatus.available && credentialReady
         ? "available"
         : authentication?.status === "pending"
           ? "pending"
           : authentication?.status === "error"
             ? "invalid"
+            : providerStatus.credential?.status === "invalid"
+              ? "invalid"
             : subscriptions.service?.status === "error" || !subscriptions.ok
               ? "network_error"
               : "missing";
-      const detail = providerStatus.available
+      const detail = providerStatus.available && credentialReady
         ? provider === "codex"
           ? description
           : "Claude Code subscription bridge is connected."
         : authentication?.detail
           || ((subscriptions.service?.status === "error" || !subscriptions.ok) ? subscriptions.service?.detail || subscriptions.detail : undefined)
+          || providerStatus.credential?.detail
           || (provider === "codex"
             ? description
             : "Connect the Claude Code subscription bridge.");
@@ -238,17 +258,16 @@ export function withSubscriptionProxyAuth(
         label,
         kind: "subscription",
         status,
+        authenticated: providerStatus.available && credentialReady,
         description,
         source: provider === "codex" ? "Codex subscription" : "Claude Code subscription",
         detail,
         ...(authentication?.authUrl ? { authUrl: authentication.authUrl } : {}),
-        ...(providerStatus.available ? {} : {
-          action: {
-            type: "subscriptionOAuth" as const,
-            provider,
-            label: authentication?.status === "pending" ? "인증 대기 중" : "구독 연결",
-          },
-        }),
+        action: {
+          type: "subscriptionOAuth" as const,
+          provider,
+          label: authentication?.status === "pending" ? "인증 대기 중" : providerStatus.available && credentialReady ? "다시 연결" : "구독 연결",
+        },
       };
     }),
     ...states.filter((state) => state.id !== "claude" && state.id !== "claude-code" && !state.id.startsWith("cross-")),

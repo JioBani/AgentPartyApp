@@ -16,9 +16,8 @@ export function accountIsConnected(provider: AuthProviderState): boolean {
   if (provider.kind === "apiKey") {
     return provider.status === "configured" || provider.status === "valid";
   }
-  // A login action on the card is the UI saying "you are not connected".
-  if (provider.action) {
-    return false;
+  if (provider.authenticated !== undefined) {
+    return provider.authenticated;
   }
   if (provider.status === "configured" || provider.status === "valid") {
     return true;

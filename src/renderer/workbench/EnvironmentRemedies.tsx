@@ -133,6 +133,18 @@ export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[]
               {step.durationMs !== undefined && <span className="wb-mono">{step.durationMs}ms</span>}
             </span>
             <span className="set-env-step-detail">{step.detail}</span>
+            {(step.path || step.cwd || step.command || step.failureKind || step.failureCode) && (
+              <span className="set-env-step-context wb-mono">
+                {step.path && <span><b>path</b> {step.path}</span>}
+                {step.cwd && <span><b>cwd</b> {step.cwd}</span>}
+                {step.command && <span><b>command</b> {step.command}</span>}
+                {(step.failureKind || step.failureCode) && (
+                  <span className="set-env-step-failure">
+                    <b><LocalizedText id="STR-1032" /></b> {[step.failureKind, step.failureCode].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+              </span>
+            )}
             {step.raw && <EnvironmentRawDetail raw={step.raw} />}
           </span>
         </div>

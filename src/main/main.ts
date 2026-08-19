@@ -952,24 +952,24 @@ function registerIpc(): void {
     return state.settings;
   });
 
-  handle("auth:list", async () => controller().listAuthProviders());
-  handle("auth:setDeepseekKey", async (_event, value: string) => controller().setDeepseekKey(value || ""));
-  handle("auth:clearDeepseekKey", async () => controller().clearDeepseekKey());
-  handle("auth:testDeepseekKey", async () => controller().testDeepseekKey());
-  handle("auth:setOpenRouterKey", async (_event, value: string) => controller().setOpenRouterKey(value || ""));
-  handle("auth:clearOpenRouterKey", async () => controller().clearOpenRouterKey());
-  handle("auth:testOpenRouterKey", async () => controller().testOpenRouterKey());
-  handle("auth:loginSubscription", async (_event, provider: string) => {
+  handle("auth:list", async (event) => controller().listAuthProviders(senderWorkspace(event)));
+  handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));
+  handle("auth:clearDeepseekKey", async (event) => controller().clearDeepseekKey(senderWorkspace(event)));
+  handle("auth:testDeepseekKey", async (event) => controller().testDeepseekKey(senderWorkspace(event)));
+  handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)));
+  handle("auth:clearOpenRouterKey", async (event) => controller().clearOpenRouterKey(senderWorkspace(event)));
+  handle("auth:testOpenRouterKey", async (event) => controller().testOpenRouterKey(senderWorkspace(event)));
+  handle("auth:loginSubscription", async (event, provider: string) => {
     if (provider !== "codex" && provider !== "claude") {
       throw new Error(`Unsupported subscription provider '${provider}'.`);
     }
-    return controller().loginSubscriptionProvider(provider);
+    return controller().loginSubscriptionProvider(provider, senderWorkspace(event));
   });
-  handle("auth:disconnectSubscription", async (_event, provider: string) => {
+  handle("auth:disconnectSubscription", async (event, provider: string) => {
     if (provider !== "codex" && provider !== "claude" && provider !== "cursor") {
       throw new Error(`Unsupported subscription provider '${provider}'.`);
     }
-    return controller().disconnectSubscriptionProvider(provider);
+    return controller().disconnectSubscriptionProvider(provider, senderWorkspace(event));
   });
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));

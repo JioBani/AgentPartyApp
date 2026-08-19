@@ -18,7 +18,7 @@ import { log } from "./logger";
 export interface SubscriptionProxyLoginResult {
   ok: boolean;
   provider: SubscriptionProxyProvider;
-  status: "already_available" | "started" | "pending" | "error";
+  status: "started" | "pending" | "error";
   detail: string;
   subscriptions: SubscriptionProxyStatus;
 }
@@ -74,7 +74,7 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
   /** Starts the bridge if needed and returns authoritative model availability. */
   ensureRunning(): Promise<SubscriptionProxyStatus> {
     if (!this.startPromise) {
-      this.startPromise = this.startIfNeeded().finally(() => {
+      this.startPromise = this.startIfNeeded().then((status) => this.withCredentialHealth(status)).finally(() => {
         this.startPromise = undefined;
       });
     }
@@ -114,16 +114,6 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
    */
   async login(provider: SubscriptionProxyProvider): Promise<SubscriptionProxyLoginResult> {
     let subscriptions = await this.ensureRunning();
-    if (subscriptions[provider].available) {
-      return {
-        ok: true,
-        provider,
-        status: "already_available",
-        detail: `${providerLabel(provider)} subscription is already connected.`,
-        subscriptions,
-      };
-    }
-
     if (this.loginProcesses.has(provider) || this.loginVerifications.has(provider)) {
       return {
         ok: true,
@@ -370,10 +360,10 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
     });
     try {
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        const status = await getSubscriptionProxyStatus();
-        if (status[provider].available) {
+        const status = await this.withCredentialHealth(await getSubscriptionProxyStatus());
+        if (status[provider].available && status[provider].credential?.status === "ready") {
           this.loginStates.delete(provider);
-          log("info", "subscription-proxy", "subscription authentication verified by model discovery", {
+          log("info", "subscription-proxy", "subscription authentication verified by credential health and model discovery", {
             provider,
             modelCount: status[provider].models.length,
           });
@@ -453,9 +443,6 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
 
   private decorate(status: SubscriptionProxyStatus): SubscriptionProxyStatus {
     for (const provider of ["codex", "claude"] as const) {
-      if (status[provider].available) {
-        this.loginStates.delete(provider);
-      }
       const state = this.loginStates.get(provider);
       if (
         state?.status === "pending" &&
@@ -479,6 +466,50 @@ export class SubscriptionProxyService implements SubscriptionProxyController {
         detail: this.serviceDetail,
       },
       authentication: Object.fromEntries(this.loginStates) as SubscriptionProxyStatus["authentication"],
+    };
+  }
+
+  /**
+   * Model discovery proves routing metadata only. Inspect the active auth-dir
+   * separately and return safe booleans; token values never leave this method.
+   */
+  private async withCredentialHealth(status: SubscriptionProxyStatus): Promise<SubscriptionProxyStatus> {
+    let configPath: string;
+    let authDir: string;
+    try {
+      configPath = await this.ensureConfig();
+      authDir = await authDirectoryFromConfig(configPath);
+    } catch (error) {
+      const detail = `Could not inspect subscription credentials: ${messageOf(error)}`;
+      return {
+        ...status,
+        codex: { ...status.codex, credential: { status: "unknown", detail } },
+        claude: { ...status.claude, credential: { status: "unknown", detail } },
+      };
+    }
+    const entries = await Promise.all((["codex", "claude"] as const).map(async (provider) => {
+      try {
+        const files = await findProviderCredentialFiles(authDir, provider);
+        if (!files.length) {
+          return [provider, { status: "missing" as const, detail: `No persisted ${providerLabel(provider)} OAuth credential exists in the active bridge auth directory.` }] as const;
+        }
+        let usable = 0;
+        for (const file of files) {
+          const parsed = JSON.parse(await fsp.readFile(file, "utf8")) as Record<string, unknown>;
+          if (bridgeCredentialIsUsable(parsed)) usable += 1;
+        }
+        return usable > 0
+          ? [provider, { status: "ready" as const, detail: `${usable} active ${providerLabel(provider)} OAuth credential(s) are loaded by the bridge.` }] as const
+          : [provider, { status: "invalid" as const, detail: `${providerLabel(provider)} credential files exist, but none has a complete active OAuth session. Reconnect this bridge account.` }] as const;
+      } catch (error) {
+        return [provider, { status: "unknown" as const, detail: `Could not inspect ${providerLabel(provider)} credential health: ${messageOf(error)}` }] as const;
+      }
+    }));
+    const health = Object.fromEntries(entries) as Record<SubscriptionProxyProvider, NonNullable<SubscriptionProxyStatus["claude"]["credential"]>>;
+    return {
+      ...status,
+      codex: { ...status.codex, credential: health.codex },
+      claude: { ...status.claude, credential: health.claude },
     };
   }
 
@@ -750,6 +781,18 @@ async function findFile(root: string, expectedName: string): Promise<string | un
     }
   }
   return undefined;
+}
+
+/** Safe metadata-only proof used instead of treating `/models` as login proof. */
+export function bridgeCredentialIsUsable(credential: Record<string, unknown>): boolean {
+  const accessToken = credential.access_token ?? credential.accessToken;
+  const refreshToken = credential.refresh_token ?? credential.refreshToken;
+  return credential.disabled !== true
+    && credential.expired !== true
+    && typeof accessToken === "string"
+    && accessToken.length > 0
+    && typeof refreshToken === "string"
+    && refreshToken.length > 0;
 }
 
 /** Prevent OAuth URLs, state parameters, and bearer-like values reaching logs/UI. */

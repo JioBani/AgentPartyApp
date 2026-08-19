@@ -16,6 +16,11 @@ export interface SubscriptionProxyProviderStatus {
   available: boolean;
   models: string[];
   loginCommand: string;
+  /** OAuth credential health, verified separately from model discovery. */
+  credential?: {
+    status: "ready" | "missing" | "invalid" | "unknown";
+    detail: string;
+  };
 }
 
 export type SubscriptionProxyProvider = "codex" | "claude";
@@ -68,9 +73,9 @@ export function normalizeSubscriptionProxyBaseUrl(value: string): string {
 }
 
 /**
- * Reads the proxy's authoritative model list. OAuth files are deliberately not
- * inspected: a credential existing on disk does not prove that it is valid or
- * currently loaded, while `/v1/models` is the routing surface the app uses.
+ * Reads the proxy's authoritative routing/model surface. Credential metadata
+ * is intentionally a separate application-service concern: model discovery
+ * alone must never be presented as proof of a usable OAuth session.
  */
 export async function getSubscriptionProxyStatus(
   overrides: Partial<SubscriptionProxyConfig> = {},

@@ -18,6 +18,7 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 | `qa-resume-target` | ClaudeAdapter restart resume target ([#17]): before the first turn a setting change must not resume an uncommitted harness session; after a turn a soft restart continues the live conversation |
 | `qa-router-diagnostics` | GPT-on-Claude-Code startup errors name the CLIProxyAPI chain (router down vs proxy unconfigured); a direct Anthropic model stays free of those diagnostics |
 | `qa-workspace-location` | workspace = cwd / storage location rules |
+| `qa-environment-precision` | 환경 보고서의 Windows/WSL host, 실제 cwd/command, timeout·spawn·exit·not-found 분류가 보존되는지 검증 |
 | `qa-layout` | panel/tab layout engine, incl. `openMemberInNewPanel` (create → new region) |
 | `qa-render` | renderer smoke render |
 | `qa-askq` | AskUserQuestion choice-card rendering |
@@ -81,6 +82,14 @@ need no model turn — they boot a real Electron app on an isolated
 (create A+B → delete active B → A becomes current + B's on-disk dir removed →
 delete last party → parties/current cleared → missing party errors, no silent
 no-op). Not billed; safe to run anytime after `npm run build`.
+
+`npm run test:e2e:environment-precision` launches the real Electron app without
+a model call, drives **런타임 → 환경** through `/api/environment` and
+`/api/navigation`, and verifies that Windows checks expose the actual workspace,
+CLI command boundaries, and the isolated Codex SQLite path. WSL probing remains
+explicit (`?wsl=1`) because it starts distributions and can legitimately wait on
+a broken distro. Set `AGENTPARTY_E2E_INCLUDE_WSL=1` to include that host-specific
+path and assert that timeouts remain errors with their command and POSIX cwd.
 
 `node scripts/qa-app-mcp-e2e.mjs` verifies the MCP status endpoint against the
 **real** harness adapters (billed — starts a live Claude + Codex member): creates
@@ -884,6 +893,13 @@ node -e "require('child_process').execSync('taskkill /PID <pid> /T /F')"
 ---
 
 ## Why this tier matters
+
+`scripts/e2e-claude-auth-separation.mjs` launches the real Electron app with a
+token-free fake Claude executable that reports `loggedIn:false`. It verifies the
+separate native/bridge cards, the workspace-scoped native auth API, and that a
+real Claude member becomes `auth-required` before the Agent SDK/provider process
+is entered. The successful-login/provider-call half must use a real user-owned
+Claude login and is intentionally never faked as product E2E.
 
 The party communication feature passed both the jsdom suite and the in-process
 integration test, yet agent-created members did **not** appear in the UI on a WSL

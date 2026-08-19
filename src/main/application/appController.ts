@@ -22,7 +22,7 @@ import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
-import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -362,7 +362,7 @@ export class AppController {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
-      auth: await this.listAuthProviders(),
+      auth: await this.listAuthProviders(workspacePath),
       sessions: await engine.listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
       modelProviders: [...MODEL_PROVIDERS],
@@ -419,7 +419,7 @@ export class AppController {
       versions: { node: process.versions.node, electron: process.versions.electron, chrome: process.versions.chrome },
       workspace: this.workspaceDisplay(workspacePath),
       logs: { filePath: logFilePath, folderPath: path.dirname(logFilePath) },
-      auth: (await this.listAuthProviders()).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
+      auth: (await this.listAuthProviders(workspacePath)).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
     };
   }
 
@@ -804,51 +804,60 @@ export class AppController {
   }
 
   /** Desktop auth cards with each native CLI's real, cached login state. */
-  private async authStateWithCursor(base?: ReturnType<typeof getAuthState>): Promise<ReturnType<typeof getAuthState>> {
-    const [cursor, codex] = await Promise.all([cursorCliAuthState(), codexCliAuthState()]);
-    return withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex);
+  private async authStateWithCli(workspacePath: string, base?: ReturnType<typeof getAuthState>, forceClaude = false): Promise<ReturnType<typeof getAuthState>> {
+    const [cursor, codex, claude] = await Promise.all([
+      cursorCliAuthState(),
+      codexCliAuthState(),
+      this.engineFor(workspacePath).getClaudeNativeAuth(forceClaude),
+    ]);
+    return withClaudeNativeAuth(withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex), claude);
   }
 
-  async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
+  async listAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const subscriptions = await this.getSubscriptionStatus();
-    return withSubscriptionProxyAuth(await this.authStateWithCursor(), subscriptions);
+    return withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), subscriptions);
   }
 
-  async setOpenRouterKey(key: string): Promise<ReturnType<typeof getAuthState>> {
+  /** Exact native Claude login for the engine host serving this workspace. */
+  getNativeClaudeAuth(workspacePath: string, force = false) {
+    return this.engineFor(workspacePath).getClaudeNativeAuth(force);
+  }
+
+  async setOpenRouterKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = setOpenRouterKey(key || "");
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async clearOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
+  async clearOpenRouterKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = clearOpenRouterKey();
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async testOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testOpenRouterKey()), await this.getSubscriptionStatus()));
+  async testOpenRouterKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testOpenRouterKey()), await this.getSubscriptionStatus()));
   }
 
-  async setDeepseekKey(key: string): Promise<ReturnType<typeof getAuthState>> {
+  async setDeepseekKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = setDeepseekKey(key || "");
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async clearDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
+  async clearDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = clearDeepseekKey();
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async testDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testDeepseekKey()), await this.getSubscriptionStatus()));
+  async testDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testDeepseekKey()), await this.getSubscriptionStatus()));
   }
 
   /** The full provider list, for the automation API's GET /api/auth. */
-  async getAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
-    return withSubscriptionProxyAuth(await this.authStateWithCursor(getAuthState()), await this.getSubscriptionStatus());
+  async getAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, getAuthState()), await this.getSubscriptionStatus());
   }
 
   /** Live OAuth-backed model availability from the local CLIProxyAPI. */
@@ -857,12 +866,12 @@ export class AppController {
   }
 
   /** Starts one browser OAuth flow and returns the same auth state the UI uses. */
-  async loginSubscriptionProvider(provider: SubscriptionProxyProvider) {
+  async loginSubscriptionProvider(provider: SubscriptionProxyProvider, workspacePath = getSettings().workspacePath || process.cwd()) {
     if (!this.deps.subscriptionProxy) {
       throw new Error("Subscription OAuth must be started from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.login(provider);
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), result.subscriptions));
     return {
       ...result,
       auth,
@@ -870,15 +879,15 @@ export class AppController {
   }
 
   /** Disconnects one persisted subscription account and refreshes every UI. */
-  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider | "cursor") {
+  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider | "cursor", workspacePath = getSettings().workspacePath || process.cwd()) {
     if (provider === "cursor") {
-      return this.disconnectCursor();
+      return this.disconnectCursor(workspacePath);
     }
     if (!this.deps.subscriptionProxy) {
       throw new Error("Subscription OAuth must be managed from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.disconnect(provider);
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), result.subscriptions));
     return {
       ...result,
       auth,
@@ -890,10 +899,10 @@ export class AppController {
    * account the auth card describes. A WSL distro's own Cursor login is that
    * host's credential and is not touched here.
    */
-  private async disconnectCursor() {
+  private async disconnectCursor(workspacePath: string) {
     const result = await cursorAgentLogout(getSettings().cursorExecutablePath);
     invalidateCursorAuthCache();
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), await this.getSubscriptionStatus()));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), await this.getSubscriptionStatus()));
     return {
       ok: result.ok,
       provider: "cursor" as const,
@@ -2228,7 +2237,7 @@ export class AppController {
    *
    * Electron is imported HERE, lazily, not at module scope: this controller is
    * also the one the headless engine server runs inside a WSL distro, where
-   * `electron` does not exist. A top-level `import … from "electron"` made every
+   * `electron` does not exist. A top-level Electron module import made every
    * WSL workspace fail to open (`WSL engine exited before ready (code 1)`), so
    * the dependency must stay inside the one method that needs it — a headless
    * caller then gets an explicit error instead of a dead engine.

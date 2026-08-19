@@ -7342,6 +7342,16 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-section-rule { flex: 1; height: 1px; background: var(--border-subtle); }
 
 /* provider / subscription row */
+.set-auth-context {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.set-auth-context b { color: var(--text-secondary); }
 .set-row { display: flex; align-items: center; gap: 14px; padding: 15px 16px; background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 12px; }
 .set-row:hover { border-color: var(--border-strong); }
 .set-row-flush { border: none; border-radius: 0; padding: 15px 16px; background: transparent; }
@@ -7469,6 +7479,9 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-env-detail { font-size: 12px; line-height: 1.5; color: var(--text-1); }
 /* The one string a user retypes by hand, so it wraps instead of truncating. */
 .set-env-path { font-size: 11px; color: var(--text-3); overflow-wrap: anywhere; }
+.set-env-host { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 10.5px; color: var(--text-3); }
+.set-env-host-chip { padding: 2px 6px; border-radius: 999px; font-weight: 650; color: var(--accent); background: var(--accent-dim); }
+.set-env-host-chip.is-wsl { color: var(--warning); background: var(--warning-dim); }
 .set-env-steps { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; padding: 8px 10px; background: color-mix(in srgb, var(--bg-0) 58%, transparent); border-radius: 7px; }
 .set-env-step { display: flex; align-items: flex-start; gap: 8px; min-width: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-2); }
 .set-env-step-icon { display: inline-flex; flex: none; margin-top: 1px; color: var(--text-3); }
@@ -7479,6 +7492,9 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-env-step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; color: var(--text-1); }
 .set-env-step-head .wb-mono { font-size: 10px; color: var(--text-3); font-weight: 400; }
 .set-env-step-detail { overflow-wrap: anywhere; }
+.set-env-step-context { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; font-size: 10px; color: var(--text-3); overflow-wrap: anywhere; word-break: break-word; }
+.set-env-step-context b { margin-right: 5px; color: var(--text-2); font-family: var(--font-sans); font-weight: 650; }
+.set-env-step-failure { color: var(--danger); }
 .set-env-step .set-env-raw { margin-top: 2px; }
 /* Buttons sit slightly further from the text than the text lines sit from each
    other (6px gap + 4px = 10px), so a row reads as "facts, then what to do"

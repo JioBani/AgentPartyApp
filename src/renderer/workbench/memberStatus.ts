@@ -58,6 +58,7 @@ function deriveStatus(member: PartyMember, session: SessionView | undefined, tra
     // The watchdog appends a "stall" diagnostic as the newest block when a turn
     // goes silent; real activity appends after it and clears this.
     stalled: isStalled(transcript),
+    authRequired: session?.snapshot.status === "auth_required",
   });
 }
 
@@ -209,6 +210,8 @@ export function statusLabel(status: MemberStatus): string {
       return "stalled";
     case "approval":
       return "approval";
+    case "auth-required":
+      return "auth required";
     case "not-started":
       return "not started";
     // States only the fact: the session this member is bound to is not there.

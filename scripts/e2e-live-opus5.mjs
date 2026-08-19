@@ -70,8 +70,8 @@ async function main() {
 
     // A live member on Opus 5 — the real proof the id routes natively.
     await post("/api/parties", { name: "opus5 e2e" });
-    await post("/api/party/members", { name: "opie", requirement: "opus 5 catalog check", role: "claude", runtime: "claude-code", model: MODEL });
-    const start = await post("/api/party/members/opie/start", { model: MODEL, permissionMode: "plan" });
+    await post("/api/party/members", { name: "opie", requirement: "opus 5 catalog check", role: "claude", runtime: "claude-code", model: MODEL, effort: "high" });
+    const start = await post("/api/party/members/opie/start", { model: MODEL, effort: "high", permissionMode: "plan" });
     assert(start.session?.id, `opie live session started (${start.session?.id})`);
 
     await post("/api/navigation", { view: "workbench" });

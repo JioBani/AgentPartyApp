@@ -34,7 +34,15 @@ const base = [{
   status: "missing",
   description: "optional",
 }];
-const provider = (available, models = []) => ({ available, models, loginCommand: "redacted" });
+const provider = (available, models = []) => ({
+  available,
+  models,
+  loginCommand: "redacted",
+  credential: {
+    status: available ? "ready" : "missing",
+    detail: available ? "complete active OAuth metadata" : "missing OAuth metadata",
+  },
+});
 const status = (overrides = {}) => ({
   ok: true,
   baseUrl: "http://127.0.0.1:8317/v1",
@@ -56,7 +64,7 @@ assert(
   ready.find((item) => item.id === "codex-bridge")?.detail === "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다.",
   "Codex bridge card explains that native Codex login is separate",
 );
-assert(!ready.find((item) => item.id === "codex-bridge")?.action, "connected bridge has no redundant login action");
+assert(ready.find((item) => item.id === "codex-bridge")?.action?.label === "다시 연결", "connected bridge keeps an explicit reauthentication action");
 assert(ready.find((item) => item.id === "claude")?.action?.provider === "claude", "Claude row owns the shared Claude login action");
 
 const nativeSignedOut = withCodexCliAuth(base, { authenticated: false });

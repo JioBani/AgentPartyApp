@@ -6,7 +6,7 @@ import type { ResolvedCodexExecutable } from "./codexExec";
 import { terminateProcessTree } from "./processTree";
 import { probeCommand, resolveOnPath, type CommandProbeResult } from "./commandProbe";
 import { parseWorkspaceLocation } from "../shared/workspaceLocation";
-import type { EnvironmentProbeStep } from "../shared/environment";
+import type { EnvironmentProbeFailureKind, EnvironmentProbeStep } from "../shared/environment";
 
 export interface HarnessExecutionProbeResult {
   ok: boolean;
@@ -34,6 +34,7 @@ export function probeLocalWorkspace(workspacePath: string): LocalWorkspaceProbe 
         label: "작업공간",
         status: "skipped",
         detail: `${location.host.distro} WSL 작업공간입니다. 이 PC의 네이티브 하네스가 아니라 WSL 환경 점검에서 검증합니다.`,
+        cwd: location.path,
       },
     };
   }
@@ -48,6 +49,9 @@ export function probeLocalWorkspace(workspacePath: string): LocalWorkspaceProbe 
           status: "failed",
           detail: `작업공간 경로가 폴더가 아닙니다: ${cwd}`,
           raw: `not a directory (cwd=${cwd})`,
+          cwd,
+          failureKind: "workspace",
+          failureCode: "ENOTDIR",
         },
       };
     }
@@ -59,6 +63,7 @@ export function probeLocalWorkspace(workspacePath: string): LocalWorkspaceProbe 
         label: "작업공간",
         status: "ok",
         detail: `프로세스 작업 폴더로 접근할 수 있습니다: ${cwd}`,
+        cwd,
       },
     };
   } catch (error) {
@@ -70,6 +75,9 @@ export function probeLocalWorkspace(workspacePath: string): LocalWorkspaceProbe 
         status: "failed",
         detail: workspaceFailureReason(fsError, cwd),
         raw: `${fsError.message} (code=${fsError.code || "UNKNOWN"}, cwd=${cwd})`,
+        cwd,
+        failureKind: "workspace",
+        failureCode: fsError.code || "UNKNOWN",
       },
     };
   }
@@ -85,11 +93,24 @@ export function skippedStep(id: string, label: string, blocker: string): Environ
   return { id, label, status: "skipped", detail: `${blocker} 단계가 실패해 검사하지 않았습니다.` };
 }
 
-export function successfulStep(id: string, label: string, detail: string, startedAt: number): EnvironmentProbeStep {
-  return { id, label, status: "ok", detail, durationMs: Date.now() - startedAt };
+export function successfulStep(
+  id: string,
+  label: string,
+  detail: string,
+  startedAt: number,
+  context: Pick<EnvironmentProbeStep, "command" | "cwd" | "path"> = {},
+): EnvironmentProbeStep {
+  return { id, label, status: "ok", detail, durationMs: Date.now() - startedAt, ...context };
 }
 
-export function failedCommandStep(id: string, label: string, subject: string, probe: CommandProbeResult, startedAt: number): EnvironmentProbeStep {
+export function failedCommandStep(
+  id: string,
+  label: string,
+  subject: string,
+  probe: CommandProbeResult,
+  startedAt: number,
+  context: Pick<EnvironmentProbeStep, "command" | "cwd" | "path"> = {},
+): EnvironmentProbeStep {
   return {
     id,
     label,
@@ -97,7 +118,16 @@ export function failedCommandStep(id: string, label: string, subject: string, pr
     detail: commandFailureReason(subject, probe),
     durationMs: Date.now() - startedAt,
     raw: probe.error,
+    failureKind: commandProbeFailureKind(probe),
+    failureCode: probe.failureCode || (probe.code === undefined || probe.code === null ? undefined : String(probe.code)),
+    ...context,
   };
+}
+
+export function commandProbeFailureKind(probe: CommandProbeResult): EnvironmentProbeFailureKind {
+  return probe.failureKind === "spawn" || probe.failureKind === "timeout" || probe.failureKind === "exit"
+    ? probe.failureKind
+    : "exit";
 }
 
 export function commandFailureReason(subject: string, probe: CommandProbeResult): string {
@@ -148,6 +178,27 @@ export function probeCodexAppServer(
   env: NodeJS.ProcessEnv = process.env,
   timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<HarnessExecutionProbeResult> {
+  return probeAppServerCommand(
+    resolved.command,
+    [...resolved.argsPrefix, ...args, "app-server"],
+    cwd,
+    env,
+    timeoutMs,
+    resolved.shell,
+    process.platform === "win32" ? "Windows" : "현재 호스트",
+  );
+}
+
+/** Performs the Codex JSON-RPC initialize handshake through any process shape. */
+export function probeAppServerCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = PROBE_TIMEOUT_MS,
+  shell = false,
+  hostLabel = "실행 호스트",
+): Promise<HarnessExecutionProbeResult> {
   return new Promise((resolve) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
@@ -155,11 +206,11 @@ export function probeCodexAppServer(
     let stdoutTail = "";
     const requestId = "agentparty-environment-probe";
 
-    const child = spawn(resolved.command, [...resolved.argsPrefix, ...args, "app-server"], {
+    const child = spawn(command, args, {
       cwd,
       env,
       windowsHide: true,
-      shell: resolved.shell,
+      shell,
       stdio: ["pipe", "pipe", "pipe"],
     });
     const lines = readline.createInterface({ input: child.stdout });
@@ -204,8 +255,8 @@ export function probeCodexAppServer(
       const spawnError = error as NodeJS.ErrnoException;
       finish({
         ok: false,
-        detail: "Windows가 Codex app-server 프로세스를 생성하지 못했습니다.",
-        error: `${error.message} (code=${spawnError.code || "UNKNOWN"}, syscall=${spawnError.syscall || "spawn"}, command=${resolved.command}, cwd=${cwd})`,
+        detail: `${hostLabel}에서 Codex app-server 프로세스를 생성하지 못했습니다.`,
+        error: `${error.message} (code=${spawnError.code || "UNKNOWN"}, syscall=${spawnError.syscall || "spawn"}, command=${command}, cwd=${cwd})`,
         failureKind: "spawn",
         failureCode: spawnError.code,
       });
@@ -232,7 +283,7 @@ export function probeCodexAppServer(
       finish({
         ok: false,
         detail: `Codex app-server가 ${timeoutMs}ms 안에 초기화되지 않았습니다.`,
-        error: evidence(`initialize timeout (command=${resolved.command}, cwd=${cwd})`),
+        error: evidence(`initialize timeout (command=${command}, cwd=${cwd})`),
         failureKind: "timeout",
       });
     }, timeoutMs);

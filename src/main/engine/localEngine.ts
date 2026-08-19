@@ -19,6 +19,7 @@ import { runPartyAction } from "./partyActions";
 import type { IdleSleepSettings } from "../../shared/idleSleep";
 import type { MemberMessagingSettings } from "../../shared/memberMessaging";
 import { inspectCursorAgent } from "../../core/cursorAgentCli";
+import { probeClaudeNativeAuth } from "../../core/claudeNativeAuth";
 import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
 import { log } from "../logger";
@@ -187,6 +188,13 @@ export class LocalEngine implements EngineConnection {
   // --- Cursor CLI (host-scoped: local host here, the distro in a WSL engine) --
   async getCursorStatus() {
     return inspectCursorAgent(getSettings().cursorExecutablePath);
+  }
+
+  async getClaudeNativeAuth(_force?: boolean) {
+    return probeClaudeNativeAuth({
+      workspacePath: this.workspacePath,
+      executablePath: getSettings().claudeExecutablePath,
+    });
   }
 
   // --- Sessions -----------------------------------------------------------
