@@ -30,10 +30,33 @@ async function waitForTest(id, timeoutMs = 90_000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const card = (await providers()).find((item) => item.id === id);
-    if (card?.test?.checkedAt) return card;
+    if (card?.test?.status === "complete") return card;
     await delay(250);
   }
   throw new Error(`Timed out waiting for ${id} CLI test result.`);
+}
+
+async function followProgress(provider, host, onInFlight, timeoutMs = 90_000) {
+  const started = Date.now();
+  const snapshots = [];
+  const signatures = new Set();
+  while (Date.now() - started < timeoutMs) {
+    const { progress } = await app.get(`/api/auth/native/${provider}/progress?host=${host}`);
+    if (progress) {
+      const signature = `${progress.phase}:${progress.check.steps.map((step) => `${step.id}=${step.status}`).join(",")}`;
+      if (!signatures.has(signature)) {
+        signatures.add(signature);
+        snapshots.push(progress);
+      }
+      if (progress.phase !== "complete" && onInFlight) {
+        await onInFlight(progress);
+        onInFlight = undefined;
+      }
+      if (progress.phase === "complete") return snapshots;
+    }
+    await delay(20);
+  }
+  throw new Error(`Timed out following ${provider}:${host} CLI progress.`);
 }
 
 try {
@@ -44,6 +67,7 @@ try {
 
   const spec = await app.get("/api/spec");
   assert(spec.endpoints.includes("POST /api/auth/native/:provider/test"), "native CLI test is published in the automation spec");
+  assert(spec.endpoints.includes("GET /api/auth/native/:provider/progress"), "native CLI progress is published in the automation spec");
 
   const initial = await providers();
   const native = initial.filter((item) => item.action?.type === "nativeCliTest");
@@ -77,6 +101,18 @@ try {
   // Product UI path: click the button, then observe the controller-broadcast
   // result through the public API rather than calling an internal helper.
   await app.post("/api/capture", { click: '[data-auth-test="codex:windows"]' });
+  const progressShot = path.join(shotDir, "auth-progress.png");
+  const codexProgress = await followProgress("codex", "windows", async () => {
+    await app.post("/api/capture", { path: progressShot, selector: '[data-auth-provider="codex"]' });
+  });
+  const inFlight = codexProgress.find((progress) => progress.phase !== "complete");
+  assert(Boolean(inFlight), "Codex exposes an in-flight progress snapshot before completion");
+  assert(
+    inFlight?.check.steps.length === 6 && inFlight.check.steps.some((step) => step.status === "pending" || step.status === "running"),
+    "the full Codex plan starts visible with unfinished rows unchecked",
+  );
+  assert(codexProgress.length >= 2, "Codex progress changes as real probe boundaries complete");
+  assert(fs.existsSync(progressShot) && fs.statSync(progressShot).size > 0, "real UI progress frame captured before completion");
   const codex = await waitForTest("codex");
   assert(codex.test.steps.some((step) => step.id === "executable"), "Codex UI test reports executable discovery");
   assert(codex.test.steps.some((step) => step.id === "version"), "Codex UI test reports version execution");

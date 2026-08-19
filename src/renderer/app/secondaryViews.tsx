@@ -365,7 +365,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onTes
           {cards.map((card) => {
             const action = card.action?.type === "nativeCliTest" ? card.action : undefined;
             if (!action) return null;
-            const isTesting = Boolean(testingNative[card.id]);
+            const isTesting = Boolean(testingNative[card.id]) || card.test?.status === "running";
             const disconnectable = card.status === "available" ? disconnectableProviderOf(card.id) : undefined;
             return (
               <div className="set-native-host" key={card.id} data-auth-provider={card.id}>

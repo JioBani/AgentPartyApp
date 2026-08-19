@@ -39,6 +39,17 @@ export const authRoutes: MethodRoute[] = [
     ),
   },
   {
+    name: "auth.nativeCliProgress",
+    http: "GET /api/auth/native/:provider/progress",
+    handler: (p, ctx) => ({
+      progress: ctx.controller.getNativeCliAuthProgress(
+        provider(p.provider, NATIVE_PROVIDERS),
+        provider(p.host, NATIVE_HOSTS),
+        ctx.workspace,
+      ) || null,
+    }),
+  },
+  {
     name: "auth.setDeepseekKey",
     http: "POST /api/auth/deepseek",
     handler: (p, ctx) => ctx.controller.setDeepseekKey(text(p.key), ctx.workspace),

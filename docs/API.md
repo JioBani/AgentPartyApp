@@ -909,6 +909,13 @@ initialization, Cursor uses `status --format json`, and Grok lets the official
 CLI validate its own rotating credential with the read-only `grok models`
 command. None of these tests sends a model prompt.
 
+The test publishes `auth:native-progress` after every real probe boundary. The
+first event contains the complete ordered plan with every step `pending`; the
+active step becomes `running`, and completed boundaries change to `ok` or
+`failed` one at a time. Boundaries after a failure become `skipped`, so the UI
+never suggests they were verified. The same in-flight snapshot is available to
+automation clients through the progress endpoint below.
+
 ```json
 {
   "host": "wsl"
@@ -931,6 +938,37 @@ command. None of these tests sends a model prompt.
     ]
   },
   "auth": [{ "id": "codex-wsl", "status": "missing" }]
+}
+```
+
+### `GET /api/auth/native/:provider/progress`
+
+Returns the latest non-blocking progress snapshot for one native CLI test.
+`:provider` accepts the same four providers as the test endpoint and the query
+must contain `host=windows|wsl`. Before the first test, `progress` is `null`.
+During a test, `phase` moves from `pending` to `running`; it becomes `complete`
+only after the final executed boundary has reported its result.
+
+```text
+GET /api/auth/native/codex/progress?host=windows
+```
+
+```json
+{
+  "progress": {
+    "provider": "codex",
+    "host": "windows",
+    "phase": "running",
+    "check": {
+      "status": "unknown",
+      "steps": [
+        { "id": "workspace", "status": "ok" },
+        { "id": "executable", "status": "ok" },
+        { "id": "version", "status": "running" },
+        { "id": "authentication", "status": "pending" }
+      ]
+    }
+  }
 }
 ```
 

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
-import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
+import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
+import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../shared/nativeCliAuth";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -455,6 +456,9 @@ export function App() {
     const offAuthUpdate = window.agentParty.onAuthUpdate?.((payload) => {
       setState((current) => ({ ...current, auth: payload as InitialAppState["auth"] }));
     });
+    const offNativeCliAuthProgress = window.agentParty.onNativeCliAuthProgress?.((payload) => {
+      setState((current) => ({ ...current, auth: applyNativeCliAuthProgress(current.auth, payload as NativeCliAuthProgress) }));
+    });
     // The push sends the raw snapshot; the initial fetch wraps it in `{ usage }`.
     const offUsageUpdate = window.agentParty.onUsageUpdate?.((payload) => setUsageLimits((payload as UsageLimitsSnapshot) || {}));
     void window.agentParty.getUsageLimits?.().then((res) => { if (res?.usage) setUsageLimits(res.usage); });
@@ -488,6 +492,7 @@ export function App() {
       offSettingsUpdate?.();
       offDiscordUpdate?.();
       offAuthUpdate?.();
+      offNativeCliAuthProgress?.();
       offUsageUpdate?.();
       offUpdateStatus?.();
       offQaLayout();
@@ -855,6 +860,17 @@ export function App() {
   }
 
   async function testNativeCliAuth(provider: NativeCliAuthProvider, host: NativeCliAuthHost): Promise<NativeCliAuthTestResult> {
+    const pending: NativeCliAuthProgress = {
+      provider,
+      host,
+      checkedAt: new Date().toISOString(),
+      phase: "pending",
+      check: nativeCliAuthProgressCheck(provider, host, [], "pending"),
+    };
+    setState((current) => ({ ...current, auth: applyNativeCliAuthProgress(current.auth, pending) }));
+    // Give the browser one paint with every row unchecked before the main
+    // process starts completing fast synchronous boundaries.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const result = await window.agentParty.testNativeCliAuth(provider, host);
     setState((current) => ({ ...current, auth: result.auth }));
     return result;

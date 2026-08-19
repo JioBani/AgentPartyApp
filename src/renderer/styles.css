@@ -7495,6 +7495,9 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-env-step { display: flex; align-items: flex-start; gap: 8px; min-width: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-2); }
 .set-env-step-icon { display: inline-flex; flex: none; margin-top: 1px; color: var(--text-3); }
 .set-env-step.is-ok .set-env-step-icon { color: var(--success); }
+.set-env-step.is-running .set-env-step-icon { color: var(--accent); }
+.set-env-step.is-pending,
+.set-env-step.is-skipped { opacity: .68; }
 .set-env-step.is-failed .set-env-step-icon { color: var(--danger); }
 .set-env-step.is-failed .set-env-step-detail { color: var(--danger); }
 .set-env-step-body { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; }

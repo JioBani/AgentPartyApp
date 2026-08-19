@@ -1413,7 +1413,8 @@ export const auditKoMessages = {
   "STR-3505": "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
   "STR-3506": "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
   "STR-3507": "다른 하네스에서 Codex 구독 GPT 모델을 사용할 때 연결하는 로컬 프록시입니다.",
-  "STR-3508": "FAIL test/auth/login.spec.ts\n ● 5회 실패하면 잠긴다\n expected 429, received 200\n ● 잠금 후 15분 뒤 풀린다\n expected 200, received 200 (잠금 없음)\n\nTests: 2 failed, 6 passed, 8 total"
+  "STR-3508": "FAIL test/auth/login.spec.ts\r\n ● 5회 실패하면 잠긴다\r\n expected 429, received 200\r\n ● 잠금 후 15분 뒤 풀린다\r\n expected 200, received 200 (잠금 없음)\r\n\r\nTests: 2 failed, 6 passed, 8 total",
+  "STR-3559": "FAIL test/auth/login.spec.ts\n ● 5회 실패하면 잠긴다\n expected 429, received 200\n ● 잠금 후 15분 뒤 풀린다\n expected 200, received 200 (잠금 없음)\n\nTests: 2 failed, 6 passed, 8 total"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

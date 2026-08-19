@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { EnvironmentReport } from "../shared/environment";
-import type { NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import type { NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
@@ -228,6 +228,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("auth:update", listener);
     return () => ipcRenderer.off("auth:update", listener);
+  },
+  onNativeCliAuthProgress: (callback: (payload: NativeCliAuthProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: NativeCliAuthProgress) => callback(payload);
+    ipcRenderer.on("auth:native-progress", listener);
+    return () => ipcRenderer.off("auth:native-progress", listener);
   },
   onDiscordUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

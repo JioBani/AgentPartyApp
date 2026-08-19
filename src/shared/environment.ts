@@ -54,7 +54,7 @@ export interface EnvironmentRemedy {
 
 export type EnvironmentGroup = "runtime" | "harness" | "wsl";
 
-export type EnvironmentProbeStepStatus = "ok" | "failed" | "skipped";
+export type EnvironmentProbeStepStatus = "pending" | "running" | "ok" | "failed" | "skipped";
 
 export type EnvironmentExecutionHost =
   | { kind: "windows"; label: "Windows"; workspace?: string }

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
@@ -58,6 +58,7 @@ import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shar
 import type { GuideOfferView } from "../../shared/guideOffer";
 import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
+import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -185,7 +186,7 @@ export class AppController {
   private readonly cliContinuationWatchers = new Set<string>();
 
   /** Last explicit native-login proof per workspace/provider/host. */
-  private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; check: EnvironmentReport["checks"][number]; distro?: string }>();
+  private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; phase: NativeCliAuthProgress["phase"]; check: EnvironmentReport["checks"][number]; distro?: string }>();
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -823,39 +824,22 @@ export class AppController {
 
   /** Applies the last button-driven proof without rerunning WSL during a routine auth refresh. */
   private withNativeCliTestState(states: AuthProviderState[], workspacePath: string): AuthProviderState[] {
-    return states.map((state) => {
+    let next = states;
+    for (const state of states) {
       const action = state.action;
-      if (action?.type !== "nativeCliTest") return state;
+      if (action?.type !== "nativeCliTest") continue;
       const tested = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, action.provider, action.host));
-      if (!tested) return state;
-      const firstFailure = tested.check.steps?.find((step) => step.status === "failed");
-      const usable = tested.check.status === "ok" || tested.check.status === "warn";
-      const status: AuthProviderState["status"] = usable
-        ? "available"
-        : tested.check.status === "missing"
-          ? "missing"
-          : tested.check.status === "unknown"
-            ? "unknown"
-            : "invalid";
-      const commandStep = firstFailure
-        || [...(tested.check.steps || [])].reverse().find((step) => Boolean(step.command));
-      return {
-        ...state,
-        status,
-        authenticated: usable,
-        source: tested.check.path || state.source,
-        detail: firstFailure
-          ? `${firstFailure.label} 단계 실패: ${firstFailure.detail}`
-          : tested.check.detail,
-        host: tested.check.host?.label || state.host,
-        workspace: tested.check.host?.workspace || state.workspace,
-        command: commandStep?.command || state.command,
-        test: {
-          checkedAt: tested.checkedAt,
-          steps: tested.check.steps || [],
-        },
-      };
-    });
+      if (!tested) continue;
+      next = applyNativeCliAuthProgress(next, {
+        provider: action.provider,
+        host: action.host,
+        checkedAt: tested.checkedAt,
+        phase: tested.phase,
+        distro: tested.distro,
+        check: tested.check,
+      });
+    }
+    return next;
   }
 
   /**
@@ -868,13 +852,57 @@ export class AppController {
     workspacePath = getSettings().workspacePath || process.cwd(),
     distro?: string,
   ): Promise<NativeCliAuthTestResult> {
-    const tested = await probeNativeCliAuthentication({ provider, host, workspacePath, distro });
     const checkedAt = new Date().toISOString();
-    this.nativeCliAuthTests.set(this.nativeCliAuthTestKey(workspacePath, provider, host), {
-      checkedAt,
-      check: tested.check,
-      distro: tested.distro,
+    const publish = (progress: Omit<NativeCliAuthProgress, "provider" | "host" | "checkedAt">) => {
+      const event: NativeCliAuthProgress = { provider, host, checkedAt, ...progress };
+      this.nativeCliAuthTests.set(this.nativeCliAuthTestKey(workspacePath, provider, host), {
+        checkedAt,
+        phase: event.phase,
+        check: event.check,
+        distro: event.distro,
+      });
+      this.broadcastNativeCliAuthProgress(event, workspacePath);
+    };
+    publish({
+      phase: "pending",
+      check: nativeCliAuthProgressCheck(provider, host, [], "pending"),
+      ...(distro ? { distro } : {}),
     });
+    let tested: Awaited<ReturnType<typeof probeNativeCliAuthentication>>;
+    try {
+      tested = await probeNativeCliAuthentication({
+        provider,
+        host,
+        workspacePath,
+        distro,
+        onProgress: ({ phase, check, distro: activeDistro }) => publish({
+          phase,
+          check,
+          ...(activeDistro ? { distro: activeDistro } : {}),
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const current = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, provider, host));
+      const settled = (current?.check.steps || []).filter((step) => step.status === "ok" || step.status === "failed" || step.status === "skipped");
+      const active = current?.check.steps?.find((step) => step.status === "running")
+        || current?.check.steps?.find((step) => step.status === "pending")
+        || { id: "probe", label: "검사 실행", detail: "검사를 시작하지 못했습니다." };
+      const failure = {
+        ...active,
+        status: "failed" as const,
+        detail: `예상하지 못한 검사 오류가 발생했습니다: ${message}`,
+        failureKind: "protocol" as const,
+        raw: message,
+      };
+      const failedCheck = nativeCliAuthProgressCheck(provider, host, [...settled.filter((step) => step.id !== active.id), failure], "complete", {
+        ...(current?.check || nativeCliAuthProgressCheck(provider, host, [], "pending")),
+        status: "error",
+        detail: failure.detail,
+      });
+      publish({ phase: "complete", check: failedCheck, ...(current?.distro ? { distro: current.distro } : {}) });
+      throw error;
+    }
     const auth = this.broadcastAuth(withSubscriptionProxyAuth(
       await this.authStateWithCli(workspacePath),
       await this.getSubscriptionStatus(),
@@ -888,6 +916,23 @@ export class AppController {
       check: tested.check,
       auth,
     };
+  }
+
+  /** Non-blocking snapshot for automation clients following an in-flight test. */
+  getNativeCliAuthProgress(
+    provider: NativeCliAuthProvider,
+    host: NativeCliAuthHost,
+    workspacePath = getSettings().workspacePath || process.cwd(),
+  ): NativeCliAuthProgress | undefined {
+    const tested = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, provider, host));
+    return tested ? {
+      provider,
+      host,
+      checkedAt: tested.checkedAt,
+      phase: tested.phase,
+      check: tested.check,
+      ...(tested.distro ? { distro: tested.distro } : {}),
+    } : undefined;
   }
 
   async listAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
@@ -1000,6 +1045,15 @@ export class AppController {
       entry.window.webContents.send("auth:update", auth);
     }
     return auth;
+  }
+
+  /** Lightweight incremental event; avoids rerunning unrelated CLIs per step. */
+  private broadcastNativeCliAuthProgress(progress: NativeCliAuthProgress, workspacePath: string): void {
+    this.deps.mobileLink?.publish("auth:native-progress", progress, workspacePath);
+    for (const entry of this.deps.windowRegistry.all()) {
+      if (workspaceKey(entry.workspacePath) !== workspaceKey(workspacePath)) continue;
+      entry.window.webContents.send("auth:native-progress", progress);
+    }
   }
 
   // --- Windows + workspace ------------------------------------------------

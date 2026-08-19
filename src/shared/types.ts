@@ -232,6 +232,7 @@ export interface AuthProviderState {
   /** Most recent real CLI execution proof shown under a native-login row. */
   test?: {
     checkedAt: string;
+    status: "running" | "complete";
     steps: EnvironmentProbeStep[];
   };
   /** Optional action rendered by Authentication and exposed over automation. */
@@ -262,6 +263,16 @@ export interface NativeCliAuthTestResult {
   check: EnvironmentCheck;
   /** Full refreshed provider list, exactly as rendered after the test. */
   auth: AuthProviderState[];
+}
+
+/** Incremental proof emitted while one native CLI connection test is running. */
+export interface NativeCliAuthProgress {
+  provider: NativeCliAuthProvider;
+  host: NativeCliAuthHost;
+  checkedAt: string;
+  phase: "pending" | "running" | "complete";
+  distro?: string;
+  check: EnvironmentCheck;
 }
 
 export interface PartyMember {

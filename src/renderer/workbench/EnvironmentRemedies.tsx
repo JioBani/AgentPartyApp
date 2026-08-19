@@ -125,7 +125,13 @@ export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[]
       {steps.map((step) => (
         <div className={`set-env-step is-${step.status}`} key={step.id} data-env-step={step.id} data-status={step.status}>
           <span className="set-env-step-icon" aria-hidden="true">
-            {step.status === "ok" ? <CheckCircle2 size={14} /> : step.status === "failed" ? <XCircle size={14} /> : <CircleDashed size={14} />}
+            {step.status === "ok"
+              ? <CheckCircle2 size={14} />
+              : step.status === "failed"
+                ? <XCircle size={14} />
+                : step.status === "running"
+                  ? <RefreshCw size={14} className="wb-spin" />
+                  : <CircleDashed size={14} />}
           </span>
           <span className="set-env-step-body">
             <span className="set-env-step-head">
