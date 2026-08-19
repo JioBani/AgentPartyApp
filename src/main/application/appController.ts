@@ -29,7 +29,7 @@ import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration
 import { PartyRepository } from "../partyRepository";
 import { parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
-import { checkCwd, locationFromPickedFolder, wslDistros } from "../cwdService";
+import { checkCwd, listWslDirectories, locationFromPickedFolder, wslDistros, type WslListing } from "../cwdService";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -1519,6 +1519,18 @@ export class AppController {
   async listWslDistros(): Promise<{ ok: true; distros: string[]; error?: string }> {
     const { names, error } = await wslDistros();
     return { ok: true, distros: names, error };
+  }
+
+  /**
+   * Lists one directory level inside a distro, for the WSL folder browser.
+   *
+   * `cwd` omitted means the distro's `$HOME`. Separate from {@link browseCwd}
+   * because the Windows folder dialog cannot browse a distro that will not
+   * start, and reaching a running one through `\\wsl$\...` answers a question
+   * about the redirector rather than about the environment the member runs in.
+   */
+  async listWslDirectories(distro: string, cwd?: string): Promise<{ ok: true } & WslListing> {
+    return { ok: true, ...(await listWslDirectories(distro, cwd)) };
   }
 
   /**

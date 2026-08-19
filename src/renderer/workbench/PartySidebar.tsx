@@ -18,7 +18,7 @@ import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { PartyGroupList } from "./PartyGroupList";
 import { MoveGroupModal, NewGroupModal } from "./PartyGroupModals";
-import { CwdPicker, ENV_LABEL, EnvIcon } from "./CwdPicker";
+import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
@@ -73,6 +73,7 @@ interface PartySidebarProps {
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  wsl?: WslBrowsing;
   onCreateMember: (input: CreateMemberInput) => void;
   onOpenMember: (member: string) => void;
   /** Hard restart (in-place harness restart); enabled only with a live session. */
@@ -218,7 +219,7 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
+  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
@@ -351,6 +352,7 @@ export function PartySidebar(props: PartySidebarProps) {
             cwdPrefs={cwdPrefs}
             now={now}
             onBrowseCwd={onBrowseCwd}
+            wsl={wsl}
             onCancel={() => setCreating(false)}
             onCreate={(input) => { onCreateMember(input); setCreating(false); }}
           />
@@ -483,6 +485,7 @@ export function PartySidebar(props: PartySidebarProps) {
           cwdPrefs={cwdPrefs}
           now={now}
           onBrowseCwd={onBrowseCwd}
+          wsl={wsl}
           onCreateGroup={() => { setNewPartyOpen(false); setNewGroupOpen(true); }}
           onCancel={() => setNewPartyOpen(false)}
           onCreate={(input) => { onCreateParty(input); setDraft(""); setNewPartyOpen(false); }}
@@ -519,13 +522,14 @@ export function PartySidebar(props: PartySidebarProps) {
  *
  * Closes ONLY via Cancel — never an outside click.
  */
-export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, now, onBrowseCwd, onCreateGroup, onCancel, onCreate }: {
+export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, now, onBrowseCwd, wsl, onCreateGroup, onCancel, onCreate }: {
   initialName: string;
   groups: PartyGroup[];
   initialGroupId: string;
   cwdPrefs: CwdPreferences;
   now: number;
   onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  wsl?: WslBrowsing;
   /** Chosen from the group dropdown's last entry; hands over to the group dialog. */
   onCreateGroup: () => void;
   onCancel: () => void;
@@ -597,6 +601,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
             onChange={setLocation}
             onChangeEnv={changeEnv}
             onBrowse={() => { void onBrowseCwd(location?.env ?? "windows").then((picked) => { if (picked) setLocation(picked); }); }}
+            wsl={wsl}
             hint={<><LocalizedText id="STR-3299" /> <b>main</b> <LocalizedText id="STR-3298" /></>}
           />
           {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}

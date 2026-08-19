@@ -41,6 +41,7 @@ const api = {
   removeRecentCwd: (location: unknown) => ipcRenderer.invoke("cwd:removeRecent", location),
   checkCwd: (location: unknown) => ipcRenderer.invoke("cwd:check", location),
   listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
+  listWslDirectories: (distro: string, cwd?: string) => ipcRenderer.invoke("cwd:wslDirectories", distro, cwd),
   browseCwd: (env: string) => ipcRenderer.invoke("cwd:browse", env),
   listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
   listAuth: () => ipcRenderer.invoke("auth:list"),

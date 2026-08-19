@@ -77,6 +77,29 @@ export interface RecentCwd {
 }
 
 /**
+ * One directory level inside a distro, as the WSL folder browser reads it.
+ *
+ * Shared rather than declared in the main process, because the browser UI, the
+ * preview fixtures and the automation API all speak this shape — and a contract
+ * defined by one of its readers drifts the moment a second one appears.
+ *
+ * Either `cwd` + `directories` are present, or `problem` is: a listing that
+ * failed says why instead of arriving as an empty folder.
+ */
+export interface WslDirectoryListing {
+  distro: string;
+  /** Absolute path the distro resolved (it expands `$HOME` and symlinks). */
+  cwd?: string;
+  /** The distro's `$HOME`, so the browser can offer a way back to it. */
+  home?: string;
+  /** Absent at `/` — there is nowhere further up. */
+  parent?: string;
+  /** Sub-directory NAMES, not paths; dot-directories included. */
+  directories?: string[];
+  problem?: CwdProblem;
+}
+
+/**
  * An existing member's fixed location, as the settings screen lists it.
  *
  * Lives here rather than in the settings component because the fixtures and the

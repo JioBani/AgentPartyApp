@@ -163,6 +163,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     removeRecentCwd: () => refused(),
     checkCwd: () => refused(),
     listWslDistros: () => Promise.resolve({ ok: true as const, distros: [] }),
+    listWslDirectories: () => refused(),
     browseCwd: () => refused(),
     listMemberLocations: () => Promise.resolve({ ok: true as const, members: [] }),
     listAuth: () => Promise.resolve(current().state.auth),

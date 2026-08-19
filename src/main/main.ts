@@ -980,6 +980,7 @@ function registerIpc(): void {
   handle("cwd:removeRecent", async (_event, location) => controller().removeRecentCwd(location));
   handle("cwd:check", async (_event, location) => controller().checkCwd(location));
   handle("cwd:distros", async () => controller().listWslDistros());
+  handle("cwd:wslDirectories", async (_event, distro, cwd) => controller().listWslDirectories(String(distro || ""), cwd ? String(cwd) : undefined));
   handle("cwd:browse", async (event, env) => controller().browseCwd(env === "wsl" ? "wsl" : "windows", senderWindowId(event)));
   handle("cwd:memberLocations", async (event) => controller().memberLocations(senderWorkspace(event)));
 

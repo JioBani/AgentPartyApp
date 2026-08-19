@@ -12,7 +12,7 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessLabel } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
-import { CwdPicker } from "./CwdPicker";
+import { CwdPicker, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, preferencesFor } from "../../shared/memberLocation";
 
@@ -49,6 +49,8 @@ interface MemberWizardProps {
    * selection alone rather than clear it.
    */
   onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  /** The WSL side of the picker (distro list + directory reader). */
+  wsl?: WslBrowsing;
   /**
    * Which step to open on. Defaults to the first; the design preview uses it to
    * show step 2 without clicking through, and a "이 설정으로 새 멤버" duplicate
@@ -113,7 +115,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, now, onBrowseCwd, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
@@ -481,6 +483,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 onChange={setLocation}
                 onChangeEnv={changeEnv}
                 onBrowse={() => { void browse(); }}
+                wsl={wsl}
                 saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
                 hint={localized("STR-3270")}
               />

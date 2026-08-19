@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { FolderOpen, Monitor, Terminal, TriangleAlert } from "lucide-react";
-import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd } from "../../shared/memberLocation";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd, WslDirectoryListing } from "../../shared/memberLocation";
 import { RECENT_CWD_LIMIT, memberLocationsEqual, preferencesFor } from "../../shared/memberLocation";
 import { relativeDay } from "../../shared/relativeTime";
+import { WslFolderBrowser } from "./WslFolderBrowser";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
@@ -27,6 +28,25 @@ export function EnvIcon({ env, size = 13 }: { env: ExecutionEnv; size?: number }
 
 export const ENV_LABEL: Record<ExecutionEnv, string> = { windows: "Windows", wsl: "WSL" };
 
+/**
+ * The WSL side's data, as one prop.
+ *
+ * One object rather than three loose props because it travels four components
+ * deep (App → Workbench → sidebar → wizard), and a trio that must be passed
+ * together is a trio that will eventually be passed apart.
+ */
+export interface WslBrowsing {
+  /**
+   * Installed distros. `undefined` while the list is still being read, so the
+   * picker can say "reading" instead of "none installed" — two different facts.
+   */
+  distros?: string[];
+  /** Why the distro list is empty, when it is. Shown, never swallowed. */
+  error?: string;
+  /** Reads one directory level inside a distro; drives the folder browser. */
+  list: (distro: string, cwd?: string) => Promise<WslDirectoryListing>;
+}
+
 export interface CwdPickerProps {
   /** The chosen location, or undefined until the user picks one. */
   value?: MemberExecutionLocation;
@@ -35,8 +55,10 @@ export interface CwdPickerProps {
   now: number;
   onChange: (value: MemberExecutionLocation) => void;
   onChangeEnv: (env: ExecutionEnv) => void;
-  /** Opens the platform folder picker for the current environment. */
+  /** Opens the platform folder picker. WINDOWS ONLY — WSL browses in-app. */
   onBrowse: () => void;
+  /** Everything the WSL side needs; omitted where WSL is not offered. */
+  wsl?: WslBrowsing;
   /**
    * The "save as this environment's default cwd" switch. Omitted where the
    * design does not offer it (the new-party dialog), rather than rendered
@@ -47,9 +69,28 @@ export interface CwdPickerProps {
   hint?: ReactNode;
 }
 
-export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, saveAsDefault, hint }: CwdPickerProps) {
+export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, wsl, saveAsDefault, hint }: CwdPickerProps) {
   const env: ExecutionEnv = value?.env ?? "windows";
   const { fallback, recent } = preferencesFor(prefs, env);
+  const [browsing, setBrowsing] = useState(false);
+  // WSL is distro-then-path: a path means nothing until we know whose
+  // filesystem it belongs to, and `/home/dev` exists in one distro and not the
+  // next. So browsing stays shut until a distro is named.
+  const distro = env === "wsl" ? value?.distro : undefined;
+  const canBrowse = env === "windows" || Boolean(distro && wsl);
+
+  /**
+   * Switching distro clears the path.
+   *
+   * Carrying it over would hand the member a directory that exists in the
+   * distro they just left — the silent substitution this feature is meant to
+   * make impossible.
+   */
+  function chooseDistro(name: string) {
+    if (name !== distro) {
+      onChange({ env: "wsl", cwd: "", distro: name });
+    }
+  }
 
   return (
     <>
@@ -68,15 +109,57 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
         ))}
       </div>
 
+      {env === "wsl" && (
+        <div className="wb-cwd-distros" role="group" aria-label={localized("STR-3343")}>
+          <span className="wb-cwd-distros-label"><LocalizedText id="STR-3344" /></span>
+          {wsl?.distros === undefined && <span className="wb-cwd-distros-note"><LocalizedText id="STR-3345" /></span>}
+          {wsl?.distros?.length === 0 && (
+            <span className="wb-cwd-distros-note is-warn">
+              <TriangleAlert size={12} />
+              {wsl?.error || localized("STR-3346")}
+            </span>
+          )}
+          {wsl?.distros?.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={"wb-cwd-distro-chip" + (name === distro ? " is-active" : "")}
+              aria-pressed={name === distro}
+              onClick={() => chooseDistro(name)}
+            >
+              <Terminal size={12} />
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="wb-cwd-field">
         <EnvIcon env={env} />
         {value?.distro && <span className="wb-cwd-distro">{value.distro}</span>}
-        <span className="wb-mono wb-cwd-path">{value?.cwd || "경로를 선택하세요"}</span>
-        <button type="button" className="wb-cwd-browse" onClick={onBrowse}>
+        <span className="wb-mono wb-cwd-path">
+          {value?.cwd || (env === "wsl" && !distro ? localized("STR-3347") : "경로를 선택하세요")}
+        </span>
+        <button
+          type="button"
+          className="wb-cwd-browse"
+          disabled={!canBrowse}
+          onClick={() => { if (env === "wsl") { setBrowsing(true); } else { onBrowse(); } }}
+        >
           <FolderOpen size={13} />
           <LocalizedText id="STR-3259" />
         </button>
       </div>
+
+      {browsing && distro && wsl && (
+        <WslFolderBrowser
+          distro={distro}
+          initialCwd={value?.cwd}
+          list={wsl.list}
+          onCancel={() => setBrowsing(false)}
+          onSelect={(cwd) => { setBrowsing(false); onChange({ env: "wsl", cwd, distro }); }}
+        />
+      )}
 
       {recent.length > 0 && (
         <div className="wb-cwd-list">

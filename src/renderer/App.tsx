@@ -212,6 +212,14 @@ export function App() {
     () => ({ groups: [], parties: [] }),
   );
   const [cwdPrefs, setCwdPrefs] = useState<CwdPreferences>(EMPTY_CWD_PREFERENCES);
+  /**
+   * Installed distros for the WSL side of the cwd picker.
+   *
+   * `distros: undefined` until the first read lands, which the picker draws as
+   * "reading" rather than "none installed" — telling those two apart is the
+   * difference between "wait" and "go install WSL".
+   */
+  const [wslState, setWslState] = useState<{ distros?: string[]; error?: string }>({});
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -231,7 +239,30 @@ export function App() {
     }
   }, []);
 
-  useEffect(() => { void refreshGroups(); void refreshCwdPreferences(); }, [refreshGroups, refreshCwdPreferences]);
+  const refreshWslDistros = useCallback(async () => {
+    try {
+      const result = await window.agentParty.listWslDistros();
+      // An error with an empty list is still an ANSWER — the picker shows it.
+      setWslState({ distros: result.distros || [], error: result.error });
+    } catch (error) {
+      setWslState({ distros: [], error: error instanceof Error ? error.message : String(error) });
+    }
+  }, []);
+
+  /**
+   * The WSL side of the picker, as one value.
+   *
+   * `list` goes straight to the main process rather than through a cache: a
+   * distro's filesystem changes under us, and a folder browser that shows a
+   * remembered tree would offer directories that are no longer there.
+   */
+  const wslBrowsing = useMemo(() => ({
+    distros: wslState.distros,
+    error: wslState.error,
+    list: (distro: string, cwd?: string) => window.agentParty.listWslDirectories(distro, cwd),
+  }), [wslState]);
+
+  useEffect(() => { void refreshGroups(); void refreshCwdPreferences(); void refreshWslDistros(); }, [refreshGroups, refreshCwdPreferences, refreshWslDistros]);
   // The party list changing is the only thing that moves these numbers.
   useEffect(() => { void refreshGroups(); }, [refreshGroups, state.party.parties, state.party.members]);
 
@@ -1779,6 +1810,7 @@ export function App() {
                 onCreateGroup={(name) => void createPartyGroup(name)}
                 onMovePartyToGroup={(partyId, groupId) => void movePartyToGroup(partyId, groupId)}
                 onBrowseCwd={browseCwd}
+                wsl={wslBrowsing}
                 onCreateMember={(input) => void createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
                 onSetMemberKeepAwake={(name, keepAwake) => void setMemberKeepAwake(name, keepAwake)}

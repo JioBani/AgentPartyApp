@@ -1928,6 +1928,19 @@ counts as the distro being usable.
 
 Installed WSL distros, for the WSL side of the picker.
 
+### `POST /api/cwd/wsl/list`
+
+One directory level INSIDE a distro, for the WSL folder browser:
+`{ distro, cwd? }` → `{ cwd, home, parent, directories }`. `cwd` omitted means
+the distro's `$HOME`, which is where browsing starts; `parent` is absent at `/`.
+`directories` are names, dot-directories included — the UI hides them behind a
+toggle rather than the API dropping them.
+
+The listing runs `sh` inside the distro, not a Windows directory read through
+`\wsl$\`: a distro that will not start must fail here rather than hand back a
+path the member cannot run in. A failure answers with `problem` (same kinds as
+`/api/cwd/check`) instead of an empty folder.
+
 ### `POST /api/cwd/browse`
 
 Opens the real folder picker and returns the location it produced, already

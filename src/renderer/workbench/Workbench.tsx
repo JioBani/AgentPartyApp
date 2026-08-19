@@ -27,6 +27,7 @@ import {
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
 import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
+import type { WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary, RegisteredParty } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { parseMemberLocation } from "../../shared/memberLocation";
@@ -78,6 +79,7 @@ interface WorkbenchProps {
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  wsl?: WslBrowsing;
   /** App-global party groups, in display order. */
   groups: PartyGroup[];
   /** Every party the app knows, from the global registry (not just this workspace). */
@@ -158,7 +160,7 @@ function saveSidebarWidth(width: number): void {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -671,6 +673,7 @@ export function Workbench(props: WorkbenchProps) {
             onCreateGroup={onCreateGroup}
             onMovePartyToGroup={onMovePartyToGroup}
             onBrowseCwd={onBrowseCwd}
+            wsl={wsl}
             onCreateMember={handleCreateMember}
             onOpenMember={handleOpenMember}
             onRestartMember={(member) => actions.restart(member)}

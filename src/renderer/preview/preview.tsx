@@ -7,6 +7,7 @@ import { MoveGroupModal, NewGroupModal } from "../workbench/PartyGroupModals";
 import { NewPartyModal } from "../workbench/PartySidebar";
 import { MemberWizard } from "../workbench/MemberWizard";
 import { CwdPicker, ENV_LABEL, EnvIcon } from "../workbench/CwdPicker";
+import { WslFolderBrowser } from "../workbench/WslFolderBrowser";
 import { WorkspaceCwdSettings } from "../app/WorkspaceCwdSettings";
 import { groupParties } from "../../shared/partyGroups";
 import type { ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
@@ -22,6 +23,8 @@ import {
   GALLERY_WSL_DEFAULT,
   GALLERY_MEMBER_PROFILE,
   GALLERY_ROUTE,
+  GALLERY_WSL_DISTROS,
+  galleryWslListing,
 } from "../../shared/partyGroupsGallery";
 import "../design-system.css";
 import "../styles.css";
@@ -56,6 +59,28 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
     render: () => <CwdPickerStage initial={GALLERY_WSL_DEFAULT} />,
   },
   {
+    id: "cwd-picker-wsl-distro",
+    title: "실행 위치 (WSL) · 배포판 미선택",
+    note: "WSL은 배포판을 먼저 고른다. 고르기 전에는 찾아보기가 열리지 않는다.",
+    width: 562,
+    render: () => <CwdPickerStage initial={{ env: "wsl", cwd: "" }} />,
+  },
+  {
+    id: "wsl-folder-browser",
+    title: "WSL 폴더 선택",
+    note: "배포판 안에서 sh 가 읽은 목록. 홈에서 열리고, 숨김 폴더는 토글로 본다.",
+    render: () => (
+      <ModalStage tall>
+        <WslFolderBrowser
+          distro="Ubuntu-24.04"
+          list={async (distro, cwd) => galleryWslListing(distro, cwd)}
+          onCancel={noop}
+          onSelect={noop}
+        />
+      </ModalStage>
+    ),
+  },
+  {
     id: "cwd-picker-windows",
     title: "실행 위치 (Windows)",
     note: "환경을 바꾸면 그 환경의 기본 cwd와 최근 목록만 보인다.",
@@ -82,6 +107,7 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
           cwdPrefs={GALLERY_CWD_PREFERENCES}
           now={GALLERY_NOW}
           onBrowseCwd={async () => null}
+          wsl={{ distros: GALLERY_WSL_DISTROS, list: async (distro, cwd) => galleryWslListing(distro, cwd) }}
           onCancel={noop}
           onCreate={noop}
           startStep={1}
@@ -102,6 +128,7 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
           cwdPrefs={GALLERY_CWD_PREFERENCES}
           now={GALLERY_NOW}
           onBrowseCwd={async () => null}
+          wsl={{ distros: GALLERY_WSL_DISTROS, list: async (distro, cwd) => galleryWslListing(distro, cwd) }}
           onCreateGroup={noop}
           onCancel={noop}
           onCreate={noop}
@@ -238,6 +265,7 @@ function CwdPickerStage({ initial, empty }: { initial?: MemberExecutionLocation;
               onChange={setValue}
               onChangeEnv={(env: ExecutionEnv) => setValue(preferencesFor(prefs, env).fallback ?? { env, cwd: "" })}
               onBrowse={noop}
+              wsl={{ distros: GALLERY_WSL_DISTROS, list: async (distro, cwd) => galleryWslListing(distro, cwd) }}
               saveAsDefault={{ checked: save, onToggle: setSave }}
               hint={`실행 환경과 cwd는 생성 후 바꿀 수 없습니다. 세션 재개와 대화 기록이 이 cwd에 묶이기 때문입니다 — 다른 위치가 필요하면 새 멤버를 만드세요.${empty ? ` (${ENV_LABEL.windows} 기본 cwd 없음)` : ""}`}
             />
