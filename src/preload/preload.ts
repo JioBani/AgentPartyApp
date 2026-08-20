@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { EnvironmentReport } from "../shared/environment";
-import type { NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import type { InitialAppState, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
@@ -32,7 +32,8 @@ const api = {
   // 파티 그룹 · 멤버 실행 위치(cwd). Each is the same AppController method the
   // HTTP route calls, so the UI and an agent drive one implementation.
   listPartyGroups: () => ipcRenderer.invoke("partyGroups:list"),
-  switchWorkspace: (workspacePath: string) => ipcRenderer.invoke("workspace:switch", workspacePath),
+  switchWorkspace: (workspacePath: string): Promise<InitialAppState | undefined> =>
+    ipcRenderer.invoke("workspace:switch", workspacePath),
   createPartyGroup: (name: string) => ipcRenderer.invoke("partyGroups:create", name),
   movePartyToGroup: (partyId: string, groupId: string) => ipcRenderer.invoke("partyGroups:move", partyId, groupId),
   renamePartyGroup: (groupId: string, name: string) => ipcRenderer.invoke("partyGroups:rename", groupId, name),

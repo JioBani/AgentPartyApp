@@ -4,8 +4,9 @@
  * The fixture mirrors the shape that exposed the lag in a real workspace:
  * eight parties, 12 open tabs / six panels per party, tool-heavy multi-megabyte
  * transcripts. It launches the real Electron app on isolated userData, selects
- * parties through the public automation route (the same AppController method
- * as the sidebar), and measures layout, first-panel, and all-panel paint.
+ * the first party through a real sidebar pointer click, then covers the public
+ * automation route too. Both paths measure layout, first-panel, and all-panel
+ * paint; the UI click is essential because it may do work before AppController.
  *
  * Offline: sleeping members never start a harness, so there is no model call.
  * Run after `npm run build`.
@@ -78,7 +79,20 @@ async function main() {
     await waitForPartyReady("perf-party-0", windowId, 15_000, performance.now());
 
     const samples = [];
-    for (let index = 1; index < PARTY_COUNT; index += 1) {
+    const query = `?window=${encodeURIComponent(windowId)}`;
+    const clickedPartyId = "perf-party-1";
+    const clickedStarted = performance.now();
+    await post(`/api/qa/pointer${query}`, {
+      steps: [{ selector: `.wb-party-row[data-party-id="${clickedPartyId}"]`, action: "click" }],
+      delayMs: 0,
+    });
+    samples.push({
+      partyId: `${clickedPartyId}-ui`,
+      commandMs: round(performance.now() - clickedStarted),
+      ...await waitForPartyReady(clickedPartyId, windowId, MAX_ALL_PANELS_MS * 2, clickedStarted),
+    });
+
+    for (let index = 2; index < PARTY_COUNT; index += 1) {
       const partyId = `perf-party-${index}`;
       const started = performance.now();
       await post(`/api/parties/${partyId}/select?window=${encodeURIComponent(windowId)}`, {});
@@ -100,7 +114,6 @@ async function main() {
 
     // Background tabs are intentionally not restored during the party switch.
     // Selecting one must still feel immediate and converge on the same history.
-    const query = `?window=${encodeURIComponent(windowId)}`;
     const storedLayout = (await get(`/api/party/layout${query}`)).layout;
     storedLayout.panels[0].active = "member-6";
     const backgroundStarted = performance.now();

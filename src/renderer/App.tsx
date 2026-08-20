@@ -966,16 +966,20 @@ export function App() {
    */
   async function selectParty(partyId: string) {
     try {
-      // Always ask when the party names a home. Whether that is a real move is
-      // decided in the main process against the window's own workspace — this
-      // side's copy of the path can be a render behind, and comparing here sent
-      // `select` to the wrong workspace and failed with "does not exist".
+      // Always ask the main process when a globally registered party names a
+      // home. The renderer's workspace copy can be one render behind; only the
+      // window registry can safely decide whether this is a real move. A
+      // same-workspace call returns no state cheaply, while a real move returns
+      // the destination state that must replace this window's old state.
       const home = groupState.parties.find((entry) => entry.id === partyId)?.workspacePath;
-      if (home) {
-        await window.agentParty.switchWorkspace(home);
-      }
+      const switchedState: InitialAppState | undefined = home
+        ? await window.agentParty.switchWorkspace(home)
+        : undefined;
       const result = await window.agentParty.selectParty(partyId);
-      await applyPartyResult(result);
+      // A real cross-workspace move does need its fresh global/session state.
+      // Apply it together with the requested party so React never paints the
+      // destination workspace's incidental default party in between.
+      await applyPartyResult(result, true, switchedState);
     } catch (error) {
       noticeOnFailure("파티를 전환하지 못했습니다")(error);
     }
@@ -1090,7 +1094,7 @@ export function App() {
     setState((current) => ({ ...current, party }));
   }
 
-  async function applyPartyResult(result: PartyCommandResult, notify = true) {
+  async function applyPartyResult(result: PartyCommandResult, notify = true, baseState?: InitialAppState) {
     // `notify` is off for routine sends: a toast on every message ("Message sent
     // to 'X'.") is noise. State still updates; real send failures surface below.
     if (notify) {
@@ -1098,12 +1102,12 @@ export function App() {
     }
     if (result.members) {
       setState((current) => ({
-        ...current,
+        ...(baseState ?? current),
         party: {
-          parties: result.parties || current.party.parties || [],
-          currentPartyId: result.currentPartyId || current.party.currentPartyId,
+          parties: result.parties || baseState?.party.parties || current.party.parties || [],
+          currentPartyId: result.currentPartyId || baseState?.party.currentPartyId || current.party.currentPartyId,
           members: result.members || [],
-          messages: result.messages || current.party.messages || [],
+          messages: result.messages || baseState?.party.messages || current.party.messages || [],
         },
       }));
       if (result.session) {

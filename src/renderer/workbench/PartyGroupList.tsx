@@ -244,6 +244,7 @@ export function PartyGroupList({
                 <button
                   type="button"
                   key={party.id}
+                  data-party-id={party.id}
                   className={
                     "wb-party-row"
                     + (party.id === activePartyId ? " is-active" : "")
