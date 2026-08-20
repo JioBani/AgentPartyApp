@@ -45,6 +45,18 @@ export const workspaceLocationRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.createPartyGroup(required(p.name, "name")),
   },
   {
+    name: "partyGroups.rename",
+    http: "POST /api/party-groups/:id/rename",
+    handler: (p, ctx) => ctx.controller.renamePartyGroup(text(p.id), required(p.name, "name")),
+  },
+  {
+    // Deletes the FOLDER, not what is in it: the parties move to the default
+    // group and the response says how many did.
+    name: "partyGroups.remove",
+    http: "DELETE /api/party-groups/:id",
+    handler: (p, ctx) => ctx.controller.removePartyGroup(text(p.id)),
+  },
+  {
     name: "partyGroups.move",
     http: "POST /api/parties/:id/group",
     handler: (p, ctx) => ctx.controller.movePartyToGroup(text(p.id), required(p.groupId, "groupId")),
@@ -89,19 +101,12 @@ export const workspaceLocationRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.listWslDistros(),
   },
   {
-    // The WSL folder browser's one call: a directory level as the distro sees
-    // it. `cwd` omitted = the distro's `$HOME`, which is where browsing starts.
-    name: "cwd.listWslDirectories",
-    http: "POST /api/cwd/wsl/list",
-    handler: (p, ctx) => ctx.controller.listWslDirectories(text(p.distro, "distro"), optText(p.cwd)),
-  },
-  {
     // Opens the real folder picker, so an agent driving QA walks the same path a
     // user does. `remote: false` — a headless engine has no dialog.
     name: "cwd.browse",
     http: "POST /api/cwd/browse",
     remote: false,
-    handler: (p, ctx) => ctx.controller.browseCwd(env0(p.env ?? "windows"), ctx.windowId),
+    handler: (p, ctx) => ctx.controller.browseCwd(env0(p.env ?? "windows"), ctx.windowId, optText(p.distro)),
   },
   {
     name: "cwd.memberLocations",

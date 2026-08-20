@@ -23,7 +23,6 @@ import {
   type CwdProblem,
   type ExecutionEnv,
   type MemberExecutionLocation,
-  type WslDirectoryListing,
 } from "../shared/memberLocation";
 import { log } from "./logger";
 
@@ -161,85 +160,37 @@ export function locationFromPickedFolder(folder: string, requested: ExecutionEnv
   return requested === "wsl" ? { env: "wsl", cwd: folder } : parsed;
 }
 
-/** The renderer reads the same shape, so it is declared once, in shared. */
-export type WslListing = WslDirectoryListing;
-
 /**
- * Lists the sub-directories of one path INSIDE a distro.
+ * The distro's `$HOME`, as the distro itself reports it.
  *
- * `cwd` omitted means "start at `$HOME`", which is what the browser opens with:
- * a WSL user's work lives under their home, and `/` opens onto `proc`, `sys`
- * and `mnt` — a first screen made entirely of directories nobody wanted.
+ * Used to point the folder dialog at `\wsl$\<distro>\home\<user>` instead of
+ * the distro root: `/` opens onto `proc`, `sys` and `mnt`, a first screen made
+ * of directories nobody wanted. Asking the distro beats guessing `/home/<user>`,
+ * which is wrong for root and for any account with a moved home.
  *
- * The path is passed as an ARGUMENT (`sh -lc '<script>' ap "<path>"`), never
- * spliced into the script text, so a directory with a quote or a `$` in its
- * name is a path and not a command.
+ * A distro that will not start answers with a `problem` rather than a guess —
+ * opening a dialog on an unreachable UNC path shows an empty window with no
+ * explanation.
  */
-export async function listWslDirectories(distro: string, cwd?: string): Promise<WslListing> {
-  // The path is OMITTED, not passed as "", when the caller wants home: an empty
-  // argument makes `wsl.exe` itself fail before the shell ever runs (measured).
-  const args = ["-d", distro, "-e", "sh", "-lc", LIST_SCRIPT, "ap", ...(cwd ? [cwd] : [])];
-  // The distro list is consulted only when this probe comes back empty (below),
-  // not before every step: browsing is one call per click, and paying a second
-  // `wsl.exe` spawn each time to re-confirm a distro we are already inside is
-  // latency the user feels on every folder.
-  const probe = await probeCommand("wsl.exe", args, { timeoutMs: WSL_PROBE_TIMEOUT_MS });
-  const lines = probe.stdout.replace(/\0/g, "").split(/\r?\n/);
-  const marked = (prefix: string) => lines.filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
-  if (lines.some((line) => line.startsWith("__AP_MISSING__"))) {
-    return { distro, problem: cwdProblem("missing") };
+export async function wslHome(distro: string): Promise<{ home?: string; problem?: CwdProblem }> {
+  const probe = await probeCommand(
+    "wsl.exe",
+    // `echo`, not `printf`: no escape to get wrong on the way through three
+    // quoting layers, and the marker keeps a login banner out of the way.
+    ["-d", distro, "-e", "sh", "-lc", 'echo "__AP_HOME__$HOME"'],
+    { timeoutMs: WSL_PROBE_TIMEOUT_MS },
+  );
+  const home = probe.stdout.replace(/\0/g, "").split(/\r?\n/)
+    .find((line) => line.startsWith("__AP_HOME__"))?.slice("__AP_HOME__".length).trim();
+  if (home) {
+    return { home };
   }
-  if (lines.some((line) => line.startsWith("__AP_DENIED__"))) {
-    return { distro, problem: cwdProblem("denied") };
+  // No marker: the shell never ran. Tell "not installed" from "will not start",
+  // because they need different repairs.
+  const { names, error } = await listWslDistros();
+  if (!error && !names.some((name) => name.toLowerCase() === distro.toLowerCase())) {
+    return { problem: cwdProblem("distro-missing") };
   }
-  const resolved = marked("__AP_CWD__")[0];
-  if (!resolved) {
-    // No marker at all: the shell never ran, so this is the distro, not the
-    // path. Which distro failure it is decides what the user has to fix, so
-    // the installed list is read HERE — the one place the answer is needed.
-    log("info", "cwd", "wsl listing produced no marker", { distro, cwd, error: probe.error });
-    const { names, error } = await listWslDistros();
-    if (!error && !names.some((name) => name.toLowerCase() === distro.toLowerCase())) {
-      return { distro, problem: cwdProblem("distro-missing") };
-    }
-    return { distro, problem: { ...cwdProblem("distro-unavailable"), message: wslFailureMessage(probe.error) } };
-  }
-  return {
-    distro,
-    cwd: resolved,
-    home: marked("__AP_HOME__")[0],
-    parent: parentOf(resolved),
-    // Sorted here rather than in the shell: `ls` sorting follows the distro's
-    // locale, and the list must not reorder itself between two machines.
-    directories: marked("__AP_DIR__").sort((a, b) => a.localeCompare(b, "en")),
-  };
-}
-
-/**
- * Resolves the target, then prints it, `$HOME`, and every sub-directory, each
- * behind a marker so a login shell's own banner cannot be mistaken for a folder.
- *
- * Always exits 0: the failure is the ANSWER here, and a non-zero exit would be
- * reported by the probe as a spawn problem instead of "that path is gone".
- */
-const LIST_SCRIPT = [
-  'target="$1"; [ -n "$target" ] || target="$HOME"',
-  'cd "$target" 2>/dev/null || { printf "__AP_MISSING__\n"; exit 0; }',
-  '[ -r . ] || { printf "__AP_DENIED__\n"; exit 0; }',
-  'printf "__AP_CWD__%s\n" "$(pwd)"',
-  'printf "__AP_HOME__%s\n" "$HOME"',
-  'for entry in .* *; do',
-  '  case "$entry" in .|..) continue ;; esac',
-  '  [ -d "$entry" ] || continue',
-  '  printf "__AP_DIR__%s\n" "$entry"',
-  'done',
-].join("\n");
-
-/** `undefined` at the root, so the caller knows not to offer a way up. */
-function parentOf(cwd: string): string | undefined {
-  if (cwd === "/" || !cwd.startsWith("/")) {
-    return undefined;
-  }
-  const cut = cwd.replace(/\/+$/, "").lastIndexOf("/");
-  return cut <= 0 ? "/" : cwd.slice(0, cut);
+  log("info", "cwd", "wsl home lookup failed", { distro, error: probe.error });
+  return { problem: { ...cwdProblem("distro-unavailable"), message: wslFailureMessage(probe.error) } };
 }

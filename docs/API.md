@@ -1928,6 +1928,17 @@ counts as the distro being usable.
 
 Installed WSL distros, for the WSL side of the picker.
 
+### `POST /api/party-groups/:id/rename`
+
+Renames a group. Duplicate names are refused; the default group is renamable
+(its `kind`, not its label, is what makes it the fallback).
+
+### `DELETE /api/party-groups/:id`
+
+Deletes the FOLDER, not what is in it: the group's parties move to the default
+group and the response says how many did (`moved`). The default group cannot be
+deleted — something has to be the place parties land.
+
 ### 멤버가 실제로 어디서 실행되는가
 
 멤버의 실행 위치는 기록만 되는 값이 아니라 하네스가 **실제로 시작되는 디렉터리**다.
@@ -1940,23 +1951,13 @@ Claude 하네스는 Agent SDK 가 프로세스 안에서 CLI 를 띄우므로, �
 `POST /api/party/members/:name/start` 를 부르면 조용히 워크스페이스에서 실행하는 대신
 이유를 담은 메시지를 돌려준다. WSL 워크스페이스(엔진이 그 배포판 안)에서는 정상 동작한다.
 
-### `POST /api/cwd/wsl/list`
-
-One directory level INSIDE a distro, for the WSL folder browser:
-`{ distro, cwd? }` → `{ cwd, home, parent, directories }`. `cwd` omitted means
-the distro's `$HOME`, which is where browsing starts; `parent` is absent at `/`.
-`directories` are names, dot-directories included — the UI hides them behind a
-toggle rather than the API dropping them.
-
-The listing runs `sh` inside the distro, not a Windows directory read through
-`\wsl$\`: a distro that will not start must fail here rather than hand back a
-path the member cannot run in. A failure answers with `problem` (same kinds as
-`/api/cwd/check`) instead of an empty folder.
-
 ### `POST /api/cwd/browse`
 
 Opens the real folder picker and returns the location it produced, already
-checked. `{ "cancelled": true }` when the dialog was closed — distinct from a
+checked. `{ env, distro? }` — for `env: "wsl"` the SAME OS dialog opens inside
+the distro, at `\wsl$\<distro>\<the distro's $HOME>`; the UNC path that comes
+back is converted to the `{distro, /posix/path}` pair. A folder picked outside
+`\wsl$\` is refused rather than converted, because `C:\...` is not a POSIX cwd. `{ "cancelled": true }` when the dialog was closed — distinct from a
 failure, so the caller leaves the previous choice alone. Desktop only.
 
 ### `GET /api/cwd/members`

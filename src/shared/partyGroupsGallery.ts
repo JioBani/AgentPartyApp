@@ -16,7 +16,7 @@
  * which is what makes the design reviewable at all.
  */
 
-import { cwdProblem, type CwdPreferences, type MemberExecutionLocation, type MemberLocationRow, type WslDirectoryListing } from "./memberLocation";
+import { cwdProblem, type CwdPreferences, type MemberExecutionLocation, type MemberLocationRow } from "./memberLocation";
 import { DEFAULT_PARTY_GROUP_ID, type PartyGroup, type PartySummary } from "./partyGroups";
 
 /** 2026-08-20 12:00 KST — the instant every relative label below is measured from. */
@@ -66,38 +66,6 @@ export const GALLERY_CWD_PREFERENCES: CwdPreferences = {
 
 /** The distros the picker offers in the preview. */
 export const GALLERY_WSL_DISTROS = ["Ubuntu-24.04", "Ubuntu-22.04", "docker-desktop"];
-
-/**
- * A small WSL tree for the folder browser, keyed by absolute path.
- *
- * Enough depth to exercise every control the browser has: a home that opens
- * with dot-directories in it (so the 숨김 폴더 toggle has something to hide),
- * a level above home, and a leaf with nothing under it.
- */
-const GALLERY_WSL_TREE: Record<string, string[]> = {
-  "/": ["bin", "etc", "home", "mnt", "opt", "srv", "usr", "var"],
-  "/home": ["dev"],
-  "/home/dev": [".cache", ".config", ".ssh", "agentparty", "legacy", "sandbox", "service"],
-  "/home/dev/service": ["api", "docs", "web"],
-  "/home/dev/service/api": [],
-};
-
-/**
- * Answers the browser from {@link GALLERY_WSL_TREE} instead of a distro.
- *
- * A path the fixture does not know comes back as `missing` rather than as an
- * empty folder, so the preview shows the same failure the real browser does.
- */
-export function galleryWslListing(distro: string, cwd?: string): WslDirectoryListing {
-  const home = "/home/dev";
-  const target = cwd || home;
-  const directories = GALLERY_WSL_TREE[target];
-  if (!directories) {
-    return { distro, problem: cwdProblem("missing") };
-  }
-  const parent = target === "/" ? undefined : target.slice(0, target.lastIndexOf("/")) || "/";
-  return { distro, cwd: target, home, parent, directories };
-}
 
 /** The empty state: a fresh install has no default and nothing remembered. */
 export const GALLERY_CWD_PREFERENCES_EMPTY: CwdPreferences = { windowsRecent: [], wslRecent: [] };

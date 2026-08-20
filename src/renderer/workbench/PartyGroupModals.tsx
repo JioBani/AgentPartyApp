@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, FolderInput, FolderPlus, X } from "lucide-react";
+import { Folder, FolderInput, FolderPlus, PencilLine, X } from "lucide-react";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
@@ -57,6 +57,60 @@ export function NewGroupModal({ onCancel, onCreate }: {
           <div className="wb-modal-actions">
             <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3280" /></button>
             <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed} onClick={create}><LocalizedText id="STR-3281" /></button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renames a group.
+ *
+ * Its own dialog rather than an inline-editable row: the name has to be
+ * validated against the other groups (duplicates are refused by the store), and
+ * a failure needs somewhere to be shown that is not the sidebar.
+ */
+export function RenameGroupModal({ group, onCancel, onRename }: {
+  group: { id: string; name: string };
+  onCancel: () => void;
+  onRename: (name: string) => void;
+}) {
+  const [name, setName] = useState(group.name);
+  const trimmed = name.trim();
+
+  function rename() {
+    if (trimmed && trimmed !== group.name) {
+      onRename(trimmed);
+    }
+  }
+
+  return (
+    <div className="wb-modal-scrim">
+      <div className="wb-modal wb-gate-modal wb-new-party-modal" role="dialog" aria-modal="true">
+        <header className="wb-modal-head">
+          <div className="wb-modal-title">
+            <PencilLine size={16} />
+            <strong><LocalizedText id="STR-3376" /></strong>
+          </div>
+          <button type="button" className="wb-icon-btn" title={localized("STR-3377")} onClick={onCancel}><X size={16} /></button>
+        </header>
+        <div className="wb-modal-body wb-gate-modal-body">
+          <div className="wb-modal-label"><LocalizedText id="STR-3277" /></div>
+          <input
+            className="wb-gate-name-input"
+            value={name}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") rename(); }}
+          />
+          <p className="wb-wizard-hint"><LocalizedText id="STR-3378" /></p>
+        </div>
+        <footer className="wb-modal-foot">
+          <span className="wb-flex-spacer" />
+          <div className="wb-modal-actions">
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3379" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed || trimmed === group.name} onClick={rename}><LocalizedText id="STR-3380" /></button>
           </div>
         </footer>
       </div>

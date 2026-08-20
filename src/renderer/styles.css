@@ -9017,10 +9017,10 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-wizard-step.is-nav { cursor: pointer; }
 .set-cwd-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--font-caption); }
 
-/* ── WSL 배포판 선택 + 배포판 내부 폴더 브라우저 ──────────────────────────
-   목업에 없는 화면이라 값은 위 블록에서 가져온다: 칩은 .wb-env-seg 버튼과,
-   목록은 .wb-cwd-list 와 같은 높이·여백을 쓴다. 새 숫자를 만들면 같은
-   컨트롤이 두 벌의 치수를 갖게 된다. */
+/* ── WSL 배포판 선택 ────────────────────────────────────────────────────
+   목업에 없는 컨트롤이라 값은 위 블록에서 가져온다: 칩은 .wb-env-seg 버튼과
+   같은 높이·여백을 쓴다. 새 숫자를 만들면 같은 컨트롤이 두 벌의 치수를 갖는다.
+   경로 자체는 OS 폴더 대화상자로 고른다(WSL 은 \wsl$\<배포판> 으로 열린다). */
 .wb-cwd-distros { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; margin-top: 6px; }
 .wb-cwd-distros-label { flex: none; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
 .wb-cwd-distros-note { display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--font-caption); }
@@ -9028,11 +9028,27 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-cwd-distro-chip { display: flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
 .wb-cwd-distro-chip:hover { border-color: var(--border-strong); color: var(--text-0); }
 .wb-cwd-distro-chip.is-active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); font-weight: var(--weight-semibold); }
-/* 브라우저를 열 수 없는 이유(배포판 미선택)는 힌트 문구가 말한다. 버튼은
-   비활성 상태를 눈에 보이게만 하고 사라지지는 않는다. */
+/* 배포판을 아직 안 골랐을 때 비활성. 사라지지 않고 눌리지 않는 상태로 남는다. */
 .wb-cwd-browse:disabled { opacity: .45; cursor: not-allowed; }
-.wb-cwd-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; min-height: var(--control-height); padding: 4px 5px 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-input); }
-.wb-cwd-crumb-path { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); font-size: var(--font-body); }
-.wb-cwd-browser-list { max-height: 260px; overflow-y: auto; }
-.wb-cwd-browser-empty { padding: 10px 8px; color: var(--text-3); font-size: var(--font-caption); text-align: center; }
-.wb-cwd-browser-error { display: flex; align-items: center; gap: 5px; margin: 6px 0 0; color: var(--danger); font-size: var(--font-caption); }
+
+/* ── 파티 그룹 가시성 (사용자 요청 2026-08-20) ──────────────────────────
+   목업의 그룹 헤더는 26px 캡션 한 줄이라 목록의 구분선처럼 읽혔다. 그룹은
+   파티를 분류하는 그릇이므로 그릇으로 보여야 한다는 지적에 따라, 목업에서
+   내려온 위 규칙을 여기서 덮어쓴다. 이 블록이 정본이고 위는 출처다. */
+/* `flex: none` matters: the list is a flex column, and with `overflow: hidden`
+   for the rounded corners a shrinking group CLIPS its own parties — the box
+   sized to one row and the rest of the list simply vanished. */
+.wb-party-group { flex: none; margin-bottom: 6px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); overflow: hidden; }
+.wb-party-group.is-menu { border-color: var(--border-strong); }
+.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-1); font-size: var(--font-body-sm); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-party-group.is-open .wb-group-row { border-bottom: 1px solid var(--border-subtle); }
+.wb-group-row:hover { background: var(--bg-4, var(--bg-3)); color: var(--text-0); }
+.wb-group-icon { flex: none; color: var(--accent); }
+.wb-group-count { flex: none; min-width: 18px; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--font-micro); text-align: center; }
+/* 파티는 그룹 상자 안에 들어간다 — 왼쪽 세로선 대신 상자가 소속을 말한다. */
+.wb-group-parties { gap: 1px; padding: 4px; margin-left: 0; border-left: 0; }
+.wb-group-empty { margin: 0; padding: 8px 6px; color: var(--text-3); font-size: var(--font-caption); text-align: center; }
+/* 드래그 중인 파티와, 그것을 받을 그룹. */
+.wb-party-row.is-dragging { opacity: .4; }
+.wb-party-group.is-drop-target { border-color: var(--accent-bd); background: var(--accent-dim); }
+.wb-party-group.is-drop-target .wb-group-row { background: var(--accent-dim); color: var(--accent); }

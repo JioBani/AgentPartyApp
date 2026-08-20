@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, ChevronsLeft, ExternalLink, FolderInput, Moon, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -17,7 +17,7 @@ import { HarnessIcon } from "./HarnessIcon";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { PartyGroupList } from "./PartyGroupList";
-import { MoveGroupModal, NewGroupModal } from "./PartyGroupModals";
+import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
 import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
@@ -71,8 +71,10 @@ interface PartySidebarProps {
   onCreateParty: (input: CreatePartyInput) => void;
   onCreateGroup: (name: string) => void;
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
+  onRemoveGroup: (groupId: string) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
-  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
   onCreateMember: (input: CreateMemberInput) => void;
   onOpenMember: (member: string) => void;
@@ -212,14 +214,57 @@ function MemberContextMenuItems({ name, view, location, onRestart, onSetKeepAwak
   );
 }
 
-// Right-click context menu target: a member row, or a party row (which needs a
-// confirm step because deleting a party cascades to all of its members).
+/**
+ * The group half of the sidebar's right-click menu.
+ *
+ * Deleting a group deletes a FOLDER, so the wording says where the parties go —
+ * "그룹만 삭제" next to the count, not a bare "삭제" that reads like it takes the
+ * parties with it. The default group has no delete item at all: something has
+ * to be the place parties land, and a disabled row would only invite the click.
+ */
+function GroupContextMenuItems({ menu, confirming, onAddParty, onRename, onArmDelete, onDelete }: {
+  menu: { groupId: string; name: string; isDefault: boolean };
+  confirming: boolean;
+  onAddParty: () => void;
+  onRename: () => void;
+  onArmDelete: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <div className="wb-ctx-head">
+        <strong>{menu.name}</strong>
+        <span><LocalizedText id="STR-3295" /></span>
+      </div>
+      <button type="button" className="wb-ctx-item" onClick={onAddParty}>
+        <Plus size={13} />  <LocalizedText id="STR-3381" />
+      </button>
+      <button type="button" className="wb-ctx-item" onClick={onRename}>
+        <PencilLine size={13} />  <LocalizedText id="STR-3382" />
+      </button>
+      {!menu.isDefault && (confirming ? (
+        <button type="button" className="wb-ctx-item is-danger" onClick={onDelete}>
+          <Trash2 size={13} />  <LocalizedText id="STR-3383" />
+        </button>
+      ) : (
+        <button type="button" className="wb-ctx-item is-danger" onClick={onArmDelete}>
+          <Trash2 size={13} />  <LocalizedText id="STR-3384" />
+        </button>
+      ))}
+    </>
+  );
+}
+
+// Right-click context menu target: a member row, a party row (which needs a
+// confirm step because deleting a party cascades to all of its members), or a
+// group header.
 type CtxMenu =
   | { kind: "member"; name: string; x: number; y: number }
-  | { kind: "party"; partyId: string; name: string; x: number; y: number };
+  | { kind: "party"; partyId: string; name: string; x: number; y: number }
+  | { kind: "group"; groupId: string; name: string; isDefault: boolean; x: number; y: number };
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
+  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
@@ -230,6 +275,13 @@ export function PartySidebar(props: PartySidebarProps) {
   const [menu, setMenu] = useState<CtxMenu | null>(null);
   // Arms the second, confirming click for the destructive party delete.
   const [confirmParty, setConfirmParty] = useState(false);
+  // Same two-step for deleting a group. Separate flag: one shared "confirm"
+  // would carry an armed party delete over into a group menu.
+  const [confirmGroup, setConfirmGroup] = useState(false);
+  /** The group the 이름 변경 dialog is open for. */
+  const [renamingGroup, setRenamingGroup] = useState<{ id: string; name: string } | null>(null);
+  /** Which group a new party should land in, when opened from a group's menu. */
+  const [newPartyGroupId, setNewPartyGroupId] = useState<string | null>(null);
   /**
    * Which groups are expanded. Starts with every group open: a first run that
    * hid the parties behind three closed folders would look like an empty app.
@@ -251,6 +303,7 @@ export function PartySidebar(props: PartySidebarProps) {
   useEffect(() => {
     if (!menu) {
       setConfirmParty(false);
+      setConfirmGroup(false);
       return;
     }
     const close = () => setMenu(null);
@@ -323,12 +376,18 @@ export function PartySidebar(props: PartySidebarProps) {
           openGroupIds={openGroupIds}
           now={now}
           menuPartyId={menu?.kind === "party" ? menu.partyId : undefined}
+          menuGroupId={menu?.kind === "group" ? menu.groupId : undefined}
           onToggleGroup={toggleGroup}
           onSelectParty={onSelectParty}
           onCreateGroup={() => setNewGroupOpen(true)}
+          onDropParty={onMovePartyToGroup}
           onPartyContextMenu={(party, event) => {
             setConfirmParty(false);
             setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
+          }}
+          onGroupContextMenu={(group, event) => {
+            setConfirmGroup(false);
+            setMenu({ kind: "group", groupId: group.id, name: group.name, isDefault: group.kind === "default", x: event.clientX, y: event.clientY });
           }}
         />
       </section>
@@ -404,7 +463,16 @@ export function PartySidebar(props: PartySidebarProps) {
       {menu && (
         // Fixed to the viewport at the cursor; click handlers above close it.
         <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
-          {menu.kind === "member" ? (
+          {menu.kind === "group" ? (
+            <GroupContextMenuItems
+              menu={menu}
+              confirming={confirmGroup}
+              onAddParty={() => { setNewPartyGroupId(menu.groupId); setNewPartyOpen(true); setMenu(null); }}
+              onRename={() => { setRenamingGroup({ id: menu.groupId, name: menu.name }); setMenu(null); }}
+              onArmDelete={() => setConfirmGroup(true)}
+              onDelete={() => { onRemoveGroup(menu.groupId); setMenu(null); }}
+            />
+          ) : menu.kind === "member" ? (
             <MemberContextMenuItems
               name={menu.name}
               view={memberOf(views, menu.name)}
@@ -477,18 +545,26 @@ export function PartySidebar(props: PartySidebarProps) {
         </div>
       )}
 
+      {renamingGroup && (
+        <RenameGroupModal
+          group={renamingGroup}
+          onCancel={() => setRenamingGroup(null)}
+          onRename={(name) => { onRenameGroup(renamingGroup.id, name); setRenamingGroup(null); }}
+        />
+      )}
+
       {newPartyOpen && (
         <NewPartyModal
           initialName={draft}
           groups={groups}
-          initialGroupId={activeGroupId}
+          initialGroupId={newPartyGroupId ?? activeGroupId}
           cwdPrefs={cwdPrefs}
           now={now}
           onBrowseCwd={onBrowseCwd}
           wsl={wsl}
           onCreateGroup={() => { setNewPartyOpen(false); setNewGroupOpen(true); }}
-          onCancel={() => setNewPartyOpen(false)}
-          onCreate={(input) => { onCreateParty(input); setDraft(""); setNewPartyOpen(false); }}
+          onCancel={() => { setNewPartyOpen(false); setNewPartyGroupId(null); }}
+          onCreate={(input) => { onCreateParty(input); setDraft(""); setNewPartyOpen(false); setNewPartyGroupId(null); }}
         />
       )}
 
@@ -528,7 +604,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
   initialGroupId: string;
   cwdPrefs: CwdPreferences;
   now: number;
-  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
   /** Chosen from the group dropdown's last entry; hands over to the group dialog. */
   onCreateGroup: () => void;
@@ -600,7 +676,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
             now={now}
             onChange={setLocation}
             onChangeEnv={changeEnv}
-            onBrowse={() => { void onBrowseCwd(location?.env ?? "windows").then((picked) => { if (picked) setLocation(picked); }); }}
+            onBrowse={() => { void onBrowseCwd(location?.env ?? "windows", location?.distro).then((picked) => { if (picked) setLocation(picked); }); }}
             wsl={wsl}
             hint={<><LocalizedText id="STR-3299" /> <b>main</b> <LocalizedText id="STR-3298" /></>}
           />

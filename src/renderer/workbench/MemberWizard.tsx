@@ -48,7 +48,7 @@ interface MemberWizardProps {
    * distinction the wizard needs, because "cancelled" must leave the previous
    * selection alone rather than clear it.
    */
-  onBrowseCwd: (env: ExecutionEnv) => Promise<MemberExecutionLocation | null>;
+  onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   /** The WSL side of the picker (distro list + directory reader). */
   wsl?: WslBrowsing;
   /**
@@ -258,7 +258,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   }
 
   async function browse() {
-    const picked = await onBrowseCwd(location?.env ?? "windows");
+    const picked = await onBrowseCwd(location?.env ?? "windows", location?.distro);
     if (picked) {
       setLocation(picked);
     }

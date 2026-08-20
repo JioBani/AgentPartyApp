@@ -249,18 +249,8 @@ export function App() {
     }
   }, []);
 
-  /**
-   * The WSL side of the picker, as one value.
-   *
-   * `list` goes straight to the main process rather than through a cache: a
-   * distro's filesystem changes under us, and a folder browser that shows a
-   * remembered tree would offer directories that are no longer there.
-   */
-  const wslBrowsing = useMemo(() => ({
-    distros: wslState.distros,
-    error: wslState.error,
-    list: (distro: string, cwd?: string) => window.agentParty.listWslDirectories(distro, cwd),
-  }), [wslState]);
+  /** The WSL side of the picker: which distros exist, and why not, if none. */
+  const wslBrowsing = useMemo(() => ({ distros: wslState.distros, error: wslState.error }), [wslState]);
 
   useEffect(() => { void refreshGroups(); void refreshCwdPreferences(); void refreshWslDistros(); }, [refreshGroups, refreshCwdPreferences, refreshWslDistros]);
   // The party list changing is the only thing that moves these numbers.
@@ -313,14 +303,42 @@ export function App() {
     }
   }
 
+  async function renamePartyGroup(groupId: string, name: string) {
+    try {
+      const result = await window.agentParty.renamePartyGroup(groupId, name);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("그룹 이름을 바꾸지 못했습니다")(error);
+    }
+  }
+
+  /**
+   * Deletes a group; its parties land in the default one.
+   *
+   * The count is reported back, because "the folder is gone" and "your six
+   * parties are now in 기본 그룹" are different facts and only the second one
+   * tells the user where to look.
+   */
+  async function removePartyGroup(groupId: string) {
+    try {
+      const result = await window.agentParty.removePartyGroup(groupId);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+      if (result.moved > 0) {
+        reportNotice(`그룹을 삭제했습니다. 파티 ${result.moved}개를 기본 그룹으로 옮겼습니다.`);
+      }
+    } catch (error) {
+      noticeOnFailure("그룹을 삭제하지 못했습니다")(error);
+    }
+  }
+
   /**
    * Opens the real folder picker and hands back a location only when it is
    * usable. A path that failed its check is reported with the reason and NOT
    * returned, so it cannot be stored as the member's cwd.
    */
-  const browseCwd = useCallback(async (env: ExecutionEnv): Promise<MemberExecutionLocation | null> => {
+  const browseCwd = useCallback(async (env: ExecutionEnv, distro?: string): Promise<MemberExecutionLocation | null> => {
     try {
-      const result = await window.agentParty.browseCwd(env);
+      const result = await window.agentParty.browseCwd(env, distro);
       if (result.cancelled || !result.location) {
         return null;
       }
@@ -578,6 +596,10 @@ export function App() {
       const incoming = payload as InitialAppState["settings"];
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
     });
+    // The group registry is app-global: a create/rename/delete/move in another
+    // window (or over the HTTP API) must reach this one, or the sidebar keeps
+    // showing folders that are gone.
+    const offPartyGroups = window.agentParty.onPartyGroupsUpdate?.(() => { void refreshGroups(); });
     const offAuthUpdate = window.agentParty.onAuthUpdate?.((payload) => {
       setState((current) => ({ ...current, auth: payload as InitialAppState["auth"] }));
     });
@@ -613,6 +635,7 @@ export function App() {
       offModelsUpdate();
       offSettingsUpdate?.();
       offDiscordUpdate?.();
+      offPartyGroups?.();
       offAuthUpdate?.();
       offUsageUpdate?.();
       offUpdateStatus?.();
@@ -1809,6 +1832,8 @@ export function App() {
                 onCreateParty={(input) => void createParty(input)}
                 onCreateGroup={(name) => void createPartyGroup(name)}
                 onMovePartyToGroup={(partyId, groupId) => void movePartyToGroup(partyId, groupId)}
+                onRenameGroup={(groupId, name) => void renamePartyGroup(groupId, name)}
+                onRemoveGroup={(groupId) => void removePartyGroup(groupId)}
                 onBrowseCwd={browseCwd}
                 wsl={wslBrowsing}
                 onCreateMember={(input) => void createMemberInline(input)}

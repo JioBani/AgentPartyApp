@@ -116,6 +116,64 @@ export class PartyGroupStore {
   }
 
   /**
+   * Renames a group.
+   *
+   * The default group is renamable like any other: its `kind` is what makes it
+   * the fallback, not its label, and {@link withDefaultGroup} recreates it by
+   * kind. Duplicate names are refused for the same reason as on create — two
+   * folders with one name is a list the user cannot navigate.
+   */
+  renameGroup(groupId: string, name: string): PartyGroupState {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) {
+      throw new Error("그룹 이름을 입력하세요.");
+    }
+    const state = this.read();
+    if (!state.groups.some((group) => group.id === groupId)) {
+      throw new Error(`그룹 '${groupId}' 을 찾을 수 없습니다.`);
+    }
+    if (state.groups.some((group) => group.id !== groupId && group.name === trimmed)) {
+      throw new Error(`'${trimmed}' 그룹이 이미 있습니다.`);
+    }
+    const now = new Date().toISOString();
+    log("info", "party", "party group renamed", { groupId, name: trimmed });
+    return this.write({
+      ...state,
+      groups: state.groups.map((group) => (group.id === groupId ? { ...group, name: trimmed, updatedAt: now } : group)),
+    });
+  }
+
+  /**
+   * Deletes a group and moves its parties to the default one.
+   *
+   * Deleting a FOLDER must never delete what is filed in it: the parties keep
+   * their ids, their workspaces and their conversations, and land somewhere the
+   * user can still reach them. The default group itself cannot be deleted —
+   * something has to be the place things land.
+   */
+  removeGroup(groupId: string): { state: PartyGroupState; moved: number } {
+    const state = this.read();
+    const group = state.groups.find((entry) => entry.id === groupId);
+    if (!group) {
+      throw new Error(`그룹 '${groupId}' 을 찾을 수 없습니다.`);
+    }
+    if (group.kind === "default") {
+      throw new Error("기본 그룹은 삭제할 수 없습니다. 파티가 돌아갈 곳이 필요합니다.");
+    }
+    const fallback = state.groups.find((entry) => entry.kind === "default")?.id ?? DEFAULT_PARTY_GROUP_ID;
+    const moved = state.parties.filter((party) => party.groupId === groupId).length;
+    log("info", "party", "party group removed", { groupId, name: group.name, moved });
+    return {
+      state: this.write({
+        ...state,
+        groups: state.groups.filter((entry) => entry.id !== groupId),
+        parties: state.parties.map((party) => (party.groupId === groupId ? { ...party, groupId: fallback } : party)),
+      }),
+      moved,
+    };
+  }
+
+  /**
    * Adds or refreshes one party's summary.
    *
    * `groupId` is only applied when given, so a routine counts refresh cannot

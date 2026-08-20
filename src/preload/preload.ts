@@ -35,14 +35,15 @@ const api = {
   switchWorkspace: (workspacePath: string) => ipcRenderer.invoke("workspace:switch", workspacePath),
   createPartyGroup: (name: string) => ipcRenderer.invoke("partyGroups:create", name),
   movePartyToGroup: (partyId: string, groupId: string) => ipcRenderer.invoke("partyGroups:move", partyId, groupId),
+  renamePartyGroup: (groupId: string, name: string) => ipcRenderer.invoke("partyGroups:rename", groupId, name),
+  removePartyGroup: (groupId: string) => ipcRenderer.invoke("partyGroups:remove", groupId),
   getCwdPreferences: (options?: { check?: boolean }) => ipcRenderer.invoke("cwd:preferences", options),
   setDefaultCwd: (location: unknown) => ipcRenderer.invoke("cwd:setDefault", location),
   clearDefaultCwd: (env: string) => ipcRenderer.invoke("cwd:clearDefault", env),
   removeRecentCwd: (location: unknown) => ipcRenderer.invoke("cwd:removeRecent", location),
   checkCwd: (location: unknown) => ipcRenderer.invoke("cwd:check", location),
   listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
-  listWslDirectories: (distro: string, cwd?: string) => ipcRenderer.invoke("cwd:wslDirectories", distro, cwd),
-  browseCwd: (env: string) => ipcRenderer.invoke("cwd:browse", env),
+  browseCwd: (env: string, distro?: string) => ipcRenderer.invoke("cwd:browse", env, distro),
   listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),
@@ -231,6 +232,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("models:update", listener);
     return () => ipcRenderer.off("models:update", listener);
+  },
+  onPartyGroupsUpdate: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("partyGroups:update", listener);
+    return () => ipcRenderer.removeListener("partyGroups:update", listener);
   },
   onSettingsUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

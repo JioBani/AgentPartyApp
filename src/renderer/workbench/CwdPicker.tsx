@@ -1,9 +1,8 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { FolderOpen, Monitor, Terminal, TriangleAlert } from "lucide-react";
-import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd, WslDirectoryListing } from "../../shared/memberLocation";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd } from "../../shared/memberLocation";
 import { RECENT_CWD_LIMIT, memberLocationsEqual, preferencesFor } from "../../shared/memberLocation";
 import { relativeDay } from "../../shared/relativeTime";
-import { WslFolderBrowser } from "./WslFolderBrowser";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
@@ -31,9 +30,9 @@ export const ENV_LABEL: Record<ExecutionEnv, string> = { windows: "Windows", wsl
 /**
  * The WSL side's data, as one prop.
  *
- * One object rather than three loose props because it travels four components
- * deep (App → Workbench → sidebar → wizard), and a trio that must be passed
- * together is a trio that will eventually be passed apart.
+ * One object rather than two loose props because it travels four components
+ * deep (App → Workbench → sidebar → wizard), and a pair that must be passed
+ * together is a pair that will eventually be passed apart.
  */
 export interface WslBrowsing {
   /**
@@ -43,8 +42,6 @@ export interface WslBrowsing {
   distros?: string[];
   /** Why the distro list is empty, when it is. Shown, never swallowed. */
   error?: string;
-  /** Reads one directory level inside a distro; drives the folder browser. */
-  list: (distro: string, cwd?: string) => Promise<WslDirectoryListing>;
 }
 
 export interface CwdPickerProps {
@@ -55,7 +52,13 @@ export interface CwdPickerProps {
   now: number;
   onChange: (value: MemberExecutionLocation) => void;
   onChangeEnv: (env: ExecutionEnv) => void;
-  /** Opens the platform folder picker. WINDOWS ONLY — WSL browses in-app. */
+  /**
+   * Opens the platform folder picker for the current environment.
+   *
+   * For WSL the caller opens the SAME dialog inside the chosen distro (through
+   * `\wsl$\`), which is why the distro has to be picked first — the dialog
+   * needs somewhere to open.
+   */
   onBrowse: () => void;
   /** Everything the WSL side needs; omitted where WSL is not offered. */
   wsl?: WslBrowsing;
@@ -72,12 +75,11 @@ export interface CwdPickerProps {
 export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, wsl, saveAsDefault, hint }: CwdPickerProps) {
   const env: ExecutionEnv = value?.env ?? "windows";
   const { fallback, recent } = preferencesFor(prefs, env);
-  const [browsing, setBrowsing] = useState(false);
   // WSL is distro-then-path: a path means nothing until we know whose
   // filesystem it belongs to, and `/home/dev` exists in one distro and not the
   // next. So browsing stays shut until a distro is named.
   const distro = env === "wsl" ? value?.distro : undefined;
-  const canBrowse = env === "windows" || Boolean(distro && wsl);
+  const canBrowse = env === "windows" || Boolean(distro);
 
   /**
    * Switching distro clears the path.
@@ -144,22 +146,12 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
           type="button"
           className="wb-cwd-browse"
           disabled={!canBrowse}
-          onClick={() => { if (env === "wsl") { setBrowsing(true); } else { onBrowse(); } }}
+          onClick={onBrowse}
         >
           <FolderOpen size={13} />
           <LocalizedText id="STR-3259" />
         </button>
       </div>
-
-      {browsing && distro && wsl && (
-        <WslFolderBrowser
-          distro={distro}
-          initialCwd={value?.cwd}
-          list={wsl.list}
-          onCancel={() => setBrowsing(false)}
-          onSelect={(cwd) => { setBrowsing(false); onChange({ env: "wsl", cwd, distro }); }}
-        />
-      )}
 
       {recent.length > 0 && (
         <div className="wb-cwd-list">

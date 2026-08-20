@@ -21,15 +21,15 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
-import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey } from "../../shared/workspaceLocation";
+import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
 import type { PartyDefinition, PartyMember } from "../../shared/types";
 import type { PartyGroup, RegisteredParty } from "../../shared/partyGroups";
 import { PartyGroupStore, type PartyGroupState } from "../partyGroupStore";
 import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration";
 import { PartyRepository } from "../partyRepository";
-import { parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
+import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
-import { checkCwd, listWslDirectories, locationFromPickedFolder, wslDistros, type WslListing } from "../cwdService";
+import { checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -87,7 +87,13 @@ export interface AppControllerDeps {
    * when cancelled. Injected rather than imported so this controller still loads
    * headless (the WSL remote engine has no dialog to open).
    */
-  pickFolder?: (windowId: string | undefined, env: ExecutionEnv) => Promise<string | undefined>;
+  pickFolder?: (windowId: string | undefined, env: ExecutionEnv, defaultPath?: string) => Promise<string | undefined>;
+  /**
+   * The app-global group registry changed. Every window shows the same folders,
+   * so a create/rename/delete/move in one of them (or over HTTP) has to reach
+   * the others — nothing else in the app is app-global this way.
+   */
+  onPartyGroupsChanged?: () => void;
   onSettingsChanged: () => void;
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
@@ -1435,12 +1441,32 @@ export class AppController {
   createPartyGroup(name: string): { ok: true; group: PartyGroup; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const { state, group } = this.partyGroups.createGroup(name);
     this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
     return { ok: true, group, groups: state.groups, parties: state.parties };
+  }
+
+  renamePartyGroup(groupId: string, name: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const state = this.partyGroups.renameGroup(groupId, name);
+    this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
+    return { ok: true, groups: state.groups, parties: state.parties };
+  }
+
+  /**
+   * Deletes a group. `moved` is how many parties landed in the default group —
+   * returned so the UI can say what happened rather than just closing.
+   */
+  removePartyGroup(groupId: string): { ok: true; moved: number; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const { state, moved } = this.partyGroups.removeGroup(groupId);
+    this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
+    return { ok: true, moved, groups: state.groups, parties: state.parties };
   }
 
   movePartyToGroup(partyId: string, groupId: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const state = this.partyGroups.moveParty(partyId, groupId);
     this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
     return { ok: true, groups: state.groups, parties: state.parties };
   }
 
@@ -1529,26 +1555,51 @@ export class AppController {
    * start, and reaching a running one through `\\wsl$\...` answers a question
    * about the redirector rather than about the environment the member runs in.
    */
-  async listWslDirectories(distro: string, cwd?: string): Promise<{ ok: true } & WslListing> {
-    return { ok: true, ...(await listWslDirectories(distro, cwd)) };
-  }
-
   /**
    * Opens the platform folder picker and returns the location it produced.
+   *
+   * For WSL the SAME dialog is used, pointed at `\\wsl$\<distro>\<home>` — the
+   * distro's own filesystem, reachable from Explorer once the distro is up. The
+   * pick comes back as a UNC path and `locationFromPickedFolder` turns it into
+   * the `{distro, /posix/path}` pair; nothing is browsed by hand.
+   *
+   * The distro's `$HOME` is asked for first, because that is where a WSL user's
+   * work lives — `\wsl$\<distro>` alone opens onto `proc`, `sys` and `mnt`. A
+   * distro that will not start answers with the reason instead of opening a
+   * dialog onto an unreachable path.
    *
    * Resolves `{ ok: true, cancelled: true }` when the user closed the dialog —
    * distinct from a failure, because the caller must leave the previous choice
    * alone rather than clear it.
    */
-  async browseCwd(env: ExecutionEnv, windowId?: string): Promise<{ ok: true; cancelled?: true; location?: MemberExecutionLocation; problem?: CwdProblem }> {
+  async browseCwd(env: ExecutionEnv, windowId?: string, distro?: string): Promise<{ ok: true; cancelled?: true; location?: MemberExecutionLocation; problem?: CwdProblem }> {
     if (!this.deps.pickFolder) {
       throw new Error("이 프로세스에서는 폴더 선택기를 열 수 없습니다.");
     }
-    const folder = await this.deps.pickFolder(windowId, env);
+    let defaultPath: string | undefined;
+    if (env === "wsl") {
+      if (!distro) {
+        return { ok: true, problem: cwdProblem("distro-missing") };
+      }
+      const { home, problem } = await wslHome(distro);
+      if (problem) {
+        return { ok: true, problem };
+      }
+      defaultPath = wslUncPath(distro, home as string);
+      log("info", "cwd", "opening the folder dialog inside a distro", { distro, home, defaultPath });
+    }
+    const folder = await this.deps.pickFolder(windowId, env, defaultPath);
     if (!folder) {
       return { ok: true, cancelled: true };
     }
     const location = locationFromPickedFolder(folder, env);
+    // Asked for a WSL folder and handed a Windows one: the user navigated out of
+    // `\\wsl$\` in the dialog. Refused rather than stored, because a `C:\...`
+    // path is not a POSIX cwd and converting it is a guess about how that distro
+    // mounts the drive.
+    if (env === "wsl" && location.env !== "wsl") {
+      return { ok: true, problem: { kind: "not-absolute", message: `WSL 배포판 안의 폴더를 선택하세요 (\\\\wsl$\\${distro}\\...): ${folder}` } };
+    }
     const { problem } = await checkCwd(location);
     return { ok: true, location, problem };
   }

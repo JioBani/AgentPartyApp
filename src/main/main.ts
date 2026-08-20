@@ -626,17 +626,23 @@ ${body}
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     getAppBuild: () => ({ version: app.getVersion(), packaged: app.isPackaged }),
     openWindow: (workspacePath) => createWindow(workspacePath),
-    pickFolder: async (windowId, env) => {
+    pickFolder: async (windowId, env, defaultPath) => {
       const target = registry().resolve(windowId)?.window;
       const result = await dialog.showOpenDialog(target!, {
         properties: ["openDirectory"],
-        // A WSL pick is made by browsing to `\wsl$\<distro>\...`; the title says
-        // so rather than opening a picker that cannot reach the distro at all.
-        title: env === "wsl" ? "WSL 폴더 선택 (\\wsl$\<배포판>\... )" : "실행 위치 폴더 선택",
+        // A WSL pick is the same dialog opened inside the distro through
+        // the `\\wsl$\` redirector; the caller resolved that path.
+        defaultPath,
+        title: env === "wsl" ? "WSL 폴더 선택" : "실행 위치 폴더 선택",
       });
       return result.canceled ? undefined : result.filePaths[0];
     },
     onSettingsChanged: () => applyRuntimeSettings(),
+    onPartyGroupsChanged: () => {
+      for (const entry of registry().all()) {
+        entry.window.webContents.send("partyGroups:update", {});
+      }
+    },
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
@@ -974,14 +980,15 @@ function registerIpc(): void {
     controller().setWindowWorkspace(senderWindowId(event), String(workspacePath || "")));
   handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
   handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
+  handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));
+  handle("partyGroups:remove", async (_event, groupId) => controller().removePartyGroup(String(groupId || "")));
   handle("cwd:preferences", async (_event, options) => controller().getCwdPreferences(options || {}));
   handle("cwd:setDefault", async (_event, location) => controller().setDefaultCwd(location));
   handle("cwd:clearDefault", async (_event, env) => controller().clearDefaultCwd(env === "wsl" ? "wsl" : "windows"));
   handle("cwd:removeRecent", async (_event, location) => controller().removeRecentCwd(location));
   handle("cwd:check", async (_event, location) => controller().checkCwd(location));
   handle("cwd:distros", async () => controller().listWslDistros());
-  handle("cwd:wslDirectories", async (_event, distro, cwd) => controller().listWslDirectories(String(distro || ""), cwd ? String(cwd) : undefined));
-  handle("cwd:browse", async (event, env) => controller().browseCwd(env === "wsl" ? "wsl" : "windows", senderWindowId(event)));
+  handle("cwd:browse", async (event, env, distro) => controller().browseCwd(env === "wsl" ? "wsl" : "windows", senderWindowId(event), distro ? String(distro) : undefined));
   handle("cwd:memberLocations", async (event) => controller().memberLocations(senderWorkspace(event)));
 
   handle("auth:list", async () => controller().listAuthProviders());
