@@ -39,6 +39,8 @@ const {
   normalizeThemePreference,
   requireThemePreference,
   resolveAppliedTheme,
+  windowBackgroundFor,
+  appearanceStateOf,
 } = await import(pathToFileURL(outFile).href);
 
 console.log("\ntheme preference (settings.json + API):");
@@ -112,6 +114,10 @@ stop();
 assert(disposed === 1, "the disposer unsubscribes nativeTheme");
 bindAppearanceUpdates(undefined, () => { throw new Error("must not run"); })();
 assert(true, "no host yields a no-op disposer");
+assert(windowBackgroundFor("light") === "#e7e8eb", "light window chrome matches bg-0");
+assert(windowBackgroundFor("dark") === "#0a0b0e", "dark window chrome matches bg-0");
+assert(windowBackgroundFor("system", true) === "#0a0b0e", "system + OS dark uses dark chrome");
+assert(appearanceStateOf("dark", false, true).background === "#0a0b0e", "appearance payload carries the chrome colour");
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

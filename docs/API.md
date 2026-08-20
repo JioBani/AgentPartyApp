@@ -504,16 +504,24 @@ shortcut read.
   "preference": "system",
   "applied": "dark",
   "options": ["system", "light", "dark"],
-  "stored": true
+  "stored": true,
+  "background": "#0a0b0e"
 }
 ```
 
 `preference` is the stored choice: `system` follows the OS, `light` and `dark`
-lock it. `applied` is the `data-theme` on `<html>` (`light` or `dark`). `stored`
-is `true` only when `settings.json` itself contains `theme` — a missing field
-does not count as an explicit Light choice. A leftover `localStorage`
-`agentparty.theme` of `dark` still migrates on upgrade; leftover `light` does
-not, because the old toggle wrote that on every first paint.
+lock it. `applied` is the `data-theme` on `<html>` (`light` or `dark`).
+`background` is the native window chrome colour (the `bg-0` token) so the
+window does not flash a hard-coded dark frame. `stored` is `true` only when
+`settings.json` itself contains `theme` — a missing field does not count as an
+explicit Light choice. A leftover `localStorage` `agentparty.theme` of `dark`
+still migrates on upgrade; leftover `light` does not, because the old toggle
+wrote that on every first paint.
+
+First paint: `index.html` applies the cached preference synchronously
+(`html[data-theme-paint=sync]`) before the React bundle runs. The ThemeProvider
+does the same at module import, so a jsdom mount without `index.html` still
+avoids a light flash.
 
 ### `POST /api/appearance/theme`
 
@@ -3618,6 +3626,19 @@ with.
 
 Opens a Message Gate editor in the renderer, so the modal can be reviewed
 without hand-clicking to it. Body `{ "kind": "member" | "party", "member": "<name>" }`.
+
+### `POST /api/qa/appearance/os`
+
+QA only (`AGENTPARTY_QA=1`). Pretends the OS colour scheme flipped:
+
+```json
+{ "dark": true }
+```
+
+The real Windows setting cannot be changed from this process. This is the
+`nativeTheme` signal the app already listens to: System preference follows it
+live; locked Light/Dark ignore it. Returns the same body as
+`GET /api/appearance/theme`.
 
 ### `POST /api/qa/environment`
 

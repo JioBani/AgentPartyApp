@@ -3,6 +3,8 @@ import {
   DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  THEME_SYNC_PAINT_ATTRIBUTE,
+  THEME_SYNC_PAINT_VALUE,
   cycleThemePreference,
   isThemePreference,
   normalizeThemePreference,
@@ -77,9 +79,17 @@ function persistPreference(preference: ThemePreference): void {
 }
 
 function applyDocumentTheme(preference: ThemePreference, applied: AppliedTheme): void {
+  if (typeof document === "undefined") {
+    return;
+  }
   document.documentElement.setAttribute("data-theme", getTheme(applied).id);
   document.documentElement.setAttribute("data-theme-preference", preference);
+  document.documentElement.setAttribute(THEME_SYNC_PAINT_ATTRIBUTE, THEME_SYNC_PAINT_VALUE);
 }
+
+const bootPreference = typeof window === "undefined" ? DEFAULT_THEME_PREFERENCE : readStoredPreference();
+const bootOsDark = osPrefersDark();
+applyDocumentTheme(bootPreference, resolveAppliedTheme(bootPreference, bootOsDark));
 
 interface ThemeContextValue {
   /** User choice: system / light / dark. */
@@ -92,13 +102,15 @@ interface ThemeContextValue {
   setTheme: (id: string) => void;
   /** Advances system → light → dark → system (title-bar shortcut). */
   cycleTheme: () => void;
+  /** QA / host broadcast: the OS scheme the desktop just observed. */
+  setOsDark: (dark: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
-  const [osDark, setOsDark] = useState<boolean>(osPrefersDark);
+  const [preference, setPreferenceState] = useState<ThemePreference>(bootPreference);
+  const [osDark, setOsDarkState] = useState<boolean>(bootOsDark);
   const themeId = resolveAppliedTheme(preference, osDark);
 
   useEffect(() => {
@@ -110,12 +122,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (preference !== "system") {
       return;
     }
-    setOsDark(osPrefersDark());
-    return subscribeOsTheme(() => setOsDark(osPrefersDark()));
+    setOsDarkState(osPrefersDark());
+    return subscribeOsTheme(() => setOsDarkState(osPrefersDark()));
   }, [preference]);
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(normalizeThemePreference(next));
+  }, []);
+
+  const setOsDark = useCallback((dark: boolean) => {
+    setOsDarkState(dark);
   }, []);
 
   const setTheme = useCallback((id: string) => {
@@ -131,8 +147,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ preference, themeId, themes: THEMES, setPreference, setTheme, cycleTheme }),
-    [preference, themeId, setPreference, setTheme, cycleTheme],
+    () => ({ preference, themeId, themes: THEMES, setPreference, setTheme, cycleTheme, setOsDark }),
+    [preference, themeId, setPreference, setTheme, cycleTheme, setOsDark],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

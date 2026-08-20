@@ -226,6 +226,11 @@ const api = {
     ipcRenderer.on("settings:update", listener);
     return () => ipcRenderer.off("settings:update", listener);
   },
+  onAppearanceUpdate: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("appearance:update", listener);
+    return () => ipcRenderer.off("appearance:update", listener);
+  },
   onAuthUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("auth:update", listener);

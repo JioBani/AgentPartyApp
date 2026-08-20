@@ -7,6 +7,7 @@ import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
 import { getPublicSettings, getSettings, updateSettings } from "./settings";
+import { normalizeThemePreference, windowBackgroundFor } from "../shared/appTheme";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { launchCliContinuation } from "./cliContinuationLauncher";
@@ -202,7 +203,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
     minWidth: 1100,
     minHeight: 720,
     title: "AgentParty",
-    backgroundColor: "#0f1419",
+    backgroundColor: windowBackgroundFor(normalizeThemePreference(getSettings().theme), nativeTheme.shouldUseDarkColors),
     titleBarStyle: "hidden",
     frame: false,
     webPreferences: {

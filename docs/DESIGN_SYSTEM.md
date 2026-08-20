@@ -19,9 +19,12 @@ custom property that a theme supplies.
 
 - `themes.ts` exports a `THEMES` array. Each `Theme` has a `color` map and a
   `shape` map. The **first** entry is the default (currently `light`).
-- At startup `ThemeProvider` injects one `<style>` block with
-  `:root[data-theme="<id>"] { --token: value; … }` for every theme, plus the
-  default on bare `:root` (so first paint is themed — no flash).
+- At startup an inline script in `index.html` (and `ThemeProvider` at module
+  import) apply the cached preference and the OS scheme **before React renders**.
+  Bare `:root` still carries the light tokens as a last-resort fallback; that is
+  not the first-paint path. `html[data-theme-paint=sync]` marks the sync path ran.
+- `BrowserWindow.backgroundColor` is the effective theme's `bg-0`, not a
+  hard-coded dark chrome, so a light user does not see a dark flash before HTML.
 - The user's preference is `system` | `light` | `dark` (`AppSettings.theme`,
   `src/shared/appTheme.ts`). The painted theme is still `data-theme="light|dark"`
   on `<html>`; `system` follows the OS via `prefers-color-scheme` (and Electron

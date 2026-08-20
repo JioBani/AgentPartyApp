@@ -210,12 +210,15 @@ export function App() {
           const next = await window.agentParty.setTheme(migrated);
           if (cancelled) return;
           theme.setPreference(next.preference);
+          theme.setOsDark(next.applied === "dark");
           setState((current) => ({ ...current, settings: { ...current.settings, theme: next.preference } }));
         } else {
           theme.setPreference(appearance.preference);
+          theme.setOsDark(appearance.applied === "dark");
         }
-      } catch {
-        if (!cancelled) theme.setPreference(normalizeThemePreference(state.settings.theme));
+      } catch (error) {
+        console.error("[appearance] bootstrap failed", error);
+        if (!cancelled) setPartyNotice(t("appearance.bootstrapError", { error: ipcErrorMessage(error) }));
       }
       if (!cancelled) setThemeReady(true);
     })();
@@ -494,6 +497,15 @@ export function App() {
       const incoming = payload as InitialAppState["settings"];
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
     });
+    const offAppearanceUpdate = window.agentParty.onAppearanceUpdate?.((payload) => {
+      const appearance = payload as { preference?: ThemePreference; applied?: string };
+      if (appearance?.preference) {
+        theme.setPreference(appearance.preference);
+      }
+      if (appearance?.applied === "light" || appearance?.applied === "dark") {
+        theme.setOsDark(appearance.applied === "dark");
+      }
+    });
     const offAuthUpdate = window.agentParty.onAuthUpdate?.((payload) => {
       setState((current) => ({ ...current, auth: payload as InitialAppState["auth"] }));
     });
@@ -531,6 +543,7 @@ export function App() {
       offPartyLayout();
       offModelsUpdate();
       offSettingsUpdate?.();
+      offAppearanceUpdate?.();
       offDiscordUpdate?.();
       offAuthUpdate?.();
       offNativeCliAuthProgress?.();
@@ -1699,9 +1712,7 @@ export function App() {
             data-theme-toggle
             title={`${t("shell.theme")}: ${themePreferenceLabel}`}
             onClick={() => {
-              const next = cycleThemePreference(themePreference);
-              theme.setPreference(next);
-              void saveTheme(next);
+              void saveTheme(cycleThemePreference(themePreference));
             }}
           >
             {themePreference === "system" ? <Monitor size={14} /> : themePreference === "dark" ? <Moon size={14} /> : <Sun size={14} />}

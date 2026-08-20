@@ -15,6 +15,18 @@ export const DEFAULT_THEME_PREFERENCE: ThemePreference = "light";
 export const THEME_STORAGE_KEY = "agentparty.theme";
 /** Explicit preference (`system` | `light` | `dark`) cached for first paint. */
 export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
+/** Set on `<html>` by the synchronous first-paint path, before React mounts. */
+export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
+export const THEME_SYNC_PAINT_VALUE = "sync";
+
+/**
+ * BrowserWindow chrome, matching `bg-0` in `themes.ts`. Keep the two equal:
+ * a mismatch is the flash this colour exists to hide.
+ */
+export const APPLIED_THEME_BACKGROUNDS: Record<AppliedTheme, string> = {
+  light: "#e7e8eb",
+  dark: "#0a0b0e",
+};
 
 /**
  * Thrown when a headless/WSL engine would otherwise write its own settings.json
@@ -61,6 +73,8 @@ export interface AppearanceState {
   options: readonly ThemePreference[];
   /** True when settings.json itself contains `theme`, not just the in-memory default. */
   stored: boolean;
+  /** Colour the native window chrome should paint while the renderer loads. */
+  background: string;
 }
 
 export interface AppearanceRemote {
@@ -97,6 +111,21 @@ export function resolveAppliedTheme(preference: ThemePreference, osDark?: boolea
   if (preference === "dark") return "dark";
   if (preference === "light") return "light";
   return osDark ? "dark" : "light";
+}
+
+export function windowBackgroundFor(preference: ThemePreference, osDark?: boolean): string {
+  return APPLIED_THEME_BACKGROUNDS[resolveAppliedTheme(preference, osDark)];
+}
+
+export function appearanceStateOf(preference: ThemePreference, osDark: boolean | undefined, stored: boolean): AppearanceState {
+  const applied = resolveAppliedTheme(preference, osDark);
+  return {
+    preference,
+    applied,
+    options: THEME_PREFERENCES,
+    stored,
+    background: APPLIED_THEME_BACKGROUNDS[applied],
+  };
 }
 
 /** Subscribe to OS scheme updates; the disposer must run on shutdown. */

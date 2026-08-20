@@ -59,13 +59,13 @@ import type { GuideOfferView } from "../../shared/guideOffer";
 import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
 import {
-  THEME_PREFERENCES,
   appearanceAccess,
   appearanceOwnerError,
+  appearanceStateOf,
   bindAppearanceUpdates,
   normalizeThemePreference,
   requireThemePreference,
-  resolveAppliedTheme,
+  windowBackgroundFor,
   type AppearanceHost,
   type AppearanceRemote,
   type AppearanceState,
@@ -206,6 +206,8 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  */
 export class AppController {
   private nativeThemeUnsubscribe: () => void = () => undefined;
+  /** QA-only override of the OS scheme. `undefined` means "ask nativeTheme". */
+  private osDarkOverride: boolean | undefined;
 
   constructor(private readonly deps: AppControllerDeps) {
     this.applyNativeTheme(normalizeThemePreference(getSettings().theme));
@@ -767,6 +769,7 @@ export class AppController {
     }
     if (Object.prototype.hasOwnProperty.call(validatedPatch, "theme")) {
       this.applyNativeTheme(validatedPatch.theme as ThemePreference);
+      this.broadcastAppearance();
     }
     // Settings are global — push to EVERY window so a change made over HTTP or in
     // another window reflects live (e.g. transcript zoom), not only on next load.
@@ -798,14 +801,7 @@ export class AppController {
     if (access === "unavailable") {
       throw appearanceOwnerError();
     }
-    const stored = storedThemePreference();
-    const preference = stored ?? normalizeThemePreference(getSettings().theme);
-    return {
-      preference,
-      applied: resolveAppliedTheme(preference, this.deps.appearance?.isDark()),
-      options: THEME_PREFERENCES,
-      stored: stored !== undefined,
-    };
+    return this.readLocalAppearance();
   }
 
   async setTheme(value: unknown): Promise<AppearanceState> {
@@ -821,15 +817,53 @@ export class AppController {
     return this.getAppearance();
   }
 
+  /**
+   * QA-only: pretends the OS scheme flipped. The real Windows colour mode
+   * cannot be changed from this process; this is the signal `nativeTheme`
+   * would have emitted. Locked Light/Dark must ignore it.
+   */
+  async qaSetOsScheme(dark: boolean): Promise<AppearanceState> {
+    this.requireQa();
+    this.osDarkOverride = dark === true;
+    this.onNativeThemeUpdated();
+    return this.getAppearance();
+  }
+
+  private osIsDark(): boolean {
+    return this.osDarkOverride ?? this.deps.appearance?.isDark() === true;
+  }
+
+  private readLocalAppearance(): AppearanceState {
+    const stored = storedThemePreference();
+    const preference = stored ?? normalizeThemePreference(getSettings().theme);
+    return appearanceStateOf(preference, this.osIsDark(), stored !== undefined);
+  }
+
   private applyNativeTheme(preference: ThemePreference): void {
     this.deps.appearance?.setSource(preference);
+    const color = windowBackgroundFor(preference, this.osIsDark());
+    const windows = typeof this.deps.windowRegistry.all === "function" ? this.deps.windowRegistry.all() : [];
+    for (const entry of windows) {
+      entry.window?.setBackgroundColor?.(color);
+    }
   }
 
   private onNativeThemeUpdated(): void {
-    if (normalizeThemePreference(getSettings().theme) !== "system") {
-      return;
+    const preference = normalizeThemePreference(getSettings().theme);
+    this.applyNativeTheme(preference);
+    if (preference === "system") {
+      this.broadcastSettings();
     }
-    this.broadcastSettings();
+    this.broadcastAppearance();
+  }
+
+  private broadcastAppearance(): void {
+    const appearance = this.readLocalAppearance();
+    this.deps.mobileLink?.publish("appearance:update", appearance);
+    const windows = typeof this.deps.windowRegistry.all === "function" ? this.deps.windowRegistry.all() : [];
+    for (const entry of windows) {
+      entry.window.webContents.send("appearance:update", appearance);
+    }
   }
 
   private broadcastSettings(): void {
