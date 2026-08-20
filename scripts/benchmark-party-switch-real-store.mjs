@@ -76,7 +76,14 @@ try {
   const samples = [];
   for (const party of sequence) {
     const started = performance.now();
-    await post(`/api/parties/${encodeURIComponent(party.id)}/select?window=${encodeURIComponent(windowId)}`, {});
+    // Measure what the person feels: the real grouped-sidebar pointer path,
+    // including renderer work before the shared AppController selection. The
+    // old direct API call missed a full redundant workspace-state read that
+    // happened only in the click handler and therefore reported a false pass.
+    await post(`/api/qa/pointer?window=${encodeURIComponent(windowId)}`, {
+      steps: [{ selector: `.wb-party-row[data-party-id=${JSON.stringify(party.id)}]`, action: "click" }],
+      delayMs: 0,
+    });
     const commandMs = performance.now() - started;
     const milestones = await waitReady(party.id, party.name, party.panels, windowId, 20_000, started);
     samples.push({ party: party.name, panels: party.panels, commandMs: round(commandMs), ...milestones });

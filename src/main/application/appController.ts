@@ -1259,16 +1259,27 @@ export class AppController {
   }
 
   /** Points a window at a different workspace and returns its fresh state. */
-  async setWindowWorkspace(windowId: string | undefined, workspacePath: string): Promise<InitialAppState> {
+  async setWindowWorkspace(windowId: string | undefined, workspacePath: string): Promise<InitialAppState>;
+  async setWindowWorkspace(
+    windowId: string | undefined,
+    workspacePath: string,
+    options: { omitStateWhenUnchanged: true },
+  ): Promise<InitialAppState | undefined>;
+  async setWindowWorkspace(
+    windowId: string | undefined,
+    workspacePath: string,
+    options?: { omitStateWhenUnchanged?: boolean },
+  ): Promise<InitialAppState | undefined> {
     const entry = this.deps.windowRegistry.resolve(windowId);
-    // Already here: return the state without touching anything. The renderer
-    // asks for this switch whenever it selects a party that names a home
-    // workspace, and it cannot reliably tell "same place" — its copy of the
-    // path can be a render behind. Deciding it HERE, against the window the
-    // registry actually holds, is the only answer that cannot be stale; doing
-    // the full switch anyway would drop the window's active party on every
-    // ordinary party click.
+    // The renderer asks whenever a party names a home and cannot reliably
+    // decide whether this window is already there from its asynchronous copy.
+    // Decide here against the authoritative window registry.
     if (entry && workspaceKey(entry.workspacePath) === workspaceKey(workspacePath)) {
+      // The grouped sidebar does not consume a duplicate state when no move
+      // occurred. Other callers retain the documented fresh-state response.
+      if (options?.omitStateWhenUnchanged) {
+        return undefined;
+      }
       return this.getState(entry.workspacePath, entry.id);
     }
     if (entry) {

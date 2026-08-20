@@ -977,7 +977,11 @@ function registerIpc(): void {
   // party list is app-global now: a party in another workspace is one click away
   // in the sidebar, and clicking it must actually go there.
   handle("workspace:switch", async (event, workspacePath: string) =>
-    controller().setWindowWorkspace(senderWindowId(event), String(workspacePath || "")));
+    controller().setWindowWorkspace(
+      senderWindowId(event),
+      String(workspacePath || ""),
+      { omitStateWhenUnchanged: true },
+    ));
   handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
   handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
   handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));
