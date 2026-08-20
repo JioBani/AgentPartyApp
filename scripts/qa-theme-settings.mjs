@@ -78,7 +78,10 @@ const original = {
 for (const [id, tokens] of Object.entries(original)) {
   const preset = registry.THEMES.find((entry) => entry.id === id);
   assert(Object.entries(tokens).every(([key, value]) => preset?.color[key] === value), `${id} preserves every original 23dc88b color token`);
+  const originalShape = { "radius-window": "9px", "radius-panel": "11px", "radius-card": "10px", "radius-button": "7px", "radius-input": "8px", "radius-pill": "6px", "radius-badge": "5px", "border-width": "1px", "focus-ring-width": "1px" };
+  assert(Object.entries(originalShape).every(([key, value]) => preset?.shape[key] === value), `${id} preserves every original 23dc88b shape token`);
 }
+assert(registry.THEMES.filter(({ id }) => !id.startsWith("agentparty-")).every(({ shape }) => shape["focus-ring-width"] === "2px"), "the other five presets keep their 2px focus ring");
 const tokenKeys = Object.keys(registry.THEMES[0].color).sort().join(",");
 for (const preset of registry.THEMES) {
   assert(Object.keys(preset.color).sort().join(",") === tokenKeys, `${preset.label} defines every color token`);

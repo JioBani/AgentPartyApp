@@ -31,11 +31,14 @@ const shape: Record<ThemeShapeToken, string> = {
   "radius-badge": "5px", "border-width": "1px", "focus-ring-width": "2px",
 };
 
+/** Exact pre-feature shape from master 23dc88b for the restored presets. */
+const agentPartyShape: Record<ThemeShapeToken, string> = { ...shape, "focus-ring-width": "1px" };
+
 const metadata = Object.fromEntries(THEME_METADATA.map((entry) => [entry.id, entry])) as Record<ThemePreference, (typeof THEME_METADATA)[number]>;
 
 /** Exact colour values from the pre-feature registry at master 23dc88b. */
 const agentPartyLight: Theme = {
-  ...metadata["agentparty-light"], shape,
+  ...metadata["agentparty-light"], shape: agentPartyShape,
   color: {
     "bg-0": metadata["agentparty-light"].background, "bg-1": "#f3f4f6", "bg-2": "#ffffff", "bg-3": "#eef0f3", "bg-4": "#e6e9ed", "bg-input": "#ffffff",
     "border-subtle": "#e2e5ea", "border": "#d3d7df", "border-strong": "#c0c5ce",
@@ -52,7 +55,7 @@ const agentPartyLight: Theme = {
 
 /** Exact colour values from the pre-feature registry at master 23dc88b. */
 const agentPartyDark: Theme = {
-  ...metadata["agentparty-dark"], shape,
+  ...metadata["agentparty-dark"], shape: agentPartyShape,
   color: {
     "bg-0": metadata["agentparty-dark"].background, "bg-1": "#0e1014", "bg-2": "#14171d", "bg-3": "#1b1f27", "bg-4": "#222731", "bg-input": "#0c0e12",
     "border-subtle": "#1c2028", "border": "#262b35", "border-strong": "#333a46",

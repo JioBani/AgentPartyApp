@@ -56,7 +56,7 @@ async function run(label, fn) {
 
 async function htmlTheme(windowId) {
   const query = windowId ? `?window=${encodeURIComponent(windowId)}` : "";
-  const { payload } = await request("POST", `/api/measure${query}`, { selector: "html", attributes: ["data-theme", "data-theme-preference", "data-theme-paint"], styles: ["--bg-0", "--bg-1", "--bg-2", "--bg-3", "--bg-4", "--bg-input", "--border-subtle", "--border", "--border-strong", "--text-0", "--text-1", "--text-2", "--text-3", "--accent", "--selection", "--status", "--live", "--success", "--danger", "--warning"], limit: 1 });
+  const { payload } = await request("POST", `/api/measure${query}`, { selector: "html", attributes: ["data-theme", "data-theme-preference", "data-theme-paint"], styles: ["--bg-0", "--bg-1", "--bg-2", "--bg-3", "--bg-4", "--bg-input", "--border-subtle", "--border", "--border-strong", "--text-0", "--text-1", "--text-2", "--text-3", "--accent", "--selection", "--status", "--live", "--success", "--danger", "--warning", "--focus-ring-width"], limit: 1 });
   const element = payload?.elements?.[0];
   if (!element) throw new Error(payload?.error || "html was not measurable");
   return { theme: element.attributes["data-theme"], preference: element.attributes["data-theme-preference"], paint: element.attributes["data-theme-paint"], styles: element.styles };
@@ -146,6 +146,7 @@ async function main() {
         assert(cssHex(painted.styles["--selection"]) === preset.selection && cssHex(painted.styles["--status"]) === preset.status, `${preset.label} ${name} selection/status tokens compute correctly`);
         if (preset.original) {
           assert(Object.entries(preset.original).every(([token, value]) => cssHex(painted.styles[token]) === value), `${preset.label} ${name} preserves original 23dc88b computed tokens`);
+          assert(painted.styles["--focus-ring-width"] === "1px", `${preset.label} ${name} preserves original 1px focus ring`);
         }
       }
     }
