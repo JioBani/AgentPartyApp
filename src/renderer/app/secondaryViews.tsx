@@ -771,25 +771,13 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
             silently, right after the strip told them there were unsaved changes. */}
         <div className="set-tab-panel" hidden={tab !== "general"}>
         <SubtreeVisibility visible={tab === "general"}>
-            {/* global auto-compact default (inherited by members without their own) */}
-            <section className="set-card">
-              <div className="set-card-label">Auto-compact</div>
-              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
-            </section>
-
-            {/* idle sleep — release a quiet member's process, keep its conversation */}
-            <section className="set-card">
-              <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
-              <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
-            </section>
-
             {/* message input preferences (send key) */}
-            <section className="set-card">
+            <section className="set-card" data-settings-card="composer">
               <div className="set-card-label">{t("runtime.general.composer")}</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
             </section>
 
-            <section className="set-card">
+            <section className="set-card" data-settings-card="member-messages">
               <div className="set-card-label">{t("runtime.general.memberMessages")}</div>
               <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
                 <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
@@ -799,6 +787,18 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
                 <InfoIcon size={14} />
                 <span>{t("runtime.general.interruptHelp")}</span>
               </div>
+            </section>
+
+            {/* global auto-compact default (inherited by members without their own) */}
+            <section className="set-card" data-settings-card="auto-compact">
+              <div className="set-card-label">Auto-compact</div>
+              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+            </section>
+
+            {/* idle sleep — release a quiet member's process, keep its conversation */}
+            <section className="set-card" data-settings-card="idle-sleep">
+              <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
+              <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
             </section>
         </SubtreeVisibility>
         </div>

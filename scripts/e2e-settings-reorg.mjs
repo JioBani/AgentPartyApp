@@ -57,9 +57,10 @@ try {
   await request("POST", "/api/qa/window/bounds", { width: 1440, height: 900 });
   await navigate("agent", "general");
   const agentTabs = await request("POST", "/api/measure", { selector: ".set-tab", limit: 20 });
-  const generalCards = await request("POST", "/api/measure", { selector: ".set-tab-panel:not([hidden]) .set-card", limit: 20 });
+  const generalCards = await request("POST", "/api/measure", { selector: ".set-tab-panel:not([hidden]) [data-settings-card]", attributes: ["data-settings-card"], limit: 20 });
   assert(agentTabs.payload?.count === 5, "Agent exposes exactly five tabs");
   assert(generalCards.payload?.count === 4, "Agent General contains exactly the four contracted sections");
+  assert(generalCards.payload?.elements?.map((entry) => entry.attributes?.["data-settings-card"]).join(",") === "composer,member-messages,auto-compact,idle-sleep", "Agent General cards follow the contracted order");
   for (const tab of ["general", "defaults", "primer", "gate", "discord"]) { await navigate("agent", tab, tab === "defaults" ? "codex" : undefined); await capture(`1440-agent-${tab}`, "light"); }
   await navigate("settings", "general");
   const settingsTabs = await request("POST", "/api/measure", { selector: ".set-tab", limit: 20 });
