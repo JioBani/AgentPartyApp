@@ -75,17 +75,18 @@ export function firstPaintFrom(boot: AppearanceBoot | null, legacyTheme: unknown
 }
 
 /**
- * `getInitialState` can resolve after a legacy migration already wrote Dark.
- * If appearance has been committed in this renderer, keep that theme instead of
- * letting the stale snapshot's default Light overwrite it.
+ * `getInitialState` can resolve after appearance already committed Dark/System
+ * (ThemeProvider + settings). Pass that committed preference — not a boolean
+ * "has committed" that would keep the renderer's default Light when current
+ * has not been updated yet.
  */
 export function retainAppearanceOnInitialState<T extends { theme?: unknown }>(
   current: T,
   incoming: T,
-  appearanceCommitted: boolean,
+  committedTheme?: unknown,
 ): T {
-  if (!appearanceCommitted) return incoming;
-  return { ...incoming, theme: current.theme };
+  if (!isThemePreference(committedTheme)) return incoming;
+  return { ...incoming, theme: committedTheme };
 }
 
 /**

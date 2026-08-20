@@ -194,16 +194,20 @@ export function App() {
   useEffect(() => { publishFontProbe(); }, []);
 
   // Appearance bootstrap vs getInitialState: a late snapshot can still carry the
-  // in-memory default Light after migration already wrote Dark. appearanceCommitted
-  // marks the renderer as having the live preference so that snapshot cannot
-  // overwrite it.
-  const appearanceCommitted = useRef(false);
+  // in-memory default Light after Dark/System was committed. commitAppearance
+  // writes settings.theme immediately so retain uses that preference, not Light.
+  const committedTheme = useRef<ThemePreference | null>(null);
   const commitAppearance = useCallback((preference: ThemePreference, applied?: string) => {
-    appearanceCommitted.current = true;
+    committedTheme.current = preference;
     theme.setPreference(preference);
     if (applied === "light" || applied === "dark") {
       theme.setOsDark(applied === "dark");
     }
+    setState((current) => (
+      current.settings.theme === preference
+        ? current
+        : { ...current, settings: { ...current.settings, theme: preference } }
+    ));
   }, [theme]);
   useEffect(() => {
     let cancelled = false;
@@ -218,7 +222,6 @@ export function App() {
           const next = await window.agentParty.setTheme(migrated);
           if (cancelled) return;
           commitAppearance(next.preference, next.applied);
-          setState((current) => ({ ...current, settings: { ...current.settings, theme: next.preference } }));
         } else {
           commitAppearance(appearance.preference, appearance.applied);
         }
@@ -419,7 +422,7 @@ export function App() {
         const merged = partyBroadcastSeen.current ? { ...next, party: current.party } : next;
         return {
           ...merged,
-          settings: retainAppearanceOnInitialState(current.settings, merged.settings, appearanceCommitted.current),
+          settings: retainAppearanceOnInitialState(current.settings, merged.settings, committedTheme.current),
         };
       });
       if (next.sessions?.[0]) {
@@ -1144,7 +1147,6 @@ export function App() {
     try {
       const appearance = await window.agentParty.setTheme(preference);
       commitAppearance(appearance.preference, appearance.applied);
-      setState((current) => ({ ...current, settings: { ...current.settings, theme: appearance.preference } }));
     } catch (error) {
       setPartyNotice(t("appearance.saveError", { error: ipcErrorMessage(error) }));
     }

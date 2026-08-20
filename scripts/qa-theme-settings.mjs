@@ -133,16 +133,32 @@ assert(firstPaintFrom({ preference: "light", applied: "light", stored: false }, 
 assert(firstPaintFrom({ preference: "light", applied: "light", stored: true }, "dark").applied === "light", "stored light is not overridden by leftover dark");
 assert(firstPaintFrom(null, null).preference === "light", "no boot and no legacy defaults to light");
 assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "ko" }, true).theme === "dark",
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "ko" }, "dark").theme === "dark",
   "late initial state keeps migrated Dark over snapshot Light",
 );
 assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light" }, false).theme === "light",
+  retainAppearanceOnInitialState({ theme: "light" }, { theme: "light" }, "dark").theme === "dark",
+  "current default Light + committed Dark keeps Dark (not the default)",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "light" }, { theme: "light" }, "system").theme === "system",
+  "current default Light + committed System keeps System",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "light" }, { theme: "dark" }, "dark").theme === "dark",
+  "incoming Dark is retained when Dark is the committed preference",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "light" }, { theme: "system" }, "system").theme === "system",
+  "incoming System is retained when System is the committed preference",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light" }, undefined).theme === "light",
   "before appearance is committed, initial state may apply",
 );
 assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "dark", locale: "en" }, true).locale === "en"
-    && retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, true).theme === "dark",
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, "dark").locale === "en"
+    && retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, "dark").theme === "dark",
   "other initial-state fields still merge when appearance is retained",
 );
 
