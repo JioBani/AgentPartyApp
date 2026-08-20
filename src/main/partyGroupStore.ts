@@ -97,7 +97,10 @@ export class PartyGroupStore {
       updatedAt: now,
     };
     log("info", "party", "party group created", { groupId: group.id, name: group.name });
-    return { state: this.write({ ...state, groups: [...state.groups, group] }), group };
+    // PREPENDED, not appended: the new group appears at the top, next to the
+    // button that made it, instead of below however many groups already
+    // exist — where the user would have to go looking for it.
+    return { state: this.write({ ...state, groups: [group, ...state.groups] }), group };
   }
 
   moveParty(partyId: string, groupId: string): PartyGroupState {

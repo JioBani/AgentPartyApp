@@ -515,7 +515,7 @@
 
 .wb-group-add {
   flex: none;
-  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
   height: 36px;
   padding: 0 10px;
   gap: 7px;
@@ -537,8 +537,7 @@
    empty drawer under it and scrolls inside that stub. */
 .wb-party-drawer > .wb-sidebar-section { flex: 1; min-height: 0; }
 .wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
-/* The create button scrolls inside this box, under the last group, so it is
-   always at the END of the folder list rather than floating over it. */
+/* Only the groups scroll; the create button above this box stays put. */
 .wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
 
 /* A narrow drawer must not turn a one-line hint into a two-line block that

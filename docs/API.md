@@ -502,6 +502,14 @@ Updates app settings.
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
 
+`sidebarDrawers` is the workbench sidebar's two drawers — the party list and the
+member list — each with `open` (expanded) and `width` (px, clamped 150–460):
+`{"sidebarDrawers": {"party": {"open": false, "width": 236}, "member": {"open":
+true, "width": 300}}}`. In the UI these are the collapse button on each drawer head
+and the drag handle between them. A collapsed drawer leaves a rail that reopens
+it. Applies live in every open window, so an agent can put the party list away
+and check a narrow layout exactly as a user would.
+
 `fonts` picks the app's UI and code font families by **family name as the OS
 reports it** — `{"fonts": {"sans": "Malgun Gothic", "mono": "D2Coding"}}`. Both
 keys are optional; `""` selects the platform default stack. In the UI this is

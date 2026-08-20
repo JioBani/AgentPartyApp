@@ -7,6 +7,7 @@ import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 import { DEFAULT_APP_LOCALE } from "../../shared/appLocale";
 import type { MessageKey } from "../i18n/messages";
+import { DEFAULT_SIDEBAR_DRAWERS } from "../../shared/sidebarDrawers";
 
 export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "agent" | "settings";
 
@@ -52,6 +53,7 @@ export const initialState: InitialAppState = {
     composer: { ...DEFAULT_COMPOSER_SETTINGS },
     memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
     favoriteModels: [],
+    sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
   },
   auth: [],
   sessions: [],

@@ -66,7 +66,7 @@ interface WorkbenchProps {
   /** Settings reviewer default (model + effort) for the Message Gate. */
   gateDefaults: GateReviewer;
   debugEnabled: boolean;
-  drawers: { party: boolean; member: boolean };
+  drawers: SidebarDrawerSettings;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
   /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
@@ -105,7 +105,7 @@ interface WorkbenchProps {
   onMemberOpened: (member: string) => void;
   /** Members frontmost in a panel — what the user is actually looking at. */
   onVisibleMembersChange: (partyId: string, members: string[]) => void;
-  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
+  onToggleDrawer: (which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
   onOpenSessions: () => void;
@@ -840,3 +840,5 @@ function aggregateByParty(views: MemberView[], parties: PartyDefinition[]): { wo
 function sameLayout(a: LayoutState, b: LayoutState): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+import type { SidebarDrawerId, SidebarDrawerSettings, SidebarDrawerState } from "../../shared/sidebarDrawers";

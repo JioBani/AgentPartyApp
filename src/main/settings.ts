@@ -18,6 +18,7 @@ import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileP
 import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
 import { DEFAULT_UPDATE_CHANNEL, normalizeUpdateChannel } from "../shared/appUpdate";
 import { DEFAULT_APP_LOCALE, normalizeAppLocale } from "../shared/appLocale";
+import { DEFAULT_SIDEBAR_DRAWERS, normalizeSidebarDrawers } from "../shared/sidebarDrawers";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -68,6 +69,7 @@ const defaults: AppSettings = {
   deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
+  sidebarDrawers: { party: { ...DEFAULT_SIDEBAR_DRAWERS.party }, member: { ...DEFAULT_SIDEBAR_DRAWERS.member } },
   fonts: { ...DEFAULT_FONT_SETTINGS },
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   idleSleep: { ...DEFAULT_IDLE_SLEEP },
@@ -210,7 +212,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // identical to the built-in), so a stale file cannot make a member session
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
-  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  const sidebarDrawers = normalizeSidebarDrawers(withRuntimeOverrides.sidebarDrawers);
+  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

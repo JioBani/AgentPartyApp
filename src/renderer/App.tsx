@@ -55,6 +55,7 @@ import type { AppLocale } from "../shared/appLocale";
 import { localized } from "./i18n/I18nProvider";
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
 import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
+import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState } from "../shared/sidebarDrawers";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -117,10 +118,7 @@ export function App() {
    * splitting them is that you can put the party list away while working with a
    * party's members — and get it back in one click.
    */
-  const [drawers, setDrawers] = useState(() => ({
-    party: window.localStorage.getItem("agentparty.partyDrawerOpen") !== "0",
-    member: window.localStorage.getItem("agentparty.memberDrawerOpen") !== "0",
-  }));
+  const drawers = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
   // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMemberScope, setVisibleMemberScope] = useState<{ partyId: string; names: string[] }>({ partyId: "", names: [] });
   // Transcript data and transcript DOM have separate lifecycles. The former is
@@ -1228,6 +1226,21 @@ export function App() {
    * empty rather than skipped — that is how a user undoes a wrong path and
    * returns the harness to auto-discovery.
    */
+  /**
+   * Collapses, expands or resizes one sidebar drawer.
+   *
+   * Goes through the settings route rather than `localStorage` so the same call
+   * an agent makes over `POST /api/settings` moves the real UI, and so a second
+   * window is told about it instead of drifting until reload.
+   */
+  async function saveDrawer(which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) {
+    const current = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
+    const settings = await window.agentParty.updateSettings({
+      sidebarDrawers: { ...current, [which]: { ...current[which], ...patch } },
+    });
+    setState((existing) => ({ ...existing, settings }));
+  }
+
   async function saveExecutablePaths(patch: Partial<InitialAppState["settings"]>) {
     const settings = await window.agentParty.updateSettings(patch);
     setState((current) => ({ ...current, settings }));
@@ -1954,12 +1967,7 @@ export function App() {
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
-                onToggleDrawer={(which, open) => {
-                  setDrawers((current) => ({ ...current, [which]: open }));
-                  try {
-                    window.localStorage.setItem(`agentparty.${which}DrawerOpen`, open ? "1" : "0");
-                  } catch { /* best-effort */ }
-                }}
+                onToggleDrawer={(which, patch) => void saveDrawer(which, patch)}
                 onOpenUsage={() => setCurrentView("usage")}
                 onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
