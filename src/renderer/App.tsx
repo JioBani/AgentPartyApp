@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -41,7 +41,7 @@ import { ipcErrorMessage } from "./app/ipcError";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
 import type { ApprovalDelivery } from "../shared/approvals";
-import { AgentSettingsView, AuthView, SettingsView, SessionsView } from "./app/secondaryViews";
+import { AgentSettingsView, AuthView, SettingsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
@@ -685,7 +685,6 @@ export function App() {
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });
-    const offRefreshHistory = window.agentParty.onRefreshHistory(() => { void refreshHistory(); setCurrentView("sessions"); });
     return () => {
       offEvents();
       offSnapshot();
@@ -706,7 +705,6 @@ export function App() {
       offNavigate();
       offWorkspaceChoose();
       offNewSession();
-      offRefreshHistory();
     };
   }, []);
 
@@ -1016,20 +1014,6 @@ export function App() {
       return next;
     });
     setActiveSessionId((current) => (current === sessionId ? "" : current));
-  }
-
-  async function refreshHistory() {
-    const result = await window.agentParty.listResumableSessions(state.settings.workspacePath);
-    setState((current) => ({ ...current, resumableSessions: result.sessions || [], resumableSessionsError: result.error }));
-  }
-
-  async function resumeHistorySession(sessionId: string) {
-    const session = await window.agentParty.resumeSession(sessionId, state.settings.workspacePath);
-    if (!session) {
-      return;
-    }
-    setState((current) => ({ ...current, sessions: upsertSession(current.sessions, session) }));
-    setActiveSessionId(session.id);
   }
 
   /**
@@ -1827,7 +1811,6 @@ export function App() {
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: viewTitle("workbench", t), icon: <Sparkles size={18} /> },
     { id: "guide", label: viewTitle("guide", t), icon: <BookOpen size={18} /> },
-    { id: "sessions", label: viewTitle("sessions", t), icon: <History size={18} /> },
     { id: "usage", label: viewTitle("usage", t), icon: <BarChart3 size={18} /> },
     { id: "auth", label: viewTitle("auth", t), icon: <KeyRound size={18} /> },
     { id: "agent", label: viewTitle("agent", t), icon: <SlidersHorizontal size={18} /> },
@@ -1913,12 +1896,10 @@ export function App() {
               <header className="screen-header">
                 <div className="screen-title">
                   <h1>{viewTitle("workbench", t)}</h1>
-                  <span className="wb-mono screen-repo">
-                    {state.workspace?.kind === "wsl" && (
-                      <span className="host-badge" title={localized("STR-0819", [state.workspace.distro])}>WSL · {state.workspace.distro}</span>
-                    )}
-                    {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
-                  </span>
+                  {/* The PARTY, not the workspace path. Parties are app-global
+                      now and every member runs in its own cwd, so the directory
+                      the app was launched from described nothing on screen. */}
+                  <span className="screen-party" title={activePartyName}>{activePartyName}</span>
                   <p>{t("shell.workbenchDescription")}</p>
                 </div>
                 <div className="screen-actions">
@@ -1969,7 +1950,6 @@ export function App() {
                 onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
                 onToggleDrawer={(which, patch) => void saveDrawer(which, patch)}
                 onOpenUsage={() => setCurrentView("usage")}
-                onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
             </>
           ) : currentView === "guide" ? (
@@ -1998,17 +1978,6 @@ export function App() {
                 </div>
               </header>
               <div className="program-scroll">
-              {currentView === "sessions" && (
-                <SessionsView
-                  sessions={sessions}
-                  resumable={state.resumableSessions || []}
-                  resumableError={state.resumableSessionsError}
-                  onOpen={(id) => { setActiveSessionId(id); setCurrentView("workbench"); }}
-                  onClose={closeSession}
-                  onRefresh={refreshHistory}
-                  onResume={resumeHistorySession}
-                />
-              )}
               {currentView === "auth" && (
                 <AuthView
                   auth={state.auth}

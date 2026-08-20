@@ -56,7 +56,6 @@ const PARTS = [
   { id: "rail", kind: "chrome", selector: ".nav-rail", scene: "workbench" },
 
   { id: "workbench", kind: "view", label: "Workbench", selector: ".program-main", scene: "workbench" },
-  { id: "sessions", kind: "view", label: "세션", selector: ".program-main", scene: "sessions" },
   { id: "usage", kind: "view", label: "Token Usage", selector: ".program-main", scene: "usage" },
   { id: "auth", kind: "view", label: "인증", selector: ".program-main", scene: "auth" },
   { id: "automation", kind: "view", label: "설정", selector: ".program-main", scene: "automation" },

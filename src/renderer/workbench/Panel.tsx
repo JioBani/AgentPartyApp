@@ -38,7 +38,6 @@ interface PanelProps {
   onOpenStatus: (member: string) => void;
   onOpenCompact: (member: string) => void;
   onOpenUsage: () => void;
-  onOpenSessions: () => void;
   onOpenGate: (member: string) => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
   /** Subagent dock/detail UI state for this panel's active member. */
@@ -50,7 +49,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenSessions, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   const cliOwned = view?.status === "external-cli";
@@ -270,7 +269,6 @@ export function Panel(props: PanelProps) {
               openMcp: () => onOpenMcp(view.name),
               openStatus: () => onOpenStatus(view.name),
               openUsage: onOpenUsage,
-              openSessions: onOpenSessions,
               openAutoCompact: () => onOpenCompact(view.name),
             }}
           />

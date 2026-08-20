@@ -337,7 +337,6 @@ export function createFakeAgentParty(): FakeAgentParty {
     onNavigate: (callback) => track(navigateListeners, callback),
     onWorkspaceChoose: (callback) => subscribe(callback),
     onNewSession: (callback) => subscribe(callback),
-    onRefreshHistory: (callback) => subscribe(callback),
 
     // Methods the real bridge gained after this fake was first written. The
     // stage demo never reaches them (mobile pairing, party primer, approvals,

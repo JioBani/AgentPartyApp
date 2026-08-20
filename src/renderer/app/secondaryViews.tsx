@@ -6,7 +6,7 @@ import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, 
 import { ipcErrorMessage } from "./ipcError";
 import { openUpdateDialog } from "./updateDialog";
 import { UPDATE_FEED, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
-import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting, SessionView } from "../../shared/types";
+import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting } from "../../shared/types";
 import {
   cursorPolicyOf,
   type CursorAgentMode,
@@ -43,48 +43,6 @@ import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
-
-export function SessionsView({ sessions, resumable, resumableError, onOpen, onClose, onRefresh, onResume }: {
-  sessions: SessionView[];
-  resumable: NonNullable<InitialAppState["resumableSessions"]>;
-  resumableError?: string;
-  onOpen: (id: string) => void;
-  onClose: (id: string) => void;
-  onRefresh: () => void;
-  onResume: (id: string) => void;
-}) {
-  return (
-    <section className="legacy-view">
-      <div className="view-toolbar"><button className="ghost-btn" onClick={onRefresh}><RefreshCw size={15} />  <LocalizedText id="STR-0986" /></button></div>
-      <div className="split-grid">
-        <section className="card">
-          <div className="card-title"><LocalizedText id="STR-0987" /></div>
-          <div className="row-list">
-            {sessions.length === 0 && <div className="empty"><LocalizedText id="STR-0988" /></div>}
-            {sessions.map((session) => (
-              <button key={session.id} className="list-row" onClick={() => onOpen(session.id)}>
-                <span><strong>{session.title || "Claude Code"}</strong><small>{session.snapshot.status || "idle"}</small></span>
-                <button type="button" className="row-x" title={localized("STR-0990")} onClick={(event) => { event.stopPropagation(); onClose(session.id); }}><X size={13} /></button>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-title"><LocalizedText id="STR-0991" /></div>
-          <div className="row-list">
-            {resumableError && <div className="soft-error">{resumableError}</div>}
-            {!resumableError && resumable.length === 0 && <div className="empty"><LocalizedText id="STR-0992" /></div>}
-            {resumable.map((session) => (
-              <button className="list-row" key={session.sessionId} onClick={() => onResume(session.sessionId)}>
-                <span><strong>{session.customTitle || session.summary || session.firstPrompt || session.sessionId}</strong><small>{[session.lastModified ? new Date(session.lastModified).toLocaleString() : "", session.gitBranch].filter(Boolean).join(" - ")}</small></span>
-              </button>
-            ))}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
 
 /** Maps an auth provider status to a badge (label + tone + whether it's a check). */
 function authBadge(status: InitialAppState["auth"][number]["status"]): { label: string; tone: "success" | "muted" | "danger"; ok: boolean } {

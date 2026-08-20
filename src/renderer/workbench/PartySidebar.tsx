@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -59,7 +59,6 @@ interface PartySidebarProps {
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
   activePartyId?: string;
-  activePartyName: string;
   views: MemberView[];
   openMembers: Set<string>;
   routes: RouteLike[];
@@ -276,7 +275,7 @@ type CtxMenu =
  */
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
    *
@@ -462,17 +461,18 @@ export function PartySidebar(props: PartySidebarProps) {
 
       {drawers.member.open ? (
         <aside className="wb-drawer wb-member-drawer" style={{ width: memberWidth }}>
-          {/* The party name lives HERE, not only in the party drawer: with the
-              party drawer collapsed this is the only thing that says which
-              party's members these are. */}
+          {/* Says what the drawer IS, like the party drawer above it. Which
+              party these members belong to is the workbench header's job — it
+              stays visible with either drawer collapsed. */}
           <header className="wb-drawer-head">
-            <span className="wb-drawer-party" title={activePartyName}>{activePartyName}</span>
+            <UserRound size={14} />
+            <span className="wb-drawer-title"><LocalizedText id="STR-2061" /></span>
+            <span className="wb-mono wb-drawer-count">{views.length}</span>
             <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("member", { open: false })}><ChevronsLeft size={15} /></button>
           </header>
 
           <section className="wb-sidebar-section wb-members-section">
             <div className="wb-section-label">
-              <span><LocalizedText id="STR-2061" /></span>
           {!creating && <span className="wb-hint"><LocalizedText id="STR-2062" /></span>}
           <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? localized("STR-2064") : localized("STR-2063")} onClick={() => setCreating((value) => !value)}>
             {creating ? <X size={14} /> : <Plus size={15} />}
@@ -543,7 +543,7 @@ export function PartySidebar(props: PartySidebarProps) {
       ) : (
         <button type="button" className="wb-drawer-rail is-member" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", { open: true })}>
           <ChevronsRight size={13} />
-          <span>{activePartyName}</span>
+          <span><LocalizedText id="STR-2061" /></span>
           <span className="wb-mono wb-drawer-rail-count">{views.length}</span>
         </button>
       )}

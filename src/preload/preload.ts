@@ -308,11 +308,6 @@ const api = {
     ipcRenderer.on("session:new", listener);
     return () => ipcRenderer.off("session:new", listener);
   },
-  onRefreshHistory: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on("session:refreshHistory", listener);
-    return () => ipcRenderer.off("session:refreshHistory", listener);
-  },
 };
 
 contextBridge.exposeInMainWorld("agentParty", api);

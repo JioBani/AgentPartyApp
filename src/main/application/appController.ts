@@ -2318,7 +2318,7 @@ export class AppController {
       tab = "automation";
     }
     const tabbed = view === "agent" || view === "settings";
-    const validViews = ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"];
+    const validViews = ["workbench", "guide", "usage", "auth", "agent", "settings"];
     if (!validViews.includes(view)) throw new Error(`Unknown view '${legacyView}'. Known: ${validViews.join(", ")} (legacy aliases: runtime, automation).`);
     if (tab && !tabbed) throw new Error(`The '${view}' screen has no tabs.`);
     if (view === "agent" && tab && !isAgentTabId(tab)) throw new Error(`Unknown agent tab '${tab}'. Known: ${AGENT_TAB_IDS.join(", ")}.`);

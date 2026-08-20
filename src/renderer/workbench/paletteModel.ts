@@ -47,7 +47,6 @@ export type PaletteAction =
   | "mcp"
   | "status"
   | "usage"
-  | "sessions"
   | "auto-compact"
   | "environment";
 
@@ -130,8 +129,6 @@ function appActionFor(harness: HarnessId, name: string): PaletteAction | undefin
       return "status";
     case "usage":
       return "usage";
-    case "resume":
-      return "sessions";
     case "new":
       return "restart";
     case "stop":
@@ -170,7 +167,7 @@ const CLAUDE_CODE: HarnessPalette = {
     cmd("mcp", "AgentParty MCP 서버 관리 열기", "command", "built-in", { run: { type: "action", action: "mcp" } }),
     cmd("agents", "Manage subagents", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
     cmd("tasks", "Show background tasks", "command", "built-in", { badges: ["read-only"], disabledReason: UNSUPPORTED_COMMAND }),
-    cmd("resume", "AgentParty 세션 기록 열기", "command", "built-in", { run: { type: "action", action: "sessions" } }),
+    cmd("resume", "Resume a past session", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
     // Built-in skills (prompt/workflow handed to the model).
     cmd("code-review", "Review the current branch / PR", "skill", "skill", { args: "[PR#]", badges: ["requires-git", "cloud"] }),
     cmd("debug", "Investigate a failure", "skill", "skill", { args: "[topic]" }),
@@ -201,7 +198,7 @@ const CODEX: HarnessPalette = {
     cmd("status", "AgentParty 세션 상태 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "status" } }),
     cmd("usage", "AgentParty 계정 사용 한도 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "usage" } }),
     cmd("mcp", "AgentParty MCP 서버 관리 열기", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "mcp" } }),
-    cmd("resume", "AgentParty 세션 기록 열기", "command", "built-in", { run: { type: "action", action: "sessions" } }),
+    cmd("resume", "Resume a past session", "command", "built-in", { disabledReason: UNSUPPORTED_COMMAND }),
     cmd("stop", "현재 실행 중인 턴 중단", "command", "built-in", { run: { type: "action", action: "interrupt" } }),
     cmd("autocompact", "AgentParty 자동 압축 설정 열기", "command", "built-in", { run: { type: "action", action: "auto-compact" } }),
     cmd("doctor", "AgentParty 환경 진단 열기", "command", "built-in", { run: { type: "action", action: "environment" } }),

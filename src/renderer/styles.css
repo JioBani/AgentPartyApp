@@ -229,12 +229,20 @@
   color: var(--text-0);
 }
 
-.screen-repo {
+/* The party the workbench is showing, beside the screen title. Truncates
+   rather than pushing the description around: a party name has no length
+   limit. */
+.screen-party {
   font-size: 11px;
-  color: var(--text-2);
+  font-weight: 600;
+  color: var(--text-1);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .host-badge {

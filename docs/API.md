@@ -2852,7 +2852,7 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, guide, sessions, usage, auth, agent, settings
+workbench, guide, usage, auth, agent, settings
 ```
 
 The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a

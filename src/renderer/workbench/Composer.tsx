@@ -60,7 +60,6 @@ interface ComposerProps {
     openMcp: () => void;
     openStatus: () => void;
     openUsage: () => void;
-    openSessions: () => void;
     openAutoCompact: () => void;
   };
   /** Show the permission control beside Send. The guide window turns this off:
@@ -148,7 +147,6 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     else if (action === "mcp") commandUi.openMcp();
     else if (action === "status") commandUi.openStatus();
     else if (action === "usage") commandUi.openUsage();
-    else if (action === "sessions") commandUi.openSessions();
     else if (action === "auto-compact") commandUi.openAutoCompact();
     else if (action === "environment") actions.openEnvironmentSettings();
   }

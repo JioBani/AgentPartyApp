@@ -892,11 +892,10 @@ function registerApplicationMenu(): void {
       label: "View",
       submenu: [
         { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
-        { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
-        { label: "Token Usage", accelerator: "CmdOrCtrl+3", click: () => navigate("usage") },
-        { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
-        { label: "Agent", accelerator: "CmdOrCtrl+5", click: () => navigate("agent") },
-        { label: "Settings", accelerator: "CmdOrCtrl+6", click: () => navigate("settings") },
+        { label: "Token Usage", accelerator: "CmdOrCtrl+2", click: () => navigate("usage") },
+        { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
+        { label: "Agent", accelerator: "CmdOrCtrl+4", click: () => navigate("agent") },
+        { label: "Settings", accelerator: "CmdOrCtrl+5", click: () => navigate("settings") },
         { type: "separator" },
         { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
@@ -908,7 +907,6 @@ function registerApplicationMenu(): void {
       label: "Session",
       submenu: [
         { label: "New Party", accelerator: "CmdOrCtrl+N", click: () => focusedWindow()?.webContents.send("session:new") },
-        { label: "Refresh History", click: () => focusedWindow()?.webContents.send("session:refreshHistory") },
       ],
     },
   ]));

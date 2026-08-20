@@ -55,7 +55,6 @@ const get = async (route) => {
 const PAGES = [
   { file: "index.html", title: "Workbench", view: "workbench", setup: workbench },
   { file: "workbench-dark.html", title: "Workbench (dark)", view: "workbench", theme: "dark", setup: workbench },
-  { file: "sessions.html", title: "세션", view: "sessions", setup: () => go("sessions") },
   { file: "usage.html", title: "Token Usage", view: "usage", setup: () => go("usage") },
   { file: "auth.html", title: "인증", view: "auth", setup: () => go("auth") },
   { file: "automation.html", title: "설정", view: "automation", setup: () => go("automation") },
