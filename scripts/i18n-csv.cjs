@@ -17,6 +17,12 @@ function parseCsv(source) {
         index += 1;
       } else if (char === '"') {
         quoted = false;
+      } else if (char === "\r" && text[index + 1] === "\n") {
+        // Git checks the inventory out with CRLF on Windows, while freshly
+        // audited TypeScript strings use LF. Keep multiline field values
+        // platform-neutral so identical copy retains its catalog identity.
+        field += "\n";
+        index += 1;
       } else {
         field += char;
       }
