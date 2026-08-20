@@ -34,6 +34,12 @@ changed, and reserve the heaviest (real model) for a final confirmation.
 8. **대체 금지** — 없는 경로를 기본 cwd 로 설정해 본다. 거절되고 기존 기본값이
    그대로 남아야 한다.
 
+9. **cwd 가 실행에 쓰이는지** — 멤버를 워크스페이스가 아닌 폴더에 만들고 한 턴을
+   돌린 뒤, Claude CLI 가 스스로 남긴 기록을 본다:
+   `~/.claude/projects/<cwd 슬러그>/<세션>.jsonl` 의 첫 줄 `cwd` 필드. 모델의
+   협조가 필요 없는 유일한 증거다(모델에게 물으면 대답을 지어낼 수 있다).
+   폴더를 지운 뒤 재개하면 `폴더 없음` 으로 거절되어야 한다.
+
 `AGENTPARTY_QA=1` 로 띄우면 `/api/qa/input` 으로 마법사 입력까지 몰 수 있어
 멤버 만들기 2단계를 실제로 통과시켜 볼 수 있다.
 

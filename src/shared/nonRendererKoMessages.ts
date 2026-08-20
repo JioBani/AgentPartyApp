@@ -1312,7 +1312,11 @@ export const nonRendererKoMessages = {
   "STR-3327": "'${…}' 그룹이 이미 있습니다.",
   "STR-3328": "그룹 '${…}' 을 찾을 수 없습니다.",
   "STR-3329": "파티 '${…}' 이 목록에 없습니다.",
-  "STR-3330": "기본 그룹"
+  "STR-3330": "기본 그룹",
+  "STR-3361": "멤버 '${…}' 는 WSL 배포판 '${…}' 안에서 실행되어야 합니다.",
+  "STR-3362": "이 워크스페이스의 엔진은 그 배포판이 아니어서 여기서는 시작할 수 없습니다 —",
+  "STR-3363": "해당 배포판의 워크스페이스에서 파티를 여세요.",
+  "STR-3364": "멤버 '${…}' 의 실행 위치를 찾을 수 없습니다 — ${…}: ${…}"
 } as const;
 
 export type NonRendererMessageKey = keyof typeof nonRendererKoMessages;

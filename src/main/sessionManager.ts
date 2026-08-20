@@ -211,12 +211,16 @@ export class SessionManager extends EventEmitter {
     const id = resumeSessionId ? `resume-${Date.now()}` : `session-${Date.now()}`;
     const request = normalizeCreateSessionInput(input);
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
+    // Where the process RUNS vs which workspace it BELONGS to. A party member
+    // carries its own cwd, and only the adapter gets it: `workspace` still
+    // decides transcripts, party routing and which windows list the session.
+    const cwd = request.cwd || workspace;
     // The session id doubles as its usage sourceId: registerSession claims the
     // active-usage slot under this id, and the fan-in filter compares event
     // sourceIds against that slot. Unstamped foreground events used to bypass
     // the filter entirely, letting every live session overwrite the meter
     // (the "usage changes on every refresh" bug).
-    const adapter = this.createAdapter(id, workspace, resumeSessionId, request, binding, id);
+    const adapter = this.createAdapter(id, cwd, resumeSessionId, request, binding, id);
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const provider = providerOfHarness(requestedHarness);
     return this.registerSession(id, workspace, adapter, provider, binding?.identity);
@@ -691,7 +695,8 @@ export class SessionManager extends EventEmitter {
     const workspace = request.workspacePath || settings.workspacePath || process.cwd();
     const adapter = new MockHarnessSession({
       id,
-      cwd: workspace,
+      // Mirrors the live path above, so a QA mock reports the member's cwd too.
+      cwd: request.cwd || workspace,
       model: selectedModel,
       effort: request.effort || selectedDefaults.effort,
       permissionMode: request.permissionMode || selectedDefaults.permissionMode || "default",

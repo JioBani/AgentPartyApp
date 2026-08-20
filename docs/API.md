@@ -1928,6 +1928,18 @@ counts as the distro being usable.
 
 Installed WSL distros, for the WSL side of the picker.
 
+### 멤버가 실제로 어디서 실행되는가
+
+멤버의 실행 위치는 기록만 되는 값이 아니라 하네스가 **실제로 시작되는 디렉터리**다.
+세션의 `workspacePath`(어느 파티에 속하는지, 트랜스크립트가 어디 쓰이는지)와는
+분리되어 있어서, 멤버가 다른 폴더에서 돈다고 저장 위치가 따라 옮겨가지 않는다.
+
+한 가지 경계가 남아 있다: **WSL 위치의 멤버는 그 배포판의 엔진만 시작할 수 있다.**
+Claude 하네스는 Agent SDK 가 프로세스 안에서 CLI 를 띄우므로, 배포판 안에서 돌리려면
+엔진 자체가 그 배포판 안에 있어야 한다. 그래서 Windows 워크스페이스에서
+`POST /api/party/members/:name/start` 를 부르면 조용히 워크스페이스에서 실행하는 대신
+이유를 담은 메시지를 돌려준다. WSL 워크스페이스(엔진이 그 배포판 안)에서는 정상 동작한다.
+
 ### `POST /api/cwd/wsl/list`
 
 One directory level INSIDE a distro, for the WSL folder browser:

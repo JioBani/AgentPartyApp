@@ -503,6 +503,17 @@ export interface SessionView {
 
 export interface CreateSessionInput {
   workspacePath?: string;
+  /**
+   * Where the harness process actually runs, when that is NOT the workspace.
+   *
+   * A member carries its own execution location, and the harness has to be
+   * started there — otherwise the picker records a directory the member never
+   * sees. Deliberately separate from `workspacePath`, which stays the session's
+   * IDENTITY (which workspace's party it belongs to, where its transcripts are
+   * written, which windows see it); overloading one field for both would move a
+   * member's storage every time it ran somewhere else.
+   */
+  cwd?: string;
   selectedHarnessId?: HarnessId;
   selectedProviderId?: ProviderId;
   model?: string;
