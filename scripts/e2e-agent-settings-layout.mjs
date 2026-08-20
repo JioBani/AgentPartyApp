@@ -209,6 +209,21 @@ async function installPopulatedWorkspaceFixture() {
   return { default: workspace, recent, members: members.payload?.members?.length || 0 };
 }
 
+async function assertPopulatedWorkspaceRendered(viewport, fixture) {
+  await navigate("settings", "workspace");
+  const defaults = await measure('[data-layout-card="settings-workspace-defaults"] .set-cwd-path');
+  const recent = await measure('[data-layout-card="settings-workspace-recent-windows"] .set-cwd-path');
+  const members = await measure('[data-layout-card="settings-workspace-members"] .set-cwd-path, [data-layout-card="settings-workspace-members"] .set-cwd-meta');
+  const defaultText = defaults.elements.map((item) => item.text).join(" | ");
+  const recentText = recent.elements.map((item) => item.text).join(" | ");
+  const memberText = members.elements.map((item) => item.text).join(" | ");
+  assert(defaultText.includes(fixture.default), `${viewport.label} renderer shows populated workspace default`);
+  assert(recentText.includes(fixture.recent), `${viewport.label} renderer shows populated long recent path`);
+  assert(memberText.includes("main"), `${viewport.label} renderer shows populated member identity`);
+  assert(memberText.includes("Layout populated workspace fixture"), `${viewport.label} renderer shows populated member party identity`);
+  return { requested: viewport.requested, actual: defaults.viewport, defaultText, recentText, memberText };
+}
+
 async function installDiscordErrorFixture() {
   const saved = await request("POST", "/api/discord/settings", {
     desktopName: "LAYOUT-QA-DESKTOP-WITH-A-LONG-NAME",
@@ -234,22 +249,36 @@ fs.mkdirSync(workspace, { recursive: true });
 fs.mkdirSync(userData, { recursive: true });
 fs.mkdirSync(shots, { recursive: true });
 fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: workspace }, null, 2));
-const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", workspace], {
-  cwd: root,
-  stdio: ["ignore", "ignore", "inherit"],
-  windowsHide: true,
-  env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" },
-});
+function spawnApp() {
+  return spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", workspace], {
+    cwd: root,
+    stdio: ["ignore", "ignore", "inherit"],
+    windowsHide: true,
+    env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" },
+  });
+}
+let child = spawnApp();
 
 try {
   await waitForApi();
+  await dismissGuideOffer();
+  const workspaceFixture = await installPopulatedWorkspaceFixture();
+
+  // CWD preferences and member locations are part of the renderer's initial
+  // settings snapshot. Restart the same real app against the same isolated
+  // stores so the visible UI, not only the backend response, owns the fixture.
+  await request("POST", "/api/window/close", {});
+  killTree(child.pid);
+  await delay(350);
+  child = spawnApp();
+  await waitForApi();
+  await dismissGuideOffer();
+
   const state = await request("GET", "/api/state");
   const appRoot = String(state.payload?.runtime?.appRoot || "");
   const mobileEnabled = state.payload?.settings?.mobile?.enabled === true;
   assert((appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep), "real app is running this worktree build");
   const appPid = Number(execFileSync("powershell", ["-NoProfile", "-Command", `(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -First 1 -ExpandProperty OwningProcess)`], { encoding: "utf8" }).trim());
-  await dismissGuideOffer();
-  const workspaceFixture = await installPopulatedWorkspaceFixture();
   const discordFixture = await installDiscordErrorFixture();
   await request("POST", "/api/qa/environment", {});
   await request("POST", "/api/qa/update", {
@@ -272,9 +301,11 @@ try {
     ? [{ width: 1440, height: 900 }]
     : [{ width: 1440, height: 900 }, { width: 760, height: 720 }];
   const viewports = [];
+  const workspaceRendered = [];
   for (const requested of viewportRequests) {
     const viewport = await setActualViewport(requested);
     viewports.push(viewport);
+    workspaceRendered.push(await assertPopulatedWorkspaceRendered(viewport, workspaceFixture));
     for (const target of tabs) {
       await auditActiveTab(target.view, target.tab, target.harness, viewport);
       if (!quickMode) for (const theme of ["light", "dark"]) {
@@ -326,7 +357,7 @@ try {
     }
   }
   const widthClamp = viewportRequests.map((requested, index) => ({ requested, actual: viewports[index]?.actual }));
-  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, mobileEnabled, widthClamp, workspaceFixture, discordFixture, failures, measurements }, null, 2));
+  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, mobileEnabled, widthClamp, workspaceFixture, workspaceRendered, discordFixture, failures, measurements }, null, 2));
   console.log(`EVIDENCE pid=${appPid} baseUrl=${base} appRoot=${appRoot}`);
   console.log(`EVIDENCE measurements=${evidencePath} screenshots=${shots}`);
   await request("POST", "/api/window/close", {});
