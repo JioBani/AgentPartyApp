@@ -5,6 +5,7 @@
  */
 import { DEFAULT_COMPOSER_SETTINGS } from "../../shared/composerSettings";
 import { DEFAULT_FONT_SETTINGS } from "../../shared/appFonts";
+import { DEFAULT_THEME_PREFERENCE } from "../../shared/appTheme";
 import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
@@ -247,6 +248,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
       deepseekApiKey: "",
       automationApiPort: 47831,
       transcriptFontScale: 1,
+      theme: DEFAULT_THEME_PREFERENCE,
       fonts: { ...DEFAULT_FONT_SETTINGS },
       compactDefault: { on: false, at: 80 },
       idleSleep: { ...DEFAULT_IDLE_SLEEP },

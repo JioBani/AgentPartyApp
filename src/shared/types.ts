@@ -13,6 +13,7 @@ import type { DiscordBridgeSettings } from "./discordBridge";
 import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
+import type { ThemePreference } from "./appTheme";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyPrimerSettings } from "./partyPrimer";
@@ -91,6 +92,11 @@ export interface AppSettings {
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
+  /**
+   * Appearance preference: follow the OS, or lock light/dark. Applied theme
+   * (`data-theme`) stays `light` or `dark`. See `shared/appTheme.ts`.
+   */
+  theme: ThemePreference;
   /**
    * The UI and code fonts, as catalog ids. Applied by writing the selected
    * stacks into `--font-sans` / `--font-mono`, which every surface already

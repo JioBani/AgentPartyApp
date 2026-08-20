@@ -12,6 +12,7 @@ import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate"
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
 import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/composerSettings";
 import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
+import { DEFAULT_THEME_PREFERENCE, normalizeThemePreference } from "../shared/appTheme";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
@@ -68,6 +69,7 @@ const defaults: AppSettings = {
   deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
+  theme: DEFAULT_THEME_PREFERENCE,
   fonts: { ...DEFAULT_FONT_SETTINGS },
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
   idleSleep: { ...DEFAULT_IDLE_SLEEP },
@@ -203,6 +205,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // when it renders, so an unknown id draws nothing and returns on its own.
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
+  const theme = normalizeThemePreference(withRuntimeOverrides.theme);
   const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
   const mobile = normalizeMobileSettings(withRuntimeOverrides.mobile);
   const updateChannel = normalizeUpdateChannel(withRuntimeOverrides.updateChannel);
@@ -210,7 +213,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // identical to the built-in), so a stale file cannot make a member session
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
-  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, theme, fonts, mobile, partyPrimer, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {
