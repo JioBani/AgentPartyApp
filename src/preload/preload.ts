@@ -36,6 +36,7 @@ const api = {
   createPartyGroup: (name: string) => ipcRenderer.invoke("partyGroups:create", name),
   movePartyToGroup: (partyId: string, groupId: string) => ipcRenderer.invoke("partyGroups:move", partyId, groupId),
   renamePartyGroup: (groupId: string, name: string) => ipcRenderer.invoke("partyGroups:rename", groupId, name),
+  reorderPartyGroups: (order: string[]) => ipcRenderer.invoke("partyGroups:reorder", order),
   removePartyGroup: (groupId: string) => ipcRenderer.invoke("partyGroups:remove", groupId),
   getCwdPreferences: (options?: { check?: boolean }) => ipcRenderer.invoke("cwd:preferences", options),
   setDefaultCwd: (location: unknown) => ipcRenderer.invoke("cwd:setDefault", location),

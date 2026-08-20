@@ -72,6 +72,7 @@ interface PartySidebarProps {
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
   onRenameGroup: (groupId: string, name: string) => void;
   onRemoveGroup: (groupId: string) => void;
+  onReorderGroups: (order: string[]) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
@@ -282,7 +283,7 @@ function loadDrawerWidth(which: "party" | "member"): number {
 }
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   const [partyWidth, setPartyWidth] = useState(() => loadDrawerWidth("party"));
   const [memberWidth, setMemberWidth] = useState(() => loadDrawerWidth("member"));
   const resizing = useRef<{ which: "party" | "member"; startX: number; startWidth: number } | null>(null);
@@ -436,6 +437,7 @@ export function PartySidebar(props: PartySidebarProps) {
           onSelectParty={onSelectParty}
           onCreateGroup={() => setNewGroupOpen(true)}
           onDropParty={onMovePartyToGroup}
+          onReorderGroups={onReorderGroups}
           onPartyContextMenu={(party, event) => {
             setConfirmParty(false);
             setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
@@ -449,7 +451,7 @@ export function PartySidebar(props: PartySidebarProps) {
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("party", event)} />
         </aside>
       ) : (
-        <button type="button" className="wb-drawer-rail" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", true)}>
+        <button type="button" className="wb-drawer-rail is-party" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", true)}>
           <ChevronsRight size={13} />
           <span><LocalizedText id="STR-3387" /></span>
           <span className="wb-mono wb-drawer-rail-count">{partySummaries.length}</span>
@@ -536,7 +538,7 @@ export function PartySidebar(props: PartySidebarProps) {
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("member", event)} />
         </aside>
       ) : (
-        <button type="button" className="wb-drawer-rail" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", true)}>
+        <button type="button" className="wb-drawer-rail is-member" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", true)}>
           <ChevronsRight size={13} />
           <span>{activePartyName}</span>
           <span className="wb-mono wb-drawer-rail-count">{views.length}</span>

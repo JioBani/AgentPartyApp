@@ -485,6 +485,38 @@
 
 .wb-drawer-rail-count { color: var(--text-3); font-weight: 400; letter-spacing: 0; }
 
+/* ── 바깥(파티) → 안쪽(멤버) → 내용 으로 읽히는 깊이 ──────────────────────
+   두 드로우어가 같은 배경이라 어디까지가 파티고 어디부터 멤버인지 경계가
+   없었다. 멤버 쪽을 한 단계 밝게(=내용에 가깝게) 깔고 왼쪽 모서리에 안쪽
+   그림자를 넣어, 파티 안으로 한 겹 들어간 메뉴로 보이게 한다. */
+.wb-party-drawer { background: var(--bg-0); }
+.wb-member-drawer {
+  background: var(--bg-1);
+  border-left: var(--border-width) solid var(--border);
+  box-shadow: inset 10px 0 12px -8px var(--shadow-strong);
+}
+/* 접힌 띠도 같은 사다리를 따른다 — 접었다고 층이 뒤집히면 안 된다. */
+.wb-drawer-rail.is-party { background: var(--bg-0); }
+.wb-drawer-rail.is-member { background: var(--bg-1); }
+
+/* 드래그로 그룹 순서 바꾸기: 놓일 자리를 선으로 보여준다. */
+.wb-party-group.is-insert-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.wb-party-group.is-insert-after { box-shadow: 0 2px 0 0 var(--accent); }
+.wb-party-group.is-dragging { opacity: .45; }
+
+/* 자리가 생겼으니 만들기 버튼도 눌러 볼 만한 크기로. 목업의 26px 한 줄은
+   목록이 화면을 꽉 채우던 시절의 크기였다. */
+.wb-group-add {
+  flex: none;
+  margin-top: var(--space-2);
+  height: 36px;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: var(--font-body-sm);
+  font-weight: var(--weight-semibold);
+  justify-content: center;
+}
+
 .wb-drawer-hint {
   margin: 0;
   color: var(--text-3);
@@ -497,7 +529,9 @@
    leftover height — otherwise it stops a third of the way down with 500px of
    empty drawer under it and scrolls inside that stub. */
 .wb-party-drawer > .wb-sidebar-section { flex: 1; min-height: 0; }
-.wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
+.wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
+/* The scroll lives on the inner list so the create button below it stays put. */
+.wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
 
 /* A narrow drawer must not turn a one-line hint into a two-line block that
    pushes the list down. It clips instead. */

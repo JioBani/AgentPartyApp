@@ -981,6 +981,7 @@ function registerIpc(): void {
   handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
   handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
   handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));
+  handle("partyGroups:reorder", async (_event, order) => controller().reorderPartyGroups(Array.isArray(order) ? order.map(String) : []));
   handle("partyGroups:remove", async (_event, groupId) => controller().removePartyGroup(String(groupId || "")));
   handle("cwd:preferences", async (_event, options) => controller().getCwdPreferences(options || {}));
   handle("cwd:setDefault", async (_event, location) => controller().setDefaultCwd(location));

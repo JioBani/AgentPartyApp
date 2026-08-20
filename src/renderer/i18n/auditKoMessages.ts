@@ -1521,7 +1521,8 @@ export const auditKoMessages = {
   "STR-3383": "한 번 더 누르면 삭제 — 파티는 기본 그룹으로",
   "STR-3384": "그룹만 삭제",
   "STR-3386": "Parties",
-  "STR-3387": "Parties"
+  "STR-3387": "Parties",
+  "STR-3388": "그룹 순서를 바꾸지 못했습니다"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

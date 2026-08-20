@@ -1928,6 +1928,13 @@ counts as the distro being usable.
 
 Installed WSL distros, for the WSL side of the picker.
 
+### `POST /api/party-groups/reorder`
+
+`{ order: [groupId, …] }` — the whole new order, first to last. Not a
+"move X before Y": one shape that cannot disagree with itself, and re-sending it
+changes nothing. A group the caller did not mention (created in another window
+mid-drag) keeps its place at the end rather than being dropped.
+
 ### `POST /api/party-groups/:id/rename`
 
 Renames a group. Duplicate names are refused; the default group is renamable

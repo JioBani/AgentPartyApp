@@ -1463,6 +1463,14 @@ export class AppController {
     return { ok: true, moved, groups: state.groups, parties: state.parties };
   }
 
+  /** Full new order, ids first-to-last. Idempotent; see the store. */
+  reorderPartyGroups(order: string[]): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const state = this.partyGroups.reorderGroups(order);
+    this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
+    return { ok: true, groups: state.groups, parties: state.parties };
+  }
+
   movePartyToGroup(partyId: string, groupId: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const state = this.partyGroups.moveParty(partyId, groupId);
     this.deps.onSettingsChanged();

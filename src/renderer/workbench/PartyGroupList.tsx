@@ -24,6 +24,9 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** Identifies our own drags, so nothing else on the page accepts the drop. */
 const PARTY_DRAG_TYPE = "application/x-agentparty-party";
+/** A group being dragged to a new position. Distinct type, so one dragover can
+ *  tell "file this party here" from "put this folder here". */
+const GROUP_DRAG_TYPE = "application/x-agentparty-group";
 
 export interface PartyGroupListProps {
   groups: PartyGroupView[];
@@ -38,6 +41,8 @@ export interface PartyGroupListProps {
   onGroupContextMenu?: (group: PartyGroupView["group"], event: React.MouseEvent) => void;
   /** Drop of a dragged party onto a group. Never called for the group it is in. */
   onDropParty?: (partyId: string, groupId: string) => void;
+  /** The whole new order, first to last, after a group was dragged. */
+  onReorderGroups?: (order: string[]) => void;
   onCreateGroup: () => void;
   /** Marks the party row the context menu is currently open on. */
   menuPartyId?: string;
@@ -47,12 +52,23 @@ export interface PartyGroupListProps {
 
 export function PartyGroupList({
   groups, activePartyId, openGroupIds, now, onToggleGroup, onSelectParty,
-  onPartyContextMenu, onGroupContextMenu, onDropParty, onCreateGroup, menuPartyId, menuGroupId,
+  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, menuPartyId, menuGroupId,
 }: PartyGroupListProps) {
   /** The group under the pointer during a drag, for the drop outline. */
   const [dropGroupId, setDropGroupId] = useState<string | undefined>(undefined);
   /** The party being dragged, so its own group does not offer itself as a target. */
   const [draggingPartyId, setDraggingPartyId] = useState<string | undefined>(undefined);
+  /** The group being dragged, and where it would land, for the insertion line. */
+  const [draggingGroupId, setDraggingGroupId] = useState<string | undefined>(undefined);
+  const [reorderTarget, setReorderTarget] = useState<{ groupId: string; after: boolean } | undefined>(undefined);
+
+  /** The order the list would have if the drag were dropped right now. */
+  function orderAfterDrop(dragged: string, target: string, after: boolean): string[] {
+    const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged);
+    const at = ids.indexOf(target);
+    ids.splice(at < 0 ? ids.length : at + (after ? 1 : 0), 0, dragged);
+    return ids;
+  }
 
   const groupOf = (partyId: string) => groups.find(({ parties }) => parties.some((party) => party.id === partyId))?.group.id;
   /**
@@ -65,9 +81,14 @@ export function PartyGroupList({
    * the question here — "is this one of ours?".
    */
   const accepts = (event: React.DragEvent) => Boolean(onDropParty) && event.dataTransfer.types.includes(PARTY_DRAG_TYPE);
+  const acceptsGroup = (event: React.DragEvent) => Boolean(onReorderGroups) && event.dataTransfer.types.includes(GROUP_DRAG_TYPE);
 
   return (
     <div className="wb-party-list">
+      {/* The groups scroll; the create button does NOT. With a dozen groups it
+          was below the fold, which is the one place a "make another one" button
+          must never be. */}
+      <div className="wb-party-scroll">
       {groups.map(({ group, parties }) => {
         const open = openGroupIds.has(group.id);
         return (
@@ -77,9 +98,24 @@ export function PartyGroupList({
               "wb-party-group"
               + (open ? " is-open" : "")
               + (dropGroupId === group.id ? " is-drop-target" : "")
+              + (draggingGroupId === group.id ? " is-dragging" : "")
+              + (reorderTarget?.groupId === group.id ? (reorderTarget.after ? " is-insert-after" : " is-insert-before") : "")
               + (group.id === menuGroupId ? " is-menu" : "")
             }
             onDragOver={(event) => {
+              // A GROUP being dragged reorders; a PARTY being dragged is filed.
+              // Two payload types, so one handler tells them apart without
+              // asking any state what is currently in flight.
+              if (acceptsGroup(event)) {
+                if (draggingGroupId === group.id) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                const box = event.currentTarget.getBoundingClientRect();
+                setReorderTarget({ groupId: group.id, after: event.clientY > box.top + box.height / 2 });
+                return;
+              }
               // The group the party already sits in is not a target; it is where
               // the drag started.
               if (!accepts(event) || (draggingPartyId && groupOf(draggingPartyId) === group.id)) {
@@ -95,9 +131,21 @@ export function PartyGroupList({
               // actually exits the group box should clear the outline.
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                 setDropGroupId((current) => (current === group.id ? undefined : current));
+                setReorderTarget((current) => (current?.groupId === group.id ? undefined : current));
               }
             }}
             onDrop={(event) => {
+              const movedGroup = event.dataTransfer.getData(GROUP_DRAG_TYPE);
+              if (movedGroup && onReorderGroups) {
+                event.preventDefault();
+                const target = reorderTarget;
+                setReorderTarget(undefined);
+                setDraggingGroupId(undefined);
+                if (movedGroup !== group.id) {
+                  onReorderGroups(orderAfterDrop(movedGroup, group.id, Boolean(target?.after)));
+                }
+                return;
+              }
               const partyId = event.dataTransfer.getData(PARTY_DRAG_TYPE);
               setDropGroupId(undefined);
               // Now the id IS readable, so "already here" is answered for real
@@ -114,6 +162,13 @@ export function PartyGroupList({
               className="wb-group-row"
               title={localized("STR-3271")}
               aria-expanded={open}
+              draggable={Boolean(onReorderGroups)}
+              onDragStart={(event) => {
+                event.dataTransfer.setData(GROUP_DRAG_TYPE, group.id);
+                event.dataTransfer.effectAllowed = "move";
+                setDraggingGroupId(group.id);
+              }}
+              onDragEnd={() => { setDraggingGroupId(undefined); setReorderTarget(undefined); }}
               onClick={() => onToggleGroup(group.id)}
               onContextMenu={(event) => {
                 if (!onGroupContextMenu) {
@@ -170,6 +225,7 @@ export function PartyGroupList({
           </div>
         );
       })}
+      </div>
       <button type="button" className="wb-group-add" onClick={onCreateGroup}>
         <FolderPlus size={13} />
         <LocalizedText id="STR-3274" />

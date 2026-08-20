@@ -45,6 +45,13 @@ export const workspaceLocationRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.createPartyGroup(required(p.name, "name")),
   },
   {
+    // The whole order, not a "move X before Y": one shape that cannot disagree
+    // with itself, and re-sending it changes nothing.
+    name: "partyGroups.reorder",
+    http: "POST /api/party-groups/reorder",
+    handler: (p, ctx) => ctx.controller.reorderPartyGroups(Array.isArray(p.order) ? p.order.map(String) : []),
+  },
+  {
     name: "partyGroups.rename",
     http: "POST /api/party-groups/:id/rename",
     handler: (p, ctx) => ctx.controller.renamePartyGroup(text(p.id), required(p.name, "name")),

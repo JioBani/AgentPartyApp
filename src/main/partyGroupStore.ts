@@ -144,6 +144,31 @@ export class PartyGroupStore {
   }
 
   /**
+   * Reorders the groups.
+   *
+   * The array order IS the display order, so this rewrites the array rather
+   * than storing a rank on each group — one place to be wrong instead of N.
+   *
+   * `order` is applied to the ids it names; a group created in another window
+   * while the user was dragging is NOT dropped, it keeps its place at the end.
+   * Refusing the whole reorder because the list moved under us would lose the
+   * drag for a reason the user cannot see.
+   */
+  reorderGroups(order: string[]): PartyGroupState {
+    const state = this.read();
+    const known = new Map(state.groups.map((group) => [group.id, group] as const));
+    const ordered = order.map((id) => known.get(id)).filter((group): group is PartyGroup => Boolean(group));
+    const seen = new Set(ordered.map((group) => group.id));
+    const appended = state.groups.filter((group) => !seen.has(group.id));
+    if (appended.length) {
+      log("info", "party", "reorder did not mention every group; keeping the rest at the end", {
+        missing: appended.map((group) => group.id),
+      });
+    }
+    return this.write({ ...state, groups: [...ordered, ...appended] });
+  }
+
+  /**
    * Deletes a group and moves its parties to the default one.
    *
    * Deleting a FOLDER must never delete what is filed in it: the parties keep
