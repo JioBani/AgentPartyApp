@@ -11,7 +11,7 @@
  *
  * Layout is MEASURED in the running renderer over CDP, not read off a picture.
  * This project has passed a capture by eye before and been wrong; the geometry
- * here (ordinal 17×17, the switch's 26×15 with its 11px knob, the merge rail
+ * here (ordinal 18×18, the switch's 26×15 with its 11px knob, the merge rail
  * spanning only the leading run) is exactly the kind that eyes approve and
  * calipers refuse. Captures are saved as a record for the handoff comparison,
  * but nothing here depends on a human looking at them.
@@ -185,7 +185,7 @@ async function listRendersFaithfully(cdp) {
         return { bg: cs.backgroundColor, color: cs.color, border: cs.borderTopColor };
       })(),
       // While a member works the composer must say where the text will GO.
-      placeholder: (document.querySelector(".wb-composer-textarea") || document.querySelector(".wb-composer-input"))?.placeholder || "",
+      placeholder: (document.querySelector(".wb-composer-textarea") || document.querySelector(".wb-composer-input"))?.getAttribute("data-placeholder") || "",
       sendLabel: document.querySelector(".wb-send-labeled")?.textContent || "",
     };
   })()`);
@@ -194,11 +194,11 @@ async function listRendersFaithfully(cdp) {
   assert(m.rows === 3, `three rows render (got ${m.rows})`);
   assert(m.title === "대기열 3", `header reads "대기열 3" (got "${m.title}")`);
   assert(/합쳐서 한 번에 전송됩니다$/.test(m.note), `header states when it goes out (got "${m.note}")`);
-  assert(m.mergeNote === "보낸 사람이 같은 것끼리만 합쳐집니다", `mixed senders change the merge note (got "${m.mergeNote}")`);
+  assert(m.mergeNote === "전송 시 3건이 한 턴에 나갑니다 — 합쳐지는 건 보낸 사람이 같은 것끼리", `mixed senders explain both delivery count and author boundaries (got "${m.mergeNote}")`);
   // The member is working here, so sending sooner means stopping it — the label
   // has to say that rather than promise a delivery it cannot make.
-  assert(m.sendAll === "중단하고 합쳐서 보내기 · 2건", `the send button names the RUN length and the stop (got "${m.sendAll}")`);
-  assert(m.ordinal.w === 17 && m.ordinal.h === 17, `ordinal chip is 17×17 (got ${m.ordinal.w}×${m.ordinal.h})`);
+  assert(m.sendAll === "중단하고 합쳐서 보내기 · 3건", `the send button names the full turn count and the stop (got "${m.sendAll}")`);
+  assert(m.ordinal.w === 18 && m.ordinal.h === 18, `ordinal chip is 18×18 (got ${m.ordinal.w}×${m.ordinal.h})`);
   assert(m.switch.w === 26 && m.switch.h === 15, `merge switch is 26×15 (got ${m.switch.w}×${m.switch.h})`);
   assert(m.knob.w === 11 && m.knob.h === 11, `switch knob is 11×11 (got ${m.knob.w}×${m.knob.h})`);
   assert(m.rowBorderStyle === "dashed", `rows are DASHED — the "not delivered yet" language (got ${m.rowBorderStyle})`);
@@ -272,7 +272,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   const before = await cdp.eval(`(() => {
     const row = document.querySelector(".wb-queue-row");
     const text = row.querySelector(".wb-queue-text");
-    const button = row.querySelector(".wb-queue-expand");
+    const button = row.querySelector('.wb-queue-btn[aria-expanded]');
     const cs = getComputedStyle(text);
     return {
       hasButton: Boolean(button),
@@ -280,7 +280,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
       whiteSpace: cs.whiteSpace,
       clipped: cs.textOverflow,
       lines: Math.round(text.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
-      buttons: document.querySelectorAll(".wb-queue-row .wb-queue-expand").length,
+      buttons: document.querySelectorAll('.wb-queue-row .wb-queue-btn[aria-expanded]').length,
       rows: document.querySelectorAll(".wb-queue-row").length,
     };
   })()`);
@@ -290,7 +290,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   assert(before.lines === 1, `and really are one line tall (got ${before.lines})`);
   assert(before.expanded === "false", "the control reports its state to a screen reader");
 
-  const clicked = await post("/api/capture", { path: path.join(shotDir, "08-row-expanded.png"), click: ".wb-queue-row .wb-queue-expand" });
+  const clicked = await post("/api/capture", { path: path.join(shotDir, "08-row-expanded.png"), click: '.wb-queue-row .wb-queue-btn[aria-expanded]' });
   // The capture route THROWS when a click selector matches nothing, so an
   // applied flag here means the control was found and pressed — not that the
   // request merely returned.
@@ -302,7 +302,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
     const cs = getComputedStyle(text);
     return {
       whiteSpace: cs.whiteSpace,
-      expanded: row.querySelector(".wb-queue-expand")?.getAttribute("aria-expanded"),
+      expanded: row.querySelector('.wb-queue-btn[aria-expanded]')?.getAttribute("aria-expanded"),
       // Only the row that was asked about opens; the rest stay out of the way.
       openRows: document.querySelectorAll(".wb-queue-text.is-open").length,
       queueOverflows: (() => { const q = document.querySelector(".wb-queue"); return q.scrollHeight > q.clientHeight + 1; })(),
@@ -313,7 +313,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   assert(after.openRows === 1, `only the asked-for row opened (got ${after.openRows})`);
   assert(!after.queueOverflows, "an expanded row still does not overflow the panel");
 
-  await post("/api/capture", { path: path.join(shotDir, "09-row-collapsed.png"), click: ".wb-queue-row .wb-queue-expand" });
+  await post("/api/capture", { path: path.join(shotDir, "09-row-collapsed.png"), click: '.wb-queue-row .wb-queue-btn[aria-expanded]' });
   const closed = await cdp.eval(`getComputedStyle(document.querySelector(".wb-queue-text")).whiteSpace`);
   assert(closed === "nowrap", `and it folds back to one line (got ${closed})`);
 }
@@ -348,7 +348,9 @@ async function dragReordersTheQueue(cdp) {
 
   // Drag row 1 down past row 3's midpoint, in steps, the way a hand moves.
   await cdp.mouse("mousePressed", grips[0].x, grips[0].y);
-  await cdp.mouse("mouseMoved", grips[0].x, grips[1].rowMid);
+  // Aim at the row's lower edge: its centre is the merge target, while the
+  // edge is the deliberately reserved reorder lane.
+  await cdp.mouse("mouseMoved", grips[0].x, grips[1].rowBottom - 2);
   // The rows move on a transition; read after it has had a frame to apply,
   // otherwise this measures the layout the drag is in the middle of leaving.
   await delay(250);
@@ -450,6 +452,11 @@ async function interruptParksAtFrontAndStaysCancellable(cdp) {
     text: "첫 번째 긴급",
     interrupt: true,
   });
+  // Interrupting makes the mock idle immediately, exactly as a real stop does.
+  // Re-arm a new active turn before the second urgent arrival; otherwise the
+  // second request is correctly sent as a fresh idle turn and never exercises
+  // enqueueCutIn's ordering among multiple cut-in rows.
+  await post("/api/qa/members/backend/emit", { status: "working" });
   const second = await post("/api/party/members/backend/message", {
     text: "두 번째 긴급",
     interrupt: true,
@@ -466,9 +473,9 @@ async function interruptParksAtFrontAndStaysCancellable(cdp) {
   const status = (await get("/api/party/status")).members.find((m) => m.name === "backend");
   assert(!status?.queuedTurnCount, `harness buffer stays empty (got ${status?.queuedTurnCount})`);
 
-  await delay(200);
+  await delay(80);
   const label = await cdp.eval(`document.querySelector(".wb-queue-cutin")?.textContent?.trim() || ""`);
-  assert(/지금/.test(label), `cut-in rows show why they are ahead (got "${label}")`);
+  assert(label === "우선 처리", `cut-in rows show why they are ahead (got "${label}")`);
   const note = await cdp.eval(`document.querySelector(".wb-queue-note")?.textContent?.trim() || ""`);
   assert(/지금 처리/.test(note), `header note names the cut-in (got "${note}")`);
 
@@ -591,7 +598,7 @@ async function goingIdleDelivers(cdp) {
   assert((await get("/api/party/members/backend/queue")).queue.items.length === 2, "two messages are waiting");
 
   // The member finishes its turn — the queue's normal delivery trigger.
-  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await post("/api/qa/members/backend/emit", { events: [{ type: "turn_complete", result: "ok" }] });
   await delay(1200);
 
   const queue = (await get("/api/party/members/backend/queue")).queue;
@@ -635,7 +642,7 @@ async function keyboardShortcuts(cdp) {
     box.focus();
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     await new Promise((r) => setTimeout(r, 700));
-    return { ran: true, before, after: document.querySelectorAll(".wb-queue-row").length, draft: box.value };
+    return { ran: true, before, after: document.querySelectorAll(".wb-queue-row").length, draft: box.textContent || "" };
   })()`);
   assert(back.ran, "the composer is focusable");
   assert(back.after === back.before - 1, `the row left the queue (${back.before} → ${back.after})`);
@@ -644,7 +651,8 @@ async function keyboardShortcuts(cdp) {
   // Typed text must not be destroyed by a recall — the message is appended.
   const guard = await cdp.eval(`(async () => {
     const box = document.querySelector(".wb-composer-textarea");
-    box.value = "";
+    box.replaceChildren();
+    box.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
     return { queue: document.querySelectorAll(".wb-queue-row").length };
@@ -751,7 +759,7 @@ async function originSurvivesDelivery(cdp) {
   assert((await post("/api/capture", { path: tabShot })).bytes > 0, `captured → ${tabShot}`);
 
   // Deliver it, then check the conversation still says who sent it.
-  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await post("/api/qa/members/backend/emit", { events: [{ type: "turn_complete", result: "ok" }] });
   await delay(1200);
 
   // A member's message renders as the app's inbound channel CARD (its established,
