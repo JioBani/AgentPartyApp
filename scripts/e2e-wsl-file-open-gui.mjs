@@ -15,10 +15,16 @@ const stamp = `${Date.now()}`;
 const shotDir = path.join(os.tmpdir(), `agentparty-manual-gui-wsl-${stamp}`);
 const launchWs = path.join(os.tmpdir(), `agentparty-manual-gui-ws-${stamp}`);
 const userData = path.join(os.tmpdir(), `agentparty-manual-gui-ud-${stamp}`);
-const fixturePosix = `/tmp/agentparty-manual-gui-${stamp}`;
-const wslUri = `wsl+${distro}:${fixturePosix}`;
+const workspacePosix = `/tmp/agentparty-manual-gui-${stamp}`;
+const wslUri = `wsl+${distro}:${workspacePosix}`;
 const publicFile = path.join("C:\\Users\\Public", `agentparty-manual-gui-${stamp}.txt`);
-const nativePosix = `${fixturePosix}/native.txt`;
+const wslHome = execFileSync("wsl.exe", ["-d", distro, "-e", "bash", "-lc", 'printf %s "$HOME"'], { encoding: "utf8" }).trim();
+if (!/^\/home\/[A-Za-z0-9._-]+$/.test(wslHome)) {
+  throw new Error(`refusing to write under unexpected WSL HOME: '${wslHome}'`);
+}
+const homeFixtureDir = `${wslHome}/agentparty-manual-gui-${stamp}`;
+const homePosix = `${homeFixtureDir}/native.txt`;
+const homeUnc = `\\\\wsl$\\${distro}${homePosix.replace(/\//g, "\\")}`;
 const MIXED = [
   "v0.2.7 배포 완료. 공개 릴리스",
   "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7, source annotated tag v0.2.7→4ab7bf0.",
@@ -44,8 +50,8 @@ async function main() {
   fs.mkdirSync(shotDir, { recursive: true });
   fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: launchWs }, null, 2));
   fs.writeFileSync(publicFile, "manual gui /mnt/c fixture\n");
-  wsl(`mkdir -p '${fixturePosix}' && printf '%s\\n' 'manual gui native' > '${nativePosix}'`);
-  fs.writeFileSync(path.join(shotDir, "README.txt"), `manual GUI shots ${stamp}\n`);
+  wsl(`mkdir -p '${workspacePosix}' '${homeFixtureDir}' && printf '%s\\n' 'manual gui /home fixture' > '${homePosix}'`);
+  fs.writeFileSync(path.join(shotDir, "README.txt"), `manual GUI shots ${stamp}\nWSL HOME=${wslHome}\nhome href=${homePosix}\n`);
 
   const launchedAt = Date.now();
   const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
@@ -94,12 +100,13 @@ async function main() {
     const win = await post("/api/windows", { workspacePath: wslUri });
     const q = `?window=${encodeURIComponent(win.id)}`;
     const mntHref = `/mnt/c/Users/Public/${path.basename(publicFile)}`;
-    const fileHome = `file://${nativePosix}`;
+    const fileHome = `file://${homePosix}`;
+    log(homePosix.startsWith("/home/"), `home href is under /home (${homePosix})`);
     const md = [
-      `[home](${nativePosix})`,
+      `[home](${homePosix})`,
       `[mnt](${mntHref})`,
       `[file](${fileHome})`,
-      `[missing](${fixturePosix}/nope.txt)`,
+      `[missing](${workspacePosix}/nope.txt)`,
     ].join("\n\n");
     await post(`/api/qa/seed${q}`, {
       party: "manual-wsl",
@@ -113,20 +120,26 @@ async function main() {
     log(true, `WSL links screenshot ${linksShot}`);
 
     const clicks = [
-      { name: "home-open", selector: `.wb-md-link a[href="${nativePosix}"]`, shot: "03-home-open.png" },
-      { name: "home-reveal", selector: `.wb-md-link:has(a[href="${nativePosix}"]) .wb-md-link-reveal`, shot: "04-home-reveal.png" },
-      { name: "mnt-open", selector: `.wb-md-link a[href="${mntHref}"]`, shot: "05-mnt-open.png" },
-      { name: "file-open", selector: `.wb-md-link a[href="${fileHome}"]`, shot: "06-file-open.png" },
-      { name: "file-reveal", selector: `.wb-md-link:has(a[href="${fileHome}"]) .wb-md-link-reveal`, shot: "07-file-reveal.png" },
-      { name: "missing-open", selector: `.wb-md-link a[href="${fixturePosix}/nope.txt"]`, shot: "08-missing-click.png" },
+      { name: "home-open", selector: `.wb-md-link a[href="${homePosix}"]`, shot: "03-home-open.png", expect: { kind: "opened", path: homeUnc } },
+      { name: "home-reveal", selector: `.wb-md-link:has(a[href="${homePosix}"]) .wb-md-link-reveal`, shot: "04-home-reveal.png", expect: { kind: "revealed", path: homeUnc } },
+      { name: "mnt-open", selector: `.wb-md-link a[href="${mntHref}"]`, shot: "05-mnt-open.png", expect: { kind: "opened", path: publicFile } },
+      { name: "mnt-reveal", selector: `.wb-md-link:has(a[href="${mntHref}"]) .wb-md-link-reveal`, shot: "05b-mnt-reveal.png", expect: { kind: "revealed", path: publicFile } },
+      { name: "file-open", selector: `.wb-md-link a[href="${fileHome}"]`, shot: "06-file-open.png", expect: { kind: "opened", path: homeUnc } },
+      { name: "file-reveal", selector: `.wb-md-link:has(a[href="${fileHome}"]) .wb-md-link-reveal`, shot: "07-file-reveal.png", expect: { kind: "revealed", path: homeUnc } },
+      { name: "missing-open", selector: `.wb-md-link a[href="${workspacePosix}/nope.txt"]`, shot: "08-missing-click.png" },
     ];
     for (const step of clicks) {
+      const before = fileDecisions().length;
       const pointed = await post(`/api/qa/pointer${q}`, { steps: [{ selector: step.selector, action: "click" }] })
         .catch((error) => ({ ok: false, error: String(error) }));
       log(pointed?.ok === true, `pointer ${step.name} (${pointed?.error || `${pointed?.steps?.[0]?.x},${pointed?.steps?.[0]?.y}`})`);
       await delay(900);
-      const shot = path.join(shotDir, step.shot);
-      await post(`/api/capture${q}`, { path: shot });
+      await post(`/api/capture${q}`, { path: path.join(shotDir, step.shot) });
+      if (step.expect) {
+        const latest = fileDecisions().slice(before).at(-1);
+        const same = String(latest?.target || "").replace(/\//g, "\\").toLowerCase() === String(step.expect.path).replace(/\//g, "\\").toLowerCase();
+        log(latest?.kind === step.expect.kind && same, `EVIDENCE ${step.expect.kind} ${step.name}: ${latest?.target || "<none>"} (want ${step.expect.path})`);
+      }
     }
     await delay(700);
     const notice = await post(`/api/measure${q}`, { selector: ".app-toast", limit: 1 }).catch((e) => ({ error: String(e) }));
@@ -145,10 +158,29 @@ async function main() {
       try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* gone */ }
     }
     try { fs.rmSync(publicFile, { force: true }); } catch { /* leftover */ }
-    try { wsl(`rm -rf '${fixturePosix}'`); } catch { /* leftover */ }
+    try { wsl(`rm -rf '${workspacePosix}'`); } catch { /* leftover */ }
+    try { wsl(`rm -rf '${homeFixtureDir}'`); } catch { /* leftover */ }
   }
   console.log(`\nshots: ${shotDir}`);
   process.exit(fail.length ? 1 : 0);
+}
+
+function fileDecisions() {
+  const dir = path.join(userData, "logs");
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".ndjson")); } catch { return []; }
+  return files
+    .flatMap((f) => fs.readFileSync(path.join(dir, f), "utf8").split("\n"))
+    .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean)
+    .map((e) => {
+      if (e.message === "local file opened in its default app") return { kind: "opened", target: String(e.data?.path ?? "") };
+      if (e.message === "local file revealed instead of launched" || e.message === "no default app; revealed instead" || e.message === "local file revealed on request") {
+        return { kind: "revealed", target: String(e.data?.path ?? "") };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 async function post(route, body) {
