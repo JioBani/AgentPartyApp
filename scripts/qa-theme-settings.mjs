@@ -26,8 +26,13 @@ const bundled = await build({
 const outFile = path.join(outDir, "app-theme.mjs");
 writeFileSync(outFile, bundled.outputFiles[0].text);
 const {
+  APPEARANCE_DESKTOP_ONLY_ERROR,
+  AppearanceOwnerError,
   DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCES,
+  appearanceAccess,
+  appearanceOwnerError,
+  bindAppearanceUpdates,
   cycleThemePreference,
   isThemePreference,
   migrateLegacyThemeValue,
@@ -82,6 +87,31 @@ assert(migrateLegacyThemeValue("light", "dark") === null, "explicit light is not
 assert(migrateLegacyThemeValue("dark", "light") === null, "explicit dark is not overridden by legacy light");
 assert(migrateLegacyThemeValue(undefined, "system") === null, "legacy system is not a stored-value we used to write");
 assert(migrateLegacyThemeValue(undefined, null) === null, "no legacy value means no migration write");
+
+console.log("\ndesktop ownership + nativeTheme disposer:");
+assert(appearanceAccess({ appearance: { isDark: () => false } }) === "local", "a nativeTheme host is local");
+assert(appearanceAccess({ appearanceRemote: { getAppearance: async () => ({}) } }) === "remote", "a HostChannel remote is remote");
+assert(appearanceAccess({ appearanceRemote: { getAppearance: async () => ({}) }, appearance: { isDark: () => false } }) === "remote", "remote wins so a distro never writes locally");
+assert(appearanceAccess({}) === "unavailable", "neither host nor channel is unavailable");
+const owner = appearanceOwnerError();
+assert(owner instanceof AppearanceOwnerError && owner.code === "appearance_desktop_only", "the reject is a typed AppearanceOwnerError");
+assert(owner.message === APPEARANCE_DESKTOP_ONLY_ERROR, "the error names the desktop-only rule");
+let calls = 0;
+let disposed = 0;
+const stop = bindAppearanceUpdates({
+  setSource() {},
+  isDark() { return false; },
+  onUpdated(listener) {
+    listener();
+    calls += 1;
+    return () => { disposed += 1; };
+  },
+}, () => undefined);
+assert(calls === 1, "bindAppearanceUpdates subscribes immediately");
+stop();
+assert(disposed === 1, "the disposer unsubscribes nativeTheme");
+bindAppearanceUpdates(undefined, () => { throw new Error("must not run"); })();
+assert(true, "no host yields a no-op disposer");
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

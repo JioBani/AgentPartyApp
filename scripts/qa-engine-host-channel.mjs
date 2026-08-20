@@ -93,6 +93,34 @@ console.log("\nfailures surface (never a silent allow):");
   stop();
 }
 
+console.log("\nappearance GET/SET forward to the desktop (never a distro settings write):");
+{
+  const desktop = { preference: "light", applied: "light", stored: false, writes: 0 };
+  const { channel, stop } = connect({
+    appearanceGet: async () => ({ preference: desktop.preference, applied: desktop.applied, options: ["system", "light", "dark"], stored: desktop.stored }),
+    appearanceSet: async (theme) => {
+      desktop.writes += 1;
+      desktop.preference = theme;
+      desktop.applied = theme === "system" ? "light" : theme;
+      desktop.stored = true;
+      return { preference: desktop.preference, applied: desktop.applied, options: ["system", "light", "dark"], stored: true };
+    },
+  }, {});
+  const got = await channel.call("appearanceGet");
+  assert(got.preference === "light" && got.stored === false, "GET appearance returns the desktop's state");
+  const set = await channel.call("appearanceSet", "dark");
+  assert(set.preference === "dark" && set.applied === "dark" && set.stored === true, "SET appearance writes on the desktop");
+  assert(desktop.writes === 1 && desktop.preference === "dark", "the host handler ran once on the desktop side");
+  stop();
+}
+{
+  const { channel, stop } = connect({}, {});
+  let error;
+  try { await channel.call("appearanceSet", "dark"); } catch (e) { error = e; }
+  assert(/Unknown host method/.test(error?.message || ""), "missing appearance host method rejects instead of writing locally");
+  stop();
+}
+
 console.log("\nthe forward direction still works alongside it:");
 {
   const engine = { listParty: async (id) => ({ ok: true, echoed: id }) };

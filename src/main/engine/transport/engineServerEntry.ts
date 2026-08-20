@@ -107,6 +107,13 @@ async function main(): Promise<void> {
     openWindow: () => Promise.reject(new Error("openWindow is not supported in the headless engine server")),
     onSettingsChanged: () => undefined,
     onWorkspacesChanged: () => undefined,
+    // Appearance is desktop-owned (nativeTheme + the host's settings.json).
+    // Forward rather than writing this process's settings file, which lives in
+    // the distro and would never reach a window.
+    appearanceRemote: {
+      getAppearance: () => hostChannel.call("appearanceGet"),
+      setTheme: (theme) => hostChannel.call("appearanceSet", theme),
+    },
   });
   automationApi = new AutomationApiServer({ port: 0, controller: appController, windowRegistry, defaultWorkspace: workspace });
   await automationApi.start();
@@ -135,6 +142,7 @@ async function main(): Promise<void> {
   host.sessionManager.on("usage", (payload) => writeLine(process.stdout, { kind: "event", channel: "usage", payload }));
 
   const shutdown = () => {
+    appController.dispose();
     hostChannel.dispose();
     automationApi?.dispose();
     host.dispose();

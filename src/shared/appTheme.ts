@@ -16,6 +16,58 @@ export const THEME_STORAGE_KEY = "agentparty.theme";
 /** Explicit preference (`system` | `light` | `dark`) cached for first paint. */
 export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
 
+/**
+ * Thrown when a headless/WSL engine would otherwise write its own settings.json
+ * (a different file from the desktop's) or invent an applied theme. The caller
+ * must either forward over HostChannel or surface this error.
+ */
+export const APPEARANCE_DESKTOP_ONLY_ERROR =
+  "모양 설정은 데스크톱 앱이 소유합니다. 이 엔진은 호스트 채널이 없어 전달할 수 없습니다.";
+
+export class AppearanceOwnerError extends Error {
+  readonly code = "appearance_desktop_only" as const;
+
+  constructor() {
+    super(APPEARANCE_DESKTOP_ONLY_ERROR);
+    this.name = "AppearanceOwnerError";
+  }
+}
+
+export type AppearanceAccess = "local" | "remote" | "unavailable";
+
+export function appearanceAccess(input: { appearance?: unknown; appearanceRemote?: unknown }): AppearanceAccess {
+  if (input.appearanceRemote) return "remote";
+  if (input.appearance) return "local";
+  return "unavailable";
+}
+
+export function appearanceOwnerError(): AppearanceOwnerError {
+  return new AppearanceOwnerError();
+}
+
+/**
+ * Desktop-only native chrome (Electron `nativeTheme`). Absent in a headless
+ * engine, which has no window chrome to colour.
+ */
+export interface AppearanceHost {
+  setSource(source: ThemePreference): void;
+  isDark(): boolean;
+  onUpdated(listener: () => void): () => void;
+}
+
+export interface AppearanceState {
+  preference: ThemePreference;
+  applied: AppliedTheme;
+  options: readonly ThemePreference[];
+  /** True when settings.json itself contains `theme`, not just the in-memory default. */
+  stored: boolean;
+}
+
+export interface AppearanceRemote {
+  getAppearance(): Promise<AppearanceState>;
+  setTheme(theme: unknown): Promise<AppearanceState>;
+}
+
 export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === "string" && (THEME_PREFERENCES as readonly string[]).includes(value);
 }
@@ -47,6 +99,14 @@ export function resolveAppliedTheme(preference: ThemePreference, osDark?: boolea
   return osDark ? "dark" : "light";
 }
 
+/** Subscribe to OS scheme updates; the disposer must run on shutdown. */
+export function bindAppearanceUpdates(host: AppearanceHost | undefined, onUpdated: () => void): () => void {
+  if (!host) {
+    return () => undefined;
+  }
+  return host.onUpdated(onUpdated);
+}
+
 /** Title-bar / shortcut order: system → light → dark → system. */
 export function cycleThemePreference(current: ThemePreference): ThemePreference {
   const index = THEME_PREFERENCES.indexOf(normalizeThemePreference(current));
@@ -65,22 +125,4 @@ export function cycleThemePreference(current: ThemePreference): ThemePreference 
 export function migrateLegacyThemeValue(storedTheme: unknown, legacyValue: unknown): ThemePreference | null {
   if (isThemePreference(storedTheme)) return null;
   return legacyValue === "dark" ? "dark" : null;
-}
-
-export interface AppearanceState {
-  preference: ThemePreference;
-  applied: AppliedTheme;
-  options: readonly ThemePreference[];
-  /** True when settings.json itself contains `theme`, not just the in-memory default. */
-  stored: boolean;
-}
-
-/**
- * Desktop-only native chrome (Electron `nativeTheme`). Absent in a headless
- * engine, which has no window chrome to colour.
- */
-export interface AppearanceHost {
-  setSource(source: ThemePreference): void;
-  isDark(): boolean;
-  onUpdated(listener: () => void): () => void;
 }

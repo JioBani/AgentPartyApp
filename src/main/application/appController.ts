@@ -60,10 +60,14 @@ import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
 import {
   THEME_PREFERENCES,
+  appearanceAccess,
+  appearanceOwnerError,
+  bindAppearanceUpdates,
   normalizeThemePreference,
   requireThemePreference,
   resolveAppliedTheme,
   type AppearanceHost,
+  type AppearanceRemote,
   type AppearanceState,
   type ThemePreference,
 } from "../../shared/appTheme";
@@ -85,11 +89,17 @@ export interface AppControllerDeps {
   getAppBuild?: () => { version: string; packaged: boolean };
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
   /**
-   * Native window chrome (Electron `nativeTheme`). Desktop-only; a headless
-   * engine has no chrome to colour, so appearance endpoints still answer from
-   * the stored preference and treat the OS scheme as light.
+   * Native window chrome (Electron `nativeTheme`). Desktop-only. A headless
+   * engine must NOT read/write its own settings.json for appearance — it
+   * forwards through {@link appearanceRemote} or fails visibly.
    */
   appearance?: AppearanceHost;
+  /**
+   * HostChannel to the desktop's appearance methods. Set on the WSL/headless
+   * engine so GET/POST /api/appearance/theme mutate the Windows host, not the
+   * distro's settings file.
+   */
+  appearanceRemote?: AppearanceRemote;
   onSettingsChanged: () => void;
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
@@ -195,9 +205,17 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  * the affected workspace so same-workspace windows stay in sync.
  */
 export class AppController {
+  private nativeThemeUnsubscribe: () => void = () => undefined;
+
   constructor(private readonly deps: AppControllerDeps) {
     this.applyNativeTheme(normalizeThemePreference(getSettings().theme));
-    this.deps.appearance?.onUpdated(() => this.onNativeThemeUpdated());
+    this.nativeThemeUnsubscribe = bindAppearanceUpdates(this.deps.appearance, () => this.onNativeThemeUpdated());
+  }
+
+  /** Drops the nativeTheme subscription. Called from app shutdown. */
+  dispose(): void {
+    this.nativeThemeUnsubscribe();
+    this.nativeThemeUnsubscribe = () => undefined;
   }
 
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
@@ -727,6 +745,9 @@ export class AppController {
       validatedPatch = { ...validatedPatch, locale: requireAppLocale(validatedPatch.locale) };
     }
     if (Object.prototype.hasOwnProperty.call(validatedPatch, "theme")) {
+      if (appearanceAccess(this.deps) !== "local") {
+        throw appearanceOwnerError();
+      }
       validatedPatch = { ...validatedPatch, theme: requireThemePreference(validatedPatch.theme) };
     }
     const previous = getSettings();
@@ -765,9 +786,18 @@ export class AppController {
   /**
    * Appearance: the user's System/Light/Dark preference and the theme the UI
    * is actually painting. Same method behind Settings, the title-bar shortcut,
-   * and GET /api/appearance/theme.
+   * and GET /api/appearance/theme. A headless engine forwards to the desktop
+   * over HostChannel; without a channel it rejects instead of writing a
+   * distro-only settings.json.
    */
-  getAppearance(): AppearanceState {
+  async getAppearance(): Promise<AppearanceState> {
+    const access = appearanceAccess(this.deps);
+    if (access === "remote") {
+      return this.deps.appearanceRemote!.getAppearance();
+    }
+    if (access === "unavailable") {
+      throw appearanceOwnerError();
+    }
     const stored = storedThemePreference();
     const preference = stored ?? normalizeThemePreference(getSettings().theme);
     return {
@@ -778,8 +808,16 @@ export class AppController {
     };
   }
 
-  setTheme(value: unknown): AppearanceState {
-    this.updateSettings({ theme: requireThemePreference(value) });
+  async setTheme(value: unknown): Promise<AppearanceState> {
+    const theme = requireThemePreference(value);
+    const access = appearanceAccess(this.deps);
+    if (access === "remote") {
+      return this.deps.appearanceRemote!.setTheme(theme);
+    }
+    if (access === "unavailable") {
+      throw appearanceOwnerError();
+    }
+    this.updateSettings({ theme });
     return this.getAppearance();
   }
 

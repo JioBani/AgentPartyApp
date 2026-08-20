@@ -494,6 +494,8 @@ ${body}
             subscriptionProxy: subscriptionProxyConfig(),
           });
         },
+        appearanceGet: () => controller().getAppearance(),
+        appearanceSet: (theme: unknown) => controller().setTheme(theme),
       },
       // The distro engine died on its own. Drop it from the registry so the very
       // next request builds a fresh one; a cached dead client would otherwise
@@ -1329,6 +1331,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   log("info", "app", "before quit");
+  appController?.dispose();
   removeAllDiscovery();
   engineRegistry?.disposeAll();
   sessionManager?.dispose();

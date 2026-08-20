@@ -530,14 +530,22 @@ is persisted in `settings.json` and pushed to every open window immediately.
 When `preference` is `system`, the painted theme follows the OS live.
 
 `POST /api/settings` accepts the same `theme` field and applies the same
-validation.
+validation, but only on the desktop process. Appearance is desktop-owned
+(`nativeTheme` and the host `settings.json`). A WSL/headless engine forwards
+`GET`/`POST /api/appearance/theme` to the Windows host over HostChannel; if
+that channel is missing, the call fails with `AppearanceOwnerError`
+(`code: "appearance_desktop_only"`) instead of writing the distro's own
+settings file. `POST /api/settings` with `theme` on that engine is rejected
+the same way.
 
 ### `POST /api/settings`
 
 Updates app settings.
 
 `theme` is the appearance preference (`"system"` | `"light"` | `"dark"`). Same
-validation and broadcast as `POST /api/appearance/theme` above.
+validation and broadcast as `POST /api/appearance/theme` above, and only on
+the desktop process — a headless engine rejects a `theme` patch instead of
+writing its own settings.json.
 
 `transcriptFontScale` is the session/transcript text zoom (1 = 100%, clamped
 0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it
