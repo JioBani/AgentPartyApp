@@ -651,10 +651,20 @@ POSIX paths (`/home/me/proj/설계.md`), and those files live on the distro's ex
 so the path is resolved in POSIX space and returned as the Windows UNC view —
 `\\wsl$\<distro>\home\me\proj\설계.md` — which is what `shell.openPath` and
 Explorer can actually reach. Without this a leading `/` reads as the C: drive
-root on Windows and the answer is `No such file: '\home\me\…'`. A Windows drive
-path stays Windows even in a WSL window, and a path that names its own distro
-(`wsl+<distro>:/p`) is honoured over the window's. Inside the headless WSL engine
-the same POSIX path is already native and is left alone.
+root on Windows and the answer is `No such file: '\home\me\…'`. `/mnt/<drive>/…`
+is the distro's view of a Windows drive, not a file on ext4, so it becomes
+`C:\…` rather than `\\wsl$\<distro>\mnt\c\…`. A Windows drive path (`C:\…`,
+`/C:/…`) stays Windows even in a WSL window. A path that names its own distro
+(`wsl+<distro>:/p`, `\\wsl$\<distro>\…`, `\\wsl.localhost\<distro>\…`) is
+honoured over the window's. A local Windows window does not guess a distro for
+an anonymous `/home` path. Inside the headless WSL engine the same POSIX path is
+already native and is left alone.
+
+`file://` URLs are decoded **before** host classification. `file:///home/…` and
+`file:///mnt/c/…` are POSIX paths (Windows `fileURLToPath` would reject them);
+`file:///C:/…` is a Windows drive; `file://wsl.localhost/<distro>/…` names that
+distro. A `#` in the URL is a fragment, not a filename; a literal `#` in a name
+is `%23`. Malformed URLs fail with `Not a readable file URL`.
 
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:

@@ -1,8 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
+import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -2500,22 +2499,14 @@ export class AppController {
 
   /** `file://` URL or plain path → an absolute path, relative ones against the window's workspace. */
   private resolveLocalPath(windowId: string | undefined, raw: string): string {
-    let value = raw;
-    if (/^file:\/\//i.test(value)) {
-      try {
-        value = fileURLToPath(value);
-      } catch {
-        throw new Error(`Not a readable file URL: '${raw}'.`);
-      }
-    } else {
-      // A link may be percent-encoded even without a scheme (spaces, Hangul).
-      try { value = decodeURI(value); } catch { /* keep the literal text */ }
-    }
+    // Decode before host classification: Windows `fileURLToPath` rejects
+    // `file:///home/...` and `file:///mnt/c/...` (ERR_INVALID_FILE_URL_PATH)
+    // even when the window is a WSL workspace that can open those paths.
     // Markdown and URL parsers commonly serialize a Windows drive path as
     // `/C:/...`. Node considers that absolute on Windows but normalizes it to
-    // `\C:\...`, which can never exist. Restore the drive spelling before the
-    // generic absolute/relative decision. POSIX/WSL paths are left untouched.
-    value = normalizeLocalFileTarget(value, process.platform);
+    // `\C:\...`, which can never exist. Restore the drive spelling after URL
+    // decode, before the generic absolute/relative decision.
+    const value = normalizeLocalFileTarget(decodeLocalFileTarget(raw), process.platform);
     const workspace = (this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined)
       || getSettings().workspacePath
       || process.cwd();

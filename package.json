@@ -82,6 +82,7 @@
     "test:e2e:usage-unpriced": "npm run build && node scripts/e2e-usage-unpriced.mjs",
     "test:e2e:transcript-render": "npm run build && node scripts/e2e-transcript-render.mjs",
     "test:e2e:message-text-rendering": "npm run build && node scripts/e2e-message-text-rendering.mjs",
+    "test:e2e:wsl-file-open": "npm run build && node scripts/e2e-wsl-file-open.mjs",
     "test:e2e:party-switch-perf": "npm run build && node scripts/e2e-party-switch-perf.mjs",
     "test:e2e:message-queue": "npm run build && node scripts/e2e-message-queue.mjs",
     "test:e2e:mobile-link": "npm run build && node scripts/e2e-mobile-link.mjs",
