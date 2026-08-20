@@ -1,0 +1,91 @@
+/*
+ * The preview's own chrome — the frame around the stages, never the stages.
+ *
+ * Deliberately tiny and prefixed `pv-`: any rule here that touched a `wb-*` or
+ * `set-*` class would be styling the app from a file the app never loads, and
+ * the preview would start disagreeing with the thing it exists to show.
+ */
+
+body {
+  margin: 0;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+.pv-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-body);
+}
+
+.pv-bar strong { color: var(--text-0); }
+.pv-bar span { color: var(--text-2); }
+.pv-bar button {
+  margin-left: auto;
+  padding: 4px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pv-stages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 28px;
+  padding: 28px;
+}
+
+.pv-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pv-stage-head h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+}
+
+.pv-stage-head p {
+  margin: 3px 0 0;
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: var(--font-caption);
+}
+
+/* The stage supplies only the box the app would have supplied — a width and a
+   surface. Padding here would move the very spacing being reviewed. */
+.pv-stage-body {
+  background: var(--bg-1);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.pv-modal-stage {
+  position: relative;
+  width: 620px;
+  height: 460px;
+}
+
+/* The wizard and the new-party dialog are taller than the small ones; the stage
+   must not clip them, or the preview would review a cropped layout. */
+.pv-modal-stage.is-tall { width: 660px; height: 780px; }
+
+.pv-modal-stage .wb-modal-scrim { position: absolute; inset: 0; }
+
+/* The wizard modal is normally sized by its scrim; on its own it needs the same
+   measure so the picker inside wraps exactly as it does in the dialog. */
+.pv-modal { width: 100%; }
+.pv-static-menu { position: static; }

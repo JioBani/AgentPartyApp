@@ -203,6 +203,7 @@ export class RemoteEngineClient implements EngineConnection {
   }
 
   listParty(viewPartyId?: string) { return this.call<Result<"listParty">>("listParty", viewPartyId); }
+  listAllParties() { return this.call<Result<"listAllParties">>("listAllParties"); }
   setIdleSleep(settings: IdleSleepSettings) { return this.call<Result<"setIdleSleep">>("setIdleSleep", settings); }
   setMemberMessaging(settings: MemberMessagingSettings) { return this.call<Result<"setMemberMessaging">>("setMemberMessaging", settings); }
   createParty(input: CreatePartyInput) { return this.call<Result<"createParty">>("createParty", input); }

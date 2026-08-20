@@ -26,7 +26,12 @@ import {
 } from "./layout";
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import { Panel } from "./Panel";
-import { CreateMemberInput, PartySidebar } from "./PartySidebar";
+import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
+import type { WslBrowsing } from "./CwdPicker";
+import type { PartyGroup, PartySummary, RegisteredParty } from "../../shared/partyGroups";
+import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
+import { parseMemberLocation } from "../../shared/memberLocation";
+import { DEFAULT_PARTY_GROUP_ID } from "../../shared/partyGroups";
 import { RuntimeModal } from "./RuntimeModal";
 import { McpModal } from "./McpModal";
 import { MessageGateModal } from "./MessageGateModal";
@@ -61,7 +66,7 @@ interface WorkbenchProps {
   /** Settings reviewer default (model + effort) for the Message Gate. */
   gateDefaults: GateReviewer;
   debugEnabled: boolean;
-  sidebarOpen: boolean;
+  drawers: { party: boolean; member: boolean };
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
   /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
@@ -69,7 +74,24 @@ interface WorkbenchProps {
   /** QA-driven "open a Message Gate modal" (member editor / party manager); applied on `nonce` change. */
   gateOpenRequest?: { kind: "member" | "party"; member: string; nonce: number } | null;
   actions: WorkbenchActions;
-  onCreateParty: (name: string, gate?: PartyGate) => void;
+  onCreateParty: (input: CreatePartyInput) => void;
+  onCreateGroup: (name: string) => void;
+  onMovePartyToGroup: (partyId: string, groupId: string) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
+  onRemoveGroup: (groupId: string) => void;
+  onReorderGroups: (order: string[]) => void;
+  /** Opens the platform folder picker; resolves null when the user cancelled. */
+  onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
+  wsl?: WslBrowsing;
+  /** App-global party groups, in display order. */
+  groups: PartyGroup[];
+  /** Every party the app knows, from the global registry (not just this workspace). */
+  registeredParties: RegisteredParty[];
+  cwdPrefs: CwdPreferences;
+  /** Last-resort cwd suggestion (the app's own workspace folder). */
+  appWorkspaceRoot: string;
+  /** Frozen "now" for recency labels, so previews render deterministically. */
+  now: number;
   onCreateMember: (input: CreateMemberInput) => void;
   onRemoveMember: (member: string) => void;
   /** Idle-sleep controls for one member (pin awake, sleep now, wake now). */
@@ -83,7 +105,7 @@ interface WorkbenchProps {
   onMemberOpened: (member: string) => void;
   /** Members frontmost in a panel — what the user is actually looking at. */
   onVisibleMembersChange: (partyId: string, members: string[]) => void;
-  onToggleSidebar: (open: boolean) => void;
+  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
   onOpenSessions: () => void;
@@ -101,9 +123,6 @@ interface DragState {
 }
 
 const DRAG_THRESHOLD = 5;
-const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 460;
-const SIDEBAR_WIDTH_KEY = "agentparty.sidebarWidth";
 const SUBUI_KEY = "agentparty.subagentUi";
 /**
  * Delays between prewarm attempts for an open tab that still has no session.
@@ -127,21 +146,8 @@ function loadSubagentUi(): SubagentUiState {
   }
 }
 
-function loadSidebarWidth(): number {
-  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(stored) && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX ? stored : 236;
-}
-
-function saveSidebarWidth(width: number): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-  } catch {
-    // Best-effort.
-  }
-}
-
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -186,20 +192,15 @@ export function Workbench(props: WorkbenchProps) {
   const [partyGateTarget, setPartyGateTarget] = useState<string | null>(null);
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
   const resizeRef = useRef<{ snapshot: LayoutState; leftId: string; rightId: string; startX: number; pairPx: number } | null>(null);
-  const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Tracks members already seen for the current party, so only members created
   // *after* the party is showing auto-open (initial load / party-switch don't).
   const knownMembersRef = useRef<{ partyKey: string; names: Set<string> }>({ partyKey: "", names: new Set() });
 
-  useEffect(() => {
-    saveSidebarWidth(sidebarWidth);
-  }, [sidebarWidth]);
 
   useEffect(() => {
     try {
@@ -251,28 +252,6 @@ export function Workbench(props: WorkbenchProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateOpenRequest?.nonce]);
-
-  function onSidebarResizeDown(event: ReactPointerEvent) {
-    sidebarResizeRef.current = { startX: event.clientX, startWidth: sidebarWidth };
-    window.addEventListener("pointermove", onSidebarResizeMove);
-    window.addEventListener("pointerup", onSidebarResizeUp, { once: true });
-    document.body.classList.add("wb-resizing");
-  }
-
-  function onSidebarResizeMove(event: PointerEvent) {
-    const ref = sidebarResizeRef.current;
-    if (!ref) {
-      return;
-    }
-    const next = ref.startWidth + (event.clientX - ref.startX);
-    setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next)));
-  }
-
-  function onSidebarResizeUp() {
-    window.removeEventListener("pointermove", onSidebarResizeMove);
-    sidebarResizeRef.current = null;
-    document.body.classList.remove("wb-resizing");
-  }
 
   // Prewarm retry cadence — see the effect below. Keyed by party + the set of
   // sessionless tabs so the backoff restarts whenever that set changes.
@@ -564,7 +543,6 @@ export function Workbench(props: WorkbenchProps) {
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointermove", onResizeMove);
-      window.removeEventListener("pointermove", onSidebarResizeMove);
       document.body.classList.remove("wb-resizing");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -582,6 +560,57 @@ export function Workbench(props: WorkbenchProps) {
   const gateParty = partyGateTarget ? parties.find((party) => party.id === partyGateTarget) : undefined;
 
   const { workingByParty, memberCountByParty } = useMemo(() => aggregateByParty(views, parties), [views, parties]);
+  /**
+   * The list's own view of the parties.
+   *
+   * Counts come from the LOADED party's member views, so an unselected party
+   * reports 0 rather than a number nobody measured — the summary store that
+   * answers for all of them lands with the group backend. Showing a fabricated
+   * count would be worse than showing none.
+   */
+  /**
+   * The list the sidebar draws: the app-global registry, with THIS window's live
+   * numbers laid over the party it actually has open.
+   *
+   * The registry is the only source that knows a party this window never
+   * opened — including ones in other workspaces, which is what makes the list
+   * independent of where the app was launched. The overlay exists because the
+   * registry is refreshed on party changes, not on every turn: "running 2" has
+   * to move the moment a member starts working, and only this window sees that.
+   */
+  const partySummaries = useMemo<PartySummary[]>(() => {
+    const live = new Map(parties.map((party) => [party.id, party] as const));
+    const merged: PartySummary[] = registeredParties.map((entry) => {
+      const loaded = entry.id === activePartyId;
+      const members = loaded ? views : [];
+      return {
+        ...entry,
+        name: live.get(entry.id)?.name ?? entry.name,
+        memberCount: loaded ? memberCountByParty[entry.id] || 0 : entry.memberCount,
+        runningCount: loaded ? workingByParty[entry.id] || 0 : entry.runningCount,
+        windowsCount: loaded ? members.filter((view) => envOfMember(view) === "windows").length : entry.windowsCount,
+        wslCount: loaded ? members.filter((view) => envOfMember(view) === "wsl").length : entry.wslCount,
+      };
+    });
+    // A party this workspace has but the registry has not caught up with yet
+    // (the refresh is a round trip) still belongs in the list.
+    const known = new Set(merged.map((entry) => entry.id));
+    for (const party of parties) {
+      if (!known.has(party.id)) {
+        merged.push({
+          id: party.id,
+          groupId: party.groupId ?? DEFAULT_PARTY_GROUP_ID,
+          name: party.name,
+          memberCount: party.id === activePartyId ? memberCountByParty[party.id] || 0 : undefined,
+          runningCount: workingByParty[party.id] || 0,
+          windowsCount: 0,
+          wslCount: 0,
+          updatedAt: party.updatedAt,
+        });
+      }
+    }
+    return merged;
+  }, [registeredParties, parties, views, activePartyId, workingByParty, memberCountByParty]);
 
   return (
     <div
@@ -589,43 +618,43 @@ export function Workbench(props: WorkbenchProps) {
       data-party-id={partyKey}
       data-layout-party={seededPartyRef.current === partyKey ? partyKey : ""}
     >
-      {sidebarOpen ? (
-        <>
-          <PartySidebar
-            parties={parties}
-            activePartyId={activePartyId}
-            activePartyName={activePartyName}
-            views={views}
-            openMembers={openMembers}
-            workingByParty={workingByParty}
-            memberCountByParty={memberCountByParty}
-            width={sidebarWidth}
-            routes={routes}
-            codexModels={codexModels}
-            onRefreshCodexModels={onRefreshCodexModels}
-            defaultProfile={defaultProfile}
-            harnessDefaults={harnessDefaults}
-            onSelectParty={onSelectParty}
-            onCreateParty={onCreateParty}
-            onCreateMember={handleCreateMember}
-            onOpenMember={handleOpenMember}
-            onRestartMember={(member) => actions.restart(member)}
-            onRemoveMember={onRemoveMember}
-            onSetMemberKeepAwake={onSetMemberKeepAwake}
-            onSleepMember={onSleepMember}
-            onWakeMember={onWakeMember}
-            onRemoveParty={onRemoveParty}
-            onOpenPartyGate={setPartyGateTarget}
-            onOpenPartyInNewWindow={onOpenPartyInNewWindow}
-            onCollapse={() => onToggleSidebar(false)}
-          />
-          <div className="wb-sidebar-resize" title={localized("STR-2289")} onPointerDown={onSidebarResizeDown} />
-        </>
-      ) : (
-        <button type="button" className="wb-sidebar-reopen" title={localized("STR-2290")} onClick={() => onToggleSidebar(true)}>
-          <PanelLeftOpen size={16} />
-        </button>
-      )}
+      <PartySidebar
+        activePartyId={activePartyId}
+        activePartyName={activePartyName}
+        views={views}
+        openMembers={openMembers}
+        drawers={drawers}
+        onToggleDrawer={onToggleDrawer}
+        routes={routes}
+        codexModels={codexModels}
+        onRefreshCodexModels={onRefreshCodexModels}
+        defaultProfile={defaultProfile}
+        harnessDefaults={harnessDefaults}
+        groups={groups}
+        partySummaries={partySummaries}
+        cwdPrefs={cwdPrefs}
+        appWorkspaceRoot={appWorkspaceRoot}
+        now={now}
+        onSelectParty={onSelectParty}
+        onCreateParty={onCreateParty}
+        onCreateGroup={onCreateGroup}
+        onMovePartyToGroup={onMovePartyToGroup}
+        onRenameGroup={onRenameGroup}
+        onRemoveGroup={onRemoveGroup}
+        onReorderGroups={onReorderGroups}
+        onBrowseCwd={onBrowseCwd}
+        wsl={wsl}
+        onCreateMember={handleCreateMember}
+        onOpenMember={handleOpenMember}
+        onRestartMember={(member) => actions.restart(member)}
+        onRemoveMember={onRemoveMember}
+        onSetMemberKeepAwake={onSetMemberKeepAwake}
+        onSleepMember={onSleepMember}
+        onWakeMember={onWakeMember}
+        onRemoveParty={onRemoveParty}
+        onOpenPartyGate={setPartyGateTarget}
+        onOpenPartyInNewWindow={onOpenPartyInNewWindow}
+      />
 
       <div className={"wb-workarea" + (drag ? " is-dragging" : "")} ref={workAreaRef}>
         {layout.panels.length === 0 && (
@@ -783,6 +812,12 @@ function seedLayout(stored: WorkbenchLayout | undefined, views: MemberView[]): L
     return emptyLayout();
   }
   return openMember(emptyLayout(), first.name);
+}
+
+/** Which environment a member runs in, or undefined for one created before cwds. */
+function envOfMember(view: MemberView): ExecutionEnv | undefined {
+  const stored = view.member.location;
+  return stored ? parseMemberLocation(stored).env : undefined;
 }
 
 function aggregateByParty(views: MemberView[], parties: PartyDefinition[]): { workingByParty: Record<string, number>; memberCountByParty: Record<string, number> } {

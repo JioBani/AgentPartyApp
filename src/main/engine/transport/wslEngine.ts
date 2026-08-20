@@ -94,7 +94,7 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
         "-d", options.distro, "-e", "bash", "-lc",
         // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
         // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
-        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}${options.acpRelayWinPath ? 'export AGENTPARTY_ACP_RELAY_SCRIPT="$HOME/.agent_party_app/server/agentparty-acp-mcp-relay.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app"`,
+        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}${options.acpRelayWinPath ? 'export AGENTPARTY_ACP_RELAY_SCRIPT="$HOME/.agent_party_app/server/agentparty-acp-mcp-relay.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app" --distro "${options.distro}"`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );
