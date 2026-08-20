@@ -47,8 +47,9 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
         <span><LocalizedText id="STR-3621" /> <b><LocalizedText id="STR-3620" /></b><LocalizedText id="STR-3622" /> <b><LocalizedText id="STR-3624" /></b><LocalizedText id="STR-3623" /></span>
       </div>
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-workspace-defaults">
         <div className="set-card-label"><LocalizedText id="STR-3625" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3626" /></span></div>
+        <div className="set-card-body set-cwd-card-body">
         {(["windows", "wsl"] as ExecutionEnv[]).map((env) => {
           const value = env === "wsl" ? prefs.wslDefault : prefs.windowsDefault;
           return (
@@ -68,6 +69,7 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
           );
         })}
         <p className="set-cwd-note"><LocalizedText id="STR-3634" /></p>
+        </div>
       </section>
 
       <RecentCwdCard
@@ -94,8 +96,9 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
         onRecheck={onRecheckRecent}
       />
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-workspace-members">
         <div className="set-card-label"><LocalizedText id="STR-3639" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3640" /></span></div>
+        <div className="set-card-body set-cwd-card-body">
         <div className="set-inline-note">
           <Lock size={12} />
           <span><LocalizedText id="STR-3642" /> <b><LocalizedText id="STR-3643" /></b><LocalizedText id="STR-3641" /></span>
@@ -111,6 +114,7 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
             </div>
           </div>
         ))}
+        </div>
       </section>
     </>
   );
@@ -128,8 +132,9 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
   onRecheck: (entry: RecentCwd) => void;
 }) {
   return (
-    <section className="set-card">
+    <section className="set-card" data-layout-card={`settings-workspace-recent-${env}`}>
       <div className="set-card-label"><LocalizedText id="STR-3645" /> {ENV_LABEL[env]}<span className="set-card-sub wb-mono">{sub}</span></div>
+      <div className="set-card-body set-cwd-card-body">
       {entries.map((entry) => {
         const isDefault = Boolean(fallback && memberLocationsEqual(fallback, entry.location));
         // A distro that will not start can be started; a folder that is gone
@@ -169,6 +174,7 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
         </div>
       )}
       <p className="set-cwd-note">{note}</p>
+      </div>
     </section>
   );
 }

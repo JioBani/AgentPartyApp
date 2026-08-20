@@ -7537,6 +7537,25 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 /* API key card */
 .set-card { background: var(--bg-2); border: var(--border-width) solid var(--border); border-radius: 12px; overflow: hidden; }
+/* Settings cards own their content gutter through one explicit body. Components
+   placed here must not bring page-level margins with them: this keeps labels,
+   notes, fields and actions on the same 20px line and guarantees an 18px close. */
+.set-card-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 13px;
+  padding: 13px 20px 18px;
+}
+.set-card-body > .set-inline-note,
+.set-card-body > .set-harness-pick { margin: 0; }
+.set-card-body > .set-field { min-width: 0; }
+.set-card-body > .set-toggle { align-self: flex-start; padding-inline: 0; }
+.set-card-body > .set-font-field { padding: 0; }
+.set-diagnostics-card-body > .set-diag-row { margin: 0; }
+.set-cwd-card-body { gap: 6px; }
+.set-cwd-card-body > .set-cwd-row + .set-cwd-row { margin-top: 0; }
+.set-cwd-card-body > .set-cwd-note { margin: 2px 0 0; }
 .set-native-provider-head { background: var(--bg-2); }
 .set-native-hosts { border-top: var(--border-width) solid var(--border-subtle); background: var(--bg-1); }
 .set-native-host + .set-native-host { border-top: var(--border-width) solid var(--border-subtle); }
@@ -7671,12 +7690,16 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    other (6px gap + 4px = 10px), so a row reads as "facts, then what to do"
    rather than as four evenly spaced lines one of which happens to be clickable. */
 .set-env-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.set-env-more { position: relative; align-self: center; }
+.set-env-more { position: relative; min-width: 0; align-self: center; }
+.set-env-more[open] { flex: 1 0 100%; align-self: stretch; }
 .set-env-more > summary { cursor: pointer; list-style: none; padding: 6px 4px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
 .set-env-more > summary::-webkit-details-marker { display: none; }
 .set-env-more > summary::after { content: "⌄"; margin-left: 5px; color: var(--text-3); }
 .set-env-more[open] > summary::after { content: "⌃"; }
-.set-env-more-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 6px; }
+/* Author display rules outrank the browser's closed-<details> stylesheet. Keep
+   the folded actions genuinely out of layout until the summary is opened. */
+.set-env-more:not([open]) > .set-env-more-actions { display: none; }
+.set-env-more[open] > .set-env-more-actions { display: flex; box-sizing: border-box; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 6px; }
 .set-repair-note { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--border-strong); color: var(--text-1); font-size: 11.5px; line-height: 1.45; }
 .set-repair-note.is-success { border-color: var(--success); }
 .set-repair-note.is-error { border-color: var(--danger); color: var(--danger); }
@@ -8914,7 +8937,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   gap: 9px;
   padding: 4px 20px 0;
 }
-.set-update-channel-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 2px 20px 12px; }
+.set-update-channel-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 2px 20px 18px; }
 .set-update-channel-option { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; padding: 12px 14px; background: var(--bg-2); border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-button); color: var(--text-1); text-align: left; cursor: pointer; }
 .set-update-channel-option > span { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; }
 .set-update-channel-option small { color: var(--text-3); font-size: 11px; line-height: 1.45; }
@@ -8922,7 +8945,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-update-channel-option.is-active { border-color: var(--accent-bd); background: var(--accent-dim); color: var(--accent); }
 .set-update-channel-option.is-active small { color: var(--text-1); }
 .set-update-channel-option:disabled { cursor: wait; opacity: .65; }
-.set-update-channel-note { display: flex; align-items: center; gap: 6px; padding: 0 20px 15px; color: var(--text-3); font-size: 11.5px; }
+.set-update-channel-note { display: flex; align-items: center; gap: 6px; padding: 0 20px 18px; color: var(--text-3); font-size: 11.5px; }
 @media (max-width: 720px) { .set-update-channel-options { grid-template-columns: 1fr; } }
 
 .set-ver-badge {
@@ -8955,9 +8978,9 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .set-ver-note { font-size: 11.5px; color: var(--text-3); }
 .set-ver-note.is-error { color: var(--danger); }
-.set-ver-empty { padding: 2px 20px 14px; font-size: 12px; color: var(--text-3); }
+.set-ver-empty { padding: 2px 20px 18px; font-size: 12px; color: var(--text-3); }
 
-.set-ver-latest { padding: 2px 20px 16px; }
+.set-ver-latest { padding: 2px 20px 18px; }
 .set-ver-head {
   display: flex;
   flex-wrap: wrap;
@@ -8986,7 +9009,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 13px 20px;
+  padding: 18px 20px;
   background: none;
   border: none;
   color: var(--text-1);
@@ -9001,7 +9024,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-ver-chev { transition: transform .15s ease; color: var(--text-3); }
 .set-ver-chev.is-open { transform: rotate(180deg); }
 
-.set-ver-list { list-style: none; margin: 0; padding: 0 20px 14px; display: flex; flex-direction: column; gap: 6px; }
+.set-ver-list { list-style: none; margin: 0; padding: 0 20px 18px; display: flex; flex-direction: column; gap: 6px; }
 .set-ver-item { border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-button); overflow: hidden; }
 .set-ver-item-head {
   width: 100%;
