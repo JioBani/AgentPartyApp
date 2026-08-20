@@ -272,7 +272,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   const before = await cdp.eval(`(() => {
     const row = document.querySelector(".wb-queue-row");
     const text = row.querySelector(".wb-queue-text");
-    const button = row.querySelector('[data-queue-action="expand"]');
+    const button = row.querySelector('.wb-queue-btn[aria-expanded]');
     const cs = getComputedStyle(text);
     return {
       hasButton: Boolean(button),
@@ -280,7 +280,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
       whiteSpace: cs.whiteSpace,
       clipped: cs.textOverflow,
       lines: Math.round(text.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
-      buttons: document.querySelectorAll('.wb-queue-row [data-queue-action="expand"]').length,
+      buttons: document.querySelectorAll('.wb-queue-row .wb-queue-btn[aria-expanded]').length,
       rows: document.querySelectorAll(".wb-queue-row").length,
     };
   })()`);
@@ -290,7 +290,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   assert(before.lines === 1, `and really are one line tall (got ${before.lines})`);
   assert(before.expanded === "false", "the control reports its state to a screen reader");
 
-  const clicked = await post("/api/capture", { path: path.join(shotDir, "08-row-expanded.png"), click: '.wb-queue-row [data-queue-action="expand"]' });
+  const clicked = await post("/api/capture", { path: path.join(shotDir, "08-row-expanded.png"), click: '.wb-queue-row .wb-queue-btn[aria-expanded]' });
   // The capture route THROWS when a click selector matches nothing, so an
   // applied flag here means the control was found and pressed — not that the
   // request merely returned.
@@ -302,7 +302,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
     const cs = getComputedStyle(text);
     return {
       whiteSpace: cs.whiteSpace,
-      expanded: row.querySelector('[data-queue-action="expand"]')?.getAttribute("aria-expanded"),
+      expanded: row.querySelector('.wb-queue-btn[aria-expanded]')?.getAttribute("aria-expanded"),
       // Only the row that was asked about opens; the rest stay out of the way.
       openRows: document.querySelectorAll(".wb-queue-text.is-open").length,
       queueOverflows: (() => { const q = document.querySelector(".wb-queue"); return q.scrollHeight > q.clientHeight + 1; })(),
@@ -313,7 +313,7 @@ async function rowsStayOneLineUntilExpanded(cdp) {
   assert(after.openRows === 1, `only the asked-for row opened (got ${after.openRows})`);
   assert(!after.queueOverflows, "an expanded row still does not overflow the panel");
 
-  await post("/api/capture", { path: path.join(shotDir, "09-row-collapsed.png"), click: '.wb-queue-row [data-queue-action="expand"]' });
+  await post("/api/capture", { path: path.join(shotDir, "09-row-collapsed.png"), click: '.wb-queue-row .wb-queue-btn[aria-expanded]' });
   const closed = await cdp.eval(`getComputedStyle(document.querySelector(".wb-queue-text")).whiteSpace`);
   assert(closed === "nowrap", `and it folds back to one line (got ${closed})`);
 }
@@ -452,6 +452,11 @@ async function interruptParksAtFrontAndStaysCancellable(cdp) {
     text: "첫 번째 긴급",
     interrupt: true,
   });
+  // Interrupting makes the mock idle immediately, exactly as a real stop does.
+  // Re-arm a new active turn before the second urgent arrival; otherwise the
+  // second request is correctly sent as a fresh idle turn and never exercises
+  // enqueueCutIn's ordering among multiple cut-in rows.
+  await post("/api/qa/members/backend/emit", { status: "working" });
   const second = await post("/api/party/members/backend/message", {
     text: "두 번째 긴급",
     interrupt: true,
@@ -468,9 +473,9 @@ async function interruptParksAtFrontAndStaysCancellable(cdp) {
   const status = (await get("/api/party/status")).members.find((m) => m.name === "backend");
   assert(!status?.queuedTurnCount, `harness buffer stays empty (got ${status?.queuedTurnCount})`);
 
-  await delay(200);
+  await delay(80);
   const label = await cdp.eval(`document.querySelector(".wb-queue-cutin")?.textContent?.trim() || ""`);
-  assert(/지금/.test(label), `cut-in rows show why they are ahead (got "${label}")`);
+  assert(label === "우선 처리", `cut-in rows show why they are ahead (got "${label}")`);
   const note = await cdp.eval(`document.querySelector(".wb-queue-note")?.textContent?.trim() || ""`);
   assert(/지금 처리/.test(note), `header note names the cut-in (got "${note}")`);
 
@@ -593,7 +598,7 @@ async function goingIdleDelivers(cdp) {
   assert((await get("/api/party/members/backend/queue")).queue.items.length === 2, "two messages are waiting");
 
   // The member finishes its turn — the queue's normal delivery trigger.
-  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await post("/api/qa/members/backend/emit", { events: [{ type: "turn_complete", result: "ok" }] });
   await delay(1200);
 
   const queue = (await get("/api/party/members/backend/queue")).queue;
@@ -637,7 +642,7 @@ async function keyboardShortcuts(cdp) {
     box.focus();
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     await new Promise((r) => setTimeout(r, 700));
-    return { ran: true, before, after: document.querySelectorAll(".wb-queue-row").length, draft: box.value };
+    return { ran: true, before, after: document.querySelectorAll(".wb-queue-row").length, draft: box.textContent || "" };
   })()`);
   assert(back.ran, "the composer is focusable");
   assert(back.after === back.before - 1, `the row left the queue (${back.before} → ${back.after})`);
@@ -646,7 +651,8 @@ async function keyboardShortcuts(cdp) {
   // Typed text must not be destroyed by a recall — the message is appended.
   const guard = await cdp.eval(`(async () => {
     const box = document.querySelector(".wb-composer-textarea");
-    box.value = "";
+    box.replaceChildren();
+    box.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
     return { queue: document.querySelectorAll(".wb-queue-row").length };
@@ -753,7 +759,7 @@ async function originSurvivesDelivery(cdp) {
   assert((await post("/api/capture", { path: tabShot })).bytes > 0, `captured → ${tabShot}`);
 
   // Deliver it, then check the conversation still says who sent it.
-  await post("/api/qa/members/backend/emit", { status: "idle" });
+  await post("/api/qa/members/backend/emit", { events: [{ type: "turn_complete", result: "ok" }] });
   await delay(1200);
 
   // A member's message renders as the app's inbound channel CARD (its established,
