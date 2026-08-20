@@ -5,7 +5,7 @@
  * It is stored as a LIST OF SECTIONS rather than one blob for two reasons:
  *   1. a human has to be able to read it. "파티 통신 규약", "Message Gate 규약"
  *      and "Discord" are separate concerns and are edited separately in
- *      Settings → 런타임 → 파티 프롬프트;
+ *      Agent → 파티 프롬프트;
  *   2. a user override then replaces only the section it targets, so the rest of
  *      the primer keeps tracking the app (new tools, new protocol rules) instead
  *      of freezing at whatever the text said the day it was edited.

@@ -7382,7 +7382,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
  * content lines up with the title above it instead of sitting 16px further out
  * — and, on a window too narrow for max-width to bite, stops hugging the right
  * edge with 4px to spare. */
-.set-page { max-width: 760px; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
+.set-page { width: 100%; max-width: 760px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
 .set-page-wide { max-width: 1180px; }
 .set-page-tabbed { max-width: 880px; padding-top: 20px; }
 .set-page-tabbed.set-page-wide { max-width: 1180px; }
@@ -7398,11 +7398,17 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   z-index: 6;
   flex: none;
   display: flex;
+  width: 100%;
+  max-width: 880px;
+  box-sizing: border-box;
   align-items: flex-end;
   gap: 2px;
   padding: 12px var(--space-7) 0;
   background: var(--bg-1);
   border-bottom: var(--border-width) solid var(--border-subtle);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .set-tabs-gap { flex: 1; }
 /* All four panels are mounted at once (staged edits must survive a tab switch),
@@ -7410,6 +7416,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-tab-panel { display: flex; flex-direction: column; gap: 22px; }
 .set-tab-panel[hidden] { display: none; }
 .set-tab {
+  flex: none;
   position: relative;
   bottom: calc(-1 * var(--border-width));
   display: inline-flex;
@@ -7425,6 +7432,15 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+}
+.set-default-harness { width: calc(100% - 40px); margin: 0 20px 20px; justify-content: center; }
+.set-default-harness:disabled { cursor: default; opacity: 0.72; }
+.set-automation-content { padding: 10px 20px 20px; }
+.set-automation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+@media (max-width: 700px) {
+  .set-page, .set-tabs { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .set-tab { padding-left: 11px; padding-right: 11px; }
+  .set-harness-pick, .set-diag-actions, .set-card-actions { flex-wrap: wrap; }
 }
 .set-tab:hover { color: var(--text-0); }
 .set-tab.is-active {

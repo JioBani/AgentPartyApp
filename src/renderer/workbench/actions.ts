@@ -108,7 +108,7 @@ export interface WorkbenchActions {
    */
   closeSession(memberName: string): void;
   /**
-   * Opens 설정 → 런타임 → 환경. Used by the in-transcript blocker card, whose
+   * Opens 설정 → 환경. Used by the in-transcript blocker card, whose
    * whole purpose is that a user never has to go LOOKING for the screen that
    * explains why their member will not start.
    */

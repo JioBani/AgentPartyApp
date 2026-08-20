@@ -111,7 +111,7 @@ Returns the active log file path.
 ### `GET /api/diagnostics`
 
 Everything a bug report needs about this install, in one call — the same report
-the settings **런타임 → 진단** tab shows and its `진단 정보 복사` button copies.
+the **설정 → 진단** tab shows and its `진단 정보 복사` button copies.
 No secrets: `auth` carries `id`/`label`/`status` only, never a key or token.
 
 ```json
@@ -141,7 +141,7 @@ appear.
 ### `GET /api/environment`
 
 Whether this machine can actually run a member, and what to do when it cannot —
-the same report the settings **런타임 → 환경** tab renders. Sibling of
+the same report the **설정 → 환경** tab renders. Sibling of
 `/api/diagnostics` and deliberately separate: that one describes a build for a
 bug report, this one is a to-do list. No secrets: paths and versions only.
 
@@ -310,7 +310,7 @@ also receives a newer stable release. `stable` only accepts published stable
 releases and uses `latest.yml`. Unknown values and changes attempted during an
 active check/download are errors, never silent fallback to the stable channel.
 
-The Settings > Runtime > Versions selector calls this same AppController method
+The Settings > Versions selector calls this same AppController method
 through IPC. The generic `POST /api/settings` route refuses `updateChannel` so
 it cannot persist a channel change without reconfiguring the running updater.
 
@@ -482,7 +482,7 @@ Returns the language used by the desktop UI: `{"locale":"ko"}` or
 ### `POST /api/settings/locale`
 
 Changes the desktop UI language through the same `AppController.setLocale`
-method used by the language picker in Settings → Runtime → General.
+method used by the language picker in Settings → General.
 
 ```json
 { "locale": "en" }
@@ -602,7 +602,7 @@ is stored as "no override", so that section keeps tracking app updates.
 
 Takes effect for sessions started or resumed **after** the change; a running
 member keeps the primer it booted with. Same controller method as Settings →
-런타임 → 파티 프롬프트.
+에이전트 → 파티 프롬프트.
 
 ### `POST /api/party/primer/translate`
 
@@ -741,7 +741,7 @@ queued messages, running on Cursor, or marked `keepAwake` (see
 `/api/party/members/:name/sleep`). A sleeping member keeps its conversation and
 wakes on the next message.
 
-`memberMessaging.interruptOnSend` is the Runtime default for member-to-member
+`memberMessaging.interruptOnSend` is the Agent-screen default for member-to-member
 messages that omit `interrupt`, for example
 `{"memberMessaging":{"interruptOnSend":true}}`. It does not affect human
 composer sends. A sender's `outboundInterrupt` override takes precedence; an
@@ -2140,7 +2140,7 @@ fail-open: the message is delivered unreviewed with a visible notice. A human
 `from: "user"` turn is never gated.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
-per-member `outboundInterrupt` override, then the Runtime
+per-member `outboundInterrupt` override, then the Agent-screen
 `memberMessaging.interruptOnSend` default. An explicit `true` or `false` always
 wins. This applies equally to the lower-level member `send` endpoint and the
 agent-facing `send`/`broadcast` tools. Interrupt is conditional on the recipient
@@ -2458,10 +2458,10 @@ a sender setting and works without a live session.
 
 - `true`: interrupt a busy recipient and put the message at the front.
 - `false`: keep a busy recipient's current turn and queue behind it.
-- `null`: inherit `memberMessaging.interruptOnSend` from Runtime settings.
+- `null`: inherit `memberMessaging.interruptOnSend` from Agent settings.
 
 Calls that explicitly include `interrupt: true` or `interrupt: false` override
-both this value and the Runtime default. Even an explicit `true` only interrupts
+both this value and the Agent default. Even an explicit `true` only interrupts
 a turn that was already active when the message arrived; it does not stop idle,
 sleeping, or newly started recipients.
 
@@ -2834,31 +2834,30 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, sessions, party, auth, runtime, automation
+workbench, guide, sessions, usage, auth, agent, settings
 ```
 
-The **런타임** screen is tabbed, and an optional `tab` lands on one of its tabs
-directly instead of leaving the caller to click the strip:
+The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a
+specific tab instead of leaving the caller to click the strip:
 
 ```json
-{ "view": "runtime", "tab": "harness" }
+{ "view": "agent", "tab": "defaults", "harness": "codex" }
 ```
 
 ```text
-general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
-harness (하네스별 생성 기본값 — 하네스 하나씩, 아래 `harness` 로 선택)
-environment (하네스 준비 상태와 해결 방법 — GET /api/environment 와 같은 값)
-gate    (Message Gate 리뷰어 기본값)
-discord (Discord 브리지 자격증명 + 연결된 멤버)
-versions (설치된 버전 · 최신 릴리스와 변경 내역 · 이전 버전 이력 — GET /api/update, GET /api/update/versions)
-diagnostics (빌드 정보 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
+agent: general, defaults, primer, gate, discord
+settings: general, environment, workspace, mobile, versions, diagnostics, automation
 ```
 
-The **하네스 기본값** tab shows one harness at a time, picked by its own sub-tab
+`settings/mobile` is feature-gated. When Mobile Link is disabled in the running
+build, the tab is hidden and navigation returns an explicit error instead of
+reporting success while leaving another tab visible.
+
+The **에이전트 기본값** tab shows one harness at a time, picked by its own sub-tab
 strip. An optional `harness` lands on one of them:
 
 ```json
-{ "view": "runtime", "tab": "harness", "harness": "codex" }
+{ "view": "agent", "tab": "defaults", "harness": "codex" }
 ```
 
 ```text
@@ -2866,9 +2865,15 @@ claude-code, codex, cursor, grok
 ```
 
 A `tab` on a screen that has none, an unknown tab id, a `harness` outside the
-`harness` tab, or an unknown harness id is an **error** — never a navigation that
+`defaults` tab, or an unknown harness id is an **error** — never a navigation that
 reports success and leaves the screen where it was. The response echoes what was
 applied (`{ok, view, tab, harness}`).
+
+`runtime` and `automation` remain deprecated compatibility aliases. `automation`
+normalizes to `settings/automation`. `runtime` maps its legacy tabs to their new
+homes: `harness` becomes `agent/defaults`; `general`, `primer`, `gate`, and
+`discord` open Agent; `environment`, `workspace`, `mobile`, `versions`, and
+`diagnostics` open Settings. The response returns the normalized destination.
 
 ## Windows & workspaces
 

@@ -51,7 +51,7 @@ import { getSubscriptionProxyStatus, subscriptionProxyConfig } from "../../core/
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
-import { RUNTIME_TAB_IDS, isRuntimeTabId } from "../../shared/runtimeTabs";
+import { AGENT_TAB_IDS, LEGACY_RUNTIME_TAB_IDS, SETTINGS_TAB_IDS, isAgentTabId, isRuntimeTabId, isSettingsTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
@@ -2302,20 +2302,37 @@ export class AppController {
    * report a navigation that never happened.
    */
   navigate(windowId: string | undefined, view: string, tab?: string, harness?: string): { ok: true; view: string; tab?: string; harness?: string } {
-    if (tab) {
-      if (view !== "runtime") {
-        throw new Error(`The '${view}' screen has no tabs.`);
+    const legacyView = view;
+    if (view === "runtime") {
+      if (tab && !isRuntimeTabId(tab)) throw new Error(`Unknown legacy runtime tab '${tab}'. Known: ${LEGACY_RUNTIME_TAB_IDS.join(", ")}.`);
+      const legacyTab = tab || "general";
+      if (["environment", "workspace", "mobile", "versions", "diagnostics"].includes(legacyTab)) {
+        view = "settings";
+        tab = legacyTab;
+      } else {
+        view = "agent";
+        tab = legacyTab === "harness" ? "defaults" : legacyTab;
       }
-      if (!isRuntimeTabId(tab)) {
-        throw new Error(`Unknown runtime tab '${tab}'. Known: ${RUNTIME_TAB_IDS.join(", ")}.`);
-      }
+    } else if (view === "automation") {
+      if (tab) throw new Error("The deprecated 'automation' alias does not accept a tab; it maps to settings/automation.");
+      view = "settings";
+      tab = "automation";
     }
-    // The 하네스 기본값 tab shows ONE harness at a time, so driving it needs to
+    const tabbed = view === "agent" || view === "settings";
+    const validViews = ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"];
+    if (!validViews.includes(view)) throw new Error(`Unknown view '${legacyView}'. Known: ${validViews.join(", ")} (legacy aliases: runtime, automation).`);
+    if (tab && !tabbed) throw new Error(`The '${view}' screen has no tabs.`);
+    if (view === "agent" && tab && !isAgentTabId(tab)) throw new Error(`Unknown agent tab '${tab}'. Known: ${AGENT_TAB_IDS.join(", ")}.`);
+    if (view === "settings" && tab && !isSettingsTabId(tab)) throw new Error(`Unknown settings tab '${tab}'. Known: ${SETTINGS_TAB_IDS.join(", ")}.`);
+    if (view === "settings" && tab === "mobile" && getSettings().mobile?.enabled !== true) {
+      throw new Error("The Settings 'mobile' tab is unavailable because Mobile Link is disabled in this build.");
+    }
+    // The Agent defaults tab shows ONE harness at a time, so driving it needs to
     // name which — same rule as the tab itself: an unknown one is an error, not a
     // navigation that silently lands somewhere else.
     if (harness) {
-      if (tab !== "harness") {
-        throw new Error("A harness can only be selected on the 'harness' runtime tab.");
+      if (view !== "agent" || tab !== "defaults") {
+        throw new Error("A harness can only be selected on the agent 'defaults' tab.");
       }
       if (!(HARNESS_IDS as readonly string[]).includes(harness)) {
         throw new Error(`Unknown harness '${harness}'. Known: ${HARNESS_IDS.join(", ")}.`);
