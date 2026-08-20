@@ -156,7 +156,7 @@ export function MobileLinkCard({ active }: { active: boolean }) {
 
   return (
     <>
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-mobile-status">
         <div className="set-card-label"><LocalizedText id="STR-0893" /></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
@@ -236,7 +236,7 @@ export function MobileLinkCard({ active }: { active: boolean }) {
         onCancel={() => void run("cancel", () => window.agentParty.cancelMobilePairing())}
       />
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-mobile-devices">
         <div className="set-card-label"><LocalizedText id="STR-0910" /></div>
         {devices.length === 0 ? (
           <div className="set-inline-note is-soft mob-empty"><InfoIcon size={14} /><span><LocalizedText id="STR-0911" /></span></div>
@@ -306,7 +306,7 @@ function ConnectionLockCard({ lock, busy, onSet, onClear }: {
   }
 
   return (
-    <section className="set-card mob-lock-card">
+    <section className="set-card mob-lock-card" data-layout-card="settings-mobile-lock">
       <div className="set-card-label"><LocalizedText id="STR-0916" /></div>
       <div className="set-inline-note is-soft">
         <LockKeyhole size={14} />
@@ -429,7 +429,7 @@ function PairingCard({ pairing, qr, busy, signaling, signalingUrl, onOpen, onCon
   const linkDown = Boolean(signaling && signaling !== "connected");
 
   return (
-    <section className="set-card">
+    <section className="set-card" data-layout-card="settings-mobile-pairing">
       <div className="set-card-label"><LocalizedText id="STR-0938" /></div>
       {phase === "failed" && pairing?.error && (
         <div className="set-inline-note is-error" role="alert"><AlertTriangle size={14} /><span>{pairing.error}</span></div>
@@ -574,7 +574,7 @@ function DeviceRow({ device, busy, onRename, onRevoke }: {
 function DiagnosticsCard({ diagnostics, busy, onRun }: { diagnostics: NatDiagnostics | undefined; busy: boolean; onRun: () => void }) {
   const guidance = diagnostics ? REASON_GUIDANCE[diagnostics.reason] || REASON_GUIDANCE.unknown : undefined;
   return (
-    <section className="set-card">
+    <section className="set-card" data-layout-card="settings-mobile-diagnostics">
       <div className="set-card-label"><LocalizedText id="STR-0962" /></div>
       {!diagnostics ? (
         <div className="set-inline-note is-soft">
@@ -639,7 +639,7 @@ function ServerCard({ settings, busy, onSave }: { settings: MobileSettings | und
   );
 
   return (
-    <section className="set-card">
+    <section className="set-card" data-layout-card="settings-mobile-server">
       <div className="set-card-label"><LocalizedText id="STR-0971" /></div>
       <div className="set-inline-note is-soft">
         <InfoIcon size={14} />

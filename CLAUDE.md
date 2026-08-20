@@ -5,3 +5,5 @@ source of truth shared with all agents; this file imports them so Claude and
 other tools stay in sync.
 
 @AGENTS.md
+
+The real-rendering and layout-verification requirements for UI changes are inherited from `AGENTS.md` and are mandatory.
