@@ -52,6 +52,13 @@ async function measure(selector, extra = {}) {
   if (response.status !== 200) throw new Error(`measure ${selector}: ${response.payload?.error || response.status}`);
   return response.payload;
 }
+async function visibleGuideOffers() {
+  // `body` guarantees a valid measurement even when the optional offer does
+  // not exist; the attribute distinguishes it without turning absence into a
+  // noisy API error.
+  const candidates = await measure("[data-guide-offer], body", { limit: 10, attributes: ["data-guide-offer"] });
+  return candidates.elements.filter((item) => item.attributes?.["data-guide-offer"] !== null && item.box.width > 0 && item.box.height > 0);
+}
 const inset = (card, child) => ({
   left: Math.round((child.left - card.left) * 100) / 100,
   right: Math.round((card.right - child.right) * 100) / 100,
@@ -86,7 +93,7 @@ const contentSelectors = {
   "settings-versions-history": "> .set-ver-toggle > *, > .set-ver-list > *",
 };
 
-async function auditActiveTab(view, tab, harness) {
+async function auditActiveTab(view, tab, harness, viewportRecord, state = "default") {
   await navigate(view, tab, harness);
   const cards = await measure('.set-tab-panel:not([hidden]) [data-layout-card]', { attributes: ["data-layout-card"] });
   assert(cards.count > 0, `${view}/${tab} exposes measurable cards`);
@@ -129,7 +136,19 @@ async function auditActiveTab(view, tab, harness) {
         bottom: Math.min(...metrics.map((value) => value.bottom)),
       };
       const closing = inset(entry.box, boxes.reduce((last, box) => box.bottom > last.bottom ? box : last)).bottom;
-      measurements.push({ view, tab, id, viewport: cards.viewport, minimum, closing });
+      measurements.push({
+        view,
+        tab,
+        state,
+        requested: viewportRecord.requested,
+        actual: cards.viewport,
+        id,
+        minimum,
+        closing,
+        horizontalOverflow: entry.scrollable.horizontal,
+        outsideCount: outside.length,
+        controlsOverlap,
+      });
       assert(minimum.left >= 18, `${id} minimum left inset is ${minimum.left}px`);
       assert(minimum.right >= 18, `${id} minimum right inset is ${minimum.right}px`);
       assert(closing >= 18, `${id} closing gutter is ${closing}px`);
@@ -138,22 +157,88 @@ async function auditActiveTab(view, tab, harness) {
 }
 
 async function capture(name, theme, scrollTo) {
+  assert((await visibleGuideOffers()).length === 0, "guide offer is absent before capture");
   if (scrollTo !== undefined) await measure(".program-scroll", { scroll: { selector: ".program-scroll", to: scrollTo } });
   const target = path.join(shots, `${name}-${scrollTo === "bottom" ? "bottom" : "top"}-${theme}.png`);
   const response = await request("POST", "/api/capture", { path: target, theme });
   assert(response.status === 200 && response.payload?.bytes > 1000 && fs.existsSync(target), `${path.basename(target)} saved`);
 }
 
+async function captureStateSet(prefix) {
+  for (const theme of ["light", "dark"]) {
+    await capture(prefix, theme, 0);
+    await capture(prefix, theme, "bottom");
+  }
+}
+
+async function setActualViewport(requested) {
+  const response = await request("POST", "/api/qa/window/bounds", requested);
+  assert(response.status === 200, `requested window ${requested.width}x${requested.height}`);
+  const surface = await measure("body");
+  const actual = surface.viewport;
+  assert(actual.width > 0 && actual.height > 0, `actual viewport is ${actual.width}x${actual.height}`);
+  return { requested, actual, label: `${Math.round(actual.width)}x${Math.round(actual.height)}` };
+}
+
+async function dismissGuideOffer() {
+  const visibleBefore = (await visibleGuideOffers()).length;
+  let clicked = false;
+  if (visibleBefore) {
+    const response = await request("POST", "/api/capture", { click: "[data-guide-offer] .ghost-btn" });
+    clicked = response.status === 200 && response.payload?.clicked === true;
+    assert(clicked, "guide offer dismiss control was clicked");
+    await delay(120);
+  }
+  const visibleAfter = (await visibleGuideOffers()).length;
+  assert(clicked || visibleBefore === 0, "guide dismissal was clicked or no offer was shown");
+  assert(visibleAfter === 0, "guide offer overlay is absent after dismissal");
+}
+
+async function installPopulatedWorkspaceFixture() {
+  const recent = path.join(workspace, "a-deliberately-long-populated-workspace-path-for-layout-qa", "nested-project");
+  fs.mkdirSync(recent, { recursive: true });
+  const defaultResult = await request("POST", "/api/cwd/default", { env: "windows", cwd: workspace });
+  assert(defaultResult.status === 200, "workspace default fixture saved through AppController API");
+  const partyResult = await request("POST", "/api/parties", { name: "Layout populated workspace fixture", location: recent });
+  assert(partyResult.status === 200, "workspace recent/member fixture created through AppController API");
+  const prefs = await request("GET", "/api/cwd/preferences");
+  const members = await request("GET", "/api/cwd/members");
+  assert(prefs.payload?.preferences?.windowsDefault?.cwd === workspace, "workspace default is populated");
+  assert((prefs.payload?.preferences?.windowsRecent || []).some((entry) => entry.location?.cwd === recent), "workspace recent list is populated");
+  assert((members.payload?.members || []).some((entry) => entry.location?.cwd === recent), "workspace member locations are populated");
+  return { default: workspace, recent, members: members.payload?.members?.length || 0 };
+}
+
+async function installDiscordErrorFixture() {
+  const saved = await request("POST", "/api/discord/settings", {
+    desktopName: "LAYOUT-QA-DESKTOP-WITH-A-LONG-NAME",
+    botToken: "layout.qa.invalid.discord.token",
+    guildId: "123456789012345678",
+    allowedUserIds: ["123456789012345678", "987654321098765432"],
+  });
+  assert(saved.status === 200 && saved.payload?.configured === true, "Discord configured fixture saved through AppController API");
+  let status = saved.payload;
+  for (let i = 0; i < 30 && status?.connection !== "error"; i += 1) {
+    await delay(200);
+    status = (await request("GET", "/api/discord")).payload;
+  }
+  assert(status?.configured === true, "Discord configured state is active");
+  assert(status?.connection === "error" && Boolean(status?.error), "Discord invalid-token error state is visible");
+  return { configured: status?.configured, connection: status?.connection, error: status?.error };
+}
+
 fs.rmSync(workspace, { recursive: true, force: true });
 fs.rmSync(userData, { recursive: true, force: true });
 fs.rmSync(shots, { recursive: true, force: true });
 fs.mkdirSync(workspace, { recursive: true });
+fs.mkdirSync(userData, { recursive: true });
 fs.mkdirSync(shots, { recursive: true });
-const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
+fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ workspacePath: workspace }, null, 2));
+const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", workspace], {
   cwd: root,
   stdio: ["ignore", "ignore", "inherit"],
   windowsHide: true,
-  env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" },
+  env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" },
 });
 
 try {
@@ -163,9 +248,9 @@ try {
   const mobileEnabled = state.payload?.settings?.mobile?.enabled === true;
   assert((appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep), "real app is running this worktree build");
   const appPid = Number(execFileSync("powershell", ["-NoProfile", "-Command", `(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -First 1 -ExpandProperty OwningProcess)`], { encoding: "utf8" }).trim());
-  const dismissShot = path.join(shots, "dismiss-guide-offer.png");
-  await request("POST", "/api/capture", { path: dismissShot, click: "[data-guide-offer] .ghost-btn" });
-  fs.rmSync(dismissShot, { force: true });
+  await dismissGuideOffer();
+  const workspaceFixture = await installPopulatedWorkspaceFixture();
+  const discordFixture = await installDiscordErrorFixture();
   await request("POST", "/api/qa/environment", {});
   await request("POST", "/api/qa/update", {
     state: "available",
@@ -183,51 +268,65 @@ try {
     ...["general", "environment", "workspace", ...(mobileEnabled ? ["mobile"] : []), "versions", "diagnostics", "automation"].map((tab) => ({ view: "settings", tab })),
   ];
 
-  await request("POST", "/api/qa/window/bounds", { width: 1440, height: 900 });
-  for (const target of tabs) await auditActiveTab(target.view, target.tab, target.harness);
-  if (!quickMode) {
-  for (const harness of ["claude-code", "codex", "cursor", "grok"]) {
-    await auditActiveTab("agent", "defaults", harness);
-    await capture(`1440x900-agent-defaults-${harness}`, "light", 0);
-    await capture(`1440x900-agent-defaults-${harness}`, "light", "bottom");
-  }
-
-  // Required expanded/interactive states are measured in the same real app.
-  await navigate("agent", "general");
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-auto-compact.png"), click: '[data-settings-card="auto-compact"] .set-compact-toggle' });
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-idle-sleep.png"), click: '[data-settings-card="idle-sleep"] .set-compact-toggle' });
-  await auditActiveTab("agent", "general");
-  await navigate("settings", "general");
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-font-picker.png"), click: '[data-layout-card="settings-fonts"] .set-font-trigger' });
-  await auditActiveTab("settings", "general");
-  await navigate("agent", "primer");
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-primer-inner-tab.png"), click: ".set-primer-tab:nth-of-type(2)" });
-  await auditActiveTab("agent", "primer");
-  await navigate("settings", "environment");
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-environment-more.png"), click: ".set-env-more > summary" });
-  await auditActiveTab("settings", "environment");
-  await navigate("settings", "versions");
-  await request("POST", "/api/capture", { path: path.join(shots, "interaction-version-history.png"), click: '[data-ver="history-toggle"]' });
-  await auditActiveTab("settings", "versions");
-
-  const viewports = [
-    { width: 1440, height: 900, themes: ["light", "dark"] },
-    { width: 1024, height: 768, themes: ["light", "dark"] },
-    { width: 760, height: 720, themes: ["light", "dark"] },
-  ];
-  for (const viewport of viewports) {
-    await request("POST", "/api/qa/window/bounds", viewport);
+  const viewportRequests = quickMode
+    ? [{ width: 1440, height: 900 }]
+    : [{ width: 1440, height: 900 }, { width: 760, height: 720 }];
+  const viewports = [];
+  for (const requested of viewportRequests) {
+    const viewport = await setActualViewport(requested);
+    viewports.push(viewport);
     for (const target of tabs) {
-      await navigate(target.view, target.tab, target.harness);
-      for (const theme of viewport.themes) {
-        const prefix = `${viewport.width}x${viewport.height}-${target.view}-${target.tab}`;
+      await auditActiveTab(target.view, target.tab, target.harness, viewport);
+      if (!quickMode) for (const theme of ["light", "dark"]) {
+        const prefix = `${viewport.label}-${target.view}-${target.tab}`;
         await capture(prefix, theme, 0);
         await capture(prefix, theme, "bottom");
       }
     }
+
+    if (!quickMode) {
+      for (const harness of ["claude-code", "codex", "cursor", "grok"]) {
+        await auditActiveTab("agent", "defaults", harness, viewport, `harness-${harness}`);
+        await capture(`${viewport.label}-agent-defaults-${harness}`, "light", 0);
+        await capture(`${viewport.label}-agent-defaults-${harness}`, "light", "bottom");
+      }
+
+      // Required expanded/interactive states are audited at every actual viewport.
+      await navigate("agent", "general");
+      let interaction = await request("POST", "/api/capture", { click: '[data-settings-card="auto-compact"] .set-compact-toggle' });
+      assert(interaction.payload?.clicked === true, "auto-compact expansion clicked");
+      interaction = await request("POST", "/api/capture", { click: '[data-settings-card="idle-sleep"] .set-compact-toggle' });
+      assert(interaction.payload?.clicked === true, "idle-sleep expansion clicked");
+      await auditActiveTab("agent", "general", undefined, viewport, "expanded");
+      await captureStateSet(`${viewport.label}-agent-general-expanded`);
+
+      await navigate("settings", "general");
+      interaction = await request("POST", "/api/capture", { click: '[data-layout-card="settings-fonts"] .set-font-trigger' });
+      assert(interaction.payload?.clicked === true, "font picker opened");
+      await auditActiveTab("settings", "general", undefined, viewport, "font-picker-open");
+      await captureStateSet(`${viewport.label}-settings-general-font-picker`);
+
+      await navigate("agent", "primer");
+      interaction = await request("POST", "/api/capture", { click: ".set-primer-tab:nth-of-type(2)" });
+      assert(interaction.payload?.clicked === true, "primer inner tab opened");
+      await auditActiveTab("agent", "primer", undefined, viewport, "inner-tab");
+      await captureStateSet(`${viewport.label}-agent-primer-inner-tab`);
+
+      await navigate("settings", "environment");
+      interaction = await request("POST", "/api/capture", { click: ".set-env-more > summary" });
+      assert(interaction.payload?.clicked === true, "environment more actions expanded");
+      await auditActiveTab("settings", "environment", undefined, viewport, "expanded");
+      await captureStateSet(`${viewport.label}-settings-environment-expanded`);
+
+      await navigate("settings", "versions");
+      interaction = await request("POST", "/api/capture", { click: '[data-ver="history-toggle"]' });
+      assert(interaction.payload?.clicked === true, "version history expanded");
+      await auditActiveTab("settings", "versions", undefined, viewport, "history-expanded");
+      await captureStateSet(`${viewport.label}-settings-versions-history`);
+    }
   }
-  }
-  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, mobileEnabled, failures, measurements }, null, 2));
+  const widthClamp = viewportRequests.map((requested, index) => ({ requested, actual: viewports[index]?.actual }));
+  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, mobileEnabled, widthClamp, workspaceFixture, discordFixture, failures, measurements }, null, 2));
   console.log(`EVIDENCE pid=${appPid} baseUrl=${base} appRoot=${appRoot}`);
   console.log(`EVIDENCE measurements=${evidencePath} screenshots=${shots}`);
   await request("POST", "/api/window/close", {});
