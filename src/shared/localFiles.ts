@@ -16,6 +16,9 @@
  */
 
 import { parseWorkspaceLocation, wslUncPath } from "./workspaceLocation";
+import { isWindowsDrivePath } from "./windowsDrivePath";
+
+export { isWindowsDrivePath } from "./windowsDrivePath";
 
 /**
  * Extensions that are executed rather than viewed when "opened".
@@ -32,16 +35,6 @@ export const NEVER_LAUNCH_EXTENSIONS = [
 ];
 
 const NEVER_LAUNCH = new Set(NEVER_LAUNCH_EXTENSIONS);
-
-/**
- * Whether a string is a Windows drive-absolute path, including the slash that
- * markdown/URL handling can place before the drive (`/C:/work/file.html`).
- * Kept separate from Node's platform-dependent `path.isAbsolute`: on Windows
- * that API accepts `/C:/...` as the quite different `\C:\...` rooted path.
- */
-export function isWindowsDrivePath(value: string): boolean {
-  return /^[\\/]?[a-z]:[\\/]/i.test(String(value || ""));
-}
 
 /**
  * Restores the URL-shaped spelling of a Windows drive path before filesystem

@@ -8618,10 +8618,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-copy-btn.is-failed { color: var(--danger); }
 .wb-copy-btn-label { white-space: nowrap; }
 
-/* A markdown link and its copy control stay on one line together. The control
-   is muted but always visible: a hover-only icon still occupies the line, so
-   hiding it buys a gap in the sentence and costs discoverability. */
-.wb-md-link { white-space: nowrap; }
+/* A markdown link's copy/reveal controls stay visible next to the anchor.
+   Do not pin the wrapper with nowrap: a long autolinked URL is wider than a
+   ~320px channel card, and nowrap overflow-clips the URL and hides the copy
+   control. Parent `.wb-md { overflow-wrap: anywhere }` wraps the href; the
+   copy button (inline-flex) stays after the last fragment. */
 .wb-md-link-copy { padding: 1px 2px; margin-left: 1px; }
 /* Reveal-in-file-manager, next to the copy control on a file link. Sized and
    toned to match it so the pair reads as one affordance on the link. */

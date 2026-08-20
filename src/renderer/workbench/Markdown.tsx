@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import { CopyButton } from "./copy";
 import { reportNotice } from "../app/appNotice";
 import { ipcErrorMessage } from "../app/ipcError";
-import { isWindowsDrivePath } from "../../shared/localFiles";
+import { isWindowsDrivePath } from "../../shared/windowsDrivePath";
 import { localized, useI18n } from "../i18n/I18nProvider";
 
 /**
