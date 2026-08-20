@@ -156,6 +156,8 @@ const frontendHistory = [
 window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
+  getAppearance: async () => ({ preference: "light", applied: "light", options: ["system", "light", "dark"], stored: false }),
+  setTheme: async (theme) => ({ preference: theme, applied: theme === "dark" ? "dark" : "light", options: ["system", "light", "dark"], stored: true }),
   chooseWorkspace: async () => initialState.settings,
   listAuth: async () => [],
   setOpenRouterKey: noop,

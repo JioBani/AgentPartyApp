@@ -12,7 +12,7 @@ import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate"
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
 import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/composerSettings";
 import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
-import { DEFAULT_THEME_PREFERENCE, normalizeThemePreference } from "../shared/appTheme";
+import { DEFAULT_THEME_PREFERENCE, isThemePreference, normalizeThemePreference, type ThemePreference } from "../shared/appTheme";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
@@ -117,6 +117,15 @@ export function getSettings(): AppSettings {
     // Merge per-harness defaults so a partial stored map keeps unset harnesses.
     harnessDefaults: mergeHarnessDefaults(stored.harnessDefaults),
   });
+}
+
+/**
+ * The `theme` value actually written in settings.json, or `undefined` when the
+ * file has no such field (the in-memory default must not look like a user choice).
+ */
+export function storedThemePreference(): ThemePreference | undefined {
+  const stored = readSettingsFile();
+  return isThemePreference(stored.theme) ? stored.theme : undefined;
 }
 
 /**

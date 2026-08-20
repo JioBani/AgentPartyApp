@@ -28,9 +28,12 @@ writeFileSync(outFile, bundled.outputFiles[0].text);
 const {
   DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCES,
+  cycleThemePreference,
   isThemePreference,
+  migrateLegacyThemeValue,
   normalizeThemePreference,
   requireThemePreference,
+  resolveAppliedTheme,
 } = await import(pathToFileURL(outFile).href);
 
 console.log("\ntheme preference (settings.json + API):");
@@ -63,6 +66,22 @@ try {
   rejected = error instanceof Error ? error.message : String(error);
 }
 assert(rejected.includes("지원하지 않는 테마입니다"), "API rejects a missing value instead of defaulting");
+
+console.log("\neffective theme + cycle + legacy migrate:");
+assert(resolveAppliedTheme("light", true) === "light", "locked light ignores OS dark");
+assert(resolveAppliedTheme("dark", false) === "dark", "locked dark ignores OS light");
+assert(resolveAppliedTheme("system", false) === "light", "system + OS light paints light");
+assert(resolveAppliedTheme("system", true) === "dark", "system + OS dark paints dark");
+assert(cycleThemePreference("system") === "light", "cycle system → light");
+assert(cycleThemePreference("light") === "dark", "cycle light → dark (same first step as the old toggle)");
+assert(cycleThemePreference("dark") === "system", "cycle dark → system");
+assert(migrateLegacyThemeValue(undefined, "dark") === "dark", "legacy dark migrates when settings have no theme");
+assert(migrateLegacyThemeValue(undefined, "light") === null, "legacy light is the old first-paint default, not a user choice");
+assert(migrateLegacyThemeValue("system", "dark") === null, "explicit system is not overridden by legacy dark");
+assert(migrateLegacyThemeValue("light", "dark") === null, "explicit light is not overridden by legacy dark");
+assert(migrateLegacyThemeValue("dark", "light") === null, "explicit dark is not overridden by legacy light");
+assert(migrateLegacyThemeValue(undefined, "system") === null, "legacy system is not a stored-value we used to write");
+assert(migrateLegacyThemeValue(undefined, null) === null, "no legacy value means no migration write");
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

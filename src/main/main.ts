@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, nativeTheme, safeStorage, screen, shell } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -626,6 +626,14 @@ ${body}
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     getAppBuild: () => ({ version: app.getVersion(), packaged: app.isPackaged }),
     openWindow: (workspacePath) => createWindow(workspacePath),
+    appearance: {
+      setSource: (source) => { nativeTheme.themeSource = source; },
+      isDark: () => nativeTheme.shouldUseDarkColors,
+      onUpdated: (listener) => {
+        nativeTheme.on("updated", listener);
+        return () => { nativeTheme.off("updated", listener); };
+      },
+    },
     onSettingsChanged: () => applyRuntimeSettings(),
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
@@ -930,6 +938,10 @@ function registerIpc(): void {
 
   // Same controller method as POST /api/settings/locale.
   handle("locale:set", async (_event, locale) => controller().setLocale(locale));
+
+  // Same controller methods as GET/POST /api/appearance/theme.
+  handle("appearance:get", async () => controller().getAppearance());
+  handle("appearance:set", async (_event, theme) => controller().setTheme(theme));
 
   // Same controller method as `POST /api/party/primer` — the UI and the
   // automation API must never take different routes to the same setting.

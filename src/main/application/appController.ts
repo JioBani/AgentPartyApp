@@ -26,7 +26,7 @@ import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthS
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
-import { getPublicSettings, getSettings, updateSettings } from "../settings";
+import { getPublicSettings, getSettings, storedThemePreference, updateSettings } from "../settings";
 import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerTotals, partyPrimerView, PARTY_PRIMER_DELIVERY, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
 import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
@@ -58,6 +58,15 @@ import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shar
 import type { GuideOfferView } from "../../shared/guideOffer";
 import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
+import {
+  THEME_PREFERENCES,
+  normalizeThemePreference,
+  requireThemePreference,
+  resolveAppliedTheme,
+  type AppearanceHost,
+  type AppearanceState,
+  type ThemePreference,
+} from "../../shared/appTheme";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
 
 export interface AppControllerDeps {
@@ -75,6 +84,12 @@ export interface AppControllerDeps {
    */
   getAppBuild?: () => { version: string; packaged: boolean };
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
+  /**
+   * Native window chrome (Electron `nativeTheme`). Desktop-only; a headless
+   * engine has no chrome to colour, so appearance endpoints still answer from
+   * the stored preference and treat the OS scheme as light.
+   */
+  appearance?: AppearanceHost;
   onSettingsChanged: () => void;
   /** Called when the set of hosted workspaces changes (rebind) so per-workspace
    *  discovery files can be reconciled. */
@@ -180,7 +195,10 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  * the affected workspace so same-workspace windows stay in sync.
  */
 export class AppController {
-  constructor(private readonly deps: AppControllerDeps) {}
+  constructor(private readonly deps: AppControllerDeps) {
+    this.applyNativeTheme(normalizeThemePreference(getSettings().theme));
+    this.deps.appearance?.onUpdated(() => this.onNativeThemeUpdated());
+  }
 
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
   private readonly cliContinuationWatchers = new Set<string>();
@@ -704,33 +722,36 @@ export class AppController {
     if (Object.prototype.hasOwnProperty.call(patch || {}, "updateChannel")) {
       throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 탭에서 변경하세요.");
     }
-    const validatedPatch = Object.prototype.hasOwnProperty.call(patch || {}, "locale")
-      ? { ...patch, locale: requireAppLocale(patch?.locale) }
-      : patch;
+    let validatedPatch = patch || {};
+    if (Object.prototype.hasOwnProperty.call(validatedPatch, "locale")) {
+      validatedPatch = { ...validatedPatch, locale: requireAppLocale(validatedPatch.locale) };
+    }
+    if (Object.prototype.hasOwnProperty.call(validatedPatch, "theme")) {
+      validatedPatch = { ...validatedPatch, theme: requireThemePreference(validatedPatch.theme) };
+    }
     const previous = getSettings();
-    updateSettings(validatedPatch || {});
+    updateSettings(validatedPatch);
     this.deps.onSettingsChanged();
-    if (typeof validatedPatch?.debugEnabled === "boolean" && validatedPatch.debugEnabled !== previous.debugEnabled) {
+    if (typeof validatedPatch.debugEnabled === "boolean" && validatedPatch.debugEnabled !== previous.debugEnabled) {
       this.deps.sessionManager.setDebugMode(validatedPatch.debugEnabled);
     }
     // Idle sleep is acted on by whichever host owns the sessions, which for a WSL
     // workspace is inside the distro — and that host reads a different
     // settings.json. Push the value instead of letting each engine look it up.
-    if (validatedPatch?.idleSleep) {
+    if (validatedPatch.idleSleep) {
       void this.deps.engineRegistry.setIdleSleep(getSettings().idleSleep);
     }
-    if (validatedPatch?.memberMessaging) {
+    if (validatedPatch.memberMessaging) {
       void this.deps.engineRegistry.setMemberMessaging(getSettings().memberMessaging);
     }
-    const settings = getPublicSettings();
+    if (Object.prototype.hasOwnProperty.call(validatedPatch, "theme")) {
+      this.applyNativeTheme(validatedPatch.theme as ThemePreference);
+    }
     // Settings are global — push to EVERY window so a change made over HTTP or in
     // another window reflects live (e.g. transcript zoom), not only on next load.
     // (The renderer preserves each window's own workspacePath on merge.)
-    this.deps.mobileLink?.publish("settings:update", settings);
-    for (const entry of this.deps.windowRegistry.all()) {
-      entry.window.webContents.send("settings:update", settings);
-    }
-    return settings;
+    this.broadcastSettings();
+    return getPublicSettings();
   }
 
   getLocale(): { locale: AppLocale } {
@@ -739,6 +760,46 @@ export class AppController {
 
   setLocale(value: unknown): AppSettings {
     return this.updateSettings({ locale: requireAppLocale(value) });
+  }
+
+  /**
+   * Appearance: the user's System/Light/Dark preference and the theme the UI
+   * is actually painting. Same method behind Settings, the title-bar shortcut,
+   * and GET /api/appearance/theme.
+   */
+  getAppearance(): AppearanceState {
+    const stored = storedThemePreference();
+    const preference = stored ?? normalizeThemePreference(getSettings().theme);
+    return {
+      preference,
+      applied: resolveAppliedTheme(preference, this.deps.appearance?.isDark()),
+      options: THEME_PREFERENCES,
+      stored: stored !== undefined,
+    };
+  }
+
+  setTheme(value: unknown): AppearanceState {
+    this.updateSettings({ theme: requireThemePreference(value) });
+    return this.getAppearance();
+  }
+
+  private applyNativeTheme(preference: ThemePreference): void {
+    this.deps.appearance?.setSource(preference);
+  }
+
+  private onNativeThemeUpdated(): void {
+    if (normalizeThemePreference(getSettings().theme) !== "system") {
+      return;
+    }
+    this.broadcastSettings();
+  }
+
+  private broadcastSettings(): void {
+    const settings = getPublicSettings();
+    this.deps.mobileLink?.publish("settings:update", settings);
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("settings:update", settings);
+    }
   }
 
   /**
@@ -2033,7 +2094,7 @@ export class AppController {
     if (typeof body?.theme === "string" && (body.theme === "light" || body.theme === "dark")) {
       await evaluate(
         "theme",
-        `(() => { document.documentElement.setAttribute("data-theme", ${JSON.stringify(body.theme)}); try { localStorage.setItem("agentparty.theme", ${JSON.stringify(body.theme)}); } catch {} })()`,
+        `(() => { document.documentElement.setAttribute("data-theme", ${JSON.stringify(body.theme)}); })()`,
       );
       applied.theme = body.theme;
       await new Promise((resolve) => setTimeout(resolve, 120));

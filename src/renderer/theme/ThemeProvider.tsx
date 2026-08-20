@@ -1,7 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  DEFAULT_THEME_PREFERENCE,
+  THEME_PREFERENCE_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  cycleThemePreference,
+  isThemePreference,
+  normalizeThemePreference,
+  resolveAppliedTheme,
+  type AppliedTheme,
+  type ThemePreference,
+} from "../../shared/appTheme";
 import { DEFAULT_THEME_ID, THEMES, buildThemeStylesheet, getTheme } from "./themes";
 
-const STORAGE_KEY = "agentparty.theme";
 const STYLE_ELEMENT_ID = "agentparty-theme-vars";
 
 /**
@@ -20,54 +30,109 @@ function ensureThemeStylesheet(): void {
 
 ensureThemeStylesheet();
 
-function readStoredTheme(): string {
+function osPrefersDark(): boolean {
+  return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-color-scheme: dark)")?.matches);
+}
+
+/** Subscribe to OS scheme changes; always unsubscribe on the returned disposer. */
+function subscribeOsTheme(onChange: () => void): () => void {
+  const media = typeof window === "undefined" ? undefined : window.matchMedia?.("(prefers-color-scheme: dark)");
+  if (!media) {
+    return () => undefined;
+  }
+  const handler = () => onChange();
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }
+  media.addListener(handler);
+  return () => media.removeListener(handler);
+}
+
+function readStoredPreference(): ThemePreference {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored && THEMES.some((theme) => theme.id === stored)) {
-      return stored;
+    const marked = window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY);
+    if (isThemePreference(marked)) {
+      return marked;
+    }
+    const legacy = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (legacy === "light" || legacy === "dark") {
+      return legacy;
     }
   } catch {
-    // localStorage may be unavailable; fall back to the default theme.
+    // localStorage may be unavailable; fall back to the default preference.
   }
-  return DEFAULT_THEME_ID;
+  return DEFAULT_THEME_PREFERENCE;
+}
+
+function persistPreference(preference: ThemePreference): void {
+  try {
+    window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, preference);
+    if (preference === "light" || preference === "dark") {
+      window.localStorage.setItem(THEME_STORAGE_KEY, preference);
+    }
+  } catch {
+    // Persistence is best-effort.
+  }
+}
+
+function applyDocumentTheme(preference: ThemePreference, applied: AppliedTheme): void {
+  document.documentElement.setAttribute("data-theme", getTheme(applied).id);
+  document.documentElement.setAttribute("data-theme-preference", preference);
 }
 
 interface ThemeContextValue {
-  themeId: string;
+  /** User choice: system / light / dark. */
+  preference: ThemePreference;
+  /** Applied visual theme (`data-theme`). */
+  themeId: AppliedTheme;
   themes: typeof THEMES;
+  setPreference: (preference: ThemePreference) => void;
+  /** Forces a visual theme id (guide stage). Light/dark become an explicit preference. */
   setTheme: (id: string) => void;
-  /** Advances to the next registered theme (used by the title-bar toggle). */
+  /** Advances system → light → dark → system (title-bar shortcut). */
   cycleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeId, setThemeId] = useState<string>(readStoredTheme);
+  const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
+  const [osDark, setOsDark] = useState<boolean>(osPrefersDark);
+  const themeId = resolveAppliedTheme(preference, osDark);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", getTheme(themeId).id);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, themeId);
-    } catch {
-      // Persistence is best-effort.
+    applyDocumentTheme(preference, themeId);
+    persistPreference(preference);
+  }, [preference, themeId]);
+
+  useEffect(() => {
+    if (preference !== "system") {
+      return;
     }
-  }, [themeId]);
+    setOsDark(osPrefersDark());
+    return subscribeOsTheme(() => setOsDark(osPrefersDark()));
+  }, [preference]);
+
+  const setPreference = useCallback((next: ThemePreference) => {
+    setPreferenceState(normalizeThemePreference(next));
+  }, []);
 
   const setTheme = useCallback((id: string) => {
-    setThemeId(THEMES.some((theme) => theme.id === id) ? id : DEFAULT_THEME_ID);
+    if (id === "system" || id === "light" || id === "dark") {
+      setPreferenceState(id);
+      return;
+    }
+    setPreferenceState(DEFAULT_THEME_ID === "dark" ? "dark" : "light");
   }, []);
 
   const cycleTheme = useCallback(() => {
-    setThemeId((current) => {
-      const index = THEMES.findIndex((theme) => theme.id === current);
-      return THEMES[(index + 1) % THEMES.length].id;
-    });
+    setPreferenceState((current) => cycleThemePreference(current));
   }, []);
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ themeId, themes: THEMES, setTheme, cycleTheme }),
-    [themeId, setTheme, cycleTheme],
+    () => ({ preference, themeId, themes: THEMES, setPreference, setTheme, cycleTheme }),
+    [preference, themeId, setPreference, setTheme, cycleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

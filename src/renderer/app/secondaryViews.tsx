@@ -32,6 +32,7 @@ import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COM
 import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily } from "../../shared/appFonts";
+import { THEME_PREFERENCES, normalizeThemePreference, type ThemePreference } from "../../shared/appTheme";
 import { enumerateLocalFonts, probeFonts } from "./fontProbe";
 import type { AppLocale } from "../../shared/appLocale";
 import { useI18n } from "../i18n/I18nProvider";
@@ -1907,20 +1908,51 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
 /**
  * The 설정 screen — app-shell preferences plus the automation API/log handles.
  *
- * The font pickers live HERE rather than under 런타임 on purpose: 런타임 owns the
- * defaults a new MEMBER inherits (harness, model, send key), while a font is a
- * property of the app window itself and applies no matter which members exist.
+ * Appearance and fonts live HERE rather than under 런타임 on purpose: 런타임 owns
+ * the defaults a new MEMBER inherits (harness, model, send key), while brightness
+ * and type are properties of the app window itself.
  */
-export function AutomationView({ automationApi, logs, debugEnabled, fonts, onToggleDebug, onSaveFonts }: {
+export function AutomationView({ automationApi, logs, debugEnabled, theme, fonts, onToggleDebug, onSaveTheme, onSaveFonts }: {
   automationApi: InitialAppState["automationApi"];
   logs: InitialAppState["logs"];
   debugEnabled: boolean;
+  theme: ThemePreference | undefined;
   fonts: FontSettings | undefined;
   onToggleDebug: (enabled: boolean) => void;
+  onSaveTheme: (theme: ThemePreference) => void;
   onSaveFonts: (patch: Partial<FontSettings>) => void;
 }) {
+  const { t } = useI18n();
+  const preference = normalizeThemePreference(theme);
+  const labels: Record<ThemePreference, MessageKey> = {
+    system: "appearance.system",
+    light: "appearance.light",
+    dark: "appearance.dark",
+  };
   return (
     <section className="legacy-view narrow set-stack">
+      <section className="card" data-settings-card="appearance">
+        <div className="card-title">{t("appearance.title")}</div>
+        <div className="set-inline-note">
+          <InfoIcon size={14} />
+          <span>{t("appearance.description")}</span>
+        </div>
+        <div className="set-harness-pick" data-theme-preference={preference}>
+          <div className="wb-segmented set-segmented">
+            {THEME_PREFERENCES.map((id) => (
+              <button
+                type="button"
+                key={id}
+                data-theme-option={id}
+                className={"wb-segment" + (id === preference ? " is-active" : "")}
+                onClick={() => onSaveTheme(id)}
+              >
+                {t(labels[id])}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
       <section className="card">
         <div className="card-title"><LocalizedText id="STR-1211" /></div>
         <FontSettingsCard settings={fonts} onSave={onSaveFonts} />

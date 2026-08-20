@@ -10,7 +10,7 @@ custom property that a theme supplies.
 | Concern | File |
 | --- | --- |
 | Theme token values (per theme) | `src/renderer/theme/themes.ts` |
-| Theme application + persistence + switcher | `src/renderer/theme/ThemeProvider.tsx` |
+| Theme application + persistence + switcher | `src/renderer/theme/ThemeProvider.tsx`, `src/shared/appTheme.ts` |
 | Member identity colors + tints | `src/renderer/theme/memberColors.ts` |
 | Non-themed primitives (fonts, spacing, type ramp, resets) | `src/renderer/design-system.css` |
 | Component styling (all `var(--token)`) | `src/renderer/styles.css` |
@@ -22,8 +22,13 @@ custom property that a theme supplies.
 - At startup `ThemeProvider` injects one `<style>` block with
   `:root[data-theme="<id>"] { --token: value; … }` for every theme, plus the
   default on bare `:root` (so first paint is themed — no flash).
-- The active theme is set via `data-theme` on `<html>` and persisted to
-  `localStorage`. The title-bar toggle cycles through `THEMES`.
+- The user's preference is `system` | `light` | `dark` (`AppSettings.theme`,
+  `src/shared/appTheme.ts`). The painted theme is still `data-theme="light|dark"`
+  on `<html>`; `system` follows the OS via `prefers-color-scheme` (and Electron
+  `nativeTheme`) and updates live. Settings → 모양 and the title-bar shortcut
+  cycle the same three preferences. A leftover `localStorage` `agentparty.theme`
+  of `dark` migrates only when settings.json has no explicit `theme` (`light` was
+  the old first-paint default, not a choice).
 
 ### Add a new theme
 

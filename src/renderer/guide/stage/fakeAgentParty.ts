@@ -17,7 +17,7 @@ import type { GuideSnapshot } from "../../../shared/guide";
 import { GUIDE_REFUSED, GUIDE_SLIDE_COUNT } from "../../../shared/guide";
 import type { PartyCommandResult } from "../../../shared/types";
 import { DEFAULT_FONT_SETTINGS } from "../../../shared/appFonts";
-import { DEFAULT_THEME_PREFERENCE } from "../../../shared/appTheme";
+import { DEFAULT_THEME_PREFERENCE, THEME_PREFERENCES, requireThemePreference, resolveAppliedTheme } from "../../../shared/appTheme";
 import { DEFAULT_COMPOSER_SETTINGS } from "../../../shared/composerSettings";
 import { DEFAULT_IDLE_SLEEP } from "../../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../../shared/memberMessaging";
@@ -151,6 +151,26 @@ export function createFakeAgentParty(): FakeAgentParty {
       const next = { ...current().state.settings, locale: locale as AppLocale };
       snapshot = { ...current(), state: { ...current().state, settings: next } };
       return next;
+    },
+    getAppearance: async () => {
+      const preference = requireThemePreference(current().state.settings.theme);
+      return {
+        preference,
+        applied: resolveAppliedTheme(preference, false),
+        options: THEME_PREFERENCES,
+        stored: true,
+      };
+    },
+    setTheme: async (theme) => {
+      const preference = requireThemePreference(theme);
+      const next = { ...current().state.settings, theme: preference };
+      snapshot = { ...current(), state: { ...current().state, settings: next } };
+      return {
+        preference,
+        applied: resolveAppliedTheme(preference, false),
+        options: THEME_PREFERENCES,
+        stored: true,
+      };
     },
     chooseWorkspace: () => refused(),
     listAuth: () => Promise.resolve(current().state.auth),

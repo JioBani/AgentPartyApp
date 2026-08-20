@@ -493,9 +493,51 @@ values are `ko` and `en`; any other value returns an error instead of silently
 falling back. `POST /api/settings` accepts the same `locale` field and applies
 the same validation.
 
+### `GET /api/appearance/theme`
+
+The user's appearance preference and the theme the UI is actually painting.
+Same `AppController.getAppearance` method the Settings selector and title-bar
+shortcut read.
+
+```json
+{
+  "preference": "system",
+  "applied": "dark",
+  "options": ["system", "light", "dark"],
+  "stored": true
+}
+```
+
+`preference` is the stored choice: `system` follows the OS, `light` and `dark`
+lock it. `applied` is the `data-theme` on `<html>` (`light` or `dark`). `stored`
+is `true` only when `settings.json` itself contains `theme` — a missing field
+does not count as an explicit Light choice. A leftover `localStorage`
+`agentparty.theme` of `dark` still migrates on upgrade; leftover `light` does
+not, because the old toggle wrote that on every first paint.
+
+### `POST /api/appearance/theme`
+
+Sets the preference through the same `AppController.setTheme` method used by
+Settings → 모양 and the title-bar shortcut.
+
+```json
+{ "theme": "dark" }
+```
+
+Accepted values are `system`, `light`, and `dark`. Any other value (including a
+missing `theme`) returns an error instead of silently falling back. The change
+is persisted in `settings.json` and pushed to every open window immediately.
+When `preference` is `system`, the painted theme follows the OS live.
+
+`POST /api/settings` accepts the same `theme` field and applies the same
+validation.
+
 ### `POST /api/settings`
 
 Updates app settings.
+
+`theme` is the appearance preference (`"system"` | `"light"` | `"dark"`). Same
+validation and broadcast as `POST /api/appearance/theme` above.
 
 `transcriptFontScale` is the session/transcript text zoom (1 = 100%, clamped
 0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it

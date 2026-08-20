@@ -111,6 +111,18 @@ export const appRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.setLocale(p.locale),
   },
   {
+    name: "appearance.theme.get",
+    http: "GET /api/appearance/theme",
+    handler: (_p, ctx) => ctx.controller.getAppearance(),
+  },
+  {
+    // Same AppController.setTheme the Settings selector and title-bar shortcut
+    // use. `theme` is required; an unknown value is an error, not a silent default.
+    name: "appearance.theme.set",
+    http: "POST /api/appearance/theme",
+    handler: (p, ctx) => ctx.controller.setTheme(p.theme),
+  },
+  {
     name: "appearance.fonts",
     http: "GET /api/appearance/fonts",
     handler: (p, ctx) => ctx.controller.getFontCatalog(ctx.windowId, optText(p.q)),

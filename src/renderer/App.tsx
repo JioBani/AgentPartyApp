@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Monitor, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -12,6 +12,13 @@ import type { PartyPrimerSectionPatch } from "./workbench/PartyPrimerSettings";
 import type { PartyPrimerSectionId } from "../shared/partyPrimer";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
+import {
+  THEME_STORAGE_KEY,
+  cycleThemePreference,
+  migrateLegacyThemeValue,
+  normalizeThemePreference,
+  type ThemePreference,
+} from "../shared/appTheme";
 import { publishFontProbe } from "./app/fontProbe";
 import { useNoticeSink } from "./app/appNotice";
 import { useUpdateDialogSink } from "./app/updateDialog";
@@ -184,6 +191,40 @@ export function App() {
 
   // Lets `GET /api/appearance/fonts` ask Chromium which families are installed.
   useEffect(() => { publishFontProbe(); }, []);
+
+  // Appearance: first paint comes from localStorage (including the legacy
+  // `agentparty.theme` key). Wait until we know whether settings.json already
+  // has an explicit `theme` before syncing, so a stored default of `light` cannot
+  // overwrite a user's leftover dark toggle.
+  const [themeReady, setThemeReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const appearance = await window.agentParty.getAppearance();
+        if (cancelled) return;
+        let legacy: string | null = null;
+        try { legacy = window.localStorage.getItem(THEME_STORAGE_KEY); } catch { /* unavailable */ }
+        const migrated = migrateLegacyThemeValue(appearance.stored ? appearance.preference : undefined, legacy);
+        if (migrated) {
+          const next = await window.agentParty.setTheme(migrated);
+          if (cancelled) return;
+          theme.setPreference(next.preference);
+          setState((current) => ({ ...current, settings: { ...current.settings, theme: next.preference } }));
+        } else {
+          theme.setPreference(appearance.preference);
+        }
+      } catch {
+        if (!cancelled) theme.setPreference(normalizeThemePreference(state.settings.theme));
+      }
+      if (!cancelled) setThemeReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!themeReady) return;
+    theme.setPreference(normalizeThemePreference(state.settings.theme));
+  }, [themeReady, state.settings.theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lets a component too deep to hold notice state report one — today, a
   // transcript file link that could not be opened. See app/appNotice.ts.
@@ -1077,6 +1118,16 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  async function saveTheme(preference: ThemePreference) {
+    try {
+      const appearance = await window.agentParty.setTheme(preference);
+      theme.setPreference(appearance.preference);
+      setState((current) => ({ ...current, settings: { ...current.settings, theme: appearance.preference } }));
+    } catch (error) {
+      setPartyNotice(t("appearance.saveError", { error: ipcErrorMessage(error) }));
+    }
+  }
+
   async function saveMemberMessaging(patch: Partial<MemberMessagingSettings>) {
     const settings = await window.agentParty.updateSettings({ memberMessaging: { ...state.settings.memberMessaging, ...patch } });
     setState((current) => ({ ...current, settings }));
@@ -1594,7 +1645,10 @@ export function App() {
     { id: "automation", label: viewTitle("automation", t), icon: <Settings size={18} /> },
   ];
 
-  const isDark = theme.themeId === "dark";
+  const themePreference = theme.preference;
+  const themePreferenceLabel = themePreference === "system"
+    ? t("appearance.system")
+    : themePreference === "dark" ? t("appearance.dark") : t("appearance.light");
 
   // Party members driving each harness subscription/account indicator. Models
   // routed through OpenRouter do not replace the selected harness process.
@@ -1639,8 +1693,18 @@ export function App() {
       <div className="app-titlebar">
         <div className="titlebar-drag">
           <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>
-          <button type="button" className="titlebar-action no-drag" title={t("shell.theme")} onClick={theme.cycleTheme}>
-            {isDark ? <Moon size={14} /> : <Sun size={14} />}
+          <button
+            type="button"
+            className="titlebar-action no-drag"
+            data-theme-toggle
+            title={`${t("shell.theme")}: ${themePreferenceLabel}`}
+            onClick={() => {
+              const next = cycleThemePreference(themePreference);
+              theme.setPreference(next);
+              void saveTheme(next);
+            }}
+          >
+            {themePreference === "system" ? <Monitor size={14} /> : themePreference === "dark" ? <Moon size={14} /> : <Sun size={14} />}
           </button>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
@@ -1810,7 +1874,7 @@ export function App() {
                 />
               )}
               {currentView === "automation" && (
-                <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} fonts={state.settings.fonts} onToggleDebug={toggleDebug} onSaveFonts={saveFonts} />
+                <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} theme={state.settings.theme} fonts={state.settings.fonts} onToggleDebug={toggleDebug} onSaveTheme={saveTheme} onSaveFonts={saveFonts} />
               )}
               </div>
             </>
