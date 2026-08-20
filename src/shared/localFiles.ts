@@ -66,8 +66,12 @@ export function normalizeLocalFileTarget(value: string, platform: string): strin
  * translation applies, so a local workspace behaves exactly as before.
  *
  * Pure: `platform` and `workspace` are arguments so this is testable off the
- * machine it describes. The caller still handles `file://` URLs and percent
- * decoding — this only decides which host a plain path belongs to.
+ * machine it describes. `file://` URLs are decoded by `decodeLocalFileTarget`
+ * first — this only decides which host a plain path belongs to.
+ *
+ * `/mnt/<single-drive-letter>/...` is the distro's view of a Windows drive, not
+ * a file on ext4. Translating it to `\\wsl$\<distro>\mnt\c\...` is the open/reveal
+ * failure: that UNC is not a reachable Windows path. Convert to `C:\...` instead.
  */
 export function localFileHostPath(value: string, workspace: string, platform: string): string {
   const input = String(value || "");
@@ -75,7 +79,7 @@ export function localFileHostPath(value: string, workspace: string, platform: st
   // that wins over the window, which is only the default host.
   const target = parseWorkspaceLocation(input);
   if (target.host.kind === "wsl") {
-    return platform === "win32" ? wslUncPath(target.host.distro, target.path) : target.path;
+    return hostPathForWslPosix(target.host.distro, target.path, platform);
   }
   const home = parseWorkspaceLocation(String(workspace || ""));
   // Only the Windows desktop needs the translation. The same controller runs
@@ -86,7 +90,85 @@ export function localFileHostPath(value: string, workspace: string, platform: st
   }
   const posix = input.replace(/\\/g, "/");
   const absolute = posix.startsWith("/") ? posix : joinPosix(home.path || "/", posix);
-  return wslUncPath(home.host.distro, absolute);
+  return hostPathForWslPosix(home.host.distro, absolute, platform);
+}
+
+/**
+ * Decode a click/HTTP target into the spelling `localFileHostPath` understands.
+ *
+ * `file://` URLs are parsed here rather than by Node's `fileURLToPath`: on
+ * Windows that API throws `ERR_INVALID_FILE_URL_PATH` for `file:///home/...`
+ * and `file:///mnt/c/...` before the WSL host can be applied. `#` is a URL
+ * fragment, not a filename; a literal `#` in a name is `%23`.
+ */
+export function decodeLocalFileTarget(raw: string): string {
+  const input = String(raw || "");
+  if (/^file:/i.test(input.trim())) {
+    return parseLocalFileUrl(input);
+  }
+  try {
+    return decodeURI(input);
+  } catch {
+    return input;
+  }
+}
+
+/**
+ * `file:` URL → a path or `wsl+<distro>:` URI. Throws the same readable error
+ * the controller surfaces for a malformed URL.
+ */
+export function parseLocalFileUrl(raw: string): string {
+  const input = String(raw || "").trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error(`Not a readable file URL: '${raw}'.`);
+  }
+  if (parsed.protocol.toLowerCase() !== "file:") {
+    throw new Error(`Not a readable file URL: '${raw}'.`);
+  }
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(parsed.pathname || "");
+  } catch {
+    throw new Error(`Not a readable file URL: '${raw}'.`);
+  }
+  const host = (parsed.hostname || "").replace(/^\[|\]$/g, "");
+  if (/^wsl(?:\.localhost|\$)$/i.test(host)) {
+    const trimmed = pathname.replace(/^\/+/, "");
+    const slash = trimmed.indexOf("/");
+    const distro = slash === -1 ? trimmed : trimmed.slice(0, slash);
+    const posix = slash === -1 ? "/" : trimmed.slice(slash);
+    if (!distro) {
+      throw new Error(`Not a readable file URL: '${raw}'.`);
+    }
+    return `wsl+${distro}:${posix || "/"}`;
+  }
+  if (host && host.toLowerCase() !== "localhost") {
+    throw new Error(`Not a readable file URL: '${raw}'.`);
+  }
+  return pathname || "/";
+}
+
+/**
+ * `/mnt/c/...` → `C:\...`. Grammar is exactly one drive letter:
+ * `^/mnt/[A-Za-z](?:/|$)`. `/mnt/wsl` and `/mnt/abc` are distro paths, not drives.
+ */
+function windowsPathFromMnt(posix: string): string | null {
+  const match = /^\/mnt\/([A-Za-z])(?:\/(.*))?$/.exec(posix);
+  if (!match) {
+    return null;
+  }
+  const rest = (match[2] || "").replace(/\//g, "\\");
+  return rest ? `${match[1].toUpperCase()}:\\${rest}` : `${match[1].toUpperCase()}:\\`;
+}
+
+function hostPathForWslPosix(distro: string, posix: string, platform: string): string {
+  if (platform !== "win32") {
+    return posix;
+  }
+  return windowsPathFromMnt(posix) || wslUncPath(distro, posix);
 }
 
 /**
