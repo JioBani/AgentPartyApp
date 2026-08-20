@@ -386,6 +386,128 @@
   overflow: hidden;
 }
 
+/* ---------- 사이드바 드로우어 (파티 | 멤버) ----------
+   하나였던 사이드바를 둘로 나눈 자리. 각자 접히고 각자 폭을 가진다 —
+   파티 목록과 멤버 목록을 한 열에 쌓으니 둘 다 좁아진다는 지적에서 나왔다.
+   아래 `.wb-sidebar-*` 규칙은 두 드로우어의 내부(섹션·라벨·목록)를 그대로
+   재사용하므로 남아 있다. 바뀐 것은 바깥 껍데기뿐이다. */
+.wb-drawer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  background: var(--bg-0);
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-drawer-head {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+}
+
+.wb-drawer-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.wb-drawer-count {
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+.wb-drawer-party {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-drawer-head .wb-icon-btn { margin-left: auto; }
+.wb-drawer-head .wb-drawer-count + .wb-icon-btn { margin-left: auto; }
+
+/* The handle sits ON the drawer's right edge, so each drawer resizes against
+   the one after it rather than against a single shared gutter. */
+.wb-drawer-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 9;
+  transition: background .15s ease;
+}
+
+.wb-drawer-resize:hover { background: var(--accent-dim); }
+
+/* A collapsed drawer keeps a readable spine rather than vanishing into an icon:
+   it has to say WHICH drawer is folded away, and carry its count. */
+.wb-drawer-rail {
+  flex: none;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  background: var(--bg-2);
+  border: 0;
+  border-right: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-drawer-rail:hover { background: var(--bg-3); color: var(--text-0); }
+
+.wb-drawer-rail > span {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  max-height: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-drawer-rail-count { color: var(--text-3); font-weight: 400; letter-spacing: 0; }
+
+.wb-drawer-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+/* The 30vh cap on the party list exists because parties and members used to
+   share one column. The party drawer owns its column now, so the list takes the
+   leftover height — otherwise it stops a third of the way down with 500px of
+   empty drawer under it and scrolls inside that stub. */
+.wb-party-drawer > .wb-sidebar-section { flex: 1; min-height: 0; }
+.wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
+
+/* A narrow drawer must not turn a one-line hint into a two-line block that
+   pushes the list down. It clips instead. */
+.wb-drawer .wb-section-label .wb-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Party sidebar ---------- */
 .wb-sidebar {
   width: var(--sidebar-width);
@@ -397,52 +519,10 @@
   min-height: 0;
 }
 
-.wb-sidebar-resize {
-  width: 6px;
-  flex: none;
-  margin-left: -3px;
-  cursor: col-resize;
-  position: relative;
-  z-index: 9;
-  transition: background .15s ease;
-}
 
-.wb-sidebar-resize:hover {
-  background: var(--accent-dim);
-}
 
-.wb-sidebar-reopen {
-  width: 34px;
-  margin: var(--space-4) 0 0 var(--space-3);
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-button);
-  background: var(--bg-2);
-  color: var(--accent);
-  align-self: flex-start;
-}
 
-.wb-sidebar-head {
-  height: 44px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
-  border-bottom: var(--border-width) solid var(--border-subtle);
-  color: var(--text-1);
-}
 
-.wb-sidebar-party {
-  flex: 1;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-0);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .wb-sidebar-section {
   padding: var(--space-5) var(--space-4) var(--space-3);

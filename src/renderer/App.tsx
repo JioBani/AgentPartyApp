@@ -107,7 +107,15 @@ export function App() {
   const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.localStorage.getItem("agentparty.sidebarOpen") !== "0");
+  /**
+   * Which sidebar drawers are open. Two independent flags, because the point of
+   * splitting them is that you can put the party list away while working with a
+   * party's members — and get it back in one click.
+   */
+  const [drawers, setDrawers] = useState(() => ({
+    party: window.localStorage.getItem("agentparty.partyDrawerOpen") !== "0",
+    member: window.localStorage.getItem("agentparty.memberDrawerOpen") !== "0",
+  }));
   // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMembers, setVisibleMembers] = useState<string[]>([]);
   // Every member with a tab in this window, frontmost or not. A background tab
@@ -1820,7 +1828,7 @@ export function App() {
                 harnessDefaults={state.settings.harnessDefaults}
                 gateDefaults={state.settings.gateDefaults}
                 debugEnabled={state.settings.debugEnabled}
-                sidebarOpen={sidebarOpen}
+                drawers={drawers}
                 layoutRequest={layoutRequest}
                 subagentOpenRequest={subagentOpenRequest}
                 gateOpenRequest={gateOpenRequest}
@@ -1847,9 +1855,11 @@ export function App() {
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={setVisibleMembers}
                 onOpenMembersChange={setOpenMembers}
-                onToggleSidebar={(open) => {
-                  setSidebarOpen(open);
-                  try { window.localStorage.setItem("agentparty.sidebarOpen", open ? "1" : "0"); } catch { /* best-effort */ }
+                onToggleDrawer={(which, open) => {
+                  setDrawers((current) => ({ ...current, [which]: open }));
+                  try {
+                    window.localStorage.setItem(`agentparty.${which}DrawerOpen`, open ? "1" : "0");
+                  } catch { /* best-effort */ }
                 }}
                 onOpenUsage={() => setCurrentView("usage")}
                 onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}

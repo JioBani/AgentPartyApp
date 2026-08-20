@@ -66,7 +66,7 @@ interface WorkbenchProps {
   /** Settings reviewer default (model + effort) for the Message Gate. */
   gateDefaults: GateReviewer;
   debugEnabled: boolean;
-  sidebarOpen: boolean;
+  drawers: { party: boolean; member: boolean };
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
   /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
@@ -104,7 +104,7 @@ interface WorkbenchProps {
   onVisibleMembersChange: (members: string[]) => void;
   /** Every member with a tab here, frontmost or not: what this window must hold. */
   onOpenMembersChange: (members: string[]) => void;
-  onToggleSidebar: (open: boolean) => void;
+  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
   onOpenSessions: () => void;
@@ -122,9 +122,6 @@ interface DragState {
 }
 
 const DRAG_THRESHOLD = 5;
-const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 460;
-const SIDEBAR_WIDTH_KEY = "agentparty.sidebarWidth";
 const SUBUI_KEY = "agentparty.subagentUi";
 /**
  * Delays between prewarm attempts for an open tab that still has no session.
@@ -148,21 +145,8 @@ function loadSubagentUi(): SubagentUiState {
   }
 }
 
-function loadSidebarWidth(): number {
-  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(stored) && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX ? stored : 236;
-}
-
-function saveSidebarWidth(width: number): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-  } catch {
-    // Best-effort.
-  }
-}
-
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, sidebarOpen, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleSidebar, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleDrawer, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -207,20 +191,15 @@ export function Workbench(props: WorkbenchProps) {
   const [partyGateTarget, setPartyGateTarget] = useState<string | null>(null);
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
   const resizeRef = useRef<{ snapshot: LayoutState; leftId: string; rightId: string; startX: number; pairPx: number } | null>(null);
-  const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Tracks members already seen for the current party, so only members created
   // *after* the party is showing auto-open (initial load / party-switch don't).
   const knownMembersRef = useRef<{ partyKey: string; names: Set<string> }>({ partyKey: "", names: new Set() });
 
-  useEffect(() => {
-    saveSidebarWidth(sidebarWidth);
-  }, [sidebarWidth]);
 
   useEffect(() => {
     try {
@@ -272,28 +251,6 @@ export function Workbench(props: WorkbenchProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateOpenRequest?.nonce]);
-
-  function onSidebarResizeDown(event: ReactPointerEvent) {
-    sidebarResizeRef.current = { startX: event.clientX, startWidth: sidebarWidth };
-    window.addEventListener("pointermove", onSidebarResizeMove);
-    window.addEventListener("pointerup", onSidebarResizeUp, { once: true });
-    document.body.classList.add("wb-resizing");
-  }
-
-  function onSidebarResizeMove(event: PointerEvent) {
-    const ref = sidebarResizeRef.current;
-    if (!ref) {
-      return;
-    }
-    const next = ref.startWidth + (event.clientX - ref.startX);
-    setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next)));
-  }
-
-  function onSidebarResizeUp() {
-    window.removeEventListener("pointermove", onSidebarResizeMove);
-    sidebarResizeRef.current = null;
-    document.body.classList.remove("wb-resizing");
-  }
 
   // Prewarm retry cadence — see the effect below. Keyed by party + the set of
   // sessionless tabs so the backoff restarts whenever that set changes.
@@ -581,7 +538,6 @@ export function Workbench(props: WorkbenchProps) {
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointermove", onResizeMove);
-      window.removeEventListener("pointermove", onSidebarResizeMove);
       document.body.classList.remove("wb-resizing");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -653,50 +609,41 @@ export function Workbench(props: WorkbenchProps) {
 
   return (
     <div className="wb-root">
-      {sidebarOpen ? (
-        <>
-          <PartySidebar
-            activePartyId={activePartyId}
-            activePartyName={activePartyName}
-            views={views}
-            openMembers={openMembers}
-            width={sidebarWidth}
-            routes={routes}
-            codexModels={codexModels}
-            onRefreshCodexModels={onRefreshCodexModels}
-            defaultProfile={defaultProfile}
-            harnessDefaults={harnessDefaults}
-            groups={groups}
-            partySummaries={partySummaries}
-            cwdPrefs={cwdPrefs}
-            now={now}
-            onSelectParty={onSelectParty}
-            onCreateParty={onCreateParty}
-            onCreateGroup={onCreateGroup}
-            onMovePartyToGroup={onMovePartyToGroup}
-            onRenameGroup={onRenameGroup}
-            onRemoveGroup={onRemoveGroup}
-            onBrowseCwd={onBrowseCwd}
-            wsl={wsl}
-            onCreateMember={handleCreateMember}
-            onOpenMember={handleOpenMember}
-            onRestartMember={(member) => actions.restart(member)}
-            onRemoveMember={onRemoveMember}
-            onSetMemberKeepAwake={onSetMemberKeepAwake}
-            onSleepMember={onSleepMember}
-            onWakeMember={onWakeMember}
-            onRemoveParty={onRemoveParty}
-            onOpenPartyGate={setPartyGateTarget}
-            onOpenPartyInNewWindow={onOpenPartyInNewWindow}
-            onCollapse={() => onToggleSidebar(false)}
-          />
-          <div className="wb-sidebar-resize" title={localized("STR-2289")} onPointerDown={onSidebarResizeDown} />
-        </>
-      ) : (
-        <button type="button" className="wb-sidebar-reopen" title={localized("STR-2290")} onClick={() => onToggleSidebar(true)}>
-          <PanelLeftOpen size={16} />
-        </button>
-      )}
+      <PartySidebar
+        activePartyId={activePartyId}
+        activePartyName={activePartyName}
+        views={views}
+        openMembers={openMembers}
+        drawers={drawers}
+        onToggleDrawer={onToggleDrawer}
+        routes={routes}
+        codexModels={codexModels}
+        onRefreshCodexModels={onRefreshCodexModels}
+        defaultProfile={defaultProfile}
+        harnessDefaults={harnessDefaults}
+        groups={groups}
+        partySummaries={partySummaries}
+        cwdPrefs={cwdPrefs}
+        now={now}
+        onSelectParty={onSelectParty}
+        onCreateParty={onCreateParty}
+        onCreateGroup={onCreateGroup}
+        onMovePartyToGroup={onMovePartyToGroup}
+        onRenameGroup={onRenameGroup}
+        onRemoveGroup={onRemoveGroup}
+        onBrowseCwd={onBrowseCwd}
+        wsl={wsl}
+        onCreateMember={handleCreateMember}
+        onOpenMember={handleOpenMember}
+        onRestartMember={(member) => actions.restart(member)}
+        onRemoveMember={onRemoveMember}
+        onSetMemberKeepAwake={onSetMemberKeepAwake}
+        onSleepMember={onSleepMember}
+        onWakeMember={onWakeMember}
+        onRemoveParty={onRemoveParty}
+        onOpenPartyGate={setPartyGateTarget}
+        onOpenPartyInNewWindow={onOpenPartyInNewWindow}
+      />
 
       <div className={"wb-workarea" + (drag ? " is-dragging" : "")} ref={workAreaRef}>
         {layout.panels.length === 0 && (

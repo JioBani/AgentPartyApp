@@ -199,12 +199,13 @@ function SidebarStage() {
   const grouped = groupParties(GALLERY_GROUPS, GALLERY_PARTIES);
   const open = new Set(GALLERY_GROUPS.map((group) => group.id).filter((id) => !closed.has(id)));
   return (
-    <aside className="wb-sidebar" style={{ width: 236 }}>
+    <aside className="wb-drawer wb-party-drawer" style={{ width: 236, height: 520 }}>
+      <header className="wb-drawer-head">
+        <span className="wb-drawer-title">Parties</span>
+        <span className="wb-mono wb-drawer-count">{GALLERY_PARTIES.length}</span>
+      </header>
       <section className="wb-sidebar-section">
-        <div className="wb-section-label">
-          <span>Parties <span className="wb-mono">{GALLERY_PARTIES.length}</span></span>
-          <span className="wb-hint">앱 전역 · cwd와 무관</span>
-        </div>
+        <p className="wb-drawer-hint">앱 전역 · cwd와 무관</p>
         <form className="wb-new-party" onSubmit={(event) => event.preventDefault()}>
           <input placeholder="새 파티 이름…" readOnly />
           <button type="button" className="wb-icon-btn is-accent" title="새 파티 만들기">＋</button>

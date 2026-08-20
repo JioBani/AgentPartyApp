@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, ChevronsLeft, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -60,7 +60,6 @@ interface PartySidebarProps {
   activePartyName: string;
   views: MemberView[];
   openMembers: Set<string>;
-  width: number;
   routes: RouteLike[];
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
   codexModels?: CodexModelDiscoveryState;
@@ -92,7 +91,9 @@ interface PartySidebarProps {
   onOpenPartyGate: (partyId: string) => void;
   /** Opens the party in another window of this process (shared engine + sessions). */
   onOpenPartyInNewWindow: (partyId: string) => void;
-  onCollapse: () => void;
+  /** Which drawers are open, and how to change that. Owned by the app shell. */
+  drawers: { party: boolean; member: boolean };
+  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
 }
 
 /**
@@ -263,8 +264,60 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number }
   | { kind: "group"; groupId: string; name: string; isDefault: boolean; x: number; y: number };
 
+/**
+ * Each drawer remembers its own width.
+ *
+ * Per drawer, not one shared number: the party list wants room for a group name
+ * plus a count, the member list wants room for a name plus a status, and one
+ * width forces the wider need on both.
+ */
+const DRAWER_WIDTH_KEY = { party: "agentparty.partyDrawerWidth", member: "agentparty.memberDrawerWidth" } as const;
+const DRAWER_DEFAULT_WIDTH = { party: 236, member: 210 } as const;
+const DRAWER_MIN = 150;
+const DRAWER_MAX = 460;
+
+function loadDrawerWidth(which: "party" | "member"): number {
+  const stored = Number(window.localStorage.getItem(DRAWER_WIDTH_KEY[which]));
+  return Number.isFinite(stored) && stored >= DRAWER_MIN && stored <= DRAWER_MAX ? stored : DRAWER_DEFAULT_WIDTH[which];
+}
+
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, width, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow, onCollapse } = props;
+  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const [partyWidth, setPartyWidth] = useState(() => loadDrawerWidth("party"));
+  const [memberWidth, setMemberWidth] = useState(() => loadDrawerWidth("member"));
+  const resizing = useRef<{ which: "party" | "member"; startX: number; startWidth: number } | null>(null);
+
+  // Saved from the value itself rather than at pointer-up, so a width that
+  // changed any other way is stored too and the drag handler needs no refs.
+  useEffect(() => { window.localStorage.setItem(DRAWER_WIDTH_KEY.party, String(partyWidth)); }, [partyWidth]);
+  useEffect(() => { window.localStorage.setItem(DRAWER_WIDTH_KEY.member, String(memberWidth)); }, [memberWidth]);
+
+  /**
+   * Drag-to-resize for one drawer.
+   *
+   * Listeners go on the window, not the handle: the pointer leaves a 4px strip
+   * immediately, and a handle-scoped listener drops the drag the moment it does.
+   */
+  function startResize(which: "party" | "member", event: React.PointerEvent) {
+    resizing.current = { which, startX: event.clientX, startWidth: which === "party" ? partyWidth : memberWidth };
+    const move = (moveEvent: PointerEvent) => {
+      const ref = resizing.current;
+      if (!ref) {
+        return;
+      }
+      const next = Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, ref.startWidth + (moveEvent.clientX - ref.startX)));
+      (ref.which === "party" ? setPartyWidth : setMemberWidth)(next);
+    };
+    const up = () => {
+      resizing.current = null;
+      window.removeEventListener("pointermove", move);
+      document.body.classList.remove("wb-resizing");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    document.body.classList.add("wb-resizing");
+  }
+
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
@@ -352,21 +405,23 @@ export function PartySidebar(props: PartySidebarProps) {
   }
 
   return (
-    <aside className="wb-sidebar" style={{ width }}>
-      <header className="wb-sidebar-head">
-        <Users size={16} />
-        <span className="wb-sidebar-party" title={activePartyName}>{activePartyName}</span>
-        <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={onCollapse}><ChevronsLeft size={16} /></button>
-      </header>
+    <>
+      {drawers.party ? (
+        <aside className="wb-drawer wb-party-drawer" style={{ width: partyWidth }}>
+          <header className="wb-drawer-head">
+            <Users size={14} />
+            <span className="wb-drawer-title"><LocalizedText id="STR-3386" /></span>
+            <span className="wb-mono wb-drawer-count">{partySummaries.length}</span>
+            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("party", false)}><ChevronsLeft size={15} /></button>
+          </header>
 
-      <section className="wb-sidebar-section">
-        {/* The hint is the whole point of the change: the list no longer depends
-            on which directory the app was launched from. */}
-        <div className="wb-section-label">
-          <span>Parties <span className="wb-mono">{partySummaries.length}</span></span>
-          <span className="wb-hint"><LocalizedText id="STR-3292" /></span>
-        </div>
-        <form className="wb-new-party" onSubmit={submit}>
+          <section className="wb-sidebar-section">
+            {/* The count and the name live in the drawer header now; what stays
+                is the hint, because it is the whole point of the change: the
+                list no longer depends on which directory the app was launched
+                from. */}
+            <p className="wb-drawer-hint"><LocalizedText id="STR-3292" /></p>
+            <form className="wb-new-party" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={localized("STR-2059")} />
           <button type="button" className="wb-icon-btn is-accent" title={localized("STR-2060")} onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
         </form>
@@ -390,11 +445,30 @@ export function PartySidebar(props: PartySidebarProps) {
             setMenu({ kind: "group", groupId: group.id, name: group.name, isDefault: group.kind === "default", x: event.clientX, y: event.clientY });
           }}
         />
-      </section>
+          </section>
+          <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("party", event)} />
+        </aside>
+      ) : (
+        <button type="button" className="wb-drawer-rail" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", true)}>
+          <ChevronsRight size={13} />
+          <span><LocalizedText id="STR-3387" /></span>
+          <span className="wb-mono wb-drawer-rail-count">{partySummaries.length}</span>
+        </button>
+      )}
 
-      <section className="wb-sidebar-section wb-members-section">
-        <div className="wb-section-label">
-          <span><LocalizedText id="STR-2061" /></span>
+      {drawers.member ? (
+        <aside className="wb-drawer wb-member-drawer" style={{ width: memberWidth }}>
+          {/* The party name lives HERE, not only in the party drawer: with the
+              party drawer collapsed this is the only thing that says which
+              party's members these are. */}
+          <header className="wb-drawer-head">
+            <span className="wb-drawer-party" title={activePartyName}>{activePartyName}</span>
+            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("member", false)}><ChevronsLeft size={15} /></button>
+          </header>
+
+          <section className="wb-sidebar-section wb-members-section">
+            <div className="wb-section-label">
+              <span><LocalizedText id="STR-2061" /></span>
           {!creating && <span className="wb-hint"><LocalizedText id="STR-2062" /></span>}
           <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? localized("STR-2064") : localized("STR-2063")} onClick={() => setCreating((value) => !value)}>
             {creating ? <X size={14} /> : <Plus size={15} />}
@@ -457,8 +531,17 @@ export function PartySidebar(props: PartySidebarProps) {
               </div>
             );
           })}
-        </div>
-      </section>
+            </div>
+          </section>
+          <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("member", event)} />
+        </aside>
+      ) : (
+        <button type="button" className="wb-drawer-rail" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", true)}>
+          <ChevronsRight size={13} />
+          <span>{activePartyName}</span>
+          <span className="wb-mono wb-drawer-rail-count">{views.length}</span>
+        </button>
+      )}
 
       {menu && (
         // Fixed to the viewport at the cursor; click handlers above close it.
@@ -584,7 +667,7 @@ export function PartySidebar(props: PartySidebarProps) {
           onMove={(groupId) => { onMovePartyToGroup(movingParty.id, groupId); setMovingParty(null); }}
         />
       )}
-    </aside>
+    </>
   );
 }
 
