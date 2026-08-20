@@ -157,8 +157,8 @@ const frontendHistory = [
 window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
-  getAppearance: async () => ({ preference: "github-light", applied: "github-light", options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: false, background: "#f6f8fa" }),
-  setTheme: async (theme) => ({ preference: theme, applied: theme, options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: true, background: "#f6f8fa" }),
+  getAppearance: async () => ({ preference: "agentparty-light", applied: "agentparty-light", options: ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: false, background: "#e7e8eb" }),
+  setTheme: async (theme) => ({ preference: theme, applied: theme, options: ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: true, background: "#e7e8eb" }),
   onAppearanceUpdate: () => () => {},
   appearanceReady: () => {},
   listMemberLocations: async () => ({
@@ -346,7 +346,7 @@ assert(Boolean(donut) && donut.querySelector(".wb-donut-ring") !== null, "donut 
 // still resolves the donut (stale) — the value a reopened app shows before turn 1.
 const staleDonut = document.querySelector('[data-panel-id="pb"] .wb-ctx-donut');
 assert(Boolean(staleDonut) && staleDonut.textContent.includes("150K") && staleDonut.textContent.includes("200K"), "stale donut shows used/total (150K / 200K)");
-assert(document.documentElement.getAttribute("data-theme") === "github-light", "default theme is GitHub Light");
+assert(document.documentElement.getAttribute("data-theme") === "agentparty-light", "default theme is AgentParty Light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
 
 // Session restart moved OFF the toolbar into the header ⋯ menu (Stop now lives in

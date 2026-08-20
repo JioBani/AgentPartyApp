@@ -95,19 +95,19 @@ console.log("\nfailures surface (never a silent allow):");
 
 console.log("\nappearance GET/SET forward to the desktop (never a distro settings write):");
 {
-  const desktop = { preference: "github-light", applied: "github-light", stored: false, writes: 0 };
+  const desktop = { preference: "agentparty-light", applied: "agentparty-light", stored: false, writes: 0 };
   const { channel, stop } = connect({
-    appearanceGet: async () => ({ preference: desktop.preference, applied: desktop.applied, options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: desktop.stored }),
+    appearanceGet: async () => ({ preference: desktop.preference, applied: desktop.applied, options: ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: desktop.stored }),
     appearanceSet: async (theme) => {
       desktop.writes += 1;
       desktop.preference = theme;
       desktop.applied = theme;
       desktop.stored = true;
-      return { preference: desktop.preference, applied: desktop.applied, options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: true };
+      return { preference: desktop.preference, applied: desktop.applied, options: ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: true };
     },
   }, {});
   const got = await channel.call("appearanceGet");
-  assert(got.preference === "github-light" && got.stored === false, "GET appearance returns the desktop's state");
+  assert(got.preference === "agentparty-light" && got.stored === false, "GET appearance returns the desktop's state");
   const set = await channel.call("appearanceSet", "nord");
   assert(set.preference === "nord" && set.applied === "nord" && set.stored === true, "SET appearance writes on the desktop");
   assert(desktop.writes === 1 && desktop.preference === "nord", "the host handler ran once on the desktop side");

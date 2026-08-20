@@ -1,4 +1,6 @@
 export const THEME_PREFERENCES = [
+  "agentparty-light",
+  "agentparty-dark",
   "github-light",
   "github-dark",
   "dracula",
@@ -9,7 +11,7 @@ export const THEME_PREFERENCES = [
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
 export type AppliedTheme = ThemePreference;
 
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = "github-light";
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = "agentparty-light";
 export const THEME_STORAGE_KEY = "agentparty.theme";
 export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
 export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
@@ -24,6 +26,8 @@ export interface ThemeMetadata {
 
 /** Shared preset metadata used by BrowserWindow chrome and renderer themes. */
 export const THEME_METADATA: readonly ThemeMetadata[] = [
+  { id: "agentparty-light", label: "AgentParty Light", scheme: "light", background: "#e7e8eb" },
+  { id: "agentparty-dark", label: "AgentParty Dark", scheme: "dark", background: "#0a0b0e" },
   { id: "github-light", label: "GitHub Light", scheme: "light", background: "#f6f8fa" },
   { id: "github-dark", label: "GitHub Dark", scheme: "dark", background: "#0d1117" },
   { id: "dracula", label: "Dracula", scheme: "dark", background: "#282a36" },
@@ -128,11 +132,11 @@ export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === "string" && (THEME_PREFERENCES as readonly string[]).includes(value);
 }
 
-/** Converts persisted values from the previous System/Light/Dark branch safely. */
+/** Converts persisted values from the original System/Light/Dark themes safely. */
 export function migrateLegacyThemeId(value: unknown): ThemePreference | null {
   if (isThemePreference(value)) return value;
-  if (value === "dark") return "github-dark";
-  if (value === "light" || value === "system") return "github-light";
+  if (value === "dark") return "agentparty-dark";
+  if (value === "light" || value === "system") return "agentparty-light";
   return null;
 }
 

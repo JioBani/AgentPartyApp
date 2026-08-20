@@ -501,11 +501,11 @@ Appearance and the titlebar theme menu.
 
 ```json
 {
-  "preference": "dracula",
-  "applied": "dracula",
-  "options": ["github-light", "github-dark", "dracula", "nord", "solarized-dark"],
+  "preference": "agentparty-light",
+  "applied": "agentparty-light",
+  "options": ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"],
   "stored": true,
-  "background": "#282a36"
+  "background": "#e7e8eb"
 }
 ```
 
@@ -514,15 +514,15 @@ Appearance and the titlebar theme menu.
 `background` is the native window chrome colour (the `bg-0` token) so the
 window does not flash a hard-coded dark frame. `stored` is `true` only when
 `settings.json` itself contains `theme`. Legacy settings/localStorage `light`
-and `dark` migrate to `github-light` and `github-dark`; legacy `system` migrates
-to the safe default `github-light`.
+and `dark` migrate to `agentparty-light` and `agentparty-dark`; legacy `system`
+uses its cached applied `light`/`dark` value, or defaults to AgentParty Light.
 
 First paint is owned by main: `createWindow` resolves the preset from
 `settings.json`, colours the BrowserWindow, and passes that
 boot payload into the preload (`window.agentPartyAppearanceBoot`) before the
 page loads. `index.html` and `ThemeProvider` prefer that value.
 `localStorage` is used only when settings.json has **no** `theme`. Both cache
-keys use one shared pre-React/persistence rule: a current five-preset preference
+keys use one shared pre-React/persistence rule: a current seven-preset preference
 wins over the applied cache; a removed `system` preference instead preserves
 its last `light`/`dark` applied value. A stale cache cannot override an explicit
 setting.
@@ -537,8 +537,8 @@ Settings appearance selector and titlebar menu.
 { "theme": "nord" }
 ```
 
-Accepted values are `github-light`, `github-dark`, `dracula`, `nord`, and
-`solarized-dark`. Any other value (including a
+Accepted values are `agentparty-light`, `agentparty-dark`, `github-light`,
+`github-dark`, `dracula`, `nord`, and `solarized-dark`. Any other value (including a
 missing `theme`) returns **HTTP 400** `{ "ok": false, "error": "지원하지 않는 테마입니다: …", "code": "invalid_theme" }`
 instead of a 500 or a silent default. The change is persisted in `settings.json`
 and pushed to every open window immediately.
@@ -556,7 +556,7 @@ instead of writing the distro's own settings file. `POST /api/settings` with
 
 Updates app settings.
 
-`theme` is one of the five preset ids documented above. The same
+`theme` is one of the seven preset ids documented above. The same
 validation and broadcast as `POST /api/appearance/theme` above, and only on
 the desktop process — a headless engine rejects a `theme` patch instead of
 writing its own settings.json.

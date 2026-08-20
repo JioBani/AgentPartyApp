@@ -1,4 +1,4 @@
-/* Real Electron E2E for the five Settings color-theme presets. */
+/* Real Electron E2E for the seven Settings color-theme presets. */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,6 +12,8 @@ const settingsPath = path.join(userData, "settings.json");
 const port = Number(process.env.AGENTPARTY_THEME_PORT || "") || 48971;
 const base = `http://127.0.0.1:${port}`;
 const presets = [
+  { id: "agentparty-light", label: "AgentParty Light", bg0: "#e7e8eb", panel: "#ffffff", text: "#171a1f", accent: "#3f6fe6", selection: "#cbd8f8", status: "#3f6fe6", original: { "--bg-1": "#f3f4f6", "--bg-3": "#eef0f3", "--bg-4": "#e6e9ed", "--bg-input": "#ffffff", "--border-subtle": "#e2e5ea", "--border": "#d3d7df", "--border-strong": "#c0c5ce", "--text-1": "#454b56", "--text-2": "#6c7480", "--text-3": "#9aa1ac", "--live": "#b9791d", "--success": "#2f8f5e", "--danger": "#cf4b45", "--warning": "#b07816" } },
+  { id: "agentparty-dark", label: "AgentParty Dark", bg0: "#0a0b0e", panel: "#14171d", text: "#e7e9ee", accent: "#5b8cff", selection: "#263b70", status: "#5b8cff", original: { "--bg-1": "#0e1014", "--bg-3": "#1b1f27", "--bg-4": "#222731", "--bg-input": "#0c0e12", "--border-subtle": "#1c2028", "--border": "#262b35", "--border-strong": "#333a46", "--text-1": "#aeb4c0", "--text-2": "#79808d", "--text-3": "#535965", "--live": "#e0a14e", "--success": "#54b585", "--danger": "#e0635d", "--warning": "#d9a441" } },
   { id: "github-light", label: "GitHub Light", bg0: "#f6f8fa", panel: "#ffffff", text: "#1f2328", accent: "#0969da", selection: "#b6d7ff", status: "#0969da" },
   { id: "github-dark", label: "GitHub Dark", bg0: "#0d1117", panel: "#161b22", text: "#f0f6fc", accent: "#58a6ff", selection: "#264f78", status: "#1f6feb" },
   { id: "dracula", label: "Dracula", bg0: "#282a36", panel: "#30323f", text: "#f8f8f2", accent: "#bd93f9", selection: "#44475a", status: "#6272a4" },
@@ -54,7 +56,7 @@ async function run(label, fn) {
 
 async function htmlTheme(windowId) {
   const query = windowId ? `?window=${encodeURIComponent(windowId)}` : "";
-  const { payload } = await request("POST", `/api/measure${query}`, { selector: "html", attributes: ["data-theme", "data-theme-preference", "data-theme-paint"], styles: ["--bg-0", "--bg-2", "--text-0", "--accent", "--selection", "--status"], limit: 1 });
+  const { payload } = await request("POST", `/api/measure${query}`, { selector: "html", attributes: ["data-theme", "data-theme-preference", "data-theme-paint"], styles: ["--bg-0", "--bg-1", "--bg-2", "--bg-3", "--bg-4", "--bg-input", "--border-subtle", "--border", "--border-strong", "--text-0", "--text-1", "--text-2", "--text-3", "--accent", "--selection", "--status", "--live", "--success", "--danger", "--warning"], limit: 1 });
   const element = payload?.elements?.[0];
   if (!element) throw new Error(payload?.error || "html was not measurable");
   return { theme: element.attributes["data-theme"], preference: element.attributes["data-theme-preference"], paint: element.attributes["data-theme-paint"], styles: element.styles };
@@ -89,10 +91,10 @@ async function main() {
   for (const target of [workspace, userData]) try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
   fs.mkdirSync(workspace, { recursive: true });
 
-  await run("five-presets", async () => {
+  await run("seven-presets", async () => {
     const initial = await request("GET", "/api/appearance/theme");
-    assert(initial.payload?.preference === "github-light", "fresh install defaults to GitHub Light");
-    assert(JSON.stringify(initial.payload?.options) === JSON.stringify(presets.map(({ id }) => id)), "API exposes exactly five presets");
+    assert(initial.payload?.preference === "agentparty-light", "fresh install defaults to AgentParty Light");
+    assert(JSON.stringify(initial.payload?.options) === JSON.stringify(presets.map(({ id }) => id)), "API exposes exactly seven presets");
     const spec = (await request("GET", "/api/spec")).payload?.endpoints || [];
     assert(spec.includes("GET /api/appearance/theme") && spec.includes("POST /api/appearance/theme"), "appearance routes are published in /api/spec");
     assert(!spec.includes("POST /api/qa/appearance/os"), "removed nativeTheme QA route is absent");
@@ -106,7 +108,7 @@ async function main() {
     assert(navigation.status === 200, "navigation opens Settings > General");
     await delay(500);
     const options = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select] option", attributes: ["value"], styles: [], limit: 10 })).payload?.elements || [];
-    assert(options.length === 5, "Settings has one dropdown with exactly five options");
+    assert(options.length === 7, "Settings has one dropdown with exactly seven options");
     assert(options.map((entry) => entry.attributes.value).join(",") === presets.map(({ id }) => id).join(","), "dropdown option ids are exact");
     assert(options.map((entry) => entry.text).join(",") === presets.map(({ label }) => label).join(","), "dropdown labels are exact");
     const trigger = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-trigger]", attributes: ["aria-haspopup", "aria-expanded"], styles: [], limit: 1 })).payload?.elements?.[0];
@@ -114,16 +116,16 @@ async function main() {
     await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu.png"), click: "[data-theme-menu-trigger]" });
     await delay(150);
     const menuOptions = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option]", attributes: ["data-theme-menu-option", "aria-checked"], styles: [], limit: 10 })).payload?.elements || [];
-    assert(menuOptions.length === 5, "titlebar menu contains the same five presets");
-    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-dracula.png"), click: "[data-theme-menu-option=dracula]" });
+    assert(menuOptions.length === 7, "titlebar menu contains the same seven presets");
+    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-agentparty-dark.png"), click: "[data-theme-menu-option=agentparty-dark]" });
     await delay(350);
-    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "dracula", "titlebar menu selects through AppController");
+    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "agentparty-dark", "titlebar menu selects AgentParty Dark through AppController");
     await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
     await delay(150);
     const syncedSelect = await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select]" });
-    assert(syncedSelect.payload?.value === "dracula", "Settings dropdown reflects the titlebar selection");
+    assert(syncedSelect.payload?.value === "agentparty-dark", "Settings dropdown reflects the titlebar AgentParty Dark selection");
     await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-escape.png"), click: "[data-theme-menu-trigger]" });
-    await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option=dracula]", key: "Escape" });
+    await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option=agentparty-dark]", key: "Escape" });
     await delay(100);
     const closedMenu = await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu]", styles: [], limit: 1 });
     assert(Boolean(closedMenu.payload?.error), "Escape closes the titlebar theme menu");
@@ -142,6 +144,9 @@ async function main() {
         assert(cssHex(painted.styles["--bg-0"]) === preset.bg0 && cssHex(painted.styles["--bg-2"]) === preset.panel, `${preset.label} ${name} background/panel tokens compute correctly`);
         assert(cssHex(painted.styles["--text-0"]) === preset.text && cssHex(painted.styles["--accent"]) === preset.accent, `${preset.label} ${name} text/accent tokens compute correctly`);
         assert(cssHex(painted.styles["--selection"]) === preset.selection && cssHex(painted.styles["--status"]) === preset.status, `${preset.label} ${name} selection/status tokens compute correctly`);
+        if (preset.original) {
+          assert(Object.entries(preset.original).every(([token, value]) => cssHex(painted.styles[token]) === value), `${preset.label} ${name} preserves original 23dc88b computed tokens`);
+        }
       }
     }
 
@@ -171,7 +176,8 @@ async function main() {
   });
 
   for (const scenario of [
-    { id: "github-dark", label: "legacy system + dark cache", nextPreference: "nord", nextTheme: "dark" },
+    { id: "agentparty-dark", label: "legacy system + dark cache", nextPreference: "light", nextTheme: "light" },
+    { id: "agentparty-light", label: "legacy light cache", nextPreference: "nord", nextTheme: "dark" },
     { id: "nord", label: "valid Nord preference + stale dark cache", nextPreference: "dracula", nextTheme: "light" },
     { id: "dracula", label: "valid Dracula preference + stale light cache", nextPreference: "solarized-dark", nextTheme: "dark" },
     { id: "solarized-dark", label: "valid Solarized Dark preference + stale dark cache" },

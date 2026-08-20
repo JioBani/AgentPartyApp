@@ -1,4 +1,4 @@
-/* Five-preset theme model, migration, first paint, ownership, and token checks. */
+/* Seven-preset theme model, migration, first paint, ownership, and token checks. */
 import { build } from "esbuild";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
@@ -18,11 +18,11 @@ async function bundle(entry, name) {
 
 const theme = await bundle("src/shared/appTheme.ts", "app-theme.mjs");
 const registry = await bundle("src/renderer/theme/themes.ts", "theme-registry.mjs");
-const expected = ["github-light", "github-dark", "dracula", "nord", "solarized-dark"];
+const expected = ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"];
 
-console.log("\nfive preset ids + strict API validation:");
-assert(theme.DEFAULT_THEME_PREFERENCE === "github-light", "GitHub Light is the safe default");
-assert(JSON.stringify(theme.THEME_PREFERENCES) === JSON.stringify(expected), "exactly five preset ids are exposed in order");
+console.log("\nseven preset ids + strict API validation:");
+assert(theme.DEFAULT_THEME_PREFERENCE === "agentparty-light", "AgentParty Light is the safe default");
+assert(JSON.stringify(theme.THEME_PREFERENCES) === JSON.stringify(expected), "exactly seven preset ids are exposed in order");
 for (const id of expected) {
   assert(theme.isThemePreference(id), `${id} is accepted`);
   assert(theme.requireThemePreference(id) === id, `${id} passes strict API validation`);
@@ -34,18 +34,18 @@ for (const invalid of ["system", "light", "dark", "auto", "", null, undefined]) 
 }
 
 console.log("\nlegacy migration + synchronous first paint:");
-assert(theme.normalizeThemePreference("light") === "github-light", "branch settings light migrates to GitHub Light");
-assert(theme.normalizeThemePreference("dark") === "github-dark", "branch settings dark migrates to GitHub Dark");
-assert(theme.normalizeThemePreference("system") === "github-light", "removed System setting migrates safely to GitHub Light");
-assert(theme.migrateLegacyThemeValue(undefined, "light") === "github-light", "legacy localStorage light migrates");
-assert(theme.migrateLegacyThemeValue(undefined, "dark") === "github-dark", "legacy localStorage dark migrates");
-assert(theme.themeFromRendererStorage("system", "dark") === "github-dark", "removed system preference preserves its last dark paint");
+assert(theme.normalizeThemePreference("light") === "agentparty-light", "branch settings light migrates to AgentParty Light");
+assert(theme.normalizeThemePreference("dark") === "agentparty-dark", "branch settings dark migrates to AgentParty Dark");
+assert(theme.normalizeThemePreference("system") === "agentparty-light", "removed System setting migrates safely to AgentParty Light");
+assert(theme.migrateLegacyThemeValue(undefined, "light") === "agentparty-light", "legacy localStorage light migrates");
+assert(theme.migrateLegacyThemeValue(undefined, "dark") === "agentparty-dark", "legacy localStorage dark migrates");
+assert(theme.themeFromRendererStorage("system", "dark") === "agentparty-dark", "removed system preference preserves its last dark paint");
 assert(theme.themeFromRendererStorage("nord", "dark") === "nord", "current preference key wins over stale applied cache");
 assert(theme.themeFromRendererStorage(undefined, "dracula") === "dracula", "current preset in applied cache is preserved");
 assert(theme.themeFromRendererStorage("solarized-dark", "light") === "solarized-dark", "Solarized preference wins over stale light cache");
 assert(theme.migrateLegacyThemeValue("nord", "dark") === null, "stored preset wins over stale cache");
 assert(theme.firstPaintFrom({ preference: "dracula", applied: "dracula", stored: true }, "light").applied === "dracula", "stored settings win before React");
-assert(theme.firstPaintFrom({ preference: "github-light", applied: "github-light", stored: false }, "dark").applied === "github-dark", "legacy cache is used only without stored settings");
+assert(theme.firstPaintFrom({ preference: "agentparty-light", applied: "agentparty-light", stored: false }, "dark").applied === "agentparty-dark", "legacy cache is used only without stored settings");
 const boot = { preference: "solarized-dark", applied: "solarized-dark", stored: true };
 assert(JSON.stringify(theme.parseAppearanceBootArgs(theme.appearanceBootArgs(boot))) === JSON.stringify(boot), "boot argv round-trips a preset");
 assert(theme.parseAppearanceBootArgs(theme.appearanceBootArgs({ ...boot, applied: "nord" })) === null, "mismatched preference/applied boot is rejected");
@@ -70,7 +70,15 @@ function contrast(a, b) {
 }
 
 console.log("\ncomplete preset tokens + contrast:");
-assert(registry.THEMES.length === 5 && registry.THEMES.map(({ id }) => id).join(",") === expected.join(","), "registry has exactly the five public presets");
+assert(registry.THEMES.length === 7 && registry.THEMES.map(({ id }) => id).join(",") === expected.join(","), "registry has exactly the seven public presets");
+const original = {
+  "agentparty-light": { "bg-0": "#e7e8eb", "bg-1": "#f3f4f6", "bg-2": "#ffffff", "bg-3": "#eef0f3", "bg-4": "#e6e9ed", "bg-input": "#ffffff", "border-subtle": "#e2e5ea", border: "#d3d7df", "border-strong": "#c0c5ce", "text-0": "#171a1f", "text-1": "#454b56", "text-2": "#6c7480", "text-3": "#9aa1ac", accent: "#3f6fe6", live: "#b9791d", success: "#2f8f5e", danger: "#cf4b45", warning: "#b07816", grid: "rgba(20,25,35,.07)", scrim: "rgba(20,23,29,.42)", shadow: "rgba(20,23,29,.13)", "shadow-strong": "rgba(20,23,29,.2)" },
+  "agentparty-dark": { "bg-0": "#0a0b0e", "bg-1": "#0e1014", "bg-2": "#14171d", "bg-3": "#1b1f27", "bg-4": "#222731", "bg-input": "#0c0e12", "border-subtle": "#1c2028", border: "#262b35", "border-strong": "#333a46", "text-0": "#e7e9ee", "text-1": "#aeb4c0", "text-2": "#79808d", "text-3": "#535965", accent: "#5b8cff", live: "#e0a14e", success: "#54b585", danger: "#e0635d", warning: "#d9a441", grid: "rgba(255,255,255,.06)", scrim: "rgba(0,0,0,.5)", shadow: "rgba(0,0,0,.4)", "shadow-strong": "rgba(0,0,0,.6)" },
+};
+for (const [id, tokens] of Object.entries(original)) {
+  const preset = registry.THEMES.find((entry) => entry.id === id);
+  assert(Object.entries(tokens).every(([key, value]) => preset?.color[key] === value), `${id} preserves every original 23dc88b color token`);
+}
 const tokenKeys = Object.keys(registry.THEMES[0].color).sort().join(",");
 for (const preset of registry.THEMES) {
   assert(Object.keys(preset.color).sort().join(",") === tokenKeys, `${preset.label} defines every color token`);

@@ -29,13 +29,16 @@ custom property that a theme supplies.
   `theme/firstPaint.ts` module runs before React and is also used by
   `ThemeProvider`. `localStorage` is only an upgrade source when
   settings.json has no `theme`. `html[data-theme-paint=sync]` marks that path.
-  Bare `:root` GitHub Light tokens are a last-resort fallback, not the
+  Bare `:root` AgentParty Light tokens are a last-resort fallback, not the
   first-paint path.
-- The user's preference is one of `github-light`, `github-dark`, `dracula`,
-  `nord`, or `solarized-dark` (`AppSettings.theme`, `src/shared/appTheme.ts`).
+- The user's preference is one of `agentparty-light`, `agentparty-dark`,
+  `github-light`, `github-dark`, `dracula`, `nord`, or `solarized-dark`
+  (`AppSettings.theme`, `src/shared/appTheme.ts`). AgentParty Light/Dark retain
+  the exact original colour tokens from master `23dc88b`.
   The same id is painted on `<html data-theme>`. Settings → General → Appearance
-  and the accessible titlebar menu share one AppController path. Legacy `light`/`dark` values migrate to
-  the corresponding GitHub preset, and settings always beat stale cache data.
+  and the accessible titlebar menu share one AppController path. Legacy
+  `light`/`dark` values migrate to the corresponding AgentParty preset, and
+  settings always beat stale cache data.
 
 ### Add a new theme
 

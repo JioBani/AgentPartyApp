@@ -33,6 +33,40 @@ const shape: Record<ThemeShapeToken, string> = {
 
 const metadata = Object.fromEntries(THEME_METADATA.map((entry) => [entry.id, entry])) as Record<ThemePreference, (typeof THEME_METADATA)[number]>;
 
+/** Exact colour values from the pre-feature registry at master 23dc88b. */
+const agentPartyLight: Theme = {
+  ...metadata["agentparty-light"], shape,
+  color: {
+    "bg-0": metadata["agentparty-light"].background, "bg-1": "#f3f4f6", "bg-2": "#ffffff", "bg-3": "#eef0f3", "bg-4": "#e6e9ed", "bg-input": "#ffffff",
+    "border-subtle": "#e2e5ea", "border": "#d3d7df", "border-strong": "#c0c5ce",
+    "text-0": "#171a1f", "text-1": "#454b56", "text-2": "#6c7480", "text-3": "#9aa1ac",
+    "accent": "#3f6fe6", "accent-dim": "rgba(63,111,230,.1)", "accent-bd": "rgba(63,111,230,.28)", "accent-fg": "#ffffff",
+    "selection": "#cbd8f8", "selection-fg": "#171a1f", "status": "#3f6fe6", "status-fg": "#ffffff",
+    "live": "#b9791d", "live-dim": "rgba(185,121,29,.13)", "live-bd": "rgba(185,121,29,.3)", "compact-zone": "rgba(185,121,29,.26)",
+    "success": "#2f8f5e", "success-dim": "rgba(47,143,94,.13)", "success-bd": "rgba(47,143,94,.28)",
+    "danger": "#cf4b45", "danger-dim": "rgba(207,75,69,.13)", "danger-bd": "rgba(207,75,69,.3)", "danger-fg": "#000000",
+    "warning": "#b07816", "warning-dim": "rgba(176,120,22,.13)", "warning-bd": "rgba(176,120,22,.3)", "warning-fg": "#000000",
+    "grid": "rgba(20,25,35,.07)", "scrim": "rgba(20,23,29,.42)", "shadow": "rgba(20,23,29,.13)", "shadow-strong": "rgba(20,23,29,.2)",
+  },
+};
+
+/** Exact colour values from the pre-feature registry at master 23dc88b. */
+const agentPartyDark: Theme = {
+  ...metadata["agentparty-dark"], shape,
+  color: {
+    "bg-0": metadata["agentparty-dark"].background, "bg-1": "#0e1014", "bg-2": "#14171d", "bg-3": "#1b1f27", "bg-4": "#222731", "bg-input": "#0c0e12",
+    "border-subtle": "#1c2028", "border": "#262b35", "border-strong": "#333a46",
+    "text-0": "#e7e9ee", "text-1": "#aeb4c0", "text-2": "#79808d", "text-3": "#535965",
+    "accent": "#5b8cff", "accent-dim": "rgba(91,140,255,.13)", "accent-bd": "rgba(91,140,255,.32)", "accent-fg": "#ffffff",
+    "selection": "#263b70", "selection-fg": "#e7e9ee", "status": "#5b8cff", "status-fg": "#0a0b0e",
+    "live": "#e0a14e", "live-dim": "rgba(224,161,78,.13)", "live-bd": "rgba(224,161,78,.34)", "compact-zone": "rgba(224,161,78,.32)",
+    "success": "#54b585", "success-dim": "rgba(84,181,133,.13)", "success-bd": "rgba(84,181,133,.32)",
+    "danger": "#e0635d", "danger-dim": "rgba(224,99,93,.13)", "danger-bd": "rgba(224,99,93,.34)", "danger-fg": "#000000",
+    "warning": "#d9a441", "warning-dim": "rgba(217,164,65,.16)", "warning-bd": "rgba(217,164,65,.34)", "warning-fg": "#000000",
+    "grid": "rgba(255,255,255,.06)", "scrim": "rgba(0,0,0,.5)", "shadow": "rgba(0,0,0,.4)", "shadow-strong": "rgba(0,0,0,.6)",
+  },
+};
+
 const githubLight: Theme = {
   ...metadata["github-light"], shape,
   color: {
@@ -113,9 +147,9 @@ const solarizedDark: Theme = {
   },
 };
 
-export const THEMES: Theme[] = [githubLight, githubDark, dracula, nord, solarizedDark];
-export const DEFAULT_THEME_ID: ThemePreference = "github-light";
-export function getTheme(id: string): Theme { return THEMES.find((theme) => theme.id === id) || githubLight; }
+export const THEMES: Theme[] = [agentPartyLight, agentPartyDark, githubLight, githubDark, dracula, nord, solarizedDark];
+export const DEFAULT_THEME_ID: ThemePreference = "agentparty-light";
+export function getTheme(id: string): Theme { return THEMES.find((theme) => theme.id === id) || agentPartyLight; }
 
 const SCALE: Record<string, string> = {
   "font-micro": "9.5px", "font-meta": "10px", "font-caption": "10.5px", "font-body-sm": "11px",
@@ -133,7 +167,7 @@ function declarations(theme: Theme): string {
 
 export function buildThemeStylesheet(): string {
   const blocks = THEMES.map((theme) => `:root[data-theme="${theme.id}"] {\n  ${declarations(theme)}\n}`);
-  blocks.unshift(`:root {\n  ${declarations(githubLight)}\n}`);
+  blocks.unshift(`:root {\n  ${declarations(agentPartyLight)}\n}`);
   blocks.unshift(`:root {\n  ${Object.entries(SCALE).map(([key, value]) => `--${key}: ${value};`).join("\n  ")}\n}`);
   return blocks.join("\n\n");
 }
