@@ -1862,7 +1862,12 @@ export function App() {
 
   return (
     <I18nProvider locale={state.settings.locale}>
-    <div className="app-shell">
+    {/* `data-workspace` is the workspace the RENDERER has applied, which is
+        not the same question as "which workspace does the window registry
+        say". A cross-workspace party switch has to replace this side's state
+        too, and the header stopped showing a path when the party name took
+        its place — so this attribute is what a QA run asserts on. */}
+    <div className="app-shell" data-workspace={state.settings.workspacePath}>
       <div className="app-titlebar">
         <div className="titlebar-drag">
           <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>

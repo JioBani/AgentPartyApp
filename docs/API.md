@@ -450,6 +450,16 @@ scrolls" question), `text`, and whatever `styles`/`attributes` were asked for.
 The response also has `count`, `texts` in document order (list ordering), `gaps`
 between consecutive matches, the active `theme`, and the `viewport`.
 
+**Stable hooks worth knowing.** Some renderer state has no text on screen to
+read, so it is published as an attribute for exactly this endpoint:
+
+| Selector | Attribute | Answers |
+|---|---|---|
+| `.app-shell` | `data-workspace` | the workspace the **renderer** has applied (the window registry's answer is `GET /api/windows`) |
+| `.wb-root` | `data-party-id` | the party the workbench is rendering |
+| `.wb-root` | `data-layout-party` | the party whose saved panel layout has been seeded |
+| `.wb-party-row` | `data-party-id` | which party a sidebar row selects, for pointer-driven runs |
+
 **Not measuring and measuring zero are different facts.** A selector that matches
 nothing is a **500 naming the selector** — never an empty list, never a zero.
 The same for a `within`/`containedBy`/`scroll` target that does not exist, an
