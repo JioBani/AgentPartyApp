@@ -489,17 +489,21 @@
    두 드로우어가 같은 배경이라 어디까지가 파티고 어디부터 멤버인지 경계가
    없었다. 멤버 쪽을 한 단계 밝게(=내용에 가깝게) 깔고 왼쪽 모서리에 안쪽
    그림자를 넣어, 파티 안으로 한 겹 들어간 메뉴로 보이게 한다. */
-.wb-party-drawer { background: var(--bg-0); }
-/* 한 토큰 통째(--bg-0 → --bg-1)는 층이 아니라 다른 화면처럼 보였다. 절반만
-   섞어서 "한 겹 안"으로만 읽히게 하고, 경계는 그림자보다 선이 맡는다. */
+/* 왼쪽부터 오른쪽으로 한 칸씩 밝아지는 사다리:
+     아이콘 레일(--bg-0) → 파티 → 멤버 → 내용(--bg-1).
+   레일과 파티가 똑같이 --bg-0 이라 한 덩어리로 보였고, 파티와 멤버는 토큰
+   한 단계를 통째로 써서 다른 화면처럼 보였다. 두 토큰 사이를 균등하게 나눠
+   네 층 모두 "한 겹" 차이로 맞춘다. 새 색을 만들지 않으므로 다크에서도
+   같은 비율로 따라온다. */
+.wb-party-drawer { background: color-mix(in srgb, var(--bg-1) 30%, var(--bg-0)); }
 .wb-member-drawer {
-  background: color-mix(in srgb, var(--bg-1) 45%, var(--bg-0));
+  background: color-mix(in srgb, var(--bg-1) 65%, var(--bg-0));
   border-left: var(--border-width) solid var(--border);
   box-shadow: inset 6px 0 8px -9px var(--shadow);
 }
 /* 접힌 띠도 같은 사다리를 따른다 — 접었다고 층이 뒤집히면 안 된다. */
-.wb-drawer-rail.is-party { background: var(--bg-0); }
-.wb-drawer-rail.is-member { background: color-mix(in srgb, var(--bg-1) 45%, var(--bg-0)); }
+.wb-drawer-rail.is-party { background: color-mix(in srgb, var(--bg-1) 30%, var(--bg-0)); }
+.wb-drawer-rail.is-member { background: color-mix(in srgb, var(--bg-1) 65%, var(--bg-0)); }
 
 /* 드래그로 그룹 순서 바꾸기: 놓일 자리를 선으로 보여준다. */
 .wb-party-group.is-insert-before { box-shadow: 0 -2px 0 0 var(--accent); }
