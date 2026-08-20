@@ -1,3 +1,5 @@
+import { AGENT_TAB_IDS, SETTINGS_TAB_IDS } from "./runtimeTabs";
+
 /**
  * The automation API's self-description.
  *
@@ -17,6 +19,11 @@ export interface AutomationApiSpec {
    * `endpoints`: desktop-local surfaces such as window chrome are excluded.
    */
   methods: readonly string[];
+  navigation: {
+    views: readonly string[];
+    tabs: { agent: typeof AGENT_TAB_IDS; settings: typeof SETTINGS_TAB_IDS };
+    deprecatedAliases: { runtime: string; automation: string };
+  };
 }
 
 export function automationApiSpec(
@@ -29,5 +36,13 @@ export function automationApiSpec(
     baseUrl,
     endpoints,
     methods,
+    navigation: {
+      views: ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"],
+      tabs: { agent: AGENT_TAB_IDS, settings: SETTINGS_TAB_IDS },
+      deprecatedAliases: {
+        runtime: "Maps each legacy Runtime tab to its Agent or Settings destination.",
+        automation: "Maps to settings/automation.",
+      },
+    },
   };
 }

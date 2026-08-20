@@ -37,9 +37,9 @@ const cardSrc = readFileSync(path.join(projectRoot, "src/renderer/app/secondaryV
 const panelSrc = readFileSync(path.join(projectRoot, "src/renderer/workbench/Panel.tsx"), "utf8");
 const svcSrc = readFileSync(path.join(projectRoot, "src/main/application/partyApplicationService.ts"), "utf8");
 assert(cardSrc.includes("config={{ effort: true, thinking: true, serviceTier: true }}"), "HarnessDefaultsCard enables all catalog reasoning axes");
-assert(!/config=\{\{\}\}/.test(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?function AutomationView/)?.[0] || ""), "HarnessDefaultsCard no longer opens the catalog with empty config");
-assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?function AutomationView/)?.[0] || "").includes('set-field-label">추론 강도'), "outer effort segment removed from harness defaults");
-assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?function AutomationView/)?.[0] || "").includes('set-field-label">추론 모드'), "outer thinking-mode segment removed from harness defaults");
+assert(!/config=\{\{\}\}/.test(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?export function SettingsView/)?.[0] || ""), "HarnessDefaultsCard no longer opens the catalog with empty config");
+assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?export function SettingsView/)?.[0] || "").includes('set-field-label">추론 강도'), "outer effort segment removed from harness defaults");
+assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?export function SettingsView/)?.[0] || "").includes('set-field-label">추론 모드'), "outer thinking-mode segment removed from harness defaults");
 assert(cardSrc.includes("reasoningBudget") && cardSrc.includes("serviceTier: serviceTier || undefined"), "save patch persists thinking budget + Cursor speed");
 assert(!panelSrc.includes('title="Effort"') && !panelSrc.includes("actions.setEffort"), "Panel header Effort dropdown is gone");
 assert(panelSrc.includes("모델 · 추론 설정"), "model pill is the single header entry for runtime reasoning");

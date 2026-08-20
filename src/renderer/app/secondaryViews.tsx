@@ -15,7 +15,7 @@ import {
 } from "../../shared/cursorPolicy";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
-import type { RuntimeTabId } from "../../shared/runtimeTabs";
+import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { MobileLinkCard } from "./MobileLinkTab";
@@ -683,31 +683,22 @@ function DiscordGlyph({ size = 14 }: { size?: number }) {
   );
 }
 
-const RUNTIME_TABS: Array<{ id: RuntimeTabId; label: MessageKey; icon: ReactNode }> = [
+const AGENT_TABS: Array<{ id: AgentTabId; label: MessageKey; icon: ReactNode }> = [
   { id: "general", label: "runtime.tab.general", icon: <Settings2 size={14} /> },
-  { id: "harness", label: "runtime.tab.harness", icon: <SquareTerminal size={14} /> },
-  { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
-  { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
+  { id: "defaults", label: "runtime.tab.harness", icon: <SquareTerminal size={14} /> },
   { id: "primer", label: "runtime.tab.primer", icon: <FileText size={14} /> },
   { id: "gate", label: "runtime.tab.gate", icon: <MessageGateIcon size={14} /> },
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
-  { id: "mobile", label: "runtime.tab.mobile", icon: <Smartphone size={14} /> },
-  { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
-  { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
 ];
 
-export function RuntimeSettingsView({ routes, harnesses, router, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onToggleDebug, onSaveLocale, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, onSaveExecutablePaths, cwdPrefs, cwdDefaultUsage, memberLocations, now, onPickDefaultCwd, onClearDefaultCwd, onPromoteRecentCwd, onRemoveRecentCwd, onRecheckRecentCwd, onCloneMember, tabRequest }: {
+export function AgentSettingsView({ routes, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
-  harnesses: any[];
-  router: string;
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
   discord?: DiscordBridgeStatus;
   onRefreshCodexModels?: () => void;
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
-  onToggleDebug: (enabled: boolean) => void;
-  onSaveLocale: (locale: AppLocale) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
@@ -718,42 +709,20 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   onSaveComposer: (patch: Partial<ComposerSettings>) => void;
   onSaveMemberMessaging: (patch: { interruptOnSend: boolean }) => void;
   onSaveDiscord: (patch: { botToken?: string; guildId?: string; allowedUserIds?: string[] }) => void;
-  /** Executable overrides for the environment tab — one patch per field. */
-  onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
-  /** 작업 위치 tab: the defaults and recents new members are seeded from. */
-  cwdPrefs: CwdPreferences;
-  /** How many existing members sit on each environment's default cwd. */
-  cwdDefaultUsage: Partial<Record<ExecutionEnv, number>>;
-  /** Existing members' fixed locations, listed read-only. */
-  memberLocations: MemberLocationRow[];
-  /** Frozen "now" for recency labels, so previews render deterministically. */
-  now: number;
-  onPickDefaultCwd: (env: ExecutionEnv) => void;
-  onClearDefaultCwd: (env: ExecutionEnv) => void;
-  onPromoteRecentCwd: (entry: RecentCwd) => void;
-  onRemoveRecentCwd: (entry: RecentCwd) => void;
-  onRecheckRecentCwd: (entry: RecentCwd) => void;
-  onCloneMember: (row: MemberLocationRow) => void;
-  /** `POST /api/navigation {view:"runtime", tab}` — `seq` re-applies a repeat. */
-  tabRequest?: { tab: RuntimeTabId; harness?: HarnessId; seq: number };
+  /** `POST /api/navigation {view:"agent", tab}` — `seq` re-applies a repeat. */
+  tabRequest?: { tab: AgentTabId; harness?: HarnessId; seq: number };
 }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<RuntimeTabId>("general");
-  const mobileEnabled = settings.mobile?.enabled === true;
-  const visibleTabs = mobileEnabled ? RUNTIME_TABS : RUNTIME_TABS.filter((entry) => entry.id !== "mobile");
+  const [tab, setTab] = useState<AgentTabId>("general");
   // Which harness the 하네스 기본값 tab is showing. Starts on the harness new
   // members are created with, since that is the one whose defaults matter.
   const [harnessTab, setHarnessTab] = useState<HarnessId>(settings.selectedHarnessId);
   useEffect(() => {
     if (tabRequest && tabRequest.seq > 0) {
-      setTab(tabRequest.tab === "mobile" && !mobileEnabled ? "general" : tabRequest.tab);
+      setTab(tabRequest.tab);
       if (tabRequest.harness) setHarnessTab(tabRequest.harness);
     }
-  }, [tabRequest?.seq, mobileEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!mobileEnabled && tab === "mobile") setTab("general");
-  }, [mobileEnabled, tab]);
-  const [copied, setCopied] = useState(false);
+  }, [tabRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
   // Which staged-save cards currently hold edits the user has not committed. Only
   // the staged cards (per-harness, Discord) can be dirty — every other control on
   // this screen applies on change, so it is never "unsaved".
@@ -764,18 +733,12 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
   const dirty = Object.values(dirtyCards).some(Boolean);
   const bindingCount = discord?.bindings?.length || 0;
 
-  function copyRouter() {
-    void navigator.clipboard?.writeText(router);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1300);
-  }
-
-  const badges: Partial<Record<RuntimeTabId, number>> = { harness: HARNESS_IDS.length, discord: bindingCount };
+  const badges: Partial<Record<AgentTabId, number>> = { defaults: HARNESS_IDS.length, discord: bindingCount };
 
   return (
     <>
       <div className="set-tabs" role="tablist" aria-label={t("runtime.tabs.label")}>
-        {visibleTabs.map((entry) => {
+        {AGENT_TABS.map((entry) => {
           const active = entry.id === tab;
           const badge = badges[entry.id];
           return (
@@ -808,68 +771,13 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
             silently, right after the strip told them there were unsaved changes. */}
         <div className="set-tab-panel" hidden={tab !== "general"}>
         <SubtreeVisibility visible={tab === "general"}>
-            <section className="set-card" data-settings-card="language">
-              <div className="set-card-label">{t("runtime.language.title")}</div>
-              <div className="set-inline-note">
-                <InfoIcon size={14} />
-                <span>{t("runtime.language.description")}</span>
-              </div>
-              <label className="set-field">
-                <span className="set-field-label">{t("runtime.language.label")}</span>
-                <select className="set-select" data-locale-select value={settings.locale} onChange={(event) => onSaveLocale(event.target.value as AppLocale)}>
-                  <option value="ko">{t("runtime.language.ko")}</option>
-                  <option value="en">{t("runtime.language.en")}</option>
-                </select>
-              </label>
-            </section>
-
-            {/* base harness */}
-            <section className="set-card">
-              <div className="set-card-label">{t("runtime.general.defaultHarness")}</div>
-              <div className="set-inline-note">
-                <InfoIcon size={14} />
-                <span>{t("runtime.general.defaultHarnessHelp")}</span>
-              </div>
-              <div className="set-router-row">
-                <span className="set-router-id"><span className="set-dot is-success" /> Router</span>
-                <span className="set-router-end">
-                  <span className="wb-mono">{router || t("runtime.general.starting")}</span>
-                  <button type="button" className="set-icon-btn" title={t("runtime.general.copy")} onClick={copyRouter}>{copied ? <Check size={14} /> : <Copy size={13} />}</button>
-                </span>
-              </div>
-              <div className="set-harness-pick">
-                <label className="set-field">
-                  <span className="set-field-label">{t("runtime.general.newMemberHarness")}</span>
-                  <select className="set-select" value={settings.selectedHarnessId} onChange={(event) => onSetDefaultHarness(event.target.value as HarnessId)}>
-                    {HARNESS_IDS.map((id) => <option key={id} value={id}>{HARNESS_LABELS[id]}</option>)}
-                  </select>
-                </label>
-                <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}>
-                  <span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
-                  <span className="set-toggle-label">{t("runtime.general.debugLogs")}</span>
-                </button>
-              </div>
-            </section>
-
-            {/* global auto-compact default (inherited by members without their own) */}
-            <section className="set-card">
-              <div className="set-card-label">Auto-compact</div>
-              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
-            </section>
-
-            {/* idle sleep — release a quiet member's process, keep its conversation */}
-            <section className="set-card">
-              <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
-              <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
-            </section>
-
             {/* message input preferences (send key) */}
-            <section className="set-card">
+            <section className="set-card" data-settings-card="composer">
               <div className="set-card-label">{t("runtime.general.composer")}</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
             </section>
 
-            <section className="set-card">
+            <section className="set-card" data-settings-card="member-messages">
               <div className="set-card-label">{t("runtime.general.memberMessages")}</div>
               <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
                 <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
@@ -880,11 +788,23 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 <span>{t("runtime.general.interruptHelp")}</span>
               </div>
             </section>
+
+            {/* global auto-compact default (inherited by members without their own) */}
+            <section className="set-card" data-settings-card="auto-compact">
+              <div className="set-card-label">Auto-compact</div>
+              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+            </section>
+
+            {/* idle sleep — release a quiet member's process, keep its conversation */}
+            <section className="set-card" data-settings-card="idle-sleep">
+              <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
+              <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
+            </section>
         </SubtreeVisibility>
         </div>
 
-        <div className="set-tab-panel" hidden={tab !== "harness"}>
-        <SubtreeVisibility visible={tab === "harness"}>
+        <div className="set-tab-panel" hidden={tab !== "defaults"}>
+        <SubtreeVisibility visible={tab === "defaults"}>
             <div className="set-tab-note">
               <InfoIcon size={14} />
               <span><LocalizedText id="STR-1080" /></span>
@@ -913,7 +833,7 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                 switching harness must not throw an unsaved one away. */}
             {HARNESS_IDS.map((id) => (
               <div className="set-subtab-panel" key={id} hidden={id !== harnessTab}>
-                <SubtreeVisibility visible={tab === "harness" && id === harnessTab}>
+                <SubtreeVisibility visible={tab === "defaults" && id === harnessTab}>
                   <HarnessDefaultsCard
                     harnessId={id}
                     label={HARNESS_LABELS[id]}
@@ -924,6 +844,14 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
                     onSave={(patch) => onSaveHarnessDefaults(id, patch)}
                     onDirtyChange={(value) => markDirty(id, value)}
                   />
+                  <button
+                    type="button"
+                    className="set-harness-save set-default-harness"
+                    disabled={settings.selectedHarnessId === id}
+                    onClick={() => onSetDefaultHarness(id)}
+                  >
+                    {settings.selectedHarnessId === id ? t("runtime.harness.currentDefault") : t("runtime.harness.makeDefault")}
+                  </button>
                 </SubtreeVisibility>
               </div>
             ))}
@@ -980,52 +908,6 @@ export function RuntimeSettingsView({ routes, harnesses, router, settings, codex
         </SubtreeVisibility>
         </div>
 
-        {/* Mobile link — pairing a phone to this desktop, and why it may not connect. */}
-        {mobileEnabled && (
-          <div className="set-tab-panel" hidden={tab !== "mobile"}>
-          <SubtreeVisibility visible={tab === "mobile"}>
-            <MobileLinkCard active={tab === "mobile"} />
-          </SubtreeVisibility>
-          </div>
-        )}
-
-        {/* Environment — readiness, not build facts: what still needs doing. */}
-        <div className="set-tab-panel" hidden={tab !== "workspace"}>
-        <SubtreeVisibility visible={tab === "workspace"}>
-            <WorkspaceCwdSettings
-              prefs={cwdPrefs}
-              defaultUsage={cwdDefaultUsage}
-              members={memberLocations}
-              now={now}
-              onPickDefault={onPickDefaultCwd}
-              onClearDefault={onClearDefaultCwd}
-              onPromoteRecent={onPromoteRecentCwd}
-              onRemoveRecent={onRemoveRecentCwd}
-              onRecheckRecent={onRecheckRecentCwd}
-              onCloneMember={onCloneMember}
-            />
-        </SubtreeVisibility>
-        </div>
-
-        <div className="set-tab-panel" hidden={tab !== "environment"}>
-        <SubtreeVisibility visible={tab === "environment"}>
-          <EnvironmentCard active={tab === "environment"} settings={settings} onSaveExecutablePaths={onSaveExecutablePaths} />
-        </SubtreeVisibility>
-        </div>
-
-        {/* Versions — what is installed, what is newest, and what shipped before. */}
-        <div className="set-tab-panel" hidden={tab !== "versions"}>
-        <SubtreeVisibility visible={tab === "versions"}>
-          <VersionsCard active={tab === "versions"} />
-        </SubtreeVisibility>
-        </div>
-
-        {/* Diagnostics — what a bug report needs: build, host, log folder. */}
-        <div className="set-tab-panel" hidden={tab !== "diagnostics"}>
-        <SubtreeVisibility visible={tab === "diagnostics"}>
-          <DiagnosticsCard active={tab === "diagnostics"} />
-        </SubtreeVisibility>
-        </div>
       </div>
     </>
   );
@@ -1938,37 +1820,113 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   );
 }
 
-/**
- * The 설정 screen — app-shell preferences plus the automation API/log handles.
- *
- * The font pickers live HERE rather than under 런타임 on purpose: 런타임 owns the
- * defaults a new MEMBER inherits (harness, model, send key), while a font is a
- * property of the app window itself and applies no matter which members exist.
- */
-export function AutomationView({ automationApi, logs, debugEnabled, fonts, onToggleDebug, onSaveFonts }: {
+const SETTINGS_TABS: Array<{ id: SettingsTabId; label: MessageKey; icon: ReactNode }> = [
+  { id: "general", label: "runtime.tab.general", icon: <Settings2 size={14} /> },
+  { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
+  { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
+  { id: "mobile", label: "runtime.tab.mobile", icon: <Smartphone size={14} /> },
+  { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
+  { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
+  { id: "automation", label: "settings.tab.automation", icon: <FlaskConical size={14} /> },
+];
+
+/** App-level settings. Panels remain mounted so controls never lose local state on tab changes. */
+export function SettingsView({ automationApi, logs, router, settings, onToggleDebug, onSaveFonts, onSaveLocale, onSaveExecutablePaths, cwdPrefs, cwdDefaultUsage, memberLocations, now, onPickDefaultCwd, onClearDefaultCwd, onPromoteRecentCwd, onRemoveRecentCwd, onRecheckRecentCwd, onCloneMember, tabRequest }: {
   automationApi: InitialAppState["automationApi"];
   logs: InitialAppState["logs"];
-  debugEnabled: boolean;
-  fonts: FontSettings | undefined;
+  router: string;
+  settings: InitialAppState["settings"];
   onToggleDebug: (enabled: boolean) => void;
   onSaveFonts: (patch: Partial<FontSettings>) => void;
+  onSaveLocale: (locale: AppLocale) => void;
+  onSaveExecutablePaths: (patch: Partial<InitialAppState["settings"]>) => void;
+  cwdPrefs: CwdPreferences;
+  cwdDefaultUsage: Partial<Record<ExecutionEnv, number>>;
+  memberLocations: MemberLocationRow[];
+  now: number;
+  onPickDefaultCwd: (env: ExecutionEnv) => void;
+  onClearDefaultCwd: (env: ExecutionEnv) => void;
+  onPromoteRecentCwd: (entry: RecentCwd) => void;
+  onRemoveRecentCwd: (entry: RecentCwd) => void;
+  onRecheckRecentCwd: (entry: RecentCwd) => void;
+  onCloneMember: (row: MemberLocationRow) => void;
+  tabRequest?: { tab: SettingsTabId; seq: number };
 }) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<SettingsTabId>("general");
+  const [copied, setCopied] = useState(false);
+  const mobileEnabled = settings.mobile?.enabled === true;
+  const visibleTabs = mobileEnabled ? SETTINGS_TABS : SETTINGS_TABS.filter((entry) => entry.id !== "mobile");
+  useEffect(() => {
+    if (!tabRequest || tabRequest.seq <= 0) return;
+    setTab(tabRequest.tab === "mobile" && !mobileEnabled ? "general" : tabRequest.tab);
+  }, [tabRequest?.seq, mobileEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!mobileEnabled && tab === "mobile") setTab("general");
+  }, [mobileEnabled, tab]);
+
+  function copySpec() {
+    void navigator.clipboard?.writeText(automationApi?.spec || "");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1300);
+  }
+
   return (
-    <section className="legacy-view narrow set-stack">
-      <section className="card">
-        <div className="card-title"><LocalizedText id="STR-1211" /></div>
-        <FontSettingsCard settings={fonts} onSave={onSaveFonts} />
-      </section>
-      <section className="card">
-        <div className="card-title"><LocalizedText id="STR-1212" /></div>
-        <Info label="API" value={automationApi?.baseUrl || ""} />
-        <Info label="Spec" value={automationApi?.spec || ""} />
-        <Info label="Logs" value={logs?.logFilePath || ""} />
-        <label className="toggle-line"><input type="checkbox" checked={debugEnabled} onChange={(event) => onToggleDebug(event.target.checked)} /><LocalizedText id="STR-1073" /></label>
-        <button className="ghost-btn" type="button" onClick={() => navigator.clipboard?.writeText(automationApi?.spec || "")}><Copy size={15} />  <LocalizedText id="STR-1214" /></button>
-        <div className="api-hint wb-mono">{automationApi?.spec || "API 시작 중..."}</div>
-      </section>
-    </section>
+    <>
+      <div className="set-tabs" role="tablist" aria-label={t("settings.tabs.label")}>
+        {visibleTabs.map((entry) => (
+          <button type="button" key={entry.id} role="tab" aria-selected={entry.id === tab} className={"set-tab" + (entry.id === tab ? " is-active" : "")} onClick={() => setTab(entry.id)}>
+            <span className="set-tab-icon">{entry.icon}</span>{t(entry.label)}
+          </button>
+        ))}
+      </div>
+      <div className="set-page set-page-tabbed">
+        <div className="set-tab-panel" hidden={tab !== "general"}><SubtreeVisibility visible={tab === "general"}>
+          <section className="set-card" data-settings-card="language">
+            <div className="set-card-label">{t("runtime.language.title")}</div>
+            <div className="set-inline-note"><InfoIcon size={14} /><span>{t("runtime.language.description")}</span></div>
+            <label className="set-field"><span className="set-field-label">{t("runtime.language.label")}</span>
+              <select className="set-select" data-locale-select value={settings.locale} onChange={(event) => onSaveLocale(event.target.value as AppLocale)}>
+                <option value="ko">{t("runtime.language.ko")}</option><option value="en">{t("runtime.language.en")}</option>
+              </select>
+            </label>
+          </section>
+          <section className="set-card"><div className="set-card-label"><LocalizedText id="STR-1211" /></div><FontSettingsCard settings={settings.fonts} onSave={onSaveFonts} /></section>
+        </SubtreeVisibility></div>
+
+        <div className="set-tab-panel" hidden={tab !== "environment"}><SubtreeVisibility visible={tab === "environment"}>
+          <EnvironmentCard active={tab === "environment"} settings={settings} onSaveExecutablePaths={onSaveExecutablePaths} />
+        </SubtreeVisibility></div>
+
+        <div className="set-tab-panel" hidden={tab !== "workspace"}><SubtreeVisibility visible={tab === "workspace"}>
+          <WorkspaceCwdSettings prefs={cwdPrefs} defaultUsage={cwdDefaultUsage} members={memberLocations} now={now} onPickDefault={onPickDefaultCwd} onClearDefault={onClearDefaultCwd} onPromoteRecent={onPromoteRecentCwd} onRemoveRecent={onRemoveRecentCwd} onRecheckRecent={onRecheckRecentCwd} onCloneMember={onCloneMember} />
+        </SubtreeVisibility></div>
+
+        {mobileEnabled && <div className="set-tab-panel" hidden={tab !== "mobile"}><SubtreeVisibility visible={tab === "mobile"}><MobileLinkCard active={tab === "mobile"} /></SubtreeVisibility></div>}
+        <div className="set-tab-panel" hidden={tab !== "versions"}><SubtreeVisibility visible={tab === "versions"}><VersionsCard active={tab === "versions"} /></SubtreeVisibility></div>
+        <div className="set-tab-panel" hidden={tab !== "diagnostics"}><SubtreeVisibility visible={tab === "diagnostics"}><DiagnosticsCard active={tab === "diagnostics"} /></SubtreeVisibility></div>
+
+        <div className="set-tab-panel" hidden={tab !== "automation"}><SubtreeVisibility visible={tab === "automation"}>
+          <section className="set-card">
+            <div className="set-card-label">{t("settings.automation.router")}</div>
+            <div className="set-automation-content"><Info label="Router" value={router} /></div>
+          </section>
+          <section className="set-card">
+            <div className="set-card-label"><LocalizedText id="STR-1212" /></div>
+            <div className="set-automation-content">
+              <Info label="API" value={automationApi?.baseUrl || ""} />
+              <Info label="Spec" value={automationApi?.spec || ""} />
+              <Info label="Logs" value={logs?.logFilePath || ""} />
+              <div className="set-automation-actions">
+                <button type="button" className="set-toggle" onClick={() => onToggleDebug(!settings.debugEnabled)}><span className={"set-switch" + (settings.debugEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span><span className="set-toggle-label">{t("runtime.general.debugLogs")}</span></button>
+                <button className="set-btn-soft" type="button" onClick={copySpec}>{copied ? <Check size={15} /> : <Copy size={15} />} <LocalizedText id="STR-1214" /></button>
+              </div>
+              <div className="api-hint wb-mono">{automationApi?.spec || t("runtime.general.starting")}</div>
+            </div>
+          </section>
+        </SubtreeVisibility></div>
+      </div>
+    </>
   );
 }
 

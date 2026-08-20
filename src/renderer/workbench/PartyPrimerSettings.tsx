@@ -20,7 +20,7 @@ export interface PartyPrimerSectionPatch {
 }
 
 /**
- * Settings → 런타임 → 파티 프롬프트.
+ * Agent → 파티 프롬프트.
  *
  * Shows the member primer the way it is actually assembled — one SUB-TAB per
  * section — so the user reads what every member is told at session start and

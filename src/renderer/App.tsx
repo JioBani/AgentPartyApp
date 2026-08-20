@@ -39,9 +39,9 @@ import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
-import { isRuntimeTabId, type RuntimeTabId } from "../shared/runtimeTabs";
+import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
 import type { ApprovalDelivery } from "../shared/approvals";
-import { AuthView, AutomationView, RuntimeSettingsView, SessionsView } from "./app/secondaryViews";
+import { AgentSettingsView, AuthView, SettingsView, SessionsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
@@ -107,9 +107,9 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
-  /** A tab (and, on the harness tab, a harness) the automation API asked the
-   *  runtime screen to land on. */
-  const [runtimeTabRequest, setRuntimeTabRequest] = useState<{ tab: RuntimeTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
+  /** Tab requests sent by the shared AppController navigation path. */
+  const [agentTabRequest, setAgentTabRequest] = useState<{ tab: AgentTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
+  const [settingsTabRequest, setSettingsTabRequest] = useState<{ tab: SettingsTabId; seq: number }>({ tab: "general", seq: 0 });
   // Sidebar open/closed persists across launches (README Electron note #6);
   // width is persisted separately in Workbench.
   /**
@@ -678,9 +678,11 @@ export function App() {
       setCurrentView(view);
       // A counter, not the id alone: asking for the tab you are already on must
       // still move the screen there after the user clicked elsewhere.
-      if (tab && isRuntimeTabId(tab)) {
+      if (view === "agent" && tab && isAgentTabId(tab)) {
         const picked = harness && (HARNESS_IDS as readonly string[]).includes(harness) ? (harness as HarnessId) : undefined;
-        setRuntimeTabRequest((current) => ({ tab, harness: picked, seq: current.seq + 1 }));
+        setAgentTabRequest((current) => ({ tab, harness: picked, seq: current.seq + 1 }));
+      } else if (view === "settings" && tab && isSettingsTabId(tab)) {
+        setSettingsTabRequest((current) => ({ tab, seq: current.seq + 1 }));
       }
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
@@ -1489,10 +1491,10 @@ export function App() {
 
   const actions: WorkbenchActions = {
     openEnvironmentSettings() {
-      setCurrentView("runtime");
+      setCurrentView("settings");
       // A counter, not the id alone — same reason as the navigation IPC above:
       // asking for a tab you are already on must still move the screen there.
-      setRuntimeTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
+      setSettingsTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
     },
     async sendMessage(name, text, attachments, options) {
       // Optimistic echo when the member already has a live session (instant feel);
@@ -1815,8 +1817,8 @@ export function App() {
     { id: "sessions", label: viewTitle("sessions", t), icon: <History size={18} /> },
     { id: "usage", label: viewTitle("usage", t), icon: <BarChart3 size={18} /> },
     { id: "auth", label: viewTitle("auth", t), icon: <KeyRound size={18} /> },
-    { id: "runtime", label: viewTitle("runtime", t), icon: <SlidersHorizontal size={18} /> },
-    { id: "automation", label: viewTitle("automation", t), icon: <Settings size={18} /> },
+    { id: "agent", label: viewTitle("agent", t), icon: <SlidersHorizontal size={18} /> },
+    { id: "settings", label: viewTitle("settings", t), icon: <Settings size={18} /> },
   ];
 
   const isDark = theme.themeId === "dark";
@@ -1852,7 +1854,7 @@ export function App() {
     <UsageLimitPill
       usage={usageLimits}
       membersByProvider={membersByProvider}
-      onOpenSettings={() => setCurrentView("automation")}
+      onOpenSettings={() => setCurrentView("settings")}
       onRefresh={() => { void refreshUsageLimits(); }}
       refreshing={usageRefreshing}
     />
@@ -2012,19 +2014,14 @@ export function App() {
                   onDisconnectSubscription={disconnectSubscription}
                 />
               )}
-              {currentView === "runtime" && (
-                <RuntimeSettingsView
+              {currentView === "agent" && (
+                <AgentSettingsView
                   routes={routes}
-                  harnesses={state.harnesses as any[]}
-                  router={state.router.baseUrl}
                   settings={state.settings}
                   codexModels={state.codexModels}
                   onRefreshCodexModels={() => void window.agentParty.refreshCodexModels().catch(noticeOnFailure("Codex 모델 목록을 새로고침하지 못했습니다"))}
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
-                  onToggleDebug={toggleDebug}
-                  onSaveLocale={saveLocale}
-                  onSaveExecutablePaths={saveExecutablePaths}
                   onSaveCompactDefault={saveCompactDefault}
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
@@ -2034,23 +2031,7 @@ export function App() {
                   onSaveMemberMessaging={saveMemberMessaging}
                   discord={discord}
                   onSaveDiscord={saveDiscordSettings}
-                  cwdPrefs={cwdPrefs}
-                  cwdDefaultUsage={cwdDefaultUsage}
-                  memberLocations={memberLocations}
-                  now={nowTick}
-                  onPickDefaultCwd={(env) => void pickDefaultCwd(env)}
-                  onClearDefaultCwd={(env) => void window.agentParty.clearDefaultCwd(env).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd를 지우지 못했습니다"))}
-                  onPromoteRecentCwd={(entry) => void window.agentParty.setDefaultCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd로 설정하지 못했습니다"))}
-                  onRemoveRecentCwd={(entry) => void window.agentParty.removeRecentCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("최근 목록에서 제거하지 못했습니다"))}
-                  // Re-checks EVERY remembered path, not just this row: the row's
-                  // own verdict is what the user asked about, and the others are
-                  // free once the distro has been woken.
-                  onRecheckRecentCwd={() => void refreshCwdPreferences(true)}
-                  onCloneMember={(row) => {
-                    setCurrentView("workbench");
-                    reportNotice(`${row.member} 의 설정으로 새 멤버를 만들려면 멤버 만들기에서 ${row.location.cwd} 를 고르세요.`);
-                  }}
-                  tabRequest={runtimeTabRequest}
+                  tabRequest={agentTabRequest}
                 />
               )}
               {currentView === "usage" && (
@@ -2064,8 +2045,28 @@ export function App() {
                   }}
                 />
               )}
-              {currentView === "automation" && (
-                <AutomationView automationApi={state.automationApi} logs={state.logs} debugEnabled={state.settings.debugEnabled} fonts={state.settings.fonts} onToggleDebug={toggleDebug} onSaveFonts={saveFonts} />
+              {currentView === "settings" && (
+                <SettingsView
+                  automationApi={state.automationApi}
+                  logs={state.logs}
+                  router={state.router.baseUrl}
+                  settings={state.settings}
+                  onToggleDebug={toggleDebug}
+                  onSaveFonts={saveFonts}
+                  onSaveLocale={saveLocale}
+                  onSaveExecutablePaths={saveExecutablePaths}
+                  cwdPrefs={cwdPrefs}
+                  cwdDefaultUsage={cwdDefaultUsage}
+                  memberLocations={memberLocations}
+                  now={nowTick}
+                  onPickDefaultCwd={(env) => void pickDefaultCwd(env)}
+                  onClearDefaultCwd={(env) => void window.agentParty.clearDefaultCwd(env).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd를 지우지 못했습니다"))}
+                  onPromoteRecentCwd={(entry) => void window.agentParty.setDefaultCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("기본 cwd로 설정하지 못했습니다"))}
+                  onRemoveRecentCwd={(entry) => void window.agentParty.removeRecentCwd(entry.location).then(applyCwdPreferences).catch(noticeOnFailure("최근 목록에서 제거하지 못했습니다"))}
+                  onRecheckRecentCwd={() => void refreshCwdPreferences(true)}
+                  onCloneMember={(row) => { setCurrentView("workbench"); reportNotice(`${row.member} 의 설정으로 새 멤버를 만들려면 멤버 만들기에서 ${row.location.cwd} 를 고르세요.`); }}
+                  tabRequest={settingsTabRequest}
+                />
               )}
               </div>
             </>
