@@ -39,6 +39,10 @@ assert(theme.normalizeThemePreference("dark") === "github-dark", "branch setting
 assert(theme.normalizeThemePreference("system") === "github-light", "removed System setting migrates safely to GitHub Light");
 assert(theme.migrateLegacyThemeValue(undefined, "light") === "github-light", "legacy localStorage light migrates");
 assert(theme.migrateLegacyThemeValue(undefined, "dark") === "github-dark", "legacy localStorage dark migrates");
+assert(theme.themeFromRendererStorage("system", "dark") === "github-dark", "removed system preference preserves its last dark paint");
+assert(theme.themeFromRendererStorage("nord", "dark") === "nord", "current preference key wins over stale applied cache");
+assert(theme.themeFromRendererStorage(undefined, "dracula") === "dracula", "current preset in applied cache is preserved");
+assert(theme.themeFromRendererStorage("solarized-dark", "light") === "solarized-dark", "Solarized preference wins over stale light cache");
 assert(theme.migrateLegacyThemeValue("nord", "dark") === null, "stored preset wins over stale cache");
 assert(theme.firstPaintFrom({ preference: "dracula", applied: "dracula", stored: true }, "light").applied === "dracula", "stored settings win before React");
 assert(theme.firstPaintFrom({ preference: "github-light", applied: "github-light", stored: false }, "dark").applied === "github-dark", "legacy cache is used only without stored settings");
@@ -73,6 +77,7 @@ for (const preset of registry.THEMES) {
   assert(preset.color["bg-0"] === theme.THEME_BACKGROUNDS[preset.id], `${preset.label} shares the first-paint background`);
   assert(contrast(preset.color["text-0"], preset.color["bg-2"]) >= 7, `${preset.label} primary text has enhanced contrast`);
   assert(contrast(preset.color["text-2"], preset.color["bg-2"]) >= 4.5, `${preset.label} muted text meets WCAG AA`);
+  assert(contrast(preset.color["danger-fg"], preset.color.danger) >= 4.5 && contrast(preset.color["warning-fg"], preset.color.warning) >= 4.5, `${preset.label} small danger/warning badge text meets WCAG AA`);
   assert(preset.color.selection && preset.color["selection-fg"] && preset.color.status && preset.color["status-fg"], `${preset.label} defines selection and status colors`);
 }
 

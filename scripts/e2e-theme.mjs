@@ -66,6 +66,23 @@ async function choosePreset(index, windowId) {
   await delay(350);
 }
 
+async function plantCache(themePreference, theme) {
+  const result = await request("POST", "/api/qa/appearance/storage", { themePreference, theme });
+  assert(result.status === 200 && result.payload?.themePreference === themePreference && result.payload?.theme === theme, `renderer cache planted as ${themePreference}/${theme}`);
+}
+
+async function verifyCacheMigration(expected, label) {
+  const painted = await htmlTheme();
+  assert(painted.theme === expected && painted.preference === expected && painted.paint === "sync", `${label} drives synchronous first paint`);
+  await delay(500);
+  const state = await request("GET", "/api/appearance/theme");
+  assert(state.payload?.preference === expected && state.payload?.stored === true, `${label} migrates through AppController into settings`);
+  const saved = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  assert(saved.theme === expected, `${label} is permanently saved`);
+  const cache = await request("POST", "/api/qa/appearance/storage", {});
+  assert(cache.payload?.themePreference === expected && cache.payload?.theme === expected, `${label} normalizes both renderer cache keys`);
+}
+
 function cssHex(value) { return String(value || "").trim().toLowerCase(); }
 
 async function main() {
@@ -150,7 +167,21 @@ async function main() {
     assert(painted.theme === "solarized-dark" && painted.preference === "solarized-dark", "synchronous first paint beats stale cache");
     assert(painted.paint === "sync", "data-theme-paint=sync proves pre-React paint");
     assert(cssHex(painted.styles["--bg-0"]) === "#002b36", "restarted first-paint token is Solarized Dark");
+    await plantCache("system", "dark");
   });
+
+  for (const scenario of [
+    { id: "github-dark", label: "legacy system + dark cache", nextPreference: "nord", nextTheme: "dark" },
+    { id: "nord", label: "valid Nord preference + stale dark cache", nextPreference: "dracula", nextTheme: "light" },
+    { id: "dracula", label: "valid Dracula preference + stale light cache", nextPreference: "solarized-dark", nextTheme: "dark" },
+    { id: "solarized-dark", label: "valid Solarized Dark preference + stale dark cache" },
+  ]) {
+    try { fs.rmSync(settingsPath, { force: true }); } catch { /* absent */ }
+    await run(`cache-${scenario.id}`, async () => {
+      await verifyCacheMigration(scenario.id, scenario.label);
+      if (scenario.nextPreference) await plantCache(scenario.nextPreference, scenario.nextTheme);
+    });
+  }
 
   for (const target of [workspace, userData]) try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
   if (failures.length) {

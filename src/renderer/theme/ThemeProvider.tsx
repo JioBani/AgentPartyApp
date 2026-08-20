@@ -2,14 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   THEME_PREFERENCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
-  THEME_SYNC_PAINT_ATTRIBUTE,
-  THEME_SYNC_PAINT_VALUE,
-  firstPaintFrom,
-  isThemePreference,
   normalizeThemePreference,
   type ThemePreference,
 } from "../../shared/appTheme";
-import { THEMES, buildThemeStylesheet, getTheme } from "./themes";
+import { THEMES, buildThemeStylesheet } from "./themes";
+import { applyDocumentTheme, initialRendererTheme } from "./firstPaint";
 
 const STYLE_ELEMENT_ID = "agentparty-theme-vars";
 
@@ -22,19 +19,6 @@ function ensureThemeStylesheet(): void {
 }
 ensureThemeStylesheet();
 
-function readLegacyTheme(): string | null {
-  try {
-    return window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY) || window.localStorage.getItem(THEME_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function bootTheme(): ThemePreference {
-  const boot = typeof window === "undefined" ? null : window.agentPartyAppearanceBoot;
-  return firstPaintFrom(boot && isThemePreference(boot.preference) ? boot : null, typeof window === "undefined" ? null : readLegacyTheme()).preference;
-}
-
 function persistTheme(theme: ThemePreference): void {
   try {
     window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, theme);
@@ -43,16 +27,6 @@ function persistTheme(theme: ThemePreference): void {
     // Main-process settings are authoritative; cache failure must not block use.
   }
 }
-
-function applyDocumentTheme(theme: ThemePreference): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-theme", getTheme(theme).id);
-  document.documentElement.setAttribute("data-theme-preference", theme);
-  document.documentElement.setAttribute(THEME_SYNC_PAINT_ATTRIBUTE, THEME_SYNC_PAINT_VALUE);
-}
-
-const initialTheme = bootTheme();
-applyDocumentTheme(initialTheme);
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -65,7 +39,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(initialTheme);
+  const [preference, setPreferenceState] = useState<ThemePreference>(initialRendererTheme);
 
   useEffect(() => {
     applyDocumentTheme(preference);

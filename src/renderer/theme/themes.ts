@@ -1,4 +1,4 @@
-import type { ThemePreference } from "../../shared/appTheme";
+import { THEME_METADATA, type ThemePreference } from "../../shared/appTheme";
 
 export type ThemeColorToken =
   | "bg-0" | "bg-1" | "bg-2" | "bg-3" | "bg-4" | "bg-input"
@@ -8,8 +8,8 @@ export type ThemeColorToken =
   | "selection" | "selection-fg" | "status" | "status-fg"
   | "live" | "live-dim" | "live-bd" | "compact-zone"
   | "success" | "success-dim" | "success-bd"
-  | "danger" | "danger-dim" | "danger-bd"
-  | "warning" | "warning-dim" | "warning-bd"
+  | "danger" | "danger-dim" | "danger-bd" | "danger-fg"
+  | "warning" | "warning-dim" | "warning-bd" | "warning-fg"
   | "grid" | "scrim" | "shadow" | "shadow-strong";
 
 export type ThemeShapeToken =
@@ -31,82 +31,84 @@ const shape: Record<ThemeShapeToken, string> = {
   "radius-badge": "5px", "border-width": "1px", "focus-ring-width": "2px",
 };
 
+const metadata = Object.fromEntries(THEME_METADATA.map((entry) => [entry.id, entry])) as Record<ThemePreference, (typeof THEME_METADATA)[number]>;
+
 const githubLight: Theme = {
-  id: "github-light", label: "GitHub Light", scheme: "light", shape,
+  ...metadata["github-light"], shape,
   color: {
-    "bg-0": "#f6f8fa", "bg-1": "#ffffff", "bg-2": "#ffffff", "bg-3": "#f6f8fa", "bg-4": "#eaeef2", "bg-input": "#ffffff",
+    "bg-0": metadata["github-light"].background, "bg-1": "#ffffff", "bg-2": "#ffffff", "bg-3": "#f6f8fa", "bg-4": "#eaeef2", "bg-input": "#ffffff",
     "border-subtle": "#d8dee4", "border": "#d0d7de", "border-strong": "#afb8c1",
     "text-0": "#1f2328", "text-1": "#424a53", "text-2": "#59636e", "text-3": "#6e7781",
     "accent": "#0969da", "accent-dim": "rgba(9,105,218,.12)", "accent-bd": "rgba(9,105,218,.38)", "accent-fg": "#ffffff",
     "selection": "#b6d7ff", "selection-fg": "#1f2328", "status": "#0969da", "status-fg": "#ffffff",
     "live": "#9a6700", "live-dim": "rgba(154,103,0,.12)", "live-bd": "rgba(154,103,0,.32)", "compact-zone": "rgba(154,103,0,.25)",
     "success": "#1a7f37", "success-dim": "rgba(26,127,55,.12)", "success-bd": "rgba(26,127,55,.3)",
-    "danger": "#cf222e", "danger-dim": "rgba(207,34,46,.11)", "danger-bd": "rgba(207,34,46,.3)",
-    "warning": "#9a6700", "warning-dim": "rgba(154,103,0,.12)", "warning-bd": "rgba(154,103,0,.32)",
+    "danger": "#cf222e", "danger-dim": "rgba(207,34,46,.11)", "danger-bd": "rgba(207,34,46,.3)", "danger-fg": "#ffffff",
+    "warning": "#9a6700", "warning-dim": "rgba(154,103,0,.12)", "warning-bd": "rgba(154,103,0,.32)", "warning-fg": "#ffffff",
     "grid": "rgba(31,35,40,.08)", "scrim": "rgba(31,35,40,.45)", "shadow": "rgba(31,35,40,.14)", "shadow-strong": "rgba(31,35,40,.24)",
   },
 };
 
 const githubDark: Theme = {
-  id: "github-dark", label: "GitHub Dark", scheme: "dark", shape,
+  ...metadata["github-dark"], shape,
   color: {
-    "bg-0": "#0d1117", "bg-1": "#010409", "bg-2": "#161b22", "bg-3": "#21262d", "bg-4": "#30363d", "bg-input": "#0d1117",
+    "bg-0": metadata["github-dark"].background, "bg-1": "#010409", "bg-2": "#161b22", "bg-3": "#21262d", "bg-4": "#30363d", "bg-input": "#0d1117",
     "border-subtle": "#21262d", "border": "#30363d", "border-strong": "#484f58",
     "text-0": "#f0f6fc", "text-1": "#c9d1d9", "text-2": "#8b949e", "text-3": "#7d8590",
     "accent": "#58a6ff", "accent-dim": "rgba(88,166,255,.14)", "accent-bd": "rgba(88,166,255,.42)", "accent-fg": "#0d1117",
     "selection": "#264f78", "selection-fg": "#ffffff", "status": "#1f6feb", "status-fg": "#ffffff",
     "live": "#d29922", "live-dim": "rgba(210,153,34,.14)", "live-bd": "rgba(210,153,34,.38)", "compact-zone": "rgba(210,153,34,.3)",
     "success": "#3fb950", "success-dim": "rgba(63,185,80,.14)", "success-bd": "rgba(63,185,80,.36)",
-    "danger": "#f85149", "danger-dim": "rgba(248,81,73,.14)", "danger-bd": "rgba(248,81,73,.38)",
-    "warning": "#d29922", "warning-dim": "rgba(210,153,34,.14)", "warning-bd": "rgba(210,153,34,.38)",
+    "danger": "#f85149", "danger-dim": "rgba(248,81,73,.14)", "danger-bd": "rgba(248,81,73,.38)", "danger-fg": "#000000",
+    "warning": "#d29922", "warning-dim": "rgba(210,153,34,.14)", "warning-bd": "rgba(210,153,34,.38)", "warning-fg": "#000000",
     "grid": "rgba(240,246,252,.07)", "scrim": "rgba(1,4,9,.68)", "shadow": "rgba(1,4,9,.5)", "shadow-strong": "rgba(1,4,9,.75)",
   },
 };
 
 const dracula: Theme = {
-  id: "dracula", label: "Dracula", scheme: "dark", shape,
+  ...metadata.dracula, shape,
   color: {
-    "bg-0": "#282a36", "bg-1": "#21222c", "bg-2": "#30323f", "bg-3": "#383a47", "bg-4": "#44475a", "bg-input": "#21222c",
+    "bg-0": metadata.dracula.background, "bg-1": "#21222c", "bg-2": "#30323f", "bg-3": "#383a47", "bg-4": "#44475a", "bg-input": "#21222c",
     "border-subtle": "#3b3d4d", "border": "#4b4e61", "border-strong": "#6272a4",
     "text-0": "#f8f8f2", "text-1": "#e2e2dc", "text-2": "#b9b9b2", "text-3": "#9b9ba5",
     "accent": "#bd93f9", "accent-dim": "rgba(189,147,249,.16)", "accent-bd": "rgba(189,147,249,.44)", "accent-fg": "#211a2b",
     "selection": "#44475a", "selection-fg": "#f8f8f2", "status": "#6272a4", "status-fg": "#ffffff",
     "live": "#f1fa8c", "live-dim": "rgba(241,250,140,.13)", "live-bd": "rgba(241,250,140,.35)", "compact-zone": "rgba(241,250,140,.28)",
     "success": "#50fa7b", "success-dim": "rgba(80,250,123,.13)", "success-bd": "rgba(80,250,123,.35)",
-    "danger": "#ff5555", "danger-dim": "rgba(255,85,85,.14)", "danger-bd": "rgba(255,85,85,.38)",
-    "warning": "#ffb86c", "warning-dim": "rgba(255,184,108,.14)", "warning-bd": "rgba(255,184,108,.38)",
+    "danger": "#ff5555", "danger-dim": "rgba(255,85,85,.14)", "danger-bd": "rgba(255,85,85,.38)", "danger-fg": "#000000",
+    "warning": "#ffb86c", "warning-dim": "rgba(255,184,108,.14)", "warning-bd": "rgba(255,184,108,.38)", "warning-fg": "#000000",
     "grid": "rgba(248,248,242,.07)", "scrim": "rgba(20,21,27,.62)", "shadow": "rgba(12,12,16,.45)", "shadow-strong": "rgba(12,12,16,.7)",
   },
 };
 
 const nord: Theme = {
-  id: "nord", label: "Nord", scheme: "dark", shape,
+  ...metadata.nord, shape,
   color: {
-    "bg-0": "#2e3440", "bg-1": "#272c36", "bg-2": "#3b4252", "bg-3": "#434c5e", "bg-4": "#4c566a", "bg-input": "#242933",
+    "bg-0": metadata.nord.background, "bg-1": "#272c36", "bg-2": "#3b4252", "bg-3": "#434c5e", "bg-4": "#4c566a", "bg-input": "#242933",
     "border-subtle": "#3b4252", "border": "#4c566a", "border-strong": "#616e88",
     "text-0": "#eceff4", "text-1": "#e5e9f0", "text-2": "#c2c8d2", "text-3": "#aeb8c8",
     "accent": "#88c0d0", "accent-dim": "rgba(136,192,208,.15)", "accent-bd": "rgba(136,192,208,.42)", "accent-fg": "#20252e",
     "selection": "#4c566a", "selection-fg": "#eceff4", "status": "#5e81ac", "status-fg": "#ffffff",
     "live": "#ebcb8b", "live-dim": "rgba(235,203,139,.14)", "live-bd": "rgba(235,203,139,.38)", "compact-zone": "rgba(235,203,139,.29)",
     "success": "#a3be8c", "success-dim": "rgba(163,190,140,.14)", "success-bd": "rgba(163,190,140,.36)",
-    "danger": "#bf616a", "danger-dim": "rgba(191,97,106,.16)", "danger-bd": "rgba(191,97,106,.4)",
-    "warning": "#d08770", "warning-dim": "rgba(208,135,112,.15)", "warning-bd": "rgba(208,135,112,.38)",
+    "danger": "#bf616a", "danger-dim": "rgba(191,97,106,.16)", "danger-bd": "rgba(191,97,106,.4)", "danger-fg": "#000000",
+    "warning": "#d08770", "warning-dim": "rgba(208,135,112,.15)", "warning-bd": "rgba(208,135,112,.38)", "warning-fg": "#000000",
     "grid": "rgba(236,239,244,.07)", "scrim": "rgba(23,27,34,.64)", "shadow": "rgba(15,18,23,.45)", "shadow-strong": "rgba(15,18,23,.7)",
   },
 };
 
 const solarizedDark: Theme = {
-  id: "solarized-dark", label: "Solarized Dark", scheme: "dark", shape,
+  ...metadata["solarized-dark"], shape,
   color: {
-    "bg-0": "#002b36", "bg-1": "#00212b", "bg-2": "#073642", "bg-3": "#0b4351", "bg-4": "#17515f", "bg-input": "#00212b",
+    "bg-0": metadata["solarized-dark"].background, "bg-1": "#00212b", "bg-2": "#073642", "bg-3": "#0b4351", "bg-4": "#17515f", "bg-input": "#00212b",
     "border-subtle": "#0b4351", "border": "#1b5663", "border-strong": "#657b83",
     "text-0": "#fdf6e3", "text-1": "#eee8d5", "text-2": "#a8b5b5", "text-3": "#93a1a1",
     "accent": "#2aa198", "accent-dim": "rgba(42,161,152,.16)", "accent-bd": "rgba(42,161,152,.45)", "accent-fg": "#001f27",
     "selection": "#075b6b", "selection-fg": "#fdf6e3", "status": "#268bd2", "status-fg": "#ffffff",
     "live": "#b58900", "live-dim": "rgba(181,137,0,.15)", "live-bd": "rgba(181,137,0,.4)", "compact-zone": "rgba(181,137,0,.3)",
     "success": "#859900", "success-dim": "rgba(133,153,0,.15)", "success-bd": "rgba(133,153,0,.38)",
-    "danger": "#dc322f", "danger-dim": "rgba(220,50,47,.15)", "danger-bd": "rgba(220,50,47,.4)",
-    "warning": "#cb4b16", "warning-dim": "rgba(203,75,22,.15)", "warning-bd": "rgba(203,75,22,.4)",
+    "danger": "#dc322f", "danger-dim": "rgba(220,50,47,.15)", "danger-bd": "rgba(220,50,47,.4)", "danger-fg": "#ffffff",
+    "warning": "#cb4b16", "warning-dim": "rgba(203,75,22,.15)", "warning-bd": "rgba(203,75,22,.4)", "warning-fg": "#ffffff",
     "grid": "rgba(238,232,213,.07)", "scrim": "rgba(0,25,31,.68)", "shadow": "rgba(0,18,23,.48)", "shadow-strong": "rgba(0,18,23,.72)",
   },
 };

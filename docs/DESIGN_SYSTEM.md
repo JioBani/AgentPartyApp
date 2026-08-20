@@ -9,7 +9,8 @@ custom property that a theme supplies.
 
 | Concern | File |
 | --- | --- |
-| Theme token values (per theme) | `src/renderer/theme/themes.ts` |
+| Preset id/label/scheme/native `bg-0` metadata | `src/shared/appTheme.ts` |
+| Remaining theme token values (per theme) | `src/renderer/theme/themes.ts` |
 | Theme application + persistence + switcher | `src/renderer/theme/ThemeProvider.tsx`, `src/shared/appTheme.ts` |
 | Member identity colors + tints | `src/renderer/theme/memberColors.ts` |
 | Non-themed primitives (fonts, spacing, type ramp, resets) | `src/renderer/design-system.css` |
@@ -17,14 +18,16 @@ custom property that a theme supplies.
 
 ## Theming model
 
-- `themes.ts` exports a `THEMES` array. Each `Theme` has a `color` map and a
-  `shape` map. The **first** entry is the default (currently `github-light`).
+- `appTheme.ts` exports the ordered `THEME_METADATA`; `themes.ts` consumes that
+  shared id/label/scheme/background source and adds each preset's remaining
+  `color` map plus the shared `shape` map.
 - First paint is owned by main. `createWindow` resolves the preset from
   settings.json, sets `BrowserWindow.backgroundColor` from the
   shared `bg-0` token (`THEME_BACKGROUNDS` in `appTheme.ts`, also used by
   `themes.ts`), and injects that boot payload via preload
-  (`window.agentPartyAppearanceBoot`) **before** the page loads. `index.html`
-  and `ThemeProvider` prefer it. `localStorage` is only an upgrade source when
+  (`window.agentPartyAppearanceBoot`) **before** the page loads. The shared
+  `theme/firstPaint.ts` module runs before React and is also used by
+  `ThemeProvider`. `localStorage` is only an upgrade source when
   settings.json has no `theme`. `html[data-theme-paint=sync]` marks that path.
   Bare `:root` GitHub Light tokens are a last-resort fallback, not the
   first-paint path.
@@ -36,9 +39,11 @@ custom property that a theme supplies.
 
 ### Add a new theme
 
-1. Append a `Theme` object to `THEMES` in `themes.ts` (fill every `color` and
-   `shape` token — TypeScript enforces completeness).
-2. Done. The switcher, injection, and persistence pick it up automatically.
+1. Append its id/label/scheme/native background once to `THEME_METADATA` and
+   `THEME_PREFERENCES` in `src/shared/appTheme.ts`.
+2. Append its palette to `THEMES` in `themes.ts`, taking `bg-0`, label, and
+   scheme from that metadata (TypeScript enforces all remaining tokens).
+3. Add the preset to the contrast and real-Electron theme matrices.
 
 Because borders and radii are tokens too, a theme can flatten corners, thicken
 borders, or restyle focus rings without touching any component.
@@ -49,7 +54,8 @@ borders, or restyle focus rings without touching any component.
 `bg-0…bg-4`, `bg-input`, `border-subtle`, `border`, `border-strong`,
 `text-0…text-3`, `accent`/`accent-dim`/`accent-bd`/`accent-fg`,
 `selection`/`selection-fg`, `status`/`status-fg`,
-`live`/`live-dim`, `success`/`success-dim`, `danger`/`danger-dim`, `scrim`.
+`live`/`live-dim`, `success`/`success-dim`,
+`danger`/`danger-dim`/`danger-fg`, `warning`/`warning-dim`/`warning-fg`, `scrim`.
 
 ### Shape tokens (themable)
 `radius-window`, `radius-panel`, `radius-card`, `radius-button`, `radius-input`,

@@ -61,6 +61,7 @@ window.ResizeObserver = class {
   disconnect() {}
 };
 globalThis.ResizeObserver = window.ResizeObserver;
+window.HTMLCanvasElement.prototype.getContext = () => ({ measureText: (text) => ({ width: String(text).length * 8 }) });
 
 window.console = console;
 const origError = console.error;
@@ -111,7 +112,7 @@ const members = [
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" }, grok: { model: "grok-4.6", effort: "high", permissionMode: "default" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
     // Settings the real app always fills in (main/settings.ts normalizes them on
     // read). They were absent here while nothing rendered the settings screen;
     // the 유휴 슬립 assertions below do, and the cards read these directly.
@@ -156,10 +157,14 @@ const frontendHistory = [
 window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
-  getAppearance: async () => ({ preference: "light", applied: "light", options: ["system", "light", "dark"], stored: false, background: "#e7e8eb" }),
-  setTheme: async (theme) => ({ preference: theme, applied: theme === "dark" ? "dark" : "light", options: ["system", "light", "dark"], stored: true, background: theme === "dark" ? "#0a0b0e" : "#e7e8eb" }),
+  getAppearance: async () => ({ preference: "github-light", applied: "github-light", options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: false, background: "#f6f8fa" }),
+  setTheme: async (theme) => ({ preference: theme, applied: theme, options: ["github-light", "github-dark", "dracula", "nord", "solarized-dark"], stored: true, background: "#f6f8fa" }),
   onAppearanceUpdate: () => () => {},
   appearanceReady: () => {},
+  listMemberLocations: async () => ({
+    ok: true,
+    members: members.map((member) => ({ member: member.name, partyName: "Refactor Auth", location: { env: "windows", cwd: "/dev/acme-api" } })),
+  }),
   chooseWorkspace: async () => initialState.settings,
   listAuth: async () => [],
   setOpenRouterKey: noop,
@@ -341,7 +346,7 @@ assert(Boolean(donut) && donut.querySelector(".wb-donut-ring") !== null, "donut 
 // still resolves the donut (stale) — the value a reopened app shows before turn 1.
 const staleDonut = document.querySelector('[data-panel-id="pb"] .wb-ctx-donut');
 assert(Boolean(staleDonut) && staleDonut.textContent.includes("150K") && staleDonut.textContent.includes("200K"), "stale donut shows used/total (150K / 200K)");
-assert(document.documentElement.getAttribute("data-theme") === "light", "default theme is light");
+assert(document.documentElement.getAttribute("data-theme") === "github-light", "default theme is GitHub Light");
 assert(document.getElementById("agentparty-theme-vars") !== null, "theme variables injected");
 
 // Session restart moved OFF the toolbar into the header ⋯ menu (Stop now lives in
@@ -358,15 +363,15 @@ const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
 const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || ""));
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
 assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
-assert(mcpMenuItem != null && menuItems.length === 3, "⋯ menu has three items (세션 재시작 · Message Gate · MCP 서버)");
+assert(mcpMenuItem != null && menuItems.length === 4, "⋯ menu has four current actions including MCP and CLI continuation");
 // A busy member's composer offers 대기열에 추가 — NOT Stop. While a member works,
 // that slot is the only way to put a message in its queue, so Stop cannot own it.
 // Stop moved to the panel toolbar, where it appears only mid-turn.
 const busySend = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-queueing, [data-panel-id="pa"] .wb-send.is-queueing');
 assert(busySend !== null, "a busy member's composer offers 대기열에 추가 (the send slot stays a send)");
 assert(document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop') === null, "Stop no longer takes over the composer's send slot");
-assert(document.querySelector('[data-panel-id="pa"] .wb-stop-pill') !== null, "a busy member's toolbar shows Stop");
-assert(document.querySelector('[data-panel-id="pb"] .wb-stop-pill') === null, "an idle member's toolbar has no Stop");
+assert(document.querySelector('[data-panel-id="pa"] .wb-composer-stop') !== null, "a busy member's composer shows a separate Stop control");
+assert(document.querySelector('[data-panel-id="pb"] .wb-composer-stop') === null, "an idle member's composer has no Stop control");
 
 // Party right-click -> new window carries only the stable party id. The main
 // process derives cwd from the sender window; forwarding settings.workspacePath
@@ -450,10 +455,10 @@ if (reviewerRow) {
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 const sleepMenuItems = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])];
-const keepAwakeItem = sleepMenuItems.find((b) => /계속 켜두기/.test(b.textContent || ""));
-const sleepItem = sleepMenuItems.find((b) => /지금 재우기/.test(b.textContent || ""));
-assert(keepAwakeItem != null, "context menu offers 계속 켜두기");
-assert(sleepItem != null, "context menu offers 지금 재우기 for an awake member");
+const keepAwakeItem = sleepMenuItems.find((b) => /항상 실행 상태 유지/.test(b.textContent || ""));
+const sleepItem = sleepMenuItems.find((b) => /지금 프로세스 종료/.test(b.textContent || ""));
+assert(keepAwakeItem != null, "context menu offers 항상 실행 상태 유지");
+assert(sleepItem != null, "context menu offers 지금 프로세스 종료 for an awake member");
 if (sleepItem) {
   sleepItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -464,7 +469,7 @@ if (reviewerRow) {
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 const pinItem = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])]
-  .find((b) => /계속 켜두기/.test(b.textContent || ""));
+  .find((b) => /항상 실행 상태 유지/.test(b.textContent || ""));
 if (pinItem) {
   pinItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -525,11 +530,11 @@ assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed bac
 
 // Settings → Runtime carries the only UI for the global idle-sleep policy, so a
 // card that fails to render leaves the feature on with no way to turn it off.
-emit("nav", { view: "runtime" });
+emit("nav", { view: "agent", tab: "general" });
 await new Promise((resolve) => setTimeout(resolve, 120));
 const runtimeText = document.getElementById("root").textContent || "";
-assert(runtimeText.includes("유휴 슬립"), "settings show the 유휴 슬립 card");
-assert(runtimeText.includes("유휴 멤버의 프로세스 내리기"), "the card explains what sleeping does");
+assert(runtimeText.includes("유휴 절전"), "settings show the 유휴 절전 card");
+assert(runtimeText.includes("유휴 멤버의 프로세스 종료"), "the card explains what sleeping does");
 assert(runtimeText.includes("5분"), "the card shows the current quiet period");
 
 // React surfaces render errors via console.error; treat those as failures.

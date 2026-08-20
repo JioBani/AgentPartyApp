@@ -155,7 +155,7 @@
 .guide-stage-error {
     position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
     z-index: 5; max-width: 86%; padding: 8px 14px; border-radius: var(--radius-pill);
-    background: var(--danger); color: var(--accent-fg);
+    background: var(--danger); color: var(--danger-fg);
     font-size: 13px; font-weight: 600; text-align: center;
   }
 .guide-stage-shade { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity var(--motion-base) ease; }

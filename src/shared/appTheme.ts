@@ -15,14 +15,25 @@ export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
 export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
 export const THEME_SYNC_PAINT_VALUE = "sync";
 
-/** BrowserWindow backgrounds. Keep equal to each preset's `bg-0` token. */
-export const THEME_BACKGROUNDS: Record<ThemePreference, string> = {
-  "github-light": "#f6f8fa",
-  "github-dark": "#0d1117",
-  dracula: "#282a36",
-  nord: "#2e3440",
-  "solarized-dark": "#002b36",
-};
+export interface ThemeMetadata {
+  id: ThemePreference;
+  label: string;
+  scheme: "light" | "dark";
+  background: string;
+}
+
+/** Shared preset metadata used by BrowserWindow chrome and renderer themes. */
+export const THEME_METADATA: readonly ThemeMetadata[] = [
+  { id: "github-light", label: "GitHub Light", scheme: "light", background: "#f6f8fa" },
+  { id: "github-dark", label: "GitHub Dark", scheme: "dark", background: "#0d1117" },
+  { id: "dracula", label: "Dracula", scheme: "dark", background: "#282a36" },
+  { id: "nord", label: "Nord", scheme: "dark", background: "#2e3440" },
+  { id: "solarized-dark", label: "Solarized Dark", scheme: "dark", background: "#002b36" },
+];
+
+export const THEME_BACKGROUNDS = Object.fromEntries(
+  THEME_METADATA.map(({ id, background }) => [id, background]),
+) as Record<ThemePreference, string>;
 
 export interface AppearanceBoot {
   preference: ThemePreference;
@@ -53,9 +64,9 @@ export function parseAppearanceBootArgs(argv: readonly string[]): AppearanceBoot
 }
 
 /** Settings boot is authoritative; renderer storage is only an upgrade source. */
-export function firstPaintFrom(boot: AppearanceBoot | null, legacyTheme: unknown): { preference: ThemePreference; applied: AppliedTheme } {
+export function firstPaintFrom(boot: AppearanceBoot | null, cachedTheme: unknown): { preference: ThemePreference; applied: AppliedTheme } {
   if (boot?.stored) return { preference: boot.preference, applied: boot.applied };
-  const migrated = migrateLegacyThemeId(legacyTheme);
+  const migrated = migrateLegacyThemeId(cachedTheme);
   if (migrated) return { preference: migrated, applied: migrated };
   if (boot) return { preference: boot.preference, applied: boot.applied };
   return { preference: DEFAULT_THEME_PREFERENCE, applied: DEFAULT_THEME_PREFERENCE };
@@ -123,6 +134,18 @@ export function migrateLegacyThemeId(value: unknown): ThemePreference | null {
   if (value === "dark") return "github-dark";
   if (value === "light" || value === "system") return "github-light";
   return null;
+}
+
+/**
+ * Resolves the two renderer cache keys. A current preset preference wins; when
+ * it is a removed `system` value, the old applied-theme key preserves whether
+ * that OS-following choice last painted light or dark.
+ */
+export function themeFromRendererStorage(themePreference: unknown, appliedTheme: unknown): ThemePreference | null {
+  if (isThemePreference(themePreference)) return themePreference;
+  const migratedApplied = migrateLegacyThemeId(appliedTheme);
+  if (migratedApplied) return migratedApplied;
+  return migrateLegacyThemeId(themePreference);
 }
 
 export function normalizeThemePreference(value: unknown): ThemePreference {

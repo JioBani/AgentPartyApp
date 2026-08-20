@@ -165,7 +165,7 @@
 
 .window-button.close:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-fg);
 }
 
 .app-body {
@@ -3159,17 +3159,17 @@ body.wb-resizing {
    like a link and starts looking like the action it is about to take. */
 .wb-queue-flat.is-danger.is-armed {
   background: var(--danger);
-  color: var(--accent-fg);
+  color: var(--danger-fg);
   font-weight: 700;
 }
-.wb-queue-flat.is-danger.is-armed:hover { background: var(--danger); color: var(--accent-fg); }
+.wb-queue-flat.is-danger.is-armed:hover { background: var(--danger); color: var(--danger-fg); }
 
 .wb-queue-x.is-armed {
   width: auto;
   gap: var(--space-1);
   padding: 0 var(--space-2);
   background: var(--danger);
-  color: var(--accent-fg);
+  color: var(--danger-fg);
   font-size: 10px;
   font-weight: 700;
 }
@@ -4278,6 +4278,7 @@ body.wb-resizing {
 .wb-send.is-stop,
 .wb-send-labeled.is-stop {
   background: var(--danger);
+  color: var(--danger-fg);
 }
 
 .wb-composer-actions {
@@ -6857,10 +6858,12 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-diag-badge.is-warning {
   background: var(--warning);
+  color: var(--warning-fg);
 }
 
 .wb-diag-badge.is-error {
   background: var(--danger);
+  color: var(--danger-fg);
 }
 
 .wb-diag-badge.is-info {
@@ -7074,7 +7077,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .micro.danger.armed {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-fg);
   border-color: var(--danger);
 }
 
@@ -9070,7 +9073,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   background: var(--warning-dim);
   color: var(--warning);
 }
-.wb-update-pill.is-downgrade:hover { background: var(--warning); color: var(--accent-fg); border-color: var(--warning); }
+.wb-update-pill.is-downgrade:hover { background: var(--warning); color: var(--warning-fg); border-color: var(--warning); }
 .set-ver-tag.is-warn { background: var(--warning-dim); color: var(--warning); }
 
 /* --- 설정 → 모바일 연결 -----------------------------------------------------

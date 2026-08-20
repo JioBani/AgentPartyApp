@@ -521,8 +521,11 @@ First paint is owned by main: `createWindow` resolves the preset from
 `settings.json`, colours the BrowserWindow, and passes that
 boot payload into the preload (`window.agentPartyAppearanceBoot`) before the
 page loads. `index.html` and `ThemeProvider` prefer that value.
-`localStorage` is used only when settings.json has **no** `theme`. A stale cache
-cannot override an explicit setting.
+`localStorage` is used only when settings.json has **no** `theme`. Both cache
+keys use one shared pre-React/persistence rule: a current five-preset preference
+wins over the applied cache; a removed `system` preference instead preserves
+its last `light`/`dark` applied value. A stale cache cannot override an explicit
+setting.
 `html[data-theme-paint=sync]` marks that path.
 
 ### `POST /api/appearance/theme`

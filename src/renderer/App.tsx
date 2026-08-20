@@ -13,7 +13,6 @@ import type { PartyPrimerSectionId } from "../shared/partyPrimer";
 import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import {
-  THEME_STORAGE_KEY,
   migrateLegacyThemeValue,
   normalizeThemePreference,
   retainAppearanceOnInitialState,
@@ -37,6 +36,7 @@ import { UpdatePill } from "./workbench/UpdatePill";
 import { MobileDrivingPill } from "./workbench/MobileDrivingPill";
 import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
+import { cachedRendererTheme } from "./theme/firstPaint";
 import { Workbench } from "./workbench/Workbench";
 import type { WorkbenchActions } from "./workbench/actions";
 import { createLatestMethodProxy } from "./workbench/stableActions";
@@ -259,9 +259,7 @@ export function App() {
       try {
         const appearance = await window.agentParty.getAppearance();
         if (cancelled) return;
-        let legacy: string | null = null;
-        try { legacy = window.localStorage.getItem(THEME_STORAGE_KEY); } catch { /* unavailable */ }
-        const migrated = migrateLegacyThemeValue(appearance.stored ? appearance.preference : undefined, legacy);
+        const migrated = migrateLegacyThemeValue(appearance.stored ? appearance.preference : undefined, cachedRendererTheme());
         if (migrated) {
           const next = await window.agentParty.setTheme(migrated);
           if (cancelled) return;
