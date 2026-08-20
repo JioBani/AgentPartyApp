@@ -506,6 +506,7 @@
 
 /* 자리가 생겼으니 만들기 버튼도 눌러 볼 만한 크기로. 목업의 26px 한 줄은
    목록이 화면을 꽉 채우던 시절의 크기였다. */
+
 .wb-group-add {
   flex: none;
   margin-top: var(--space-2);
@@ -6100,6 +6101,20 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 .wb-wizard-input:focus { outline: none; border-color: var(--accent); }
 .wb-wizard-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
+
+/* 그룹 고르는 드롭다운. `.wb-wizard-input` 은 흰 모달 위에서 --bg-1 이라
+   12단계밖에 차이가 안 나 필드로 안 읽혔다. 한 단계 더 눌러 깔고 테두리를
+   올려서, 열리는 컨트롤이라는 게 배경과 구분되게 한다. */
+.wb-group-select {
+  height: 38px;
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.wb-group-select:hover { background: var(--bg-4, var(--bg-3)); border-color: var(--accent-bd); }
+.wb-group-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
 
 /* States what "기본 설정으로 만들기" will create. Boxed, unlike the ordinary
    hints, because it describes the footer's shortcut rather than the field above

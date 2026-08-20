@@ -88,6 +88,8 @@ interface WorkbenchProps {
   /** Every party the app knows, from the global registry (not just this workspace). */
   registeredParties: RegisteredParty[];
   cwdPrefs: CwdPreferences;
+  /** Last-resort cwd suggestion (the app's own workspace folder). */
+  appWorkspaceRoot: string;
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
   onCreateMember: (input: CreateMemberInput) => void;
@@ -147,7 +149,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleDrawer, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onOpenMembersChange, onToggleDrawer, onOpenUsage, onOpenSessions } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -625,6 +627,7 @@ export function Workbench(props: WorkbenchProps) {
         groups={groups}
         partySummaries={partySummaries}
         cwdPrefs={cwdPrefs}
+        appWorkspaceRoot={appWorkspaceRoot}
         now={now}
         onSelectParty={onSelectParty}
         onCreateParty={onCreateParty}

@@ -370,6 +370,10 @@ export interface PartyDefinition {
    * Optional because parties created before groups existed have none; those are
    * shown in the default group rather than hidden, so a missing value can never
    * strand a party (README §4.1).
+   *
+   * CREATION-TIME SEED ONLY. The app-global registry owns which group a party is
+   * in; this value is read once, when the party is first registered, and is
+   * stale from the first move onwards. Never write it back into the registry.
    */
   groupId?: string;
   createdAt: string;

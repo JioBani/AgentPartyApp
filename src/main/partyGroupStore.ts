@@ -201,8 +201,15 @@ export class PartyGroupStore {
   /**
    * Adds or refreshes one party's summary.
    *
-   * `groupId` is only applied when given, so a routine counts refresh cannot
-   * move a party the user filed somewhere back into the default group.
+   * `groupId` is a SEED for a party this store has never seen; it never moves
+   * one that is already filed. Which folder a party is in belongs to this
+   * registry, and {@link moveParty} is the only thing that changes it.
+   *
+   * The workspace's own `party.json` also carries a `groupId`, written when the
+   * party was created. That value goes stale the moment the user moves the
+   * party, and every routine counts-refresh passed it back in — which filed the
+   * party back into the group it was BORN in as soon as anyone created the next
+   * member or party. Ignoring it here is what makes a move stick.
    */
   upsertParty(summary: RegisteredParty): PartyGroupState {
     const state = this.read();
@@ -211,7 +218,7 @@ export class PartyGroupStore {
       return this.write(recordConflict(state, summary.id, [existing.workspacePath, summary.workspacePath]));
     }
     const merged: RegisteredParty = existing
-      ? { ...existing, ...summary, groupId: summary.groupId || existing.groupId }
+      ? { ...existing, ...summary, groupId: existing.groupId }
       : { ...summary, groupId: summary.groupId || DEFAULT_PARTY_GROUP_ID };
     return this.write({
       ...state,

@@ -115,6 +115,35 @@ export function preferencesFor(prefs: CwdPreferences, env: ExecutionEnv): { fall
     : { fallback: prefs.windowsDefault, recent: prefs.windowsRecent };
 }
 
+/**
+ * What the cwd picker should start on.
+ *
+ * Most recent first, then this environment's default, then the app's own
+ * workspace folder. An empty field made every new member a folder hunt, and the
+ * path somebody used a minute ago is the best guess anyone has.
+ *
+ * A remembered path that FAILED its last check is skipped rather than offered:
+ * pre-selecting a directory we already know is gone just moves the failure to
+ * the create button.
+ */
+export function suggestedCwd(
+  prefs: CwdPreferences,
+  env: ExecutionEnv,
+  appWorkspaceRoot?: string,
+): MemberExecutionLocation | undefined {
+  const { fallback, recent } = preferencesFor(prefs, env);
+  const usableRecent = recent.find((entry) => !entry.problem);
+  if (usableRecent) {
+    return usableRecent.location;
+  }
+  if (fallback) {
+    return fallback;
+  }
+  // Only Windows gets the app folder: there is no app-managed directory inside
+  // a distro, and inventing one would be a guess about somebody else's machine.
+  return env === "windows" && appWorkspaceRoot ? { env: "windows", cwd: appWorkspaceRoot } : undefined;
+}
+
 /** `MemberExecutionLocation` → the stored `WorkspaceLocation` string. */
 export function serializeMemberLocation(loc: MemberExecutionLocation): string {
   return serializeWorkspaceLocation(toWorkspaceLocation(loc));

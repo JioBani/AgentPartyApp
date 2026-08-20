@@ -67,6 +67,9 @@ export const GALLERY_CWD_PREFERENCES: CwdPreferences = {
 /** The distros the picker offers in the preview. */
 export const GALLERY_WSL_DISTROS = ["Ubuntu-24.04", "Ubuntu-22.04", "docker-desktop"];
 
+/** Stands in for `<userData>/workspaces` in the preview. */
+export const GALLERY_APP_WORKSPACE_ROOT = "C:\Users\Dev\AppData\Roaming\AgentParty\workspaces";
+
 /** The empty state: a fresh install has no default and nothing remembered. */
 export const GALLERY_CWD_PREFERENCES_EMPTY: CwdPreferences = { windowsRecent: [], wslRecent: [] };
 

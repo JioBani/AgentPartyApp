@@ -29,7 +29,7 @@ import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration
 import { PartyRepository } from "../partyRepository";
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
-import { checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
+import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
 import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
@@ -1516,8 +1516,14 @@ export class AppController {
   // ------------------------------------------------------------ 멤버 실행 위치
 
   /** Default + recent cwds. `check: true` re-probes each entry (spawns wsl.exe). */
-  async getCwdPreferences(options?: { check?: boolean }): Promise<{ ok: true; preferences: CwdPreferences }> {
-    return { ok: true, preferences: options?.check ? await getCheckedCwdPreferences() : getCwdPreferences() };
+  async getCwdPreferences(options?: { check?: boolean }): Promise<{ ok: true; preferences: CwdPreferences; appWorkspaceRoot: string }> {
+    return {
+      ok: true,
+      preferences: options?.check ? await getCheckedCwdPreferences() : getCwdPreferences(),
+      // The last-resort suggestion for a user with no recent and no default.
+      // Sent with the preferences because the renderer cannot know userData.
+      appWorkspaceRoot: appWorkspaceRoot(),
+    };
   }
 
   async setDefaultCwd(location: MemberExecutionLocation): Promise<{ ok: true; preferences: CwdPreferences }> {

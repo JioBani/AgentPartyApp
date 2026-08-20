@@ -13,7 +13,9 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { probeCommand } from "../core/commandProbe";
+import { getUserDataDir } from "./userDataDir";
 import { listWslDistros } from "./environmentService";
 import {
   checkLocationShape,
@@ -193,4 +195,24 @@ export async function wslHome(distro: string): Promise<{ home?: string; problem?
   }
   log("info", "cwd", "wsl home lookup failed", { distro, error: probe.error });
   return { problem: { ...cwdProblem("distro-unavailable"), message: wslFailureMessage(probe.error) } };
+}
+
+/**
+ * The folder the app offers when the user has no recent and no default cwd.
+ *
+ * Under `userData` next to the rest of the app's own state, so a first run has
+ * somewhere real to put a party without asking the user to go find a directory
+ * first. Created here rather than at the moment of use: a suggested path that
+ * does not exist would be refused by the very check that guards creation.
+ */
+export function appWorkspaceRoot(): string {
+  const root = path.join(getUserDataDir(), "workspaces");
+  try {
+    fs.mkdirSync(root, { recursive: true });
+  } catch (error) {
+    // Reported, not swallowed: without it the picker offers a path that cannot
+    // be used, and the failure would surface later as a confusing refusal.
+    log("warn", "cwd", "could not create the app workspace folder", { root, error: error instanceof Error ? error.message : String(error) });
+  }
+  return root;
 }

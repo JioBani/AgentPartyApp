@@ -22,7 +22,7 @@ import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
-import { checkLocationShape, parseMemberLocation, preferencesFor } from "../../shared/memberLocation";
+import { checkLocationShape, parseMemberLocation, suggestedCwd } from "../../shared/memberLocation";
 
 export interface CreateMemberInput {
   name: string;
@@ -54,6 +54,7 @@ interface PartySidebarProps {
   partySummaries: PartySummary[];
   /** Default + recent cwds, offered when creating a party or a member. */
   cwdPrefs: CwdPreferences;
+  appWorkspaceRoot: string;
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
   activePartyId?: string;
@@ -283,7 +284,7 @@ function loadDrawerWidth(which: "party" | "member"): number {
 }
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   const [partyWidth, setPartyWidth] = useState(() => loadDrawerWidth("party"));
   const [memberWidth, setMemberWidth] = useState(() => loadDrawerWidth("member"));
   const resizing = useRef<{ which: "party" | "member"; startX: number; startWidth: number } | null>(null);
@@ -485,6 +486,7 @@ export function PartySidebar(props: PartySidebarProps) {
             defaultProfile={defaultProfile}
             harnessDefaults={harnessDefaults}
             cwdPrefs={cwdPrefs}
+            appWorkspaceRoot={appWorkspaceRoot}
             now={now}
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}
@@ -644,6 +646,7 @@ export function PartySidebar(props: PartySidebarProps) {
           groups={groups}
           initialGroupId={newPartyGroupId ?? activeGroupId}
           cwdPrefs={cwdPrefs}
+          appWorkspaceRoot={appWorkspaceRoot}
           now={now}
           onBrowseCwd={onBrowseCwd}
           wsl={wsl}
@@ -683,11 +686,12 @@ export function PartySidebar(props: PartySidebarProps) {
  *
  * Closes ONLY via Cancel — never an outside click.
  */
-export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, now, onBrowseCwd, wsl, onCreateGroup, onCancel, onCreate }: {
+export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, appWorkspaceRoot, now, onBrowseCwd, wsl, onCreateGroup, onCancel, onCreate }: {
   initialName: string;
   groups: PartyGroup[];
   initialGroupId: string;
   cwdPrefs: CwdPreferences;
+  appWorkspaceRoot: string;
   now: number;
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
@@ -698,7 +702,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
 }) {
   const [name, setName] = useState(initialName);
   const [groupId, setGroupId] = useState(initialGroupId || groups[0]?.id || "");
-  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(cwdPrefs.windowsDefault);
+  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() => suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [gateOn, setGateOn] = useState(false);
   const [rule, setRule] = useState("간결하게 보내세요. 오케스트레이터를 거치지 말고 담당 멤버에게 직접 소통하세요.");
   // A party cannot be created without somewhere for `main` to run (README §7).
@@ -713,8 +717,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
   }
 
   function changeEnv(env: ExecutionEnv) {
-    const { fallback } = preferencesFor(cwdPrefs, env);
-    setLocation(fallback ?? { env, cwd: "" });
+    setLocation(suggestedCwd(cwdPrefs, env, appWorkspaceRoot) ?? { env, cwd: "" });
   }
 
   return (
@@ -740,7 +743,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, n
 
           <div className="wb-modal-label"><LocalizedText id="STR-3295" /></div>
           <select
-            className="wb-wizard-input"
+            className="wb-wizard-input wb-group-select"
             value={groupId}
             onChange={(event) => {
               if (event.target.value === "__new") {

@@ -14,7 +14,7 @@ import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import { CwdPicker, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
-import { checkLocationShape, preferencesFor } from "../../shared/memberLocation";
+import { checkLocationShape, suggestedCwd } from "../../shared/memberLocation";
 
 /** Why this harness's permission axes matter, in the wizard's own voice. */
 const PERMISSION_HINTS: Record<HarnessId, string> = {
@@ -39,6 +39,7 @@ interface MemberWizardProps {
   harnessDefaults: Record<string, HarnessDefaults>;
   /** Default + recent cwds per environment, used to seed and offer the location. */
   cwdPrefs: CwdPreferences;
+  appWorkspaceRoot: string;
   /** Frozen "now" for the recency column, so previews render deterministically. */
   now: number;
   /**
@@ -115,7 +116,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
@@ -128,7 +129,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * than borrowing the other environment's path, which would create the member
    * somewhere the user never chose.
    */
-  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(cwdPrefs.windowsDefault);
+  // Starts on the last cwd that worked, not empty: an empty field made every
+  // new member a folder hunt. See `suggestedCwd`.
+  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() => suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   /** Steps already reached, so the rail can jump back to one without re-walking. */
   const [maxStep, setMaxStep] = useState(startStep);
@@ -253,8 +256,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * POSIX cwd — a value no distro can use, offered as if it were ready.
    */
   function changeEnv(env: ExecutionEnv) {
-    const { fallback } = preferencesFor(cwdPrefs, env);
-    setLocation(fallback ?? { env, cwd: "" });
+    setLocation(suggestedCwd(cwdPrefs, env, appWorkspaceRoot) ?? { env, cwd: "" });
   }
 
   async function browse() {

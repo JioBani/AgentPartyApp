@@ -1911,6 +1911,12 @@ Default cwd per environment plus the ten most recent. `?check=1` re-probes every
 entry in its own environment (this can start a WSL distro), so the default is the
 cheap read.
 
+The response also carries `appWorkspaceRoot` — `<userData>/workspaces`, created
+on demand. It is what the picker offers when the user has neither a remembered
+cwd nor a default, so a first run has somewhere real to put a party instead of
+an empty field. It is a SUGGESTION: nothing is written to the preferences until
+a party or member is actually created there.
+
 ### `POST /api/cwd/default` · `POST /api/cwd/default/clear` · `POST /api/cwd/recent/remove`
 
 Set, clear and forget. Setting refuses a location that is not usable right now,

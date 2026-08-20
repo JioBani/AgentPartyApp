@@ -220,6 +220,8 @@ export function App() {
     () => ({ groups: [], parties: [] }),
   );
   const [cwdPrefs, setCwdPrefs] = useState<CwdPreferences>(EMPTY_CWD_PREFERENCES);
+  /** Where the picker points when the user has neither a recent nor a default. */
+  const [appWorkspaceRoot, setAppWorkspaceRoot] = useState("");
   /**
    * Installed distros for the WSL side of the cwd picker.
    *
@@ -242,6 +244,7 @@ export function App() {
     try {
       const result = await window.agentParty.getCwdPreferences(check ? { check: true } : undefined);
       setCwdPrefs(result.preferences);
+      setAppWorkspaceRoot(result.appWorkspaceRoot || "");
     } catch (error) {
       noticeOnFailure("작업 위치 설정을 읽지 못했습니다")(error);
     }
@@ -1845,6 +1848,7 @@ export function App() {
                 groups={partyGroups}
                 registeredParties={groupState.parties}
                 cwdPrefs={cwdPrefs}
+                appWorkspaceRoot={appWorkspaceRoot}
                 now={nowTick}
                 onCreateParty={(input) => void createParty(input)}
                 onCreateGroup={(name) => void createPartyGroup(name)}

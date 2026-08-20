@@ -22,6 +22,7 @@ import {
   GALLERY_WSL_DEFAULT,
   GALLERY_MEMBER_PROFILE,
   GALLERY_ROUTE,
+  GALLERY_APP_WORKSPACE_ROOT,
   GALLERY_WSL_DISTROS,
 } from "../../shared/partyGroupsGallery";
 import "../design-system.css";
@@ -88,6 +89,7 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
           defaultProfile={GALLERY_MEMBER_PROFILE as never}
           harnessDefaults={{} as never}
           cwdPrefs={GALLERY_CWD_PREFERENCES}
+          appWorkspaceRoot={GALLERY_APP_WORKSPACE_ROOT}
           now={GALLERY_NOW}
           onBrowseCwd={async () => null}
           wsl={{ distros: GALLERY_WSL_DISTROS }}
@@ -109,6 +111,7 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
           groups={GALLERY_GROUPS}
           initialGroupId="g-payments"
           cwdPrefs={GALLERY_CWD_PREFERENCES}
+          appWorkspaceRoot={GALLERY_APP_WORKSPACE_ROOT}
           now={GALLERY_NOW}
           onBrowseCwd={async () => null}
           wsl={{ distros: GALLERY_WSL_DISTROS }}
