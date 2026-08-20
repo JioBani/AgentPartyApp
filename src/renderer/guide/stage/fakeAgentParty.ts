@@ -152,12 +152,12 @@ export function createFakeAgentParty(): FakeAgentParty {
       snapshot = { ...current(), state: { ...current().state, settings: next } };
       return next;
     },
-    getAppearance: async () => appearanceStateOf(requireThemePreference(current().state.settings.theme), false, true),
+    getAppearance: async () => appearanceStateOf(requireThemePreference(current().state.settings.theme), true),
     setTheme: async (theme) => {
       const preference = requireThemePreference(theme);
       const next = { ...current().state.settings, theme: preference };
       snapshot = { ...current(), state: { ...current().state, settings: next } };
-      return appearanceStateOf(preference, false, true);
+      return appearanceStateOf(preference, true);
     },
     onAppearanceUpdate: (callback) => subscribe(callback),
     appearanceReady: () => undefined,

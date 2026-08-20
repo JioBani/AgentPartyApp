@@ -495,55 +495,54 @@ the same validation.
 
 ### `GET /api/appearance/theme`
 
-The user's appearance preference and the theme the UI is actually painting.
-Same `AppController.getAppearance` method the Settings selector and title-bar
-shortcut read.
+The persisted VS Code-style color theme and the theme the UI is painting. This
+is the same `AppController.getAppearance` method used by Settings > General >
+Appearance and the titlebar theme menu.
 
 ```json
 {
-  "preference": "system",
-  "applied": "dark",
-  "options": ["system", "light", "dark"],
+  "preference": "dracula",
+  "applied": "dracula",
+  "options": ["github-light", "github-dark", "dracula", "nord", "solarized-dark"],
   "stored": true,
-  "background": "#0a0b0e"
+  "background": "#282a36"
 }
 ```
 
-`preference` is the stored choice: `system` follows the OS, `light` and `dark`
-lock it. `applied` is the `data-theme` on `<html>` (`light` or `dark`).
+`preference` and `applied` are the selected preset id and the `data-theme` on
+`<html>`. There is no OS-following mode.
 `background` is the native window chrome colour (the `bg-0` token) so the
 window does not flash a hard-coded dark frame. `stored` is `true` only when
-`settings.json` itself contains `theme` — a missing field does not count as an
-explicit Light choice. A leftover `localStorage` `agentparty.theme` of `dark`
-still migrates on upgrade; leftover `light` does not, because the old toggle
-wrote that on every first paint.
+`settings.json` itself contains `theme`. Legacy settings/localStorage `light`
+and `dark` migrate to `github-light` and `github-dark`; legacy `system` migrates
+to the safe default `github-light`.
 
-First paint is owned by main: `createWindow` resolves preference+applied from
-`settings.json` and `nativeTheme`, colours the BrowserWindow, and passes that
+First paint is owned by main: `createWindow` resolves the preset from
+`settings.json`, colours the BrowserWindow, and passes that
 boot payload into the preload (`window.agentPartyAppearanceBoot`) before the
 page loads. `index.html` and `ThemeProvider` prefer that value.
-`localStorage` is used only when settings.json has **no** `theme` and the
-legacy key is `dark`. A stale cache cannot override an explicit setting.
+`localStorage` is used only when settings.json has **no** `theme`. A stale cache
+cannot override an explicit setting.
 `html[data-theme-paint=sync]` marks that path.
 
 ### `POST /api/appearance/theme`
 
-Sets the preference through the same `AppController.setTheme` method used by
-Settings → 모양 and the title-bar shortcut.
+Sets the preset through the same `AppController.setTheme` method used by the
+Settings appearance selector and titlebar menu.
 
 ```json
-{ "theme": "dark" }
+{ "theme": "nord" }
 ```
 
-Accepted values are `system`, `light`, and `dark`. Any other value (including a
+Accepted values are `github-light`, `github-dark`, `dracula`, `nord`, and
+`solarized-dark`. Any other value (including a
 missing `theme`) returns **HTTP 400** `{ "ok": false, "error": "지원하지 않는 테마입니다: …", "code": "invalid_theme" }`
 instead of a 500 or a silent default. The change is persisted in `settings.json`
-and pushed to every open window immediately. When `preference` is `system`, the
-painted theme follows the OS live.
+and pushed to every open window immediately.
 
 `POST /api/settings` accepts the same `theme` field and applies the same
-validation, but only on the desktop process. Appearance is desktop-owned
-(`nativeTheme` and the host `settings.json`). A WSL/headless engine forwards
+validation, but only on the desktop process. Appearance is desktop-owned by the
+host `settings.json`. A WSL/headless engine forwards
 `GET`/`POST /api/appearance/theme` to the Windows host over HostChannel; if
 that channel is missing, the call fails with **HTTP 403**
 `{ "ok": false, "error": "모양 설정은 데스크톱 앱이 소유합니다. …", "code": "appearance_desktop_only" }`
@@ -554,7 +553,7 @@ instead of writing the distro's own settings file. `POST /api/settings` with
 
 Updates app settings.
 
-`theme` is the appearance preference (`"system"` | `"light"` | `"dark"`). Same
+`theme` is one of the five preset ids documented above. The same
 validation and broadcast as `POST /api/appearance/theme` above, and only on
 the desktop process — a headless engine rejects a `theme` patch instead of
 writing its own settings.json.
@@ -3651,7 +3650,7 @@ the `GET /api/update/versions` shape.
 
 ### `POST /api/qa/input`
 
-Types into a field and/or presses a key in the targeted window — the input
+Types into a field, selects an option, and/or presses a key in the targeted window — the input
 counterpart of `/api/capture`'s `click`, so a keyboard-driven workflow can be
 driven through the real UI instead of calling the mutation behind it.
 Window-scoped (`?window=<id>`; focused window when omitted).
@@ -3659,6 +3658,8 @@ Window-scoped (`?window=<id>`; focused window when omitted).
 ```json
 { "selector": ".wb-composer-editor", "text": "상태 알려줘", "key": "Enter", "modifiers": ["control"] }
 ```
+
+For a select control: `{ "selector": "[data-theme-select]", "select": "nord" }`.
 
 Every field is optional and applied in order:
 
@@ -3672,6 +3673,9 @@ Every field is optional and applied in order:
   content is selected first, so the text **replaces** it; `""` clears the field.
   If the focused element is neither, the call **fails**, naming that element's
   tag: being unable to type is a failure, not a quiet no-op.
+- `select` — requires a focused `<select>` and an existing option value, then
+  drives its `input`/`change` workflow. A missing option or non-select target
+  fails visibly instead of reporting a no-op as success.
 - `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
   browser's own default action for that key still runs. This is the reason the
   endpoint exists: a synthetic DOM event dispatched from a script never fires a
@@ -3778,19 +3782,6 @@ QA only. Writes renderer `localStorage` keys used by first-paint / migration
 ```json
 { "theme": "dark", "themePreference": null }
 ```
-
-### `POST /api/qa/appearance/os`
-
-QA only (`AGENTPARTY_QA=1`). Pretends the OS colour scheme flipped:
-
-```json
-{ "dark": true }
-```
-
-The real Windows setting cannot be changed from this process. This is the
-`nativeTheme` signal the app already listens to: System preference follows it
-live; locked Light/Dark ignore it. Returns the same body as
-`GET /api/appearance/theme`.
 
 ### `POST /api/qa/environment`
 

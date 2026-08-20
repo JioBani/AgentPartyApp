@@ -34,7 +34,8 @@ import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COM
 import { IDLE_SLEEP_MAX_MINUTES, IDLE_SLEEP_MIN_MINUTES, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { COMPOSER_SEND_KEYS, type ComposerSendKey, type ComposerSettings } from "../../shared/composerSettings";
 import { normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily } from "../../shared/appFonts";
-import { THEME_PREFERENCES, normalizeThemePreference, type ThemePreference } from "../../shared/appTheme";
+import { normalizeThemePreference, type ThemePreference } from "../../shared/appTheme";
+import { THEMES } from "../theme/themes";
 import { enumerateLocalFonts, probeFonts } from "./fontProbe";
 import type { AppLocale } from "../../shared/appLocale";
 import { useI18n } from "../i18n/I18nProvider";
@@ -1856,11 +1857,6 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
 }) {
   const { t } = useI18n();
   const preference = normalizeThemePreference(settings.theme);
-  const themeLabels: Record<ThemePreference, MessageKey> = {
-    system: "appearance.system",
-    light: "appearance.light",
-    dark: "appearance.dark",
-  };
   const [tab, setTab] = useState<SettingsTabId>("general");
   const [copied, setCopied] = useState(false);
   const mobileEnabled = settings.mobile?.enabled === true;
@@ -1893,23 +1889,17 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
           <section className="set-card" data-settings-card="appearance">
             <div className="set-card-label">{t("appearance.title")}</div>
             <div className="set-inline-note"><InfoIcon size={14} /><span>{t("appearance.description")}</span></div>
-            <div className="set-harness-pick" data-theme-preference={preference}>
-              <div className="wb-segmented set-segmented" role="radiogroup" aria-label={t("appearance.title")}>
-                {THEME_PREFERENCES.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={preference === value}
-                    className={"wb-segment" + (preference === value ? " is-active" : "")}
-                    data-theme-option={value}
-                    onClick={() => onSaveTheme(value)}
-                  >
-                    {t(themeLabels[value])}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <label className="set-field">
+              <span className="set-field-label">{t("appearance.themeLabel")}</span>
+              <select
+                className="set-select"
+                data-theme-select
+                value={preference}
+                onChange={(event) => onSaveTheme(event.target.value as ThemePreference)}
+              >
+                {THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
+              </select>
+            </label>
           </section>
           <section className="set-card" data-settings-card="language">
             <div className="set-card-label">{t("runtime.language.title")}</div>

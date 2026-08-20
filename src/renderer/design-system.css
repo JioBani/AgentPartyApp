@@ -67,6 +67,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+::selection {
+  background: var(--selection);
+  color: var(--selection-fg);
+}
+
 button {
   font-family: inherit;
   font-size: inherit;

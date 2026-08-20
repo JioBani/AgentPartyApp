@@ -69,7 +69,6 @@ import {
   appearanceAccess,
   appearanceOwnerError,
   appearanceStateOf,
-  bindAppearanceUpdates,
   THEME_PREFERENCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   normalizeThemePreference,
@@ -98,8 +97,8 @@ export interface AppControllerDeps {
   getAppBuild?: () => { version: string; packaged: boolean };
   openWindow: (workspacePath: string) => Promise<WindowInfo>;
   /**
-   * Native window chrome (Electron `nativeTheme`). Desktop-only. A headless
-   * engine must NOT read/write its own settings.json for appearance — it
+   * Desktop appearance owner marker. A headless engine must NOT read/write its
+   * own settings.json for appearance — it
    * forwards through {@link appearanceRemote} or fails visibly.
    */
   appearance?: AppearanceHost;
@@ -226,20 +225,9 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
  * the affected workspace so same-workspace windows stay in sync.
  */
 export class AppController {
-  private nativeThemeUnsubscribe: () => void = () => undefined;
-  /** QA-only override of the OS scheme. `undefined` means "ask nativeTheme". */
-  private osDarkOverride: boolean | undefined;
+  constructor(private readonly deps: AppControllerDeps) {}
 
-  constructor(private readonly deps: AppControllerDeps) {
-    this.applyNativeTheme(normalizeThemePreference(getSettings().theme));
-    this.nativeThemeUnsubscribe = bindAppearanceUpdates(this.deps.appearance, () => this.onNativeThemeUpdated());
-  }
-
-  /** Drops the nativeTheme subscription. Called from app shutdown. */
-  dispose(): void {
-    this.nativeThemeUnsubscribe();
-    this.nativeThemeUnsubscribe = () => undefined;
-  }
+  dispose(): void {}
 
   /** App-global party groups + the party summaries filed under them. */
   private readonly partyGroups = new PartyGroupStore();
@@ -796,7 +784,7 @@ export class AppController {
       void this.deps.engineRegistry.setMemberMessaging(getSettings().memberMessaging);
     }
     if (Object.prototype.hasOwnProperty.call(validatedPatch, "theme")) {
-      this.applyNativeTheme(validatedPatch.theme as ThemePreference);
+      this.applyWindowTheme(validatedPatch.theme as ThemePreference);
       this.broadcastAppearance();
     }
     // Settings are global — push to EVERY window so a change made over HTTP or in
@@ -815,8 +803,8 @@ export class AppController {
   }
 
   /**
-   * Appearance: the user's System/Light/Dark preference and the theme the UI
-   * is actually painting. Same method behind Settings, the title-bar shortcut,
+   * Appearance: the user's five-preset color theme and the theme the UI is
+   * actually painting. Same method behind Settings
    * and GET /api/appearance/theme. A headless engine forwards to the desktop
    * over HostChannel; without a channel it rejects instead of writing a
    * distro-only settings.json.
@@ -845,18 +833,6 @@ export class AppController {
     return this.getAppearance();
   }
 
-  /**
-   * QA-only: pretends the OS scheme flipped. The real Windows colour mode
-   * cannot be changed from this process; this is the signal `nativeTheme`
-   * would have emitted. Locked Light/Dark must ignore it.
-   */
-  async qaSetOsScheme(dark: boolean): Promise<AppearanceState> {
-    this.requireQa();
-    this.osDarkOverride = dark === true;
-    this.onNativeThemeUpdated();
-    return this.getAppearance();
-  }
-
   async qaSetRendererStorage(windowId: string | undefined, patch: { theme?: string | null; themePreference?: string | null }): Promise<{ theme: string | null; themePreference: string | null }> {
     this.requireQa();
     const win = this.windowFor(windowId);
@@ -881,32 +857,18 @@ export class AppController {
     return result;
   }
 
-  private osIsDark(): boolean {
-    return this.osDarkOverride ?? this.deps.appearance?.isDark() === true;
-  }
-
   private readLocalAppearance(): AppearanceState {
     const stored = storedThemePreference();
     const preference = stored ?? normalizeThemePreference(getSettings().theme);
-    return appearanceStateOf(preference, this.osIsDark(), stored !== undefined);
+    return appearanceStateOf(preference, stored !== undefined);
   }
 
-  private applyNativeTheme(preference: ThemePreference): void {
-    this.deps.appearance?.setSource(preference);
-    const color = windowBackgroundFor(preference, this.osIsDark());
+  private applyWindowTheme(preference: ThemePreference): void {
+    const color = windowBackgroundFor(preference);
     const windows = typeof this.deps.windowRegistry.all === "function" ? this.deps.windowRegistry.all() : [];
     for (const entry of windows) {
       entry.window?.setBackgroundColor?.(color);
     }
-  }
-
-  private onNativeThemeUpdated(): void {
-    const preference = normalizeThemePreference(getSettings().theme);
-    this.applyNativeTheme(preference);
-    if (preference === "system") {
-      this.broadcastSettings();
-    }
-    this.broadcastAppearance();
   }
 
   private broadcastAppearance(): void {
@@ -3124,7 +3086,7 @@ export class AppController {
    */
   async qaInput(
     windowId: string | undefined,
-    body: { selector?: string; text?: string; key?: string; modifiers?: string[] },
+    body: { selector?: string; text?: string; select?: string; key?: string; modifiers?: string[] },
   ): Promise<{
     ok: true;
     selector: string;
@@ -3148,6 +3110,26 @@ export class AppController {
         // Never silently type into whatever happened to hold focus instead.
         throw new Error(`No focusable element matches selector '${selector}'.`);
       }
+    }
+    if (typeof body?.select === "string") {
+      const selected = await win.webContents.executeJavaScript(
+        `(() => {
+          const el = document.activeElement;
+          if (!(el instanceof HTMLSelectElement)) return { ok: false, tag: el?.tagName?.toLowerCase?.() || "none" };
+          const value = ${JSON.stringify(body.select)};
+          if (!Array.from(el.options).some((option) => option.value === value)) return { ok: false, tag: "select", value };
+          el.value = value;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { ok: true, value: el.value };
+        })()`,
+      );
+      if (!selected?.ok) {
+        throw new Error(selected?.tag === "select"
+          ? `Select has no option '${selected?.value || ""}'.`
+          : `Cannot select an option on the focused element <${selected?.tag || "none"}>.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
     if (typeof body?.text === "string") {
       // "Could not do it" is a failure, not a quiet success: asked to type into
@@ -3215,7 +3197,7 @@ export class AppController {
           if (!el) return { kind: "none", value: null, references: [], draft: null };
           const tag = el.tagName.toLowerCase();
           const NOT_TEXT = ["checkbox", "radio", "button", "submit", "reset", "file", "image", "range", "color"];
-          if (tag === "textarea" || (tag === "input" && !NOT_TEXT.includes(el.type))) {
+          if (tag === "select" || tag === "textarea" || (tag === "input" && !NOT_TEXT.includes(el.type))) {
             return { kind: "value", value: el.value, references: [], draft: el.value };
           }
           if (!el.isContentEditable) return { kind: "none", value: null, references: [], draft: null };

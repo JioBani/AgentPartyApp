@@ -116,8 +116,8 @@ export const appRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.getAppearance(),
   },
   {
-    // Same AppController.setTheme the Settings selector and title-bar shortcut
-    // use. `theme` is required; an unknown value is an error, not a silent default.
+    // Same AppController.setTheme the Settings selector uses. `theme` is
+    // required; an unknown value is an error, not a silent default.
     name: "appearance.theme.set",
     http: "POST /api/appearance/theme",
     handler: (p, ctx) => ctx.controller.setTheme(p.theme),

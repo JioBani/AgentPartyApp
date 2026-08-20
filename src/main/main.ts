@@ -1,13 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, nativeTheme, safeStorage, screen, shell, type WebContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell, type WebContents } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
 import { getPublicSettings, getSettings, storedThemePreference, updateSettings } from "./settings";
-import { appearanceBootArgs, normalizeThemePreference, resolveAppliedTheme, windowBackgroundFor } from "../shared/appTheme";
+import { appearanceBootArgs, normalizeThemePreference, windowBackgroundFor } from "../shared/appTheme";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { launchCliContinuation } from "./cliContinuationLauncher";
@@ -199,8 +199,7 @@ function defaultWorkspace(): string {
 function appearanceBootForWindow() {
   const stored = storedThemePreference();
   const preference = stored ?? normalizeThemePreference(getSettings().theme);
-  const applied = resolveAppliedTheme(preference, nativeTheme.shouldUseDarkColors);
-  return { preference, applied, stored: stored !== undefined };
+  return { preference, applied: preference, stored: stored !== undefined };
 }
 
 /** Reveals a window after appearance boot. Keyed by webContents so every createWindow path shares one show. */
@@ -215,7 +214,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
     minHeight: 720,
     title: "AgentParty",
     show: false,
-    backgroundColor: windowBackgroundFor(boot.preference, nativeTheme.shouldUseDarkColors),
+    backgroundColor: windowBackgroundFor(boot.preference),
     titleBarStyle: "hidden",
     frame: false,
     webPreferences: {
@@ -654,14 +653,7 @@ ${body}
     getAutomationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
     getAppBuild: () => ({ version: app.getVersion(), packaged: app.isPackaged }),
     openWindow: (workspacePath) => createWindow(workspacePath),
-    appearance: {
-      setSource: (source) => { nativeTheme.themeSource = source; },
-      isDark: () => nativeTheme.shouldUseDarkColors,
-      onUpdated: (listener) => {
-        nativeTheme.on("updated", listener);
-        return () => { nativeTheme.off("updated", listener); };
-      },
-    },
+    appearance: { desktop: true },
     pickFolder: async (windowId, env, defaultPath) => {
       const target = registry().resolve(windowId)?.window;
       const result = await dialog.showOpenDialog(target!, {

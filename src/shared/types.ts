@@ -102,8 +102,8 @@ export interface AppSettings {
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
   /**
-   * Appearance preference: follow the OS, or lock light/dark. Applied theme
-   * (`data-theme`) stays `light` or `dark`. See `shared/appTheme.ts`.
+   * Persisted color-theme preset. The same id is applied to `data-theme`.
+   * See `shared/appTheme.ts`.
    */
   theme: ThemePreference;
   /**

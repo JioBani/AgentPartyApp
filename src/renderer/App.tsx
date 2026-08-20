@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Monitor, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Palette, Settings, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -14,7 +14,6 @@ import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import {
   THEME_STORAGE_KEY,
-  cycleThemePreference,
   migrateLegacyThemeValue,
   normalizeThemePreference,
   retainAppearanceOnInitialState,
@@ -115,6 +114,9 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
+  const themeMenuTriggerRef = useRef<HTMLButtonElement>(null);
   /** Tab requests sent by the shared AppController navigation path. */
   const [agentTabRequest, setAgentTabRequest] = useState<{ tab: AgentTabId; harness?: HarnessId; seq: number }>({ tab: "general", seq: 0 });
   const [settingsTabRequest, setSettingsTabRequest] = useState<{ tab: SettingsTabId; seq: number }>({ tab: "general", seq: 0 });
@@ -204,16 +206,47 @@ export function App() {
   // Lets `GET /api/appearance/fonts` ask Chromium which families are installed.
   useEffect(() => { publishFontProbe(); }, []);
 
+  useEffect(() => {
+    if (!themeMenuOpen) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!themeMenuRef.current?.contains(event.target as Node)) setThemeMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setThemeMenuOpen(false);
+      themeMenuTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => themeMenuRef.current?.querySelector<HTMLElement>("[role=menuitemradio][aria-checked=true]")?.focus());
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [themeMenuOpen]);
+
+  function moveThemeMenuFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(themeMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]") || []);
+    if (!items.length) return;
+    const current = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    let next = current;
+    if (event.key === "ArrowDown") next = (current + 1) % items.length;
+    else if (event.key === "ArrowUp") next = (current - 1 + items.length) % items.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    else return;
+    event.preventDefault();
+    items[next].focus();
+  }
+
   // Appearance bootstrap vs getInitialState: a late snapshot can still carry the
   // in-memory default Light after Dark/System was committed. commitAppearance
   // writes settings.theme immediately so retain uses that preference, not Light.
   const committedTheme = useRef<ThemePreference | null>(null);
-  const commitAppearance = useCallback((preference: ThemePreference, applied?: string) => {
+  const commitAppearance = useCallback((preference: ThemePreference) => {
     committedTheme.current = preference;
     theme.setPreference(preference);
-    if (applied === "light" || applied === "dark") {
-      theme.setOsDark(applied === "dark");
-    }
     setState((current) => (
       current.settings.theme === preference
         ? current
@@ -232,9 +265,9 @@ export function App() {
         if (migrated) {
           const next = await window.agentParty.setTheme(migrated);
           if (cancelled) return;
-          commitAppearance(next.preference, next.applied);
+          commitAppearance(next.preference);
         } else {
-          commitAppearance(appearance.preference, appearance.applied);
+          commitAppearance(appearance.preference);
         }
       } catch (error) {
         console.error("[appearance] bootstrap failed", error);
@@ -715,7 +748,7 @@ export function App() {
     const offAppearanceUpdate = window.agentParty.onAppearanceUpdate?.((payload) => {
       const appearance = payload as { preference?: ThemePreference; applied?: string };
       if (appearance?.preference) {
-        commitAppearance(appearance.preference, appearance.applied);
+        commitAppearance(appearance.preference);
       }
     });
     // The group registry is app-global: a create/rename/delete/move in another
@@ -1373,7 +1406,7 @@ export function App() {
   async function saveTheme(preference: ThemePreference) {
     try {
       const appearance = await window.agentParty.setTheme(preference);
-      commitAppearance(appearance.preference, appearance.applied);
+      commitAppearance(appearance.preference);
     } catch (error) {
       setPartyNotice(t("appearance.saveError", { error: ipcErrorMessage(error) }));
     }
@@ -1896,11 +1929,6 @@ export function App() {
     { id: "settings", label: viewTitle("settings", t), icon: <Settings size={18} /> },
   ];
 
-  const themePreference = theme.preference;
-  const themePreferenceLabel = themePreference === "system"
-    ? t("appearance.system")
-    : themePreference === "dark" ? t("appearance.dark") : t("appearance.light");
-
   // Party members driving each harness subscription/account indicator. Models
   // routed through OpenRouter do not replace the selected harness process.
   const membersByProvider = useMemo<Partial<Record<UsageProviderId, number>>>(() => {
@@ -1944,17 +1972,48 @@ export function App() {
       <div className="app-titlebar">
         <div className="titlebar-drag">
           <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>
-          <button
-            type="button"
-            className="titlebar-action no-drag"
-            data-theme-toggle
-            title={`${t("shell.theme")}: ${themePreferenceLabel}`}
-            onClick={() => {
-              void saveTheme(cycleThemePreference(themePreference));
-            }}
-          >
-            {themePreference === "system" ? <Monitor size={14} /> : themePreference === "dark" ? <Moon size={14} /> : <Sun size={14} />}
-          </button>
+          <div className="titlebar-theme-wrap no-drag" ref={themeMenuRef}>
+            <button
+              ref={themeMenuTriggerRef}
+              type="button"
+              className="titlebar-action"
+              data-theme-menu-trigger
+              aria-haspopup="menu"
+              aria-expanded={themeMenuOpen}
+              aria-label={`${t("appearance.title")}: ${theme.themes.find((item) => item.id === theme.preference)?.label || theme.preference}`}
+              onClick={() => setThemeMenuOpen((open) => !open)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setThemeMenuOpen(true);
+                }
+              }}
+            >
+              <Palette size={14} />
+            </button>
+            {themeMenuOpen && (
+              <div className="titlebar-theme-menu" data-theme-menu role="menu" aria-label={t("appearance.themeLabel")} onKeyDown={moveThemeMenuFocus}>
+                {theme.themes.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={theme.preference === item.id}
+                    data-theme-menu-option={item.id}
+                    className={theme.preference === item.id ? "is-active" : ""}
+                    onClick={() => {
+                      void saveTheme(item.id);
+                      setThemeMenuOpen(false);
+                      themeMenuTriggerRef.current?.focus();
+                    }}
+                  >
+                    <span className="titlebar-theme-swatch" style={{ background: item.color.accent }} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
           {/* Renders only while a phone is connected — see MobileDrivingPill. */}

@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     openWindow: () => Promise.reject(new Error("openWindow is not supported in the headless engine server")),
     onSettingsChanged: () => undefined,
     onWorkspacesChanged: () => undefined,
-    // Appearance is desktop-owned (nativeTheme + the host's settings.json).
+    // Appearance is desktop-owned (window chrome + the host's settings.json).
     // Forward rather than writing this process's settings file, which lives in
     // the distro and would never reach a window.
     appearanceRemote: {

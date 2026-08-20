@@ -1,166 +1,80 @@
-/*
- * Theme preference: stored value, default, and the API's strict reject.
- *
- * The renderer toggle used to persist `light`/`dark` in localStorage. Settings
- * now own `theme` as `system` | `light` | `dark`. The default stays `light` so
- * an upgrading user who never chose a theme sees the same first paint.
- */
+/* Five-preset theme model, migration, first paint, ownership, and token checks. */
 import { build } from "esbuild";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { qaTempDir } from "./lib/qaTemp.mjs";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
+const assert = (condition, message) => { console.log(`  ${condition ? "✓" : "✗"} ${message}`); if (!condition) failures.push(message); };
 
-const outDir = qaTempDir();
-const bundled = await build({
-  entryPoints: [path.join(projectRoot, "src/shared/appTheme.ts")],
-  bundle: true,
-  format: "esm",
-  platform: "neutral",
-  write: false,
-});
-const outFile = path.join(outDir, "app-theme.mjs");
-writeFileSync(outFile, bundled.outputFiles[0].text);
-const {
-  APPEARANCE_DESKTOP_ONLY_ERROR,
-  AppearanceOwnerError,
-  InvalidThemeError,
-  DEFAULT_THEME_PREFERENCE,
-  THEME_PREFERENCES,
-  appearanceAccess,
-  appearanceOwnerError,
-  bindAppearanceUpdates,
-  cycleThemePreference,
-  isThemePreference,
-  migrateLegacyThemeValue,
-  normalizeThemePreference,
-  requireThemePreference,
-  resolveAppliedTheme,
-  windowBackgroundFor,
-  appearanceStateOf,
-  firstPaintFrom,
-  parseAppearanceBootArgs,
-  appearanceBootArgs,
-  retainAppearanceOnInitialState,
-} = await import(pathToFileURL(outFile).href);
-
-console.log("\ntheme preference (settings.json + API):");
-assert(DEFAULT_THEME_PREFERENCE === "light", "default stays light (current first paint)");
-assert(THEME_PREFERENCES.join(",") === "system,light,dark", "preference set is system | light | dark");
-assert(isThemePreference("system") && isThemePreference("light") && isThemePreference("dark"), "all three preferences are accepted");
-assert(!isThemePreference("Light") && !isThemePreference("") && !isThemePreference(null), "case, empty, and null are not preferences");
-
-assert(normalizeThemePreference("system") === "system", "normalize keeps system");
-assert(normalizeThemePreference("light") === "light", "normalize keeps light");
-assert(normalizeThemePreference("dark") === "dark", "normalize keeps dark");
-assert(normalizeThemePreference(undefined) === "light", "missing stored value heals to light");
-assert(normalizeThemePreference("auto") === "light", "stale stored value heals to light");
-assert(normalizeThemePreference(1) === "light", "non-string stored value heals to light");
-
-assert(requireThemePreference("system") === "system", "API accepts system");
-assert(requireThemePreference("light") === "light", "API accepts light");
-assert(requireThemePreference("dark") === "dark", "API accepts dark");
-let rejected;
-try {
-  requireThemePreference("auto");
-} catch (error) {
-  rejected = error;
+async function bundle(entry, name) {
+  const result = await build({ entryPoints: [path.join(root, entry)], bundle: true, format: "esm", platform: "neutral", write: false });
+  const file = path.join(qaTempDir(), name);
+  writeFileSync(file, result.outputFiles[0].text);
+  return import(`${pathToFileURL(file).href}?v=${Date.now()}`);
 }
-assert(rejected instanceof InvalidThemeError, "unknown value throws InvalidThemeError");
-assert(rejected.status === 400 && rejected.code === "invalid_theme", "invalid theme is 400 invalid_theme");
-assert(String(rejected.message).includes("auto"), "the error names the rejected value");
-rejected = undefined;
-try {
-  requireThemePreference(undefined);
-} catch (error) {
-  rejected = error;
+
+const theme = await bundle("src/shared/appTheme.ts", "app-theme.mjs");
+const registry = await bundle("src/renderer/theme/themes.ts", "theme-registry.mjs");
+const expected = ["github-light", "github-dark", "dracula", "nord", "solarized-dark"];
+
+console.log("\nfive preset ids + strict API validation:");
+assert(theme.DEFAULT_THEME_PREFERENCE === "github-light", "GitHub Light is the safe default");
+assert(JSON.stringify(theme.THEME_PREFERENCES) === JSON.stringify(expected), "exactly five preset ids are exposed in order");
+for (const id of expected) {
+  assert(theme.isThemePreference(id), `${id} is accepted`);
+  assert(theme.requireThemePreference(id) === id, `${id} passes strict API validation`);
 }
-assert(rejected instanceof InvalidThemeError && rejected.status === 400, "a missing value is 400, not a silent default");
+for (const invalid of ["system", "light", "dark", "auto", "", null, undefined]) {
+  let error;
+  try { theme.requireThemePreference(invalid); } catch (caught) { error = caught; }
+  assert(error instanceof theme.InvalidThemeError && error.status === 400 && error.code === "invalid_theme", `${String(invalid)} is strict invalid_theme 400`);
+}
 
-console.log("\neffective theme + cycle + legacy migrate:");
-assert(resolveAppliedTheme("light", true) === "light", "locked light ignores OS dark");
-assert(resolveAppliedTheme("dark", false) === "dark", "locked dark ignores OS light");
-assert(resolveAppliedTheme("system", false) === "light", "system + OS light paints light");
-assert(resolveAppliedTheme("system", true) === "dark", "system + OS dark paints dark");
-assert(cycleThemePreference("system") === "light", "cycle system → light");
-assert(cycleThemePreference("light") === "dark", "cycle light → dark (same first step as the old toggle)");
-assert(cycleThemePreference("dark") === "system", "cycle dark → system");
-assert(migrateLegacyThemeValue(undefined, "dark") === "dark", "legacy dark migrates when settings have no theme");
-assert(migrateLegacyThemeValue(undefined, "light") === null, "legacy light is the old first-paint default, not a user choice");
-assert(migrateLegacyThemeValue("system", "dark") === null, "explicit system is not overridden by legacy dark");
-assert(migrateLegacyThemeValue("light", "dark") === null, "explicit light is not overridden by legacy dark");
-assert(migrateLegacyThemeValue("dark", "light") === null, "explicit dark is not overridden by legacy light");
-assert(migrateLegacyThemeValue(undefined, "system") === null, "legacy system is not a stored-value we used to write");
-assert(migrateLegacyThemeValue(undefined, null) === null, "no legacy value means no migration write");
+console.log("\nlegacy migration + synchronous first paint:");
+assert(theme.normalizeThemePreference("light") === "github-light", "branch settings light migrates to GitHub Light");
+assert(theme.normalizeThemePreference("dark") === "github-dark", "branch settings dark migrates to GitHub Dark");
+assert(theme.normalizeThemePreference("system") === "github-light", "removed System setting migrates safely to GitHub Light");
+assert(theme.migrateLegacyThemeValue(undefined, "light") === "github-light", "legacy localStorage light migrates");
+assert(theme.migrateLegacyThemeValue(undefined, "dark") === "github-dark", "legacy localStorage dark migrates");
+assert(theme.migrateLegacyThemeValue("nord", "dark") === null, "stored preset wins over stale cache");
+assert(theme.firstPaintFrom({ preference: "dracula", applied: "dracula", stored: true }, "light").applied === "dracula", "stored settings win before React");
+assert(theme.firstPaintFrom({ preference: "github-light", applied: "github-light", stored: false }, "dark").applied === "github-dark", "legacy cache is used only without stored settings");
+const boot = { preference: "solarized-dark", applied: "solarized-dark", stored: true };
+assert(JSON.stringify(theme.parseAppearanceBootArgs(theme.appearanceBootArgs(boot))) === JSON.stringify(boot), "boot argv round-trips a preset");
+assert(theme.parseAppearanceBootArgs(theme.appearanceBootArgs({ ...boot, applied: "nord" })) === null, "mismatched preference/applied boot is rejected");
+assert(theme.retainAppearanceOnInitialState({ theme: "github-light" }, { theme: "github-light", locale: "en" }, "nord").theme === "nord", "late initial state cannot overwrite a committed theme");
 
-console.log("\ndesktop ownership + nativeTheme disposer:");
-assert(appearanceAccess({ appearance: { isDark: () => false } }) === "local", "a nativeTheme host is local");
-assert(appearanceAccess({ appearanceRemote: { getAppearance: async () => ({}) } }) === "remote", "a HostChannel remote is remote");
-assert(appearanceAccess({ appearanceRemote: { getAppearance: async () => ({}) }, appearance: { isDark: () => false } }) === "remote", "remote wins so a distro never writes locally");
-assert(appearanceAccess({}) === "unavailable", "neither host nor channel is unavailable");
-const owner = appearanceOwnerError();
-assert(owner instanceof AppearanceOwnerError && owner.code === "appearance_desktop_only", "the reject is a typed AppearanceOwnerError");
-assert(owner.message === APPEARANCE_DESKTOP_ONLY_ERROR, "the error names the desktop-only rule");
-let calls = 0;
-let disposed = 0;
-const stop = bindAppearanceUpdates({
-  setSource() {},
-  isDark() { return false; },
-  onUpdated(listener) {
-    listener();
-    calls += 1;
-    return () => { disposed += 1; };
-  },
-}, () => undefined);
-assert(calls === 1, "bindAppearanceUpdates subscribes immediately");
-stop();
-assert(disposed === 1, "the disposer unsubscribes nativeTheme");
-bindAppearanceUpdates(undefined, () => { throw new Error("must not run"); })();
-assert(true, "no host yields a no-op disposer");
-assert(windowBackgroundFor("light") === "#e7e8eb", "light window chrome matches bg-0");
-assert(windowBackgroundFor("dark") === "#0a0b0e", "dark window chrome matches bg-0");
-assert(windowBackgroundFor("system", true) === "#0a0b0e", "system + OS dark uses dark chrome");
-assert(appearanceStateOf("dark", false, true).background === "#0a0b0e", "appearance payload carries the chrome colour");
-assert(owner.status === 403 && owner.code === "appearance_desktop_only", "owner error is 403 appearance_desktop_only");
-const roundTrip = parseAppearanceBootArgs(appearanceBootArgs({ preference: "system", applied: "dark", stored: true }));
-assert(roundTrip && roundTrip.preference === "system" && roundTrip.applied === "dark" && roundTrip.stored === true, "boot argv round-trips");
-assert(firstPaintFrom({ preference: "dark", applied: "dark", stored: true }, "light").applied === "dark", "stored settings beat a stale light cache");
-assert(firstPaintFrom({ preference: "light", applied: "light", stored: false }, "dark").applied === "dark", "legacy dark paints when settings have no theme");
-assert(firstPaintFrom({ preference: "light", applied: "light", stored: true }, "dark").applied === "light", "stored light is not overridden by leftover dark");
-assert(firstPaintFrom(null, null).preference === "light", "no boot and no legacy defaults to light");
-assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "ko" }, "dark").theme === "dark",
-  "late initial state keeps migrated Dark over snapshot Light",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "light" }, { theme: "light" }, "dark").theme === "dark",
-  "current default Light + committed Dark keeps Dark (not the default)",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "light" }, { theme: "light" }, "system").theme === "system",
-  "current default Light + committed System keeps System",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "light" }, { theme: "dark" }, "dark").theme === "dark",
-  "incoming Dark is retained when Dark is the committed preference",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "light" }, { theme: "system" }, "system").theme === "system",
-  "incoming System is retained when System is the committed preference",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light" }, undefined).theme === "light",
-  "before appearance is committed, initial state may apply",
-);
-assert(
-  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, "dark").locale === "en"
-    && retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, "dark").theme === "dark",
-  "other initial-state fields still merge when appearance is retained",
-);
+console.log("\ndesktop ownership + chrome background:");
+assert(theme.appearanceAccess({ appearance: { desktop: true } }) === "local", "desktop marker owns local appearance");
+assert(theme.appearanceAccess({ appearanceRemote: {} }) === "remote", "HostChannel remote owns headless appearance");
+assert(theme.appearanceAccess({ appearance: { desktop: true }, appearanceRemote: {} }) === "remote", "remote wins so WSL never writes distro settings");
+assert(theme.appearanceAccess({}) === "unavailable", "missing owner fails visibly");
+const owner = theme.appearanceOwnerError();
+assert(owner.status === 403 && owner.code === "appearance_desktop_only", "owner error is typed HTTP 403");
+for (const id of expected) assert(theme.appearanceStateOf(id, true).background === theme.THEME_BACKGROUNDS[id], `${id} chrome matches bg-0`);
+
+function luminance(hex) {
+  const parts = hex.slice(1).match(/.{2}/g).map((part) => parseInt(part, 16) / 255).map((value) => value <= .03928 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+  return .2126 * parts[0] + .7152 * parts[1] + .0722 * parts[2];
+}
+function contrast(a, b) {
+  const [bright, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (bright + .05) / (dark + .05);
+}
+
+console.log("\ncomplete preset tokens + contrast:");
+assert(registry.THEMES.length === 5 && registry.THEMES.map(({ id }) => id).join(",") === expected.join(","), "registry has exactly the five public presets");
+const tokenKeys = Object.keys(registry.THEMES[0].color).sort().join(",");
+for (const preset of registry.THEMES) {
+  assert(Object.keys(preset.color).sort().join(",") === tokenKeys, `${preset.label} defines every color token`);
+  assert(preset.color["bg-0"] === theme.THEME_BACKGROUNDS[preset.id], `${preset.label} shares the first-paint background`);
+  assert(contrast(preset.color["text-0"], preset.color["bg-2"]) >= 7, `${preset.label} primary text has enhanced contrast`);
+  assert(contrast(preset.color["text-2"], preset.color["bg-2"]) >= 4.5, `${preset.label} muted text meets WCAG AA`);
+  assert(preset.color.selection && preset.color["selection-fg"] && preset.color.status && preset.color["status-fg"], `${preset.label} defines selection and status colors`);
+}
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

@@ -269,13 +269,15 @@ function ModalStage({ children, tall }: { children: JSX.Element; tall?: boolean 
 }
 
 function Preview() {
-  const { themeId, cycleTheme } = useTheme();
+  const { themeId, themes, setTheme } = useTheme();
   return (
     <div className="pv-root">
       <header className="pv-bar">
         <strong>AgentParty · 디자인 목업</strong>
         <span>파티 그룹 · 멤버 실행 위치(cwd) — 기능을 실행하지 않고 보는 화면</span>
-        <button type="button" onClick={cycleTheme}>테마: {themeId}</button>
+        <select value={themeId} onChange={(event) => setTheme(event.target.value)} aria-label="테마">
+          {themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
+        </select>
       </header>
       <div className="pv-stages">
         {stages.map((stage) => (

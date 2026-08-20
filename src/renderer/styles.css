@@ -46,14 +46,14 @@
   width: 15px;
   height: 15px;
   border-radius: 4px;
-  background: linear-gradient(150deg, var(--accent), #7a5bff);
+  background: var(--status);
 }
 
 .brand-mark-dot {
   width: 5px;
   height: 5px;
   border-radius: 1px;
-  background: #fff;
+  background: var(--status-fg);
 }
 
 .brand-name {
@@ -86,6 +86,58 @@
 .titlebar-action:hover {
   background: var(--bg-2);
   color: var(--text-0);
+}
+
+.titlebar-theme-wrap {
+  position: relative;
+  display: flex;
+}
+
+.titlebar-theme-menu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% - 2px);
+  left: 0;
+  width: 190px;
+  padding: 5px;
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-2);
+  box-shadow: 0 12px 30px var(--shadow-strong);
+}
+
+.titlebar-theme-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+}
+
+.titlebar-theme-menu button:hover,
+.titlebar-theme-menu button:focus-visible {
+  outline: none;
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.titlebar-theme-menu button.is-active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.titlebar-theme-swatch {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: 3px;
 }
 
 .no-drag {
@@ -2490,7 +2542,7 @@ body.wb-resizing {
   border: var(--border-width) solid var(--border);
   border-radius: 12px;
   background: var(--bg-2);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 2px var(--shadow);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2498,16 +2550,16 @@ body.wb-resizing {
 }
 
 /*
- * Dark mode needs a stronger step: --bg-3 sits close enough to --bg-2 there that
+ * Dark presets need a stronger step: --bg-3 sits close enough to --bg-2 there that
  * the three bands read as one surface and the structure disappears. The border
  * does the separating instead of the fill alone.
  */
-[data-theme="dark"] .wb-approval-head,
-[data-theme="dark"] .wb-approval-actions {
+[data-theme]:not([data-theme="github-light"]) .wb-approval-head,
+[data-theme]:not([data-theme="github-light"]) .wb-approval-actions {
   border-color: var(--border-strong);
 }
 
-[data-theme="dark"] .wb-approval-head {
+[data-theme]:not([data-theme="github-light"]) .wb-approval-head {
   background: var(--bg-4);
 }
 

@@ -125,7 +125,14 @@ export function getSettings(): AppSettings {
  */
 export function storedThemePreference(): ThemePreference | undefined {
   const stored = readSettingsFile();
-  return isThemePreference(stored.theme) ? stored.theme : undefined;
+  if (!Object.prototype.hasOwnProperty.call(stored, "theme")) return undefined;
+  if (isThemePreference(stored.theme)) return stored.theme;
+  if (stored.theme === "light" || stored.theme === "dark" || stored.theme === "system") {
+    const migrated = normalizeThemePreference(stored.theme);
+    updateSettings({ theme: migrated });
+    return migrated;
+  }
+  return normalizeThemePreference(stored.theme);
 }
 
 /**

@@ -1,13 +1,4 @@
-/*
- * Full-process E2E for appearance (System / Light / Dark).
- *
- * First paint is owned by main (settings + nativeTheme), passed into the
- * renderer before load. localStorage is only a true-legacy dark path.
- *
- * OS colour-scheme: Windows cannot be flipped from this process. QA therefore
- * drives `POST /api/qa/appearance/os`, which is the nativeTheme signal the app
- * already listens to.
- */
+/* Real Electron E2E for the five Settings color-theme presets. */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -17,21 +8,22 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = path.join(os.tmpdir(), "agentparty-theme-ws");
 const userData = path.join(os.tmpdir(), "agentparty-theme-ud");
+const settingsPath = path.join(userData, "settings.json");
 const port = Number(process.env.AGENTPARTY_THEME_PORT || "") || 48971;
 const base = `http://127.0.0.1:${port}`;
+const presets = [
+  { id: "github-light", label: "GitHub Light", bg0: "#f6f8fa", panel: "#ffffff", text: "#1f2328", accent: "#0969da", selection: "#b6d7ff", status: "#0969da" },
+  { id: "github-dark", label: "GitHub Dark", bg0: "#0d1117", panel: "#161b22", text: "#f0f6fc", accent: "#58a6ff", selection: "#264f78", status: "#1f6feb" },
+  { id: "dracula", label: "Dracula", bg0: "#282a36", panel: "#30323f", text: "#f8f8f2", accent: "#bd93f9", selection: "#44475a", status: "#6272a4" },
+  { id: "nord", label: "Nord", bg0: "#2e3440", panel: "#3b4252", text: "#eceff4", accent: "#88c0d0", selection: "#4c566a", status: "#5e81ac" },
+  { id: "solarized-dark", label: "Solarized Dark", bg0: "#002b36", panel: "#073642", text: "#fdf6e3", accent: "#2aa198", selection: "#075b6b", status: "#268bd2" },
+];
 const failures = [];
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const assert = (condition, message) => {
-  console.log(`  ${condition ? "PASS" : "FAIL"} ${message}`);
-  if (!condition) failures.push(message);
-};
+const assert = (condition, message) => { console.log(`  ${condition ? "PASS" : "FAIL"} ${message}`); if (!condition) failures.push(message); };
 
 async function request(method, url, body) {
-  const response = await fetch(`${base}${url}`, {
-    method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const response = await fetch(`${base}${url}`, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   let payload = null;
   try { payload = await response.json(); } catch { payload = { error: await response.text() }; }
   return { status: response.status, payload };
@@ -39,193 +31,128 @@ async function request(method, url, body) {
 
 async function waitForApi() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      if ((await request("GET", "/api/health")).payload?.ok) return;
-    } catch { /* app is still starting */ }
+    try { if ((await request("GET", "/api/health")).payload?.ok) return; } catch { /* starting */ }
     await delay(500);
   }
   throw new Error("Automation API did not start");
 }
 
-function killTree(pid) {
-  if (!pid) return;
-  try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* already closed */ }
-}
-
+function killTree(pid) { if (pid) try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* closed */ } }
 function launch() {
   return spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
-    cwd: root,
-    stdio: ["ignore", "ignore", "inherit"],
-    windowsHide: true,
-    env: {
-      ...process.env,
-      AGENTPARTY_QA: "1",
-      AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
-      AGENTPARTY_AUTOMATION_PORT: String(port),
-      AGENTPARTY_USER_DATA: userData,
-    },
+    cwd: root, stdio: ["ignore", "ignore", "inherit"], windowsHide: true,
+    env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData },
   });
-}
-
-async function htmlTheme(windowId) {
-  const suffix = windowId ? `?window=${encodeURIComponent(windowId)}` : "";
-  const { payload } = await request("POST", `/api/measure${suffix}`, {
-    selector: "html",
-    attributes: ["data-theme", "data-theme-preference", "data-theme-paint"],
-    limit: 1,
-  });
-  if (!payload?.ok && !payload?.elements) {
-    throw new Error(`Could not measure html theme: ${payload?.error || "unknown error"}`);
-  }
-  const attributes = payload.elements?.[0]?.attributes || {};
-  return {
-    applied: payload.theme || attributes["data-theme"] || "",
-    preference: attributes["data-theme-preference"] || "",
-    paint: attributes["data-theme-paint"] || "",
-  };
 }
 
 async function run(label, fn) {
   let child;
-  try {
-    child = launch();
-    await waitForApi();
-    await fn();
-  } catch (error) {
-    console.error(label, error);
-    failures.push(`${label}: ${error?.message || error}`);
-  } finally {
-    killTree(child?.pid);
-    await delay(500);
-  }
+  try { child = launch(); await waitForApi(); await fn(); }
+  catch (error) { console.error(label, error); failures.push(`${label}: ${error?.message || error}`); }
+  finally { killTree(child?.pid); await delay(500); }
 }
 
+async function htmlTheme(windowId) {
+  const query = windowId ? `?window=${encodeURIComponent(windowId)}` : "";
+  const { payload } = await request("POST", `/api/measure${query}`, { selector: "html", attributes: ["data-theme", "data-theme-preference", "data-theme-paint"], styles: ["--bg-0", "--bg-2", "--text-0", "--accent", "--selection", "--status"], limit: 1 });
+  const element = payload?.elements?.[0];
+  if (!element) throw new Error(payload?.error || "html was not measurable");
+  return { theme: element.attributes["data-theme"], preference: element.attributes["data-theme-preference"], paint: element.attributes["data-theme-paint"], styles: element.styles };
+}
+
+async function choosePreset(index, windowId) {
+  const query = `?window=${encodeURIComponent(windowId)}`;
+  await request("POST", `/api/qa/input${query}`, { selector: "[data-theme-select]", select: presets[index].id });
+  await delay(350);
+}
+
+function cssHex(value) { return String(value || "").trim().toLowerCase(); }
+
 async function main() {
-  for (const target of [workspace, userData]) {
-    try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
-  }
+  for (const target of [workspace, userData]) try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
   fs.mkdirSync(workspace, { recursive: true });
 
-  await run("plant-legacy", async () => {
+  await run("five-presets", async () => {
     const initial = await request("GET", "/api/appearance/theme");
-    assert(initial.payload?.preference === "light", "a fresh install defaults to light");
-    assert(initial.payload?.stored === false, "a missing settings.json theme is not an explicit choice");
-    const stored = await request("POST", "/api/qa/appearance/storage", { theme: "dark", themePreference: null });
-    assert(stored.status === 200 && stored.payload?.theme === "dark", "legacy localStorage dark can be planted");
-    await delay(400);
-  });
-
-  {
-    const settingsPath = path.join(userData, "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const file = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-      delete file.theme;
-      fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2));
-    }
-  }
-
-  await run("legacy-and-product", async () => {
-    const spec = await request("GET", "/api/spec");
-    const endpoints = spec.payload?.endpoints || [];
-    assert(endpoints.includes("GET /api/appearance/theme"), "GET /api/appearance/theme is in the spec");
-    assert(endpoints.includes("POST /api/appearance/theme"), "POST /api/appearance/theme is in the spec");
-    assert(endpoints.includes("POST /api/qa/appearance/os"), "POST /api/qa/appearance/os is in the spec");
-
-    let legacyPaint;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      legacyPaint = await htmlTheme();
-      if (legacyPaint.applied === "dark" && legacyPaint.preference === "dark") break;
-      await delay(250);
-    }
-    assert(legacyPaint?.applied === "dark" && legacyPaint?.preference === "dark", "legacy dark paints when settings.json has no theme");
-    const migrated = await request("GET", "/api/appearance/theme");
-    assert(migrated.payload?.preference === "dark" && migrated.payload?.stored === true, "legacy dark migrates into settings.json");
-    assert(migrated.payload?.applied === "dark" && migrated.payload?.background === "#0a0b0e", "migrated Dark keeps dark chrome, not default Light");
-    const settled = await htmlTheme();
-    assert(settled.applied === "dark" && settled.preference === "dark", "renderer still shows Dark after initial state loads");
+    assert(initial.payload?.preference === "github-light", "fresh install defaults to GitHub Light");
+    assert(JSON.stringify(initial.payload?.options) === JSON.stringify(presets.map(({ id }) => id)), "API exposes exactly five presets");
+    const spec = (await request("GET", "/api/spec")).payload?.endpoints || [];
+    assert(spec.includes("GET /api/appearance/theme") && spec.includes("POST /api/appearance/theme"), "appearance routes are published in /api/spec");
+    assert(!spec.includes("POST /api/qa/appearance/os"), "removed nativeTheme QA route is absent");
 
     const windows = (await request("GET", "/api/windows")).payload?.windows || [];
     const win1 = windows[0]?.id;
-    const opened = await request("POST", "/api/windows", { workspacePath: workspace });
-    const win2 = opened.payload?.id;
-    assert(Boolean(win1 && win2 && win1 !== win2), "a second window opened in this process");
+    const win2 = (await request("POST", "/api/windows", { workspacePath: workspace })).payload?.id;
+    assert(Boolean(win1 && win2 && win1 !== win2), "second real BrowserWindow opened");
 
-    const dark = await request("POST", "/api/appearance/theme", { theme: "dark" });
-    assert(dark.status === 200 && dark.payload?.preference === "dark" && dark.payload?.applied === "dark", "POST /api/appearance/theme accepts dark");
-    assert(dark.payload?.background === "#0a0b0e", "dark chrome matches bg-0");
+    const navigation = await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
+    assert(navigation.status === 200, "navigation opens Settings > General");
     await delay(500);
-    assert((await htmlTheme(win1)).applied === "dark", "window 1 paints dark");
-    assert((await htmlTheme(win2)).applied === "dark", "window 2 received the live broadcast");
+    const options = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select] option", attributes: ["value"], styles: [], limit: 10 })).payload?.elements || [];
+    assert(options.length === 5, "Settings has one dropdown with exactly five options");
+    assert(options.map((entry) => entry.attributes.value).join(",") === presets.map(({ id }) => id).join(","), "dropdown option ids are exact");
+    assert(options.map((entry) => entry.text).join(",") === presets.map(({ label }) => label).join(","), "dropdown labels are exact");
+    const trigger = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-trigger]", attributes: ["aria-haspopup", "aria-expanded"], styles: [], limit: 1 })).payload?.elements?.[0];
+    assert(trigger?.attributes?.["aria-haspopup"] === "menu", "titlebar exposes an ARIA theme menu trigger");
+    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu.png"), click: "[data-theme-menu-trigger]" });
+    await delay(150);
+    const menuOptions = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option]", attributes: ["data-theme-menu-option", "aria-checked"], styles: [], limit: 10 })).payload?.elements || [];
+    assert(menuOptions.length === 5, "titlebar menu contains the same five presets");
+    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-dracula.png"), click: "[data-theme-menu-option=dracula]" });
+    await delay(350);
+    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "dracula", "titlebar menu selects through AppController");
+    await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
+    await delay(150);
+    const syncedSelect = await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select]" });
+    assert(syncedSelect.payload?.value === "dracula", "Settings dropdown reflects the titlebar selection");
+    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-escape.png"), click: "[data-theme-menu-trigger]" });
+    await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option=dracula]", key: "Escape" });
+    await delay(100);
+    const closedMenu = await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu]", styles: [], limit: 1 });
+    assert(Boolean(closedMenu.payload?.error), "Escape closes the titlebar theme menu");
 
-    const invalid = await request("POST", "/api/appearance/theme", { theme: "auto" });
-    assert(invalid.status === 400, "an unknown theme is HTTP 400, not 500");
-    assert(invalid.payload?.code === "invalid_theme", "unknown theme serializes code invalid_theme");
-    assert(String(invalid.payload.error).includes("지원하지 않는 테마입니다"), "the error names the rejected value");
-    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "dark", "invalid input does not overwrite the current theme");
+    for (let index = 0; index < presets.length; index += 1) {
+      const preset = presets[index];
+      await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
+      await delay(150);
+      await choosePreset(index, win1);
+      const state = await request("GET", "/api/appearance/theme");
+      assert(state.payload?.preference === preset.id && state.payload?.applied === preset.id, `${preset.label} selected through the real dropdown`);
+      assert(state.payload?.background === preset.bg0, `${preset.label} BrowserWindow background matches bg-0`);
+      for (const [name, windowId] of [["window 1", win1], ["window 2", win2]]) {
+        const painted = await htmlTheme(windowId);
+        assert(painted.theme === preset.id && painted.preference === preset.id, `${preset.label} broadcasts to ${name}`);
+        assert(cssHex(painted.styles["--bg-0"]) === preset.bg0 && cssHex(painted.styles["--bg-2"]) === preset.panel, `${preset.label} ${name} background/panel tokens compute correctly`);
+        assert(cssHex(painted.styles["--text-0"]) === preset.text && cssHex(painted.styles["--accent"]) === preset.accent, `${preset.label} ${name} text/accent tokens compute correctly`);
+        assert(cssHex(painted.styles["--selection"]) === preset.selection && cssHex(painted.styles["--status"]) === preset.status, `${preset.label} ${name} selection/status tokens compute correctly`);
+      }
+    }
 
+    const invalid = await request("POST", "/api/appearance/theme", { theme: "dark" });
+    assert(invalid.status === 400 && invalid.payload?.code === "invalid_theme", "removed legacy id is strict invalid_theme 400");
+    assert(String(invalid.payload?.error).includes("dark"), "invalid diagnostic names the rejected value");
     const missing = await request("POST", "/api/appearance/theme", {});
-    assert(missing.status === 400 && missing.payload?.code === "invalid_theme", "a missing theme field is 400 invalid_theme");
+    assert(missing.status === 400 && missing.payload?.code === "invalid_theme", "missing theme is strict invalid_theme 400");
+    const viaSettings = await request("POST", "/api/settings", { theme: "auto" });
+    assert(viaSettings.status === 400 && viaSettings.payload?.code === "invalid_theme", "settings route shares strict validation");
+    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "solarized-dark", "invalid input does not overwrite selection");
 
-    const viaSettings = await request("POST", "/api/settings", { theme: "nope" });
-    assert(viaSettings.status === 400 && viaSettings.payload?.code === "invalid_theme", "POST /api/settings rejects an unknown theme as 400 invalid_theme");
-
-    const system = await request("POST", "/api/appearance/theme", { theme: "system" });
-    assert(system.status === 200 && system.payload?.preference === "system", "POST /api/appearance/theme accepts system");
-    await delay(400);
-    const paintedSystem = await htmlTheme(win1);
-    assert(paintedSystem.preference === "system", "system preference is visible on html");
-    assert(paintedSystem.applied === "light" || paintedSystem.applied === "dark", "system paints an applied light or dark theme");
-
-    const osDark = await request("POST", "/api/qa/appearance/os", { dark: true });
-    assert(osDark.status === 200 && osDark.payload?.preference === "system" && osDark.payload?.applied === "dark", "QA OS-dark follows System live");
-    await delay(400);
-    assert((await htmlTheme(win1)).applied === "dark", "window 1 follows the nativeTheme signal");
-    assert((await htmlTheme(win2)).applied === "dark", "window 2 follows the nativeTheme signal");
-    const osLight = await request("POST", "/api/qa/appearance/os", { dark: false });
-    assert(osLight.payload?.applied === "light", "QA OS-light follows System live");
-    await delay(400);
-    assert((await htmlTheme(win1)).applied === "light", "window 1 returns to light with the OS signal");
-
-    const locked = await request("POST", "/api/appearance/theme", { theme: "light" });
-    assert(locked.payload?.preference === "light", "lock light");
-    const ignored = await request("POST", "/api/qa/appearance/os", { dark: true });
-    assert(ignored.payload?.preference === "light" && ignored.payload?.applied === "light", "locked Light ignores the OS signal");
-
-    await request("POST", "/api/navigation", { view: "automation" });
-    await delay(500);
-    const { payload: card } = await request("POST", "/api/measure", { selector: "[data-settings-card=appearance]", limit: 1 });
-    assert(Boolean(card?.elements?.[0]), "Settings shows an explicit appearance selector");
-    const { payload: active } = await request("POST", "/api/measure", { selector: "[data-theme-option=light].is-active", limit: 1 });
-    assert(Boolean(active?.elements?.[0]), "the Settings selector marks Light as selected");
-
-    await request("POST", "/api/appearance/theme", { theme: "system" });
-    await delay(300);
-    const click = await request("POST", "/api/capture", { path: path.join(os.tmpdir(), "agentparty-theme-click.png"), click: "[data-theme-toggle]" });
-    assert(click.status === 200 && click.payload?.ok !== false, "the title-bar shortcut is clickable");
-    await delay(400);
-    assert((await request("GET", "/api/appearance/theme")).payload?.preference === "light", "title-bar cycles system → light");
-
-    await request("POST", "/api/appearance/theme", { theme: "dark" });
-    await delay(300);
-    const planted = await request("POST", "/api/qa/appearance/storage", { theme: "light", themePreference: "light" });
-    assert(planted.status === 200 && planted.payload?.themePreference === "light", "stale light cache planted against stored dark");
+    const saved = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    assert(saved.theme === "solarized-dark", "dropdown selection persists to settings.json");
+    const planted = await request("POST", "/api/qa/appearance/storage", { theme: "light", themePreference: "github-light" });
+    assert(planted.payload?.themePreference === "github-light", "stale cache planted against stored Solarized Dark");
   });
 
-  await run("settings-beat-stale-cache", async () => {
-    const restarted = await request("GET", "/api/appearance/theme");
-    assert(restarted.payload?.preference === "dark", "settings.json dark survives restart");
-    assert(restarted.payload?.applied === "dark", "authoritative boot is dark, not the stale light cache");
-    assert(restarted.payload?.stored === true, "settings.json still has an explicit theme after restart");
-    assert(restarted.payload?.background === "#0a0b0e", "restarted window chrome is dark bg-0");
+  await run("restart-first-paint", async () => {
+    const state = await request("GET", "/api/appearance/theme");
+    assert(state.payload?.preference === "solarized-dark" && state.payload?.stored === true, "saved preset survives restart");
     const painted = await htmlTheme();
-    assert(painted.preference === "dark" && painted.applied === "dark", "first paint follows settings, not localStorage");
-    assert(painted.paint === "sync", "data-theme-paint=sync proves the pre-React path ran");
+    assert(painted.theme === "solarized-dark" && painted.preference === "solarized-dark", "synchronous first paint beats stale cache");
+    assert(painted.paint === "sync", "data-theme-paint=sync proves pre-React paint");
+    assert(cssHex(painted.styles["--bg-0"]) === "#002b36", "restarted first-paint token is Solarized Dark");
   });
 
-  for (const target of [workspace, userData]) {
-    try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
-  }
-
+  for (const target of [workspace, userData]) try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
   if (failures.length) {
     console.error(`theme E2E failed (${failures.length})`);
     for (const failure of failures) console.error(`  - ${failure}`);

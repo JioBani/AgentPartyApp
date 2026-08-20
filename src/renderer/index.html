@@ -5,28 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AgentParty</title>
     <script>
-      /* Same rules as firstPaintFrom() in src/shared/appTheme.ts. Preload
-         exposes window.agentPartyAppearanceBoot from main (settings+nativeTheme)
-         before this runs. localStorage is only used when settings has no theme. */
+      /* Same rules as firstPaintFrom() in src/shared/appTheme.ts. Preload exposes
+         the settings-owned theme before this runs; localStorage is upgrade-only. */
       (function () {
         try {
           var boot = window.agentPartyAppearanceBoot;
           var legacy = null;
-          try { legacy = localStorage.getItem("agentparty.theme"); } catch (e) {}
+          try { legacy = localStorage.getItem("agentparty.themePreference") || localStorage.getItem("agentparty.theme"); } catch (e) {}
           var pref;
           var applied;
           if (boot && boot.stored) {
             pref = boot.preference;
             applied = boot.applied;
-          } else if (legacy === "dark") {
-            pref = "dark";
-            applied = "dark";
+          } else if (legacy === "dark" || legacy === "github-dark") {
+            pref = "github-dark";
+            applied = "github-dark";
+          } else if (legacy === "light" || legacy === "system" || legacy === "github-light") {
+            pref = "github-light";
+            applied = "github-light";
           } else if (boot && boot.preference && boot.applied) {
             pref = boot.preference;
             applied = boot.applied;
           } else {
-            pref = "light";
-            applied = "light";
+            pref = "github-light";
+            applied = "github-light";
           }
           document.documentElement.setAttribute("data-theme", applied);
           document.documentElement.setAttribute("data-theme-preference", pref);

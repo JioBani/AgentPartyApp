@@ -23,7 +23,6 @@ export const QA_ENDPOINTS = [
   "POST /api/qa/usage",
   "POST /api/qa/design-gallery",
   "POST /api/qa/environment",
-  "POST /api/qa/appearance/os",
   "POST /api/qa/appearance/storage",
   "POST /api/qa/update",
   "POST /api/qa/reset",
@@ -77,13 +76,6 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
   // machine. `{"reset":true}` puts the real probe back.
   if (method === "POST" && url.pathname === "/api/qa/environment") {
     sendJson(res, 200, c.qaEnvironment(await readJson(req)));
-    return;
-  }
-  // Pretends the OS colour scheme flipped. The real Windows setting cannot be
-  // changed from this process; this is the nativeTheme signal the app listens to.
-  if (method === "POST" && url.pathname === "/api/qa/appearance/os") {
-    const body = await readJson(req);
-    sendJson(res, 200, await c.qaSetOsScheme(body?.dark === true));
     return;
   }
   if (method === "POST" && url.pathname === "/api/qa/appearance/storage") {
