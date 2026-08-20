@@ -17,6 +17,7 @@ export type MemberStatus =
   | "working"
   | "idle"
   | "approval"
+  | "auth-required"
   | "not-started"
   | "stalled"
   | "disconnected"
@@ -36,6 +37,8 @@ export interface MemberStatusFacts {
   pendingApproval: boolean;
   /** The stall watchdog has fired and nothing has happened since. */
   stalled: boolean;
+  /** Native runtime reported that this execution host needs login. */
+  authRequired?: boolean;
 }
 
 /**
@@ -61,6 +64,9 @@ export function deriveMemberStatus(facts: MemberStatusFacts): MemberStatus {
   }
   if (!facts.hasLiveSession) {
     return "not-started";
+  }
+  if (facts.authRequired) {
+    return "auth-required";
   }
   // FIRST among the live-session cases on purpose. An unresolved approval
   // restored from disk would otherwise pin a dead member in "approval" forever,

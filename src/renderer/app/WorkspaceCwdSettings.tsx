@@ -44,11 +44,11 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
     <>
       <div className="set-tab-note">
         <Info size={14} />
-        <span><LocalizedText id="STR-3227" /> <b><LocalizedText id="STR-3226" /></b><LocalizedText id="STR-3228" /> <b><LocalizedText id="STR-3230" /></b><LocalizedText id="STR-3229" /></span>
+        <span><LocalizedText id="STR-3621" /> <b><LocalizedText id="STR-3620" /></b><LocalizedText id="STR-3622" /> <b><LocalizedText id="STR-3624" /></b><LocalizedText id="STR-3623" /></span>
       </div>
 
       <section className="set-card">
-        <div className="set-card-label"><LocalizedText id="STR-3231" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3232" /></span></div>
+        <div className="set-card-label"><LocalizedText id="STR-3625" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3626" /></span></div>
         {(["windows", "wsl"] as ExecutionEnv[]).map((env) => {
           const value = env === "wsl" ? prefs.wslDefault : prefs.windowsDefault;
           return (
@@ -56,18 +56,18 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
               <span className="set-cwd-kind"><EnvIcon env={env} />{ENV_LABEL[env]}</span>
               {value?.distro && <span className="wb-cwd-distro">{value.distro}</span>}
               <span className="wb-mono set-cwd-path">{value?.cwd ?? "설정 안 됨"}</span>
-              {value && <span className="wb-cwd-pin"><LocalizedText id="STR-3234" /></span>}
+              {value && <span className="wb-cwd-pin"><LocalizedText id="STR-3628" /></span>}
               <span className="set-cwd-meta">
                 {value ? `멤버 ${defaultUsage[env] ?? 0}개가 사용` : "멤버 생성 시 직접 선택"}
               </span>
               <div className="set-cwd-actions">
                 <button type="button" className="set-btn-soft" onClick={() => onPickDefault(env)}>{value ? "변경" : "선택"}</button>
-                {value && <button type="button" className="set-btn-soft" onClick={() => onClearDefault(env)}><LocalizedText id="STR-3239" /></button>}
+                {value && <button type="button" className="set-btn-soft" onClick={() => onClearDefault(env)}><LocalizedText id="STR-3633" /></button>}
               </div>
             </div>
           );
         })}
-        <p className="set-cwd-note"><LocalizedText id="STR-3240" /></p>
+        <p className="set-cwd-note"><LocalizedText id="STR-3634" /></p>
       </section>
 
       <RecentCwdCard
@@ -76,7 +76,7 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
         entries={prefs.windowsRecent}
         fallback={prefs.windowsDefault}
         now={now}
-        note={localized("STR-3242")}
+        note={localized("STR-3636")}
         onPromote={onPromoteRecent}
         onRemove={onRemoveRecent}
         onRecheck={onRecheckRecent}
@@ -88,17 +88,17 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
         entries={prefs.wslRecent}
         fallback={prefs.wslDefault}
         now={now}
-        note={localized("STR-3244")}
+        note={localized("STR-3638")}
         onPromote={onPromoteRecent}
         onRemove={onRemoveRecent}
         onRecheck={onRecheckRecent}
       />
 
       <section className="set-card">
-        <div className="set-card-label"><LocalizedText id="STR-3245" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3246" /></span></div>
+        <div className="set-card-label"><LocalizedText id="STR-3639" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-3640" /></span></div>
         <div className="set-inline-note">
           <Lock size={12} />
-          <span><LocalizedText id="STR-3248" /> <b><LocalizedText id="STR-3249" /></b><LocalizedText id="STR-3247" /></span>
+          <span><LocalizedText id="STR-3642" /> <b><LocalizedText id="STR-3643" /></b><LocalizedText id="STR-3641" /></span>
         </div>
         {members.map((row) => (
           <div key={`${row.partyName}/${row.member}`} className="set-cwd-row">
@@ -107,7 +107,7 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
             <span className="wb-mono set-cwd-path">{row.member} · {row.location.cwd}</span>
             <span className="set-cwd-meta">{row.partyName}</span>
             <div className="set-cwd-actions">
-              <button type="button" className="set-btn-soft" onClick={() => onCloneMember(row)}><LocalizedText id="STR-3250" /></button>
+              <button type="button" className="set-btn-soft" onClick={() => onCloneMember(row)}><LocalizedText id="STR-3644" /></button>
             </div>
           </div>
         ))}
@@ -129,7 +129,7 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
 }) {
   return (
     <section className="set-card">
-      <div className="set-card-label"><LocalizedText id="STR-3251" /> {ENV_LABEL[env]}<span className="set-card-sub wb-mono">{sub}</span></div>
+      <div className="set-card-label"><LocalizedText id="STR-3645" /> {ENV_LABEL[env]}<span className="set-card-sub wb-mono">{sub}</span></div>
       {entries.map((entry) => {
         const isDefault = Boolean(fallback && memberLocationsEqual(fallback, entry.location));
         // A distro that will not start can be started; a folder that is gone
@@ -143,7 +143,7 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
             <span className="set-cwd-kind"><EnvIcon env={env} />{ENV_LABEL[env]}</span>
             {entry.location.distro && <span className="wb-cwd-distro">{entry.location.distro}</span>}
             <span className="wb-mono set-cwd-path">{entry.location.cwd}</span>
-            {isDefault && <span className="wb-cwd-pin"><LocalizedText id="STR-3252" /></span>}
+            {isDefault && <span className="wb-cwd-pin"><LocalizedText id="STR-3646" /></span>}
             {entry.problem ? (
               <span className="wb-cwd-warn"><TriangleAlert size={12} />{entry.problem.message}</span>
             ) : (
@@ -151,13 +151,13 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
             )}
             <div className="set-cwd-actions">
               {entry.problem
-                ? retryable && <button type="button" className="set-btn-soft" onClick={() => onRecheck(entry)}><LocalizedText id="STR-3253" /></button>
+                ? retryable && <button type="button" className="set-btn-soft" onClick={() => onRecheck(entry)}><LocalizedText id="STR-3647" /></button>
                 : (
                   // Kept (disabled) on the row that is already the default so the
                   // list does not reflow as the default moves between rows.
-                  <button type="button" className="set-btn-soft" disabled={isDefault} onClick={() => onPromote(entry)}><LocalizedText id="STR-3254" /></button>
+                  <button type="button" className="set-btn-soft" disabled={isDefault} onClick={() => onPromote(entry)}><LocalizedText id="STR-3648" /></button>
                 )}
-              {!isDefault && <button type="button" className="set-btn-soft" onClick={() => onRemove(entry)}><LocalizedText id="STR-3255" /></button>}
+              {!isDefault && <button type="button" className="set-btn-soft" onClick={() => onRemove(entry)}><LocalizedText id="STR-3649" /></button>}
             </div>
           </div>
         );
@@ -165,7 +165,7 @@ function RecentCwdCard({ env, sub, entries, fallback, now, note, onPromote, onRe
       {entries.length === 0 && (
         <div className="set-cwd-row">
           <span className="set-cwd-kind"><EnvIcon env={env} />{ENV_LABEL[env]}</span>
-          <span className="set-cwd-path"><LocalizedText id="STR-3256" /></span>
+          <span className="set-cwd-path"><LocalizedText id="STR-3650" /></span>
         </div>
       )}
       <p className="set-cwd-note">{note}</p>

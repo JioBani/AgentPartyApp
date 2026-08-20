@@ -15,36 +15,62 @@
  *    when the caller asks for it.
  */
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as crypto from "node:crypto";
 import { getSettings } from "./settings";
 import { log } from "./logger";
 import { invalidateCursorAuthCache } from "./authService";
-import { claudeAgentSdkSpec, claudeSdkVersion, sdkPackageJsonCandidates } from "./claudeSdkVersion";
-import { firstLine, isFile, probeCommand, resolveOnPath } from "../core/commandProbe";
-import { resolveClaudeCli } from "../core/claudeCli";
+import { claudeAgentSdkSpec, claudeSdkVersion } from "./claudeSdkVersion";
+import { firstLine, isFile, probeCommand, resolveOnPath, type CommandProbeResult } from "../core/commandProbe";
+import { resolveClaudeCli, resolveSdkClaudeCli } from "../core/claudeCli";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "../core/codexExec";
+import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import {
   claudeLoggedIn,
   codexRuntimeFailureReason,
   commandFailureReason,
   failedCommandStep,
+  commandProbeFailureKind,
+  probeAppServerCommand,
   probeClaudeCommand,
   probeCodexAppServer,
   probeLocalWorkspace,
   skippedStep,
   successfulStep,
 } from "../core/harnessExecutionProbe";
-import { resolveCursorAgentCommand, cursorAgentAuthStatus } from "../core/cursorAgentCli";
+import { resolveCursorAgentCommand } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
-import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
+import { grokHomeDir, grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
 import { isEnvironmentBlockedError } from "../core/environmentError";
 import { workspaceKey } from "../shared/workspaceLocation";
-import { claudeCliVersionForSdk, type EnvironmentCheck, type EnvironmentProbeStep, type EnvironmentRemedy, type EnvironmentReport } from "../shared/environment";
+import { parseWorkspaceLocation } from "../shared/workspaceLocation";
+import { getUserDataDir } from "./userDataDir";
+import { claudeCliVersionForSdk, type EnvironmentCheck, type EnvironmentExecutionHost, type EnvironmentProbeFailureKind, type EnvironmentProbeStep, type EnvironmentRemedy, type EnvironmentReport } from "../shared/environment";
+import type { NativeCliAuthHost, NativeCliAuthProvider } from "../shared/types";
+import { nativeCliAuthProgressCheck } from "../shared/nativeCliAuth";
 
 const CACHE_TTL_MS = 30_000;
 /** A cold distro can take a while to boot before it answers anything. */
 const WSL_TIMEOUT_MS = 90_000;
 
 const cache = new Map<string, { at: number; report: EnvironmentReport }>();
+
+function displayCommand(command: string, args: string[] = []): string {
+  const parts = [command, ...args].map((part, index, all) => redactEnvironmentCommandPart(part, index > 0 ? all[index - 1] : ""));
+  return parts.map((part) => /\s/.test(part) ? `"${part.replace(/"/g, '\\"')}"` : part).join(" ");
+}
+
+export function redactEnvironmentCommandPart(value: string, previous: string): string {
+  if (/^(?:--?)?(?:api[-_]?key|token|password|secret|authorization)$/i.test(previous)) return "[redacted]";
+  if (/^(?:sk-|xai-|Bearer\s)/i.test(value)) return "[redacted]";
+  return value.replace(/((?:api[-_]?key|token|password|secret|authorization)\s*[=:]\s*)[^\s,;]+/gi, "$1[redacted]");
+}
+
+function claudeDisplayCommand(command: string, args: string[]): string {
+  return /\.(?:[cm]?js)$/i.test(command)
+    ? displayCommand(resolveOnPath(process.platform === "win32" ? "node.exe" : "node") || "node", [command, ...args])
+    : displayCommand(command, args);
+}
 
 /**
  * A fixed report standing in for the real probe (QA only).
@@ -82,9 +108,9 @@ export async function probeEnvironment(options: EnvironmentProbeOptions = {}): P
   }
   const sdkVersion = claudeSdkVersion();
   const checks = [
-    ...(await runtimeChecks()),
+    ...(await runtimeChecks(workspacePath)),
     ...(await harnessChecks(sdkVersion, workspacePath)),
-    ...(options.includeWsl ? await wslChecks(sdkVersion) : []),
+    ...(options.includeWsl ? await wslChecks(sdkVersion, workspacePath) : []),
   ];
   const report: EnvironmentReport = {
     checkedAt: new Date().toISOString(),
@@ -97,6 +123,95 @@ export async function probeEnvironment(options: EnvironmentProbeOptions = {}): P
   return report;
 }
 
+export interface NativeCliAuthenticationProbe {
+  check: EnvironmentCheck;
+  distro?: string;
+}
+
+export interface NativeCliAuthenticationProgress extends NativeCliAuthenticationProbe {
+  phase: "running" | "complete";
+}
+
+type NativeCliStepObserver = (steps: EnvironmentProbeStep[]) => void;
+
+/** Emits an immutable snapshot every time a real probe boundary completes. */
+function observedSteps(initial: EnvironmentProbeStep[], observer?: NativeCliStepObserver, replayInitial = true): EnvironmentProbeStep[] {
+  if (!observer) return [...initial];
+  const steps: EnvironmentProbeStep[] = replayInitial ? [] : [...initial];
+  const append = Array.prototype.push.bind(steps) as (...items: EnvironmentProbeStep[]) => number;
+  steps.push = (...items: EnvironmentProbeStep[]) => {
+    const length = append(...items);
+    observer([...steps]);
+    return length;
+  };
+  if (replayInitial) {
+    for (const step of initial) steps.push(step);
+  }
+  return steps;
+}
+
+/**
+ * Runs one native CLI through the same executable, cwd, authentication, and
+ * runtime checks used by the environment screen. This is intentionally
+ * targeted: testing Claude must not also start Codex, and WSL is started only
+ * after the user explicitly chooses its test button.
+ */
+export async function probeNativeCliAuthentication(options: {
+  provider: NativeCliAuthProvider;
+  host: NativeCliAuthHost;
+  workspacePath?: string;
+  distro?: string;
+  onProgress?: (progress: NativeCliAuthenticationProgress) => void;
+}): Promise<NativeCliAuthenticationProbe> {
+  const workspacePath = options.workspacePath || getSettings().workspacePath || process.cwd();
+  const checkId = options.provider === "claude" ? "claude-code" : options.provider;
+  const publish = (steps: EnvironmentProbeStep[], phase: "running" | "complete", finalCheck?: EnvironmentCheck, distro?: string) => {
+    options.onProgress?.({
+      phase,
+      distro,
+      check: nativeCliAuthProgressCheck(options.provider, options.host, steps, phase, finalCheck),
+    });
+  };
+  publish([], "running");
+
+  if (mockReport) {
+    const check = options.host === "windows"
+      ? mockReport.checks.find((item) => item.id === `harness.${checkId}`)
+      : mockReport.checks.find((item) => item.id.endsWith(`.${checkId}`) && item.host?.kind === "wsl");
+    if (check) {
+      const distro = check.host?.kind === "wsl" ? check.host.distro : undefined;
+      const completed = nativeCliAuthProgressCheck(options.provider, options.host, check.steps || [], "complete", check);
+      publish(completed.steps || [], "complete", completed, distro);
+      return { check: completed, ...(distro ? { distro } : {}) };
+    }
+  }
+
+  if (options.host === "windows") {
+    const observe: NativeCliStepObserver = (steps) => publish(steps, "running");
+    const check = options.provider === "claude"
+      ? await claudeCheck(claudeSdkVersion(), workspacePath, observe)
+      : options.provider === "codex"
+        ? await codexCheck(workspacePath, observe)
+        : options.provider === "cursor"
+          ? await cursorCheck(workspacePath, observe)
+          : await grokCliAuthenticationCheck(workspacePath, observe);
+    const hosted = { ...check, host: windowsExecutionHost(workspacePath) };
+    const completed = nativeCliAuthProgressCheck(options.provider, options.host, hosted.steps || [], "complete", hosted);
+    publish(completed.steps || [], "complete", completed);
+    return { check: completed };
+  }
+
+  const tested = await probeWslNativeCliAuthentication(
+    options.provider,
+    workspacePath,
+    options.distro,
+    (steps, distro) => publish(steps, "running", undefined, distro),
+  );
+  const completed = nativeCliAuthProgressCheck(options.provider, options.host, tested.check.steps || [], "complete", tested.check);
+  publish(completed.steps || [], "complete", completed, tested.distro);
+  return { check: completed, ...(tested.distro ? { distro: tested.distro } : {}) };
+}
+
 /** Drops the cached report (call after a repair changes the machine). */
 export function invalidateEnvironmentCache(): void {
   cache.clear();
@@ -104,8 +219,9 @@ export function invalidateEnvironmentCache(): void {
 
 // ---------------------------------------------------------------- runtime
 
-async function runtimeChecks(): Promise<EnvironmentCheck[]> {
-  return [await gitCheck(), await nodeCheck()];
+async function runtimeChecks(workspacePath: string): Promise<EnvironmentCheck[]> {
+  const host = windowsExecutionHost(workspacePath);
+  return [await gitCheck(), await nodeCheck()].map((check) => ({ ...check, host }));
 }
 
 async function gitCheck(): Promise<EnvironmentCheck> {
@@ -161,12 +277,22 @@ async function nodeCheck(): Promise<EnvironmentCheck> {
 // ---------------------------------------------------------------- harness
 
 async function harnessChecks(sdkVersion: string | undefined, workspacePath: string): Promise<EnvironmentCheck[]> {
+  const host = windowsExecutionHost(workspacePath);
   return [
     await claudeCheck(sdkVersion, workspacePath),
     await codexCheck(workspacePath),
-    await cursorCheck(),
-    await grokCheck(),
-  ];
+    await cursorCheck(workspacePath),
+    await grokCheck(workspacePath),
+  ].map((check) => ({ ...check, host }));
+}
+
+function windowsExecutionHost(workspacePath: string): EnvironmentExecutionHost {
+  const location = parseWorkspaceLocation(workspacePath);
+  return {
+    kind: "windows",
+    label: "Windows",
+    ...(location.host.kind === "local" ? { workspace: path.resolve(location.path || ".") } : {}),
+  };
 }
 
 /**
@@ -195,7 +321,7 @@ function chooseClaudeCli(configured: string): { command: string; origin: string 
   }
   // The resolver answered "let the SDK use its own copy"; name that copy, since
   // it IS what a dev run and a WSL distro execute.
-  const sdkNative = sdkNativeClaudeCli();
+  const sdkNative = resolveSdkClaudeCli();
   return sdkNative ? { command: sdkNative, origin: CLAUDE_ORIGIN_LABEL.sdk } : undefined;
 }
 
@@ -208,13 +334,13 @@ const CLAUDE_ORIGIN_LABEL = {
   sdk: "Agent SDK가 함께 설치한 실행 파일",
 } as const;
 
-async function claudeCheck(sdkVersion: string | undefined, workspacePath: string): Promise<EnvironmentCheck> {
+async function claudeCheck(sdkVersion: string | undefined, workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const expected = claudeCliVersionForSdk(sdkVersion);
   const configured = String(settings.claudeExecutablePath || "").trim();
   const chosen = chooseClaudeCli(configured);
   const workspace = probeLocalWorkspace(workspacePath);
-  const steps: EnvironmentProbeStep[] = [workspace.step];
+  const steps = observedSteps([workspace.step], observer);
 
   const remedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CLAUDE_INSTALL_COMMAND },
@@ -230,7 +356,15 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
   ];
 
   if (!chosen) {
-    steps.push({ id: "executable", label: "실행 파일", status: "failed", detail: "Claude Code CLI를 찾지 못했습니다." });
+    steps.push({
+      id: "executable",
+      label: "실행 파일",
+      status: "failed",
+      detail: "Claude Code CLI를 찾지 못했습니다.",
+      command: configured || "claude",
+      failureKind: "not-found",
+      raw: configured ? `file not found: ${configured}` : "Claude Code CLI was not found in settings, environment, PATH, well-known locations, or the Agent SDK.",
+    });
     steps.push(skippedStep("version", "버전 확인", "실행 파일"));
     steps.push(skippedStep("runtime", "프로세스 실행", "실행 파일"));
     steps.push(skippedStep("authentication", "로그인", "실행 파일"));
@@ -294,7 +428,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
   const versionStartedAt = Date.now();
   const versionProbe = await probeClaudeCommand(chosen.command, ["--version"], workspace.cwd);
   if (!versionProbe.ok) {
-    steps.push(failedCommandStep("version", "버전 확인", "Claude Code", versionProbe, versionStartedAt));
+    steps.push(failedCommandStep("version", "버전 확인", "Claude Code", versionProbe, versionStartedAt, {
+      command: claudeDisplayCommand(chosen.command, ["--version"]),
+      cwd: workspace.cwd,
+    }));
     steps.push(skippedStep("runtime", "프로세스 실행", "버전 확인"));
     steps.push(skippedStep("authentication", "로그인", "버전 확인"));
     return {
@@ -312,7 +449,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
     };
   }
   const version = firstLine(versionProbe.stdout);
-  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt));
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, {
+    command: claudeDisplayCommand(chosen.command, ["--version"]),
+    cwd: workspace.cwd,
+  }));
 
   // `auth status` starts the same resolved Claude executable in the real cwd.
   // It does not call a model, but proves process creation and account state.
@@ -320,7 +460,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
   const authProbe = await probeClaudeCommand(chosen.command, ["auth", "status"], workspace.cwd);
   const processStarted = authProbe.failureKind !== "spawn" && authProbe.failureKind !== "timeout";
   if (!processStarted) {
-    steps.push(failedCommandStep("runtime", "프로세스 실행", "Claude Code", authProbe, authStartedAt));
+    steps.push(failedCommandStep("runtime", "프로세스 실행", "Claude Code", authProbe, authStartedAt, {
+      command: claudeDisplayCommand(chosen.command, ["auth", "status"]),
+      cwd: workspace.cwd,
+    }));
     steps.push(skippedStep("authentication", "로그인", "프로세스 실행"));
     return {
       id: "harness.claude-code",
@@ -335,7 +478,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
       remedies,
     };
   }
-  steps.push(successfulStep("runtime", "프로세스 실행", `현재 작업공간에서 Claude Code 프로세스를 생성했습니다.`, authStartedAt));
+  steps.push(successfulStep("runtime", "프로세스 실행", `현재 작업공간에서 Claude Code 프로세스를 생성했습니다.`, authStartedAt, {
+    command: claudeDisplayCommand(chosen.command, ["auth", "status"]),
+    cwd: workspace.cwd,
+  }));
   const signedIn = authProbe.ok && claudeLoggedIn(authProbe.stdout);
   if (!signedIn) {
     steps.push({
@@ -345,6 +491,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
       detail: "Claude Code 로그인이 유효하지 않습니다.",
       durationMs: Date.now() - authStartedAt,
       raw: authProbe.error || authProbe.stderr.trim() || "claude auth status did not report loggedIn=true",
+      command: claudeDisplayCommand(chosen.command, ["auth", "status"]),
+      cwd: workspace.cwd,
+      failureKind: "authentication",
+      failureCode: authProbe.failureCode || (authProbe.code === undefined || authProbe.code === null ? undefined : String(authProbe.code)),
     });
     return {
       id: "harness.claude-code",
@@ -359,7 +509,10 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
       remedies: [{ kind: "command", label: "로그인 명령 복사", command: "claude" }],
     };
   }
-  steps.push(successfulStep("authentication", "로그인", "Claude Code 계정 로그인이 유효합니다.", authStartedAt));
+  steps.push(successfulStep("authentication", "로그인", "Claude Code 계정 로그인이 유효합니다.", authStartedAt, {
+    command: claudeDisplayCommand(chosen.command, ["auth", "status"]),
+    cwd: workspace.cwd,
+  }));
 
   const actual = version?.match(/\d+\.\d+\.\d+/)?.[0];
   const skewed = Boolean(expected && actual && expected !== actual);
@@ -383,7 +536,7 @@ async function claudeCheck(sdkVersion: string | undefined, workspacePath: string
 
 const CODEX_INSTALL_COMMAND = "npm install -g @openai/codex";
 
-async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
+async function codexCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const configured = String(settings.codexExecutablePath || "").trim();
   const executable = codexExecutable(settings.codexExecutablePath);
@@ -393,13 +546,17 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
   const executableExists = isFile(resolved.command)
     || Boolean(resolveOnPath(resolved.command))
     || Boolean(resolved.argsPrefix[0] && isFile(resolved.argsPrefix[0]));
-  const steps: EnvironmentProbeStep[] = [workspace.step, {
+  const steps = observedSteps([workspace.step, {
     id: "executable",
     label: "실행 파일",
     status: executableExists ? "ok" : "failed",
     detail: executableExists ? `Codex 실행 경로: ${reportedPath}` : `Codex 실행 파일을 찾을 수 없습니다: ${reportedPath}`,
-    ...(executableExists ? {} : { raw: `file not found: ${reportedPath}` }),
-  }];
+    ...(executableExists ? {} : {
+      command: reportedPath,
+      failureKind: "not-found" as const,
+      raw: `file not found: ${reportedPath}`,
+    }),
+  }], observer);
   const remedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CODEX_INSTALL_COMMAND },
     {
@@ -451,7 +608,7 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
   }
 
   const versionStartedAt = Date.now();
-  const codexEnv = {
+  const codexEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...(process.env.AGENTPARTY_NATIVE_CODEX_HOME
       ? { CODEX_HOME: process.env.AGENTPARTY_NATIVE_CODEX_HOME }
@@ -463,7 +620,10 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
     { shell: resolved.shell, cwd: workspace.cwd, env: codexEnv },
   );
   if (!versionProbe.ok) {
-    steps.push(failedCommandStep("version", "버전 확인", "Codex", versionProbe, versionStartedAt));
+    steps.push(failedCommandStep("version", "버전 확인", "Codex", versionProbe, versionStartedAt, {
+      command: displayCommand(resolved.command, [...resolved.argsPrefix, "--version"]),
+      cwd: workspace.cwd,
+    }));
     steps.push(skippedStep("authentication", "로그인", "버전 확인"));
     steps.push(skippedStep("runtime", "app-server 초기화", "버전 확인"));
     return {
@@ -481,7 +641,10 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
     };
   }
   const version = firstLine(versionProbe.stdout);
-  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt));
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, {
+    command: displayCommand(resolved.command, [...resolved.argsPrefix, "--version"]),
+    cwd: workspace.cwd,
+  }));
 
   const authStartedAt = Date.now();
   const authProbe = await probeCommand(
@@ -491,18 +654,67 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
   );
   const signedIn = authProbe.ok;
   steps.push(signedIn
-    ? successfulStep("authentication", "로그인", "Codex 계정 로그인이 유효합니다.", authStartedAt)
-    : failedCommandStep("authentication", "로그인", "Codex 로그인 확인", authProbe, authStartedAt));
+    ? successfulStep("authentication", "로그인", "Codex 계정 로그인이 유효합니다.", authStartedAt, {
+        command: displayCommand(resolved.command, [...resolved.argsPrefix, "login", "status"]),
+        cwd: workspace.cwd,
+      })
+    : {
+        ...failedCommandStep("authentication", "로그인", "Codex 로그인 확인", authProbe, authStartedAt, {
+          command: displayCommand(resolved.command, [...resolved.argsPrefix, "login", "status"]),
+          cwd: workspace.cwd,
+        }),
+        failureKind: "authentication",
+      });
+
+  const sqliteHome = agentPartyCodexSqliteHome(getUserDataDir(), `environment:${workspaceKey(workspacePath)}`);
+  const storageStartedAt = Date.now();
+  try {
+    fs.mkdirSync(sqliteHome, { recursive: true });
+    codexEnv.CODEX_SQLITE_HOME = sqliteHome;
+    steps.push(successfulStep("state", "상태 저장소", `멤버와 분리된 진단용 SQLite 경로를 준비했습니다: ${sqliteHome}`, storageStartedAt, {
+      path: sqliteHome,
+    }));
+  } catch (error) {
+    const fsError = error as NodeJS.ErrnoException;
+    steps.push({
+      id: "state",
+      label: "상태 저장소",
+      status: "failed",
+      detail: `Codex 상태 저장소를 만들 수 없습니다: ${sqliteHome}`,
+      durationMs: Date.now() - storageStartedAt,
+      path: sqliteHome,
+      failureKind: "workspace",
+      failureCode: fsError.code || "UNKNOWN",
+      raw: fsError.message,
+    });
+    steps.push(skippedStep("runtime", "app-server 초기화", "상태 저장소"));
+    return {
+      id: "harness.codex",
+      group: "harness",
+      label: "Codex",
+      status: "error",
+      detail: "상태 저장소 준비 단계에서 실패해 Codex app-server를 실행하지 않았습니다.",
+      version,
+      path: reportedPath,
+      raw: fsError.message,
+      steps,
+    };
+  }
 
   const runtimeStartedAt = Date.now();
+  const runtimeArgs = [...resolved.argsPrefix, ...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"', "app-server"];
   const runtimeProbe = await probeCodexAppServer(
     resolved,
     [...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"'],
     workspace.cwd,
     codexEnv,
+    60_000,
   );
   steps.push(runtimeProbe.ok
-    ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt)
+    ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt, {
+        command: displayCommand(resolved.command, runtimeArgs),
+        cwd: workspace.cwd,
+      })
     : {
         id: "runtime",
         label: "app-server 초기화",
@@ -510,6 +722,10 @@ async function codexCheck(workspacePath: string): Promise<EnvironmentCheck> {
         detail: codexRuntimeFailureReason(runtimeProbe),
         durationMs: Date.now() - runtimeStartedAt,
         raw: runtimeProbe.error,
+        command: displayCommand(resolved.command, runtimeArgs),
+        cwd: workspace.cwd,
+        failureKind: runtimeProbe.failureKind,
+        failureCode: runtimeProbe.failureCode,
       });
 
   const loginRemedies: EnvironmentRemedy[] = [
@@ -544,7 +760,7 @@ const CURSOR_INSTALL_COMMAND = process.platform === "win32"
   ? "irm 'https://cursor.com/install?win32=true' | iex"
   : "curl https://cursor.com/install -fsS | bash";
 
-async function cursorCheck(): Promise<EnvironmentCheck> {
+async function cursorCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const installRemedies: EnvironmentRemedy[] = [
     { kind: "command", label: "설치 명령 복사", command: CURSOR_INSTALL_COMMAND },
@@ -559,14 +775,24 @@ async function cursorCheck(): Promise<EnvironmentCheck> {
     { kind: "settings", label: "실행 파일 경로 지정", settingsField: "cursorExecutablePath" },
   ];
 
-  let source: string;
+  let resolved: ReturnType<typeof resolveCursorAgentCommand>;
   try {
-    source = resolveCursorAgentCommand(settings.cursorExecutablePath).source;
+    resolved = resolveCursorAgentCommand(settings.cursorExecutablePath);
   } catch (error) {
     // A path the user typed and a CLI that was never installed are different
     // problems with different fixes. Leading with "설치하기" for a typo'd path
     // sends them to reinstall something they already have.
     const configured = String(settings.cursorExecutablePath || "").trim();
+    const steps = observedSteps([], observer);
+    steps.push({
+      id: "executable",
+      label: "실행 파일",
+      status: "failed",
+      detail: configured ? `설정한 경로에 파일이 없습니다: ${configured}` : "Cursor Agent CLI를 찾지 못했습니다.",
+      command: configured || "cursor-agent",
+      failureKind: "not-found",
+      raw: isEnvironmentBlockedError(error) ? error.raw : (error instanceof Error ? error.message : String(error)),
+    });
     return {
       id: "harness.cursor",
       group: "harness",
@@ -576,6 +802,7 @@ async function cursorCheck(): Promise<EnvironmentCheck> {
         ? `설정된 경로에서 실행 파일을 찾지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
         : "Cursor Agent CLI를 찾지 못했습니다. Cursor 하네스 멤버를 실행할 수 없습니다.",
       raw: isEnvironmentBlockedError(error) ? error.raw : (error instanceof Error ? error.message : String(error)),
+      steps,
       // A wrong path is fixed by fixing the path, so the install buttons stand
       // down to a secondary role and the duplicate settings entry is dropped.
       remedies: configured
@@ -584,15 +811,55 @@ async function cursorCheck(): Promise<EnvironmentCheck> {
     };
   }
 
-  const auth = await cursorAgentAuthStatus(settings.cursorExecutablePath);
+  const cwd = windowsExecutionHost(workspacePath).workspace || process.cwd();
+  const steps = observedSteps([{
+    id: "executable", label: "실행 파일", status: "ok", detail: resolved.source,
+    command: displayCommand(resolved.command, resolved.argsPrefix), cwd,
+  }], observer);
+  const versionStartedAt = Date.now();
+  const versionProbe = await probeCommand(resolved.command, [...resolved.argsPrefix, "--version"], { cwd });
+  steps.push(versionProbe.ok
+    ? successfulStep("version", "버전 확인", firstLine(versionProbe.stdout), versionStartedAt, {
+        command: displayCommand(resolved.command, [...resolved.argsPrefix, "--version"]), cwd,
+      })
+    : failedCommandStep("version", "버전 확인", "Cursor", versionProbe, versionStartedAt, {
+        command: displayCommand(resolved.command, [...resolved.argsPrefix, "--version"]), cwd,
+      }));
+  const authProbe = await probeCommand(resolved.command, [...resolved.argsPrefix, "status", "--format", "json"], { cwd });
+  let auth: { authenticated?: boolean; email?: string; error?: string };
+  try {
+    const parsed = JSON.parse(authProbe.stdout) as { isAuthenticated?: unknown; userInfo?: { email?: unknown } };
+    auth = {
+      authenticated: Boolean(parsed.isAuthenticated),
+      email: typeof parsed.userInfo?.email === "string" ? parsed.userInfo.email : undefined,
+      error: authProbe.ok ? undefined : authProbe.error,
+    };
+  } catch {
+    auth = { error: authProbe.error || authProbe.stderr.trim() || "Cursor status output was not valid JSON" };
+  }
+  steps.push({
+    id: "authentication",
+    label: "로그인",
+    status: auth.authenticated ? "ok" : "failed",
+    detail: auth.authenticated ? "Cursor 계정 로그인이 유효합니다." : auth.authenticated === false ? "Cursor 로그인이 필요합니다." : "Cursor 로그인 상태를 확인하지 못했습니다.",
+    command: displayCommand(resolved.command, [...resolved.argsPrefix, "status", "--format", "json"]),
+    cwd,
+    ...(auth.authenticated ? {} : {
+      failureKind: authProbe.ok ? "authentication" : commandProbeFailureKind(authProbe),
+      failureCode: probeFailureCode(authProbe),
+      raw: auth.error,
+    }),
+  });
   if (auth.authenticated === false) {
     return {
       id: "harness.cursor",
       group: "harness",
       label: "Cursor",
-      status: "missing",
-      detail: "설치되어 있지만 로그인되어 있지 않습니다.",
-      path: source,
+      status: versionProbe.ok ? "missing" : "error",
+      detail: versionProbe.ok ? "설치되어 있지만 로그인되어 있지 않습니다." : "Cursor 실행 파일은 찾았지만 버전 확인에 실패했습니다.",
+      version: versionProbe.ok ? firstLine(versionProbe.stdout) : undefined,
+      path: resolved.source,
+      steps,
       remedies: [
         { kind: "command", label: "로그인 명령 복사", command: "cursor-agent login" },
         {
@@ -609,12 +876,16 @@ async function cursorCheck(): Promise<EnvironmentCheck> {
     id: "harness.cursor",
     group: "harness",
     label: "Cursor",
-    status: auth.authenticated ? "ok" : "warn",
-    detail: auth.authenticated
-      ? `설치되어 있고 로그인되어 있습니다${auth.email ? ` (${auth.email})` : ""}.`
-      : "설치되어 있지만 로그인 상태를 확인하지 못했습니다.",
-    path: source,
+    status: !versionProbe.ok ? "error" : auth.authenticated ? "ok" : "warn",
+    detail: !versionProbe.ok
+      ? "Cursor 실행 파일은 찾았지만 버전 확인에 실패했습니다."
+      : auth.authenticated
+        ? `설치되어 있고 로그인되어 있습니다${auth.email ? ` (${auth.email})` : ""}.`
+        : "설치되어 있지만 로그인 상태를 확인하지 못했습니다.",
+    version: versionProbe.ok ? firstLine(versionProbe.stdout) : undefined,
+    path: resolved.source,
     raw: auth.error,
+    steps,
   };
 }
 
@@ -622,11 +893,20 @@ const GROK_INSTALL_COMMAND = process.platform === "win32"
   ? "irm https://x.ai/cli/install.ps1 | iex"
   : "curl -fsSL https://x.ai/cli/install.sh | bash";
 
-async function grokCheck(): Promise<EnvironmentCheck> {
+async function grokCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
   const settings = getSettings();
   const configured = String(settings.grokExecutablePath || "").trim();
   const installed = grokCliInstalledPath(settings.grokExecutablePath);
   if (!installed) {
+    const steps = observedSteps([], observer);
+    steps.push({
+      id: "executable",
+      label: "실행 파일",
+      status: "failed",
+      detail: configured ? `설정한 경로에 파일이 없습니다: ${configured}` : "Grok Build CLI를 찾지 못했습니다.",
+      command: configured || "grok",
+      failureKind: "not-found",
+    });
     return {
       id: "harness.grok",
       group: "harness",
@@ -635,6 +915,7 @@ async function grokCheck(): Promise<EnvironmentCheck> {
       detail: configured
         ? `설정된 경로에서 Grok Build CLI를 찾지 못했습니다: ${configured}. 경로를 고치거나 비워서 자동 탐색으로 되돌리세요.`
         : "Grok Build CLI가 설치되어 있지 않습니다. Grok 하네스 멤버를 실행할 수 없습니다.",
+      steps,
       remedies: [
         ...(configured ? pathRemedies("grokExecutablePath") : []),
         { kind: "command", label: "설치 명령 복사", command: GROK_INSTALL_COMMAND },
@@ -651,13 +932,44 @@ async function grokCheck(): Promise<EnvironmentCheck> {
     };
   }
 
-  const probe = await probeCommand(installed, ["--version"]);
+  const cwd = windowsExecutionHost(workspacePath).workspace || process.cwd();
+  const steps = observedSteps([{
+    id: "executable", label: "실행 파일", status: "ok", detail: installed,
+    command: installed, cwd,
+  }], observer);
+  const versionStartedAt = Date.now();
+  const probe = await probeCommand(installed, ["--version"], { cwd });
   const text = firstLine(probe.stdout);
   // The official build prints a commit hash; the community `grok-dev` package
   // installs a different agent under the same name and does not.
   const official = /^grok\s+\S+\s+\([0-9a-f]{6,}\)/i.test(text);
   const login = grokSubscriptionAvailable();
+  steps.push(probe.ok
+    ? successfulStep("version", "버전 확인", text, versionStartedAt, { command: displayCommand(installed, ["--version"]), cwd })
+    : failedCommandStep("version", "버전 확인", "Grok Build", probe, versionStartedAt, { command: displayCommand(installed, ["--version"]), cwd }));
+  if (!probe.ok) {
+    return {
+      id: "harness.grok",
+      group: "harness",
+      label: "Grok Build",
+      status: "error",
+      detail: "Grok Build 실행 파일은 찾았지만 버전 확인에 실패했습니다.",
+      path: installed,
+      raw: probe.error,
+      steps,
+      remedies: [
+        { kind: "command", label: "공식 CLI 설치 명령 복사", command: GROK_INSTALL_COMMAND },
+        { kind: "docs", label: "설치 안내", url: "https://x.ai/cli" },
+      ],
+    };
+  }
   if (probe.ok && !official) {
+    steps.push({
+      id: "identity", label: "공식 CLI 확인", status: "failed",
+      detail: "공식 Grok Build가 출력하는 commit hash가 없습니다.",
+      command: displayCommand(installed, ["--version"]), cwd,
+      failureKind: "protocol", raw: text,
+    });
     return {
       id: "harness.grok",
       group: "harness",
@@ -666,23 +978,44 @@ async function grokCheck(): Promise<EnvironmentCheck> {
       detail: "같은 이름의 다른 CLI(커뮤니티 grok-dev)가 설치되어 있습니다. 공식 Grok Build CLI가 필요합니다.",
       version: text,
       path: installed,
+      steps,
       remedies: [
         { kind: "command", label: "공식 CLI 설치 명령 복사", command: GROK_INSTALL_COMMAND },
         { kind: "docs", label: "설치 안내", url: "https://x.ai/cli" },
       ],
     };
   }
+  if (probe.ok) {
+    steps.push({
+      id: "identity",
+      label: "공식 CLI 확인",
+      status: "ok",
+      detail: "공식 Grok Build의 commit hash를 확인했습니다.",
+      command: displayCommand(installed, ["--version"]),
+      cwd,
+    });
+  }
+  const authFile = path.join(grokHomeDir(), "auth.json");
+  steps.push({
+    id: "authentication", label: "로그인", status: login.ok ? "ok" : "failed",
+    detail: login.ok ? `Grok 인증 파일을 확인했습니다: ${authFile}` : "Grok 인증 파일이 없거나 자격증명이 유효하지 않습니다.",
+    path: authFile,
+    ...(login.ok ? {} : { failureKind: "not-found" as const, raw: login.raw || login.reason }),
+  });
   return {
     id: "harness.grok",
     group: "harness",
     label: "Grok Build",
-    status: login.ok ? "ok" : "missing",
-    detail: login.ok
-      ? `설치되어 있고 로그인되어 있습니다${login.email ? ` (${login.email})` : ""}.`
-      : "설치되어 있지만 로그인되어 있지 않습니다.",
+    status: !probe.ok ? "error" : login.ok ? "ok" : "missing",
+    detail: !probe.ok
+      ? "Grok Build 실행 파일은 찾았지만 버전 확인에 실패했습니다."
+      : login.ok
+        ? `설치되어 있고 로그인되어 있습니다${login.email ? ` (${login.email})` : ""}.`
+        : "설치되어 있지만 로그인되어 있지 않습니다.",
     version: text || undefined,
     path: installed,
     raw: login.ok ? undefined : (login.raw || login.reason),
+    steps,
     ...(login.ok ? {} : {
       remedies: [
         { kind: "command", label: "로그인 명령 복사", command: "grok login" },
@@ -695,6 +1028,51 @@ async function grokCheck(): Promise<EnvironmentCheck> {
         },
       ],
     }),
+  };
+}
+
+/**
+ * Explicit Authentication-button proof for Grok. The routine environment card
+ * reads safe credential metadata to stay offline; a user-requested test goes
+ * further and lets the official CLI validate/refresh its own rotating token via
+ * `grok models`. AgentParty never reads the token value or refreshes it itself.
+ */
+async function grokCliAuthenticationCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const credentialSteps = (steps: EnvironmentProbeStep[]) => steps.map((step) => step.id === "authentication"
+    ? { ...step, id: "credential", label: "자격 증명 파일" }
+    : step);
+  const base = await grokCheck(workspacePath, observer ? (steps) => observer(credentialSteps(steps)) : undefined);
+  if (!base.path || base.status === "error" || base.steps?.some((step) => step.id === "executable" && step.status === "failed")) {
+    return base;
+  }
+  const cwd = windowsExecutionHost(workspacePath).workspace || process.cwd();
+  const args = ["--no-auto-update", "models"];
+  const startedAt = Date.now();
+  const probe = await probeCommand(base.path, args, { cwd, timeoutMs: 60_000 });
+  const output = combinedProbeOutput(probe);
+  const failureKind: EnvironmentProbeFailureKind = /login|auth|credential|token|unauthorized|forbidden|401|403/i.test(output)
+    ? "authentication"
+    : commandProbeFailureKind(probe);
+  const steps = observedSteps(credentialSteps(base.steps || []), observer, false);
+  const authentication = probe.ok
+    ? successfulStep("authentication", "로그인", "Grok CLI가 구독 계정으로 모델 목록을 조회했습니다.", startedAt, {
+        command: displayCommand(base.path, args), cwd,
+      })
+    : {
+        ...failedCommandStep("authentication", "로그인", "Grok 로그인 확인", probe, startedAt, {
+          command: displayCommand(base.path, args), cwd,
+        }),
+        failureKind,
+      };
+  steps.push(authentication);
+  return {
+    ...base,
+    status: probe.ok ? "ok" : failureKind === "authentication" ? "missing" : "error",
+    detail: probe.ok
+      ? "Windows에서 Grok CLI 실행과 구독 로그인을 확인했습니다."
+      : `Grok 로그인 확인 단계에서 실패했습니다. ${commandFailureReason("Grok", probe)}`,
+    raw: probe.ok ? undefined : probe.error,
+    steps,
   };
 }
 
@@ -819,128 +1197,781 @@ function isProbableWorkspaceDistro(name: string): boolean {
   return !/^docker-desktop/i.test(name);
 }
 
-export async function listWslDistros(): Promise<{ names: string[]; error?: string }> {
+interface WslTarget {
+  distro: string;
+  workspace: string;
+  host: EnvironmentExecutionHost;
+}
+
+interface WslSdkResult {
+  check: EnvironmentCheck;
+  binary?: string;
+}
+
+export async function listWslDistros(): Promise<{ names: string[]; error?: string; probe?: CommandProbeResult }> {
   const probe = await probeCommand("wsl.exe", ["-l", "-q"], { timeoutMs: 30_000 });
   if (!probe.ok) {
-    return { names: [], error: probe.error };
+    return { names: [], error: probe.error, probe };
   }
   const names = probe.stdout
     .split(/\r?\n/)
     .map((line) => line.replace(/\0/g, "").trim())
     .filter(Boolean);
-  return { names };
+  return { names, probe };
 }
 
-async function wslChecks(sdkVersion: string | undefined): Promise<EnvironmentCheck[]> {
+/** Reads the `*` marker from `wsl -l -v`; unlike localized headers, it is stable. */
+async function defaultWslDistro(): Promise<{ name?: string; probe: CommandProbeResult; detail?: string }> {
+  const probe = await probeCommand("wsl.exe", ["-l", "-v"], { timeoutMs: 30_000 });
+  if (!probe.ok) return { probe, detail: probe.error };
+  const marked = probe.stdout
+    .replace(/\0/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .find((line) => /^\s*\*/.test(line));
+  if (!marked) return { probe, detail: "wsl.exe -l -v output had no default-distribution marker." };
+  const columns = marked.replace(/^\s*\*\s*/, "").split(/\s{2,}/).filter(Boolean);
+  const name = columns[0]?.trim();
+  return name ? { name, probe } : { probe, detail: "The default WSL distribution name could not be parsed." };
+}
+
+async function probeWslNativeCliAuthentication(
+  provider: NativeCliAuthProvider,
+  workspacePath: string,
+  requestedDistro?: string,
+  onSteps?: (steps: EnvironmentProbeStep[], distro?: string) => void,
+): Promise<NativeCliAuthenticationProbe> {
+  const listedAt = Date.now();
+  const listed = await listWslDistros();
+  const available = listed.names.filter(isProbableWorkspaceDistro);
+  const requested = String(requestedDistro || "").trim();
+  const defaultSelection = requested || !available.length ? undefined : await defaultWslDistro();
+  const distro = requested
+    ? available.find((name) => name.toLocaleLowerCase() === requested.toLocaleLowerCase())
+    : available.find((name) => name.toLocaleLowerCase() === defaultSelection?.name?.toLocaleLowerCase()) || available[0];
+  const defaultFallback = Boolean(!requested && distro && !defaultSelection?.name);
+  const providerLabel = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "cursor" ? "Cursor" : "Grok";
+  const distributionStep: EnvironmentProbeStep = distro
+    ? {
+        id: "distribution",
+        label: "WSL 배포판",
+        status: "ok",
+        detail: requested
+          ? `요청한 배포판 ${distro}를 선택했습니다.`
+          : defaultFallback
+            ? `기본 배포판 표식을 읽지 못해 목록의 첫 배포판 ${distro}를 선택했습니다.`
+            : `기본 배포판 ${distro}를 선택했습니다.`,
+        durationMs: Date.now() - listedAt,
+        command: requested ? "wsl.exe -l -q" : "wsl.exe -l -v",
+        cwd: process.cwd(),
+        ...(defaultFallback ? { raw: defaultSelection?.detail } : {}),
+      }
+    : {
+        id: "distribution",
+        label: "WSL 배포판",
+        status: "failed",
+        detail: listed.error
+          ? "WSL 배포판 목록을 읽지 못했습니다."
+          : requested
+            ? `요청한 WSL 배포판을 찾지 못했습니다: ${requested}`
+            : "사용 가능한 WSL 배포판이 없습니다.",
+        durationMs: Date.now() - listedAt,
+        command: "wsl.exe -l -q",
+        cwd: process.cwd(),
+        failureKind: listed.probe ? commandProbeFailureKind(listed.probe) : "not-found",
+        failureCode: listed.probe ? probeFailureCode(listed.probe) : undefined,
+        raw: listed.error || (requested ? `available distributions: ${available.join(", ") || "none"}` : undefined),
+      };
+  onSteps?.([distributionStep], distro);
+
+  if (!distro) {
+    const failureKind = distributionStep.failureKind;
+    const check: EnvironmentCheck = {
+        id: `native.${provider}.wsl`,
+        group: "wsl",
+        label: `${providerLabel} - WSL`,
+        status: failureKind === "not-found" ? "missing" : "error",
+        detail: distributionStep.detail,
+        host: { kind: "windows", label: "Windows" },
+        raw: distributionStep.raw,
+        steps: [distributionStep],
+      };
+    return { check };
+  }
+
+  const location = parseWorkspaceLocation(workspacePath);
+  const workspace = location.host.kind === "wsl" && location.host.distro.toLocaleLowerCase() === distro.toLocaleLowerCase()
+    ? location.path
+    : "$HOME";
+  const target: WslTarget = {
+    distro,
+    workspace,
+    host: { kind: "wsl", distro, label: `WSL · ${distro}`, workspace },
+  };
+  const workspaceCheck = await wslWorkspaceCheck(target);
+  onSteps?.([distributionStep, ...(workspaceCheck.steps || [])], distro);
+  if (workspaceCheck.status !== "ok") {
+    const check: EnvironmentCheck = {
+        ...workspaceCheck,
+        id: `native.${provider}.wsl`,
+        label: `${providerLabel} - WSL`,
+        steps: [distributionStep, ...(workspaceCheck.steps || [])],
+      };
+    return { distro, check };
+  }
+
+  const observe: NativeCliStepObserver = (steps) => onSteps?.([distributionStep, ...steps], distro);
+  const check = provider === "claude"
+    ? await wslClaudeCheck(target, undefined, observe)
+    : provider === "codex"
+      ? await wslCodexCheck(target, observe)
+      : provider === "cursor"
+        ? await wslCursorCheck(target, observe)
+        : await wslGrokCheck(target, observe);
+  const completed: EnvironmentCheck = {
+      ...check,
+      id: `native.${provider}.wsl`,
+      label: `${providerLabel} - WSL`,
+      steps: [distributionStep, ...(check.steps || [])],
+    };
+  return { distro, check: completed };
+}
+
+async function wslChecks(sdkVersion: string | undefined, workspacePath: string): Promise<EnvironmentCheck[]> {
   if (process.platform !== "win32") {
     return [];
   }
-  const { names, error } = await listWslDistros();
-  if (error) {
+  const listed = await listWslDistros();
+  if (listed.error) {
+    const kind = listed.probe?.failureKind === "spawn" && listed.probe.failureCode === "ENOENT" ? "not-found" : commandProbeFailureKind(listed.probe!);
     return [{
       id: "wsl.available",
       group: "wsl",
       label: "WSL",
-      status: "missing",
-      detail: "WSL을 사용할 수 없습니다. WSL 워크스페이스를 열려면 WSL이 필요합니다.",
-      raw: error,
-      remedies: [
+      status: kind === "not-found" ? "missing" : "error",
+      detail: kind === "not-found"
+        ? "Windows에서 wsl.exe를 찾지 못했습니다."
+        : `Windows에서 WSL 배포판 목록을 읽지 못했습니다 (${failureLabel(kind)}).`,
+      host: { kind: "windows", label: "Windows" },
+      raw: listed.error,
+      steps: [{
+        id: "distribution-list",
+        label: "배포판 목록",
+        status: "failed",
+        detail: kind === "timeout" ? "wsl.exe가 제한 시간 안에 응답하지 않았습니다." : "wsl.exe 배포판 조회가 실패했습니다.",
+        command: "wsl.exe -l -q",
+        cwd: process.cwd(),
+        failureKind: kind,
+        failureCode: probeFailureCode(listed.probe!),
+        raw: listed.error,
+      }],
+      remedies: kind === "not-found" ? [
         { kind: "command", label: "설치 명령 복사", command: "wsl --install" },
         { kind: "docs", label: "WSL 설치 안내", url: "https://learn.microsoft.com/windows/wsl/install" },
-      ],
+      ] : undefined,
     }];
   }
 
-  const targets = names.filter(isProbableWorkspaceDistro);
+  const location = parseWorkspaceLocation(workspacePath);
+  const available = listed.names.filter(isProbableWorkspaceDistro);
+  const selected = location.host.kind === "wsl"
+    ? [location.host.distro]
+    : available;
+  const targets = selected.map((distro): WslTarget => {
+    const workspace = location.host.kind === "wsl" && location.host.distro === distro ? location.path : "$HOME";
+    return {
+      distro,
+      workspace,
+      host: { kind: "wsl", distro, label: `WSL · ${distro}`, workspace },
+    };
+  });
   const checks: EnvironmentCheck[] = [{
     id: "wsl.available",
     group: "wsl",
     label: "WSL",
     status: targets.length ? "ok" : "warn",
-    detail: targets.length ? `배포판 ${targets.length}개: ${targets.join(", ")}` : "사용 가능한 배포판이 없습니다.",
+    detail: targets.length
+      ? location.host.kind === "wsl"
+        ? `현재 작업공간의 배포판 ${location.host.distro}를 검사합니다.`
+        : `배포판 ${targets.length}개를 각각 검사합니다: ${targets.map((target) => target.distro).join(", ")}`
+      : "사용 가능한 배포판이 없습니다.",
+    host: { kind: "windows", label: "Windows" },
+    steps: [{
+      id: "distribution-list",
+      label: "배포판 목록",
+      status: "ok",
+      detail: available.length ? available.join(", ") : "워크스페이스용 배포판 없음",
+      command: "wsl.exe -l -q",
+      cwd: process.cwd(),
+    }],
   }];
-  for (const distro of targets) {
-    checks.push(...await wslDistroChecks(distro, sdkVersion));
+  for (const target of targets) {
+    checks.push(...await wslDistroChecks(target, sdkVersion));
   }
   return checks;
 }
 
-async function wslDistroChecks(distro: string, sdkVersion: string | undefined): Promise<EnvironmentCheck[]> {
-  const node = await probeCommand(
-    "wsl.exe",
-    ["-d", distro, "-e", "bash", "-lc", "command -v node >/dev/null 2>&1 && node -v || exit 3"],
-    { timeoutMs: WSL_TIMEOUT_MS },
-  );
-  const nodeCheck: EnvironmentCheck = node.ok
-    ? {
-        id: `wsl.${distro}.node`,
-        group: "wsl",
-        label: `${distro} · Node.js`,
-        status: "ok",
-        detail: "배포판 안에 Node.js가 있습니다.",
-        version: firstLine(node.stdout),
-      }
-    : {
-        id: `wsl.${distro}.node`,
-        group: "wsl",
-        label: `${distro} · Node.js`,
-        status: "missing",
-        detail: "배포판 안에 Node.js가 없습니다. 이 배포판의 워크스페이스는 열 수 없습니다.",
-        raw: node.error,
-        remedies: [
-          { kind: "command", label: "설치 명령 복사", command: `wsl -d ${distro} -e bash -lc "sudo apt update && sudo apt install -y nodejs npm"` },
-          { kind: "docs", label: "WSL에 Node 설치", url: "https://learn.microsoft.com/windows/dev-environment/javascript/nodejs-on-wsl" },
-        ],
-      };
-
-  // Only meaningful once node exists — the engine bundle runs under it.
-  if (!node.ok) {
-    return [nodeCheck];
+async function wslDistroChecks(target: WslTarget, sdkVersion: string | undefined): Promise<EnvironmentCheck[]> {
+  const workspaceCheck = await wslWorkspaceCheck(target);
+  if (workspaceCheck.status !== "ok") {
+    return [workspaceCheck];
   }
 
-  const sdk = await probeCommand(
-    "wsl.exe",
-    ["-d", distro, "-e", "bash", "-lc", "cat \"$HOME/.agent_party_app/server/node_modules/@anthropic-ai/claude-agent-sdk/package.json\" 2>/dev/null || exit 3"],
-    { timeoutMs: WSL_TIMEOUT_MS },
-  );
-  const reinstall: EnvironmentRemedy = {
-    kind: "repair",
-    label: "SDK 다시 설치",
-    repairId: `wsl.sdk.reinstall:${distro}`,
-  };
-  if (!sdk.ok) {
-    return [nodeCheck, {
-      id: `wsl.${distro}.sdk`,
-      group: "wsl",
-      label: `${distro} · Claude Agent SDK`,
-      status: "unknown",
-      detail: "아직 설치되지 않았습니다. 이 배포판의 워크스페이스를 처음 열 때 자동으로 설치됩니다.",
-      remedies: [reinstall],
-    }];
+  const nodeCheck = await wslNodeCheck(target);
+  if (nodeCheck.status !== "ok") {
+    return [workspaceCheck, nodeCheck];
   }
 
-  const installed = safeJsonVersion(sdk.stdout);
-  const skewed = Boolean(installed && sdkVersion && installed !== sdkVersion);
-  return [nodeCheck, {
-    id: `wsl.${distro}.sdk`,
-    group: "wsl",
-    label: `${distro} · Claude Agent SDK`,
-    status: skewed ? "warn" : "ok",
-    detail: skewed
-      ? `이 배포판에는 ${installed}이 설치되어 있고 앱은 ${sdkVersion}을 씁니다. 배포판 SDK는 처음 설치된 뒤 자동으로 갱신되지 않습니다.`
-      : "앱과 같은 버전이 설치되어 있습니다.",
-    version: installed,
-    ...(skewed ? { remedies: [reinstall] } : {}),
-  }];
+  const sdk = await wslSdkCheck(target, sdkVersion);
+  const checks = [workspaceCheck, nodeCheck, sdk.check];
+  if (sdk.binary) {
+    checks.push(await wslClaudeCheck(target, sdk.binary));
+  }
+  checks.push(await wslCodexCheck(target));
+  return checks;
 }
 
-function safeJsonVersion(text: string): string | undefined {
-  try {
-    const parsed = JSON.parse(text) as { version?: unknown };
-    return typeof parsed.version === "string" ? parsed.version : undefined;
-  } catch {
-    return undefined;
+async function wslWorkspaceCheck(target: WslTarget): Promise<EnvironmentCheck> {
+  const script = target.workspace === "$HOME"
+    ? "cd \"$HOME\" && pwd -P"
+    : `test -d ${bashQuote(target.workspace)} || { echo AGENTPARTY_WORKSPACE_NOT_FOUND >&2; exit 44; }; cd ${bashQuote(target.workspace)} && pwd -P`;
+  const startedAt = Date.now();
+  const probe = await wslShellProbe(target, script, false);
+  const command = wslDisplayCommand(target, script, false);
+  if (probe.ok) {
+    const resolved = firstLine(probe.stdout) || target.workspace;
+    target.workspace = resolved;
+    target.host = { kind: "wsl", distro: target.distro, label: `WSL · ${target.distro}`, workspace: resolved };
+    return {
+      id: `wsl.${target.distro}.workspace`,
+      group: "wsl",
+      label: `${target.distro} · 작업공간`,
+      status: "ok",
+      detail: `배포판 안에서 실제 작업 폴더에 접근했습니다: ${resolved}`,
+      path: resolved,
+      host: target.host,
+      steps: [successfulStep("workspace", "작업공간 접근", `cwd를 사용할 수 있습니다: ${resolved}`, startedAt, { command, cwd: resolved })],
+    };
   }
+  const failureKind = classifyWslProbeFailure(probe, "AGENTPARTY_WORKSPACE_NOT_FOUND", "workspace");
+  const notFound = failureKind === "workspace";
+  return {
+    id: `wsl.${target.distro}.workspace`,
+    group: "wsl",
+    label: `${target.distro} · 작업공간`,
+    status: "error",
+    detail: notFound
+      ? `배포판 안에 작업공간 폴더가 없습니다: ${target.workspace}`
+      : wslFailureDetail(target, "작업공간 접근", probe),
+    path: target.workspace,
+    host: target.host,
+    raw: probe.error,
+    steps: [{
+      id: "workspace",
+      label: "작업공간 접근",
+      status: "failed",
+      detail: notFound ? "지정한 POSIX 경로가 배포판 안에 없습니다." : wslFailureDetail(target, "작업공간 접근", probe),
+      durationMs: Date.now() - startedAt,
+      command,
+      cwd: target.workspace,
+      failureKind,
+      failureCode: probeFailureCode(probe),
+      raw: probe.error,
+    }],
+  };
+}
+
+async function wslNodeCheck(target: WslTarget): Promise<EnvironmentCheck> {
+  const script = `command -v node >/dev/null 2>&1 || { echo AGENTPARTY_NODE_NOT_FOUND >&2; exit 44; }; node -v`;
+  const startedAt = Date.now();
+  const probe = await wslShellProbe(target, script);
+  const command = wslDisplayCommand(target, script);
+  if (probe.ok) {
+    return {
+      id: `wsl.${target.distro}.node`,
+      group: "wsl",
+      label: `${target.distro} · Node.js`,
+      status: "ok",
+      detail: `WSL 엔진이 실행되는 ${target.workspace}에서 Node.js를 확인했습니다.`,
+      version: firstLine(probe.stdout),
+      host: target.host,
+      steps: [successfulStep("runtime", "Node.js 실행", firstLine(probe.stdout), startedAt, { command, cwd: target.workspace })],
+    };
+  }
+  const failureKind = classifyWslProbeFailure(probe, "AGENTPARTY_NODE_NOT_FOUND");
+  const missing = failureKind === "not-found";
+  return {
+    id: `wsl.${target.distro}.node`,
+    group: "wsl",
+    label: `${target.distro} · Node.js`,
+    status: missing ? "missing" : "error",
+    detail: missing
+      ? `배포판의 PATH에서 Node.js를 찾지 못했습니다. 작업공간: ${target.workspace}`
+      : wslFailureDetail(target, "Node.js 실행", probe),
+    host: target.host,
+    raw: probe.error,
+    steps: [{
+      id: "runtime",
+      label: "Node.js 실행",
+      status: "failed",
+      detail: missing ? "command -v node가 실행 파일을 찾지 못했습니다." : wslFailureDetail(target, "Node.js 실행", probe),
+      durationMs: Date.now() - startedAt,
+      command,
+      cwd: target.workspace,
+      failureKind,
+      failureCode: probeFailureCode(probe),
+      raw: probe.error,
+    }],
+    remedies: missing ? [
+      { kind: "command", label: "설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "sudo apt update && sudo apt install -y nodejs npm"` },
+      { kind: "docs", label: "WSL에 Node 설치", url: "https://learn.microsoft.com/windows/dev-environment/javascript/nodejs-on-wsl" },
+    ] : undefined,
+  };
+}
+
+async function wslSdkCheck(target: WslTarget, sdkVersion: string | undefined): Promise<WslSdkResult> {
+  const reinstall: EnvironmentRemedy = { kind: "repair", label: "SDK 다시 설치", repairId: `wsl.sdk.reinstall:${target.distro}` };
+  const script = [
+    'server="$HOME/.agent_party_app/server"',
+    'pkg="$server/node_modules/@anthropic-ai/claude-agent-sdk/package.json"',
+    '[ -f "$pkg" ] || { echo AGENTPARTY_SDK_NOT_FOUND >&2; exit 44; }',
+    'version="$(node -e \'const p=require(process.argv[1]);process.stdout.write(String(p.version||""))\' "$pkg")"',
+    'binary="$(find "$server/node_modules/@anthropic-ai" -maxdepth 5 -type f -name claude -path "*claude-agent-sdk-linux-*/*" -print -quit)"',
+    '[ -n "$binary" ] || { echo AGENTPARTY_SDK_BINARY_NOT_FOUND >&2; exit 45; }',
+    'printf "%s\\t%s\\n" "$version" "$binary"',
+  ].join("; ");
+  const startedAt = Date.now();
+  const probe = await wslShellProbe(target, script);
+  const command = wslDisplayCommand(target, script);
+  if (!probe.ok) {
+    const output = combinedProbeOutput(probe);
+    const missingPackage = output.includes("AGENTPARTY_SDK_NOT_FOUND");
+    const missingBinary = output.includes("AGENTPARTY_SDK_BINARY_NOT_FOUND");
+    const failureKind = classifyWslProbeFailure(probe, missingPackage ? "AGENTPARTY_SDK_NOT_FOUND" : missingBinary ? "AGENTPARTY_SDK_BINARY_NOT_FOUND" : undefined);
+    return { check: {
+      id: `wsl.${target.distro}.sdk`,
+      group: "wsl",
+      label: `${target.distro} · Claude Agent SDK`,
+      status: missingPackage ? "unknown" : missingBinary ? "error" : "error",
+      detail: missingPackage
+        ? "AgentParty의 WSL 엔진 SDK가 아직 설치되지 않았습니다. 이 배포판의 작업공간을 처음 열 때 설치됩니다."
+        : missingBinary
+          ? "SDK 패키지는 있지만 실제로 실행할 Linux Claude 바이너리가 없습니다."
+          : wslFailureDetail(target, "SDK와 Claude 바이너리 확인", probe),
+      host: target.host,
+      raw: probe.error,
+      steps: [{
+        id: "sdk",
+        label: "SDK와 실행 파일",
+        status: "failed",
+        detail: missingPackage ? "SDK package.json을 찾지 못했습니다." : missingBinary ? "SDK Linux 실행 파일을 찾지 못했습니다." : wslFailureDetail(target, "SDK 확인", probe),
+        durationMs: Date.now() - startedAt,
+        command,
+        cwd: target.workspace,
+        failureKind,
+        failureCode: probeFailureCode(probe),
+        raw: probe.error,
+      }],
+      remedies: [reinstall],
+    } };
+  }
+  const [installed, binary] = firstLine(probe.stdout).split("\t");
+  const skewed = Boolean(installed && sdkVersion && installed !== sdkVersion);
+  return {
+    binary,
+    check: {
+      id: `wsl.${target.distro}.sdk`,
+      group: "wsl",
+      label: `${target.distro} · Claude Agent SDK`,
+      status: skewed ? "warn" : "ok",
+      detail: skewed
+        ? `배포판 SDK ${installed}과 앱 SDK ${sdkVersion}의 버전이 다릅니다.`
+        : "앱과 같은 SDK 버전과 실제 Linux Claude 바이너리를 확인했습니다.",
+      version: installed,
+      path: binary,
+      host: target.host,
+      steps: [successfulStep("sdk", "SDK와 실행 파일", binary, startedAt, { command, cwd: target.workspace })],
+      ...(skewed ? { remedies: [reinstall] } : {}),
+    },
+  };
+}
+
+async function wslClaudeCheck(target: WslTarget, binary?: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const sdkCandidate = binary
+    ? `candidate=${bashQuote(binary)}`
+    : 'candidate="$(find "$HOME/.agent_party_app/server/node_modules/@anthropic-ai" -maxdepth 5 -type f -name claude -path "*claude-agent-sdk-linux-*/*" -print -quit 2>/dev/null)"';
+  const resolveScript = `command -v claude 2>/dev/null || { ${sdkCandidate}; [ -n "$candidate" ] && [ -x "$candidate" ] && printf "%s\\n" "$candidate" || { echo AGENTPARTY_CLAUDE_NOT_FOUND >&2; exit 44; }; }`;
+  const resolveStartedAt = Date.now();
+  const resolved = await wslShellProbe(target, resolveScript);
+  const steps = observedSteps([{ id: "workspace", label: "작업공간", status: "ok", detail: target.workspace, cwd: target.workspace }], observer);
+  if (!resolved.ok) {
+    const missing = classifyWslProbeFailure(resolved, "AGENTPARTY_CLAUDE_NOT_FOUND") === "not-found";
+    steps.push(wslFailedStep(target, "executable", "실행 파일", resolveScript, resolved, resolveStartedAt, missing ? "WSL의 PATH와 AgentParty SDK에서 Claude Code 실행 파일을 찾지 못했습니다." : undefined, missing ? "not-found" : undefined));
+    return {
+      id: `wsl.${target.distro}.claude-code`, group: "wsl", label: `${target.distro} · Claude Code`, status: missing ? "missing" : "error",
+      detail: missing ? "이 WSL 배포판에 Claude Code가 없습니다." : wslFailureDetail(target, "Claude Code 실행 파일 탐색", resolved),
+      host: target.host, raw: resolved.error, steps,
+      remedies: missing ? [{ kind: "command", label: "WSL 설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "npm install -g @anthropic-ai/claude-code"` }] : undefined,
+    };
+  }
+  binary = firstLine(resolved.stdout);
+  steps.push(successfulStep("executable", "실행 파일", binary, resolveStartedAt, { command: wslDisplayCommand(target, resolveScript), cwd: target.workspace }));
+  const versionScript = `${bashQuote(binary)} --version`;
+  const versionStartedAt = Date.now();
+  const versionProbe = await wslShellProbe(target, versionScript);
+  if (!versionProbe.ok) {
+    steps.push(wslFailedStep(target, "version", "버전 확인", versionScript, versionProbe, versionStartedAt));
+    return wslHarnessFailure(target, "claude-code", "Claude Code", "버전 확인", binary, steps, versionProbe);
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, { command: wslDisplayCommand(target, versionScript), cwd: target.workspace }));
+
+  const authScript = `${bashQuote(binary)} auth status`;
+  const authStartedAt = Date.now();
+  const authProbe = await wslShellProbe(target, authScript);
+  const processStarted = authProbe.failureKind !== "spawn" && authProbe.failureKind !== "timeout";
+  if (!processStarted) {
+    steps.push(wslFailedStep(target, "runtime", "프로세스 실행", authScript, authProbe, authStartedAt));
+    return wslHarnessFailure(target, "claude-code", "Claude Code", "프로세스 실행", binary, steps, authProbe);
+  }
+  steps.push(successfulStep("runtime", "프로세스 실행", "SDK Linux Claude 바이너리를 작업공간에서 실행했습니다.", authStartedAt, {
+    command: wslDisplayCommand(target, authScript), cwd: target.workspace,
+  }));
+  const signedIn = authProbe.ok && claudeLoggedIn(authProbe.stdout);
+  if (!signedIn) {
+    steps.push(wslFailedStep(target, "authentication", "로그인", authScript, authProbe, authStartedAt, "WSL 안의 Claude 로그인이 유효하지 않습니다.", "authentication"));
+  } else {
+    steps.push(successfulStep("authentication", "로그인", "WSL 안의 Claude 로그인이 유효합니다.", authStartedAt, {
+      command: wslDisplayCommand(target, authScript), cwd: target.workspace,
+    }));
+  }
+  return {
+    id: `wsl.${target.distro}.claude-code`,
+    group: "wsl",
+    label: `${target.distro} · Claude Code`,
+    status: signedIn ? "ok" : "missing",
+    detail: signedIn ? "실제 WSL 작업공간에서 SDK Claude 실행과 로그인을 확인했습니다." : "Claude 프로세스는 실행됐지만 WSL 로그인이 필요합니다.",
+    version,
+    path: binary,
+    host: target.host,
+    raw: signedIn ? undefined : (authProbe.error || authProbe.stderr.trim() || authProbe.stdout.trim()),
+    steps,
+    remedies: signedIn ? undefined : [{ kind: "command", label: "WSL 로그인 명령 복사", command: `wsl -d ${target.distro} -e ${binary}` }],
+  };
+}
+
+async function wslCodexCheck(target: WslTarget, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const resolveScript = process.env.AGENTPARTY_CODEX_BIN
+    ? `candidate=${bashQuote(process.env.AGENTPARTY_CODEX_BIN)}; [ -x "$candidate" ] || { echo AGENTPARTY_CODEX_NOT_FOUND >&2; exit 44; }; printf "%s\\n" "$candidate"`
+    : 'command -v codex || { echo AGENTPARTY_CODEX_NOT_FOUND >&2; exit 44; }';
+  const resolveStartedAt = Date.now();
+  const resolved = await wslShellProbe(target, resolveScript);
+  const steps = observedSteps([{ id: "workspace", label: "작업공간", status: "ok", detail: target.workspace, cwd: target.workspace }], observer);
+  if (!resolved.ok) {
+    const missing = classifyWslProbeFailure(resolved, "AGENTPARTY_CODEX_NOT_FOUND") === "not-found";
+    steps.push(wslFailedStep(target, "executable", "실행 파일", resolveScript, resolved, resolveStartedAt, missing ? "WSL의 PATH에서 Codex를 찾지 못했습니다." : undefined, missing ? "not-found" : undefined));
+    return {
+      id: `wsl.${target.distro}.codex`, group: "wsl", label: `${target.distro} · Codex`, status: missing ? "missing" : "error",
+      detail: missing ? "WSL 안에 Codex CLI가 없습니다." : wslFailureDetail(target, "Codex 실행 파일 탐색", resolved),
+      host: target.host, raw: resolved.error, steps,
+      remedies: missing ? [{ kind: "command", label: "WSL 설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "npm install -g @openai/codex"` }] : undefined,
+    };
+  }
+  const binary = firstLine(resolved.stdout);
+  steps.push(successfulStep("executable", "실행 파일", binary, resolveStartedAt, { command: wslDisplayCommand(target, resolveScript), cwd: target.workspace }));
+
+  const versionScript = `${bashQuote(binary)} --version`;
+  const versionStartedAt = Date.now();
+  const versionProbe = await wslShellProbe(target, versionScript);
+  if (!versionProbe.ok) {
+    steps.push(wslFailedStep(target, "version", "버전 확인", versionScript, versionProbe, versionStartedAt));
+    return wslHarnessFailure(target, "codex", "Codex", "버전 확인", binary, steps, versionProbe);
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, { command: wslDisplayCommand(target, versionScript), cwd: target.workspace }));
+
+  const authScript = `${bashQuote(binary)} login status`;
+  const authStartedAt = Date.now();
+  const authProbe = await wslShellProbe(target, authScript);
+  const signedIn = authProbe.ok;
+  steps.push(signedIn
+    ? successfulStep("authentication", "로그인", "WSL 안의 Codex 로그인이 유효합니다.", authStartedAt, { command: wslDisplayCommand(target, authScript), cwd: target.workspace })
+    : wslFailedStep(target, "authentication", "로그인", authScript, authProbe, authStartedAt, "WSL 안의 Codex 로그인이 유효하지 않습니다.", "authentication"));
+
+  const digest = crypto.createHash("sha256").update(`${target.distro}:${target.workspace}`).digest("hex").slice(0, 16);
+  const sqliteHome = `$HOME/.agent_party_app/codex-sqlite/environment-${digest}`;
+  const extraArgs = codexExtraArgs();
+  const runtimeScript = [
+    `mkdir -p \"${sqliteHome}\"`,
+    `export CODEX_SQLITE_HOME=\"${sqliteHome}\"`,
+    process.env.AGENTPARTY_NATIVE_CODEX_HOME ? `export CODEX_HOME=${bashQuote(process.env.AGENTPARTY_NATIVE_CODEX_HOME)}` : "",
+    `exec ${bashQuote(binary)} ${[...extraArgs, "-c", 'cli_auth_credentials_store="file"', "app-server"].map(bashQuote).join(" ")}`,
+  ].filter(Boolean).join("; ");
+  const runtimeStartedAt = Date.now();
+  const runtimeProbe = await probeAppServerCommand(
+    "wsl.exe",
+    ["-d", target.distro, "-e", "bash", "-lc", `cd ${bashQuote(target.workspace)} && ${runtimeScript}`],
+    process.cwd(),
+    process.env,
+    WSL_TIMEOUT_MS,
+    false,
+    `WSL · ${target.distro}`,
+  );
+  const runtimeCommand = wslDisplayCommand(target, runtimeScript);
+  steps.push(runtimeProbe.ok
+    ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt, { command: runtimeCommand, cwd: target.workspace })
+    : {
+        id: "runtime", label: "app-server 초기화", status: "failed", detail: runtimeProbe.detail,
+        durationMs: Date.now() - runtimeStartedAt, command: runtimeCommand, cwd: target.workspace,
+        failureKind: runtimeProbe.failureKind, failureCode: runtimeProbe.failureCode, raw: runtimeProbe.error,
+      });
+  return {
+    id: `wsl.${target.distro}.codex`,
+    group: "wsl",
+    label: `${target.distro} · Codex`,
+    status: !runtimeProbe.ok ? "error" : signedIn ? "ok" : "missing",
+    detail: !runtimeProbe.ok
+      ? `실제 WSL 실행 조건에서 app-server 초기화에 실패했습니다 (${failureLabel(runtimeProbe.failureKind || "protocol")}).`
+      : signedIn ? "실제 WSL 작업공간에서 Codex app-server 실행과 로그인을 확인했습니다." : "app-server는 정상이나 WSL 로그인이 필요합니다.",
+    version,
+    path: binary,
+    host: target.host,
+    raw: runtimeProbe.ok ? (signedIn ? undefined : authProbe.error) : runtimeProbe.error,
+    steps,
+  };
+}
+
+async function wslCursorCheck(target: WslTarget, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const resolveScript = 'command -v agent 2>/dev/null || command -v cursor-agent 2>/dev/null || { echo AGENTPARTY_CURSOR_NOT_FOUND >&2; exit 44; }';
+  const resolveStartedAt = Date.now();
+  const resolved = await wslShellProbe(target, resolveScript);
+  const steps = observedSteps([{ id: "workspace", label: "작업공간", status: "ok", detail: target.workspace, cwd: target.workspace }], observer);
+  if (!resolved.ok) {
+    const missing = classifyWslProbeFailure(resolved, "AGENTPARTY_CURSOR_NOT_FOUND") === "not-found";
+    steps.push(wslFailedStep(target, "executable", "실행 파일", resolveScript, resolved, resolveStartedAt, missing ? "WSL의 PATH에서 Cursor Agent CLI를 찾지 못했습니다." : undefined, missing ? "not-found" : undefined));
+    return {
+      id: `wsl.${target.distro}.cursor`, group: "wsl", label: `${target.distro} · Cursor`, status: missing ? "missing" : "error",
+      detail: missing ? "이 WSL 배포판에 Cursor Agent CLI가 없습니다." : wslFailureDetail(target, "Cursor 실행 파일 탐색", resolved),
+      host: target.host, raw: resolved.error, steps,
+      remedies: missing ? [{ kind: "command", label: "WSL 설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "curl https://cursor.com/install -fsS | bash"` }] : undefined,
+    };
+  }
+  const binary = firstLine(resolved.stdout);
+  steps.push(successfulStep("executable", "실행 파일", binary, resolveStartedAt, { command: wslDisplayCommand(target, resolveScript), cwd: target.workspace }));
+
+  const versionScript = `${bashQuote(binary)} --version`;
+  const versionStartedAt = Date.now();
+  const versionProbe = await wslShellProbe(target, versionScript);
+  if (!versionProbe.ok) {
+    steps.push(wslFailedStep(target, "version", "버전 확인", versionScript, versionProbe, versionStartedAt));
+    return wslHarnessFailure(target, "cursor", "Cursor", "버전 확인", binary, steps, versionProbe);
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, { command: wslDisplayCommand(target, versionScript), cwd: target.workspace }));
+
+  const authScript = `${bashQuote(binary)} status --format json`;
+  const authStartedAt = Date.now();
+  const authProbe = await wslShellProbe(target, authScript);
+  let authenticated: boolean | undefined;
+  let email: string | undefined;
+  if (authProbe.ok) {
+    try {
+      const parsed = JSON.parse(authProbe.stdout) as { isAuthenticated?: unknown; userInfo?: { email?: unknown } };
+      authenticated = Boolean(parsed.isAuthenticated);
+      email = typeof parsed.userInfo?.email === "string" ? parsed.userInfo.email : undefined;
+    } catch {
+      authenticated = undefined;
+    }
+  }
+  if (authenticated) {
+    steps.push(successfulStep("authentication", "로그인", `WSL 안의 Cursor 로그인이 유효합니다${email ? ` (${email})` : ""}.`, authStartedAt, {
+      command: wslDisplayCommand(target, authScript), cwd: target.workspace,
+    }));
+  } else {
+    steps.push(wslFailedStep(
+      target,
+      "authentication",
+      "로그인",
+      authScript,
+      authProbe,
+      authStartedAt,
+      authenticated === false ? "WSL 안의 Cursor 로그인이 유효하지 않습니다." : "Cursor 로그인 상태 응답을 해석하지 못했습니다.",
+      authenticated === false ? "authentication" : authProbe.ok ? "protocol" : commandProbeFailureKind(authProbe),
+    ));
+  }
+  return {
+    id: `wsl.${target.distro}.cursor`,
+    group: "wsl",
+    label: `${target.distro} · Cursor`,
+    status: authenticated ? "ok" : authenticated === false ? "missing" : "error",
+    detail: authenticated ? "실제 WSL 작업공간에서 Cursor CLI 실행과 로그인을 확인했습니다." : authenticated === false ? "Cursor CLI는 실행됐지만 WSL 로그인이 필요합니다." : "Cursor 로그인 상태 확인에 실패했습니다.",
+    version,
+    path: binary,
+    host: target.host,
+    raw: authenticated ? undefined : (authProbe.error || authProbe.stderr.trim() || authProbe.stdout.trim()),
+    steps,
+    remedies: authenticated ? undefined : [{ kind: "command", label: "WSL 로그인 명령 복사", command: `wsl -d ${target.distro} -e ${binary} login` }],
+  };
+}
+
+async function wslGrokCheck(target: WslTarget, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const resolveScript = 'command -v grok 2>/dev/null || { echo AGENTPARTY_GROK_NOT_FOUND >&2; exit 44; }';
+  const resolveStartedAt = Date.now();
+  const resolved = await wslShellProbe(target, resolveScript);
+  const steps = observedSteps([{ id: "workspace", label: "작업공간", status: "ok", detail: target.workspace, cwd: target.workspace }], observer);
+  if (!resolved.ok) {
+    const missing = classifyWslProbeFailure(resolved, "AGENTPARTY_GROK_NOT_FOUND") === "not-found";
+    steps.push(wslFailedStep(target, "executable", "실행 파일", resolveScript, resolved, resolveStartedAt, missing ? "WSL의 PATH에서 Grok Build CLI를 찾지 못했습니다." : undefined, missing ? "not-found" : undefined));
+    return {
+      id: `wsl.${target.distro}.grok`, group: "wsl", label: `${target.distro} · Grok`, status: missing ? "missing" : "error",
+      detail: missing ? "이 WSL 배포판에 Grok Build CLI가 없습니다." : wslFailureDetail(target, "Grok 실행 파일 탐색", resolved),
+      host: target.host, raw: resolved.error, steps,
+      remedies: missing ? [{ kind: "command", label: "WSL 설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "curl -fsSL https://x.ai/cli/install.sh | bash"` }] : undefined,
+    };
+  }
+  const binary = firstLine(resolved.stdout);
+  steps.push(successfulStep("executable", "실행 파일", binary, resolveStartedAt, { command: wslDisplayCommand(target, resolveScript), cwd: target.workspace }));
+
+  const versionScript = `${bashQuote(binary)} --version`;
+  const versionStartedAt = Date.now();
+  const versionProbe = await wslShellProbe(target, versionScript);
+  if (!versionProbe.ok) {
+    steps.push(wslFailedStep(target, "version", "버전 확인", versionScript, versionProbe, versionStartedAt));
+    return wslHarnessFailure(target, "grok", "Grok", "버전 확인", binary, steps, versionProbe);
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, { command: wslDisplayCommand(target, versionScript), cwd: target.workspace }));
+  if (!/^grok\s+\S+\s+\([0-9a-f]{6,}\)/i.test(version)) {
+    steps.push({
+      id: "identity", label: "공식 CLI 확인", status: "failed",
+      detail: "공식 Grok Build가 출력하는 commit hash가 없습니다.",
+      command: wslDisplayCommand(target, versionScript), cwd: target.workspace,
+      failureKind: "protocol", raw: version,
+    });
+    return {
+      id: `wsl.${target.distro}.grok`, group: "wsl", label: `${target.distro} · Grok`, status: "error",
+      detail: "같은 이름의 다른 CLI가 설치되어 있습니다. 공식 Grok Build CLI가 필요합니다.",
+      version, path: binary, host: target.host, raw: version, steps,
+    };
+  }
+  steps.push({
+    id: "identity", label: "공식 CLI 확인", status: "ok",
+    detail: "공식 Grok Build의 commit hash를 확인했습니다.",
+    command: wslDisplayCommand(target, versionScript), cwd: target.workspace,
+  });
+
+  // The official CLI owns and may rotate its refresh token. `grok models` is
+  // its read-only authenticated command, so it proves the account without this
+  // app reading or copying token contents.
+  const authScript = `${bashQuote(binary)} models`;
+  const authStartedAt = Date.now();
+  const authProbe = await wslShellProbe(target, authScript);
+  const signedIn = authProbe.ok;
+  const authOutput = combinedProbeOutput(authProbe);
+  const authFailure = /login|auth|credential|token|unauthorized|forbidden|401|403/i.test(authOutput)
+    ? "authentication"
+    : commandProbeFailureKind(authProbe);
+  steps.push(signedIn
+    ? successfulStep("authentication", "로그인", "WSL 안의 Grok 구독 로그인이 유효합니다.", authStartedAt, { command: wslDisplayCommand(target, authScript), cwd: target.workspace })
+    : wslFailedStep(target, "authentication", "로그인", authScript, authProbe, authStartedAt, "Grok의 인증 명령 `grok models`가 실패했습니다.", authFailure));
+  return {
+    id: `wsl.${target.distro}.grok`,
+    group: "wsl",
+    label: `${target.distro} · Grok`,
+    status: signedIn ? "ok" : authFailure === "authentication" ? "missing" : "error",
+    detail: signedIn ? "실제 WSL 작업공간에서 Grok CLI 실행과 구독 로그인을 확인했습니다." : "Grok 로그인 확인 단계에서 실패했습니다.",
+    version,
+    path: binary,
+    host: target.host,
+    raw: signedIn ? undefined : authProbe.error,
+    steps,
+    remedies: signedIn ? undefined : [{ kind: "command", label: "WSL 로그인 명령 복사", command: `wsl -d ${target.distro} -e ${binary} login` }],
+  };
+}
+
+function wslShellProbe(target: WslTarget, script: string, useWorkspace = true): Promise<CommandProbeResult> {
+  const shellCommand = useWorkspace ? `${wslCd(target.workspace)} && ${script}` : script;
+  return probeCommand("wsl.exe", ["-d", target.distro, "-e", "bash", "-lc", shellCommand], { timeoutMs: WSL_TIMEOUT_MS });
+}
+
+function wslDisplayCommand(target: WslTarget, script: string, useWorkspace = true): string {
+  const shellCommand = useWorkspace ? `${wslCd(target.workspace)} && ${script}` : script;
+  return displayCommand("wsl.exe", ["-d", target.distro, "-e", "bash", "-lc", shellCommand]);
+}
+
+function wslCd(workspace: string): string {
+  return workspace === "$HOME" ? 'cd "$HOME"' : `cd ${bashQuote(workspace)}`;
+}
+
+function wslFailedStep(
+  target: WslTarget,
+  id: string,
+  label: string,
+  script: string,
+  probe: CommandProbeResult,
+  startedAt: number,
+  detail = wslFailureDetail(target, label, probe),
+  failureKind = commandProbeFailureKind(probe),
+): EnvironmentProbeStep {
+  return {
+    id, label, status: "failed", detail, durationMs: Date.now() - startedAt,
+    command: wslDisplayCommand(target, script), cwd: target.workspace,
+    failureKind, failureCode: probeFailureCode(probe), raw: probe.error || combinedProbeOutput(probe),
+  };
+}
+
+function wslHarnessFailure(
+  target: WslTarget,
+  id: string,
+  label: string,
+  stage: string,
+  path: string,
+  steps: EnvironmentProbeStep[],
+  probe: CommandProbeResult,
+): EnvironmentCheck {
+  return {
+    id: `wsl.${target.distro}.${id}`, group: "wsl", label: `${target.distro} · ${label}`, status: "error",
+    detail: `${stage} 단계에서 실패했습니다. ${wslFailureDetail(target, label, probe)}`,
+    path, host: target.host, raw: probe.error, steps,
+  };
+}
+
+function wslFailureDetail(target: WslTarget, subject: string, probe: CommandProbeResult): string {
+  if (probe.failureKind === "timeout") return `${target.distro} WSL이 ${subject} 명령에 ${WSL_TIMEOUT_MS}ms 안에 응답하지 않았습니다.`;
+  if (probe.failureKind === "spawn") return `Windows에서 wsl.exe 프로세스를 만들지 못했습니다 (${probe.failureCode || "원인 코드 없음"}).`;
+  return `${target.distro} WSL의 ${subject} 명령이 종료 코드 ${probe.code ?? "없음"}로 실패했습니다.`;
+}
+
+function probeFailureCode(probe: CommandProbeResult): string | undefined {
+  return probe.failureCode || (probe.code === undefined || probe.code === null ? undefined : String(probe.code));
+}
+
+function combinedProbeOutput(probe: CommandProbeResult): string {
+  return [probe.stdout, probe.stderr, probe.error].filter(Boolean).join("\n");
+}
+
+/** Pure classification seam used by the WSL checks and focused regression QA. */
+export function classifyWslProbeFailure(
+  probe: CommandProbeResult,
+  missingMarker?: string,
+  markerKind: EnvironmentProbeFailureKind = "not-found",
+): EnvironmentProbeFailureKind {
+  if (missingMarker && combinedProbeOutput(probe).includes(missingMarker)) return markerKind;
+  return commandProbeFailureKind(probe);
+}
+
+function failureLabel(kind: string): string {
+  if (kind === "not-found") return "실행 파일 없음";
+  if (kind === "authentication") return "로그인 오류";
+  if (kind === "spawn") return "프로세스 생성 실패";
+  if (kind === "timeout") return "응답 시간 초과";
+  if (kind === "protocol") return "프로토콜 오류";
+  if (kind === "workspace") return "작업공간 오류";
+  return "명령 종료 오류";
+}
+
+function bashQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 // ------------------------------------------------------------------- SDK
@@ -950,24 +1981,3 @@ function safeJsonVersion(text: string): string | undefined {
  * actually spawns, and it is invisible from PATH — so the environment screen
  * would otherwise report the host CLI while the app used a different one.
  */
-function sdkNativeClaudeCli(): string | undefined {
-  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : "";
-  if (!arch) {
-    return undefined;
-  }
-  const packageName = `claude-agent-sdk-${process.platform}-${arch}`;
-  const executable = process.platform === "win32" ? "claude.exe" : "claude";
-  for (const file of sdkPackageJsonCandidates()) {
-    const sdkDir = path.dirname(file);
-    const candidates = [
-      path.join(sdkDir, "node_modules", "@anthropic-ai", packageName, executable),
-      path.join(sdkDir, "..", packageName, executable),
-    ];
-    for (const candidate of candidates) {
-      if (isFile(candidate)) {
-        return path.normalize(candidate);
-      }
-    }
-  }
-  return undefined;
-}

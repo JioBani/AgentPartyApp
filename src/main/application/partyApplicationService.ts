@@ -2809,6 +2809,7 @@ export class PartyApplicationService {
         // doubles predate it. A double that cannot answer reports "not
         // stalled", which is the state the watchdog itself starts in.
         stalled: Boolean(member.sessionId && this.deps.sessionManager.isStalled?.(member.sessionId)),
+        authRequired: snapshot?.status === "auth_required",
       }),
     };
   }

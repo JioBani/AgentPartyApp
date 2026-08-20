@@ -477,7 +477,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 afterwards, which is why it is marked 필수 and says so. */}
             {step === "runtime" && (
             <section className="wb-wizard-section">
-              <div className="wb-modal-label"><LocalizedText id="STR-3268" /> <span className="wb-wizard-optional"><LocalizedText id="STR-3269" /></span></div>
+              <div className="wb-modal-label"><LocalizedText id="STR-3662" /> <span className="wb-wizard-optional"><LocalizedText id="STR-3663" /></span></div>
               <CwdPicker
                 value={location}
                 prefs={cwdPrefs}
@@ -487,7 +487,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 onBrowse={() => { void browse(); }}
                 wsl={wsl}
                 saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
-                hint={localized("STR-3270")}
+                hint={localized("STR-3664")}
               />
               {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
             </section>

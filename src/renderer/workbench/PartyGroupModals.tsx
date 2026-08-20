@@ -36,27 +36,27 @@ export function NewGroupModal({ onCancel, onCreate }: {
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <FolderPlus size={16} />
-            <strong><LocalizedText id="STR-3275" /></strong>
+            <strong><LocalizedText id="STR-3669" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title={localized("STR-3276")} onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-3670")} onClick={onCancel}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-gate-modal-body">
-          <div className="wb-modal-label"><LocalizedText id="STR-3277" /></div>
+          <div className="wb-modal-label"><LocalizedText id="STR-3671" /></div>
           <input
             className="wb-gate-name-input"
             value={name}
             autoFocus
-            placeholder={localized("STR-3278")}
+            placeholder={localized("STR-3672")}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") create(); }}
           />
-          <p className="wb-wizard-hint"><LocalizedText id="STR-3279" /></p>
+          <p className="wb-wizard-hint"><LocalizedText id="STR-3673" /></p>
         </div>
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3280" /></button>
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed} onClick={create}><LocalizedText id="STR-3281" /></button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3674" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed} onClick={create}><LocalizedText id="STR-3675" /></button>
           </div>
         </footer>
       </div>
@@ -91,12 +91,12 @@ export function RenameGroupModal({ group, onCancel, onRename }: {
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <PencilLine size={16} />
-            <strong><LocalizedText id="STR-3376" /></strong>
+            <strong><LocalizedText id="STR-3770" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title={localized("STR-3377")} onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-3771")} onClick={onCancel}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-gate-modal-body">
-          <div className="wb-modal-label"><LocalizedText id="STR-3277" /></div>
+          <div className="wb-modal-label"><LocalizedText id="STR-3671" /></div>
           <input
             className="wb-gate-name-input"
             value={name}
@@ -104,13 +104,13 @@ export function RenameGroupModal({ group, onCancel, onRename }: {
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") rename(); }}
           />
-          <p className="wb-wizard-hint"><LocalizedText id="STR-3378" /></p>
+          <p className="wb-wizard-hint"><LocalizedText id="STR-3772" /></p>
         </div>
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3379" /></button>
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed || trimmed === group.name} onClick={rename}><LocalizedText id="STR-3380" /></button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3773" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" disabled={!trimmed || trimmed === group.name} onClick={rename}><LocalizedText id="STR-3774" /></button>
           </div>
         </footer>
       </div>
@@ -134,12 +134,12 @@ export function MoveGroupModal({ party, groups, partyCountByGroup, onCancel, onM
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <FolderInput size={16} />
-            <strong><LocalizedText id="STR-3282" /> <span className="wb-mono">{party.name}</span></strong>
+            <strong><LocalizedText id="STR-3676" /> <span className="wb-mono">{party.name}</span></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title={localized("STR-3283")} onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-3677")} onClick={onCancel}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-gate-modal-body">
-          <div className="wb-modal-label"><LocalizedText id="STR-3284" /></div>
+          <div className="wb-modal-label"><LocalizedText id="STR-3678" /></div>
           <div className="wb-cwd-list">
             {groups.map((group) => (
               <button
@@ -151,24 +151,24 @@ export function MoveGroupModal({ party, groups, partyCountByGroup, onCancel, onM
               >
                 <Folder size={13} />
                 <span className="wb-cwd-item-path">{group.name}</span>
-                {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3285" /></span>}
-                <span className="set-cwd-meta"><LocalizedText id="STR-3287" /> {partyCountByGroup[group.id] ?? 0}</span>
+                {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3679" /></span>}
+                <span className="set-cwd-meta"><LocalizedText id="STR-3681" /> {partyCountByGroup[group.id] ?? 0}</span>
               </button>
             ))}
           </div>
-          <p className="wb-wizard-hint"><LocalizedText id="STR-3288" /></p>
+          <p className="wb-wizard-hint"><LocalizedText id="STR-3682" /></p>
         </div>
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3289" /></button>
+            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-3683" /></button>
             <button
               type="button"
               className="wb-btn wb-btn-accent"
               disabled={target === party.groupId}
               onClick={() => onMove(target)}
             >
-              <LocalizedText id="STR-3290" />
+              <LocalizedText id="STR-3684" />
             </button>
           </div>
         </footer>

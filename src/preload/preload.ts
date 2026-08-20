@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { EnvironmentReport } from "../shared/environment";
-import type { TranscriptSave, TranscriptSaveResult } from "../shared/types";
+import type { NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
@@ -53,6 +53,8 @@ const api = {
   setOpenRouterKey: (value: string) => ipcRenderer.invoke("auth:setOpenRouterKey", value),
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
+  testNativeCliAuth: (provider: NativeCliAuthProvider, host: NativeCliAuthHost): Promise<NativeCliAuthTestResult> =>
+    ipcRenderer.invoke("auth:testNativeCli", provider, host),
   loginSubscription: (provider: "codex" | "claude") => ipcRenderer.invoke("auth:loginSubscription", provider),
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
@@ -194,7 +196,7 @@ const api = {
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
-  getMemberTranscript: (name: string) => ipcRenderer.invoke("party:transcript:get", name),
+  getMemberTranscript: (name: string, partyId?: string) => ipcRenderer.invoke("party:transcript:get", name, partyId),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   /** Bytes for one screenshot a transcript references, fetched only when shown. */
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),
@@ -248,6 +250,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("auth:update", listener);
     return () => ipcRenderer.off("auth:update", listener);
+  },
+  onNativeCliAuthProgress: (callback: (payload: NativeCliAuthProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: NativeCliAuthProgress) => callback(payload);
+    ipcRenderer.on("auth:native-progress", listener);
+    return () => ipcRenderer.off("auth:native-progress", listener);
   },
   onDiscordUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

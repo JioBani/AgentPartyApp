@@ -80,6 +80,7 @@ the mockup to the tenth of a pixel.
 | `qa-resume-target` | ClaudeAdapter restart resume target ([#17]): before the first turn a setting change must not resume an uncommitted harness session; after a turn a soft restart continues the live conversation |
 | `qa-router-diagnostics` | GPT-on-Claude-Code startup errors name the CLIProxyAPI chain (router down vs proxy unconfigured); a direct Anthropic model stays free of those diagnostics |
 | `qa-workspace-location` | workspace = cwd / storage location rules |
+| `qa-environment-precision` | 환경 보고서의 Windows/WSL host, 실제 cwd/command, timeout·spawn·exit·not-found 분류가 보존되는지 검증 |
 | `qa-layout` | panel/tab layout engine, incl. `openMemberInNewPanel` (create → new region) |
 | `qa-render` | renderer smoke render |
 | `qa-askq` | AskUserQuestion choice-card rendering |
@@ -114,6 +115,7 @@ the mockup to the tenth of a pixel.
 | `qa-composer-drop-path` | Non-image file drop ([P-3]10, jsdom): dropping a non-image inserts its **path** into the draft (a member reads files itself, so a path is what it can act on) — it used to be swallowed entirely, since `onDrop` only reacted when some file was an image. Covers space-quoting, appending to an existing draft, mixed image+file drops doing both, a text-only model still accepting a path, and an unresolvable file being **reported** rather than skipped. `pathForFile` (the `webUtils` preload bridge) is mocked — see the script header for why no tier can drop a real file |
 | `qa-composer-copy-image` | R-18 lock: the composer attachment strip does **not** carry a copy control (the mis-wired [P-3]9 surface). Remove still works. Transcript copy is covered by `qa-transcript-image`. |
 | `qa-transcript-image` | R-18/R-19 (jsdom): a transcript image has copy + enlarge; copy hits the clipboard bridge per-image and surfaces failure; enlarge reuses the shared overlay with fit/actual zoom; closes via ✕/Escape only (not backdrop click). |
+| `qa-transcript-render-efficiency` | transcript scheduling/structural sharing: visible restore priority, one in-flight read, one cached-panel reveal per yield, progressive DOM convergence to the unchanged 150-block window, token-only session timestamp skips, stable latest-action delegates, historical block reuse, and streaming/action-sensitive refresh. |
 | `qa-mcp` | MCP (external server) status + actions through the SAME `EngineConnection` methods the `/api/sessions/:id/mcp*` endpoints and the workbench MCP panel call (route parity): neutral snapshot shape + harness tag + per-server capability flags (`canReconnect`/`canToggle`/`canAuthenticate` — the honest Claude↔Codex asymmetry), and reconnect/toggle/authenticate mutating live state. Backed by the QA mock harness's seeded servers (connected+tools / needs-auth+authenticate / failed+error). |
 | `qa-auto-compact` | per-member auto-compaction pure logic (`src/shared/autoCompact.ts`): threshold clamp/step-snap (50–95), OFF-by-default, stored/HTTP `normalizeAutoCompact`, inheritance (member setting → global `compactDefault` → built-in), token estimate (never against an unknown window), and `shouldAutoCompact` crossing test the renderer trigger fires on (off / unknown-window / unknown-usage never fire). |
 | `qa-compact-dialog` | context donut + Auto-compact dialog render (jsdom), locking `design_handoff_auto_compact`: the donut is a **ring** (not a bar) with a threshold **tick** only when on, and clicking it opens the dialog; the dialog carries the current-usage card (used/total/%), the enable toggle, the 50–95 step-5 threshold slider, and a footer with **지금 압축 실행** (fires `compact` + closes; disabled with no live session) beside **완료**. |
@@ -143,6 +145,33 @@ need no model turn — they boot a real Electron app on an isolated
 (create A+B → delete active B → A becomes current + B's on-disk dir removed →
 delete last party → parties/current cleared → missing party errors, no silent
 no-op). Not billed; safe to run anytime after `npm run build`.
+
+`npm run test:e2e:environment-precision` launches the real Electron app without
+a model call, drives **런타임 → 환경** through `/api/environment` and
+`/api/navigation`, and verifies that Windows checks expose the actual workspace,
+CLI command boundaries, and the isolated Codex SQLite path. WSL probing remains
+explicit (`?wsl=1`) because it starts distributions and can legitimately wait on
+a broken distro. Set `AGENTPARTY_E2E_INCLUDE_WSL=1` to include that host-specific
+path and assert that timeouts remain errors with their command and POSIX cwd.
+
+`node scripts/e2e-party-switch-perf.mjs` seeds 8 parties and 96 persisted
+transcripts (~51 MiB of text), with 12 open tabs and six visible panels per
+party. Half the blocks are collapsed tool results. It selects every party
+through the public automation route and locks three milestones: correct layout,
+first usable transcript within 500 ms, then all six sequentially filled within
+5 seconds. It also covers a cached warm return, a cold background-tab click,
+rapid-switch party scoping, progressive convergence to the established
+150-block tail, deferred tool expansion, older-history paging, and a real
+workbench capture. Sleeping fixture members keep it offline and unbilled.
+
+For an existing workspace, run
+`node scripts/benchmark-party-switch-real-store.mjs <workspace> [installed-exe]`.
+The benchmark copies only `.agent_party_app` into a guarded temporary directory,
+marks copied members sleeping, and launches the real app against that copy; the
+source workspace and its live parties are never written. Omitting `installed-exe`
+measures the current worktree build, while supplying it makes a baseline run.
+Add `--open` to leave that isolated sleeping-member copy open in the real app
+for hands-on QA; the command prints the copy and user-data paths for cleanup.
 
 `node scripts/qa-app-mcp-e2e.mjs` verifies the MCP status endpoint against the
 **real** harness adapters (billed — starts a live Claude + Codex member): creates
@@ -946,6 +975,13 @@ node -e "require('child_process').execSync('taskkill /PID <pid> /T /F')"
 ---
 
 ## Why this tier matters
+
+`scripts/e2e-claude-auth-separation.mjs` launches the real Electron app with a
+token-free fake Claude executable that reports `loggedIn:false`. It verifies the
+separate native/bridge cards, the workspace-scoped native auth API, and that a
+real Claude member becomes `auth-required` before the Agent SDK/provider process
+is entered. The successful-login/provider-call half must use a real user-owned
+Claude login and is intentionally never faked as product E2E.
 
 The party communication feature passed both the jsdom suite and the in-process
 integration test, yet agent-created members did **not** appear in the UI on a WSL

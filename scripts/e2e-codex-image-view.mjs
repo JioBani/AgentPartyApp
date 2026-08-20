@@ -1,11 +1,12 @@
 /*
- * Full-process e2e for the bug "a Codex member views an image and the chat shows
- * nothing".
+ * Full-process e2e for the two image-display intents:
+ * - AgentParty attach-image MCP: immediately show the user.
+ * - Codex native imageView: keep inspection evidence collapsed until opened.
  *
  * Codex reports its built-in image viewer as an `imageView` item, which the
- * adapter turned into a tool box carrying only the PATH. Tool boxes already
- * render any image content block in their `result` (that is how screenshots
- * appear) — there just was never one to render.
+ * adapter turns into an `image_view` tool carrying the path and picture. The
+ * picture belongs inside that disclosure, unlike the explicit attach-image MCP
+ * which normalizes to a dedicated transcript image block.
  *
  * This drives the REAL app and the REAL production function: the result payload
  * injected here is built by `imageContentResult` from dist, the exact call
@@ -120,29 +121,78 @@ async function main() {
     const panel = await post("/api/measure", { selector: ".wb-panel-title, .wb-tab-name", limit: 20 });
     assert(panel.ok && (panel.texts || []).some((t) => t.includes("viewer")), `the 'viewer' panel is open (${(panel.texts || []).join(", ") || "no panels"})`);
 
-    // --- the transcript renders it ---------------------------------------
+    // AgentParty's attach-image MCP exists specifically to show the USER a
+    // picture. It is normalized to kind:"image" (not a tool box) and must keep
+    // its immediate display behavior while native inspection becomes lazy.
+    const attachedFile = "mcp-attached.png";
+    fs.mkdirSync(path.join(ws, ".agent_party_app", "images"), { recursive: true });
+    fs.copyFileSync(imagePath, path.join(ws, ".agent_party_app", "images", attachedFile));
+    await post("/api/qa/members/viewer/emit", {
+      events: [{
+        type: "tool_call",
+        id: "agentparty-attach-image-1",
+        name: "mcp__agentparty-app__attach-image",
+        input: { path: imagePath, caption: "MCP visible image" },
+        status: "completed",
+        result: { ok: true, file: attachedFile, mediaType: "image/png", bytes: pngBytes },
+        source: "agentparty-app",
+      }],
+    });
+    await delay(500);
+    const mcpImage = await post("/api/measure", { selector: ".wb-attached-image img.wb-msg-image", limit: 5, attributes: ["src"] });
+    assert(mcpImage.ok && mcpImage.count === 1, "AgentParty attach-image MCP remains immediately visible");
+
+    // --- native image_view is inspection evidence, so it stays lazy -------
     await post("/api/qa/members/viewer/emit", { events: [imageViewEvent(imageContentResult, imagePath)] });
     await delay(900);
 
-    // It renders as the SAME card as an attached image — the tool exists to show
-    // a picture, so the disclosure box and the `{"path": …}` dump are noise.
-    const card = await post("/api/measure", { selector: ".wb-attached-image", limit: 5 });
-    assert(card.ok && card.count > 0, `rendered as the attached-image card (${card.count || 0})`);
-    const asToolBox = await post("/api/measure", { selector: "details.wb-tool", limit: 5 }).catch(() => null);
-    assert(!asToolBox?.ok, "not rendered as a collapsible tool box");
-    const caption = await post("/api/measure", { selector: ".wb-attached-image-caption", limit: 5 });
-    assert(caption.ok && (caption.texts || []).some((t) => t.includes("codex-viewed.png")),
-      `the card still names the file (${(caption.texts || []).join(" | ")})`);
+    const nativeTool = await post("/api/measure", { selector: "details.wb-tool", limit: 5, attributes: ["open"] });
+    assert(nativeTool.ok && nativeTool.count === 1 && !nativeTool.elements?.[0]?.attributes?.open,
+      "native image_view remains a collapsed tool");
+    assert((nativeTool.texts || []).some((text) => text.includes("codex-viewed.png")),
+      "the collapsed summary still names the inspected file");
+    const nativeBeforeOpen = await post("/api/measure", { selector: "img.wb-tool-image", limit: 5 });
+    assert(Number(nativeBeforeOpen.count || 0) === 0, "native image_view mounts no image before disclosure opens");
 
-    const img = await post("/api/measure", { selector: "img.wb-tool-image", limit: 5, attributes: ["src"] });
-    assert(img.ok && img.count > 0, `the picture is rendered (${img.count || 0} <img>)`);
-    const rendered = img.elements?.[0];
+    const shot = path.join(outDir, "codex-image-view-open.png");
+    const openedNative = await post("/api/capture", { path: shot, click: "details.wb-tool > summary" });
+    assert(openedNative.applied?.clicked === true, "native image_view opens through the real UI");
+    await delay(500);
+    const nativeAfterOpen = await post("/api/measure", { selector: "details.wb-tool[open] img.wb-tool-image", limit: 5, attributes: ["src"] });
+    assert(nativeAfterOpen.ok && nativeAfterOpen.count === 1, "opening native image_view mounts the picture on demand");
+    const rendered = nativeAfterOpen.elements?.[0];
     assert((rendered?.box?.width || 0) > 0 && (rendered?.box?.height || 0) > 0,
       `the image has real layout size (${rendered?.box?.width}x${rendered?.box?.height})`);
     assert(/^data:image\/png;base64,/.test(String(rendered?.attributes?.src || "")), "the <img> carries the decoded PNG");
+    await post("/api/capture", { path: shot, click: "details.wb-tool[open] > summary" });
+    await delay(300);
 
-    const shot = path.join(outDir, "codex-image-view.png");
-    assert((await post("/api/capture", { path: shot })).ok, `captured the transcript → ${shot}`);
+    // An exec that internally called view_image follows the same lazy boundary.
+    await post("/api/qa/members/viewer/emit", {
+      events: [{
+        type: "tool_call",
+        id: "codex-exec-image-1",
+        name: "exec",
+        input: { command: "tools.view_image(...)" },
+        status: "completed",
+        result: [{ type: "text", text: imagePath }, ...imageContentResult(imagePath)],
+        source: "codex",
+      }],
+    });
+    await delay(700);
+
+    const collapsedExec = await post("/api/measure", { selector: "details.wb-tool", limit: 5, attributes: ["open"] });
+    assert(collapsedExec.ok && collapsedExec.count === 2 && collapsedExec.elements?.every((element) => !element.attributes?.open),
+      "an ordinary image-bearing exec is collapsed by default");
+    const beforeOpen = await post("/api/measure", { selector: "img.wb-tool-image", limit: 5 });
+    assert(Number(beforeOpen.count || 0) === 0, "collapsed native and exec tools mount no image elements");
+
+    const lazyShot = path.join(outDir, "codex-exec-image-open.png");
+    const openedExec = await post("/api/capture", { path: lazyShot, click: ".wb-transcript > details.wb-tool:last-of-type > summary" });
+    assert(openedExec.applied?.clicked === true, "the ordinary tool disclosure opens through the real UI");
+    await delay(500);
+    const afterOpen = await post("/api/measure", { selector: "details.wb-tool[open] img.wb-tool-image", limit: 5, attributes: ["src"] });
+    assert(afterOpen.ok && afterOpen.count === 1, "opening the disclosure mounts its image on demand");
 
     // --- a failure is visible, not silent --------------------------------
     await post("/api/qa/members/viewer/emit", {
@@ -166,7 +216,7 @@ async function main() {
 
   console.log("");
   if (failures.length) { console.log(`CODEX IMAGE VIEW E2E FAILED: ${failures.length}`); process.exit(1); }
-  console.log("CODEX IMAGE VIEW E2E PASSED (adapter payload + transcript rendering + stated failures)");
+  console.log("CODEX IMAGE VIEW E2E PASSED (AgentParty MCP immediate + native inspection lazy + stated failures)");
   process.exit(0);
 }
 

@@ -6,7 +6,7 @@ import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, 
 import { ipcErrorMessage } from "./ipcError";
 import { openUpdateDialog } from "./updateDialog";
 import { UPDATE_FEED, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
-import type { HarnessDefaults, HarnessId, InitialAppState, PermissionModeSetting, SessionView } from "../../shared/types";
+import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting, SessionView } from "../../shared/types";
 import {
   cursorPolicyOf,
   type CursorAgentMode,
@@ -93,6 +93,7 @@ function authBadge(status: InitialAppState["auth"][number]["status"]): { label: 
     case "configured": return { label: "설정됨", tone: "success", ok: true };
     case "valid": return { label: "정상", tone: "success", ok: true };
     case "pending": return { label: "인증 대기", tone: "muted", ok: false };
+    case "unknown": return { label: "확인 필요", tone: "muted", ok: false };
     case "missing": return { label: "미설정", tone: "muted", ok: false };
     case "invalid": return { label: "유효하지 않음", tone: "danger", ok: false };
     case "network_error": return { label: "네트워크 오류", tone: "danger", ok: false };
@@ -290,7 +291,7 @@ const API_KEY_PLACEHOLDERS: Record<string, string> = {
   deepseek: "새 DeepSeek API 키 입력 (sk-…)",
 };
 
-export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onConnectSubscription, onDisconnectSubscription }: {
+export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onTestNativeCli, onConnectSubscription, onDisconnectSubscription }: {
   auth: InitialAppState["auth"];
   /** Per-provider key drafts. One shared draft would let a second API-key card
    *  overwrite the first provider's credential. */
@@ -300,14 +301,41 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
   onTest: (providerId: string) => void;
   /** Clears a stored API key. Required for OpenRouter (R-25); DeepSeek uses the same path. */
   onClear: (providerId: string) => void | Promise<void>;
+  onTestNativeCli: (provider: NativeCliAuthProvider, host: NativeCliAuthHost) => Promise<NativeCliAuthTestResult>;
   onConnectSubscription: (provider: "codex" | "claude") => void;
   onDisconnectSubscription: (provider: DisconnectableProvider) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const subscriptions = auth.filter((provider) => provider.kind === "subscription");
+  const nativeCli = subscriptions.filter((provider) =>
+    provider.surface === "native-cli"
+    || (provider.surface !== "cross-harness" && provider.action?.type !== "subscriptionOAuth"));
+  const crossHarness = subscriptions.filter((provider) =>
+    provider.surface === "cross-harness" || provider.action?.type === "subscriptionOAuth");
+  const nativeCliGroups = (["claude", "codex", "cursor", "grok"] as const)
+    .map((provider) => ({
+      provider,
+      cards: nativeCli.filter((card) => card.action?.type === "nativeCliTest" && card.action.provider === provider),
+    }))
+    .filter((group) => group.cards.length > 0);
   const apiKeys = auth.filter((provider) => provider.kind === "apiKey");
   const [disconnectArmed, setDisconnectArmed] = useState<DisconnectableProvider | undefined>();
   const [disconnecting, setDisconnecting] = useState<DisconnectableProvider | undefined>();
   const [clearing, setClearing] = useState<string | undefined>();
+  const [testingNative, setTestingNative] = useState<Record<string, boolean>>({});
+  const [nativeTestErrors, setNativeTestErrors] = useState<Record<string, string>>({});
+
+  async function testNative(providerId: string, provider: NativeCliAuthProvider, host: NativeCliAuthHost): Promise<void> {
+    setTestingNative((current) => ({ ...current, [providerId]: true }));
+    setNativeTestErrors((current) => ({ ...current, [providerId]: "" }));
+    try {
+      await onTestNativeCli(provider, host);
+    } catch (error) {
+      setNativeTestErrors((current) => ({ ...current, [providerId]: ipcErrorMessage(error) }));
+    } finally {
+      setTestingNative((current) => ({ ...current, [providerId]: false }));
+    }
+  }
 
   async function confirmDisconnect(provider: DisconnectableProvider): Promise<void> {
     setDisconnectArmed(undefined);
@@ -319,62 +347,153 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
     }
   }
 
-  return (
-    <div className="set-page">
-      {subscriptions.length > 0 && (
-        <section className="set-section">
-          <SetSectionHead label={localized("STR-1018")} />
-          {subscriptions.map((provider) => {
-            const disconnectable = provider.status === "available" ? disconnectableProviderOf(provider.id) : undefined;
+  function nativeProviderCards(): ReactNode {
+    const labels: Record<NativeCliAuthProvider, string> = {
+      claude: "Claude",
+      codex: "Codex",
+      cursor: "Cursor",
+      grok: "Grok",
+    };
+    return nativeCliGroups.map(({ provider, cards }) => (
+      <div className="set-card set-native-provider" key={provider} data-native-provider={provider}>
+        <div className="set-row set-row-flush set-native-provider-head">
+          <span className="set-row-icon"><ShieldCheck size={19} /></span>
+          <div className="set-row-body">
+            <span className="set-row-name">{labels[provider]}</span>
+            <span className="set-row-desc">{t("auth.native.hostIsolation")}</span>
+          </div>
+        </div>
+        <div className="set-native-hosts">
+          {cards.map((card) => {
+            const action = card.action?.type === "nativeCliTest" ? card.action : undefined;
+            if (!action) return null;
+            const isTesting = Boolean(testingNative[card.id]) || card.test?.status === "running";
+            const disconnectable = card.status === "available" ? disconnectableProviderOf(card.id) : undefined;
             return (
-            <div className="set-row-stack" key={provider.id}>
-              <div className="set-row">
-                <span className="set-row-icon"><ShieldCheck size={19} /></span>
-                <div className="set-row-body">
-                  <span className="set-row-name">{provider.label}</span>
-                  <span className="set-row-desc">{provider.detail || provider.description}</span>
-                </div>
-                {provider.action?.type === "subscriptionOAuth" && (
+              <div className="set-native-host" key={card.id} data-auth-provider={card.id}>
+                <div className="set-row set-native-host-row">
+                  <span className="set-row-icon is-accent">
+                    {action.host === "windows" ? <MonitorSmartphone size={18} /> : <SquareTerminal size={18} />}
+                  </span>
+                  <div className="set-row-body">
+                    <span className="set-row-name">{action.host === "windows" ? "Windows" : "WSL"}</span>
+                    <span className="set-row-desc">{card.detail || card.description}</span>
+                    {(card.host || card.workspace || card.command) && (
+                      <span className="set-auth-context wb-mono">
+                        {card.host && <span><b>host</b> {card.host}</span>}
+                        {card.workspace && <span><b>cwd</b> {card.workspace}</span>}
+                        {card.command && <span><b>command</b> {card.command}</span>}
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     className="set-btn-soft"
-                    disabled={provider.status === "pending"}
-                    onClick={() => onConnectSubscription(provider.action!.provider)}
+                    disabled={isTesting}
+                    data-auth-test={`${action.provider}:${action.host}`}
+                    onClick={() => void testNative(card.id, action.provider, action.host)}
                   >
-                    <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
-                    {provider.action.label}
+                    <FlaskConical size={14} className={isTesting ? "wb-spin" : ""} />
+                    {isTesting ? "테스트 중…" : action.label}
                   </button>
-                )}
-                {disconnectable && (
-                  <button
-                    type="button"
-                    className={`set-btn-soft set-btn-disconnect${disconnectArmed === disconnectable ? " is-armed" : ""}`}
-                    disabled={disconnecting === disconnectable}
-                    onClick={() => {
-                      if (disconnectArmed !== disconnectable) {
-                        setDisconnectArmed(disconnectable);
-                        return;
-                      }
-                      void confirmDisconnect(disconnectable);
-                    }}
-                    onBlur={() => setDisconnectArmed(undefined)}
-                  >
-                    {disconnecting === disconnectable
-                      ? <RefreshCw size={14} className="wb-spin" />
-                      : <LogOut size={14} />}
-                    {disconnecting === disconnectable ? "연결 끊는 중…" : disconnectArmed === disconnectable ? "정말 연결 끊기" : "연결 끊기"}
-                  </button>
-                )}
-                <SetBadge status={provider.status} />
+                  {disconnectable && (
+                    <button
+                      type="button"
+                      className={`set-btn-soft set-btn-disconnect${disconnectArmed === disconnectable ? " is-armed" : ""}`}
+                      disabled={disconnecting === disconnectable}
+                      onClick={() => {
+                        if (disconnectArmed !== disconnectable) {
+                          setDisconnectArmed(disconnectable);
+                          return;
+                        }
+                        void confirmDisconnect(disconnectable);
+                      }}
+                      onBlur={() => setDisconnectArmed(undefined)}
+                    >
+                      {disconnecting === disconnectable
+                        ? <RefreshCw size={14} className="wb-spin" />
+                        : <LogOut size={14} />}
+                      {disconnecting === disconnectable ? "연결 끊는 중…" : disconnectArmed === disconnectable ? "정말 연결 끊기" : "연결 끊기"}
+                    </button>
+                  )}
+                  <SetBadge status={card.status} />
+                </div>
+                {card.test?.steps?.length ? <EnvironmentProbeSteps steps={card.test.steps} /> : null}
+                {nativeTestErrors[card.id] && <div className="soft-error">{t("auth.native.testError", { error: nativeTestErrors[card.id] })}</div>}
               </div>
-              {/* The bridge opened the SYSTEM DEFAULT browser. When the account
-                  lives in another browser or profile that flow can never finish,
-                  so the link must be reachable by hand — otherwise the row just
-                  sits at "인증 대기 중" forever. */}
-              {provider.authUrl && <AuthUrlRow url={provider.authUrl} />}
-            </div>
             );
           })}
+        </div>
+      </div>
+    ));
+  }
+
+  function authRows(providers: AuthProviderState[]): ReactNode {
+    return providers.map((provider) => {
+      const disconnectable = provider.status === "available" ? disconnectableProviderOf(provider.id) : undefined;
+      const oauthAction = provider.action?.type === "subscriptionOAuth" ? provider.action : undefined;
+      return (
+        <div className="set-row-stack" key={provider.id} data-auth-provider={provider.id}>
+          <div className="set-row">
+            <span className="set-row-icon"><ShieldCheck size={19} /></span>
+            <div className="set-row-body">
+              <span className="set-row-name">{provider.label}</span>
+              <span className="set-row-desc">{provider.detail || provider.description}</span>
+              {(provider.host || provider.workspace || provider.command) && (
+                <span className="set-auth-context wb-mono">
+                  {provider.host && <span><b>host</b> {provider.host}</span>}
+                  {provider.workspace && <span><b>cwd</b> {provider.workspace}</span>}
+                  {provider.command && <span><b>command</b> {provider.command}</span>}
+                </span>
+              )}
+            </div>
+            {oauthAction && (
+              <button
+                type="button"
+                className="set-btn-soft"
+                disabled={provider.status === "pending"}
+                onClick={() => onConnectSubscription(oauthAction.provider)}
+              >
+                <RefreshCw size={14} className={provider.status === "pending" ? "wb-spin" : ""} />
+                {oauthAction.label}
+              </button>
+            )}
+            {disconnectable && (
+              <button
+                type="button"
+                className={`set-btn-soft set-btn-disconnect${disconnectArmed === disconnectable ? " is-armed" : ""}`}
+                disabled={disconnecting === disconnectable}
+                onClick={() => {
+                  if (disconnectArmed !== disconnectable) {
+                    setDisconnectArmed(disconnectable);
+                    return;
+                  }
+                  void confirmDisconnect(disconnectable);
+                }}
+                onBlur={() => setDisconnectArmed(undefined)}
+              >
+                {disconnecting === disconnectable
+                  ? <RefreshCw size={14} className="wb-spin" />
+                  : <LogOut size={14} />}
+                {disconnecting === disconnectable ? "연결 끊는 중…" : disconnectArmed === disconnectable ? "정말 연결 끊기" : "연결 끊기"}
+              </button>
+            )}
+            <SetBadge status={provider.status} />
+          </div>
+          {/* The bridge opens the system-default browser. Keep the URL copyable
+              so another browser profile can finish the same pending flow. */}
+          {provider.authUrl && <AuthUrlRow url={provider.authUrl} />}
+        </div>
+      );
+    });
+  }
+
+  return (
+    <div className="set-page">
+      {nativeCliGroups.length > 0 && (
+        <section className="set-section">
+          <SetSectionHead label={t("auth.native.section")} />
+          {nativeProviderCards()}
         </section>
       )}
 
@@ -434,6 +553,13 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onCon
           </div>
         ))}
       </section>
+
+      {crossHarness.length > 0 && (
+        <section className="set-section" data-auth-section="cross-harness">
+          <SetSectionHead label={t("auth.crossHarness.section")} />
+          {authRows(crossHarness)}
+        </section>
+      )}
     </div>
   );
 }
@@ -1074,6 +1200,12 @@ function EnvironmentCheckRow({ check, onRepaired, onOpenExecutable }: {
         <span className="set-env-label">{check.label}</span>
         {check.version && <span className="set-env-version wb-mono">{check.version}</span>}
       </div>
+      {check.host && (
+        <div className="set-env-host">
+          <span className={`set-env-host-chip is-${check.host.kind}`}>{check.host.label}</span>
+          {check.host.workspace && <span className="wb-mono"><LocalizedText id="STR-1134" /> {check.host.workspace}</span>}
+        </div>
+      )}
       <div className="set-env-detail">{check.detail}</div>
       {check.path && <div className="set-env-path wb-mono">{check.path}</div>}
       {Boolean(check.steps?.length) && <EnvironmentProbeSteps steps={check.steps || []} />}

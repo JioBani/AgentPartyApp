@@ -161,6 +161,7 @@ started with that exact path as `cwd`.
       "label": "Cursor",
       "status": "missing",
       "detail": "설치되어 있지만 로그인되어 있지 않습니다.",
+      "host": { "kind": "windows", "label": "Windows", "workspace": "C:\\work" },
       "path": "C:\\Users\\me\\AppData\\Local\\cursor-agent\\versions\\2026.07.23-e383d2b",
       "remedies": [
         { "kind": "command", "label": "로그인 명령 복사", "command": "cursor-agent login" },
@@ -171,9 +172,13 @@ started with that exact path as `cwd`.
 }
 ```
 
-Claude and Codex checks additionally return ordered `steps`. A failed report
-therefore says both **where** it stopped and **why**, while `raw` retains the
-untranslated OS/CLI evidence:
+Every check names its execution `host` (`windows` or one concrete `wsl`
+distribution) and the host-native `workspace`. Harness and WSL execution checks
+additionally return ordered `steps`. Each process step carries its exact
+`command`, process `cwd`, an inspected resource `path`, and, on failure, a
+structured `failureKind` plus optional `failureCode`. A failed report therefore
+says both **where** it stopped and **why**, while `raw` retains the untranslated
+OS/CLI evidence:
 
 ```json
 {
@@ -185,7 +190,7 @@ untranslated OS/CLI evidence:
     { "id": "executable", "label": "실행 파일", "status": "ok", "detail": "Codex 실행 경로: C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd" },
     { "id": "version", "label": "버전 확인", "status": "ok", "detail": "codex-cli 0.145.0", "durationMs": 92 },
     { "id": "authentication", "label": "로그인", "status": "ok", "detail": "Codex 계정 로그인이 유효합니다.", "durationMs": 81 },
-    { "id": "runtime", "label": "app-server 초기화", "status": "failed", "detail": "Windows가 Codex 프로세스 생성을 거부했습니다.", "raw": "spawn UNKNOWN (code=UNKNOWN, syscall=spawn, command=..., cwd=C:\\work)" }
+    { "id": "runtime", "label": "app-server 초기화", "status": "failed", "detail": "Windows가 Codex 프로세스 생성을 거부했습니다.", "command": "codex -c cli_auth_credentials_store=… app-server", "cwd": "C:\\work", "failureKind": "spawn", "failureCode": "UNKNOWN", "raw": "spawn UNKNOWN (code=UNKNOWN, syscall=spawn, command=..., cwd=C:\\work)" }
   ]
 }
 ```
@@ -193,9 +198,19 @@ untranslated OS/CLI evidence:
 The execution probes make no model request. Claude runs `--version` and
 `auth status` through the same resolved executable and real workspace. Codex
 runs `--version`, `login status`, then starts the same `app-server` transport as
-a member and completes its `initialize` handshake. This catches invalid cwd,
+a member, with a stable diagnostic-only `CODEX_SQLITE_HOME`, and completes its
+`initialize` handshake. This catches invalid cwd,
 unspawnable launchers, login failures, early exits, protocol errors and timeouts
 without spending provider tokens.
+
+With `?wsl=1`, Windows discovery and each WSL execution host stay separate. For
+the current WSL workspace the probe uses its exact distro and POSIX cwd; from a
+Windows workspace each installed non-utility distro is probed from its resolved
+home. The WSL chain is `workspace → Node.js → Agent SDK/Linux Claude binary →
+Claude version/process/login → Codex executable/version/login/app-server`.
+A hung distro is therefore reported as `failureKind: "timeout"` at workspace
+access, not falsely as “Node.js missing”; only an explicit `command -v` marker
+is classified as `not-found`.
 
 `status` is `ok` | `warn` | `missing` | `error` | `unknown`; `missing` and
 `error` are what block work. `raw` carries the untranslated probe failure (CLI
@@ -835,7 +850,31 @@ Cursor `cursorPolicy` mirrors Cursor CLI's separate controls:
 ### `GET /api/auth`
 
 Lists every credential provider (subscriptions and API keys) with its status,
-masked value, and where the credential came from.
+masked value, and where the credential came from. Native CLI rows use
+`surface: "native-cli"`; local subscription-proxy rows use
+`surface: "cross-harness"`, which the desktop renders last under
+**교차 하네스 연결**.
+
+Claude is deliberately two cards. `claude-native` is the login used by a
+`claude-code` runtime member on the workspace's actual engine host; `claude` is
+the CLIProxyAPI subscription bridge used only for routed Claude models. Each
+native card includes `host`, host-native `workspace`, and a token-free `command`.
+One card being connected never changes the other card's status. The native CLI
+surface groups one card per CLI provider, with independent Windows and
+default-WSL rows inside it. The stable row ids are `claude-native` /
+`claude-native-wsl`, `codex` / `codex-wsl`, `cursor` / `cursor-wsl`, and `grok` /
+`grok-wsl`. WSL remains `status: "unknown"` until its own test is requested,
+because an implicit check would boot the distribution.
+
+### `GET /api/auth/native/claude`
+
+Runs `claude auth status` through the same engine that serves the request
+workspace. A Windows workspace therefore checks the Windows CLI, while a WSL
+workspace checks that distro's own CLI/SDK binary and POSIX cwd. `?refresh=1`
+requests a fresh proof. The result includes `authenticated`, `host`, `workspace`,
+`executable`, diagnostic `command`, and the exact `loginCommand`; it whitelists
+only `loggedIn`, `authMethod`, and `apiProvider` from CLI output and never returns
+credential-file contents or OAuth tokens.
 
 Native Codex (`id: "codex"`) and the local subscription bridge
 (`id: "codex-bridge"`) are deliberately separate. The native card is read from
@@ -844,10 +883,94 @@ GPT models routed through the Claude Code harness. AgentParty never reads or
 copies the bridge's rotating OAuth refresh token into native Codex
 `auth.json`; each native Windows/WSL host must own its own `codex login`.
 
-The Authentication screen labels `codex-bridge` as `Claude Code용 GPT 연결`
-and explains: `Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다.
-Codex 하네스의 로그인과는 별도입니다.` The internal id stays stable for
-automation clients.
+The Authentication screen labels the two cross-harness proxy rows simply
+`Claude` and `Codex`. Their stable automation ids remain `claude` and
+`codex-bridge`; these rows are separate from every Windows/WSL native CLI login.
+
+### `POST /api/auth/native/:provider/test`
+
+Runs the selected CLI through the same executable and runtime probes used by
+the Environment screen. `:provider` is `claude`, `codex`, `cursor`, or `grok`;
+the JSON body must
+contain `host: "windows" | "wsl"`. An optional `distro` selects a particular WSL
+distribution; otherwise the `*` default reported by `wsl.exe -l -v` is used. If
+that marker cannot be read, the first usable distribution is selected and that
+fallback is stated in the returned distribution step rather than hidden.
+
+The command is really executed. The result checks workspace/distribution
+selection, executable discovery, version, authentication, and the harness's
+runtime boundary where applicable. It returns every structured step, including
+the first failed stage, exact token-free command/cwd, failure kind/code, and raw
+diagnostic output. It never reads or returns OAuth token contents. `ok` is true
+only when the CLI is usable; an authentication or runtime failure still returns
+HTTP success with `ok: false` so clients can render the diagnostic result.
+Claude uses `auth status`, Codex uses `login status` plus app-server
+initialization, Cursor uses `status --format json`, and Grok lets the official
+CLI validate its own rotating credential with the read-only `grok models`
+command. None of these tests sends a model prompt.
+
+The test publishes `auth:native-progress` after every real probe boundary. The
+first event contains the complete ordered plan with every step `pending`; the
+active step becomes `running`, and completed boundaries change to `ok` or
+`failed` one at a time. Boundaries after a failure become `skipped`, so the UI
+never suggests they were verified. The same in-flight snapshot is available to
+automation clients through the progress endpoint below.
+
+```json
+{
+  "host": "wsl"
+}
+```
+
+```json
+{
+  "ok": false,
+  "provider": "codex",
+  "host": "wsl",
+  "distro": "Ubuntu",
+  "checkedAt": "2026-08-20T12:00:00.000Z",
+  "check": {
+    "status": "missing",
+    "detail": "WSL 안에 Codex CLI가 없습니다.",
+    "steps": [
+      { "id": "distribution", "status": "ok", "detail": "기본 배포판 Ubuntu를 선택했습니다." },
+      { "id": "executable", "status": "failed", "failureKind": "not-found", "detail": "WSL의 PATH에서 Codex를 찾지 못했습니다." }
+    ]
+  },
+  "auth": [{ "id": "codex-wsl", "status": "missing" }]
+}
+```
+
+### `GET /api/auth/native/:provider/progress`
+
+Returns the latest non-blocking progress snapshot for one native CLI test.
+`:provider` accepts the same four providers as the test endpoint and the query
+must contain `host=windows|wsl`. Before the first test, `progress` is `null`.
+During a test, `phase` moves from `pending` to `running`; it becomes `complete`
+only after the final executed boundary has reported its result.
+
+```text
+GET /api/auth/native/codex/progress?host=windows
+```
+
+```json
+{
+  "progress": {
+    "provider": "codex",
+    "host": "windows",
+    "phase": "running",
+    "check": {
+      "status": "unknown",
+      "steps": [
+        { "id": "workspace", "status": "ok" },
+        { "id": "executable", "status": "ok" },
+        { "id": "version", "status": "running" },
+        { "id": "authentication", "status": "pending" }
+      ]
+    }
+  }
+}
+```
 
 ### `POST /api/auth/deepseek`
 
@@ -888,8 +1011,12 @@ When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and 
 ### `GET /api/auth/subscriptions`
 
 Ensures the local subscription bridge is running, queries its authoritative
-model surface (default `http://127.0.0.1:8317/v1/models`), and reports
-Codex/ChatGPT and Claude OAuth availability separately. AgentParty starts the
+model surface (default `http://127.0.0.1:8317/v1/models`), separately inspects
+safe credential metadata in the configured auth directory, and reports
+Codex/ChatGPT and Claude OAuth availability separately. A model name alone is
+not login proof: the provider is connected only when a non-disabled,
+non-expired credential has both access and refresh material. The values of
+those fields are never returned or logged. AgentParty starts the
 bridge on launch and monitors it after launch. Provider refresh tokens remain in
 CLIProxyAPI's persistent auth directory, so no service command or repeated login
 is required after the browser approval. Failures are returned explicitly; this
@@ -900,8 +1027,8 @@ endpoint never falls back to OpenRouter.
   "ok": true,
   "baseUrl": "http://127.0.0.1:8317/v1",
   "service": { "status": "ready", "managed": true, "detail": "..." },
-  "codex": { "available": true, "models": ["gpt-5.4-mini"], "loginCommand": "... -codex-login" },
-  "claude": { "available": false, "models": [], "loginCommand": "... -claude-login" },
+  "codex": { "available": true, "models": ["gpt-5.4-mini"], "loginCommand": "... -codex-login", "credential": { "status": "ready", "detail": "..." } },
+  "claude": { "available": false, "models": [], "loginCommand": "... -claude-login", "credential": { "status": "missing", "detail": "..." } },
   "authentication": {}
 }
 ```
@@ -912,6 +1039,9 @@ Starts the same one-time browser OAuth action exposed by the Authentication
 screen. `:provider` is `codex` or `claude`. The response includes both the raw
 subscription bridge state and the same `auth` provider list rendered by the UI.
 While approval is pending, poll `GET /api/auth/subscriptions` or `GET /api/state`.
+Calling this endpoint is an explicit reauthentication request even when the
+bridge currently looks healthy; it never returns `already_available` merely
+because `/models` contains provider models.
 
 ```json
 {
@@ -1142,6 +1272,9 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
   edit) and bills the configured **OpenRouter API key** (not the Codex
   subscription). Selecting one without an OpenRouter key configured fails
   explicitly at session start.
+  `Gemini 3.7 Flash` is exposed as `claude-gemini-3-7-flash` on Claude Code and
+  `google/gemini-3.7-flash` on Codex. Both routes use the configured OpenRouter
+  API key and expose low, medium, and high reasoning effort.
 - **Claude subscription models** are exposed as Codex routes with
   `"modelProvider": "claude-subscription"` and the exact CLIProxyAPI Claude
   model id. They use the local Claude OAuth credential rather than OpenRouter.

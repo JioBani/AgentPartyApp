@@ -6,6 +6,14 @@
 - 코드 수정 여부: 없음. 이 문서는 진단과 수정 요구사항만 기록한다.
 - 관련: `docs/BUG-REPORT-2026-07-22-AGENT-SESSIONS-AND-MESSAGE-GATE.md` §4·§5 (동일 결함의 WSL 변종)
 
+> 해결 상태 (2026-08-20): 이 문서의 P0 항목은
+> `fix/environment-path-diagnostics`에서 구현·검증됐다. 네이티브 Claude와
+> 구독 브리지는 별도 카드/API 상태이며, 실제 실행 호스트의
+> `claude auth status` preflight가 미로그인 멤버를 provider 호출 전에
+> `auth_required`로 전환한다. 모델 목록만으로 브리지 로그인을 판정하거나
+> 재연결을 no-op 처리하지 않는다. 아래 본문은 결함 당시의 조사 기록이다.
+> P1의 외부 프로세스 소유권 충돌 감사는 별도 과제로 남는다.
+
 ## 1. 증상
 
 - Windows에서 Claude 구독을 "연결"했고 앱은 연결됨으로 표시한다.

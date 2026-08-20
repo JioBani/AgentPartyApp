@@ -47,6 +47,7 @@ assert(visionOf("gpt-5.6-sol")?.image === true, "GPT-5.6 Sol supports images");
 assert(visionOf("GLM-5.2")?.image === false, "GLM-5.2 is text-only");
 assert(visionOf("Qwen3.7 Max")?.image === false, "Qwen3.7 Max is text-only");
 assert(visionOf("DeepSeek V4 Pro")?.image === false, "DeepSeek V4 Pro is text-only");
+assert(visionOf("Gemini 3.7 Flash")?.image === true && visionOf("Gemini 3.7 Flash")?.video === true, "Gemini 3.7 Flash supports image and video input");
 assert(visionOf("Gemini 3.5 Flash")?.image === true, "Gemini 3.5 Flash supports images");
 
 console.log("\nvisionForModel resolution:");

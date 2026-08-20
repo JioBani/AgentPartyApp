@@ -160,7 +160,7 @@ export function PartyGroupList({
             <button
               type="button"
               className="wb-group-row"
-              title={localized("STR-3271")}
+              title={localized("STR-3665")}
               aria-expanded={open}
               draggable={Boolean(onReorderGroups)}
               onDragStart={(event) => {
@@ -182,7 +182,7 @@ export function PartyGroupList({
               <ChevronDown size={13} className="wb-group-caret" />
               {open ? <FolderOpen size={14} className="wb-group-icon" /> : <Folder size={14} className="wb-group-icon" />}
               <span className="wb-group-name">{group.name}</span>
-              {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3272" /></span>}
+              {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3666" /></span>}
               <span className="wb-mono wb-group-count">{parties.length}</span>
             </button>
             <div className="wb-group-parties">
@@ -220,7 +220,7 @@ export function PartyGroupList({
               ))}
               {/* An empty group says so rather than collapsing to a blank strip:
                   a folder you cannot see is a folder you will not file into. */}
-              {parties.length === 0 && <p className="wb-group-empty"><LocalizedText id="STR-3375" /></p>}
+              {parties.length === 0 && <p className="wb-group-empty"><LocalizedText id="STR-3769" /></p>}
             </div>
           </div>
         );
@@ -228,7 +228,7 @@ export function PartyGroupList({
       </div>
       <button type="button" className="wb-group-add" onClick={onCreateGroup}>
         <FolderPlus size={13} />
-        <LocalizedText id="STR-3274" />
+        <LocalizedText id="STR-3668" />
       </button>
     </div>
   );

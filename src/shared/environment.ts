@@ -54,7 +54,20 @@ export interface EnvironmentRemedy {
 
 export type EnvironmentGroup = "runtime" | "harness" | "wsl";
 
-export type EnvironmentProbeStepStatus = "ok" | "failed" | "skipped";
+export type EnvironmentProbeStepStatus = "pending" | "running" | "ok" | "failed" | "skipped";
+
+export type EnvironmentExecutionHost =
+  | { kind: "windows"; label: "Windows"; workspace?: string }
+  | { kind: "wsl"; label: string; distro: string; workspace?: string };
+
+export type EnvironmentProbeFailureKind =
+  | "workspace"
+  | "not-found"
+  | "authentication"
+  | "spawn"
+  | "timeout"
+  | "exit"
+  | "protocol";
 
 /**
  * One observable stage of a harness readiness check. Keeping this structured
@@ -69,6 +82,16 @@ export interface EnvironmentProbeStep {
   /** What was proven, or why this stage could not complete. */
   detail: string;
   durationMs?: number;
+  /** The exact process invocation boundary used for this proof. */
+  command?: string;
+  /** Host-native cwd passed to the process (Windows or POSIX). */
+  cwd?: string;
+  /** Exact file or directory inspected by a non-process step. */
+  path?: string;
+  /** Machine-readable reason the step failed; never inferred from translated copy. */
+  failureKind?: EnvironmentProbeFailureKind;
+  /** OS errno, exit code, or protocol code where one exists. */
+  failureCode?: string;
   /** Untranslated OS/CLI evidence. Never populated with successful auth output. */
   raw?: string;
 }
@@ -81,6 +104,8 @@ export interface EnvironmentCheck {
   status: EnvironmentStatus;
   /** Why it is in this state, in the user's language. Never empty. */
   detail: string;
+  /** Where this check runs. Windows and each WSL distro are distinct hosts. */
+  host?: EnvironmentExecutionHost;
   version?: string;
   /** Where the thing was found, so "it IS installed" disputes are resolvable. */
   path?: string;
@@ -135,14 +160,25 @@ export function claudeCliVersionForSdk(sdkVersion: string | undefined): string |
 export function formatEnvironmentReport(report: EnvironmentReport): string {
   const lines = report.checks.map((check) => {
     const facts = [check.version, check.path].filter(Boolean).join(" @ ");
-    const steps = (check.steps || []).map((step) =>
-      `    - [${step.status}] ${step.label}: ${step.detail}`,
-    );
+    const host = check.host
+      ? `${check.host.label}${check.host.workspace ? ` · ${check.host.workspace}` : ""}`
+      : "";
+    const steps = (check.steps || []).flatMap((step) => {
+      const failure = [step.failureKind, step.failureCode].filter(Boolean).join(" · ");
+      return [
+        `    - [${step.status}] ${step.label}: ${step.detail}`,
+        step.path ? `      path: ${step.path}` : "",
+        step.cwd ? `      cwd: ${step.cwd}` : "",
+        step.command ? `      command: ${step.command}` : "",
+        failure ? `      failure: ${failure}` : "",
+      ].filter(Boolean);
+    });
     return [
       `[${check.status}] ${check.label}${facts ? ` — ${facts}` : ""}`,
+      host ? `    host: ${host}` : "",
       `    ${check.detail}`,
       ...steps,
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   });
   return [
     `환경 점검 ${report.checkedAt}`,

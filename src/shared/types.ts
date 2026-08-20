@@ -20,6 +20,7 @@ import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyPrimerSettings } from "./partyPrimer";
 import type { UpdateChannel } from "./appUpdate";
 import type { AppLocale } from "./appLocale";
+import type { EnvironmentCheck, EnvironmentProbeStep } from "./environment";
 
 export const PERMISSION_MODE_SETTINGS = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
@@ -216,11 +217,20 @@ export interface AuthProviderState {
   id: string;
   label: string;
   kind: "subscription" | "apiKey";
-  status: "available" | "configured" | "missing" | "pending" | "valid" | "invalid" | "network_error";
+  status: "available" | "configured" | "missing" | "pending" | "unknown" | "valid" | "invalid" | "network_error";
   description: string;
+  /** Which Authentication section owns this row. */
+  surface?: "native-cli" | "cross-harness";
   source?: string;
   maskedValue?: string;
   detail?: string;
+  /** Explicit authentication proof; avoids inferring login from labels/actions. */
+  authenticated?: boolean;
+  /** Execution host and location this credential belongs to. */
+  host?: string;
+  workspace?: string;
+  /** Read-only diagnostic or login command. Never contains a token. */
+  command?: string;
   /**
    * The pending OAuth URL, while a subscription login is waiting on the browser.
    * The bridge opens the SYSTEM DEFAULT browser, so this is what lets a user
@@ -228,12 +238,50 @@ export interface AuthProviderState {
    * "인증 대기 중" with nothing to click.
    */
   authUrl?: string;
-  /** Optional action rendered by Authentication and exposed over automation. */
-  action?: {
-    type: "subscriptionOAuth";
-    provider: "codex" | "claude";
-    label: string;
+  /** Most recent real CLI execution proof shown under a native-login row. */
+  test?: {
+    checkedAt: string;
+    status: "running" | "complete";
+    steps: EnvironmentProbeStep[];
   };
+  /** Optional action rendered by Authentication and exposed over automation. */
+  action?:
+    | {
+        type: "subscriptionOAuth";
+        provider: "codex" | "claude";
+        label: string;
+      }
+    | {
+        type: "nativeCliTest";
+        provider: NativeCliAuthProvider;
+        host: "windows" | "wsl";
+        label: string;
+      };
+}
+
+export type NativeCliAuthProvider = "claude" | "codex" | "cursor" | "grok";
+export type NativeCliAuthHost = "windows" | "wsl";
+
+/** Result shared by the Authentication button, IPC, and local automation API. */
+export interface NativeCliAuthTestResult {
+  ok: boolean;
+  provider: NativeCliAuthProvider;
+  host: NativeCliAuthHost;
+  distro?: string;
+  checkedAt: string;
+  check: EnvironmentCheck;
+  /** Full refreshed provider list, exactly as rendered after the test. */
+  auth: AuthProviderState[];
+}
+
+/** Incremental proof emitted while one native CLI connection test is running. */
+export interface NativeCliAuthProgress {
+  provider: NativeCliAuthProvider;
+  host: NativeCliAuthHost;
+  checkedAt: string;
+  phase: "pending" | "running" | "complete";
+  distro?: string;
+  check: EnvironmentCheck;
 }
 
 export interface PartyMember {

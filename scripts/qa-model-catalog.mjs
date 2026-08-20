@@ -84,6 +84,12 @@ for (const m of openRouterModels()) {
   assert(/.+\/.+/.test(m.orModelId || ""), `${m.id} has a concrete OR id (${m.orModelId})`);
   assert(alias[(m.runtimeModel || m.id).toLowerCase()] === m.orModelId, `${m.id} alias resolves to ${m.orModelId}`);
 }
+const gemini37 = routes.find((route) => route.harnessId === "claude-code" && route.model === "Gemini 3.7 Flash");
+const gemini37Codex = routes.find((route) => route.harnessId === "codex" && route.model === "google/gemini-3.7-flash");
+assert(gemini37?.runtimeModel === "claude-gemini-3-7-flash", "Gemini 3.7 Flash has a dedicated Claude router alias");
+assert(alias["claude-gemini-3-7-flash"] === "google/gemini-3.7-flash", "Gemini 3.7 Flash alias resolves to its exact OpenRouter id");
+assert(gemini37Codex?.modelProvider === "openrouter" && gemini37Codex.enabled, "Gemini 3.7 Flash is selectable on Codex through OpenRouter");
+assert(gemini37?.pricing?.inputUsdPerM === 0.375 && gemini37?.pricing?.outputUsdPerM === 1.875, "Gemini 3.7 Flash exposes current OpenRouter token prices");
 const gptMiniClaudeRoute = routes.find((route) => route.harnessId === "claude-code" && route.model === "GPT-5.4 mini");
 assert(alias["claude-gpt-5.4-mini"] === undefined, "Claude Code GPT mini is absent from the OpenRouter alias map");
 assert(routerTargetForModel("claude-gpt-5.4-mini")?.kind === "codex-subscription", "Claude Code GPT mini targets the Codex subscription proxy");
@@ -113,6 +119,7 @@ const eff = (id) => byId[id].capabilities.effort;
 const th = (id) => byId[id].capabilities.thinking;
 assert(th("MiniMax M3").supported && th("MiniMax M3").modes.map((o) => o.id).join() === "enabled,adaptive,disabled", "MiniMax M3 is a 3-mode thinking control");
 assert(eff("GLM-5.2").options.map((o) => o.id).join() === "high,max" && th("GLM-5.2").supported, "GLM-5.2 has high/max effort + thinking");
+assert(eff("Gemini 3.7 Flash").options.map((o) => o.id).join() === "low,medium,high" && eff("Gemini 3.7 Flash").defaultValue === "medium", "Gemini 3.7 Flash exposes its supported reasoning efforts");
 assert(Boolean(th("Qwen3.7 Plus").budget) && th("Qwen3.7 Plus").budget.default === 81920, "Qwen3.7 Plus exposes a thinking budget");
 assert(!eff("Kimi K2.7 Code").supported && !th("Kimi K2.7 Code").supported, "Kimi K2.7 Code (always-on) shows no reasoning control");
 assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Grok Build 0.1 (undocumented) shows no reasoning control");

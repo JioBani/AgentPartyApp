@@ -125,7 +125,13 @@ export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[]
       {steps.map((step) => (
         <div className={`set-env-step is-${step.status}`} key={step.id} data-env-step={step.id} data-status={step.status}>
           <span className="set-env-step-icon" aria-hidden="true">
-            {step.status === "ok" ? <CheckCircle2 size={14} /> : step.status === "failed" ? <XCircle size={14} /> : <CircleDashed size={14} />}
+            {step.status === "ok"
+              ? <CheckCircle2 size={14} />
+              : step.status === "failed"
+                ? <XCircle size={14} />
+                : step.status === "running"
+                  ? <RefreshCw size={14} className="wb-spin" />
+                  : <CircleDashed size={14} />}
           </span>
           <span className="set-env-step-body">
             <span className="set-env-step-head">
@@ -133,6 +139,18 @@ export function EnvironmentProbeSteps({ steps }: { steps: EnvironmentProbeStep[]
               {step.durationMs !== undefined && <span className="wb-mono">{step.durationMs}ms</span>}
             </span>
             <span className="set-env-step-detail">{step.detail}</span>
+            {(step.path || step.cwd || step.command || step.failureKind || step.failureCode) && (
+              <span className="set-env-step-context wb-mono">
+                {step.path && <span><b>path</b> {step.path}</span>}
+                {step.cwd && <span><b>cwd</b> {step.cwd}</span>}
+                {step.command && <span><b>command</b> {step.command}</span>}
+                {(step.failureKind || step.failureCode) && (
+                  <span className="set-env-step-failure">
+                    <b><LocalizedText id="STR-1032" /></b> {[step.failureKind, step.failureCode].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+              </span>
+            )}
             {step.raw && <EnvironmentRawDetail raw={step.raw} />}
           </span>
         </div>

@@ -5,12 +5,12 @@ import { fileURLToPath } from "node:url";
 import { isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { AppSettings, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
-import { probeEnvironment, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
+import { probeEnvironment, probeNativeCliAuthentication, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
 import { GALLERY_ENVIRONMENT_REPORT } from "../../shared/environmentGallery";
 import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -30,7 +30,7 @@ import { PartyRepository } from "../partyRepository";
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
-import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -66,6 +66,7 @@ import type { GuideChatKind, GuideChatSettings, GuideChatView } from "../../shar
 import type { GuideOfferView } from "../../shared/guideOffer";
 import { getGuideOffer, markGuideOfferShown } from "../guideOffer";
 import { requireAppLocale, type AppLocale } from "../../shared/appLocale";
+import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -206,6 +207,9 @@ export class AppController {
 
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
   private readonly cliContinuationWatchers = new Set<string>();
+
+  /** Last explicit native-login proof per workspace/provider/host. */
+  private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; phase: NativeCliAuthProgress["phase"]; check: EnvironmentReport["checks"][number]; distro?: string }>();
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -389,7 +393,7 @@ export class AppController {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
-      auth: await this.listAuthProviders(),
+      auth: await this.listAuthProviders(workspacePath),
       sessions: await engine.listWorkspaceSessions(),
       modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
       modelProviders: [...MODEL_PROVIDERS],
@@ -446,7 +450,7 @@ export class AppController {
       versions: { node: process.versions.node, electron: process.versions.electron, chrome: process.versions.chrome },
       workspace: this.workspaceDisplay(workspacePath),
       logs: { filePath: logFilePath, folderPath: path.dirname(logFilePath) },
-      auth: (await this.listAuthProviders()).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
+      auth: (await this.listAuthProviders(workspacePath)).map((provider) => ({ id: provider.id, label: provider.label, status: provider.status })),
     };
   }
 
@@ -831,51 +835,178 @@ export class AppController {
   }
 
   /** Desktop auth cards with each native CLI's real, cached login state. */
-  private async authStateWithCursor(base?: ReturnType<typeof getAuthState>): Promise<ReturnType<typeof getAuthState>> {
-    const [cursor, codex] = await Promise.all([cursorCliAuthState(), codexCliAuthState()]);
-    return withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex);
+  private async authStateWithCli(workspacePath: string, base?: ReturnType<typeof getAuthState>, forceClaude = false): Promise<ReturnType<typeof getAuthState>> {
+    const [cursor, codex, claude] = await Promise.all([
+      cursorCliAuthState(),
+      codexCliAuthState(),
+      this.engineFor(workspacePath).getClaudeNativeAuth(forceClaude),
+    ]);
+    const state = withClaudeNativeAuth(withCodexCliAuth(withCursorCliAuth(base || getAuthState(), cursor), codex), claude);
+    return this.withNativeCliTestState(state, workspacePath);
   }
 
-  async listAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
+  private nativeCliAuthTestKey(workspacePath: string, provider: NativeCliAuthProvider, host: NativeCliAuthHost): string {
+    return `${workspaceKey(workspacePath)}:${provider}:${host}`;
+  }
+
+  /** Applies the last button-driven proof without rerunning WSL during a routine auth refresh. */
+  private withNativeCliTestState(states: AuthProviderState[], workspacePath: string): AuthProviderState[] {
+    let next = states;
+    for (const state of states) {
+      const action = state.action;
+      if (action?.type !== "nativeCliTest") continue;
+      const tested = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, action.provider, action.host));
+      if (!tested) continue;
+      next = applyNativeCliAuthProgress(next, {
+        provider: action.provider,
+        host: action.host,
+        checkedAt: tested.checkedAt,
+        phase: tested.phase,
+        distro: tested.distro,
+        check: tested.check,
+      });
+    }
+    return next;
+  }
+
+  /**
+   * Executes one native CLI until login/runtime readiness is proven or one
+   * named stage fails. UI, IPC, and HTTP all call this exact method.
+   */
+  async testNativeCliAuth(
+    provider: NativeCliAuthProvider,
+    host: NativeCliAuthHost,
+    workspacePath = getSettings().workspacePath || process.cwd(),
+    distro?: string,
+  ): Promise<NativeCliAuthTestResult> {
+    const checkedAt = new Date().toISOString();
+    const publish = (progress: Omit<NativeCliAuthProgress, "provider" | "host" | "checkedAt">) => {
+      const event: NativeCliAuthProgress = { provider, host, checkedAt, ...progress };
+      this.nativeCliAuthTests.set(this.nativeCliAuthTestKey(workspacePath, provider, host), {
+        checkedAt,
+        phase: event.phase,
+        check: event.check,
+        distro: event.distro,
+      });
+      this.broadcastNativeCliAuthProgress(event, workspacePath);
+    };
+    publish({
+      phase: "pending",
+      check: nativeCliAuthProgressCheck(provider, host, [], "pending"),
+      ...(distro ? { distro } : {}),
+    });
+    let tested: Awaited<ReturnType<typeof probeNativeCliAuthentication>>;
+    try {
+      tested = await probeNativeCliAuthentication({
+        provider,
+        host,
+        workspacePath,
+        distro,
+        onProgress: ({ phase, check, distro: activeDistro }) => publish({
+          phase,
+          check,
+          ...(activeDistro ? { distro: activeDistro } : {}),
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const current = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, provider, host));
+      const settled = (current?.check.steps || []).filter((step) => step.status === "ok" || step.status === "failed" || step.status === "skipped");
+      const active = current?.check.steps?.find((step) => step.status === "running")
+        || current?.check.steps?.find((step) => step.status === "pending")
+        || { id: "probe", label: "검사 실행", detail: "검사를 시작하지 못했습니다." };
+      const failure = {
+        ...active,
+        status: "failed" as const,
+        detail: `예상하지 못한 검사 오류가 발생했습니다: ${message}`,
+        failureKind: "protocol" as const,
+        raw: message,
+      };
+      const failedCheck = nativeCliAuthProgressCheck(provider, host, [...settled.filter((step) => step.id !== active.id), failure], "complete", {
+        ...(current?.check || nativeCliAuthProgressCheck(provider, host, [], "pending")),
+        status: "error",
+        detail: failure.detail,
+      });
+      publish({ phase: "complete", check: failedCheck, ...(current?.distro ? { distro: current.distro } : {}) });
+      throw error;
+    }
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(
+      await this.authStateWithCli(workspacePath),
+      await this.getSubscriptionStatus(),
+    ));
+    return {
+      ok: tested.check.status === "ok" || tested.check.status === "warn",
+      provider,
+      host,
+      ...(tested.distro ? { distro: tested.distro } : {}),
+      checkedAt,
+      check: tested.check,
+      auth,
+    };
+  }
+
+  /** Non-blocking snapshot for automation clients following an in-flight test. */
+  getNativeCliAuthProgress(
+    provider: NativeCliAuthProvider,
+    host: NativeCliAuthHost,
+    workspacePath = getSettings().workspacePath || process.cwd(),
+  ): NativeCliAuthProgress | undefined {
+    const tested = this.nativeCliAuthTests.get(this.nativeCliAuthTestKey(workspacePath, provider, host));
+    return tested ? {
+      provider,
+      host,
+      checkedAt: tested.checkedAt,
+      phase: tested.phase,
+      check: tested.check,
+      ...(tested.distro ? { distro: tested.distro } : {}),
+    } : undefined;
+  }
+
+  async listAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const subscriptions = await this.getSubscriptionStatus();
-    return withSubscriptionProxyAuth(await this.authStateWithCursor(), subscriptions);
+    return withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), subscriptions);
   }
 
-  async setOpenRouterKey(key: string): Promise<ReturnType<typeof getAuthState>> {
+  /** Exact native Claude login for the engine host serving this workspace. */
+  getNativeClaudeAuth(workspacePath: string, force = false) {
+    return this.engineFor(workspacePath).getClaudeNativeAuth(force);
+  }
+
+  async setOpenRouterKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = setOpenRouterKey(key || "");
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async clearOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
+  async clearOpenRouterKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = clearOpenRouterKey();
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async testOpenRouterKey(): Promise<ReturnType<typeof getAuthState>> {
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testOpenRouterKey()), await this.getSubscriptionStatus()));
+  async testOpenRouterKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testOpenRouterKey()), await this.getSubscriptionStatus()));
   }
 
-  async setDeepseekKey(key: string): Promise<ReturnType<typeof getAuthState>> {
+  async setDeepseekKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = setDeepseekKey(key || "");
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async clearDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
+  async clearDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     const state = clearDeepseekKey();
     this.deps.onSettingsChanged();
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(state), await this.getSubscriptionStatus()));
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
   }
 
-  async testDeepseekKey(): Promise<ReturnType<typeof getAuthState>> {
-    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(await testDeepseekKey()), await this.getSubscriptionStatus()));
+  async testDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testDeepseekKey()), await this.getSubscriptionStatus()));
   }
 
   /** The full provider list, for the automation API's GET /api/auth. */
-  async getAuthProviders(): Promise<ReturnType<typeof getAuthState>> {
-    return withSubscriptionProxyAuth(await this.authStateWithCursor(getAuthState()), await this.getSubscriptionStatus());
+  async getAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, getAuthState()), await this.getSubscriptionStatus());
   }
 
   /** Live OAuth-backed model availability from the local CLIProxyAPI. */
@@ -884,12 +1015,12 @@ export class AppController {
   }
 
   /** Starts one browser OAuth flow and returns the same auth state the UI uses. */
-  async loginSubscriptionProvider(provider: SubscriptionProxyProvider) {
+  async loginSubscriptionProvider(provider: SubscriptionProxyProvider, workspacePath = getSettings().workspacePath || process.cwd()) {
     if (!this.deps.subscriptionProxy) {
       throw new Error("Subscription OAuth must be started from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.login(provider);
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), result.subscriptions));
     return {
       ...result,
       auth,
@@ -897,15 +1028,15 @@ export class AppController {
   }
 
   /** Disconnects one persisted subscription account and refreshes every UI. */
-  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider | "cursor") {
+  async disconnectSubscriptionProvider(provider: SubscriptionProxyProvider | "cursor", workspacePath = getSettings().workspacePath || process.cwd()) {
     if (provider === "cursor") {
-      return this.disconnectCursor();
+      return this.disconnectCursor(workspacePath);
     }
     if (!this.deps.subscriptionProxy) {
       throw new Error("Subscription OAuth must be managed from the AgentParty desktop Authentication screen, not a remote workspace engine.");
     }
     const result = await this.deps.subscriptionProxy.disconnect(provider);
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), result.subscriptions));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), result.subscriptions));
     return {
       ...result,
       auth,
@@ -917,10 +1048,10 @@ export class AppController {
    * account the auth card describes. A WSL distro's own Cursor login is that
    * host's credential and is not touched here.
    */
-  private async disconnectCursor() {
+  private async disconnectCursor(workspacePath: string) {
     const result = await cursorAgentLogout(getSettings().cursorExecutablePath);
     invalidateCursorAuthCache();
-    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCursor(), await this.getSubscriptionStatus()));
+    const auth = this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath), await this.getSubscriptionStatus()));
     return {
       ok: result.ok,
       provider: "cursor" as const,
@@ -941,6 +1072,15 @@ export class AppController {
       entry.window.webContents.send("auth:update", auth);
     }
     return auth;
+  }
+
+  /** Lightweight incremental event; avoids rerunning unrelated CLIs per step. */
+  private broadcastNativeCliAuthProgress(progress: NativeCliAuthProgress, workspacePath: string): void {
+    this.deps.mobileLink?.publish("auth:native-progress", progress, workspacePath);
+    for (const entry of this.deps.windowRegistry.all()) {
+      if (workspaceKey(entry.workspacePath) !== workspaceKey(workspacePath)) continue;
+      entry.window.webContents.send("auth:native-progress", progress);
+    }
   }
 
   // --- Windows + workspace ------------------------------------------------
@@ -1982,8 +2122,8 @@ export class AppController {
     return this.deps.discord;
   }
 
-  getMemberTranscript(workspacePath: string, name: string, windowId?: string): Promise<unknown[]> {
-    return this.engineFor(workspacePath).getMemberTranscript(name, this.partyForWindow(windowId));
+  getMemberTranscript(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<unknown[]> {
+    return this.engineFor(workspacePath).getMemberTranscript(name, partyId || this.partyForWindow(windowId));
   }
 
   /** Where the harness keeps its own untrimmed copy of a member's conversation. */
@@ -2545,7 +2685,7 @@ export class AppController {
    *
    * Electron is imported HERE, lazily, not at module scope: this controller is
    * also the one the headless engine server runs inside a WSL distro, where
-   * `electron` does not exist. A top-level `import … from "electron"` made every
+   * `electron` does not exist. A top-level Electron module import made every
    * WSL workspace fail to open (`WSL engine exited before ready (code 1)`), so
    * the dependency must stay inside the one method that needs it — a headless
    * caller then gets an explicit error instead of a dead engine.

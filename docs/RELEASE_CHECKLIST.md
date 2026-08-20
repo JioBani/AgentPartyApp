@@ -13,6 +13,19 @@ Windows 배포본을 준비하고 `JioBani/AgentParty-releases`에 공개할 때
 - 기존 `master` 체크아웃을 직접 수정하지 않는다. 릴리스 전용 worktree와 브랜치를 사용한다.
 - 토큰은 파일, 명령 출력, 릴리스 본문에 남기지 않는다.
 
+### 버전 선택
+
+SemVer의 변경 범위를 먼저 분류한 뒤 버전을 정한다. 릴리스를 만든다는 이유만으로
+두 번째 자리(minor)를 올리지 않는다.
+
+- 기존 사용자 동작과 호환되는 작은 버그 수정, 성능 개선, 내부 리팩터링은 세 번째
+  자리인 **patch**를 올린다. 예: `0.2.5` → `0.2.6`.
+- 호환성을 유지하면서 사용자 기능을 추가하면 두 번째 자리인 **minor**를 올리고
+  patch는 `0`으로 되돌린다. 예: `0.2.6` → `0.3.0`.
+- API, 저장 데이터, 사용자 동작의 호환성을 깨는 변경은 첫 번째 자리인 **major**를
+  올린다. `0.x` 개발 단계에서도 호환성 영향은 릴리스 본문에 명시한다.
+- 베타/RC는 선택한 정식 버전에 prerelease 식별자를 붙인다. 예: `0.3.0-beta.1`.
+
 ### 베타 채널 릴리스
 
 - 버전과 태그는 `0.3.0-beta.1`, `v0.3.0-beta.1` 같은 SemVer prerelease 형식이다.
@@ -90,6 +103,14 @@ npm run package:win
 | `AgentParty <version>.exe` | `AgentParty-<version>.exe` | 포터블 실행본, 자동 업데이트 미지원 |
 | `latest.yml` | `latest.yml` | 최신 버전과 설치본 해시 메타데이터 |
 
+포터블 배포본 자체를 실행하는 자동화 QA는 다음 명령으로 실행한다. 실제 패키지의
+버전, 격리된 작업공간, Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면
+캡처를 함께 확인한다.
+
+```powershell
+npm run test:e2e:packaged-release
+```
+
 `latest.yml`의 `version`, 설치본 URL, SHA-512 값이 생성된 설치본과 일치해야 한다.
 
 ## 4. 실제 배포본 QA
@@ -164,6 +185,46 @@ npm run release:win
 - `AgentParty-<version>.exe`는 포터블 버전이며 자동 업데이트를 지원하지 않습니다.
 ```
 
+### PowerShell에서 한글 릴리스 본문 올리기
+
+Windows PowerShell 5.1의 `Invoke-RestMethod`에 JSON **문자열**을 `-Body`로 바로
+넘기면, 요청 본문이 UTF-8이 아닌 인코딩으로 전송되어 한글이 GitHub에 도착하기 전에
+`?`로 치환될 수 있다. `-ContentType application/json`만 지정하는 것으로는 충분하지
+않다. JSON을 명시적으로 UTF-8 바이트로 바꾸고 charset도 함께 선언한다.
+
+```powershell
+$payload = @{
+  name = "AgentParty v<version>"
+  body = $releaseNotes
+  draft = $true
+  prerelease = $false
+} | ConvertTo-Json
+
+$utf8Body = [Text.Encoding]::UTF8.GetBytes($payload)
+Invoke-RestMethod `
+  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/<release-id>" `
+  -Headers $headers `
+  -Method Patch `
+  -ContentType "application/json; charset=utf-8" `
+  -Body $utf8Body
+```
+
+본문을 올린 직후 GitHub API에서 다시 읽어 업로드 전 원문과 일치하는지 확인한다.
+줄바꿈 형식만 정규화하고 본문 문자는 그대로 비교한다. 이 검증이 실패하면
+publish하지 않는다.
+
+```powershell
+$saved = Invoke-RestMethod `
+  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/tags/v<version>" `
+  -Headers @{ "User-Agent" = "AgentParty-Release-Verify" }
+
+$expectedBody = ($releaseNotes -replace "`r`n", "`n").TrimEnd()
+$actualBody = ([string]$saved.body -replace "`r`n", "`n").TrimEnd()
+if ($actualBody -cne $expectedBody) {
+  throw "GitHub release body differs from the UTF-8 source"
+}
+```
+
 draft 상태에서 다음을 검증한다.
 
 - 태그와 릴리스 제목이 정확하다.
@@ -172,6 +233,7 @@ draft 상태에서 다음을 검증한다.
 - 다운로드한 `latest.yml`이 `<version>`과
   `AgentParty-Setup-<version>.exe`를 가리킨다.
 - 릴리스 본문에 내부 경로, 토큰, 개발자 전용 정보가 없다.
+- GitHub API에서 다시 읽은 본문이 업로드 전 UTF-8 원문과 일치한다.
 
 검증을 모두 통과한 경우에만 publish한다.
 

@@ -96,7 +96,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
 
   return (
     <>
-      <div className="wb-env-seg" role="group" aria-label={localized("STR-3257")}>
+      <div className="wb-env-seg" role="group" aria-label={localized("STR-3651")}>
         {(["windows", "wsl"] as ExecutionEnv[]).map((candidate) => (
           <button
             key={candidate}
@@ -112,13 +112,13 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
       </div>
 
       {env === "wsl" && (
-        <div className="wb-cwd-distros" role="group" aria-label={localized("STR-3343")}>
-          <span className="wb-cwd-distros-label"><LocalizedText id="STR-3344" /></span>
-          {wsl?.distros === undefined && <span className="wb-cwd-distros-note"><LocalizedText id="STR-3345" /></span>}
+        <div className="wb-cwd-distros" role="group" aria-label={localized("STR-3737")}>
+          <span className="wb-cwd-distros-label"><LocalizedText id="STR-3738" /></span>
+          {wsl?.distros === undefined && <span className="wb-cwd-distros-note"><LocalizedText id="STR-3739" /></span>}
           {wsl?.distros?.length === 0 && (
             <span className="wb-cwd-distros-note is-warn">
               <TriangleAlert size={12} />
-              {wsl?.error || localized("STR-3346")}
+              {wsl?.error || localized("STR-3740")}
             </span>
           )}
           {wsl?.distros?.map((name) => (
@@ -140,7 +140,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
         <EnvIcon env={env} />
         {value?.distro && <span className="wb-cwd-distro">{value.distro}</span>}
         <span className="wb-mono wb-cwd-path">
-          {value?.cwd || (env === "wsl" && !distro ? localized("STR-3347") : "경로를 선택하세요")}
+          {value?.cwd || (env === "wsl" && !distro ? localized("STR-3741") : "경로를 선택하세요")}
         </span>
         <button
           type="button"
@@ -149,15 +149,15 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
           onClick={onBrowse}
         >
           <FolderOpen size={13} />
-          <LocalizedText id="STR-3259" />
+          <LocalizedText id="STR-3653" />
         </button>
       </div>
 
       {recent.length > 0 && (
         <div className="wb-cwd-list">
           <div className="wb-cwd-list-label">
-            <LocalizedText id="STR-3261" /> {ENV_LABEL[env]} <LocalizedText id="STR-3260" />
-            <span><LocalizedText id="STR-3262" /> {RECENT_CWD_LIMIT}개</span>
+            <LocalizedText id="STR-3655" /> {ENV_LABEL[env]} <LocalizedText id="STR-3654" />
+            <span><LocalizedText id="STR-3656" /> {RECENT_CWD_LIMIT}개</span>
           </div>
           {recent.map((entry) => (
             <CwdRecentItem
@@ -180,7 +180,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
             checked={saveAsDefault.checked}
             onChange={(event) => saveAsDefault.onToggle(event.target.checked)}
           />
-          <span><LocalizedText id="STR-3264" /> {ENV_LABEL[env]} <LocalizedText id="STR-3263" /></span>
+          <span><LocalizedText id="STR-3658" /> {ENV_LABEL[env]} <LocalizedText id="STR-3657" /></span>
         </label>
       )}
 
@@ -214,7 +214,7 @@ function CwdRecentItem({ entry, now, isDefault, isSelected, onSelect }: {
     >
       {entry.location.distro && <span className="wb-cwd-distro">{entry.location.distro}</span>}
       <span className="wb-mono wb-cwd-item-path">{entry.location.cwd}</span>
-      {isDefault && <span className="wb-cwd-pin"><LocalizedText id="STR-3265" /></span>}
+      {isDefault && <span className="wb-cwd-pin"><LocalizedText id="STR-3659" /></span>}
       {entry.problem ? (
         <span className="wb-cwd-warn">
           <TriangleAlert size={12} />

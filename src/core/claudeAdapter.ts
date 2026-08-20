@@ -32,6 +32,7 @@ import { approvalAnswers, claudeApprovalFields, extractToolFilePath, withFilePat
 import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
+import { probeClaudeNativeAuth, type ClaudeNativeAuthState } from "./claudeNativeAuth";
 
 export interface ClaudeAdapterOptions {
   id: string;
@@ -85,6 +86,8 @@ export interface ClaudeAdapterOptions {
   sdkLoader?: () => Promise<SdkModule>;
   /** QA seam; production warns after 15 seconds without a matching hook response. */
   hookStallMs?: number;
+  /** QA seam for native Claude auth preflight. Production probes the real CLI. */
+  nativeAuthProbe?: () => Promise<ClaudeNativeAuthState>;
 }
 
 type SdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -713,6 +716,27 @@ export class ClaudeAdapter extends EventEmitter {
   private async run(): Promise<void> {
     let activeQuery: Query | undefined;
     try {
+      if (!this.usesRouterBackend() && (!this.options.sdkLoader || this.options.nativeAuthProbe)) {
+        const auth = await (this.options.nativeAuthProbe?.() || probeClaudeNativeAuth({
+          workspacePath: this.options.cwd,
+          executablePath: this.options.executablePath,
+        }));
+        if (auth.status === "auth_required") {
+          this.currentStatus = "auth_required";
+          this.lastError = auth.detail;
+          this.emitEvent({ type: "status", status: "auth_required", detail: auth.detail, at: now() });
+          this.emitEvent({
+            type: "error",
+            ...errorEventPayload(new EnvironmentBlockedError(auth.detail, "harness.claude-code")),
+            at: now(),
+          });
+          this.log("auth_required", { host: auth.host.label, workspace: auth.workspace, executable: auth.executable });
+          return;
+        }
+        if (!auth.authenticated) {
+          throw new EnvironmentBlockedError(auth.detail, "harness.claude-code");
+        }
+      }
       const sdk = await (this.options.sdkLoader ?? loadSdk)();
       const executable = resolveClaudeExecutable(this.options.executablePath);
       if (this.usesRouterBackend() && !isRoutableRouterModel(this.runtimeModel)) {

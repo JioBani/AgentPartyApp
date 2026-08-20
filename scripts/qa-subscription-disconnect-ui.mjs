@@ -37,8 +37,8 @@ const { act } = await import("react");
 const { AuthView } = await import(`${pathToFileURL(out).href}?v=${Date.now()}`);
 let disconnected = 0;
 const auth = [
-  { id: "codex", label: "Codex", kind: "subscription", status: "available", description: "native" },
-  { id: "codex-bridge", label: "Claude Code용 GPT 연결", kind: "subscription", status: "available", description: "Claude Code 하네스에서 GPT 모델을 사용할 때만 필요합니다. Codex 하네스의 로그인과는 별도입니다." },
+  { id: "codex", label: "Codex", kind: "subscription", surface: "native-cli", status: "available", description: "native", action: { type: "nativeCliTest", provider: "codex", host: "windows", label: "연결 테스트" } },
+  { id: "codex-bridge", label: "Codex", kind: "subscription", surface: "cross-harness", status: "available", description: "cross", action: { type: "subscriptionOAuth", provider: "codex", label: "다시 연결" } },
   { id: "openrouter", label: "OpenRouter", kind: "apiKey", status: "missing", description: "optional" },
 ];
 const rootNode = createRoot(document.getElementById("root"));
@@ -51,6 +51,7 @@ await act(async () => {
     onSave() {},
     onTest() {},
     onClear() {},
+    async onTestNativeCli() {},
     onConnectSubscription() {},
     async onDisconnectSubscription(provider) {
       if (provider === "codex") disconnected += 1;
@@ -59,7 +60,7 @@ await act(async () => {
 });
 const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "연결 끊기");
 assert(button, "connected Codex bridge row exposes the disconnect button");
-const nativeRow = [...document.querySelectorAll(".set-row-stack")].find((row) => row.querySelector(".set-row-name")?.textContent === "Codex");
+const nativeRow = document.querySelector('[data-native-provider="codex"]');
 assert(nativeRow && !nativeRow.querySelector(".set-btn-disconnect"), "native Codex row has no bridge disconnect action");
 
 await act(async () => button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));

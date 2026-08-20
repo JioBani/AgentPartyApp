@@ -152,7 +152,7 @@ function MemberContextMenuItems({ name, view, location, onRestart, onSetKeepAwak
             {location.distro && <span className="wb-cwd-distro">{location.distro}</span>}
             <span className="wb-mono">{location.cwd}</span>
           </span>
-          <span><LocalizedText id="STR-3291" /></span>
+          <span><LocalizedText id="STR-3685" /></span>
         </div>
       )}
       <button
@@ -237,21 +237,21 @@ function GroupContextMenuItems({ menu, confirming, onAddParty, onRename, onArmDe
     <>
       <div className="wb-ctx-head">
         <strong>{menu.name}</strong>
-        <span><LocalizedText id="STR-3295" /></span>
+        <span><LocalizedText id="STR-3689" /></span>
       </div>
       <button type="button" className="wb-ctx-item" onClick={onAddParty}>
-        <Plus size={13} />  <LocalizedText id="STR-3381" />
+        <Plus size={13} />  <LocalizedText id="STR-3775" />
       </button>
       <button type="button" className="wb-ctx-item" onClick={onRename}>
-        <PencilLine size={13} />  <LocalizedText id="STR-3382" />
+        <PencilLine size={13} />  <LocalizedText id="STR-3776" />
       </button>
       {!menu.isDefault && (confirming ? (
         <button type="button" className="wb-ctx-item is-danger" onClick={onDelete}>
-          <Trash2 size={13} />  <LocalizedText id="STR-3383" />
+          <Trash2 size={13} />  <LocalizedText id="STR-3777" />
         </button>
       ) : (
         <button type="button" className="wb-ctx-item is-danger" onClick={onArmDelete}>
-          <Trash2 size={13} />  <LocalizedText id="STR-3384" />
+          <Trash2 size={13} />  <LocalizedText id="STR-3778" />
         </button>
       ))}
     </>
@@ -412,7 +412,7 @@ export function PartySidebar(props: PartySidebarProps) {
         <aside className="wb-drawer wb-party-drawer" style={{ width: partyWidth }}>
           <header className="wb-drawer-head">
             <Users size={14} />
-            <span className="wb-drawer-title"><LocalizedText id="STR-3386" /></span>
+            <span className="wb-drawer-title"><LocalizedText id="STR-3780" /></span>
             <span className="wb-mono wb-drawer-count">{partySummaries.length}</span>
             <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("party", false)}><ChevronsLeft size={15} /></button>
           </header>
@@ -422,7 +422,7 @@ export function PartySidebar(props: PartySidebarProps) {
                 is the hint, because it is the whole point of the change: the
                 list no longer depends on which directory the app was launched
                 from. */}
-            <p className="wb-drawer-hint"><LocalizedText id="STR-3292" /></p>
+            <p className="wb-drawer-hint"><LocalizedText id="STR-3686" /></p>
             <form className="wb-new-party" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={localized("STR-2059")} />
           <button type="button" className="wb-icon-btn is-accent" title={localized("STR-2060")} onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>
@@ -454,7 +454,7 @@ export function PartySidebar(props: PartySidebarProps) {
       ) : (
         <button type="button" className="wb-drawer-rail is-party" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", true)}>
           <ChevronsRight size={13} />
-          <span><LocalizedText id="STR-3387" /></span>
+          <span><LocalizedText id="STR-3781" /></span>
           <span className="wb-mono wb-drawer-rail-count">{partySummaries.length}</span>
         </button>
       )}
@@ -599,7 +599,7 @@ export function PartySidebar(props: PartySidebarProps) {
               <button
                 type="button"
                 className="wb-ctx-item"
-                title={localized("STR-3293")}
+                title={localized("STR-3687")}
                 onClick={() => {
                   const party = partySummaries.find((entry) => entry.id === menu.partyId);
                   if (party) {
@@ -608,7 +608,7 @@ export function PartySidebar(props: PartySidebarProps) {
                   setMenu(null);
                 }}
               >
-                <FolderInput size={13} />  <LocalizedText id="STR-3294" />
+                <FolderInput size={13} />  <LocalizedText id="STR-3688" />
               </button>
               {confirmParty ? (
                 <button
@@ -741,7 +741,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             onKeyDown={(event) => { if (event.key === "Enter") create(); }}
           />
 
-          <div className="wb-modal-label"><LocalizedText id="STR-3295" /></div>
+          <div className="wb-modal-label"><LocalizedText id="STR-3689" /></div>
           <select
             className="wb-wizard-input wb-group-select"
             value={groupId}
@@ -754,10 +754,10 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             }}
           >
             {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            <option value="__new">{localized("STR-3296")}</option>
+            <option value="__new">{localized("STR-3690")}</option>
           </select>
 
-          <div className="wb-modal-label"><LocalizedText id="STR-3297" /></div>
+          <div className="wb-modal-label"><LocalizedText id="STR-3691" /></div>
           <CwdPicker
             value={location}
             prefs={cwdPrefs}
@@ -766,7 +766,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             onChangeEnv={changeEnv}
             onBrowse={() => { void onBrowseCwd(location?.env ?? "windows", location?.distro).then((picked) => { if (picked) setLocation(picked); }); }}
             wsl={wsl}
-            hint={<><LocalizedText id="STR-3299" /> <b>main</b> <LocalizedText id="STR-3298" /></>}
+            hint={<><LocalizedText id="STR-3693" /> <b>main</b> <LocalizedText id="STR-3692" /></>}
           />
           {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
 
