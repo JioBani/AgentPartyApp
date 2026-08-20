@@ -425,55 +425,55 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
               {drag?.mergeInto === row.id && (
                 <span className="wb-queue-merge-hint"><ArrowUpFromLine size={12} />  <LocalizedText id="STR-1829" /></span>
               )}
-              {row.showGrip ? (
-                <button
-                  type="button"
-                  className="wb-queue-grip"
-                  title={localized("STR-1830")}
-                  aria-label={localized("STR-1831", [row.n])}
-                  onPointerDown={(event) => startDrag(event, row)}
-                  onPointerMove={moveDrag}
-                  onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
-                  onKeyDown={(event) => stepRow(event, row)}
+              <div className="wb-queue-row-head" data-queue-header>
+                {row.showGrip ? (
+                  <button
+                    type="button"
+                    className="wb-queue-grip"
+                    title={localized("STR-1830")}
+                    aria-label={localized("STR-1831", [row.n])}
+                    onPointerDown={(event) => startDrag(event, row)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onKeyDown={(event) => stepRow(event, row)}
+                  >
+                    <GripVertical size={14} />
+                  </button>
+                ) : (
+                  <span className="wb-queue-grip is-idle" aria-hidden="true" />
+                )}
+                <span className="wb-queue-n">{row.n}</span>
+                <span
+                  className={"wb-queue-from" + (row.fromMember ? " is-member" : "")}
+                  style={row.from ? memberColorVars(row.from) : undefined}
+                  title={localized("STR-1832", [row.fromLabel])}
                 >
-                  <GripVertical size={14} />
-                </button>
-              ) : (
-                <span className="wb-queue-grip is-idle" aria-hidden="true" />
-              )}
-              <span className="wb-queue-n">{row.n}</span>
-              <span
-                className={"wb-queue-from" + (row.fromMember ? " is-member" : "")}
-                style={row.from ? memberColorVars(row.from) : undefined}
-                title={localized("STR-1832", [row.fromLabel])}
-              >
-                <span className="wb-queue-from-dot" />
-                {row.fromLabel}
-              </span>
-              <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
-              {/* Reads with the controls, not against the message: these are
-                  facts about this row's turn, so they sit with the row's other
-                  affordances rather than trailing the text.
-                  The expand button that used to sit here is the one below — it
-                  moved right of the badges and grew, so it is not duplicated. */}
-              {row.cutIn && (
-                <span className="wb-queue-cutin" title={localized("STR-1833")}>
-
-                  <LocalizedText id="STR-1834" />
+                  <span className="wb-queue-from-dot" />
+                  {row.fromLabel}
                 </span>
-              )}
-              {row.showNextBadge && <span className="wb-queue-next"><LocalizedText id="STR-1835" /></span>}
-              <button type="button" className="wb-queue-btn" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
-                {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              </button>
-              {/* Merging is done by dragging a row onto another, and sending one
-                  row early is the toolbar's 중단하고 보내기 — neither needs a
-                  per-row button competing with 편집 and 삭제 for the same corner. */}
-              {row.showEdit && (
-                <button type="button" className="wb-queue-btn" title={localized("STR-1836")} onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={13} /></button>
-              )}
-              <button type="button" className="wb-queue-btn is-danger" title={localized("STR-1837")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
+                <span className="wb-queue-row-head-spacer" />
+                {/* Reads with the controls, not against the message: these are
+                    facts about this row's turn, so they stay in the compact
+                    header instead of reserving columns beside every body line. */}
+                {row.cutIn && (
+                  <span className="wb-queue-cutin" title={localized("STR-1833")}>
+                    <LocalizedText id="STR-1834" />
+                  </span>
+                )}
+                {row.showNextBadge && <span className="wb-queue-next"><LocalizedText id="STR-1835" /></span>}
+                <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
+                  {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                </button>
+                {/* Merging is done by dragging a row onto another, and sending one
+                    row early is the toolbar's 중단하고 보내기 — neither needs a
+                    per-row button competing with 편집 and 삭제 for the same corner. */}
+                {row.showEdit && (
+                  <button type="button" className="wb-queue-btn" data-queue-action="edit" title={localized("STR-1836")} onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={13} /></button>
+                )}
+                <button type="button" className="wb-queue-btn is-danger" data-queue-action="remove" title={localized("STR-1837")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
+              </div>
+              <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
             </div>
           ))}
           </div>

@@ -3211,12 +3211,9 @@ body.wb-resizing {
 .wb-queue-row {
   position: relative;
   display: flex;
-  /* Centred: a collapsed row is ONE line, and its number, sender chip, badge and
-     buttons all belong on that line's axis. Only an expanded row pins them to
-     the top, since there the body is what grows and the controls should stay
-     level with the first line rather than drift to the middle of a paragraph. */
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   padding: 6px 7px 6px 8px;
   border: var(--border-width) dashed var(--border);
   border-radius: 8px;
@@ -3236,7 +3233,18 @@ body.wb-resizing {
    slid under a neighbour that is stepping aside. */
 .wb-queue-row.is-dragging { z-index: 4; }
 
-.wb-queue-row.is-expanded { align-items: flex-start; }
+.wb-queue-row-head {
+  min-width: 0;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.wb-queue-row-head-spacer {
+  flex: 1;
+  min-width: 0;
+}
 
 .wb-queue-row.is-merge-target {
   border-style: solid;
@@ -3362,6 +3370,7 @@ body.wb-resizing {
 
 .wb-queue-from {
   flex: none;
+  max-width: min(180px, 40%);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3373,6 +3382,9 @@ body.wb-resizing {
   color: var(--text-2);
   font-size: 9.5px;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wb-queue-from-dot {
   width: 5px;
@@ -3390,7 +3402,7 @@ body.wb-resizing {
 .wb-queue-from.is-member .wb-queue-from-dot { background: var(--member); }
 
 .wb-queue-text {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   font-size: 12px;
   line-height: 1.45;
