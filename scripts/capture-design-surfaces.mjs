@@ -364,7 +364,7 @@ async function main() {
       flush: true,
     });
   }
-  for (const [view, name, file] of [["usage", "Token Usage", "usage"], ["sessions", "세션", "sessions"], ["auth", "인증", "auth"], ["automation", "설정", "automation"]]) {
+  for (const [view, name, file] of [["usage", "Token Usage", "usage"], ["auth", "인증", "auth"], ["automation", "설정", "automation"]]) {
     await post("/api/navigation", { view });
     await delay(900);
     await capture(cdp, { file: `screens/${file}.html`, group: "Screens", name, selector: ".app-body", height: "760px", flush: true });

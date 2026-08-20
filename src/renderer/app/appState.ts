@@ -7,8 +7,9 @@ import { DEFAULT_IDLE_SLEEP } from "../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging";
 import { DEFAULT_APP_LOCALE } from "../../shared/appLocale";
 import type { MessageKey } from "../i18n/messages";
+import { DEFAULT_SIDEBAR_DRAWERS } from "../../shared/sidebarDrawers";
 
-export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "agent" | "settings";
+export type ViewId = "workbench" | "guide" | "usage" | "auth" | "agent" | "settings";
 
 /** Staged per-member runtime values applied when a member's session starts. */
 export interface MemberRuntimeDraft {
@@ -52,6 +53,7 @@ export const initialState: InitialAppState = {
     composer: { ...DEFAULT_COMPOSER_SETTINGS },
     memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
     favoriteModels: [],
+    sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
   },
   auth: [],
   sessions: [],
@@ -69,7 +71,6 @@ export function viewTitle(view: ViewId, t: (key: MessageKey) => string): string 
   const titles: Record<ViewId, MessageKey> = {
     workbench: "view.workbench.title",
     guide: "view.guide.title",
-    sessions: "view.sessions.title",
     usage: "view.usage.title",
     auth: "view.auth.title",
     agent: "view.runtime.title",
@@ -84,7 +85,6 @@ export function viewSubtitle(view: ViewId, t: (key: MessageKey) => string): stri
   const subtitles: Record<ViewId, MessageKey> = {
     workbench: "view.workbench.subtitle",
     guide: "view.guide.subtitle",
-    sessions: "view.sessions.subtitle",
     usage: "view.usage.subtitle",
     auth: "view.auth.subtitle",
     agent: "view.runtime.subtitle",
@@ -98,5 +98,5 @@ export function displayPath(value: string | undefined): string {
 }
 
 export function isViewId(value: string): value is ViewId {
-  return ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"].includes(value);
+  return ["workbench", "guide", "usage", "auth", "agent", "settings"].includes(value);
 }

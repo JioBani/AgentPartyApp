@@ -10,6 +10,7 @@ import type { MemberQueueState } from "./messageQueue";
 import type { MemberStatus } from "./memberDisplayStatus";
 import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { SidebarDrawerSettings } from "./sidebarDrawers";
 import type { PartyGroup } from "./partyGroups";
 import type { CwdPreferences } from "./memberLocation";
 import type { MobileSettings } from "./mobileProtocol";
@@ -100,6 +101,13 @@ export interface AppSettings {
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
+  /**
+   * The sidebar's party and member drawers: expanded or collapsed, and how
+   * wide. Settings rather than renderer-local storage so an agent can collapse
+   * a drawer over the API exactly as the user does. See
+   * `shared/sidebarDrawers.ts`.
+   */
+  sidebarDrawers: SidebarDrawerSettings;
   /**
    * The UI and code fonts, as catalog ids. Applied by writing the selected
    * stacks into `--font-sans` / `--font-mono`, which every surface already

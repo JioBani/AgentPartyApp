@@ -450,6 +450,16 @@ scrolls" question), `text`, and whatever `styles`/`attributes` were asked for.
 The response also has `count`, `texts` in document order (list ordering), `gaps`
 between consecutive matches, the active `theme`, and the `viewport`.
 
+**Stable hooks worth knowing.** Some renderer state has no text on screen to
+read, so it is published as an attribute for exactly this endpoint:
+
+| Selector | Attribute | Answers |
+|---|---|---|
+| `.app-shell` | `data-workspace` | the workspace the **renderer** has applied (the window registry's answer is `GET /api/windows`) |
+| `.wb-root` | `data-party-id` | the party the workbench is rendering |
+| `.wb-root` | `data-layout-party` | the party whose saved panel layout has been seeded |
+| `.wb-party-row` | `data-party-id` | which party a sidebar row selects, for pointer-driven runs |
+
 **Not measuring and measuring zero are different facts.** A selector that matches
 nothing is a **500 naming the selector** — never an empty list, never a zero.
 The same for a `within`/`containedBy`/`scroll` target that does not exist, an
@@ -501,6 +511,14 @@ Updates app settings.
 0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
+
+`sidebarDrawers` is the workbench sidebar's two drawers — the party list and the
+member list — each with `open` (expanded) and `width` (px, clamped 150–460):
+`{"sidebarDrawers": {"party": {"open": false, "width": 236}, "member": {"open":
+true, "width": 300}}}`. In the UI these are the collapse button on each drawer head
+and the drag handle between them. A collapsed drawer leaves a rail that reopens
+it. Applies live in every open window, so an agent can put the party list away
+and check a narrow layout exactly as a user would.
 
 `fonts` picks the app's UI and code font families by **family name as the OS
 reports it** — `{"fonts": {"sans": "Malgun Gothic", "mono": "D2Coding"}}`. Both
@@ -2844,7 +2862,7 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, guide, sessions, usage, auth, agent, settings
+workbench, guide, usage, auth, agent, settings
 ```
 
 The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a

@@ -54,7 +54,7 @@ async function main() {
   const visible = () => evaluate(`[...document.querySelectorAll("[data-view-panel]")].filter((n) => !n.hidden).map((n) => n.dataset.viewPanel)`);
   ok((await visible()).join() === "workbench", "첫 화면은 workbench");
 
-  for (const view of ["runtime", "usage", "sessions", "auth", "automation", "workbench"]) {
+  for (const view of ["runtime", "usage", "auth", "automation", "workbench"]) {
     const clicked = await evaluate(`(() => { const el = document.querySelector('[data-goto="${view}"]'); if (!el) return false; el.click(); return true; })()`);
     const shown = await visible();
     ok(clicked && shown.length === 1 && shown[0] === view, `레일 → ${view} (보이는 화면: ${shown.join(",") || "없음"})`);

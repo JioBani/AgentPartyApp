@@ -892,11 +892,10 @@ function registerApplicationMenu(): void {
       label: "View",
       submenu: [
         { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
-        { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
-        { label: "Token Usage", accelerator: "CmdOrCtrl+3", click: () => navigate("usage") },
-        { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
-        { label: "Agent", accelerator: "CmdOrCtrl+5", click: () => navigate("agent") },
-        { label: "Settings", accelerator: "CmdOrCtrl+6", click: () => navigate("settings") },
+        { label: "Token Usage", accelerator: "CmdOrCtrl+2", click: () => navigate("usage") },
+        { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
+        { label: "Agent", accelerator: "CmdOrCtrl+4", click: () => navigate("agent") },
+        { label: "Settings", accelerator: "CmdOrCtrl+5", click: () => navigate("settings") },
         { type: "separator" },
         { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
@@ -908,7 +907,6 @@ function registerApplicationMenu(): void {
       label: "Session",
       submenu: [
         { label: "New Party", accelerator: "CmdOrCtrl+N", click: () => focusedWindow()?.webContents.send("session:new") },
-        { label: "Refresh History", click: () => focusedWindow()?.webContents.send("session:refreshHistory") },
       ],
     },
   ]));
@@ -977,7 +975,11 @@ function registerIpc(): void {
   // party list is app-global now: a party in another workspace is one click away
   // in the sidebar, and clicking it must actually go there.
   handle("workspace:switch", async (event, workspacePath: string) =>
-    controller().setWindowWorkspace(senderWindowId(event), String(workspacePath || "")));
+    controller().setWindowWorkspace(
+      senderWindowId(event),
+      String(workspacePath || ""),
+      { omitStateWhenUnchanged: true },
+    ));
   handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
   handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
   handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));

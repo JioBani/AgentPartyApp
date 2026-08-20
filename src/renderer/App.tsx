@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpen, FolderOpen, History, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, KeyRound, Maximize2, Minus, Moon, Settings, SlidersHorizontal, Sparkles, Sun, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -41,7 +41,7 @@ import { ipcErrorMessage } from "./app/ipcError";
 import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
 import type { ApprovalDelivery } from "../shared/approvals";
-import { AgentSettingsView, AuthView, SettingsView, SessionsView } from "./app/secondaryViews";
+import { AgentSettingsView, AuthView, SettingsView } from "./app/secondaryViews";
 import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
@@ -55,6 +55,7 @@ import type { AppLocale } from "../shared/appLocale";
 import { localized } from "./i18n/I18nProvider";
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
 import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
+import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState } from "../shared/sidebarDrawers";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -117,10 +118,7 @@ export function App() {
    * splitting them is that you can put the party list away while working with a
    * party's members — and get it back in one click.
    */
-  const [drawers, setDrawers] = useState(() => ({
-    party: window.localStorage.getItem("agentparty.partyDrawerOpen") !== "0",
-    member: window.localStorage.getItem("agentparty.memberDrawerOpen") !== "0",
-  }));
+  const drawers = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
   // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMemberScope, setVisibleMemberScope] = useState<{ partyId: string; names: string[] }>({ partyId: "", names: [] });
   // Transcript data and transcript DOM have separate lifecycles. The former is
@@ -687,7 +685,6 @@ export function App() {
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });
-    const offRefreshHistory = window.agentParty.onRefreshHistory(() => { void refreshHistory(); setCurrentView("sessions"); });
     return () => {
       offEvents();
       offSnapshot();
@@ -708,7 +705,6 @@ export function App() {
       offNavigate();
       offWorkspaceChoose();
       offNewSession();
-      offRefreshHistory();
     };
   }, []);
 
@@ -970,16 +966,20 @@ export function App() {
    */
   async function selectParty(partyId: string) {
     try {
-      // Always ask when the party names a home. Whether that is a real move is
-      // decided in the main process against the window's own workspace — this
-      // side's copy of the path can be a render behind, and comparing here sent
-      // `select` to the wrong workspace and failed with "does not exist".
+      // Always ask the main process when a globally registered party names a
+      // home. The renderer's workspace copy can be one render behind; only the
+      // window registry can safely decide whether this is a real move. A
+      // same-workspace call returns no state cheaply, while a real move returns
+      // the destination state that must replace this window's old state.
       const home = groupState.parties.find((entry) => entry.id === partyId)?.workspacePath;
-      if (home) {
-        await window.agentParty.switchWorkspace(home);
-      }
+      const switchedState: InitialAppState | undefined = home
+        ? await window.agentParty.switchWorkspace(home)
+        : undefined;
       const result = await window.agentParty.selectParty(partyId);
-      await applyPartyResult(result);
+      // A real cross-workspace move does need its fresh global/session state.
+      // Apply it together with the requested party so React never paints the
+      // destination workspace's incidental default party in between.
+      await applyPartyResult(result, true, switchedState);
     } catch (error) {
       noticeOnFailure("파티를 전환하지 못했습니다")(error);
     }
@@ -1018,20 +1018,6 @@ export function App() {
       return next;
     });
     setActiveSessionId((current) => (current === sessionId ? "" : current));
-  }
-
-  async function refreshHistory() {
-    const result = await window.agentParty.listResumableSessions(state.settings.workspacePath);
-    setState((current) => ({ ...current, resumableSessions: result.sessions || [], resumableSessionsError: result.error }));
-  }
-
-  async function resumeHistorySession(sessionId: string) {
-    const session = await window.agentParty.resumeSession(sessionId, state.settings.workspacePath);
-    if (!session) {
-      return;
-    }
-    setState((current) => ({ ...current, sessions: upsertSession(current.sessions, session) }));
-    setActiveSessionId(session.id);
   }
 
   /**
@@ -1108,7 +1094,7 @@ export function App() {
     setState((current) => ({ ...current, party }));
   }
 
-  async function applyPartyResult(result: PartyCommandResult, notify = true) {
+  async function applyPartyResult(result: PartyCommandResult, notify = true, baseState?: InitialAppState) {
     // `notify` is off for routine sends: a toast on every message ("Message sent
     // to 'X'.") is noise. State still updates; real send failures surface below.
     if (notify) {
@@ -1116,12 +1102,12 @@ export function App() {
     }
     if (result.members) {
       setState((current) => ({
-        ...current,
+        ...(baseState ?? current),
         party: {
-          parties: result.parties || current.party.parties || [],
-          currentPartyId: result.currentPartyId || current.party.currentPartyId,
+          parties: result.parties || baseState?.party.parties || current.party.parties || [],
+          currentPartyId: result.currentPartyId || baseState?.party.currentPartyId || current.party.currentPartyId,
           members: result.members || [],
-          messages: result.messages || current.party.messages || [],
+          messages: result.messages || baseState?.party.messages || current.party.messages || [],
         },
       }));
       if (result.session) {
@@ -1228,6 +1214,21 @@ export function App() {
    * empty rather than skipped — that is how a user undoes a wrong path and
    * returns the harness to auto-discovery.
    */
+  /**
+   * Collapses, expands or resizes one sidebar drawer.
+   *
+   * Goes through the settings route rather than `localStorage` so the same call
+   * an agent makes over `POST /api/settings` moves the real UI, and so a second
+   * window is told about it instead of drifting until reload.
+   */
+  async function saveDrawer(which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) {
+    const current = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
+    const settings = await window.agentParty.updateSettings({
+      sidebarDrawers: { ...current, [which]: { ...current[which], ...patch } },
+    });
+    setState((existing) => ({ ...existing, settings }));
+  }
+
   async function saveExecutablePaths(patch: Partial<InitialAppState["settings"]>) {
     const settings = await window.agentParty.updateSettings(patch);
     setState((current) => ({ ...current, settings }));
@@ -1814,7 +1815,6 @@ export function App() {
   const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
     { id: "workbench", label: viewTitle("workbench", t), icon: <Sparkles size={18} /> },
     { id: "guide", label: viewTitle("guide", t), icon: <BookOpen size={18} /> },
-    { id: "sessions", label: viewTitle("sessions", t), icon: <History size={18} /> },
     { id: "usage", label: viewTitle("usage", t), icon: <BarChart3 size={18} /> },
     { id: "auth", label: viewTitle("auth", t), icon: <KeyRound size={18} /> },
     { id: "agent", label: viewTitle("agent", t), icon: <SlidersHorizontal size={18} /> },
@@ -1862,7 +1862,12 @@ export function App() {
 
   return (
     <I18nProvider locale={state.settings.locale}>
-    <div className="app-shell">
+    {/* `data-workspace` is the workspace the RENDERER has applied, which is
+        not the same question as "which workspace does the window registry
+        say". A cross-workspace party switch has to replace this side's state
+        too, and the header stopped showing a path when the party name took
+        its place — so this attribute is what a QA run asserts on. */}
+    <div className="app-shell" data-workspace={state.settings.workspacePath}>
       <div className="app-titlebar">
         <div className="titlebar-drag">
           <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>
@@ -1900,12 +1905,10 @@ export function App() {
               <header className="screen-header">
                 <div className="screen-title">
                   <h1>{viewTitle("workbench", t)}</h1>
-                  <span className="wb-mono screen-repo">
-                    {state.workspace?.kind === "wsl" && (
-                      <span className="host-badge" title={localized("STR-0819", [state.workspace.distro])}>WSL · {state.workspace.distro}</span>
-                    )}
-                    {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
-                  </span>
+                  {/* The PARTY, not the workspace path. Parties are app-global
+                      now and every member runs in its own cwd, so the directory
+                      the app was launched from described nothing on screen. */}
+                  <span className="screen-party" title={activePartyName}>{activePartyName}</span>
                   <p>{t("shell.workbenchDescription")}</p>
                 </div>
                 <div className="screen-actions">
@@ -1954,14 +1957,8 @@ export function App() {
                 onSelectParty={(partyId) => void selectParty(partyId)}
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
-                onToggleDrawer={(which, open) => {
-                  setDrawers((current) => ({ ...current, [which]: open }));
-                  try {
-                    window.localStorage.setItem(`agentparty.${which}DrawerOpen`, open ? "1" : "0");
-                  } catch { /* best-effort */ }
-                }}
+                onToggleDrawer={(which, patch) => void saveDrawer(which, patch)}
                 onOpenUsage={() => setCurrentView("usage")}
-                onOpenSessions={() => { void refreshHistory(); setCurrentView("sessions"); }}
               />
             </>
           ) : currentView === "guide" ? (
@@ -1990,17 +1987,6 @@ export function App() {
                 </div>
               </header>
               <div className="program-scroll">
-              {currentView === "sessions" && (
-                <SessionsView
-                  sessions={sessions}
-                  resumable={state.resumableSessions || []}
-                  resumableError={state.resumableSessionsError}
-                  onOpen={(id) => { setActiveSessionId(id); setCurrentView("workbench"); }}
-                  onClose={closeSession}
-                  onRefresh={refreshHistory}
-                  onResume={resumeHistorySession}
-                />
-              )}
               {currentView === "auth" && (
                 <AuthView
                   auth={state.auth}
