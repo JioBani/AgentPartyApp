@@ -537,7 +537,8 @@
    empty drawer under it and scrolls inside that stub. */
 .wb-party-drawer > .wb-sidebar-section { flex: 1; min-height: 0; }
 .wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
-/* The scroll lives on the inner list so the create button below it stays put. */
+/* The create button scrolls inside this box, under the last group, so it is
+   always at the END of the folder list rather than floating over it. */
 .wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
 
 /* A narrow drawer must not turn a one-line hint into a two-line block that

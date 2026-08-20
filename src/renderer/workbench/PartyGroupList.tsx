@@ -85,9 +85,8 @@ export function PartyGroupList({
 
   return (
     <div className="wb-party-list">
-      {/* The groups scroll; the create button does NOT. With a dozen groups it
-          was below the fold, which is the one place a "make another one" button
-          must never be. */}
+      {/* The create button scrolls WITH the groups and sits under the last one,
+          where "one more folder" belongs: the end of the list it adds to. */}
       <div className="wb-party-scroll">
       {groups.map(({ group, parties }) => {
         const open = openGroupIds.has(group.id);
@@ -225,11 +224,11 @@ export function PartyGroupList({
           </div>
         );
       })}
-      </div>
       <button type="button" className="wb-group-add" onClick={onCreateGroup}>
         <FolderPlus size={13} />
         <LocalizedText id="STR-3668" />
       </button>
+      </div>
     </div>
   );
 }
