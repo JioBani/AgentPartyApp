@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { parseAppearanceBootArgs } from "../shared/appTheme";
 import type { DiagnosticsReport } from "../shared/diagnostics";
 import type { EnvironmentReport } from "../shared/environment";
 import type { NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, TranscriptSave, TranscriptSaveResult } from "../shared/types";
@@ -10,6 +11,12 @@ import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approva
 import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
 import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
+
+const appearanceBoot = parseAppearanceBootArgs(process.argv)
+  || ipcRenderer.sendSync("appearance:boot");
+if (appearanceBoot) {
+  contextBridge.exposeInMainWorld("agentPartyAppearanceBoot", appearanceBoot);
+}
 
 const api = {
   /**

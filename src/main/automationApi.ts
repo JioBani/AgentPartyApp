@@ -142,9 +142,14 @@ export class AutomationApiServer {
       sendJson(res, 200, await match.route.handler(await this.paramsFor(req, url, match.pathParams), context));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = error instanceof ApiError ? error.status : 500;
-      log(status >= 500 ? "error" : "warn", "api", "request failed", { path: url.pathname, status, error: message });
-      sendJson(res, status, { ok: false, error: message });
+      const status = error instanceof ApiError
+        ? error.status
+        : typeof (error as { status?: unknown }).status === "number"
+          ? (error as { status: number }).status
+          : 500;
+      const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
+      log(status >= 500 ? "error" : "warn", "api", "request failed", { path: url.pathname, status, error: message, code });
+      sendJson(res, status, { ok: false, error: message, ...(code ? { code } : {}) });
     }
   }
 }

@@ -20,13 +20,59 @@ export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
 export const THEME_SYNC_PAINT_VALUE = "sync";
 
 /**
- * BrowserWindow chrome, matching `bg-0` in `themes.ts`. Keep the two equal:
- * a mismatch is the flash this colour exists to hide.
+ * The `bg-0` token for light and dark. `themes.ts` paints CSS from this;
+ * `windowBackgroundFor` paints BrowserWindow chrome from the same values.
  */
 export const APPLIED_THEME_BACKGROUNDS: Record<AppliedTheme, string> = {
   light: "#e7e8eb",
   dark: "#0a0b0e",
 };
+
+export interface AppearanceBoot {
+  preference: ThemePreference;
+  applied: AppliedTheme;
+  stored: boolean;
+}
+
+const BOOT_PREF_FLAG = "--ap-pref=";
+const BOOT_APPLIED_FLAG = "--ap-applied=";
+const BOOT_STORED_FLAG = "--ap-stored=";
+
+export function appearanceBootArgs(boot: AppearanceBoot): string[] {
+  return [
+    `${BOOT_PREF_FLAG}${boot.preference}`,
+    `${BOOT_APPLIED_FLAG}${boot.applied}`,
+    `${BOOT_STORED_FLAG}${boot.stored ? "1" : "0"}`,
+  ];
+}
+
+export function parseAppearanceBootArgs(argv: readonly string[]): AppearanceBoot | null {
+  const pref = argv.find((arg) => arg.startsWith(BOOT_PREF_FLAG))?.slice(BOOT_PREF_FLAG.length);
+  const applied = argv.find((arg) => arg.startsWith(BOOT_APPLIED_FLAG))?.slice(BOOT_APPLIED_FLAG.length);
+  const stored = argv.find((arg) => arg.startsWith(BOOT_STORED_FLAG))?.slice(BOOT_STORED_FLAG.length);
+  if (!isThemePreference(pref) || !isAppliedTheme(applied) || (stored !== "0" && stored !== "1")) {
+    return null;
+  }
+  return { preference: pref, applied, stored: stored === "1" };
+}
+
+/**
+ * First paint. Settings+nativeTheme (boot.stored) always win over a stale
+ * localStorage cache. localStorage `dark` is used only when settings.json has
+ * no `theme` (true legacy).
+ */
+export function firstPaintFrom(boot: AppearanceBoot | null, legacyTheme: unknown): { preference: ThemePreference; applied: AppliedTheme } {
+  if (boot?.stored) {
+    return { preference: boot.preference, applied: boot.applied };
+  }
+  if (legacyTheme === "dark") {
+    return { preference: "dark", applied: "dark" };
+  }
+  if (boot) {
+    return { preference: boot.preference, applied: boot.applied };
+  }
+  return { preference: DEFAULT_THEME_PREFERENCE, applied: "light" };
+}
 
 /**
  * Thrown when a headless/WSL engine would otherwise write its own settings.json
@@ -38,10 +84,21 @@ export const APPEARANCE_DESKTOP_ONLY_ERROR =
 
 export class AppearanceOwnerError extends Error {
   readonly code = "appearance_desktop_only" as const;
+  readonly status = 403;
 
   constructor() {
     super(APPEARANCE_DESKTOP_ONLY_ERROR);
     this.name = "AppearanceOwnerError";
+  }
+}
+
+export class InvalidThemeError extends Error {
+  readonly code = "invalid_theme" as const;
+  readonly status = 400;
+
+  constructor(value: unknown) {
+    super(`지원하지 않는 테마입니다: ${String(value ?? "")}`);
+    this.name = "InvalidThemeError";
   }
 }
 
@@ -98,7 +155,7 @@ export function normalizeThemePreference(value: unknown): ThemePreference {
 /** Validates an explicit user/API choice instead of silently changing it. */
 export function requireThemePreference(value: unknown): ThemePreference {
   if (!isThemePreference(value)) {
-    throw new Error(`지원하지 않는 테마입니다: ${String(value ?? "")}`);
+    throw new InvalidThemeError(value);
   }
   return value;
 }

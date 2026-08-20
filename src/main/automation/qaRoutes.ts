@@ -24,6 +24,7 @@ export const QA_ENDPOINTS = [
   "POST /api/qa/design-gallery",
   "POST /api/qa/environment",
   "POST /api/qa/appearance/os",
+  "POST /api/qa/appearance/storage",
   "POST /api/qa/update",
   "POST /api/qa/reset",
 ] as const;
@@ -83,6 +84,14 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
   if (method === "POST" && url.pathname === "/api/qa/appearance/os") {
     const body = await readJson(req);
     sendJson(res, 200, await c.qaSetOsScheme(body?.dark === true));
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/qa/appearance/storage") {
+    const body = await readJson(req);
+    sendJson(res, 200, await c.qaSetRendererStorage(windowId, {
+      theme: Object.prototype.hasOwnProperty.call(body || {}, "theme") ? body.theme : undefined,
+      themePreference: Object.prototype.hasOwnProperty.call(body || {}, "themePreference") ? body.themePreference : undefined,
+    }));
     return;
   }
   // Pins an app-update status so the update pill/modal can be reviewed without

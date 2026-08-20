@@ -63,6 +63,8 @@ import {
   appearanceOwnerError,
   appearanceStateOf,
   bindAppearanceUpdates,
+  THEME_PREFERENCE_STORAGE_KEY,
+  THEME_STORAGE_KEY,
   normalizeThemePreference,
   requireThemePreference,
   windowBackgroundFor,
@@ -827,6 +829,30 @@ export class AppController {
     this.osDarkOverride = dark === true;
     this.onNativeThemeUpdated();
     return this.getAppearance();
+  }
+
+  async qaSetRendererStorage(windowId: string | undefined, patch: { theme?: string | null; themePreference?: string | null }): Promise<{ theme: string | null; themePreference: string | null }> {
+    this.requireQa();
+    const win = this.windowFor(windowId);
+    if (!win) {
+      throw new Error("Target window is not available.");
+    }
+    const result = await win.webContents.executeJavaScript(
+      `(() => {
+        const theme = ${JSON.stringify(patch.theme === undefined ? undefined : patch.theme)};
+        const pref = ${JSON.stringify(patch.themePreference === undefined ? undefined : patch.themePreference)};
+        if (theme === null) localStorage.removeItem(${JSON.stringify(THEME_STORAGE_KEY)});
+        else if (typeof theme === "string") localStorage.setItem(${JSON.stringify(THEME_STORAGE_KEY)}, theme);
+        if (pref === null) localStorage.removeItem(${JSON.stringify(THEME_PREFERENCE_STORAGE_KEY)});
+        else if (typeof pref === "string") localStorage.setItem(${JSON.stringify(THEME_PREFERENCE_STORAGE_KEY)}, pref);
+        return {
+          theme: localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)}),
+          themePreference: localStorage.getItem(${JSON.stringify(THEME_PREFERENCE_STORAGE_KEY)}),
+        };
+      })()`,
+    );
+    await win.webContents.session.flushStorageData();
+    return result;
   }
 
   private osIsDark(): boolean {

@@ -5,16 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AgentParty</title>
     <script>
-      /* Keep keys in sync with src/shared/appTheme.ts. Runs before the module
-         bundle so the first paint already has data-theme, not a light :root. */
+      /* Same rules as firstPaintFrom() in src/shared/appTheme.ts. Preload
+         exposes window.agentPartyAppearanceBoot from main (settings+nativeTheme)
+         before this runs. localStorage is only used when settings has no theme. */
       (function () {
         try {
-          var pref = localStorage.getItem("agentparty.themePreference")
-            || localStorage.getItem("agentparty.theme");
-          if (pref !== "system" && pref !== "light" && pref !== "dark") pref = "light";
-          var dark = pref === "dark" || (pref === "system" && window.matchMedia
-            && window.matchMedia("(prefers-color-scheme: dark)").matches);
-          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+          var boot = window.agentPartyAppearanceBoot;
+          var legacy = null;
+          try { legacy = localStorage.getItem("agentparty.theme"); } catch (e) {}
+          var pref;
+          var applied;
+          if (boot && boot.stored) {
+            pref = boot.preference;
+            applied = boot.applied;
+          } else if (legacy === "dark") {
+            pref = "dark";
+            applied = "dark";
+          } else if (boot && boot.preference && boot.applied) {
+            pref = boot.preference;
+            applied = boot.applied;
+          } else {
+            pref = "light";
+            applied = "light";
+          }
+          document.documentElement.setAttribute("data-theme", applied);
           document.documentElement.setAttribute("data-theme-preference", pref);
           document.documentElement.setAttribute("data-theme-paint", "sync");
         } catch (e) {}

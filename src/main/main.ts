@@ -6,8 +6,8 @@ import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
-import { getPublicSettings, getSettings, updateSettings } from "./settings";
-import { normalizeThemePreference, windowBackgroundFor } from "../shared/appTheme";
+import { getPublicSettings, getSettings, storedThemePreference, updateSettings } from "./settings";
+import { appearanceBootArgs, normalizeThemePreference, resolveAppliedTheme, windowBackgroundFor } from "../shared/appTheme";
 import { SessionManager } from "./sessionManager";
 import { AppController } from "./application/appController";
 import { launchCliContinuation } from "./cliContinuationLauncher";
@@ -196,14 +196,22 @@ function defaultWorkspace(): string {
   return getSettings().workspacePath || process.cwd();
 }
 
+function appearanceBootForWindow() {
+  const stored = storedThemePreference();
+  const preference = stored ?? normalizeThemePreference(getSettings().theme);
+  const applied = resolveAppliedTheme(preference, nativeTheme.shouldUseDarkColors);
+  return { preference, applied, stored: stored !== undefined };
+}
+
 async function createWindow(workspacePath: string): Promise<WindowInfo> {
+  const boot = appearanceBootForWindow();
   const window = new BrowserWindow({
     width: 1480,
     height: 960,
     minWidth: 1100,
     minHeight: 720,
     title: "AgentParty",
-    backgroundColor: windowBackgroundFor(normalizeThemePreference(getSettings().theme), nativeTheme.shouldUseDarkColors),
+    backgroundColor: windowBackgroundFor(boot.preference, nativeTheme.shouldUseDarkColors),
     titleBarStyle: "hidden",
     frame: false,
     webPreferences: {
@@ -211,6 +219,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      additionalArguments: appearanceBootArgs(boot),
       // Keep painting when backgrounded so /api/capture works off-foreground.
       backgroundThrottling: false,
     },
@@ -935,6 +944,11 @@ function senderWindowId(event: IpcMainInvokeEvent): string | undefined {
 }
 
 function registerIpc(): void {
+  // Sync so preload can expose the boot theme before the page's first paint.
+  ipcMain.on("appearance:boot", (event) => {
+    event.returnValue = appearanceBootForWindow();
+  });
+
   handle("app:getInitialState", async (event) => controller().getState(senderWorkspace(event), senderWindowId(event)));
 
   handle("settings:update", async (_event, patch) => controller().updateSettings(patch || {}));

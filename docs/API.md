@@ -518,10 +518,13 @@ explicit Light choice. A leftover `localStorage` `agentparty.theme` of `dark`
 still migrates on upgrade; leftover `light` does not, because the old toggle
 wrote that on every first paint.
 
-First paint: `index.html` applies the cached preference synchronously
-(`html[data-theme-paint=sync]`) before the React bundle runs. The ThemeProvider
-does the same at module import, so a jsdom mount without `index.html` still
-avoids a light flash.
+First paint is owned by main: `createWindow` resolves preference+applied from
+`settings.json` and `nativeTheme`, colours the BrowserWindow, and passes that
+boot payload into the preload (`window.agentPartyAppearanceBoot`) before the
+page loads. `index.html` and `ThemeProvider` prefer that value.
+`localStorage` is used only when settings.json has **no** `theme` and the
+legacy key is `dark`. A stale cache cannot override an explicit setting.
+`html[data-theme-paint=sync]` marks that path.
 
 ### `POST /api/appearance/theme`
 
@@ -533,18 +536,19 @@ Settings → 모양 and the title-bar shortcut.
 ```
 
 Accepted values are `system`, `light`, and `dark`. Any other value (including a
-missing `theme`) returns an error instead of silently falling back. The change
-is persisted in `settings.json` and pushed to every open window immediately.
-When `preference` is `system`, the painted theme follows the OS live.
+missing `theme`) returns **HTTP 400** `{ "ok": false, "error": "지원하지 않는 테마입니다: …", "code": "invalid_theme" }`
+instead of a 500 or a silent default. The change is persisted in `settings.json`
+and pushed to every open window immediately. When `preference` is `system`, the
+painted theme follows the OS live.
 
 `POST /api/settings` accepts the same `theme` field and applies the same
 validation, but only on the desktop process. Appearance is desktop-owned
 (`nativeTheme` and the host `settings.json`). A WSL/headless engine forwards
 `GET`/`POST /api/appearance/theme` to the Windows host over HostChannel; if
-that channel is missing, the call fails with `AppearanceOwnerError`
-(`code: "appearance_desktop_only"`) instead of writing the distro's own
-settings file. `POST /api/settings` with `theme` on that engine is rejected
-the same way.
+that channel is missing, the call fails with **HTTP 403**
+`{ "ok": false, "error": "모양 설정은 데스크톱 앱이 소유합니다. …", "code": "appearance_desktop_only" }`
+instead of writing the distro's own settings file. `POST /api/settings` with
+`theme` on that engine is rejected the same way.
 
 ### `POST /api/settings`
 
@@ -3626,6 +3630,15 @@ with.
 
 Opens a Message Gate editor in the renderer, so the modal can be reviewed
 without hand-clicking to it. Body `{ "kind": "member" | "party", "member": "<name>" }`.
+
+### `POST /api/qa/appearance/storage`
+
+QA only. Writes renderer `localStorage` keys used by first-paint / migration
+(`agentparty.theme`, `agentparty.themePreference`). `null` removes a key.
+
+```json
+{ "theme": "dark", "themePreference": null }
+```
 
 ### `POST /api/qa/appearance/os`
 

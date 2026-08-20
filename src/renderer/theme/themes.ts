@@ -1,3 +1,5 @@
+import { APPLIED_THEME_BACKGROUNDS } from "../../shared/appTheme";
+
 /**
  * Theme registry — single source of truth for every themable design token.
  *
@@ -67,7 +69,7 @@ const light: Theme = {
   label: "Light",
   scheme: "light",
   color: {
-    "bg-0": "#e7e8eb",
+    "bg-0": APPLIED_THEME_BACKGROUNDS.light,
     "bg-1": "#f3f4f6",
     "bg-2": "#ffffff",
     "bg-3": "#eef0f3",
@@ -119,7 +121,7 @@ const dark: Theme = {
   label: "Dark",
   scheme: "dark",
   color: {
-    "bg-0": "#0a0b0e",
+    "bg-0": APPLIED_THEME_BACKGROUNDS.dark,
     "bg-1": "#0e1014",
     "bg-2": "#14171d",
     "bg-3": "#1b1f27",

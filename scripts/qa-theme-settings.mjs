@@ -28,6 +28,7 @@ writeFileSync(outFile, bundled.outputFiles[0].text);
 const {
   APPEARANCE_DESKTOP_ONLY_ERROR,
   AppearanceOwnerError,
+  InvalidThemeError,
   DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCES,
   appearanceAccess,
@@ -41,6 +42,9 @@ const {
   resolveAppliedTheme,
   windowBackgroundFor,
   appearanceStateOf,
+  firstPaintFrom,
+  parseAppearanceBootArgs,
+  appearanceBootArgs,
 } = await import(pathToFileURL(outFile).href);
 
 console.log("\ntheme preference (settings.json + API):");
@@ -59,20 +63,22 @@ assert(normalizeThemePreference(1) === "light", "non-string stored value heals t
 assert(requireThemePreference("system") === "system", "API accepts system");
 assert(requireThemePreference("light") === "light", "API accepts light");
 assert(requireThemePreference("dark") === "dark", "API accepts dark");
-let rejected = "";
+let rejected;
 try {
   requireThemePreference("auto");
 } catch (error) {
-  rejected = error instanceof Error ? error.message : String(error);
+  rejected = error;
 }
-assert(rejected.includes("지원하지 않는 테마입니다") && rejected.includes("auto"), "API rejects an unknown value instead of healing it");
-rejected = "";
+assert(rejected instanceof InvalidThemeError, "unknown value throws InvalidThemeError");
+assert(rejected.status === 400 && rejected.code === "invalid_theme", "invalid theme is 400 invalid_theme");
+assert(String(rejected.message).includes("auto"), "the error names the rejected value");
+rejected = undefined;
 try {
   requireThemePreference(undefined);
 } catch (error) {
-  rejected = error instanceof Error ? error.message : String(error);
+  rejected = error;
 }
-assert(rejected.includes("지원하지 않는 테마입니다"), "API rejects a missing value instead of defaulting");
+assert(rejected instanceof InvalidThemeError && rejected.status === 400, "a missing value is 400, not a silent default");
 
 console.log("\neffective theme + cycle + legacy migrate:");
 assert(resolveAppliedTheme("light", true) === "light", "locked light ignores OS dark");
@@ -118,6 +124,13 @@ assert(windowBackgroundFor("light") === "#e7e8eb", "light window chrome matches 
 assert(windowBackgroundFor("dark") === "#0a0b0e", "dark window chrome matches bg-0");
 assert(windowBackgroundFor("system", true) === "#0a0b0e", "system + OS dark uses dark chrome");
 assert(appearanceStateOf("dark", false, true).background === "#0a0b0e", "appearance payload carries the chrome colour");
+assert(owner.status === 403 && owner.code === "appearance_desktop_only", "owner error is 403 appearance_desktop_only");
+const roundTrip = parseAppearanceBootArgs(appearanceBootArgs({ preference: "system", applied: "dark", stored: true }));
+assert(roundTrip && roundTrip.preference === "system" && roundTrip.applied === "dark" && roundTrip.stored === true, "boot argv round-trips");
+assert(firstPaintFrom({ preference: "dark", applied: "dark", stored: true }, "light").applied === "dark", "stored settings beat a stale light cache");
+assert(firstPaintFrom({ preference: "light", applied: "light", stored: false }, "dark").applied === "dark", "legacy dark paints when settings have no theme");
+assert(firstPaintFrom({ preference: "light", applied: "light", stored: true }, "dark").applied === "light", "stored light is not overridden by leftover dark");
+assert(firstPaintFrom(null, null).preference === "light", "no boot and no legacy defaults to light");
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

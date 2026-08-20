@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
-  DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   THEME_SYNC_PAINT_ATTRIBUTE,
   THEME_SYNC_PAINT_VALUE,
   cycleThemePreference,
+  firstPaintFrom,
   isThemePreference,
   normalizeThemePreference,
   resolveAppliedTheme,
@@ -51,20 +51,17 @@ function subscribeOsTheme(onChange: () => void): () => void {
   return () => media.removeListener(handler);
 }
 
-function readStoredPreference(): ThemePreference {
+function readLegacyTheme(): string | null {
   try {
-    const marked = window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY);
-    if (isThemePreference(marked)) {
-      return marked;
-    }
-    const legacy = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (legacy === "light" || legacy === "dark") {
-      return legacy;
-    }
+    return window.localStorage.getItem(THEME_STORAGE_KEY);
   } catch {
-    // localStorage may be unavailable; fall back to the default preference.
+    return null;
   }
-  return DEFAULT_THEME_PREFERENCE;
+}
+
+function bootAppearance(): { preference: ThemePreference; applied: AppliedTheme } {
+  const boot = typeof window === "undefined" ? undefined : window.agentPartyAppearanceBoot;
+  return firstPaintFrom(boot && isThemePreference(boot.preference) ? boot : null, typeof window === "undefined" ? null : readLegacyTheme());
 }
 
 function persistPreference(preference: ThemePreference): void {
@@ -87,9 +84,10 @@ function applyDocumentTheme(preference: ThemePreference, applied: AppliedTheme):
   document.documentElement.setAttribute(THEME_SYNC_PAINT_ATTRIBUTE, THEME_SYNC_PAINT_VALUE);
 }
 
-const bootPreference = typeof window === "undefined" ? DEFAULT_THEME_PREFERENCE : readStoredPreference();
-const bootOsDark = osPrefersDark();
-applyDocumentTheme(bootPreference, resolveAppliedTheme(bootPreference, bootOsDark));
+const bootPaint = bootAppearance();
+const bootPreference = bootPaint.preference;
+const bootOsDark = bootPaint.applied === "dark";
+applyDocumentTheme(bootPaint.preference, bootPaint.applied);
 
 interface ThemeContextValue {
   /** User choice: system / light / dark. */

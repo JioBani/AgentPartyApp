@@ -19,12 +19,15 @@ custom property that a theme supplies.
 
 - `themes.ts` exports a `THEMES` array. Each `Theme` has a `color` map and a
   `shape` map. The **first** entry is the default (currently `light`).
-- At startup an inline script in `index.html` (and `ThemeProvider` at module
-  import) apply the cached preference and the OS scheme **before React renders**.
-  Bare `:root` still carries the light tokens as a last-resort fallback; that is
-  not the first-paint path. `html[data-theme-paint=sync]` marks the sync path ran.
-- `BrowserWindow.backgroundColor` is the effective theme's `bg-0`, not a
-  hard-coded dark chrome, so a light user does not see a dark flash before HTML.
+- First paint is owned by main. `createWindow` resolves preference+applied from
+  settings.json and `nativeTheme`, sets `BrowserWindow.backgroundColor` from the
+  shared `bg-0` token (`APPLIED_THEME_BACKGROUNDS` in `appTheme.ts`, also used by
+  `themes.ts`), and injects that boot payload via preload
+  (`window.agentPartyAppearanceBoot`) **before** the page loads. `index.html`
+  and `ThemeProvider` prefer it. `localStorage` is only the true-legacy `dark`
+  path when settings.json has no `theme`. `html[data-theme-paint=sync]` marks
+  that path. Bare `:root` light tokens are a last-resort fallback, not the
+  first-paint path.
 - The user's preference is `system` | `light` | `dark` (`AppSettings.theme`,
   `src/shared/appTheme.ts`). The painted theme is still `data-theme="light|dark"`
   on `<html>`; `system` follows the OS via `prefers-color-scheme` (and Electron
