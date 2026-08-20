@@ -461,7 +461,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     sessions: PAIR_SESSIONS,
     transcripts: { main: MAIN_CREATED_IMPL, reviewer: REVIEWER_GATED },
     panels: twoPanels,
-    extras: { view: "runtime", viewTab: "general" },
+    extras: { view: "agent", viewTab: "general" },
   }),
 
   // 28 — 오래 쓴 뒤. 도넛을 눌러 압축 창을 연 상태.

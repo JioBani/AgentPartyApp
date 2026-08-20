@@ -19,6 +19,10 @@ export default defineConfig({
         // bundle now; this second document exists so the demo can own its
         // `window.agentParty` without touching the real one.
         guideStage: path.join(here, "src/renderer/guide/stage/index.html"),
+        // 디자인 목업: the party-group and cwd screens rendered from fixtures,
+        // so the design can be reviewed without running the feature. Its own
+        // document because it must NOT boot the app (no window.agentParty).
+        preview: path.join(here, "src/renderer/preview/index.html"),
       },
     },
   },

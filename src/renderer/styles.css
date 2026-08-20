@@ -386,6 +386,169 @@
   overflow: hidden;
 }
 
+/* ---------- 사이드바 드로우어 (파티 | 멤버) ----------
+   하나였던 사이드바를 둘로 나눈 자리. 각자 접히고 각자 폭을 가진다 —
+   파티 목록과 멤버 목록을 한 열에 쌓으니 둘 다 좁아진다는 지적에서 나왔다.
+   아래 `.wb-sidebar-*` 규칙은 두 드로우어의 내부(섹션·라벨·목록)를 그대로
+   재사용하므로 남아 있다. 바뀐 것은 바깥 껍데기뿐이다. */
+.wb-drawer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  background: var(--bg-0);
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-drawer-head {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+}
+
+.wb-drawer-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.wb-drawer-count {
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+.wb-drawer-party {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-drawer-head .wb-icon-btn { margin-left: auto; }
+.wb-drawer-head .wb-drawer-count + .wb-icon-btn { margin-left: auto; }
+
+/* The handle sits ON the drawer's right edge, so each drawer resizes against
+   the one after it rather than against a single shared gutter. */
+.wb-drawer-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 9;
+  transition: background .15s ease;
+}
+
+.wb-drawer-resize:hover { background: var(--accent-dim); }
+
+/* A collapsed drawer keeps a readable spine rather than vanishing into an icon:
+   it has to say WHICH drawer is folded away, and carry its count. */
+.wb-drawer-rail {
+  flex: none;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  background: var(--bg-2);
+  border: 0;
+  border-right: var(--border-width) solid var(--border-subtle);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-drawer-rail:hover { background: var(--bg-3); color: var(--text-0); }
+
+.wb-drawer-rail > span {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  max-height: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-drawer-rail-count { color: var(--text-3); font-weight: 400; letter-spacing: 0; }
+
+/* ── 바깥(파티) → 안쪽(멤버) → 내용 으로 읽히는 깊이 ──────────────────────
+   두 드로우어가 같은 배경이라 어디까지가 파티고 어디부터 멤버인지 경계가
+   없었다. 멤버 쪽을 한 단계 밝게(=내용에 가깝게) 깔고 왼쪽 모서리에 안쪽
+   그림자를 넣어, 파티 안으로 한 겹 들어간 메뉴로 보이게 한다. */
+/* 왼쪽부터 오른쪽으로 한 칸씩 밝아지는 사다리:
+     아이콘 레일(--bg-0) → 파티 → 멤버 → 내용(--bg-1).
+   레일과 파티가 똑같이 --bg-0 이라 한 덩어리로 보였고, 파티와 멤버는 토큰
+   한 단계를 통째로 써서 다른 화면처럼 보였다. 두 토큰 사이를 균등하게 나눠
+   네 층 모두 "한 겹" 차이로 맞춘다. 새 색을 만들지 않으므로 다크에서도
+   같은 비율로 따라온다. */
+.wb-party-drawer { background: color-mix(in srgb, var(--bg-1) 30%, var(--bg-0)); }
+.wb-member-drawer {
+  background: color-mix(in srgb, var(--bg-1) 65%, var(--bg-0));
+  border-left: var(--border-width) solid var(--border);
+  box-shadow: inset 6px 0 8px -9px var(--shadow);
+}
+/* 접힌 띠도 같은 사다리를 따른다 — 접었다고 층이 뒤집히면 안 된다. */
+.wb-drawer-rail.is-party { background: color-mix(in srgb, var(--bg-1) 30%, var(--bg-0)); }
+.wb-drawer-rail.is-member { background: color-mix(in srgb, var(--bg-1) 65%, var(--bg-0)); }
+
+/* 드래그로 그룹 순서 바꾸기: 놓일 자리를 선으로 보여준다. */
+.wb-party-group.is-insert-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.wb-party-group.is-insert-after { box-shadow: 0 2px 0 0 var(--accent); }
+.wb-party-group.is-dragging { opacity: .45; }
+
+/* 자리가 생겼으니 만들기 버튼도 눌러 볼 만한 크기로. 목업의 26px 한 줄은
+   목록이 화면을 꽉 채우던 시절의 크기였다. */
+
+.wb-group-add {
+  flex: none;
+  margin-top: var(--space-2);
+  height: 36px;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: var(--font-body-sm);
+  font-weight: var(--weight-semibold);
+  justify-content: center;
+}
+
+.wb-drawer-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+/* The 30vh cap on the party list exists because parties and members used to
+   share one column. The party drawer owns its column now, so the list takes the
+   leftover height — otherwise it stops a third of the way down with 500px of
+   empty drawer under it and scrolls inside that stub. */
+.wb-party-drawer > .wb-sidebar-section { flex: 1; min-height: 0; }
+.wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
+/* The scroll lives on the inner list so the create button below it stays put. */
+.wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
+
+/* A narrow drawer must not turn a one-line hint into a two-line block that
+   pushes the list down. It clips instead. */
+.wb-drawer .wb-section-label .wb-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Party sidebar ---------- */
 .wb-sidebar {
   width: var(--sidebar-width);
@@ -397,52 +560,10 @@
   min-height: 0;
 }
 
-.wb-sidebar-resize {
-  width: 6px;
-  flex: none;
-  margin-left: -3px;
-  cursor: col-resize;
-  position: relative;
-  z-index: 9;
-  transition: background .15s ease;
-}
 
-.wb-sidebar-resize:hover {
-  background: var(--accent-dim);
-}
 
-.wb-sidebar-reopen {
-  width: 34px;
-  margin: var(--space-4) 0 0 var(--space-3);
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-button);
-  background: var(--bg-2);
-  color: var(--accent);
-  align-self: flex-start;
-}
 
-.wb-sidebar-head {
-  height: 44px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
-  border-bottom: var(--border-width) solid var(--border-subtle);
-  color: var(--text-1);
-}
 
-.wb-sidebar-party {
-  flex: 1;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-0);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .wb-sidebar-section {
   padding: var(--space-5) var(--space-4) var(--space-3);
@@ -5987,6 +6108,20 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-wizard-input:focus { outline: none; border-color: var(--accent); }
 .wb-wizard-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
 
+/* 그룹 고르는 드롭다운. `.wb-wizard-input` 은 흰 모달 위에서 --bg-1 이라
+   12단계밖에 차이가 안 나 필드로 안 읽혔다. 한 단계 더 눌러 깔고 테두리를
+   올려서, 열리는 컨트롤이라는 게 배경과 구분되게 한다. */
+.wb-group-select {
+  height: 38px;
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.wb-group-select:hover { background: var(--bg-4, var(--bg-3)); border-color: var(--accent-bd); }
+.wb-group-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+
 /* States what "기본 설정으로 만들기" will create. Boxed, unlike the ordinary
    hints, because it describes the footer's shortcut rather than the field above
    it. Wraps instead of clipping: a long model label must stay readable in a
@@ -7247,7 +7382,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
  * content lines up with the title above it instead of sitting 16px further out
  * — and, on a window too narrow for max-width to bite, stops hugging the right
  * edge with 4px to spare. */
-.set-page { max-width: 760px; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
+.set-page { width: 100%; max-width: 760px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; padding: 6px var(--space-7) 40px; animation: mcp-rise 0.22s ease both; }
 .set-page-wide { max-width: 1180px; }
 .set-page-tabbed { max-width: 880px; padding-top: 20px; }
 .set-page-tabbed.set-page-wide { max-width: 1180px; }
@@ -7263,11 +7398,17 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   z-index: 6;
   flex: none;
   display: flex;
+  width: 100%;
+  max-width: 880px;
+  box-sizing: border-box;
   align-items: flex-end;
   gap: 2px;
   padding: 12px var(--space-7) 0;
   background: var(--bg-1);
   border-bottom: var(--border-width) solid var(--border-subtle);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .set-tabs-gap { flex: 1; }
 /* All four panels are mounted at once (staged edits must survive a tab switch),
@@ -7275,6 +7416,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .set-tab-panel { display: flex; flex-direction: column; gap: 22px; }
 .set-tab-panel[hidden] { display: none; }
 .set-tab {
+  flex: none;
   position: relative;
   bottom: calc(-1 * var(--border-width));
   display: inline-flex;
@@ -7290,6 +7432,15 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+}
+.set-default-harness { width: calc(100% - 40px); margin: 0 20px 20px; justify-content: center; }
+.set-default-harness:disabled { cursor: default; opacity: 0.72; }
+.set-automation-content { padding: 10px 20px 20px; }
+.set-automation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+@media (max-width: 700px) {
+  .set-page, .set-tabs { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .set-tab { padding-left: 11px; padding-right: 11px; }
+  .set-harness-pick, .set-diag-actions, .set-card-actions { flex-wrap: wrap; }
 }
 .set-tab:hover { color: var(--text-0); }
 .set-tab.is-active {
@@ -8483,10 +8634,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-copy-btn.is-failed { color: var(--danger); }
 .wb-copy-btn-label { white-space: nowrap; }
 
-/* A markdown link and its copy control stay on one line together. The control
-   is muted but always visible: a hover-only icon still occupies the line, so
-   hiding it buys a gap in the sentence and costs discoverability. */
-.wb-md-link { white-space: nowrap; }
+/* A markdown link's copy/reveal controls stay visible next to the anchor.
+   Do not pin the wrapper with nowrap: a long autolinked URL is wider than a
+   ~320px channel card, and nowrap overflow-clips the URL and hides the copy
+   control. Parent `.wb-md { overflow-wrap: anywhere }` wraps the href; the
+   copy button (inline-flex) stays after the last fragment. */
 .wb-md-link-copy { padding: 1px 2px; margin-left: 1px; }
 /* Reveal-in-file-manager, next to the copy control on a file link. Sized and
    toned to match it so the pair reads as one affordance on the link. */
@@ -8992,3 +9144,91 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   max-width: 520px;
   line-height: 1.55;
 }
+
+
+/* ===================== 파티 그룹 · 멤버 실행 위치(cwd) =====================
+   claude.ai/design 목업(AgentParty Desktop · shared/mock.css)에서 그대로
+   내려온 규칙이다. 값은 손대지 않는다 — 여기서 숫자를 "정리"하면 목업과
+   앱이 갈라지고, 다음 핸드오프가 어느 쪽이 정본인지 알 수 없게 된다. */
+/* ── 새 기능 스타일 (파티 그룹 · 멤버 cwd). 앱에 되돌릴 때 함께 옮긴다. ── */
+.wb-group-row { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 6px; background: none; border: 0; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-group-row:hover { background: var(--bg-3); color: var(--text-1); }
+.wb-group-caret { flex: none; transition: transform var(--motion-fast); }
+.wb-party-group:not(.is-open) .wb-group-caret { transform: rotate(-90deg); }
+.wb-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.wb-group-count { color: var(--text-3); font-size: var(--font-micro); }
+.wb-group-badge { padding: 1px 5px; border: 1px solid var(--border-subtle); border-radius: var(--radius-badge); background: var(--bg-3); color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-medium); }
+.wb-group-parties { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 6px 8px; margin-left: 7px; border-left: 1px solid var(--border-subtle); }
+.wb-party-group:not(.is-open) .wb-group-parties { display: none; }
+.wb-group-add { display: flex; align-items: center; gap: 5px; width: 100%; padding: 5px 6px; margin-top: 4px; background: none; border: 1px dashed var(--border); border-radius: var(--radius-button); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
+.wb-group-add:hover { border-color: var(--accent-bd); color: var(--accent); }
+.wb-env-seg { display: flex; flex: none; gap: 4px; margin-top: 6px; padding: 3px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-button); }
+.wb-env-seg button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; height: 26px; background: none; border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-body); cursor: pointer; }
+.wb-env-seg button.is-active { background: var(--bg-2); border-color: var(--border); color: var(--text-0); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px var(--shadow); }
+.wb-cwd-field { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; min-height: var(--control-height); margin-top: 6px; padding: 4px 5px 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-input); color: var(--text-2); }
+.wb-cwd-path { flex: 1 1 90px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); font-size: var(--font-body); }
+.wb-cwd-distro { flex: none; padding: 1px 6px; border: 1px solid var(--accent-bd); border-radius: var(--radius-badge); background: var(--accent-dim); color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-cwd-browse { display: flex; flex: none; align-items: center; gap: 4px; height: 22px; padding: 0 7px; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-1); font-size: var(--font-caption); cursor: pointer; }
+.wb-cwd-browse:hover { border-color: var(--border-strong); color: var(--text-0); }
+.wb-cwd-list { flex: none; margin-top: 6px; overflow: hidden; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
+.wb-cwd-list-label { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
+.wb-cwd-list-label span { margin-left: auto; color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
+.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 5px 8px; background: none; border: 0; border-top: 1px solid var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-cwd-item:first-of-type { border-top: 0; }
+.wb-cwd-item:hover { background: var(--bg-3); }
+.wb-cwd-item.is-selected { background: var(--accent-dim); color: var(--text-0); }
+.wb-cwd-item.is-broken { color: var(--text-3); }
+.wb-cwd-item-path { flex: 1 1 80px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-cwd-pin { flex: none; color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-cwd-warn { display: flex; flex: none; align-items: center; gap: 3px; color: var(--danger); font-size: var(--font-micro); }
+.wb-cwd-save { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--text-1); font-size: var(--font-body-sm); cursor: pointer; }
+.wb-ctx-head { display: flex; flex-direction: column; gap: 2px; padding: 7px 9px; border-bottom: 1px solid var(--border-subtle); color: var(--text-3); font-size: var(--font-micro); }
+.wb-ctx-head strong { color: var(--text-0); font-size: var(--font-body-sm); }
+.wb-ctx-head .wb-ctx-head-loc { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: var(--font-caption); }
+.set-cwd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 7px 9px; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
+.set-cwd-row + .set-cwd-row { margin-top: 6px; }
+.set-cwd-row.is-broken { background: var(--danger-dim); border-color: var(--danger-bd); }
+.set-cwd-kind { display: flex; flex: none; align-items: center; gap: 5px; width: 84px; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .04em; }
+.set-cwd-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); font-size: var(--font-body); }
+.set-cwd-meta { flex: none; color: var(--text-3); font-size: var(--font-micro); }
+.set-cwd-actions { display: flex; flex: none; gap: 6px; }
+/* The mockup wires this with `data-open`; in the app a step is clickable only
+   once it has been visited, so the class carries the same affordance. */
+.wb-wizard-step.is-nav { cursor: pointer; }
+.set-cwd-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--font-caption); }
+
+/* ── WSL 배포판 선택 ────────────────────────────────────────────────────
+   목업에 없는 컨트롤이라 값은 위 블록에서 가져온다: 칩은 .wb-env-seg 버튼과
+   같은 높이·여백을 쓴다. 새 숫자를 만들면 같은 컨트롤이 두 벌의 치수를 갖는다.
+   경로 자체는 OS 폴더 대화상자로 고른다(WSL 은 \wsl$\<배포판> 으로 열린다). */
+.wb-cwd-distros { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; margin-top: 6px; }
+.wb-cwd-distros-label { flex: none; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
+.wb-cwd-distros-note { display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--font-caption); }
+.wb-cwd-distros-note.is-warn { color: var(--danger); }
+.wb-cwd-distro-chip { display: flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
+.wb-cwd-distro-chip:hover { border-color: var(--border-strong); color: var(--text-0); }
+.wb-cwd-distro-chip.is-active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); font-weight: var(--weight-semibold); }
+/* 배포판을 아직 안 골랐을 때 비활성. 사라지지 않고 눌리지 않는 상태로 남는다. */
+.wb-cwd-browse:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── 파티 그룹 가시성 (사용자 요청 2026-08-20) ──────────────────────────
+   목업의 그룹 헤더는 26px 캡션 한 줄이라 목록의 구분선처럼 읽혔다. 그룹은
+   파티를 분류하는 그릇이므로 그릇으로 보여야 한다는 지적에 따라, 목업에서
+   내려온 위 규칙을 여기서 덮어쓴다. 이 블록이 정본이고 위는 출처다. */
+/* `flex: none` matters: the list is a flex column, and with `overflow: hidden`
+   for the rounded corners a shrinking group CLIPS its own parties — the box
+   sized to one row and the rest of the list simply vanished. */
+.wb-party-group { flex: none; margin-bottom: 6px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); overflow: hidden; }
+.wb-party-group.is-menu { border-color: var(--border-strong); }
+.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-1); font-size: var(--font-body-sm); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-party-group.is-open .wb-group-row { border-bottom: 1px solid var(--border-subtle); }
+.wb-group-row:hover { background: var(--bg-4, var(--bg-3)); color: var(--text-0); }
+.wb-group-icon { flex: none; color: var(--accent); }
+.wb-group-count { flex: none; min-width: 18px; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--font-micro); text-align: center; }
+/* 파티는 그룹 상자 안에 들어간다 — 왼쪽 세로선 대신 상자가 소속을 말한다. */
+.wb-group-parties { gap: 1px; padding: 4px; margin-left: 0; border-left: 0; }
+.wb-group-empty { margin: 0; padding: 8px 6px; color: var(--text-3); font-size: var(--font-caption); text-align: center; }
+/* 드래그 중인 파티와, 그것을 받을 그룹. */
+.wb-party-row.is-dragging { opacity: .4; }
+.wb-party-group.is-drop-target { border-color: var(--accent-bd); background: var(--accent-dim); }
+.wb-party-group.is-drop-target .wb-group-row { background: var(--accent-dim); color: var(--accent); }

@@ -10,6 +10,8 @@ import type { MemberQueueState } from "./messageQueue";
 import type { MemberStatus } from "./memberDisplayStatus";
 import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { PartyGroup } from "./partyGroups";
+import type { CwdPreferences } from "./memberLocation";
 import type { MobileSettings } from "./mobileProtocol";
 import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
@@ -68,6 +70,13 @@ export interface AppSettings {
   /** Language used by every user-facing app surface. */
   locale: AppLocale;
   workspacePath: string;
+  /**
+   * Default and recent cwds offered when creating a party or a member
+   * (`shared/memberLocation.ts`). App-global, not per-workspace: the party list
+   * no longer depends on where the app was launched from, and neither should
+   * the directories it suggests.
+   */
+  cwdPreferences?: CwdPreferences;
   /** Stable by default; beta opts into GitHub prereleases. */
   updateChannel: UpdateChannel;
   /** Claude Code executable override (Claude-harness infrastructure). */
@@ -285,6 +294,17 @@ export interface PartyMember {
   partyId?: string;
   name: string;
   /**
+   * The directory this member runs in, and the environment that directory
+   * belongs to (`C:\Project\App`, or `wsl+Ubuntu-24.04:/srv/app`). Fixed at
+   * creation and never rewritten: the CLIs key session discovery, settings and
+   * conversation resume off the cwd, so changing it would detach the member
+   * from its own history.
+   *
+   * Optional only for members created before this field existed; those are
+   * backfilled from the workspace their party lived in (README §10).
+   */
+  location?: string;
+  /**
    * `sleeping` is the app's own doing, and that is what separates it from every
    * other non-running value: the member was idle long enough that its harness
    * process was released to reclaim memory, while the conversation itself is
@@ -398,6 +418,18 @@ export interface PartyMember {
 export interface PartyDefinition {
   id: string;
   name: string;
+  /**
+   * Which party group this party is filed under (`shared/partyGroups.ts`).
+   *
+   * Optional because parties created before groups existed have none; those are
+   * shown in the default group rather than hidden, so a missing value can never
+   * strand a party (README §4.1).
+   *
+   * CREATION-TIME SEED ONLY. The app-global registry owns which group a party is
+   * in; this value is read once, when the party is first registered, and is
+   * stale from the first move onwards. Never write it back into the registry.
+   */
+  groupId?: string;
   createdAt: string;
   updatedAt: string;
   /**
@@ -455,11 +487,29 @@ export interface CreatePartyInput {
   name: string;
   /** Optional initial Message Gate for the new party (default: off, no rule). */
   gate?: PartyGate;
+  /** Which party group to file it under; default group when omitted. */
+  groupId?: string;
+  /**
+   * Serialized execution location for the `main` member created alongside.
+   *
+   * The PARTY has no cwd — this belongs to `main` (README §7). Omitted only by
+   * callers that predate the field; those fall back to the workspace the party
+   * is being created in, which is where `main` would have run anyway.
+   */
+  location?: string;
 }
 
 export interface CreateMemberInput {
   partyId?: string;
   name: string;
+  /**
+   * Serialized execution location (`C:\proj` or `wsl+Ubuntu:/srv`), fixed for
+   * the member's life. Optional on the type so a caller that omits it is
+   * rejected with a reason rather than silently given the app's own cwd.
+   */
+  location?: string;
+  /** Also store this location as its environment's default cwd. */
+  saveAsDefault?: boolean;
   requirement: string;
   role?: string;
   initialTask?: string;
@@ -511,6 +561,17 @@ export interface SessionView {
 
 export interface CreateSessionInput {
   workspacePath?: string;
+  /**
+   * Where the harness process actually runs, when that is NOT the workspace.
+   *
+   * A member carries its own execution location, and the harness has to be
+   * started there — otherwise the picker records a directory the member never
+   * sees. Deliberately separate from `workspacePath`, which stays the session's
+   * IDENTITY (which workspace's party it belongs to, where its transcripts are
+   * written, which windows see it); overloading one field for both would move a
+   * member's storage every time it ran somewhere else.
+   */
+  cwd?: string;
   selectedHarnessId?: HarnessId;
   selectedProviderId?: ProviderId;
   model?: string;
@@ -568,7 +629,7 @@ export interface InitialAppState {
    * failure that made parallel worktrees silently test the wrong code.
    */
   runtime?: { appRoot: string };
-  party: { parties?: PartyDefinition[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
+  party: { parties?: PartyDefinition[]; groups?: PartyGroup[]; currentPartyId?: string; members: PartyMember[]; messages?: PartyMessage[]; error?: string };
   windows?: WindowInfo[];
   /**
    * Approvals still waiting on an answer in this workspace.

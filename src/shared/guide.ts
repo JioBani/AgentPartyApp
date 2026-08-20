@@ -12,7 +12,7 @@ import type { UsageLimitsSnapshot } from "./usageLimits";
 import type { UpdateStatus } from "./appUpdate";
 import type { DiscordBridgeStatus } from "./discordBridge";
 import type { McpServerSnapshot } from "./mcp";
-import type { RuntimeTabId } from "./runtimeTabs";
+import type { AgentTabId, SettingsTabId } from "./runtimeTabs";
 import type { TokenUsageAggregate, TurnUsageRecord } from "./tokenUsage";
 
 /** Chapter titles in the table of contents (§2-3). Not the slide list.
@@ -282,9 +282,9 @@ export interface GuideSnapshot {
   discord?: DiscordBridgeStatus;
   /** MCP servers the member's harness reports, for the MCP modal slide. */
   mcp?: McpServerSnapshot;
-  view?: "workbench" | "sessions" | "usage" | "auth" | "runtime" | "automation";
-  /** Settings → 런타임 tab to land on, when `view` is `runtime`. */
-  viewTab?: RuntimeTabId;
+  view?: "workbench" | "sessions" | "usage" | "auth" | "agent" | "settings";
+  /** Optional tab for the Agent or Settings screen. */
+  viewTab?: AgentTabId | SettingsTabId;
   viewHarness?: HarnessId;
   /** Real UI to open on top of the state (see {@link GuideStageStep}). */
   steps?: GuideStageStep[];

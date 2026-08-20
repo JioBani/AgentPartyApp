@@ -16,6 +16,17 @@ const root = path.resolve(process.argv[2] || process.cwd());
 const output = path.resolve(root, process.argv[3] || "docs/user-facing-strings-excel.csv");
 
 const SOURCE_ROOTS = ["src/renderer", "src/shared", "src/core", "src/main", "src/preload"];
+
+/**
+ * Directories whose strings never reach a user.
+ *
+ * `src/renderer/preview` is the design mockup page — a developer surface that is
+ * built but never linked from the app. Its captions describe the states being
+ * reviewed ("최근 목록의 마지막 항목은 시작할 수 없는 배포판"), and putting them
+ * in the product's translation inventory would ask a translator to localize
+ * notes to ourselves.
+ */
+const SKIP_DIRS = ["src/renderer/preview"];
 const GUIDE_ROOT = "guide/knowledge";
 const CATALOG_FILE = "src/shared/modelCatalog.json";
 
@@ -195,7 +206,10 @@ function walk(relativeDir) {
   const found = [];
   for (const entry of fs.readdirSync(absoluteDir, { withFileTypes: true })) {
     const relative = posix(path.join(relativeDir, entry.name));
-    if (entry.isDirectory()) found.push(...walk(relative));
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.includes(relative)) continue;
+      found.push(...walk(relative));
+    }
     else if (/\.tsx?$/.test(entry.name)) found.push(relative);
   }
   return found;
@@ -265,7 +279,10 @@ function auditHtml() {
     if (!fs.existsSync(absoluteDir)) return;
     for (const entry of fs.readdirSync(absoluteDir, { withFileTypes: true })) {
       const relative = posix(path.join(relativeDir, entry.name));
-      if (entry.isDirectory()) collect(relative);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.includes(relative)) continue;
+        collect(relative);
+      }
       else if (entry.name.endsWith(".html")) htmlFiles.push(relative);
     }
   }

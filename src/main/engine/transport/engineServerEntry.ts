@@ -1,4 +1,5 @@
 import { setConsoleLogging } from "../../logger";
+import { setHostDistro } from "../../hostIdentity";
 import { installCrashHandlers } from "../../crashHandler";
 import { createEngineHost } from "../engineHost";
 import { AppController } from "../../application/appController";
@@ -17,7 +18,7 @@ import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
  * `wsl.exe -d <distro> -e node engineServerEntry`. stdout is the RPC channel, so
  * console logging is disabled (file logging continues). See the WSL remote-engine design.
  *
- * Args: --workspace <path> --storage <dir>
+ * Args: --workspace <path> --storage <dir> [--distro <name>]
  */
 function arg(name: string): string {
   const index = process.argv.indexOf(`--${name}`);
@@ -29,6 +30,9 @@ async function main(): Promise<void> {
 
   const workspace = arg("workspace") || process.cwd();
   const storage = arg("storage") || workspace;
+  // Which distro this engine IS. A member pinned to another one must not start
+  // here just because the path happens to exist in both.
+  setHostDistro(arg("distro") || undefined);
 
   // This process runs a WSL workspace's whole engine with NO window attached, so
   // a crash here is even less visible than one in the desktop: nobody sees a

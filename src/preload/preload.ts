@@ -34,11 +34,28 @@ const api = {
   getAppearance: () => ipcRenderer.invoke("appearance:get"),
   setTheme: (theme: unknown) => ipcRenderer.invoke("appearance:set", theme),
   appearanceReady: () => ipcRenderer.send("appearance:ready"),
-  /** Edits ONE section of the member primer (Settings → 런타임 → 파티 프롬프트). */
+  /** Edits ONE section of the member primer (Agent → 파티 프롬프트). */
   savePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:save", patch),
   /** Translates (or clears the translation of) one primer section. */
   translatePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:translate", patch),
   chooseWorkspace: () => ipcRenderer.invoke("workspace:choose"),
+  // 파티 그룹 · 멤버 실행 위치(cwd). Each is the same AppController method the
+  // HTTP route calls, so the UI and an agent drive one implementation.
+  listPartyGroups: () => ipcRenderer.invoke("partyGroups:list"),
+  switchWorkspace: (workspacePath: string) => ipcRenderer.invoke("workspace:switch", workspacePath),
+  createPartyGroup: (name: string) => ipcRenderer.invoke("partyGroups:create", name),
+  movePartyToGroup: (partyId: string, groupId: string) => ipcRenderer.invoke("partyGroups:move", partyId, groupId),
+  renamePartyGroup: (groupId: string, name: string) => ipcRenderer.invoke("partyGroups:rename", groupId, name),
+  reorderPartyGroups: (order: string[]) => ipcRenderer.invoke("partyGroups:reorder", order),
+  removePartyGroup: (groupId: string) => ipcRenderer.invoke("partyGroups:remove", groupId),
+  getCwdPreferences: (options?: { check?: boolean }) => ipcRenderer.invoke("cwd:preferences", options),
+  setDefaultCwd: (location: unknown) => ipcRenderer.invoke("cwd:setDefault", location),
+  clearDefaultCwd: (env: string) => ipcRenderer.invoke("cwd:clearDefault", env),
+  removeRecentCwd: (location: unknown) => ipcRenderer.invoke("cwd:removeRecent", location),
+  checkCwd: (location: unknown) => ipcRenderer.invoke("cwd:check", location),
+  listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
+  browseCwd: (env: string, distro?: string) => ipcRenderer.invoke("cwd:browse", env, distro),
+  listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),
   clearDeepseekKey: () => ipcRenderer.invoke("auth:clearDeepseekKey"),
@@ -228,6 +245,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("models:update", listener);
     return () => ipcRenderer.off("models:update", listener);
+  },
+  onPartyGroupsUpdate: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("partyGroups:update", listener);
+    return () => ipcRenderer.removeListener("partyGroups:update", listener);
   },
   onSettingsUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

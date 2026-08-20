@@ -111,7 +111,7 @@ Returns the active log file path.
 ### `GET /api/diagnostics`
 
 Everything a bug report needs about this install, in one call — the same report
-the settings **런타임 → 진단** tab shows and its `진단 정보 복사` button copies.
+the **설정 → 진단** tab shows and its `진단 정보 복사` button copies.
 No secrets: `auth` carries `id`/`label`/`status` only, never a key or token.
 
 ```json
@@ -141,7 +141,7 @@ appear.
 ### `GET /api/environment`
 
 Whether this machine can actually run a member, and what to do when it cannot —
-the same report the settings **런타임 → 환경** tab renders. Sibling of
+the same report the **설정 → 환경** tab renders. Sibling of
 `/api/diagnostics` and deliberately separate: that one describes a build for a
 bug report, this one is a to-do list. No secrets: paths and versions only.
 
@@ -310,7 +310,7 @@ also receives a newer stable release. `stable` only accepts published stable
 releases and uses `latest.yml`. Unknown values and changes attempted during an
 active check/download are errors, never silent fallback to the stable channel.
 
-The Settings > Runtime > Versions selector calls this same AppController method
+The Settings > Versions selector calls this same AppController method
 through IPC. The generic `POST /api/settings` route refuses `updateChannel` so
 it cannot persist a channel change without reconfiguring the running updater.
 
@@ -482,7 +482,7 @@ Returns the language used by the desktop UI: `{"locale":"ko"}` or
 ### `POST /api/settings/locale`
 
 Changes the desktop UI language through the same `AppController.setLocale`
-method used by the language picker in Settings → Runtime → General.
+method used by the language picker in Settings → General.
 
 ```json
 { "locale": "en" }
@@ -664,7 +664,7 @@ is stored as "no override", so that section keeps tracking app updates.
 
 Takes effect for sessions started or resumed **after** the change; a running
 member keeps the primer it booted with. Same controller method as Settings →
-런타임 → 파티 프롬프트.
+에이전트 → 파티 프롬프트.
 
 ### `POST /api/party/primer/translate`
 
@@ -713,10 +713,20 @@ POSIX paths (`/home/me/proj/설계.md`), and those files live on the distro's ex
 so the path is resolved in POSIX space and returned as the Windows UNC view —
 `\\wsl$\<distro>\home\me\proj\설계.md` — which is what `shell.openPath` and
 Explorer can actually reach. Without this a leading `/` reads as the C: drive
-root on Windows and the answer is `No such file: '\home\me\…'`. A Windows drive
-path stays Windows even in a WSL window, and a path that names its own distro
-(`wsl+<distro>:/p`) is honoured over the window's. Inside the headless WSL engine
-the same POSIX path is already native and is left alone.
+root on Windows and the answer is `No such file: '\home\me\…'`. `/mnt/<drive>/…`
+is the distro's view of a Windows drive, not a file on ext4, so it becomes
+`C:\…` rather than `\\wsl$\<distro>\mnt\c\…`. A Windows drive path (`C:\…`,
+`/C:/…`) stays Windows even in a WSL window. A path that names its own distro
+(`wsl+<distro>:/p`, `\\wsl$\<distro>\…`, `\\wsl.localhost\<distro>\…`) is
+honoured over the window's. A local Windows window does not guess a distro for
+an anonymous `/home` path. Inside the headless WSL engine the same POSIX path is
+already native and is left alone.
+
+`file://` URLs are decoded **before** host classification. `file:///home/…` and
+`file:///mnt/c/…` are POSIX paths (Windows `fileURLToPath` would reject them);
+`file:///C:/…` is a Windows drive; `file://wsl.localhost/<distro>/…` names that
+distro. A `#` in the URL is a fragment, not a filename; a literal `#` in a name
+is `%23`. Malformed URLs fail with `Not a readable file URL`.
 
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:
@@ -803,7 +813,7 @@ queued messages, running on Cursor, or marked `keepAwake` (see
 `/api/party/members/:name/sleep`). A sleeping member keeps its conversation and
 wakes on the next message.
 
-`memberMessaging.interruptOnSend` is the Runtime default for member-to-member
+`memberMessaging.interruptOnSend` is the Agent-screen default for member-to-member
 messages that omit `interrupt`, for example
 `{"memberMessaging":{"interruptOnSend":true}}`. It does not affect human
 composer sends. A sender's `outboundInterrupt` override takes precedence; an
@@ -2046,8 +2056,13 @@ merely waiting states something false.
 Creates a party, creates its `main` member, and attempts to init-start `main` so skills and slash commands can populate the palette before the first chat. Init failures are returned in the command message and logged instead of being hidden.
 
 ```json
-{ "name": "Feature QA" }
+{ "name": "Feature QA", "groupId": "default", "location": "wsl+Ubuntu-24.04:/home/dev/svc" }
 ```
+
+`location` is the cwd of the `main` member created alongside — the party itself
+owns none. It is checked in the environment it names BEFORE anything is created,
+so an unusable path returns an error and leaves nothing half-made. Omitted, it
+falls back to the request's workspace. `groupId` defaults to the default group.
 
 ### `POST /api/parties/:id/select`
 
@@ -2056,6 +2071,118 @@ Selects the active party for member creation and compatibility endpoints.
 ### `POST /api/parties/:id/delete`
 
 Permanently deletes a party: closes every live session it owns, drops its members and messages, and removes its on-disk storage. If the deleted party was active, focus falls to another party (or none, if it was the last one). Returns the refreshed party listing.
+
+## Party groups and member execution locations
+
+App-global, not workspace-scoped: the same groups and the same parties are
+returned whichever directory the app was launched from. See
+`docs/기획/파티 그룹 및 멤버별 작업공간/README.md`.
+
+A **location** is the existing serialized workspace form — `C:\Project\App`, or
+`wsl+Ubuntu-24.04:/home/dev/svc` — and is written in request bodies as
+`{ "env": "windows" | "wsl", "cwd": "...", "distro": "..." }` (`distro` required
+for `wsl`).
+
+### `GET /api/party-groups`
+
+Every group and every registered party. A party carries `workspacePath` (where
+its members and transcripts live), `memberCount`, `runningCount` and the
+`windowsCount`/`wslCount` split. Reading this never opens a party.
+
+### `POST /api/party-groups`
+
+Creates a user group. `{ "name": "결제 리팩터" }`. A duplicate name is refused.
+
+### `POST /api/parties/:id/group`
+
+Moves a party to another group. `{ "groupId": "..." }`. Members, sessions and
+transcripts are untouched — a group is a folder, not a location.
+
+### `POST /api/party-groups/migrate`
+
+Registers parties that predate groups, and gives members with no location the
+workspace their party was stored in. Idempotent — it runs at boot and on every
+workspace switch, and re-running reports `registered: 0, backfilled: 0`. Nothing
+moves on disk and no id changes; a party id claimed by two workspaces is
+reported in `conflicts` rather than merged.
+
+```json
+{ "ok": true, "workspaces": ["C:\proj"], "registered": 2, "backfilled": 3, "conflicts": [], "failures": [] }
+```
+
+### `GET /api/cwd/preferences`
+
+Default cwd per environment plus the ten most recent. `?check=1` re-probes every
+entry in its own environment (this can start a WSL distro), so the default is the
+cheap read.
+
+The response also carries `appWorkspaceRoot` — `<userData>/workspaces`, created
+on demand. It is what the picker offers when the user has neither a remembered
+cwd nor a default, so a first run has somewhere real to put a party instead of
+an empty field. It is a SUGGESTION: nothing is written to the preferences until
+a party or member is actually created there.
+
+### `POST /api/cwd/default` · `POST /api/cwd/default/clear` · `POST /api/cwd/recent/remove`
+
+Set, clear and forget. Setting refuses a location that is not usable right now,
+with the reason — a default exists to be filled in without further thought.
+
+### `POST /api/cwd/check`
+
+Checks one location **in the environment it names**: `fs.stat` for Windows, a
+probe inside the distro for WSL. Returns `{ usable, problem }` rather than
+throwing, where `problem.kind` is one of `missing`, `denied`, `distro-missing`,
+`distro-unavailable`, `not-absolute`. That Windows can see `\wsl$\...` never
+counts as the distro being usable.
+
+### `GET /api/cwd/distros`
+
+Installed WSL distros, for the WSL side of the picker.
+
+### `POST /api/party-groups/reorder`
+
+`{ order: [groupId, …] }` — the whole new order, first to last. Not a
+"move X before Y": one shape that cannot disagree with itself, and re-sending it
+changes nothing. A group the caller did not mention (created in another window
+mid-drag) keeps its place at the end rather than being dropped.
+
+### `POST /api/party-groups/:id/rename`
+
+Renames a group. Duplicate names are refused; the default group is renamable
+(its `kind`, not its label, is what makes it the fallback).
+
+### `DELETE /api/party-groups/:id`
+
+Deletes the FOLDER, not what is in it: the group's parties move to the default
+group and the response says how many did (`moved`). The default group cannot be
+deleted — something has to be the place parties land.
+
+### 멤버가 실제로 어디서 실행되는가
+
+멤버의 실행 위치는 기록만 되는 값이 아니라 하네스가 **실제로 시작되는 디렉터리**다.
+세션의 `workspacePath`(어느 파티에 속하는지, 트랜스크립트가 어디 쓰이는지)와는
+분리되어 있어서, 멤버가 다른 폴더에서 돈다고 저장 위치가 따라 옮겨가지 않는다.
+
+한 가지 경계가 남아 있다: **WSL 위치의 멤버는 그 배포판의 엔진만 시작할 수 있다.**
+Claude 하네스는 Agent SDK 가 프로세스 안에서 CLI 를 띄우므로, 배포판 안에서 돌리려면
+엔진 자체가 그 배포판 안에 있어야 한다. 그래서 Windows 워크스페이스에서
+`POST /api/party/members/:name/start` 를 부르면 조용히 워크스페이스에서 실행하는 대신
+이유를 담은 메시지를 돌려준다. WSL 워크스페이스(엔진이 그 배포판 안)에서는 정상 동작한다.
+
+### `POST /api/cwd/browse`
+
+Opens the real folder picker and returns the location it produced, already
+checked. `{ env, distro? }` — for `env: "wsl"` the SAME OS dialog opens inside
+the distro, at `\wsl$\<distro>\<the distro's $HOME>`; the UNC path that comes
+back is converted to the `{distro, /posix/path}` pair. A folder picked outside
+`\wsl$\` is refused rather than converted, because `C:\...` is not a POSIX cwd. `{ "cancelled": true }` when the dialog was closed — distinct from a
+failure, so the caller leaves the previous choice alone. Desktop only.
+
+### `GET /api/cwd/members`
+
+Existing members' fixed locations, read-only. There is deliberately no endpoint
+that CHANGES one: a member's cwd is fixed for its life, because the CLIs key
+session discovery, settings and conversation resume off it.
 
 ## AgentParty Members
 
@@ -2085,7 +2212,7 @@ fail-open: the message is delivered unreviewed with a visible notice. A human
 `from: "user"` turn is never gated.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
-per-member `outboundInterrupt` override, then the Runtime
+per-member `outboundInterrupt` override, then the Agent-screen
 `memberMessaging.interruptOnSend` default. An explicit `true` or `false` always
 wins. This applies equally to the lower-level member `send` endpoint and the
 agent-facing `send`/`broadcast` tools. Interrupt is conditional on the recipient
@@ -2114,6 +2241,13 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
   "initialTask": "Inspect the current repo."
 }
 ```
+
+`location` fixes where the member runs, for its life — `"C:\Project\App"` or
+`"wsl+Ubuntu-24.04:/home/dev/svc"`. It is checked in that environment before the
+member is created, so an unusable path is refused with the reason instead of
+being replaced by a working one. Omitted, it falls back to the request's
+workspace, which is where a member would have run before locations existed.
+`saveAsDefault: true` also stores it as that environment's default cwd.
 
 Creation accepts the full runtime profile: `model`, `effort`, `reasoning`,
 `reasoningBudget`, and an explicit initial permission. Use `permissionMode` for
@@ -2396,10 +2530,10 @@ a sender setting and works without a live session.
 
 - `true`: interrupt a busy recipient and put the message at the front.
 - `false`: keep a busy recipient's current turn and queue behind it.
-- `null`: inherit `memberMessaging.interruptOnSend` from Runtime settings.
+- `null`: inherit `memberMessaging.interruptOnSend` from Agent settings.
 
 Calls that explicitly include `interrupt: true` or `interrupt: false` override
-both this value and the Runtime default. Even an explicit `true` only interrupts
+both this value and the Agent default. Even an explicit `true` only interrupts
 a turn that was already active when the message arrived; it does not stop idle,
 sleeping, or newly started recipients.
 
@@ -2772,31 +2906,30 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, sessions, party, auth, runtime, automation
+workbench, guide, sessions, usage, auth, agent, settings
 ```
 
-The **런타임** screen is tabbed, and an optional `tab` lands on one of its tabs
-directly instead of leaving the caller to click the strip:
+The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a
+specific tab instead of leaving the caller to click the strip:
 
 ```json
-{ "view": "runtime", "tab": "harness" }
+{ "view": "agent", "tab": "defaults", "harness": "codex" }
 ```
 
 ```text
-general (기본 하네스 · Auto-compact · 유휴 슬립 · 입력창)
-harness (하네스별 생성 기본값 — 하네스 하나씩, 아래 `harness` 로 선택)
-environment (하네스 준비 상태와 해결 방법 — GET /api/environment 와 같은 값)
-gate    (Message Gate 리뷰어 기본값)
-discord (Discord 브리지 자격증명 + 연결된 멤버)
-versions (설치된 버전 · 최신 릴리스와 변경 내역 · 이전 버전 이력 — GET /api/update, GET /api/update/versions)
-diagnostics (빌드 정보 · 로그 폴더 열기 · 진단 정보 복사 — GET /api/diagnostics 와 같은 값)
+agent: general, defaults, primer, gate, discord
+settings: general, environment, workspace, mobile, versions, diagnostics, automation
 ```
 
-The **하네스 기본값** tab shows one harness at a time, picked by its own sub-tab
+`settings/mobile` is feature-gated. When Mobile Link is disabled in the running
+build, the tab is hidden and navigation returns an explicit error instead of
+reporting success while leaving another tab visible.
+
+The **에이전트 기본값** tab shows one harness at a time, picked by its own sub-tab
 strip. An optional `harness` lands on one of them:
 
 ```json
-{ "view": "runtime", "tab": "harness", "harness": "codex" }
+{ "view": "agent", "tab": "defaults", "harness": "codex" }
 ```
 
 ```text
@@ -2804,9 +2937,15 @@ claude-code, codex, cursor, grok
 ```
 
 A `tab` on a screen that has none, an unknown tab id, a `harness` outside the
-`harness` tab, or an unknown harness id is an **error** — never a navigation that
+`defaults` tab, or an unknown harness id is an **error** — never a navigation that
 reports success and leaves the screen where it was. The response echoes what was
 applied (`{ok, view, tab, harness}`).
+
+`runtime` and `automation` remain deprecated compatibility aliases. `automation`
+normalizes to `settings/automation`. `runtime` maps its legacy tabs to their new
+homes: `harness` becomes `agent/defaults`; `general`, `primer`, `gate`, and
+`discord` open Agent; `environment`, `workspace`, `mobile`, `versions`, and
+`diagnostics` open Settings. The response returns the normalized destination.
 
 ## Windows & workspaces
 

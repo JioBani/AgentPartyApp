@@ -153,7 +153,7 @@ const CLAUDE_CODE: HarnessPalette = {
   prefixes: [SLASH],
   commands: [
     // Built-in control commands.
-    cmd("model", "AgentParty Runtime에서 모델과 추론 설정 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
+    cmd("model", "멤버의 모델과 추론 설정 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
     cmd("compact", "Compact the conversation to free context", "command", "built-in", { run: { type: "action", action: "compact" } }),
     cmd("clear", "Clear the conversation", "command", "built-in", { badges: ["destructive"] }),
     cmd("status", "AgentParty 세션 상태 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "status" } }),
@@ -161,7 +161,7 @@ const CLAUDE_CODE: HarnessPalette = {
     cmd("usage", "AgentParty 계정 사용 한도 표시", "command", "built-in", { badges: ["read-only"], run: { type: "action", action: "usage" } }),
     cmd("permissions", "AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
     cmd("plan", "AgentParty 권한 설정에서 Plan 모드 선택", "command", "built-in", { run: { type: "action", action: "permissions" } }),
-    cmd("effort", "AgentParty Runtime에서 추론 강도 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
+    cmd("effort", "멤버의 추론 강도 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
     cmd("autocompact", "AgentParty 자동 압축 설정 열기", "command", "built-in", { run: { type: "action", action: "auto-compact" } }),
     cmd("stop", "현재 실행 중인 턴 중단", "command", "built-in", { run: { type: "action", action: "interrupt" } }),
     cmd("doctor", "AgentParty 환경 진단 열기", "command", "built-in", { run: { type: "action", action: "environment" } }),
@@ -190,7 +190,7 @@ const CODEX: HarnessPalette = {
   harness: "codex",
   prefixes: [SLASH],
   commands: [
-    cmd("model", "AgentParty Runtime에서 모델 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
+    cmd("model", "멤버의 모델 변경", "command", "built-in", { run: { type: "action", action: "runtime" } }),
     cmd("permissions", "AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
     cmd("approvals", "구식 이름 — AgentParty 권한 설정 열기", "command", "built-in", { run: { type: "action", action: "permissions" } }),
     cmd("new", "빈 대화로 하드 리스타트", "command", "built-in", { badges: ["destructive"], run: { type: "action", action: "restart" } }),

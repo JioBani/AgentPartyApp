@@ -9,7 +9,7 @@ import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../shared/memberMessaging"
 import { DEFAULT_APP_LOCALE } from "../../shared/appLocale";
 import type { MessageKey } from "../i18n/messages";
 
-export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "runtime" | "automation";
+export type ViewId = "workbench" | "guide" | "sessions" | "usage" | "auth" | "agent" | "settings";
 
 /** Staged per-member runtime values applied when a member's session starts. */
 export interface MemberRuntimeDraft {
@@ -74,8 +74,8 @@ export function viewTitle(view: ViewId, t: (key: MessageKey) => string): string 
     sessions: "view.sessions.title",
     usage: "view.usage.title",
     auth: "view.auth.title",
-    runtime: "view.runtime.title",
-    automation: "view.automation.title",
+    agent: "view.runtime.title",
+    settings: "view.automation.title",
   };
   return t(titles[view]);
 }
@@ -89,8 +89,8 @@ export function viewSubtitle(view: ViewId, t: (key: MessageKey) => string): stri
     sessions: "view.sessions.subtitle",
     usage: "view.usage.subtitle",
     auth: "view.auth.subtitle",
-    runtime: "view.runtime.subtitle",
-    automation: "view.automation.subtitle",
+    agent: "view.runtime.subtitle",
+    settings: "view.automation.subtitle",
   };
   return t(subtitles[view]);
 }
@@ -100,5 +100,5 @@ export function displayPath(value: string | undefined): string {
 }
 
 export function isViewId(value: string): value is ViewId {
-  return ["workbench", "guide", "sessions", "usage", "auth", "runtime", "automation"].includes(value);
+  return ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"].includes(value);
 }

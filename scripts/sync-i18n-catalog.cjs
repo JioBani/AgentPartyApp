@@ -28,7 +28,12 @@ function decodeJsxEntities(value) {
 function writeCatalog(selectedRows, output, exportName, typeName) {
   const messages = Object.fromEntries(selectedRows.map((row) => {
     const text = row.suggested_text_ko || row.text;
-    return [row.id, row.kind === "jsx-text" ? decodeJsxEntities(text) : text];
+    // A multi-line cell in the CSV carries whatever line ending the file was
+    // checked out with, so a Windows clone regenerated this catalog with CRLF
+    // where a Unix clone wrote LF — one source producing two committed files.
+    // A UI string never needs a carriage return.
+    const normalized = text.replace(/\r\n?/g, "\n");
+    return [row.id, row.kind === "jsx-text" ? decodeJsxEntities(normalized) : normalized];
   }));
   const body = `// Generated from ${path.relative(root, input).split(path.sep).join("/")}. Do not edit by hand.\n`
     + `export const ${exportName} = ${JSON.stringify(messages, null, 2)} as const;\n\n`

@@ -10,7 +10,7 @@
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { qaTempDir } from "./lib/qaTemp.mjs";
 
@@ -91,9 +91,11 @@ assert(link?.getAttribute("href") === "https://example.com" && link?.getAttribut
 console.log("\nLinks open in the OS browser (P-3.5):");
 const opened = [];
 const openedPaths = [];
+const revealed = [];
 window.agentParty = {
   openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); },
   openPath: (file) => { openedPaths.push(file); return Promise.resolve({ ok: true, action: "opened", path: file }); },
+  revealPath: (file) => { revealed.push(file); return Promise.resolve({ ok: true }); },
 };
 globalThis.window.agentParty = window.agentParty;
 const clickEvent = new window.MouseEvent("click", { bubbles: true, cancelable: true });
@@ -108,6 +110,11 @@ windowsDriveLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, 
 await new Promise((res) => setTimeout(res, 20));
 assert(openedPaths.some((value) => /^\/C:\/Project/.test(value)), "URL-shaped /C:/ markdown link is handed to the local-file controller");
 assert(openedPaths.some((value) => /^C:\/Project/i.test(value)), `bare C:/ markdown link is not mistaken for a foreign URI scheme (href=${windowsDriveLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
+const driveReveal = windowsDriveLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
+assert(Boolean(driveReveal), "a local-file link carries a reveal control");
+driveReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(revealed.some((value) => /^C:\/Project/i.test(value)), "the reveal control hands the file path to revealPath");
 const linkCopy = body?.querySelector(".wb-md-link .wb-copy-btn");
 assert(Boolean(linkCopy), "a copy control sits next to the link");
 const copied = [];
@@ -145,6 +152,116 @@ assert(!text.includes("##") && !text.includes("**") && !text.includes("```"), "r
 console.log("\nDebug message wrapping (structure):");
 const status = document.querySelector(".wb-status .wb-mono");
 assert(Boolean(status) && (status.textContent || "").length > 300, "long debug/stderr line is rendered in a wb-mono span (CSS wraps it)");
+
+console.log("\nMixed Korean/URL/English channel body:");
+const MIXED = [
+  "v0.2.7 배포 완료. 공개 릴리스",
+  "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7, source annotated tag v0.2.7→4ab7bf0.",
+  "설치본/포터블/blockmap/latest.yml 언급은 완료. 익명 다운로드 4개 모두 HTTP 200, latest.yml 0.2.7 및 한글 릴리스 노트 정상 확인.",
+].join("\n");
+const MIXED_HREF = "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7";
+const mixedHost = document.createElement("div");
+document.body.appendChild(mixedHost);
+reactDom.createRoot(mixedHost).render(React.createElement(Transcript, {
+  view: {
+    ...view,
+    transcript: [{ id: "ch-mixed", kind: "channel", direction: "in", from: "alice", to: "bob", text: MIXED, at: "10:02" }],
+  },
+  density: "wide",
+  actions: {},
+}));
+await new Promise((res) => setTimeout(res, 80));
+const bubble = mixedHost.querySelector(".wb-channel-bubble");
+const bubbleText = bubble?.textContent || "";
+assert(Boolean(bubble), "channel card renders a bubble");
+assert(bubbleText.includes("v0.2.7 배포 완료"), "Korean prefix is visible");
+assert(bubbleText.includes(MIXED_HREF), "full autolinked URL text is visible (no truncation)");
+assert(bubbleText.includes(", source annotated tag v0.2.7"), "comma and English after the URL are visible");
+assert(bubbleText.includes("한글 릴리스 노트 정상 확인"), "trailing Korean sentence is visible");
+const mixedLink = bubble?.querySelector(`a[href="${MIXED_HREF}"]`);
+const mixedWrap = mixedLink?.closest(".wb-md-link");
+assert(Boolean(mixedLink), "bare URL autolinks to the exact href (comma stays outside the anchor)");
+assert(Boolean(mixedWrap), "autolink sits in the .wb-md-link wrapper");
+assert(Boolean(mixedWrap?.querySelector(".wb-copy-btn")), "copy control remains next to the autolink");
+opened.length = 0;
+mixedLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(opened[0] === MIXED_HREF, "clicking the autolink hands the exact href to openExternal");
+Object.defineProperty(window.navigator, "clipboard", { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+copied.length = 0;
+mixedWrap?.querySelector(".wb-copy-btn")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(copied[0] === MIXED_HREF, "copy control writes the exact href, not the surrounding sentence");
+
+console.log("\nWSL / POSIX / file: local-file hrefs survive sanitisation:");
+const wslMd = [
+  "[mnt](/mnt/c/Users/Public/a.txt)",
+  "",
+  "[home](/home/me/a.md)",
+  "",
+  "[file-home](file:///home/me/a.md)",
+  "",
+  "[file-wsl](file://wsl.localhost/Ubuntu-22.04/home/me/a.md)",
+  "",
+  "[web](https://example.com/wsl-href)",
+  "",
+  "[mail](mailto:someone@example.com)",
+].join("\n");
+const wslHost = document.createElement("div");
+document.body.appendChild(wslHost);
+reactDom.createRoot(wslHost).render(React.createElement(Transcript, {
+  view: {
+    ...view,
+    transcript: [{ id: "a-wsl", kind: "assistant", text: wslMd, at: "10:03" }],
+  },
+  density: "wide",
+  actions: {},
+}));
+await new Promise((res) => setTimeout(res, 80));
+const wslBody = wslHost.querySelector(".wb-assistant-body");
+const hrefOf = (label) => [...(wslBody?.querySelectorAll("a") || [])].find((a) => a.textContent === label)?.getAttribute("href") || "";
+assert(hrefOf("mnt") === "/mnt/c/Users/Public/a.txt", "POSIX /mnt href is not stripped");
+assert(hrefOf("home") === "/home/me/a.md", "POSIX /home href is not stripped");
+assert(hrefOf("file-home") === "file:///home/me/a.md", "file:///home href is not stripped");
+assert(hrefOf("file-wsl") === "file://wsl.localhost/Ubuntu-22.04/home/me/a.md", "file://wsl.localhost href is not stripped");
+assert(hrefOf("web") === "https://example.com/wsl-href", "http href is unchanged");
+assert(hrefOf("mail") === "mailto:someone@example.com", "mailto href is unchanged");
+openedPaths.length = 0;
+revealed.length = 0;
+opened.length = 0;
+const clickLabel = (label) => {
+  const anchor = [...(wslBody?.querySelectorAll("a") || [])].find((a) => a.textContent === label);
+  anchor?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  return anchor;
+};
+clickLabel("mnt");
+clickLabel("home");
+clickLabel("file-home");
+clickLabel("file-wsl");
+const webAnchor = clickLabel("web");
+clickLabel("mail");
+await new Promise((res) => setTimeout(res, 20));
+assert(openedPaths.filter((p) => p === "/mnt/c/Users/Public/a.txt").length === 1, "/mnt click hands the href to openPath once");
+assert(openedPaths.filter((p) => p === "/home/me/a.md").length === 1, "/home click hands the href to openPath once");
+assert(openedPaths.filter((p) => p === "file:///home/me/a.md").length === 1, "file:///home click hands the href to openPath once");
+assert(openedPaths.filter((p) => p === "file://wsl.localhost/Ubuntu-22.04/home/me/a.md").length === 1, "file://wsl.localhost click hands the href to openPath once");
+assert(openedPaths.length === 4, `only the four local-file links call openPath (${openedPaths.join(" | ")})`);
+assert(opened.includes("https://example.com/wsl-href"), "http still goes to openExternal");
+assert(!opened.some((u) => /^file:/i.test(u)), "file: is not handed to openExternal");
+const homeReveal = [...(wslBody?.querySelectorAll("a") || [])].find((a) => a.textContent === "home")?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
+assert(Boolean(homeReveal), "/home link carries a reveal control");
+assert(!webAnchor?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal"), "http link has no reveal control");
+homeReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+const fileHomeReveal = [...(wslBody?.querySelectorAll("a") || [])].find((a) => a.textContent === "file-home")?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
+assert(Boolean(fileHomeReveal), "file:///home link carries a reveal control");
+fileHomeReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(revealed.filter((p) => p === "/home/me/a.md").length === 1, "reveal control hands /home to revealPath once");
+assert(revealed.filter((p) => p === "file:///home/me/a.md").length === 1, "reveal control hands file:///home to revealPath once");
+
+console.log("\nCSS: long-link wrapper is not nowrap:");
+const css = readFileSync(path.join(projectRoot, "src/renderer/styles.css"), "utf8");
+assert(!/\.wb-md-link\s*\{[^}]*white-space\s*:\s*nowrap/.test(css), ".wb-md-link does not set white-space:nowrap");
 
 console.log(failures.length ? `\nMARKDOWN RENDER FAILED (${failures.length})` : "\nMARKDOWN RENDER PASSED");
 process.exit(failures.length ? 1 : 0);

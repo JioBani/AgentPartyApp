@@ -5,7 +5,8 @@ import remarkGfm from "remark-gfm";
 import { CopyButton } from "./copy";
 import { reportNotice } from "../app/appNotice";
 import { ipcErrorMessage } from "../app/ipcError";
-import { isWindowsDrivePath } from "../../shared/localFiles";
+import { isWindowsDrivePath } from "../../shared/windowsDrivePath";
+import { isLocalFileUrl, isPreservedLocalHref } from "../../shared/localFileHref";
 import { localized, useI18n } from "../i18n/I18nProvider";
 
 /**
@@ -27,11 +28,11 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     <div className="wb-md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        // react-markdown treats `C:` as an unsafe URI scheme and erases the
-        // href before our link component can classify it. Preserve only the
-        // narrow drive-absolute grammar; every other URL keeps the library's
+        // react-markdown treats `C:` and `file:` as unsafe schemes and erases
+        // the href before our link component can classify it. Preserve the
+        // narrow local-file grammar; every other URL keeps the library's
         // default sanitisation.
-        urlTransform={(url) => isWindowsDrivePath(url) ? url : defaultUrlTransform(url)}
+        urlTransform={(url) => isPreservedLocalHref(url) ? url : defaultUrlTransform(url)}
         components={{
           a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} {...props}>{children}</MarkdownLink>,
           pre: ({ node: _node, children, ...props }) => <MarkdownPre {...props}>{children}</MarkdownPre>,
@@ -146,7 +147,7 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
   // Anything left over that is not an in-page anchor or a foreign scheme is a
   // path — a file the member wrote or read. A bare `C:/...` superficially
   // matches the URI-scheme grammar (`C:`), so recognise drive paths first.
-  const file = !target && href && (isWindowsDrivePath(href) || (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#"))) ? href : "";
+  const file = !target && href && (isWindowsDrivePath(href) || isLocalFileUrl(href) || (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#"))) ? href : "";
   const copyable = target || file;
   return (
     <span className="wb-md-link">

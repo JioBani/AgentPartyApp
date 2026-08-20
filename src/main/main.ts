@@ -662,7 +662,23 @@ ${body}
         return () => { nativeTheme.off("updated", listener); };
       },
     },
+    pickFolder: async (windowId, env, defaultPath) => {
+      const target = registry().resolve(windowId)?.window;
+      const result = await dialog.showOpenDialog(target!, {
+        properties: ["openDirectory"],
+        // A WSL pick is the same dialog opened inside the distro through
+        // the `\\wsl$\` redirector; the caller resolved that path.
+        defaultPath,
+        title: env === "wsl" ? "WSL 폴더 선택" : "실행 위치 폴더 선택",
+      });
+      return result.canceled ? undefined : result.filePaths[0];
+    },
     onSettingsChanged: () => applyRuntimeSettings(),
+    onPartyGroupsChanged: () => {
+      for (const entry of registry().all()) {
+        entry.window.webContents.send("partyGroups:update", {});
+      }
+    },
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
@@ -915,8 +931,8 @@ function registerApplicationMenu(): void {
         { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
         { label: "Token Usage", accelerator: "CmdOrCtrl+3", click: () => navigate("usage") },
         { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
-        { label: "Runtime", accelerator: "CmdOrCtrl+5", click: () => navigate("runtime") },
-        { label: "Automation", accelerator: "CmdOrCtrl+6", click: () => navigate("automation") },
+        { label: "Agent", accelerator: "CmdOrCtrl+5", click: () => navigate("agent") },
+        { label: "Settings", accelerator: "CmdOrCtrl+6", click: () => navigate("settings") },
         { type: "separator" },
         { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
@@ -999,6 +1015,30 @@ function registerIpc(): void {
     const state = await controller().setWindowWorkspace(senderWindowId(event), workspace);
     return state.settings;
   });
+
+  // 파티 그룹 · 멤버 실행 위치. Thin: every one forwards to the AppController
+  // method its HTTP route also calls, so there is one implementation to keep
+  // right rather than a UI copy and an API copy.
+  handle("partyGroups:list", async () => controller().listPartyGroups());
+  handle("partyGroups:migrate", async (event) => controller().migratePartyGroups([senderWorkspace(event)]));
+  // Moving this window to the workspace a party lives in. Needed because the
+  // party list is app-global now: a party in another workspace is one click away
+  // in the sidebar, and clicking it must actually go there.
+  handle("workspace:switch", async (event, workspacePath: string) =>
+    controller().setWindowWorkspace(senderWindowId(event), String(workspacePath || "")));
+  handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
+  handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
+  handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));
+  handle("partyGroups:reorder", async (_event, order) => controller().reorderPartyGroups(Array.isArray(order) ? order.map(String) : []));
+  handle("partyGroups:remove", async (_event, groupId) => controller().removePartyGroup(String(groupId || "")));
+  handle("cwd:preferences", async (_event, options) => controller().getCwdPreferences(options || {}));
+  handle("cwd:setDefault", async (_event, location) => controller().setDefaultCwd(location));
+  handle("cwd:clearDefault", async (_event, env) => controller().clearDefaultCwd(env === "wsl" ? "wsl" : "windows"));
+  handle("cwd:removeRecent", async (_event, location) => controller().removeRecentCwd(location));
+  handle("cwd:check", async (_event, location) => controller().checkCwd(location));
+  handle("cwd:distros", async () => controller().listWslDistros());
+  handle("cwd:browse", async (event, env, distro) => controller().browseCwd(env === "wsl" ? "wsl" : "windows", senderWindowId(event), distro ? String(distro) : undefined));
+  handle("cwd:memberLocations", async (event) => controller().memberLocations(senderWorkspace(event)));
 
   handle("auth:list", async (event) => controller().listAuthProviders(senderWorkspace(event)));
   handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));

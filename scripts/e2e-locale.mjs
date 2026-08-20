@@ -81,7 +81,7 @@ async function main() {
 
   try {
     await waitForApi();
-    await request("POST", "/api/navigation", { view: "runtime", tab: "general" });
+    await request("POST", "/api/navigation", { view: "settings", tab: "general" });
     await delay(500);
 
     const initial = await request("GET", "/api/settings/locale");
@@ -91,8 +91,8 @@ async function main() {
     const changed = await request("POST", "/api/settings/locale", { locale: "en" });
     assert(changed.status === 200 && changed.payload?.locale === "en", "POST /api/settings/locale accepts English");
     await delay(500);
-    assert(await measuredText(".titlebar-brand .brand-sub") === "Runtime", "the open window changes language immediately");
-    assert(await measuredText(".set-tab.is-active") === "General", "runtime navigation uses the English catalog");
+    assert(await measuredText(".titlebar-brand .brand-sub") === "Settings", "the open window changes language immediately");
+    assert(await measuredText(".set-tab.is-active") === "General", "settings navigation uses the English catalog");
 
     const persisted = JSON.parse(fs.readFileSync(path.join(userData, "settings.json"), "utf8"));
     assert(persisted.locale === "en", "the locale is persisted in settings.json");
@@ -103,7 +103,7 @@ async function main() {
 
     await request("POST", "/api/settings/locale", { locale: "ko" });
     await delay(300);
-    assert(await measuredText(".titlebar-brand .brand-sub") === "런타임", "switching back to Korean updates the same screen");
+    assert(await measuredText(".titlebar-brand .brand-sub") === "설정", "switching back to Korean updates the same screen");
     await request("POST", "/api/navigation", { view: "workbench" });
     await delay(300);
     assert(await measuredText(".wb-workarea-empty p") === expectedEmptyWorkbenchCopy, "a CSV-backed workbench message renders from the Korean catalog");
