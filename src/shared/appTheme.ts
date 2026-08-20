@@ -75,6 +75,20 @@ export function firstPaintFrom(boot: AppearanceBoot | null, legacyTheme: unknown
 }
 
 /**
+ * `getInitialState` can resolve after a legacy migration already wrote Dark.
+ * If appearance has been committed in this renderer, keep that theme instead of
+ * letting the stale snapshot's default Light overwrite it.
+ */
+export function retainAppearanceOnInitialState<T extends { theme?: unknown }>(
+  current: T,
+  incoming: T,
+  appearanceCommitted: boolean,
+): T {
+  if (!appearanceCommitted) return incoming;
+  return { ...incoming, theme: current.theme };
+}
+
+/**
  * Thrown when a headless/WSL engine would otherwise write its own settings.json
  * (a different file from the desktop's) or invent an applied theme. The caller
  * must either forward over HostChannel or surface this error.

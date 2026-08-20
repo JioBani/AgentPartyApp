@@ -17,6 +17,7 @@ import {
   cycleThemePreference,
   migrateLegacyThemeValue,
   normalizeThemePreference,
+  retainAppearanceOnInitialState,
   type ThemePreference,
 } from "../shared/appTheme";
 import { publishFontProbe } from "./app/fontProbe";
@@ -192,11 +193,18 @@ export function App() {
   // Lets `GET /api/appearance/fonts` ask Chromium which families are installed.
   useEffect(() => { publishFontProbe(); }, []);
 
-  // Appearance: first paint comes from localStorage (including the legacy
-  // `agentparty.theme` key). Wait until we know whether settings.json already
-  // has an explicit `theme` before syncing, so a stored default of `light` cannot
-  // overwrite a user's leftover dark toggle.
-  const [themeReady, setThemeReady] = useState(false);
+  // Appearance bootstrap vs getInitialState: a late snapshot can still carry the
+  // in-memory default Light after migration already wrote Dark. appearanceCommitted
+  // marks the renderer as having the live preference so that snapshot cannot
+  // overwrite it.
+  const appearanceCommitted = useRef(false);
+  const commitAppearance = useCallback((preference: ThemePreference, applied?: string) => {
+    appearanceCommitted.current = true;
+    theme.setPreference(preference);
+    if (applied === "light" || applied === "dark") {
+      theme.setOsDark(applied === "dark");
+    }
+  }, [theme]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -209,25 +217,21 @@ export function App() {
         if (migrated) {
           const next = await window.agentParty.setTheme(migrated);
           if (cancelled) return;
-          theme.setPreference(next.preference);
-          theme.setOsDark(next.applied === "dark");
+          commitAppearance(next.preference, next.applied);
           setState((current) => ({ ...current, settings: { ...current.settings, theme: next.preference } }));
         } else {
-          theme.setPreference(appearance.preference);
-          theme.setOsDark(appearance.applied === "dark");
+          commitAppearance(appearance.preference, appearance.applied);
         }
       } catch (error) {
         console.error("[appearance] bootstrap failed", error);
         if (!cancelled) setPartyNotice(t("appearance.bootstrapError", { error: ipcErrorMessage(error) }));
       }
-      if (!cancelled) setThemeReady(true);
+      if (!cancelled) {
+        window.agentParty.appearanceReady?.();
+      }
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!themeReady) return;
-    theme.setPreference(normalizeThemePreference(state.settings.theme));
-  }, [themeReady, state.settings.theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lets a component too deep to hold notice state report one — today, a
   // transcript file link that could not be opened. See app/appNotice.ts.
@@ -409,7 +413,15 @@ export function App() {
   useEffect(() => {
     void window.agentParty.getInitialState().then((next) => {
       // If a party broadcast already arrived, keep it (avoid the load race).
-      setState((current) => (partyBroadcastSeen.current ? { ...next, party: current.party } : next));
+      // Same for appearance: a late snapshot's default Light must not replace
+      // a legacy migration that already committed Dark.
+      setState((current) => {
+        const merged = partyBroadcastSeen.current ? { ...next, party: current.party } : next;
+        return {
+          ...merged,
+          settings: retainAppearanceOnInitialState(current.settings, merged.settings, appearanceCommitted.current),
+        };
+      });
       if (next.sessions?.[0]) {
         setActiveSessionId(next.sessions[0].id);
       }
@@ -500,10 +512,7 @@ export function App() {
     const offAppearanceUpdate = window.agentParty.onAppearanceUpdate?.((payload) => {
       const appearance = payload as { preference?: ThemePreference; applied?: string };
       if (appearance?.preference) {
-        theme.setPreference(appearance.preference);
-      }
-      if (appearance?.applied === "light" || appearance?.applied === "dark") {
-        theme.setOsDark(appearance.applied === "dark");
+        commitAppearance(appearance.preference, appearance.applied);
       }
     });
     const offAuthUpdate = window.agentParty.onAuthUpdate?.((payload) => {
@@ -1134,7 +1143,7 @@ export function App() {
   async function saveTheme(preference: ThemePreference) {
     try {
       const appearance = await window.agentParty.setTheme(preference);
-      theme.setPreference(appearance.preference);
+      commitAppearance(appearance.preference, appearance.applied);
       setState((current) => ({ ...current, settings: { ...current.settings, theme: appearance.preference } }));
     } catch (error) {
       setPartyNotice(t("appearance.saveError", { error: ipcErrorMessage(error) }));

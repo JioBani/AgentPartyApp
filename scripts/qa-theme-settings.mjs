@@ -45,6 +45,7 @@ const {
   firstPaintFrom,
   parseAppearanceBootArgs,
   appearanceBootArgs,
+  retainAppearanceOnInitialState,
 } = await import(pathToFileURL(outFile).href);
 
 console.log("\ntheme preference (settings.json + API):");
@@ -131,6 +132,19 @@ assert(firstPaintFrom({ preference: "dark", applied: "dark", stored: true }, "li
 assert(firstPaintFrom({ preference: "light", applied: "light", stored: false }, "dark").applied === "dark", "legacy dark paints when settings have no theme");
 assert(firstPaintFrom({ preference: "light", applied: "light", stored: true }, "dark").applied === "light", "stored light is not overridden by leftover dark");
 assert(firstPaintFrom(null, null).preference === "light", "no boot and no legacy defaults to light");
+assert(
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "ko" }, true).theme === "dark",
+  "late initial state keeps migrated Dark over snapshot Light",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light" }, false).theme === "light",
+  "before appearance is committed, initial state may apply",
+);
+assert(
+  retainAppearanceOnInitialState({ theme: "dark" }, { theme: "dark", locale: "en" }, true).locale === "en"
+    && retainAppearanceOnInitialState({ theme: "dark" }, { theme: "light", locale: "en" }, true).theme === "dark",
+  "other initial-state fields still merge when appearance is retained",
+);
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:`);

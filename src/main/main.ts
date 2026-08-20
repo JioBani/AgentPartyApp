@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, nativeTheme, safeStorage, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, nativeTheme, safeStorage, screen, shell, type WebContents } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -203,6 +203,9 @@ function appearanceBootForWindow() {
   return { preference, applied, stored: stored !== undefined };
 }
 
+/** Reveals a window after appearance boot. Keyed by webContents so every createWindow path shares one show. */
+const revealByContents = new WeakMap<WebContents, () => void>();
+
 async function createWindow(workspacePath: string): Promise<WindowInfo> {
   const boot = appearanceBootForWindow();
   const window = new BrowserWindow({
@@ -211,6 +214,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
     minWidth: 1100,
     minHeight: 720,
     title: "AgentParty",
+    show: false,
     backgroundColor: windowBackgroundFor(boot.preference, nativeTheme.shouldUseDarkColors),
     titleBarStyle: "hidden",
     frame: false,
@@ -243,6 +247,15 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   // Advertise this workspace as served by this process (once the API is up).
   reconcileDiscovery();
 
+  let revealed = false;
+  const reveal = () => {
+    if (revealed || window.isDestroyed()) return;
+    revealed = true;
+    window.show();
+    window.focus();
+  };
+  revealByContents.set(window.webContents, reveal);
+
   const rendererUrl = process.env.AGENTPARTY_RENDERER_URL;
   guardNavigation(window, rendererUrl);
   if (rendererUrl) {
@@ -251,6 +264,9 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   } else {
     await window.loadFile(path.join(__dirname, "../../dist-renderer/index.html"));
   }
+  // Hidden until the renderer commits appearance. Fallback so a failed
+  // bootstrap cannot leave a window that never appears.
+  setTimeout(reveal, 8000);
   log("info", "window", "window created", { id: entry.id, workspacePath: entry.workspacePath });
   return { id: entry.id, workspacePath: entry.workspacePath, focused: true };
 }
@@ -947,6 +963,9 @@ function registerIpc(): void {
   // Sync so preload can expose the boot theme before the page's first paint.
   ipcMain.on("appearance:boot", (event) => {
     event.returnValue = appearanceBootForWindow();
+  });
+  ipcMain.on("appearance:ready", (event) => {
+    revealByContents.get(event.sender)?.();
   });
 
   handle("app:getInitialState", async (event) => controller().getState(senderWorkspace(event), senderWindowId(event)));

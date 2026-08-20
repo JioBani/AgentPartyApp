@@ -131,11 +131,18 @@ async function main() {
     assert(endpoints.includes("POST /api/appearance/theme"), "POST /api/appearance/theme is in the spec");
     assert(endpoints.includes("POST /api/qa/appearance/os"), "POST /api/qa/appearance/os is in the spec");
 
-    const legacyPaint = await htmlTheme();
-    assert(legacyPaint.applied === "dark" && legacyPaint.preference === "dark", "legacy dark paints when settings.json has no theme");
-    await delay(600);
+    let legacyPaint;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      legacyPaint = await htmlTheme();
+      if (legacyPaint.applied === "dark" && legacyPaint.preference === "dark") break;
+      await delay(250);
+    }
+    assert(legacyPaint?.applied === "dark" && legacyPaint?.preference === "dark", "legacy dark paints when settings.json has no theme");
     const migrated = await request("GET", "/api/appearance/theme");
     assert(migrated.payload?.preference === "dark" && migrated.payload?.stored === true, "legacy dark migrates into settings.json");
+    assert(migrated.payload?.applied === "dark" && migrated.payload?.background === "#0a0b0e", "migrated Dark keeps dark chrome, not default Light");
+    const settled = await htmlTheme();
+    assert(settled.applied === "dark" && settled.preference === "dark", "renderer still shows Dark after initial state loads");
 
     const windows = (await request("GET", "/api/windows")).payload?.windows || [];
     const win1 = windows[0]?.id;

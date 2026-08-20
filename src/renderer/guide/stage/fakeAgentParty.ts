@@ -160,6 +160,7 @@ export function createFakeAgentParty(): FakeAgentParty {
       return appearanceStateOf(preference, false, true);
     },
     onAppearanceUpdate: (callback) => subscribe(callback),
+    appearanceReady: () => undefined,
     chooseWorkspace: () => refused(),
     listAuth: () => Promise.resolve(current().state.auth),
     setDeepseekKey: () => refused(),

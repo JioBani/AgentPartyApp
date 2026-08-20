@@ -159,6 +159,7 @@ window.agentParty = {
   getAppearance: async () => ({ preference: "light", applied: "light", options: ["system", "light", "dark"], stored: false, background: "#e7e8eb" }),
   setTheme: async (theme) => ({ preference: theme, applied: theme === "dark" ? "dark" : "light", options: ["system", "light", "dark"], stored: true, background: theme === "dark" ? "#0a0b0e" : "#e7e8eb" }),
   onAppearanceUpdate: () => () => {},
+  appearanceReady: () => {},
   chooseWorkspace: async () => initialState.settings,
   listAuth: async () => [],
   setOpenRouterKey: noop,

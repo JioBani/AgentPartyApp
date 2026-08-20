@@ -33,6 +33,7 @@ const api = {
   setLocale: (locale: string) => ipcRenderer.invoke("locale:set", locale),
   getAppearance: () => ipcRenderer.invoke("appearance:get"),
   setTheme: (theme: unknown) => ipcRenderer.invoke("appearance:set", theme),
+  appearanceReady: () => ipcRenderer.send("appearance:ready"),
   /** Edits ONE section of the member primer (Settings → 런타임 → 파티 프롬프트). */
   savePartyPrimerSection: (patch: unknown) => ipcRenderer.invoke("party:primer:save", patch),
   /** Translates (or clears the translation of) one primer section. */
