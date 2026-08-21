@@ -56,6 +56,15 @@ export interface QaMemberSpec {
   status?: "working" | "idle" | "approval";
   autoReply?: boolean;
   blocks?: unknown[];
+  /**
+   * Serialized execution location (`C:\proj`, `wsl+Ubuntu:/srv/app`).
+   *
+   * Mock members used to be pinned to the QA workspace, which made a party of
+   * them indistinguishable in the one screen that groups members BY where they
+   * run — every seeded member landed in a single directory, so the host/cwd tree
+   * could never be exercised end to end. Omitted = the workspace, as before.
+   */
+  location?: string;
   /** Seeded slash-command inventory for exercising the command palette in QA. */
   commands?: HarnessCommand[];
 }

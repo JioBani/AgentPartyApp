@@ -1,9 +1,10 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, AlignLeft, ArrowDownLeft, Ban, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Loader, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
+import { isToolProblem, toolOutcomeOf, type ToolOutcome } from "./toolOutcome";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
@@ -484,27 +485,35 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
   const failed = block.state === "failed";
   return (
     <div className={"wb-block wb-channel" + (incoming ? " is-in" : " is-out") + (failed ? " is-failed" : "") + (fromDiscord ? " is-discord" : "")}>
+      {/* Two bands, not one line. Who sent it to whom is one fact and how it
+          was delivered is another; sharing a single nowrap row meant the status
+          chips pushed the participants until a member name broke a character
+          per line and collided with the arrow between them. */}
       <div className="wb-channel-head">
-        <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
         <span className="wb-channel-route">
+          <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
           {/* Same card as a member-to-member message, but the origin is stated:
               a Discord message comes from the USER on another device, not a peer. */}
           {fromDiscord && <span className="wb-channel-source">Discord</span>}
-          <span className="wb-channel-peer">{from || "?"}</span>
+          <span className="wb-channel-peer" title={from || "?"}>{from || "?"}</span>
           <ArrowRight size={12} className="wb-channel-arrow" />
-          <span className="wb-channel-peer">{to || "?"}</span>
+          <span className="wb-channel-peer" title={to || "?"}>{to || "?"}</span>
         </span>
-        <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
-        {/* This one waited in the queue before it was handed over — permanent,
-            because in scrollback it is what explains why replies above it do
-            not answer it. */}
-        {block.fromQueue && (
-          <span className="wb-user-origin" title={localized("STR-2181")}>
-            <AlignLeft size={9} />  <LocalizedText id="STR-2182" />
-          </span>
-        )}
-        {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2183" /></span>}
-        {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+        {/* Delivery facts. They wrap as whole chips onto their own line rather
+            than squeezing the names beside them. */}
+        <span className="wb-channel-flags">
+          <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
+          {/* This one waited in the queue before it was handed over — permanent,
+              because in scrollback it is what explains why replies above it do
+              not answer it. */}
+          {block.fromQueue && (
+            <span className="wb-user-origin" title={localized("STR-2181")}>
+              <AlignLeft size={9} />  <LocalizedText id="STR-2182" />
+            </span>
+          )}
+          {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2183" /></span>}
+          {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+        </span>
       </div>
       {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
       {failed && <div className="wb-channel-failed"><LocalizedText id="STR-2185" />{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
@@ -634,13 +643,27 @@ function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
   return presentation;
 }
 
+/**
+ * One wording per outcome, so the tooltip, the accessible label and the inline
+ * badge cannot describe the same result three different ways.
+ */
+const TOOL_OUTCOME_STR: Record<ToolOutcome, "STR-3787" | "STR-3788" | "STR-3789" | "STR-3790"> = {
+  ok: "STR-3787",
+  failed: "STR-3788",
+  denied: "STR-3789",
+  running: "STR-3790",
+};
+
 function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; density: PanelDensity; detail: "full" | "answers" }) {
   const [full, setFull] = useState(false);
   const { arg, fullInput, result, hasImages, meta, hasMore } = toolPresentationFor(block);
   // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
   // command/result. The full command + output live in the "전체 보기" popup so a
   // long bash run never floods the transcript inline.
-  const failed = block.status === "failed";
+  // What HAPPENED, not merely whether the call closed. A red check still reads
+  // as "done, fine", so a refusal and a clean run must not share a glyph.
+  const outcome = toolOutcomeOf(block);
+  const failed = isToolProblem(outcome);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
   // Pictures returned by a tool are evidence the agent consumed, not a message
   // to the user. Even a native image_view in a wide workbench stays collapsed.
@@ -661,7 +684,16 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
     >
       <summary>
         <ChevronRight size={13} className="wb-caret" />
-        <span className={"wb-tool-check" + (failed ? " failed" : "")}><Check size={11} /></span>
+        <span
+          className={"wb-tool-check is-" + outcome + (failed ? " failed" : "")}
+          title={localized(TOOL_OUTCOME_STR[outcome])}
+          aria-label={localized(TOOL_OUTCOME_STR[outcome])}
+        >
+          {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} /> : <Check size={11} />}
+        </span>
+        {/* Colour alone cannot carry this: the whole point is that the two red
+            states mean different things, and one of them is not a fault. */}
+        {failed && <span className="wb-tool-outcome"><LocalizedText id={TOOL_OUTCOME_STR[outcome]} /></span>}
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}

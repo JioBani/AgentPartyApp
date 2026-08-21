@@ -1304,7 +1304,9 @@ export class ClaudeAdapter extends EventEmitter {
     }
 
     if (message.subtype === "permission_denied") {
-      this.emitEvent({ type: "tool_call", id: message.tool_use_id, name: message.tool_name, input: withFilePath(message.tool_input), status: "failed", result: message.message, at: now() });
+      // Denied, not failed. Nothing malfunctioned — the call was refused — and
+      // the transcript has to be able to say which of the two happened.
+      this.emitEvent({ type: "tool_call", id: message.tool_use_id, name: message.tool_name, input: withFilePath(message.tool_input), status: "denied", result: message.message, at: now() });
       return;
     }
 

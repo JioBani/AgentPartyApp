@@ -8,15 +8,11 @@ import type { PermissionModeSetting } from "../../shared/types";
 import type { PartyGate } from "../../shared/messageGate";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
-import { memberColorVars } from "../theme/memberColors";
-import { statusLabel } from "./memberStatus";
 import { MemberWizard } from "./MemberWizard";
-import { WorkingDots } from "./StatusIndicator";
-import { harnessLabel } from "./harnessLabel";
-import { HarnessIcon } from "./HarnessIcon";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { PartyGroupList } from "./PartyGroupList";
+import { MemberCwdTree } from "./MemberCwdTree";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
 import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
@@ -393,6 +389,12 @@ export function PartySidebar(props: PartySidebarProps) {
    * hid the parties behind three closed folders would look like an empty app.
    */
   const [closedGroupIds, setClosedGroupIds] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * The member tree's own folded groups, by the same rule and for the same
+   * reason: tracking what is CLOSED means a member created in a directory nobody
+   * has seen before appears in an open group rather than a hidden one.
+   */
+  const [closedMemberGroupIds, setClosedMemberGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const openGroupIds = useMemo(
     () => new Set(groups.map((group) => group.id).filter((id) => !closedGroupIds.has(id))),
     [groups, closedGroupIds],
@@ -475,6 +477,23 @@ export function PartySidebar(props: PartySidebarProps) {
     }
     onCreateParty({ name, groupId: activeGroupId, location: cwdPrefs.windowsDefault });
     setDraft("");
+  }
+
+  /**
+   * Which member host / directory groups are folded. Separate from the party
+   * groups above: the two lists collapse independently, and one shared set would
+   * make folding a party group close a directory that merely shares its id.
+   */
+  function toggleMemberGroup(groupId: string) {
+    setClosedMemberGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
   }
 
   function toggleGroup(groupId: string) {
@@ -580,47 +599,15 @@ export function PartySidebar(props: PartySidebarProps) {
           />
         )}
 
-        <div className="wb-member-list">
-          {views.length === 0 && <div className="wb-empty"><LocalizedText id="STR-2065" /></div>}
-          {views.map((view) => {
-            const removable = view.name !== "main";
-            return (
-              <div
-                role="button"
-                tabIndex={0}
-                key={view.name}
-                className={"wb-member-row" + (openMembers.has(view.name) ? " is-open" : "") + (menu?.kind === "member" && menu.name === view.name ? " is-menu" : "")}
-                style={memberColorVars(view.name)}
-                onClick={() => onOpenMember(view.name)}
-                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
-                onContextMenu={(event) => {
-                  // Always worth showing now: 계속 켜두기 applies to any member,
-                  // session or not, so there is no longer a case with nothing
-                  // actionable in it.
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setMenu({ kind: "member", name: view.name, x: event.clientX, y: event.clientY });
-                }}
-              >
-                <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
-                <span className="wb-member-name">{view.name}</span>
-                {/* Which harness this member runs on. The same model behaves
-                    differently per harness, so the model alone does not say what
-                    a member is. Short here (the row is dense), full name on hover. */}
-                <span className="wb-harness-chip" title={harnessLabel(view.member.runtime)} aria-label={harnessLabel(view.member.runtime)}>
-                  <HarnessIcon harness={view.member.runtime} />
-                </span>
-                {view.pendingApproval && <span className="wb-member-badge"><LocalizedText id="STR-2066" /></span>}
-                {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
-                {/* A running turn is motion, not the grey word "working" that
-                    read as a label and was easy to miss down the list. */}
-                {!view.pendingApproval && (view.status === "working"
-                  ? <WorkingDots label={localized("STR-2067")} />
-                  : <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>)}
-              </div>
-            );
-          })}
-            </div>
+        <MemberCwdTree
+          views={views}
+          openMembers={openMembers}
+          closedGroupIds={closedMemberGroupIds}
+          menuMemberName={menu?.kind === "member" ? menu.name : undefined}
+          onToggleGroup={toggleMemberGroup}
+          onOpenMember={onOpenMember}
+          onMemberContextMenu={(name, event) => setMenu({ kind: "member", name, x: event.clientX, y: event.clientY })}
+        />
           </section>
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("member", event)} />
         </aside>

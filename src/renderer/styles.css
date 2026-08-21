@@ -4193,12 +4193,11 @@ body.wb-resizing {
     flex: 1 0 100%;
   }
 
-  /* The toolbar's copy of the member name is the one thing here that IS
-     duplicated — the tab directly above it says the same name. Squeezed to a few
-     pixels it was neither readable nor informative, so at this width it gives
-     the row back to the controls, which have no second home. The status dot
-     stays: it is the only live-state mark in the header. */
-  .wb-toolbar-id strong {
+  /* The duplicated member name that used to be squeezed to a few pixels here is
+     gone entirely — the tab directly above says it. What is left is the member's
+     cwd, which appears nowhere else; at this width it keeps only the folder name
+     and the environment icon, with the full path still in the tooltip. */
+  .wb-toolbar-cwd .wb-cwd-head {
     display: none;
   }
 }
@@ -4249,17 +4248,6 @@ body.wb-resizing {
   align-items: center;
   justify-content: space-between;
   margin-top: 7px;
-}
-
-.wb-composer-tools {
-  display: flex;
-  gap: 3px;
-}
-
-.wb-composer-tools .wb-icon-btn {
-  width: 26px;
-  height: 26px;
-  color: var(--text-3);
 }
 
 .wb-send {
@@ -9334,3 +9322,493 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-row.is-dragging { opacity: .4; }
 .wb-party-group.is-drop-target { border-color: var(--accent-bd); background: var(--accent-dim); }
 .wb-party-group.is-drop-target .wb-group-row { background: var(--accent-dim); color: var(--accent); }
+
+/* ── 멤버 목록: 실행 호스트 · 작업 디렉터리 트리 ─────────────────────────── */
+
+/* Two levels, one drawer. The host section says WHERE the members below it run
+   (Windows / WSL) and each directory group says which checkout — stated once
+   per group instead of once per row, which is what the flat list could not do
+   without turning every member into two lines of path. */
+.wb-host-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-host-row,
+.wb-cwd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-host-row {
+  height: 26px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+.wb-cwd-row {
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.wb-host-row:hover,
+.wb-cwd-row:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.wb-host-row > svg,
+.wb-cwd-row > svg,
+.wb-host-icon {
+  flex: none;
+}
+
+/* The caret is the only thing that says a group can be folded, so it turns
+   rather than disappearing: a rotated caret still reads as "there is more". */
+.wb-group-caret {
+  flex: none;
+  transition: transform var(--motion-fast);
+}
+
+.wb-host-group:not(.is-open) > .wb-host-row .wb-group-caret,
+.wb-cwd-group:not(.is-open) > .wb-cwd-row .wb-group-caret {
+  transform: rotate(-90deg);
+}
+
+.wb-host-group:not(.is-open) .wb-host-groups,
+.wb-cwd-group:not(.is-open) .wb-cwd-members {
+  display: none;
+}
+
+.wb-host-name {
+  flex: none;
+  color: inherit;
+}
+
+.wb-host-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-cwd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Indented under its host and hung off a hairline, so nesting is visible at a
+   glance without a second background colour competing with the member rows. */
+.wb-cwd-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: 6px;
+  margin-left: 12px;
+  border-left: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-cwd-distro {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font: 600 9.5px/1.5 var(--font-mono);
+}
+
+/* The path gives up its width first — it is the only elastic thing in the row —
+   and gives it up from the LEFT, where the ancestors are. */
+.wb-cwd-path,
+.wb-toolbar-cwd-path {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* The prefix is already shortened to a root plus one ellipsis (see
+   `splitPathTail`), so it is a handful of characters and must NOT shrink: a
+   flexible prefix is one CSS truncates to a bare `C`, which then runs into the
+   directory name and reads as a path that does not exist. The name beside it is
+   the part that gives way. */
+.wb-cwd-head {
+  flex: none;
+  white-space: nowrap;
+  opacity: .68;
+}
+
+/* Never shrinks: two worktrees under one long parent are told apart by exactly
+   this, and truncating it is how the list starts showing identical rows. */
+.wb-cwd-tail {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.wb-group-count {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* A folded group still has to report what is happening inside it — otherwise
+   collapsing a host is how you stop noticing an approval that is waiting. */
+.wb-group-alert {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.wb-group-live {
+  flex: none;
+}
+
+/* The provider mark that replaced the status dot in front of a member's name.
+   Slightly larger than the dot was: it now carries identity, not just liveness,
+   and a 10px brand mark is a smudge. The slot is fixed so names still start on
+   one vertical line whatever mark lands in it. */
+.wb-member-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-2);
+}
+
+.wb-member-row.is-open .wb-member-mark,
+.wb-tab.is-active .wb-member-mark {
+  color: var(--text-0);
+}
+
+.wb-vendor-mark { display: block; flex: none; }
+.wb-vendor-mark-tone { fill: color-mix(in srgb, currentColor 55%, var(--bg-0)); }
+
+/* One neutral mark for every provider we hold no artwork for — OpenRouter
+   today, whatever is added next. A blank slot reads as a bug and the nearest
+   brand we happen to own would be a lie; the provider's name stays reachable
+   from the wrapper's tooltip and label either way. */
+.wb-provider-icon-generic { opacity: .75; }
+
+/* ── 멤버 패널 보조 헤더: 실행 위치 ─────────────────────────────────────── */
+
+/* Replaces the member name, which the tab directly above already said. The cwd
+   appears nowhere else in the panel and decides which files this member edits. */
+.wb-toolbar-cwd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.wb-toolbar-cwd > svg {
+  flex: none;
+}
+
+.wb-toolbar-id .wb-status-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Below the wide tier the chip keeps its tone and its pulse but drops the word,
+   so the location gets the row instead of both of them being clipped. */
+.wb-toolbar-id .wb-status-pill .wb-dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* ── Composer 하단: 좁은 폭 ─────────────────────────────────────────────── */
+
+/* The row wraps as a whole instead of crushing its buttons. Without this the
+   flex row shrank the primary button below its own text and the Korean label
+   broke one character per line — the control was still there, and unreadable. */
+.wb-composer-row {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.wb-composer-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Labels stay on one line. A button narrower than its own word is not a smaller
+   button, it is a broken one. */
+.wb-send-labeled {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Icon-only Stop, immediately right of send/queue. Small, but never smaller
+   than a comfortable target. */
+.wb-composer-stop.is-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.wb-composer-stop.is-icon:focus-visible {
+  outline: 2px solid var(--danger-bd, var(--danger));
+  outline-offset: 1px;
+}
+
+/* Mid-interrupt the button stays visible but stops inviting a second press. */
+.wb-composer-stop.is-interrupting {
+  opacity: .6;
+}
+
+/* The permission control is the one thing here that may still be clipped; it
+   truncates its own label instead of pushing the row out of the panel. */
+.wb-composer-actions .wb-pill,
+.wb-composer-actions .wb-dd {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ── 대기열 항목: 순서 → 메타 → 내용 → 동작 ───────────────────────────── */
+
+/* The ordinal owns a fixed slot at the head of the row and says what it is.
+   A bare badge could be read as a count, an id or a position; with the suffix
+   beside it there is only one reading, and the fixed width means the sender
+   chips line up down the whole list instead of stepping with the digit count. */
+.wb-queue-ord {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 40px;
+}
+
+.wb-queue-ord-suffix {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-queue-row.is-next .wb-queue-ord-suffix {
+  color: var(--member);
+}
+
+/* Everything about the TURN — who sent it, whether it cut in, whether it is
+   next — between the order and the controls. It takes the slack, so the row's
+   two fixed ends stay put however long a member's name is. */
+.wb-queue-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+/* One control well, same order on every row: expand, edit, delete. Fixed, so a
+   long name in the meta band can never push the delete off the panel. */
+.wb-queue-row-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.wb-queue-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The message body reads as the row's content, not as one more chip in the
+   header: it starts under the metadata band and gets the full width. */
+.wb-queue-row-head + .wb-queue-text {
+  margin-top: 2px;
+  padding-left: 2px;
+}
+
+/* Narrow panels drop the suffix rather than the number — the ordinal still
+   leads the row, and the aria-label keeps saying what it means. */
+.wb-queue.is-narrow .wb-queue-ord-suffix {
+  display: none;
+}
+
+.wb-queue.is-narrow .wb-queue-ord {
+  min-width: 0;
+}
+
+/* ── 도구 실행 결과: 결과의 의미를 형태로 말한다 ───────────────────────── */
+
+/* A check that only changes colour says "done" in both cases, and "done" is not
+   what a refused call means. The shape carries the outcome now; the tone only
+   reinforces it, so the distinction survives a colour-blind reader and a
+   screenshot in the wrong theme. */
+.wb-tool-check.is-denied {
+  background: var(--warning-dim, var(--danger-dim));
+  color: var(--warning, var(--danger));
+}
+
+.wb-tool-check.is-running {
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+.wb-tool-check.is-running svg {
+  animation: wb-spin 1s linear infinite;
+}
+
+/* The word beside the mark. Only for the outcomes that are NOT success: a badge
+   on every row would be noise, and success is already the resting state. */
+.wb-tool-outcome {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background: var(--danger-dim);
+  color: var(--danger);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wb-tool-check.is-denied + .wb-tool-outcome {
+  background: var(--warning-dim, var(--danger-dim));
+  color: var(--warning, var(--danger));
+}
+
+/* ── 전달·병합 카드: 좁은 폭 ───────────────────────────────────────────── */
+
+/* Participants and delivery status are two facts. On one nowrap line the status
+   chips pushed the names until a member name broke a character per line and ran
+   into the arrow; now each band keeps its own line when the card is narrow. */
+.wb-channel-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.wb-channel-route {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+/* A name is an atom. It shortens with an ellipsis or not at all — never mid
+   syllable — and the full name stays in the title. */
+.wb-channel-peer {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-channel-icon,
+.wb-channel-arrow {
+  flex: none;
+}
+
+/* Status chips wrap as whole chips, in their own band, and never steal width
+   from the names beside them. */
+.wb-channel-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.wb-channel-flags .wb-time {
+  margin-left: 0;
+}
+
+.wb-channel-tag,
+.wb-channel-source {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Long paths, branch names and URLs stay inside the card, but Korean prose is
+   not broken mid-word to achieve it: `anywhere` only breaks where nothing else
+   fits, which is exactly the unbreakable-token case. */
+.wb-channel-bubble {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* "전체 보기" is an action on the body, not part of it. */
+.wb-channel-bubble .wb-expand-inline {
+  display: inline-flex;
+  margin-top: 4px;
+}
+
+/* ── 탭 드래그 중 레이아웃 안정 ────────────────────────────────────────── */
+
+/* The new-panel drop target used to be a flex SIBLING of the panels. Every
+   panel therefore lost 120px+ of width the moment a drag began, re-flowed its
+   composer to the narrow layout mid-gesture, and flowed back on drop — which is
+   what read as "dragging a tab breaks the composer". It is an overlay now: it
+   occupies no layout space, so panel widths are identical before, during and
+   after a drag, and nothing has to be restored when the drag ends. */
+.wb-newpanel-zone {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  bottom: var(--space-5);
+  width: 120px;
+  margin-left: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--bg-1) 86%, transparent);
+}
+
+/* ── Composer 안내 문구: 한 줄 유지 ─────────────────────────────────────── */
+
+/* An empty composer's hint is a label, not content: it shortens rather than
+   stacking three lines of one-word rows in a narrow panel. Typed text still
+   wraps normally — that is the user's own material. */
+.wb-composer-bar .wb-composer-editor:empty::before {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below its own comfortable minimum the editor stops shrinking and the controls
+   take the next line instead (the container query above), so neither the hint
+   nor the buttons are ever crushed. */
+.wb-composer-bar .wb-composer-input {
+  min-width: 96px;
+}

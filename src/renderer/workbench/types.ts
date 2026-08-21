@@ -3,6 +3,7 @@ import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../../shared/subagentActivity";
 import type { RouteVision } from "./routes";
+import type { ModelProvider } from "./modelProvider";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { WorkbenchPanel } from "../../shared/workbenchLayout";
 
@@ -86,6 +87,13 @@ export interface MemberView {
   thinkingBudget?: number;
   permissionMode: string;
   cursorPolicy?: CursorPolicy;
+  /**
+   * The company behind the effective model (`anthropic`, `openai`, `xai`, …),
+   * resolved from `model` on every rebuild so a model change or a status refresh
+   * moves the icon with it. Undefined when nothing can identify the model — the
+   * icon then falls back to a neutral mark rather than to another brand.
+   */
+  provider?: ModelProvider;
   /** Effective model's multimodal support, for composer gating + indicators. */
   vision?: RouteVision;
   /** The effective model's selectable effort options (empty when the model has none). */

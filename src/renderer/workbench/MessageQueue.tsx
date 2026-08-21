@@ -443,35 +443,53 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 ) : (
                   <span className="wb-queue-grip is-idle" aria-hidden="true" />
                 )}
-                <span className="wb-queue-n">{row.n}</span>
-                <span
-                  className={"wb-queue-from" + (row.fromMember ? " is-member" : "")}
-                  style={row.from ? memberColorVars(row.from) : undefined}
-                  title={localized("STR-1832", [row.fromLabel])}
-                >
-                  <span className="wb-queue-from-dot" />
-                  {row.fromLabel}
+                {/* Delivery order, first and in a fixed slot. A bare badge left
+                    the reader to guess whether the number was a position, a
+                    count or an id, so it says which one out loud; the width is
+                    fixed so the metadata beside it starts on one line down the
+                    whole list. */}
+                <span className="wb-queue-ord" title={localized("STR-3785", [row.n])} aria-label={localized("STR-3785", [row.n])}>
+                  <span className="wb-queue-n">{row.n}</span>
+                  <span className="wb-queue-ord-suffix" aria-hidden="true"><LocalizedText id="STR-3786" /></span>
                 </span>
-                <span className="wb-queue-row-head-spacer" />
-                {/* Reads with the controls, not against the message: these are
-                    facts about this row's turn, so they stay in the compact
-                    header instead of reserving columns beside every body line. */}
-                {row.cutIn && (
-                  <span className="wb-queue-cutin" title={localized("STR-1833")}>
-                    <LocalizedText id="STR-1834" />
+                {/* Everything ABOUT this row's turn, in one band between the
+                    order and the controls: who sent it, and whether it cut in or
+                    is up next. It used to float beside the number, where the
+                    chip read as part of the ordinal. */}
+                <div className="wb-queue-meta">
+                  <span
+                    className={"wb-queue-from" + (row.fromMember ? " is-member" : "")}
+                    style={row.from ? memberColorVars(row.from) : undefined}
+                    title={localized("STR-1832", [row.fromLabel])}
+                    aria-label={localized("STR-1832", [row.fromLabel])}
+                  >
+                    <span className="wb-queue-from-dot" />
+                    {row.fromLabel}
                   </span>
-                )}
-                {row.showNextBadge && <span className="wb-queue-next"><LocalizedText id="STR-1835" /></span>}
-                <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
-                  {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-                </button>
-                {/* Merging is done by dragging a row onto another, and sending one
-                    row early is the toolbar's 중단하고 보내기 — neither needs a
-                    per-row button competing with 편집 and 삭제 for the same corner. */}
-                {row.showEdit && (
-                  <button type="button" className="wb-queue-btn" data-queue-action="edit" title={localized("STR-1836")} onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={13} /></button>
-                )}
-                <button type="button" className="wb-queue-btn is-danger" data-queue-action="remove" title={localized("STR-1837")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
+                  {/* Facts about the turn, not about the message: they belong
+                      with the sender rather than reserving a column beside every
+                      body line. */}
+                  {row.cutIn && (
+                    <span className="wb-queue-cutin" title={localized("STR-1833")}>
+                      <LocalizedText id="STR-1834" />
+                    </span>
+                  )}
+                  {row.showNextBadge && <span className="wb-queue-next"><LocalizedText id="STR-1835" /></span>}
+                </div>
+                {/* One control well, right-aligned and in the same order on
+                    every row, so the delete never lands where the expand was. */}
+                <div className="wb-queue-row-actions">
+                  <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-label={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
+                    {row.open ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                  </button>
+                  {/* Merging is done by dragging a row onto another, and sending
+                      one row early is the toolbar's 중단하고 보내기 — neither
+                      needs a per-row button competing for the same corner. */}
+                  {row.showEdit && (
+                    <button type="button" className="wb-queue-btn" data-queue-action="edit" title={localized("STR-1836")} aria-label={localized("STR-1836")} onClick={() => void run({ action: "edit", itemId: row.id })}><Pencil size={13} /></button>
+                  )}
+                  <button type="button" className="wb-queue-btn is-danger" data-queue-action="remove" title={localized("STR-1837")} aria-label={localized("STR-1837")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
+                </div>
               </div>
               <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
             </div>

@@ -333,12 +333,17 @@ assert(!/working/.test(workingRow?.textContent || ""), "…instead of the grey w
 const idleRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.textContent.includes("frontend"));
 assert(/not started|idle/.test(idleRow?.textContent || "") && !idleRow?.querySelector(".wb-working-dots"), "a member that is not running keeps its status label and shows no indicator");
 
-// [P-8] The model alone does not identify a member — the same model behaves
-// differently per harness — so the harness is shown where the member is named.
-const rowChip = workingRow?.querySelector(".wb-harness-chip");
-assert(rowChip?.querySelector('svg[data-harness="claude-code"]') && rowChip?.getAttribute("title") === "Claude Code", "sidebar row shows the official harness mark + full name on hover");
-const tabChip = document.querySelector(".wb-tab .wb-harness-chip");
-assert(tabChip?.querySelector('svg[data-harness="claude-code"]'), "tab strip shows the harness mark");
+// [P-8] The mark beside a member's name is its MODEL PROVIDER, not the harness
+// that runs it: a Codex-harness member on an Anthropic model was being badged
+// OpenAI. The harness is still named, in the tab's tooltip.
+const rowChip = workingRow?.querySelector(".wb-member-mark");
+assert(rowChip?.querySelector('svg[data-vendor-mark="claude"]') && rowChip?.getAttribute("title") === "Anthropic", "sidebar row shows the model provider's mark + provider name on hover");
+assert(!workingRow?.querySelector(".wb-dot"), "…and the status dot no longer duplicates the row's status label");
+const testerRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.querySelector(".wb-member-name")?.textContent === "tester");
+assert(testerRow?.querySelector('svg[data-vendor-mark="openai"]'), "a member on an OpenAI model gets the OpenAI mark, not its harness's");
+const tabChip = document.querySelector(".wb-tab .wb-member-mark");
+assert(tabChip?.querySelector('svg[data-vendor-mark="claude"]'), "tab strip carries the same provider mark");
+assert(!document.querySelector(".wb-tab .wb-harness-chip"), "…and does not also carry a second, harness-shaped brand mark");
 const activeTab = document.querySelector(".wb-tab.is-active");
 assert(/Claude Code/.test(activeTab?.getAttribute("title") || ""), "the tab's tooltip names the harness in full");
 // The context indicator is now a DONUT (ring), not a bar. Clicking it opens the
