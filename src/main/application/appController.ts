@@ -3223,7 +3223,7 @@ export class AppController {
     },
   ): Promise<{
     ok: true;
-    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }>;
+    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }>;
   }> {
     this.requireQa();
     const win = this.windowFor(windowId);
@@ -3235,7 +3235,18 @@ export class AppController {
       throw new Error("Pointer input requires between 1 and 64 steps.");
     }
     const delayMs = Math.min(500, Math.max(0, Number.isFinite(body?.delayMs) ? Number(body.delayMs) : 40));
-    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }> = [];
+    // Electron drops sendInputEvent input for an unfocused BrowserWindow. API
+    // callers often run from a terminal that owns focus, so focus the explicitly
+    // targeted QA window before reporting any pointer step as completed.
+    if (!win.isFocused()) {
+      win.show();
+      win.focus();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+    if (!win.isFocused()) {
+      throw new Error("Target window could not be focused; pointer input was not sent.");
+    }
+    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }> = [];
     let isDown = false;
 
     try {
@@ -3245,7 +3256,7 @@ export class AppController {
         if (!selector) {
           throw new Error(`Pointer step ${index + 1} requires a selector.`);
         }
-        if (action !== "move" && action !== "down" && action !== "up" && action !== "click") {
+        if (action !== "move" && action !== "down" && action !== "up" && action !== "click" && action !== "rightclick") {
           throw new Error(`Pointer step ${index + 1} has unsupported action '${action}'.`);
         }
         const point = await win.webContents.executeJavaScript(
@@ -3285,6 +3296,10 @@ export class AppController {
           if (isDown) throw new Error(`Pointer step ${index + 1} cannot click while already pressed.`);
           win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...coordinates });
           win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...coordinates });
+        } else if (action === "rightclick") {
+          if (isDown) throw new Error(`Pointer step ${index + 1} cannot right-click while already pressed.`);
+          win.webContents.sendInputEvent({ type: "mouseDown", button: "right", clickCount: 1, ...coordinates });
+          win.webContents.sendInputEvent({ type: "mouseUp", button: "right", clickCount: 1, ...coordinates });
         }
         completed.push({ selector, action, ...coordinates });
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));

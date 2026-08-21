@@ -50,6 +50,12 @@ defineGlobal("HTMLElement", window.HTMLElement);
 defineGlobal("getComputedStyle", window.getComputedStyle.bind(window));
 defineGlobal("requestAnimationFrame", window.requestAnimationFrame?.bind(window) || ((cb) => setTimeout(() => cb(Date.now()), 0)));
 defineGlobal("cancelAnimationFrame", window.cancelAnimationFrame?.bind(window) || clearTimeout);
+// Font settings probe canvas metrics. jsdom deliberately omits a canvas
+// implementation; deterministic widths are enough for this renderer smoke.
+window.HTMLCanvasElement.prototype.getContext = () => ({
+  font: "",
+  measureText: (text) => ({ width: String(text).length * 10 }),
+});
 if (!globalThis.crypto?.randomUUID) {
   defineGlobal("crypto", { randomUUID: () => "id-" + Math.random().toString(16).slice(2) });
 }
@@ -111,7 +117,7 @@ const members = [
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" }, grok: { model: "grok-4.6", effort: "high", permissionMode: "default" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
     // Settings the real app always fills in (main/settings.ts normalizes them on
     // read). They were absent here while nothing rendered the settings screen;
     // the 유휴 슬립 assertions below do, and the cards read these directly.
@@ -157,6 +163,7 @@ window.agentParty = {
   getInitialState: async () => initialState,
   updateSettings: async (patch) => ({ ...initialState.settings, ...patch }),
   chooseWorkspace: async () => initialState.settings,
+  listMemberLocations: async () => ({ ok: true, members: [] }),
   listAuth: async () => [],
   setOpenRouterKey: noop,
   clearOpenRouterKey: noop,
@@ -352,17 +359,16 @@ const menuItems = [...document.querySelectorAll('[data-panel-id="pb"] .wb-menu-i
 const restartMenuItem = menuItems.find((b) => /세션 재시작/.test(b.textContent || ""));
 const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
 const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || ""));
+const cliMenuItem = menuItems.find((b) => /CLI로 이어가기/.test(b.textContent || ""));
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
 assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
-assert(mcpMenuItem != null && menuItems.length === 3, "⋯ menu has three items (세션 재시작 · Message Gate · MCP 서버)");
+assert(mcpMenuItem != null && cliMenuItem != null && menuItems.length === 4, "⋯ menu has restart, Message Gate, MCP, and CLI continuation actions");
 // A busy member's composer offers 대기열에 추가 — NOT Stop. While a member works,
 // that slot is the only way to put a message in its queue, so Stop cannot own it.
-// Stop moved to the panel toolbar, where it appears only mid-turn.
 const busySend = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-queueing, [data-panel-id="pa"] .wb-send.is-queueing');
 assert(busySend !== null, "a busy member's composer offers 대기열에 추가 (the send slot stays a send)");
 assert(document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop') === null, "Stop no longer takes over the composer's send slot");
-assert(document.querySelector('[data-panel-id="pa"] .wb-stop-pill') !== null, "a busy member's toolbar shows Stop");
-assert(document.querySelector('[data-panel-id="pb"] .wb-stop-pill') === null, "an idle member's toolbar has no Stop");
+assert(document.querySelector('.wb-stop-pill') === null, "obsolete toolbar Stop pills are not rendered");
 
 // Party right-click -> new window carries only the stable party id. The main
 // process derives cwd from the sender window; forwarding settings.workspacePath
@@ -440,34 +446,34 @@ if (restartItem) {
 assert(restartedSessions.includes("s-reviewer"), "하드 리스타트 restarted the member's live session (restart called with its session id)");
 
 // Idle sleep is otherwise reachable only over HTTP, so the menu is the whole UI
-// for it: 계속 켜두기 must pin the member and 지금 재우기 must release it.
+// for it: 항상 실행 상태 유지 must pin the member and 지금 프로세스 종료 must release it.
 if (reviewerRow) {
   reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 const sleepMenuItems = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])];
-const keepAwakeItem = sleepMenuItems.find((b) => /계속 켜두기/.test(b.textContent || ""));
-const sleepItem = sleepMenuItems.find((b) => /지금 재우기/.test(b.textContent || ""));
-assert(keepAwakeItem != null, "context menu offers 계속 켜두기");
-assert(sleepItem != null, "context menu offers 지금 재우기 for an awake member");
+const keepAwakeItem = sleepMenuItems.find((b) => /항상 실행 상태 유지/.test(b.textContent || ""));
+const sleepItem = sleepMenuItems.find((b) => /지금 프로세스 종료/.test(b.textContent || ""));
+assert(keepAwakeItem != null, "context menu offers 항상 실행 상태 유지");
+assert(sleepItem != null, "context menu offers 지금 프로세스 종료 for an awake member");
 if (sleepItem) {
   sleepItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
-assert(sleepCalls.includes("reviewer"), "지금 재우기 released the member's process (sleepPartyMember called)");
+assert(sleepCalls.includes("reviewer"), "지금 프로세스 종료 released the member's process (sleepPartyMember called)");
 if (reviewerRow) {
   reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 const pinItem = [...(document.querySelector(".wb-ctx-menu")?.querySelectorAll(".wb-ctx-item") || [])]
-  .find((b) => /계속 켜두기/.test(b.textContent || ""));
+  .find((b) => /항상 실행 상태 유지/.test(b.textContent || ""));
 if (pinItem) {
   pinItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 assert(
   keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
-  "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
+  "항상 실행 상태 유지 pinned the member awake (setMemberKeepAwake called with true)",
 );
 
 // A window holds the history of members it has OPEN (or that hold a live
@@ -521,11 +527,11 @@ assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed bac
 
 // Settings → Runtime carries the only UI for the global idle-sleep policy, so a
 // card that fails to render leaves the feature on with no way to turn it off.
-emit("nav", { view: "runtime" });
+emit("nav", { view: "agent", tab: "general" });
 await new Promise((resolve) => setTimeout(resolve, 120));
 const runtimeText = document.getElementById("root").textContent || "";
-assert(runtimeText.includes("유휴 슬립"), "settings show the 유휴 슬립 card");
-assert(runtimeText.includes("유휴 멤버의 프로세스 내리기"), "the card explains what sleeping does");
+assert(runtimeText.includes("유휴 절전"), "settings show the 유휴 절전 card");
+assert(runtimeText.includes("유휴 멤버의 프로세스 종료"), "the card explains what sleeping does");
 assert(runtimeText.includes("5분"), "the card shows the current quiet period");
 
 // React surfaces render errors via console.error; treat those as failures.

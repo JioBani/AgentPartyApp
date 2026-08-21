@@ -3686,7 +3686,9 @@ Sends real Chromium pointer input to elements in the targeted Electron window
 without moving the operating-system cursor. This is the pointer counterpart of
 `/api/qa/input`; use it for controls whose behaviour depends on
 `pointerdown`/`pointerenter`/`pointerup` rather than a synthetic DOM click.
-Window-scoped (`?window=<id>`; focused window when omitted).
+Window-scoped (`?window=<id>`; focused window when omitted). The endpoint
+focuses that window first because Electron discards input sent to an unfocused
+window.
 
 ```json
 {
@@ -3700,7 +3702,9 @@ Window-scoped (`?window=<id>`; focused window when omitted).
 ```
 
 Each selector must match exactly one visible element. Actions are `move`,
-`down`, `up`, and `click` (the default). A sequence may contain 1–64 steps and
+`down`, `up`, `click` (the default), and `rightclick`. Use `rightclick` to open
+the same context menu a user gets from the secondary mouse button. A sequence
+may contain 1–64 steps and
 must finish with the pointer released. `delayMs` defaults to 40 and is capped at
 500 so React can process state between gesture steps. Returns the selector,
 action, and renderer-local coordinates used for every completed step.

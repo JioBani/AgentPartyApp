@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -266,6 +266,42 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number }
   | { kind: "group"; groupId: string; name: string; isDefault: boolean; x: number; y: number };
 
+interface PositionedCtxMenu {
+  /** The exact menu state this measurement belongs to. */
+  menu: CtxMenu;
+  left: number;
+  top: number;
+}
+
+const CONTEXT_MENU_VIEWPORT_GUTTER = 8;
+const CONTEXT_MENU_ANCHOR_GAP = 4;
+
+/**
+ * Places a context menu next to its pointer anchor without clipping it.
+ *
+ * Opening direction is decided from the measured menu size, not a guessed
+ * item count: member actions vary with session state and destructive actions
+ * can change after the menu opens. If the menu does not fit below/right of the
+ * pointer, it opens above/left, then clamps to the viewport as a final guard.
+ */
+function fitContextMenuToViewport(
+  anchor: { x: number; y: number },
+  menuSize: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const maxLeft = Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, viewport.width - menuSize.width - CONTEXT_MENU_VIEWPORT_GUTTER);
+  const maxTop = Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, viewport.height - menuSize.height - CONTEXT_MENU_VIEWPORT_GUTTER);
+  const fitsRight = anchor.x + CONTEXT_MENU_ANCHOR_GAP + menuSize.width + CONTEXT_MENU_VIEWPORT_GUTTER <= viewport.width;
+  const fitsBelow = anchor.y + CONTEXT_MENU_ANCHOR_GAP + menuSize.height + CONTEXT_MENU_VIEWPORT_GUTTER <= viewport.height;
+  const preferredLeft = fitsRight ? anchor.x + CONTEXT_MENU_ANCHOR_GAP : anchor.x - menuSize.width - CONTEXT_MENU_ANCHOR_GAP;
+  const preferredTop = fitsBelow ? anchor.y + CONTEXT_MENU_ANCHOR_GAP : anchor.y - menuSize.height - CONTEXT_MENU_ANCHOR_GAP;
+
+  return {
+    left: Math.round(Math.min(maxLeft, Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, preferredLeft))),
+    top: Math.round(Math.min(maxTop, Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, preferredTop))),
+  };
+}
+
 /**
  * Each drawer remembers its own width.
  *
@@ -328,6 +364,8 @@ export function PartySidebar(props: PartySidebarProps) {
   const [movingParty, setMovingParty] = useState<PartySummary | null>(null);
   // Right-click context menu, at the cursor, for a member or party row.
   const [menu, setMenu] = useState<CtxMenu | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<PositionedCtxMenu | null>(null);
   // Arms the second, confirming click for the destructive party delete.
   const [confirmParty, setConfirmParty] = useState(false);
   // Same two-step for deleting a group. Separate flag: one shared "confirm"
@@ -372,6 +410,38 @@ export function PartySidebar(props: PartySidebarProps) {
       window.removeEventListener("contextmenu", close);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  // Measure the real rendered menu before paint. `visibility: hidden` on the
+  // first render prevents a one-frame flash at the unadjusted cursor position.
+  useLayoutEffect(() => {
+    const element = contextMenuRef.current;
+    if (!menu || !element) {
+      return;
+    }
+
+    const position = () => {
+      const bounds = element.getBoundingClientRect();
+      const next = fitContextMenuToViewport(
+        { x: menu.x, y: menu.y },
+        { width: bounds.width, height: bounds.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      setMenuPosition((current) => (
+        current?.menu === menu && current.left === next.left && current.top === next.top
+          ? current
+          : { menu, ...next }
+      ));
+    };
+
+    position();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
+    observer?.observe(element);
+    window.addEventListener("resize", position);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", position);
     };
   }, [menu]);
 
@@ -549,8 +619,14 @@ export function PartySidebar(props: PartySidebarProps) {
       )}
 
       {menu && (
-        // Fixed to the viewport at the cursor; click handlers above close it.
-        <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+        <div
+          ref={contextMenuRef}
+          className="wb-ctx-menu"
+          style={menuPosition?.menu === menu
+            ? { left: menuPosition.left, top: menuPosition.top }
+            : { left: menu.x, top: menu.y, visibility: "hidden" }}
+          onClick={(event) => event.stopPropagation()}
+        >
           {menu.kind === "group" ? (
             <GroupContextMenuItems
               menu={menu}

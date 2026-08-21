@@ -39,12 +39,17 @@ const mkView = (name) => ({ name, color: "#888", member: { name, partyId: "p1", 
 let removed = [];
 let removedParties = [];
 const props = {
-  parties: [{ id: "p1", name: "P", createdAt: "", updatedAt: "" }], activePartyId: "p1", activePartyName: "P",
-  views: [mkView("main"), mkView("alice")], openMembers: new Set(), workingByParty: { p1: 0 }, memberCountByParty: { p1: 2 },
-  width: 240, routes: [], defaultProfile: { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" },
-  onSelectParty: () => {}, onCreateParty: () => {}, onCreateMember: () => {}, onOpenMember: () => {},
+  groups: [{ id: "default", name: "Default", kind: "default", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }],
+  partySummaries: [{ id: "p1", groupId: "default", name: "P", memberCount: 2, runningCount: 0, windowsCount: 2, wslCount: 0, updatedAt: "2026-01-01T00:00:00.000Z" }],
+  cwdPrefs: { windowsRecent: [], wslRecent: [] }, appWorkspaceRoot: "C:\\Project", now: Date.parse("2026-01-01T00:00:00.000Z"),
+  activePartyId: "p1", views: [mkView("main"), mkView("alice")], openMembers: new Set(),
+  drawers: { party: { open: true, width: 236 }, member: { open: true, width: 210 } },
+  routes: [], defaultProfile: { harness: "claude-code", model: "sonnet", effort: "medium", permissionMode: "default" }, harnessDefaults: {},
+  onSelectParty: () => {}, onCreateParty: () => {}, onCreateGroup: () => {}, onMovePartyToGroup: () => {},
+  onRenameGroup: () => {}, onRemoveGroup: () => {}, onReorderGroups: () => {}, onBrowseCwd: async () => null,
+  onCreateMember: () => {}, onOpenMember: () => {}, onRestartMember: () => {}, onSetMemberKeepAwake: () => {}, onSleepMember: () => {}, onWakeMember: () => {},
   onRemoveMember: (name) => removed.push(name), onRemoveParty: (id) => removedParties.push(id),
-  onOpenPartyGate: () => {}, onCollapse: () => {},
+  onOpenPartyGate: () => {}, onOpenPartyInNewWindow: () => {}, onToggleDrawer: () => {},
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(PartySidebar, props));
 await new Promise((r) => setTimeout(r, 80));
@@ -60,14 +65,14 @@ assert(rows.length === 2, "both members rendered");
 
 // Right-click 'main' → a menu without 삭제하기. The menu used to be suppressed
 // entirely here (main is not removable and had no session, so nothing was
-// actionable), but 계속 켜두기 applies to every member including main, so the
+// actionable), but 항상 실행 상태 유지 applies to every member including main, so the
 // menu now opens; only the delete item stays absent.
 rightClick(rowFor("main")); await tick();
 const mainCtx = document.querySelector(".wb-ctx-menu");
 assert(Boolean(mainCtx), "right-click on 'main' opens a context menu");
 const mainItems = mainCtx ? [...mainCtx.querySelectorAll(".wb-ctx-item")] : [];
 assert(!mainItems.some((b) => /삭제하기/.test(b.textContent || "")), "'main' context menu has no 삭제하기");
-assert(mainItems.some((b) => /계속 켜두기/.test(b.textContent || "")), "'main' context menu offers 계속 켜두기");
+assert(mainItems.some((b) => /항상 실행 상태 유지/.test(b.textContent || "")), "'main' context menu offers 항상 실행 상태 유지");
 
 // Right-click 'alice' → a context menu with a delete item appears; no removal yet.
 rightClick(rowFor("alice")); await tick();
@@ -96,8 +101,8 @@ assert(removedParties.length === 0, "the first step does not delete the party");
 // First click arms the confirm; still no deletion.
 click(step1); await tick();
 const confirm = [...document.querySelectorAll(".wb-ctx-menu .wb-ctx-item")]
-  .find((button) => /한 번 더 클릭/.test(button.textContent || ""));
-assert(confirm && /한 번 더 클릭/.test(confirm.textContent || ""), "first click arms a '한 번 더 클릭' confirm");
+  .find((button) => /다시 선택하여 확인/.test(button.textContent || ""));
+assert(confirm && /다시 선택하여 확인/.test(confirm.textContent || ""), "first click arms the explicit delete confirmation");
 assert(removedParties.length === 0, "arming the confirm still does not delete the party");
 
 // Second click deletes; menu closes.
