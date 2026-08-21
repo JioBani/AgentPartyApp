@@ -5,6 +5,14 @@ release/
 # Generated design-system bundle + its verification shots (docs/DESIGN_MIRROR.md).
 # Always reproducible from the app itself, and 1.9 MB of it is copied fonts.
 build/
+!build/
+build/*
+!build/installer.nsh
+!build/icon-source.png
+!build/icon.png
+!build/icon.ico
+!build/icons/
+!build/icons/*.png
 *.log
 .env
 .env.*

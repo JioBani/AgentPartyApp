@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FolderOpen, Monitor, Terminal, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, FolderOpen, Monitor, Terminal, TriangleAlert } from "lucide-react";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd } from "../../shared/memberLocation";
 import { RECENT_CWD_LIMIT, memberLocationsEqual, preferencesFor } from "../../shared/memberLocation";
 import { relativeDay } from "../../shared/relativeTime";
@@ -44,6 +44,20 @@ export interface WslBrowsing {
   error?: string;
 }
 
+/**
+ * A WSL cwd is selectable only when its distro came from the discovered list.
+ * The backend still validates the path itself; this prevents stale or typed
+ * distro names from leaving either creation surface before that round trip.
+ */
+export function selectableWslDistroError(value: MemberExecutionLocation | undefined, wsl?: WslBrowsing): string | undefined {
+  if (value?.env !== "wsl") return undefined;
+  if (wsl?.distros === undefined) return "WSL 배포판 목록을 불러오는 중입니다.";
+  if (!value.distro) return wsl.error || "WSL 배포판을 선택하세요.";
+  return wsl.distros.some((name) => name.toLowerCase() === value.distro?.toLowerCase())
+    ? undefined
+    : wsl.error || "설치된 WSL 배포판 중 하나를 선택하세요.";
+}
+
 export interface CwdPickerProps {
   /** The chosen location, or undefined until the user picks one. */
   value?: MemberExecutionLocation;
@@ -79,7 +93,8 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
   // filesystem it belongs to, and `/home/dev` exists in one distro and not the
   // next. So browsing stays shut until a distro is named.
   const distro = env === "wsl" ? value?.distro : undefined;
-  const canBrowse = env === "windows" || Boolean(distro);
+  const selectedDistro = wsl?.distros?.find((name) => name.toLowerCase() === distro?.toLowerCase());
+  const canBrowse = env === "windows" || Boolean(selectedDistro);
 
   /**
    * Switching distro clears the path.
@@ -112,8 +127,25 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
       </div>
 
       {env === "wsl" && (
-        <div className="wb-cwd-distros" role="group" aria-label={localized("STR-3737")}>
-          <span className="wb-cwd-distros-label"><LocalizedText id="STR-3738" /></span>
+        <div className="wb-cwd-distros">
+          <label className="wb-cwd-distro-select">
+            <span className="wb-cwd-distros-label"><LocalizedText id="STR-3738" /></span>
+            <span className="wb-cwd-distro-control">
+              <Terminal size={13} />
+              <select
+                aria-label={localized("STR-3737")}
+                value={selectedDistro || ""}
+                disabled={wsl?.distros === undefined || wsl.distros.length === 0}
+                onChange={(event) => chooseDistro(event.target.value)}
+              >
+                <option value="" disabled>
+                  {wsl?.distros === undefined ? "배포판 검색 중" : "배포판 선택"}
+                </option>
+                {wsl?.distros?.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <ChevronDown size={13} className="wb-cwd-distro-chevron" />
+            </span>
+          </label>
           {wsl?.distros === undefined && <span className="wb-cwd-distros-note"><LocalizedText id="STR-3739" /></span>}
           {wsl?.distros?.length === 0 && (
             <span className="wb-cwd-distros-note is-warn">
@@ -121,18 +153,6 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
               {wsl?.error || localized("STR-3740")}
             </span>
           )}
-          {wsl?.distros?.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className={"wb-cwd-distro-chip" + (name === distro ? " is-active" : "")}
-              aria-pressed={name === distro}
-              onClick={() => chooseDistro(name)}
-            >
-              <Terminal size={12} />
-              {name}
-            </button>
-          ))}
         </div>
       )}
 
@@ -153,12 +173,35 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
         </button>
       </div>
 
+      <div className="wb-cwd-default">
+        <div className="wb-cwd-default-label">
+          <span>현재 기본 작업 위치</span>
+          <span>{ENV_LABEL[env]}</span>
+        </div>
+        {fallback ? (
+          <button
+            type="button"
+            className={"wb-cwd-default-value" + (value && memberLocationsEqual(value, fallback) ? " is-selected" : "")}
+            aria-pressed={Boolean(value && memberLocationsEqual(value, fallback))}
+            onClick={() => onChange(fallback)}
+          >
+            <EnvIcon env={env} />
+            {fallback.distro && <span className="wb-cwd-distro">{fallback.distro}</span>}
+            <span className="wb-mono wb-cwd-item-path">{fallback.cwd}</span>
+            <span className="wb-cwd-pin">기본값</span>
+          </button>
+        ) : (
+          <p className="wb-cwd-default-empty">설정되지 않음</p>
+        )}
+      </div>
+
       {recent.length > 0 && (
         <div className="wb-cwd-list">
           <div className="wb-cwd-list-label">
             <LocalizedText id="STR-3655" /> {ENV_LABEL[env]} <LocalizedText id="STR-3654" />
             <span><LocalizedText id="STR-3656" /> {RECENT_CWD_LIMIT}개</span>
           </div>
+          <div role="radiogroup" aria-label={`${ENV_LABEL[env]} 최근 작업 위치`}>
           {recent.map((entry) => (
             <CwdRecentItem
               key={`${entry.location.distro ?? ""}:${entry.location.cwd}`}
@@ -169,6 +212,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
               onSelect={() => onChange(entry.location)}
             />
           ))}
+          </div>
         </div>
       )}
 
@@ -208,10 +252,12 @@ function CwdRecentItem({ entry, now, isDefault, isSelected, onSelect }: {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={isSelected}
       className={"wb-cwd-item" + (isSelected ? " is-selected" : "") + (broken ? " is-broken" : "")}
-      aria-current={isSelected || undefined}
       onClick={onSelect}
     >
+      <span className="wb-cwd-choice" aria-hidden="true">{isSelected && <Check size={11} strokeWidth={3} />}</span>
       {entry.location.distro && <span className="wb-cwd-distro">{entry.location.distro}</span>}
       <span className="wb-mono wb-cwd-item-path">{entry.location.cwd}</span>
       {isDefault && <span className="wb-cwd-pin"><LocalizedText id="STR-3659" /></span>}

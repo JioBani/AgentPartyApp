@@ -243,6 +243,17 @@ async function main() {
     assert(counts.parties === PARTIES, `sidebar renders all ${PARTIES} parties (got ${counts.parties})`);
     assert(counts.members === MEMBERS + 1, `sidebar renders all ${MEMBERS + 1} members (got ${counts.members})`);
 
+    const moreBefore = await cdp.eval(`(() => {
+      const button = document.querySelector(".wb-party-more");
+      const list = document.querySelector(".wb-party-scroll");
+      return { visible: Boolean(button), top: list?.scrollTop || 0, label: button?.getAttribute("aria-label") || "" };
+    })()`);
+    assert(moreBefore.visible && moreBefore.label.length > 0, "party overflow affordance is visible and keyboard-labelled while content remains below");
+    await cdp.eval(`document.querySelector(".wb-party-more")?.click()`);
+    await delay(700);
+    const moreAfter = await cdp.eval(`document.querySelector(".wb-party-scroll")?.scrollTop || 0`);
+    assert(moreAfter > moreBefore.top, `party overflow button advances to the next hidden area (scrollTop ${moreBefore.top} → ${moreAfter})`);
+
     for (const [label, list, row] of [
       ["party", ".wb-party-scroll", ".wb-party-row"],
       ["member", ".wb-member-list", ".wb-member-row"],
@@ -255,6 +266,9 @@ async function main() {
       // The complaint itself: the last row must be hit-testable after scrolling.
       assert(m.lastRowReachable, `last ${label} row is reachable by click after scrolling to the bottom (hit "${m.hitText}")`);
     }
+    await delay(250);
+    const moreAtBottom = await cdp.eval(`Boolean(document.querySelector(".wb-party-more"))`);
+    assert(!moreAtBottom, "party overflow affordance disappears at the actual bottom");
 
     // Reproduce the exact lower-row context-menu bug with native pointer input.
     // The previous measurement left the member list at its bottom; the last row

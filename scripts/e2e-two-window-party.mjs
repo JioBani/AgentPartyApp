@@ -72,6 +72,29 @@ try {
   assert(after.length === 2, `the process now hosts TWO windows (${after.length})`);
   assert((await liveUrls(ws)).length === 1, "still ONE process serves the workspace (not two)");
 
+  const measureWindow = (windowId, selector) => post(base, `/api/measure?window=${encodeURIComponent(windowId)}`, { selector });
+  await waitFor(
+    async () => [await measureWindow(win1, ".wb-party-drawer"), await measureWindow(win2, ".wb-party-drawer")],
+    (rows) => rows.every((row) => row?.elements?.length === 1),
+  );
+  const initialParty = await measureWindow(win1, ".wb-party-drawer");
+  const initialMember = await measureWindow(win1, ".wb-member-drawer");
+  assert(initialParty?.elements?.[0]?.box?.width === 256, "party drawer starts at exactly 256px without a saved width");
+  assert(initialMember?.elements?.[0]?.box?.width === 256, "member drawer starts at exactly 256px without a saved width");
+
+  await post(base, `/api/qa/pointer?window=${encodeURIComponent(win1)}`, {
+    steps: [{ selector: ".wb-party-drawer .wb-drawer-head .wb-icon-btn", action: "click" }], delayMs: 0,
+  });
+  const win1PartyClosed = await waitFor(() => measureWindow(win1, ".wb-drawer-rail.is-party"), (row) => row?.elements?.length === 1);
+  const win2PartyOpen = await measureWindow(win2, ".wb-party-drawer");
+  assert(win1PartyClosed?.elements?.length === 1 && win2PartyOpen?.elements?.length === 1, "party drawer collapse is isolated to one window");
+  await post(base, `/api/qa/pointer?window=${encodeURIComponent(win1)}`, {
+    steps: [{ selector: ".wb-member-drawer .wb-drawer-head .wb-icon-btn", action: "click" }], delayMs: 0,
+  });
+  const win1MemberClosed = await waitFor(() => measureWindow(win1, ".wb-drawer-rail.is-member"), (row) => row?.elements?.length === 1);
+  const win2MemberOpen = await measureWindow(win2, ".wb-member-drawer");
+  assert(win1MemberClosed?.elements?.length === 1 && win2MemberOpen?.elements?.length === 1, "member drawer collapse is isolated to one window and independent of the party drawer");
+
   // Two parties (shared on disk); createParty response's currentPartyId is the new id.
   const idA = (await post(base, "/api/parties", { name: "WIN-A" }))?.currentPartyId;
   const idB = (await post(base, "/api/parties", { name: "WIN-B" }))?.currentPartyId;
