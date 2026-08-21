@@ -12,7 +12,7 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessLabel } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
-import { CwdPicker, type WslBrowsing } from "./CwdPicker";
+import { CwdPicker, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, suggestedCwd } from "../../shared/memberLocation";
 
@@ -230,7 +230,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * and a green button here never means the path was verified.
    */
   const locationProblem = location ? checkLocationShape(location) : undefined;
-  const hasLocation = Boolean(location?.cwd) && !locationProblem;
+  const distroProblem = selectableWslDistroError(location, wsl);
+  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem;
+  const canSubmit = canCreate && hasLocation;
   // Name gates the first step, location the second; the permission step is
   // pre-seeded from the saved defaults and cannot be left unusable.
   const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation : true;
@@ -268,7 +270,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   }
 
   function create() {
-    if (!canCreate) {
+    if (!canSubmit) {
       return;
     }
     onCreate({
@@ -490,7 +492,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
                 hint={localized("STR-3664")}
               />
-              {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+              {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
             </section>
             )}
 
@@ -533,7 +535,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               </button>
             )}
             {isLastStep ? (
-              <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
+              <button type="button" className="wb-btn wb-btn-accent" disabled={!canSubmit} onClick={create}>
                 <UserPlus size={14} />  <LocalizedText id="STR-1768" />
               </button>
             ) : (

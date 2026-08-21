@@ -47,6 +47,7 @@ function defineGlobal(name, value) {
 defineGlobal("window", window);
 defineGlobal("document", window.document);
 defineGlobal("HTMLElement", window.HTMLElement);
+defineGlobal("Node", window.Node);
 defineGlobal("getComputedStyle", window.getComputedStyle.bind(window));
 defineGlobal("requestAnimationFrame", window.requestAnimationFrame?.bind(window) || ((cb) => setTimeout(() => cb(Date.now()), 0)));
 defineGlobal("cancelAnimationFrame", window.cancelAnimationFrame?.bind(window) || clearTimeout);
@@ -156,6 +157,8 @@ const wakeCalls = [];
 // session. Activating it prewarms a resumed session; navigating away, losing
 // that session, and returning must prewarm again without dropping the history.
 const startedMembers = [];
+const sentPartyMessages = [];
+let failNextMemberSend = false;
 const frontendHistory = [
   { id: "front-old-user", kind: "user", text: "keep this old question", at: "09:00" },
   { id: "front-old-answer", kind: "assistant", text: "KEEP_FRONTEND_HISTORY", at: "09:01" },
@@ -181,6 +184,15 @@ window.agentParty = {
   resumeSession: async () => sessions[0],
   closeSession: noop,
   sendMessage: noop,
+  sendMemberMessage: async (...args) => {
+    sentPartyMessages.push(args);
+    if (failNextMemberSend) {
+      failNextMemberSend = false;
+      return { ok: false, message: "simulated send failure", ...initialState.party };
+    }
+    const member = members.find((item) => item.name === args[0]);
+    return { ok: true, message: "", ...initialState.party, member };
+  },
   interrupt: noop,
   restart: async (sessionId) => { restartedSessions.push(sessionId); return { ok: true }; },
   compact: noop,
@@ -201,7 +213,10 @@ window.agentParty = {
   createParty: async () => ({ ok: true, message: "", ...initialState.party }),
   selectParty: async () => ({ ok: true, message: "", ...initialState.party }),
   createPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
-  sendPartyMessage: async () => ({ ok: true, message: "", ...initialState.party }),
+  sendPartyMessage: async (...args) => {
+    sentPartyMessages.push(args);
+    return { ok: true, message: "", ...initialState.party };
+  },
   bindPartyMember: noop,
   openPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   closePartyMember: async (name) => { closedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
@@ -308,7 +323,7 @@ assert(!crashed, `mount did not throw${crashed ? `: ${crashed.stack || crashed}`
 const html = document.getElementById("root").innerHTML;
 const text = document.getElementById("root").textContent || "";
 assert(html.length > 2000, "root rendered substantial markup");
-assert(text.includes("Workbench"), "workbench nav label shown");
+assert(text.includes("파티") && !text.includes("Workbench"), "party navigation is present without exposed Workbench terminology");
 assert(text.includes("Refactor Auth"), "active party name shown in sidebar");
 assert(document.querySelectorAll('[data-panel-id]').length === 2, "two panels rendered from seeded layout");
 
@@ -537,6 +552,56 @@ assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed bac
 
 // Settings → Runtime carries the only UI for the global idle-sleep policy, so a
 // card that fails to render leaves the feature on with no way to turn it off.
+const frontendEditor = document.querySelector(".wb-composer-editor");
+assert(frontendEditor != null, "frontend composer is available for draft persistence QA");
+if (frontendEditor) {
+  frontendEditor.textContent = "FRONTEND_UNSENT_DRAFT";
+  frontendEditor.dispatchEvent(new window.InputEvent("input", { bubbles: true, inputType: "insertText", data: "FRONTEND_UNSENT_DRAFT" }));
+}
+window.dispatchEvent(new window.Event("resize"));
+emit("nav", { view: "usage" });
+await new Promise((resolve) => setTimeout(resolve, 80));
+emit("nav", { view: "workbench" });
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "draft survives navigation and resize remounts");
+
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "reviewer", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+const reviewerEditor = document.querySelector(".wb-composer-editor");
+if (reviewerEditor) {
+  reviewerEditor.textContent = "REVIEWER_UNSENT_DRAFT";
+  reviewerEditor.dispatchEvent(new window.InputEvent("input", { bubbles: true, inputType: "insertText", data: "REVIEWER_UNSENT_DRAFT" }));
+}
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "member switch restores only the original member draft");
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "reviewer", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "REVIEWER_UNSENT_DRAFT", "second member keeps an isolated draft");
+document.querySelector(".wb-composer-editor")?.closest("form")?.dispatchEvent(new window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 80));
+assert(sentPartyMessages.length > 0, "sending the active member draft reaches the party action");
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "", "successful send clears the active member draft");
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "sending another member does not clear this member draft");
+failNextMemberSend = true;
+document.querySelector(".wb-composer-editor")?.closest("form")?.dispatchEvent(new window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 80));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "failed send restores the active member draft");
+
 emit("nav", { view: "agent", tab: "general" });
 await new Promise((resolve) => setTimeout(resolve, 120));
 const runtimeText = document.getElementById("root").textContent || "";

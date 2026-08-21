@@ -1,5 +1,5 @@
 export const koMessages = {
-  "view.workbench.title": "Workbench",
+  "view.workbench.title": "파티",
   "view.guide.title": "가이드",
   "view.usage.title": "Token Usage",
   "view.auth.title": "인증",
@@ -84,7 +84,7 @@ export type MessageKey = keyof typeof koMessages;
 export type MessageValues = Record<string, string | number>;
 
 export const enMessages: Record<MessageKey, string> = {
-  "view.workbench.title": "Workbench",
+  "view.workbench.title": "Parties",
   "view.guide.title": "Guide",
   "view.usage.title": "Token Usage",
   "view.auth.title": "Authentication",

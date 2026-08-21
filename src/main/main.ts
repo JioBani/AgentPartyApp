@@ -220,6 +220,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
     minWidth: 1100,
     minHeight: 720,
     title: "AgentParty",
+    icon: path.join(app.getAppPath(), "build", "icon.png"),
     show: false,
     backgroundColor: windowBackgroundFor(boot.preference),
     titleBarStyle: "hidden",
@@ -957,15 +958,13 @@ function registerApplicationMenu(): void {
       label: "File",
       submenu: [
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWindow(defaultWorkspace()) },
-        { label: "Choose Workspace", click: () => focusedWindow()?.webContents.send("workspace:choose") },
-        { type: "separator" },
         { label: "Close Window", role: "close" },
       ],
     },
     {
       label: "View",
       submenu: [
-        { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
+        { label: "Parties", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
         { label: "Token Usage", accelerator: "CmdOrCtrl+2", click: () => navigate("usage") },
         { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
         { label: "Agent", accelerator: "CmdOrCtrl+4", click: () => navigate("agent") },
