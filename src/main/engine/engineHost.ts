@@ -5,7 +5,7 @@ import { WorkspaceManager, type ReviewGate } from "../workspaceManager";
 import { setUserDataDir } from "../userDataDir";
 import { EngineRegistry } from "./engineRegistry";
 import type { EngineRegistryDeps } from "./engineRegistry";
-import type { DiscordBridgePort } from "../application/partyApplicationService";
+import type { DiscordBridgePort, PartyExecutionLocationPort } from "../application/partyApplicationService";
 import type { PartyBridge } from "../../core/partyBridge";
 import type { HostedPartySessionBinding } from "../../shared/types";
 import { RemoteHarnessSession, type RemoteHarnessSessionOptions } from "../harness/remoteHarnessSession";
@@ -41,6 +41,8 @@ export interface EngineHostConfig {
    * bridge, and the tools then report that plainly instead of doing nothing.
    */
   discord?: DiscordBridgePort;
+  /** Desktop-global validator and suggestion catalog for member execution cwd. */
+  executionLocations?: PartyExecutionLocationPort;
 }
 
 /**
@@ -90,7 +92,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
       : undefined,
     createHostedPartyBridge: config.createHostedPartyBridge,
   });
-  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord);
+  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord, config.executionLocations);
   engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {

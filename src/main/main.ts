@@ -41,6 +41,9 @@ import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
+import { memberExecutionLocationCatalog } from "../shared/memberLocation";
+import { getCheckedCwdPreferences, rememberCwd } from "./cwdPreferencesStore";
+import { checkCwd } from "./cwdService";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -443,6 +446,14 @@ ${body}
     // Members reach Discord through their party tools; the bridge itself is
     // desktop-owned (it holds the token and the gateway socket).
     discord: discordBridge,
+    executionLocations: {
+      list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
+      check: (location) => checkCwd(location),
+      remember: (location) => {
+        rememberCwd(location);
+        applyRuntimeSettings();
+      },
+    },
     // Desktop only: a WSL workspace is served by an engine spawned in the distro.
     createRemoteEngine: (location, serialized) => {
       if (location.host.kind !== "wsl") {
@@ -490,7 +501,7 @@ ${body}
         // state lives in the desktop engine. Execute every party tool through
         // the same AppController path used by UI and HTTP automation.
         partyTool: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) =>
-          controller().invokePartyToolAs(ownerWorkspace, member, tool, args, partyId),
+          controller().invokePartyToolAs(ownerWorkspace, member, tool, args, partyId, true),
         reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
           // Assigned right after createEngineHost returns, and this closure only
           // runs once a workspace resolves — but say so out loud rather than

@@ -10,6 +10,7 @@ import { resolveCursorAgentCommand } from "./cursorAgentCli";
 import { errorEventPayload, isEnvironmentBlockedError } from "./environmentError";
 import { fetchCursorUsage, readCursorAccessToken } from "./cursorUsage";
 import type { McpServerSnapshot } from "../shared/mcp";
+import { PARTY_TOOL_NAMES } from "./partyBridge";
 import {
   cursorPolicyFromLegacyPermission,
   cursorPolicyOf,
@@ -380,7 +381,7 @@ export class CursorAdapter extends EventEmitter {
             name: "agentparty-app",
             state: this.partyMcpConnected ? "connected" : "unknown",
             transport: "stdio",
-            tools: CURSOR_PARTY_MCP_TOOLS.map((name) => ({ name })),
+            tools: PARTY_TOOL_NAMES.map((name) => ({ name })),
             canReconnect: false,
             canToggle: false,
             canAuthenticate: false,
@@ -840,20 +841,6 @@ export class CursorAdapter extends EventEmitter {
     });
   }
 }
-
-const CURSOR_PARTY_MCP_TOOLS = [
-  "send",
-  "member-create",
-  "member-remove",
-  "member-permission",
-  "gate-set",
-  "party-gate-set",
-  "list",
-  "list-models",
-  "member-status",
-  "interrupt",
-  "broadcast",
-] as const;
 
 export function cursorModelSlug(model: string, effort: string, serviceTier: string = "standard"): string {
   if (isCursorAuto(model)) return "auto";

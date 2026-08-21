@@ -24,6 +24,7 @@ import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 import type { ClaudeNativeAuthState } from "../../core/claudeNativeAuth";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { ApprovalDelivery } from "../../shared/approvals";
+import type { PartyMcpToolSpec, PartyToolResult } from "../../core/partyBridge";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -142,6 +143,10 @@ export interface EngineConnection {
    * than the UI's command result — see `PartyApplicationService.invokePartyToolAs`.
    */
   invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]>;
+  /** Runs the shipped stdio MCP relay on this engine host for deterministic E2E. */
+  invokePartyMcpTransport(member: string, partyId: string, tool: string, args: unknown): Promise<PartyToolResult>;
+  /** Discovers tools through that same host-local stdio MCP relay. */
+  listPartyMcpTools(member: string, partyId: string): Promise<PartyMcpToolSpec[]>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   /** Messages addressed to a busy member that it has not been handed yet (shared/messageQueue.ts). */

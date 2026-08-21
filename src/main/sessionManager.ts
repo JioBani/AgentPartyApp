@@ -1405,6 +1405,15 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Live local endpoint used by the party MCP relay on this engine host.
+   * Exposed to LocalEngine only so the automation E2E route can launch the
+   * exact same stdio relay with the exact same destination as a real member.
+   */
+  partyMcpAutomationBaseUrl(): string {
+    return this.codexAutomationBaseUrl(getSettings().automationApiPort);
+  }
+
+  /**
    * The URL a Codex member's party MCP server fetches for every party tool. It
    * MUST be the ACTUAL bound automation-API URL: the server falls back to an
    * ephemeral port when the preferred one is taken (a second app instance or a

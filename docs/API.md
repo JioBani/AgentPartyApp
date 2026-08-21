@@ -2781,6 +2781,59 @@ was told anything — re-sending is harmless. Panels with no `id` or no `tabs` a
 dropped, and a `focusedPanelId` naming no surviving panel falls back to the
 first, so a malformed body cannot leave the workbench unable to open anything.
 
+### `POST /api/parties/:partyId/members/:name/mcp-tools/:tool`
+
+Invokes one party tool through the **real stdio MCP transport** on the named
+member's execution host. This endpoint exists for deterministic product E2E: it
+launches the shipped `agentparty-app` MCP relay, performs JSON-RPC
+`initialize` + `tools/call`, lets the relay call that host's local automation
+API, and on WSL crosses the engine host channel back to the Windows-global
+`AppController`. It does not shortcut directly to the party service and does
+not spend a model turn.
+
+The party is explicit in the path so a focused window cannot change test scope.
+Tool arguments belong under `arguments`:
+
+```json
+{
+  "arguments": {
+    "to": "windows-worker",
+    "content": "MCP transport probe",
+    "interrupt": false
+  }
+}
+```
+
+The response identifies the transport and the host that actually ran it:
+
+```json
+{
+  "ok": true,
+  "transport": "mcp-stdio",
+  "member": "wsl-worker",
+  "partyId": "party-...",
+  "tool": "send",
+  "executionLocation": "wsl+Ubuntu-20.04:/home/dev/project",
+  "executionHost": "wsl",
+  "distro": "Ubuntu-20.04"
+}
+```
+
+`ok: false` is the real MCP tool result (for example a missing member or gate
+rejection). A broken relay, JSON-RPC framing error, unreachable host-local API,
+or host-channel failure is an HTTP error instead, so transport failures cannot
+masquerade as an ordinary tool refusal. This endpoint is desktop-local and is
+not published to the mobile RPC table.
+
+### `GET /api/parties/:partyId/members/:name/mcp-tools`
+
+Runs MCP `initialize` + `tools/list` through the same real host-local stdio
+relay. The response contains the canonical `tools` array plus the member's
+`executionLocation`, `executionHost`, optional `distro`, and
+`transport: "mcp-stdio"`. Use this endpoint to prove that the packaged relay on
+Windows or WSL can discover the complete current tool surface; reading the core
+schema directly does not exercise that transport.
+
 ## Harness Party API
 
 Harness skills and tools can call these local endpoints from inside a session. This is a local mechanical identity mechanism, not a public auth system.
@@ -2788,6 +2841,14 @@ Harness skills and tools can call these local endpoints from inside a session. T
 ### `GET /api/harness/party`
 
 Returns the same member/message state as `GET /api/party`.
+
+### `GET /api/harness/party/tool-spec`
+
+Returns the canonical MCP names, descriptions, JSON schemas, and read-only
+annotations. The shipped stdio relay fetches this on every `tools/list`, so it
+cannot retain a stale hand-copied subset when a party tool is added. This is an
+internal discovery endpoint; product E2E should normally use the member-scoped
+stdio endpoint above.
 
 ### `POST /api/harness/party/messages`
 
@@ -2813,6 +2874,49 @@ outside the app process — today Codex, via
 `scripts/agentparty-codex-mcp-server.mjs`. `:tool` is a party tool name
 (`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
 the body is that tool's arguments.
+
+#### `list-locations` and explicit `member-create.location`
+
+`list-locations` returns the currently supported execution hosts and the
+app-global default/recent cwd suggestions. A suggestion with `problem` remains
+visible for diagnosis but is not usable until repaired.
+
+```json
+{
+  "supportedHosts": [
+    { "host": "windows", "distroRequired": false, "pathStyle": "win32" },
+    { "host": "wsl", "distroRequired": true, "pathStyle": "posix" }
+  ],
+  "locations": [
+    { "host": "windows", "cwd": "C:\\Project\\App", "location": "C:\\Project\\App", "source": "recent", "usedAt": "..." },
+    { "host": "wsl", "distro": "Ubuntu-20.04", "cwd": "/home/me/app", "location": "wsl+Ubuntu-20.04:/home/me/app", "source": "recent", "usedAt": "..." }
+  ]
+}
+```
+
+`member-create` accepts that host-native tuple as `location`:
+
+```json
+{
+  "name": "windows-worker",
+  "role": "Build on Windows",
+  "location": { "host": "windows", "cwd": "C:\\Project\\App" }
+}
+```
+
+```json
+{
+  "name": "wsl-worker",
+  "role": "Build in Linux",
+  "location": { "host": "wsl", "distro": "Ubuntu-20.04", "cwd": "/home/me/app" }
+}
+```
+
+The app validates the cwd on the selected host before creating anything. WSL
+requires `distro`; Windows rejects it. Omitting `location` preserves the useful
+agent behavior of inheriting the caller's execution location. The `host` field
+is intentionally independent of cwd syntax, so native Linux/macOS hosts can be
+added later without changing this request shape.
 
 The caller is taken from `X-AgentParty-Member-Base64url` (the member name's
 UTF-8 bytes encoded as base64url) and never from the body, so an agent cannot
@@ -2859,6 +2963,12 @@ from its own source. **The bytes never enter the model's context**: a tool
 result IS part of the conversation, so returning them there would cost exactly
 what this avoids. The member consequently cannot see what it attached, and
 should say in its reply whatever the conversation needs to remember about it.
+
+For a WSL (or future remote-host) member, `path` is read and validated beside
+the harness before only the image envelope crosses to the Windows-global party
+owner. The desktop never tries to open a WSL-only `/...` path. The same rule is
+used by `discord-send-image`; host-local file access remains local even though
+party and Discord authority are desktop-owned.
 
 ## Window
 

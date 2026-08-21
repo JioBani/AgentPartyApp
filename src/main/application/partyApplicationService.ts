@@ -17,7 +17,16 @@ import type {
 import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
-import { CWD_PROBLEM_MESSAGE, parseMemberLocation, serializeMemberLocation } from "../../shared/memberLocation";
+import {
+  CWD_PROBLEM_MESSAGE,
+  memberLocationFromRequest,
+  memberLocationRequestOf,
+  parseMemberLocation,
+  serializeMemberLocation,
+  type CwdProblem,
+  type MemberExecutionLocation,
+  type MemberExecutionLocationCatalog,
+} from "../../shared/memberLocation";
 import { workspaceKey } from "../../shared/workspaceLocation";
 import { getHostDistro, isHostDistro } from "../hostIdentity";
 import type { ImageAttachment } from "../../shared/attachments";
@@ -98,6 +107,18 @@ export interface PartyApplicationDeps {
    * rather than silently doing nothing. See `main/discordBridgeService.ts`.
    */
   discord?: DiscordBridgePort;
+  /**
+   * Desktop-owned cwd catalog and validator used by member-facing tools.
+   * A WSL execution worker deliberately does not own this state: its hosted
+   * tool calls are forwarded to the desktop's global party authority.
+   */
+  executionLocations?: PartyExecutionLocationPort;
+}
+
+export interface PartyExecutionLocationPort {
+  list(): Promise<MemberExecutionLocationCatalog>;
+  check(location: MemberExecutionLocation): Promise<{ location: MemberExecutionLocation; serialized: string; problem?: CwdProblem }>;
+  remember(location: MemberExecutionLocation): void;
 }
 
 /**
@@ -2671,7 +2692,7 @@ export class PartyApplicationService {
     // Give the member's session the in-process party tool surface, with its
     // identity closure-bound so `from` is never agent-supplied.
     const binding: SessionPartyBinding = {
-      bridge: this.partyBridgeFor(this.partyIdOf(member), member.name),
+      bridge: this.partyBridgeFor(this.partyIdOf(member), member.name, member.location),
       identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
     };
     // Resume the harness's own thread when we have one, so reopening the member
@@ -2956,10 +2977,10 @@ export class PartyApplicationService {
       return { ok: false, error: `Member '${member}' is not in this party.` };
     }
     const party = this.partyIdOf(caller);
-    return invokePartyTool(this.partyBridgeFor(party, caller.name), { party, member: caller.name, role: caller.role }, tool, args);
+    return invokePartyTool(this.partyBridgeFor(party, caller.name, caller.location), { party, member: caller.name, role: caller.role }, tool, args);
   }
 
-  private partyBridgeFor(party: string, selfMember: string): PartyBridge {
+  private partyBridgeFor(party: string, selfMember: string, selfLocation?: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {
       send: async (from, to, content, interrupt, force, forceReason) => {
@@ -2994,11 +3015,31 @@ export class PartyApplicationService {
           return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
         }
         try {
+          let location = selfLocation || this.workspacePath();
+          let executionLocation: MemberExecutionLocation | undefined;
+          if (request.location !== undefined) {
+            if (!this.deps.executionLocations) {
+              return { ok: false, error: "Execution-location validation is unavailable in this process." };
+            }
+            const requested = memberLocationFromRequest(request.location);
+            const checked = await this.deps.executionLocations.check(requested);
+            if (checked.problem) {
+              return { ok: false, error: `Cannot use execution location — ${checked.problem.message}: ${checked.serialized}` };
+            }
+            location = checked.serialized;
+            executionLocation = checked.location;
+          }
           this.createMember({
             partyId: party,
             name: request.name,
             requirement: request.role,
             role: request.role,
+            // Before party storage became Windows-global, an agent-created
+            // member naturally inherited the caller's workspace. Preserve that
+            // execution behavior: the global store path is persistence, never a
+            // cwd. A WSL member therefore creates a WSL sibling by default and
+            // a Windows member creates a Windows sibling.
+            location,
             runtime: harness,
             model: request.model,
             effort: request.effort,
@@ -3010,8 +3051,29 @@ export class PartyApplicationService {
             cursorPolicy: request.cursorPolicy,
           });
           const started = this.startMember(request.name, {}, {}, party);
+          const remembered = executionLocation || parseMemberLocation(location);
+          let warning: string | undefined;
+          try {
+            this.deps.executionLocations?.remember(remembered);
+          } catch (error) {
+            warning = `Member was created, but its cwd could not be added to recent locations: ${errorMessage(error)}`;
+            log("warn", "cwd", "member tool could not remember a successful cwd", {
+              member: request.name,
+              location: serializeMemberLocation(remembered),
+              error: errorMessage(error),
+            });
+          }
           notify();
-          return { ok: true, data: { ok: true, name: request.name, status: started.member?.status ?? "running" } };
+          return {
+            ok: true,
+            data: {
+              ok: true,
+              name: request.name,
+              status: started.member?.status ?? "running",
+              location: { ...memberLocationRequestOf(remembered), location: serializeMemberLocation(remembered) },
+              ...(warning ? { warning } : {}),
+            },
+          };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
@@ -3099,11 +3161,24 @@ export class PartyApplicationService {
             model: member.model ?? "",
             permissionMode: member.permissionMode,
             codexPolicy: member.codexPolicy,
+            location: member.location
+              ? { ...memberLocationRequestOf(parseMemberLocation(member.location)), location: member.location }
+              : undefined,
             // The effective Message Gate so a member editing another's gate can
             // read its current on/off + rule + reviewer.
             gate: this.effectiveGateOf(member, state),
           }));
         return { ok: true, data: { members } };
+      },
+      listLocations: async () => {
+        if (!this.deps.executionLocations) {
+          return { ok: false, error: "Execution-location suggestions are unavailable in this process." };
+        }
+        try {
+          return { ok: true, data: await this.deps.executionLocations.list() };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
       },
       listModels: async (query) => partyModelDiscovery(this.deps.sessionManager.getCodexModelState(), query),
       status: async (name) => {
@@ -3178,7 +3253,7 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      discordSendImage: async (imagePath, caption) => {
+      discordSendImage: async (imagePath, caption, hostImage) => {
         const discord = this.deps.discord;
         if (!discord) {
           return { ok: false, error: "The Discord bridge is not available in this process." };
@@ -3187,10 +3262,14 @@ export class PartyApplicationService {
         // path exists only inside the distro, while the bridge (and the token) live
         // on the desktop. Only the decoded bytes cross that boundary.
         let image: { dataBase64: string; filename: string; mediaType: string };
-        try {
-          image = readImageFile(imagePath);
-        } catch (error) {
-          return { ok: false, error: errorMessage(error) };
+        if (hostImage) {
+          image = hostImage;
+        } else {
+          try {
+            image = readImageFile(imagePath);
+          } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+          }
         }
         try {
           const result = await discord.sendImageAsMember(this.workspacePath(), party, selfMember, image, caption);
@@ -3199,7 +3278,7 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      attachImage: async ({ path: imagePath, url, caption }) => {
+      attachImage: async ({ path: imagePath, url, caption, hostImage }) => {
         // A URL is kept as given rather than downloaded, so it renders from its
         // own source and nothing has to be retained for it.
         if (url) {
@@ -3211,10 +3290,14 @@ export class PartyApplicationService {
         // Read HERE, in the process the member runs in: a WSL member's path
         // exists only inside the distro. Only the decoded bytes cross.
         let image: { dataBase64: string; filename: string; mediaType: string };
-        try {
-          image = readImageFile(String(imagePath));
-        } catch (error) {
-          return { ok: false, error: errorMessage(error) };
+        if (hostImage) {
+          image = hostImage;
+        } else {
+          try {
+            image = readImageFile(String(imagePath));
+          } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+          }
         }
         if (base64ByteLength(image.dataBase64) > DEFAULT_MAX_IMAGE_BYTES) {
           return { ok: false, error: `'${image.filename}' is larger than the ${Math.round(DEFAULT_MAX_IMAGE_BYTES / (1024 * 1024))} MB limit for an attached image.` };

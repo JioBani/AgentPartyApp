@@ -99,10 +99,13 @@ async function main(): Promise<void> {
   // NOT reachable across the process/network boundary — 127.0.0.1 there is the
   // distro loopback, not the Windows host — so a Codex member's party MCP server
   // gets "-32603: fetch failed" on every tool. Serve the SAME automation surface
-  // locally on the distro's loopback, backed by this engine (which owns this
-  // workspace's party state), and hand its real URL to the harness. An empty
-  // WindowRegistry is correct headless: there are no windows to broadcast to, and
-  // `defaultWorkspace` resolves every request to the one workspace served here.
+  // locally on the distro's loopback and hand its real URL to the harness. The
+  // worker owns execution sessions, not party state: identity-bound party-tool
+  // calls are forwarded over `remotePartyTool` to the desktop's Windows-global
+  // AppController. Its workspace-local files may be a migration source and must
+  // never shadow newer global members. An empty WindowRegistry is correct
+  // headless: there are no windows to broadcast to, and `defaultWorkspace`
+  // resolves non-party execution requests to the one workspace served here.
   const windowRegistry = new WindowRegistry();
   let automationApi: AutomationApiServer | undefined;
   const appController = new AppController({

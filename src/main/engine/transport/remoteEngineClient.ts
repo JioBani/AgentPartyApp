@@ -220,6 +220,8 @@ export class RemoteEngineClient implements EngineConnection {
   createMember(input: CreateMemberInput) { return this.call<Result<"createMember">>("createMember", input); }
   sendPartyMessage(name: string, content: string, from?: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }) { return this.call<Result<"sendPartyMessage">>("sendPartyMessage", name, content, from, attachments, partyId, options); }
   invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string) { return this.call<Result<"invokePartyToolAs">>("invokePartyToolAs", member, tool, args, partyId); }
+  invokePartyMcpTransport(member: string, partyId: string, tool: string, args: unknown) { return this.call<Result<"invokePartyMcpTransport">>("invokePartyMcpTransport", member, partyId, tool, args); }
+  listPartyMcpTools(member: string, partyId: string) { return this.call<Result<"listPartyMcpTools">>("listPartyMcpTools", member, partyId); }
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) { return this.call<Result<"sendUserMessage">>("sendUserMessage", name, text, attachments, partyId, options); }
   getMemberQueue(name: string, partyId?: string) { return this.call<Result<"getMemberQueue">>("getMemberQueue", name, partyId); }
   runQueueCommand(name: string, command: QueueCommand, partyId?: string) { return this.call<Result<"runQueueCommand">>("runQueueCommand", name, command, partyId); }

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import type { PartyToolResult } from "../../core/partyBridge";
+import { invokePartyToolFromExecutionHost, type PartyToolResult } from "../../core/partyBridge";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -83,7 +83,11 @@ export interface AppControllerDeps {
   subscriptionProxy?: SubscriptionProxyController;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
-  /** Headless execution-engine fallback for tools owned by a party on the desktop host. */
+  /**
+   * Headless execution-worker route for party tools owned by the desktop host.
+   * A WSL worker may still have old workspace-local party files, but those are
+   * migration sources, never an authority after global-party mode was added.
+   */
   remotePartyTool?: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) => Promise<PartyToolResult>;
   /**
    * Identity of the running build, for diagnostics. Injected rather than read
@@ -2074,9 +2078,44 @@ export class AppController {
    * The party comes from the CALLER's own identity, never from a window: the
    * member's tools act inside its own party regardless of what anyone is viewing.
    */
-  async invokePartyToolAs(workspacePath: string, member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+  async invokePartyToolAs(
+    workspacePath: string,
+    member: string,
+    tool: string,
+    args: unknown,
+    partyId?: string,
+    hostPrepared = false,
+  ): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
     if (this.globalPartyMode()) {
+      // A raw Windows MCP relay also enters through HTTP, so prepare its local
+      // file inputs here. A WSL worker has already prepared them and arrives
+      // through the trusted host channel with `hostPrepared=true`; re-reading
+      // its `/...` path on Windows would recreate the cross-host image bug.
+      if (!hostPrepared) {
+        return invokePartyToolFromExecutionHost(
+          (preparedTool, preparedArgs) => this.mutateParty(
+            workspacePath,
+            (engine) => engine.invokePartyToolAs(member, preparedTool, preparedArgs, partyId),
+          ),
+          tool,
+          args,
+        );
+      }
       return this.mutateParty(workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
+    }
+    // A headless WSL engine is an execution worker, not a second party owner.
+    // Its local storage can contain the legacy copy that was just migrated. If
+    // we ask `workspaceOwningParty` first, that stale copy wins and a WSL Codex
+    // MCP call sees only the pre-migration members. Route an identity-bound tool
+    // straight to the desktop authority even when that legacy party still
+    // exists locally; the party id is supplied by the member's immutable MCP
+    // environment, not by model-controlled arguments.
+    if (partyId && this.deps.remotePartyTool) {
+      return invokePartyToolFromExecutionHost(
+        (preparedTool, preparedArgs) => this.deps.remotePartyTool!(workspacePath, member, preparedTool, preparedArgs, partyId),
+        tool,
+        args,
+      );
     }
     // `workspacePath` came from the FOCUSED WINDOW, because an HTTP caller has
     // no window of its own — and one process serves every open window. With a
@@ -2084,10 +2123,57 @@ export class AppController {
     // the wrong place ("Member 'refactor' is not in this party."). The party the
     // member names is the reliable key, so it decides which engine runs the tool.
     const owner = partyId ? await this.deps.engineRegistry.workspaceOwningParty(partyId, workspacePath) : undefined;
-    if (!owner && partyId && this.deps.remotePartyTool) {
-      return this.deps.remotePartyTool(workspacePath, member, tool, args, partyId);
-    }
     return this.mutateParty(owner || workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
+  }
+
+  /**
+   * Deterministic E2E entry: launches the real stdio MCP relay on the member's
+   * execution host, rather than calling the party controller directly.
+   */
+  async invokeMemberPartyMcpTool(workspacePath: string, partyId: string, memberName: string, tool: string, args: unknown) {
+    const listing = await this.partyEngine(workspacePath).listParty(partyId);
+    const member = listing.members.find((entry) => entry.partyId === partyId && entry.name === memberName);
+    if (!member) {
+      throw new Error(`Party member '${memberName}' does not exist in party '${partyId}'.`);
+    }
+    if (!member.location) {
+      throw new Error(`Party member '${memberName}' has no execution location.`);
+    }
+    const location = parseWorkspaceLocation(member.location);
+    const result = await this.engineFor(member.location).invokePartyMcpTransport(member.name, partyId, tool, args);
+    return {
+      ...result,
+      transport: "mcp-stdio" as const,
+      member: member.name,
+      partyId,
+      tool,
+      executionLocation: member.location,
+      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+    };
+  }
+
+  /** Product-E2E discovery through the relay on the member's actual host. */
+  async listMemberPartyMcpTools(workspacePath: string, partyId: string, memberName: string) {
+    const listing = await this.partyEngine(workspacePath).listParty(partyId);
+    const member = listing.members.find((entry) => entry.partyId === partyId && entry.name === memberName);
+    if (!member) {
+      throw new Error(`Party member '${memberName}' does not exist in party '${partyId}'.`);
+    }
+    if (!member.location) {
+      throw new Error(`Party member '${memberName}' has no execution location.`);
+    }
+    const location = parseWorkspaceLocation(member.location);
+    return {
+      ok: true as const,
+      tools: await this.engineFor(member.location).listPartyMcpTools(member.name, partyId),
+      transport: "mcp-stdio" as const,
+      member: member.name,
+      partyId,
+      executionLocation: member.location,
+      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+    };
   }
 
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */

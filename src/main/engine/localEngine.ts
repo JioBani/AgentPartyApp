@@ -25,6 +25,7 @@ import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQ
 import { log } from "../logger";
 import type { ApprovalDelivery } from "../../shared/approvals";
 import { resolveHarnessOriginal } from "../harnessOriginal";
+import { invokePartyMcpTransport as runPartyMcpTransport, listPartyMcpTransport } from "../partyMcpTransport";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -100,6 +101,24 @@ export class LocalEngine implements EngineConnection {
 
   async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string) {
     return this.party.invokePartyToolAs(member, tool, args, partyId);
+  }
+
+  async invokePartyMcpTransport(member: string, partyId: string, tool: string, args: unknown) {
+    return runPartyMcpTransport({
+      automationBaseUrl: this.deps.sessionManager.partyMcpAutomationBaseUrl(),
+      member,
+      party: partyId,
+      tool,
+      args,
+    });
+  }
+
+  async listPartyMcpTools(member: string, partyId: string) {
+    return listPartyMcpTransport({
+      automationBaseUrl: this.deps.sessionManager.partyMcpAutomationBaseUrl(),
+      member,
+      party: partyId,
+    });
   }
 
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) {

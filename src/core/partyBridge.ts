@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
+import { MEMBER_EXECUTION_HOSTS, type MemberExecutionLocationRequest } from "../shared/memberLocation";
+import { readImageFile } from "./imageFile";
 
 // Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
@@ -30,6 +32,15 @@ export interface PartyToolResult {
   data?: unknown;
 }
 
+/** Image bytes read beside a remote member before crossing execution hosts. */
+export interface PartyHostImage {
+  dataBase64: string;
+  filename: string;
+  mediaType: string;
+}
+
+const PARTY_HOST_IMAGE_FIELD = "__agentpartyHostImage";
+
 export interface PartyCreateMemberRequest {
   name: string;
   role: string;
@@ -47,6 +58,11 @@ export interface PartyCreateMemberRequest {
   codexPolicy?: CodexPolicy;
   /** Initial Cursor agent mode + approval mode. */
   cursorPolicy?: CursorPolicy;
+  /**
+   * Explicit execution host and cwd. When omitted, the member inherits the
+   * caller's location. Use list-locations for recent validated suggestions.
+   */
+  location?: MemberExecutionLocationRequest;
 }
 
 /**
@@ -123,6 +139,8 @@ export interface PartyBridge {
   partyGateSet(patch: PartyGateGlobalPatch): Promise<PartyToolResult>;
   /** List the caller's party members and their status. */
   list(): Promise<PartyToolResult>;
+  /** List supported execution hosts plus recent/default cwd suggestions. */
+  listLocations(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options.
    *  With no query this answers with a compact index; any filter switches to
    *  full detail rows for the matches. See {@link PartyModelQuery}. */
@@ -138,7 +156,7 @@ export interface PartyBridge {
   /** Post one message from THIS member into its Discord channel. */
   discordSend(content: string): Promise<PartyToolResult>;
   /** Upload one image file from THIS member's machine into its Discord thread. */
-  discordSendImage(path: string, caption?: string): Promise<PartyToolResult>;
+  discordSendImage(path: string, caption?: string, hostImage?: PartyHostImage): Promise<PartyToolResult>;
   /** Stop bridging THIS member; the Discord channel and its history remain. */
   discordDisconnect(): Promise<PartyToolResult>;
   /**
@@ -146,7 +164,7 @@ export interface PartyBridge {
    * The picture never enters the model's context — the app keeps the bytes and
    * the tool result carries only a reference.
    */
-  attachImage(input: { path?: string; url?: string; caption?: string }): Promise<PartyToolResult>;
+  attachImage(input: { path?: string; url?: string; caption?: string; hostImage?: PartyHostImage }): Promise<PartyToolResult>;
 }
 
 /**
@@ -158,37 +176,64 @@ export interface PartyBridge {
 export function partyBridgeFromInvoker(
   invoke: (tool: PartyToolName, args: unknown) => Promise<PartyToolResult>,
 ): PartyBridge {
+  const hostInvoke = (tool: PartyToolName, args: unknown) => invokePartyToolFromExecutionHost(invoke, tool, args);
   return {
-    send: (_from, to, content, interrupt, force, forceReason) => invoke("send", { to, content, interrupt, force, forceReason }),
-    createMember: (request) => invoke("member-create", request),
-    removeMember: (name) => invoke("member-remove", { name }),
-    setPermission: (name, request) => invoke("member-permission", { name, ...request }),
-    gateSet: (name, patch) => invoke("gate-set", { name, ...patch }),
-    partyGateSet: (patch) => invoke("party-gate-set", patch),
-    list: () => invoke("list", {}),
-    listModels: (query) => invoke("list-models", query || {}),
-    status: (name) => invoke("member-status", name ? { name } : {}),
-    interrupt: (target) => invoke("interrupt", { target }),
-    broadcast: (content, interrupt) => invoke("broadcast", { content, interrupt }),
-    discordConnect: (channelName) => invoke("discord-connect", channelName ? { channelName } : {}),
-    discordSend: (content) => invoke("discord-send", { content }),
-    discordSendImage: (path, caption) => invoke("discord-send-image", { path, caption }),
-    discordDisconnect: () => invoke("discord-disconnect", {}),
-    attachImage: (input) => invoke("attach-image", input),
+    send: (_from, to, content, interrupt, force, forceReason) => hostInvoke("send", { to, content, interrupt, force, forceReason }),
+    createMember: (request) => hostInvoke("member-create", request),
+    removeMember: (name) => hostInvoke("member-remove", { name }),
+    setPermission: (name, request) => hostInvoke("member-permission", { name, ...request }),
+    gateSet: (name, patch) => hostInvoke("gate-set", { name, ...patch }),
+    partyGateSet: (patch) => hostInvoke("party-gate-set", patch),
+    list: () => hostInvoke("list", {}),
+    listLocations: () => hostInvoke("list-locations", {}),
+    listModels: (query) => hostInvoke("list-models", query || {}),
+    status: (name) => hostInvoke("member-status", name ? { name } : {}),
+    interrupt: (target) => hostInvoke("interrupt", { target }),
+    broadcast: (content, interrupt) => hostInvoke("broadcast", { content, interrupt }),
+    discordConnect: (channelName) => hostInvoke("discord-connect", channelName ? { channelName } : {}),
+    discordSend: (content) => hostInvoke("discord-send", { content }),
+    discordSendImage: (path, caption) => hostInvoke("discord-send-image", { path, caption }),
+    discordDisconnect: () => hostInvoke("discord-disconnect", {}),
+    attachImage: (input) => hostInvoke("attach-image", input),
   };
 }
 
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
+/**
+ * Reads file arguments on the member's execution host before forwarding them
+ * to the desktop's global party owner. The reserved byte field is removed from
+ * model input and rebuilt, so it cannot be spoofed by an agent.
+ */
+export async function invokePartyToolFromExecutionHost(
+  invoke: (tool: PartyToolName, args: unknown) => Promise<PartyToolResult>,
+  tool: string,
+  args: unknown,
+): Promise<PartyToolResult> {
+  const name = partyToolNameOf(tool);
+  if (!name) return { ok: false, error: `Unknown AgentParty tool '${tool}'.` };
+  const input = args && typeof args === "object" && !Array.isArray(args) ? { ...(args as Record<string, unknown>) } : {};
+  delete input[PARTY_HOST_IMAGE_FIELD];
+  if ((name === "attach-image" || name === "discord-send-image") && typeof input.path === "string" && input.path) {
+    try {
+      input[PARTY_HOST_IMAGE_FIELD] = readImageFile(input.path);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return invoke(name, input);
+}
+
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. If interrupt is omitted, your member override and then the Runtime default decide whether a busy recipient is stopped. Set interrupt=true to cut in, or interrupt=false to explicitly queue behind the current turn.",
-  "member-create": "Create a new member in your party and start its session. Call list-models first for valid harness, model, and reasoning options.",
+  "member-create": "Create a new member in your party and start its session. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
   list: "List your party's members and their current status.",
+  "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
@@ -223,7 +268,19 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
       reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
       effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+      serviceTier: { type: "string", description: "Optional service tier from list-models." },
       permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
+      location: {
+        type: "object",
+        description: "Explicit execution host and cwd. Omit to inherit the caller's location; call list-locations for suggestions.",
+        properties: {
+          host: { type: "string", enum: [...MEMBER_EXECUTION_HOSTS], description: "Execution host. WSL is Windows-only; future native hosts extend this field." },
+          cwd: { type: "string", description: "Absolute path in that host's native syntax." },
+          distro: { type: "string", description: "Required when host is wsl; omit for windows." },
+        },
+        required: ["host", "cwd"],
+        additionalProperties: false,
+      },
       codexPolicy: {
         type: "object",
         description: "Initial Codex permission policy.",
@@ -324,6 +381,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     additionalProperties: false,
   },
   list: { type: "object", properties: {}, additionalProperties: false },
+  "list-locations": { type: "object", properties: {}, additionalProperties: false },
   "list-models": {
     type: "object",
     properties: {
@@ -406,16 +464,50 @@ export interface PartyDynamicToolSpec {
   }>;
 }
 
+export interface PartyMcpToolSpec {
+  name: PartyToolName;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: {
+    readOnlyHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint: boolean;
+    openWorldHint: boolean;
+  };
+}
+
+/**
+ * Canonical tool descriptions served to every out-of-process MCP relay.
+ * Keeping names and schemas here prevents the raw stdio script from becoming a
+ * second, stale copy of the AgentParty capability surface.
+ */
+export function buildPartyMcpToolSpecs(): PartyMcpToolSpec[] {
+  const readOnly = new Set<PartyToolName>(["list", "list-locations", "list-models", "member-status"]);
+  return PARTY_TOOL_NAMES.map((name) => ({
+    name,
+    description: partyDynamicToolDescriptions[name],
+    inputSchema: partyDynamicToolSchemas[name],
+    ...(readOnly.has(name) ? {
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    } : {}),
+  }));
+}
+
 export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
   return {
     type: "namespace",
     name: PARTY_MCP_SERVER,
     description: "AgentParty app party controls for messaging and member management.",
-    tools: PARTY_TOOL_NAMES.map((name) => ({
+    tools: buildPartyMcpToolSpecs().map(({ name, description, inputSchema }) => ({
       type: "function",
       name,
-      description: partyDynamicToolDescriptions[name],
-      inputSchema: partyDynamicToolSchemas[name],
+      description,
+      inputSchema,
     })),
   };
 }
@@ -461,9 +553,11 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
         reasoningBudget: typeof input.reasoningBudget === "number" ? input.reasoningBudget : undefined,
         effort: typeof input.effort === "string" ? input.effort : undefined,
+        serviceTier: typeof input.serviceTier === "string" ? input.serviceTier : undefined,
         permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
         codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
         cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
+        location: input.location && typeof input.location === "object" ? input.location as MemberExecutionLocationRequest : undefined,
       });
     }
     case "member-remove": {
@@ -527,6 +621,8 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
     }
     case "list":
       return bridge.list();
+    case "list-locations":
+      return bridge.listLocations();
     case "list-models":
       return bridge.listModels({
         harness: typeof input.harness === "string" && input.harness ? input.harness : undefined,
@@ -564,7 +660,11 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (typeof imagePath !== "string" || !imagePath) {
         return { ok: false, error: "discord-send-image requires string argument: path." };
       }
-      return bridge.discordSendImage(imagePath, typeof input.caption === "string" ? input.caption : undefined);
+      return bridge.discordSendImage(
+        imagePath,
+        typeof input.caption === "string" ? input.caption : undefined,
+        partyHostImageOf(input[PARTY_HOST_IMAGE_FIELD]),
+      );
     }
     case "discord-disconnect":
       return bridge.discordDisconnect();
@@ -577,9 +677,24 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (imagePath && url) {
         return { ok: false, error: "attach-image takes path OR url, not both." };
       }
-      return bridge.attachImage({ path: imagePath, url, caption: typeof input.caption === "string" ? input.caption : undefined });
+      return bridge.attachImage({
+        path: imagePath,
+        url,
+        caption: typeof input.caption === "string" ? input.caption : undefined,
+        hostImage: partyHostImageOf(input[PARTY_HOST_IMAGE_FIELD]),
+      });
     }
   }
+}
+
+function partyHostImageOf(value: unknown): PartyHostImage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const image = value as Record<string, unknown>;
+  return typeof image.dataBase64 === "string"
+    && typeof image.filename === "string"
+    && typeof image.mediaType === "string"
+    ? { dataBase64: image.dataBase64, filename: image.filename, mediaType: image.mediaType }
+    : undefined;
 }
 
 interface McpToolResult {
@@ -630,7 +745,13 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
         reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
         effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
+        serviceTier: z.string().optional().describe("Optional service tier from list-models."),
         permissionMode: z.string().optional().describe("Initial Claude permission mode."),
+        location: z.object({
+          host: z.enum(MEMBER_EXECUTION_HOSTS).describe("Execution host. WSL is Windows-only; future native hosts extend this field."),
+          cwd: z.string().describe("Absolute path in the selected host's native syntax."),
+          distro: z.string().optional().describe("Required when host is wsl; omit for windows."),
+        }).optional().describe("Explicit execution location. Omit to inherit your own; call list-locations for suggestions."),
         codexPolicy: z.object({
           sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
           approval: z.enum(["untrusted", "on-request", "never"]),
@@ -696,6 +817,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),
     ),
     tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
+    tool("list-locations", partyDynamicToolDescriptions["list-locations"], {}, async () => envelope(await bridge.listLocations())),
     tool(
       "list-models",
       partyDynamicToolDescriptions["list-models"],
