@@ -6,8 +6,8 @@
  *  - Nothing moves on disk. A party's members, messages, layout and transcripts
  *    stay in the workspace they were written to, and the party keeps its id,
  *    its members keep theirs, and every session id survives. The migration only
- *    ADDS: a registry row saying "this party is in the default group, and its
- *    detail lives in that workspace".
+ *    reconciles registry rows saying where each party's detail lives; it never
+ *    moves party data.
  *  - A member with no `location` is backfilled with the workspace its party was
  *    stored in — the directory it has been running in all along, not a guess.
  *  - The same party id found in two workspaces is recorded as a conflict, never
@@ -21,10 +21,9 @@
  * be read is named in the result rather than leaving a silently short list.
  */
 
-import { PartyRepository } from "./partyRepository";
 import { PartyGroupStore } from "./partyGroupStore";
 import { parseMemberLocation } from "../shared/memberLocation";
-import type { PartyMember } from "../shared/types";
+import type { PartyDefinition, PartyMember } from "../shared/types";
 import { log } from "./logger";
 
 export interface MigrationReport {
@@ -50,10 +49,13 @@ export interface MigrationReport {
  * up copies, backups and other checkouts, and quietly present them as the
  * user's parties.
  */
-export function migratePartyGroups(
+export async function migratePartyGroups(
   workspaces: string[],
-  deps: { repository: PartyRepository; store: PartyGroupStore },
-): MigrationReport {
+  deps: {
+    store: PartyGroupStore;
+    loadWorkspace: (workspacePath: string) => Promise<{ parties: PartyDefinition[]; members: PartyMember[]; backfilled: number }>;
+  },
+): Promise<MigrationReport> {
   const report: MigrationReport = {
     ok: true,
     workspaces: [...new Set(workspaces.filter(Boolean))],
@@ -65,34 +67,24 @@ export function migratePartyGroups(
 
   for (const workspacePath of report.workspaces) {
     try {
-      const state = deps.repository.read(workspacePath);
+      // The owning engine performs both operations. A WSL workspace therefore
+      // reads `/home/...` inside its distro instead of the desktop trying to
+      // open `wsl+Distro:/home/...` as a Windows filesystem path.
+      const state = await deps.loadWorkspace(workspacePath);
+      // A closed/missing local volume can look like an empty repository. Keep
+      // its durable summaries rather than interpreting temporary absence as
+      // deletion. Real in-app deletion is reconciled by the live change path.
       if (!state.parties.length) {
         continue;
       }
       const before = new Set(deps.store.read().parties.map((party) => party.id));
-      const backfilled = backfillLocations(state.members, workspacePath);
-      if (backfilled.length) {
-        // One write per party, because that is the file that owns its members.
-        for (const partyId of new Set(backfilled.map((member) => member.partyId || ""))) {
-          deps.repository.writeParty(
-            workspacePath,
-            partyId,
-            state.members.filter((member) => member.partyId === partyId),
-            state.messages.filter((message) => message.partyId === partyId),
-          );
-        }
-        report.backfilled += backfilled.length;
-      }
-
-      for (const party of state.parties) {
+      const summaries = state.parties.map((party) => {
         const own = state.members.filter((member) => member.partyId === party.id);
         const envs = own.map((member) => (member.location ? parseMemberLocation(member.location).env : undefined));
-        deps.store.upsertParty({
+        return {
           id: party.id,
-          // EMPTY on purpose. `upsertParty` files a party it has never seen into
-          // the default group and leaves an already-registered one where it is;
-          // naming the default here instead would drag every party the user
-          // moved back into 기본 그룹 on the next boot — which it did.
+          // EMPTY on purpose. The registry uses this only as a new party's
+          // default-group seed and preserves an existing party's filing.
           groupId: party.groupId || "",
           name: party.name,
           memberCount: own.length,
@@ -101,11 +93,12 @@ export function migratePartyGroups(
           wslCount: envs.filter((env) => env === "wsl").length,
           updatedAt: party.updatedAt,
           workspacePath,
-        });
-        if (!before.has(party.id)) {
-          report.registered += 1;
-        }
-      }
+        };
+      });
+      const incomingIds = new Set(summaries.map((party) => party.id));
+      const reconciled = deps.store.reconcileWorkspace(workspacePath, summaries);
+      report.registered += reconciled.state.parties.filter((party) => !before.has(party.id) && incomingIds.has(party.id)).length;
+      report.backfilled += state.backfilled;
     } catch (error) {
       report.ok = false;
       report.failures.push({ workspacePath, error: error instanceof Error ? error.message : String(error) });
@@ -122,24 +115,4 @@ export function migratePartyGroups(
     failures: report.failures.length,
   });
   return report;
-}
-
-/**
- * Gives every member with no location the workspace its party was stored in.
- *
- * Mutates in place and returns what it touched, so the caller writes only the
- * parties that actually changed. A member that already has one is never
- * rewritten — the stored value is the user's choice, and this function has no
- * better information than they did.
- */
-function backfillLocations(members: PartyMember[], workspacePath: string): PartyMember[] {
-  const touched: PartyMember[] = [];
-  for (const member of members) {
-    if (!member.location) {
-      member.location = workspacePath;
-      member.updatedAt = new Date().toISOString();
-      touched.push(member);
-    }
-  }
-  return touched;
 }

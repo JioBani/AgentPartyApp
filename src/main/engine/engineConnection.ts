@@ -127,6 +127,8 @@ export interface EngineConnection {
   listParty(viewPartyId?: string): Promise<PartyListing>;
   /** Every party WITH every member — what the app-global registry counts from. */
   listAllParties(): Promise<ReturnType<PartyApplicationService["listAll"]>>;
+  /** Backfills legacy members on the host that owns their workspace store. */
+  backfillMemberLocations(): Promise<ReturnType<PartyApplicationService["backfillMemberLocations"]>>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;

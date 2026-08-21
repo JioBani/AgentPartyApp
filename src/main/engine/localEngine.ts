@@ -67,6 +67,10 @@ export class LocalEngine implements EngineConnection {
     return this.party.listAll();
   }
 
+  async backfillMemberLocations() {
+    return this.party.backfillMemberLocations();
+  }
+
   async createParty(input: CreatePartyInput) {
     return this.party.createParty(input);
   }

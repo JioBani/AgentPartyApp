@@ -1952,12 +1952,15 @@ interactive `/mcp` (the SDK doesn't expose an OAuth flow).
 
 Lists parties, the selected party, its members, and recent party messages.
 
-Party state is stored in the targeted window's workspace under
-`.agent_party_app/state.json` (a legacy `.agentparty/state.json` is still read as
-a fallback). Member role files are stored under
-`.agent_party_app/parties/<party>/members`, but member sessions always start with
-cwd set to the workspace root. The result is scoped to the targeted window's
-workspace (`?window=<id>`; focused window when omitted).
+Party state is stored in the targeted window's workspace as a shared
+`.agent_party_app/parties.json` index plus per-party
+`.agent_party_app/parties/<id>/party.json` detail files. Legacy
+`.agent_party_app/state.json` and `.agentparty/state.json` stores are imported
+into that split layout on first read. Member role and transcript files remain
+under `.agent_party_app/parties/<id>/members`; a member session starts at its
+stored execution `location` (legacy members are backfilled with their owning
+workspace). The result is scoped to the targeted window's workspace
+(`?window=<id>`; focused window when omitted).
 
 ```json
 {
@@ -2061,6 +2064,12 @@ workspace their party was stored in. Idempotent — it runs at boot and on every
 workspace switch, and re-running reports `registered: 0, backfilled: 0`. Nothing
 moves on disk and no id changes; a party id claimed by two workspaces is
 reported in `conflicts` rather than merged.
+
+The migration reads through the workspace's owning engine. Windows workspaces
+are read in the desktop process and `wsl+<distro>:` workspaces are read by the
+engine inside that distro; the desktop never treats a WSL URI as a Windows file
+path. Once registered, WSL summaries remain in the app-global list on later
+native Windows launches without starting the distro merely to draw the list.
 
 ```json
 { "ok": true, "workspaces": ["C:\proj"], "registered": 2, "backfilled": 3, "conflicts": [], "failures": [] }

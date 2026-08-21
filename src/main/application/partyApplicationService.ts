@@ -17,8 +17,8 @@ import type {
 import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
-import { CWD_PROBLEM_MESSAGE, parseMemberLocation } from "../../shared/memberLocation";
-import { isHostDistro } from "../hostIdentity";
+import { CWD_PROBLEM_MESSAGE, parseMemberLocation, serializeMemberLocation } from "../../shared/memberLocation";
+import { getHostDistro, isHostDistro } from "../hostIdentity";
 import type { ImageAttachment } from "../../shared/attachments";
 import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
 import {
@@ -441,6 +441,47 @@ export class PartyApplicationService {
   listAll(): { parties: PartyDefinition[]; members: PartyMember[] } {
     const state = this.readState();
     return { parties: state.parties, members: state.members };
+  }
+
+  /**
+   * Gives pre-location members the workspace they have always run in.
+   *
+   * This lives on the workspace engine, rather than in the desktop migration,
+   * because only that engine can read and write its store. In particular a WSL
+   * workspace is a POSIX path inside the distro; treating its serialized URI as
+   * a Windows path made the desktop report a successful migration that found
+   * zero parties. One write per touched party preserves the split-store
+   * isolation guarantee.
+   */
+  backfillMemberLocations(): { backfilled: number } {
+    const workspace = this.workspacePath();
+    const distro = getHostDistro();
+    // A remote engine knows its workspace as `/home/...`; member locations are
+    // cross-host addresses and must retain the distro or the Windows renderer
+    // will misclassify that POSIX path as a native cwd.
+    const memberLocation = distro
+      ? serializeMemberLocation({ env: "wsl", cwd: workspace, distro })
+      : workspace;
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const touched = new Set<string>();
+    let backfilled = 0;
+    for (const member of state.members) {
+      if (member.location) {
+        continue;
+      }
+      member.location = memberLocation;
+      member.updatedAt = new Date().toISOString();
+      touched.add(this.partyIdOf(member));
+      backfilled += 1;
+    }
+    for (const partyId of touched) {
+      this.repository.writeParty(workspace, partyId, this.membersOf(state, partyId), this.messagesOf(state, partyId));
+    }
+    if (backfilled > 0) {
+      this.invalidate();
+      log("info", "party", "backfilled member execution locations", { workspace, backfilled, parties: touched.size });
+    }
+    return { backfilled };
   }
 
   createParty(input: CreatePartyInput): PartyCommandResult {

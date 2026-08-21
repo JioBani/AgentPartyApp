@@ -195,11 +195,15 @@ boots the real app and opens a `wsl+<distro>:` workspace through the same
 `POST /api/windows` call the `agent-party` CLI makes, then asserts `GET /api/state`
 comes back with the distro, the distro path, AND a session list — the last one is
 what proves the engine **inside** the distro answered, rather than the URI merely
-being parsed on the Windows side. Guards a whole failure class: the engine server
-is bundled as ESM and run by the distro's plain node, so any Electron-only
-dependency reaching its module graph (`import … from "electron"`, `__dirname`)
-kills it at LOAD time and the workspace silently renders as "작업공간 없음".
-Requires the distro; the workspace is created under `/tmp` inside it.
+being parsed on the Windows side. It also seeds pre-existing WSL parties (including
+the legacy id `SEL-6809`), proves the owning engine registers and backfills them,
+moves them repeatedly through `POST /api/parties/:id/group` without losing any
+rows, verifies the native Windows renderer receives them, then relaunches on a
+Windows workspace only and checks the WSL summaries remain visible without opening
+the distro workspace. Guards both load-time engine failures and the regression
+where the desktop treated a WSL URI as a Windows path, leaving a party visible in
+the workbench but absent from the movable global registry. Requires the distro;
+the isolated fixture workspace is created under `/tmp` inside it and removed.
 
 `node scripts/e2e-live-codex-approval-roundtrip.mjs` drives the REAL
 `CodexAdapter` against a real `codex app-server` (billed — one short turn) and

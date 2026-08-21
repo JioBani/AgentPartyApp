@@ -20,12 +20,11 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
-import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
+import { isWslLocation, parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
 import type { PartyDefinition, PartyMember } from "../../shared/types";
 import type { PartyGroup, RegisteredParty } from "../../shared/partyGroups";
 import { PartyGroupStore, type PartyGroupState } from "../partyGroupStore";
 import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration";
-import { PartyRepository } from "../partyRepository";
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
@@ -317,7 +316,16 @@ export class AppController {
    * event in main.ts; see the party-communication design §8.
    */
   notifyPartyChanged(workspacePath: string): Promise<void> {
-    return this.broadcastParty(workspacePath);
+    return this.refreshChangedParty(workspacePath);
+  }
+
+  private async refreshChangedParty(workspacePath: string): Promise<void> {
+    // Remote engines emit the same party event as local ones, but their store is
+    // readable only through RPC. Refresh the app-global registry before drawing
+    // the workspace view so an agent-created WSL party cannot exist in the
+    // workbench while remaining absent from the grouped sidebar.
+    await this.syncPartyRegistry(workspacePath);
+    await this.broadcastParty(workspacePath);
   }
 
   /** The party's workbench tab layout, or undefined when none is stored yet. */
@@ -384,7 +392,7 @@ export class AppController {
     // Boot is the first moment a workspace's parties can be registered, and this
     // is the one call every window makes on open. Idempotent, so the repeat on
     // every window costs a read and changes nothing.
-    this.migratePartyGroups([workspacePath]);
+    await this.migratePartyGroups([workspacePath]);
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
     const codexModels = await engine.listCodexModels();
@@ -1293,10 +1301,8 @@ export class AppController {
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });
-    // A workspace this process had not seen may hold parties the registry does
-    // not know yet — registering them here is what makes the global list
-    // complete rather than "whatever happened to be open at boot".
-    this.migratePartyGroups([workspacePath]);
+    // getState performs the host-correct migration after the window is rebound.
+    // Do not run it twice here: a WSL migration crosses the engine RPC boundary.
     return this.getState(workspacePath, entry?.id);
   }
 
@@ -1574,13 +1580,33 @@ export class AppController {
    * already knows). Scanning the disk for `.agent_party_app` folders would sweep
    * up backups and other checkouts and present them as the user's parties.
    */
-  migratePartyGroups(extraWorkspaces: string[] = []): MigrationReport {
+  async migratePartyGroups(extraWorkspaces: string[] = []): Promise<MigrationReport> {
+    const openWorkspaces = this.deps.windowRegistry.all().map((entry) => entry.workspacePath);
+    const openKeys = new Set(openWorkspaces.map(workspaceKey));
     const workspaces = [...new Set([
-      ...this.partyGroups.knownWorkspaces(),
-      ...this.deps.windowRegistry.all().map((entry) => entry.workspacePath),
+      // Closed local workspaces are cheap to reconcile in-process. A registered,
+      // closed WSL workspace already has a durable summary; starting every known
+      // distro engine on each native Windows boot would turn drawing the list
+      // into opening every party. It is refreshed whenever that workspace opens.
+      ...this.partyGroups.knownWorkspaces().filter((workspace) =>
+        !isWslLocation(parseWorkspaceLocation(workspace)) || openKeys.has(workspaceKey(workspace))),
+      ...openWorkspaces,
       ...extraWorkspaces.filter(Boolean),
     ])];
-    return migratePartyGroups(workspaces, { repository: new PartyRepository(), store: this.partyGroups });
+    const before = JSON.stringify(this.partyGroups.read());
+    const report = await migratePartyGroups(workspaces, {
+      store: this.partyGroups,
+      loadWorkspace: async (workspacePath) => {
+        const engine = this.engineFor(workspacePath);
+        const { backfilled } = await engine.backfillMemberLocations();
+        const state = await engine.listAllParties();
+        return { ...state, backfilled };
+      },
+    });
+    if (JSON.stringify(this.partyGroups.read()) !== before) {
+      this.deps.onPartyGroupsChanged?.();
+    }
+    return report;
   }
 
   listPartyGroups(): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[]; conflicts: PartyGroupState["conflicts"] } {
@@ -1621,7 +1647,18 @@ export class AppController {
     return { ok: true, groups: state.groups, parties: state.parties };
   }
 
-  movePartyToGroup(partyId: string, groupId: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+  async movePartyToGroup(partyId: string, groupId: string): Promise<{ ok: true; groups: PartyGroup[]; parties: RegisteredParty[] }> {
+    if (!this.partyGroups.read().parties.some((party) => party.id === partyId)) {
+      // The current workspace view intentionally shows a just-discovered party
+      // before its registry round-trip completes. If the user moves it during
+      // that window, locate its live engine and register the whole workspace,
+      // then perform the same move. This heals the exact "visible but not in the
+      // list" state without inventing a party or swallowing a missing engine.
+      const owner = await this.deps.engineRegistry.workspaceOwningParty(partyId);
+      if (owner) {
+        await this.syncPartyRegistry(owner, { surfaceFailure: true });
+      }
+    }
     const state = this.partyGroups.moveParty(partyId, groupId);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
@@ -1635,13 +1672,12 @@ export class AppController {
    * state that was just written, so the sidebar can show them for a party it has
    * not opened — which is what removes the "0 members" guess.
    */
-  registerWorkspaceParties(workspacePath: string, parties: PartyDefinition[], members: PartyMember[]): void {
+  registerWorkspaceParties(workspacePath: string, parties: PartyDefinition[], members: PartyMember[]): boolean {
     const now = new Date().toISOString();
-    const known = new Set(parties.map((party) => party.id));
-    for (const party of parties) {
+    const summaries = parties.map((party) => {
       const own = members.filter((member) => member.partyId === party.id);
       const envs = own.map((member) => (member.location ? parseMemberLocation(member.location).env : undefined));
-      this.partyGroups.upsertParty({
+      return {
         id: party.id,
         groupId: party.groupId || "",
         name: party.name,
@@ -1651,16 +1687,9 @@ export class AppController {
         wslCount: envs.filter((env) => env === "wsl").length,
         updatedAt: party.updatedAt || now,
         workspacePath,
-      });
-    }
-    // A party that vanished from ITS OWN workspace is gone; one registered
-    // against a different workspace is left alone, or opening workspace A would
-    // delete workspace B's parties from the list.
-    for (const registered of this.partyGroups.read().parties) {
-      if (registered.workspacePath === workspacePath && !known.has(registered.id)) {
-        this.partyGroups.removeParty(registered.id);
-      }
-    }
+      };
+    });
+    return this.partyGroups.reconcileWorkspace(workspacePath, summaries).changed;
   }
 
   // ------------------------------------------------------------ 멤버 실행 위치
@@ -1860,14 +1889,23 @@ export class AppController {
   }
 
   /** Re-publishes one workspace's parties into the app-global registry. */
-  private async syncPartyRegistry(workspacePath: string): Promise<void> {
+  private async syncPartyRegistry(workspacePath: string, options?: { surfaceFailure?: boolean }): Promise<boolean> {
     try {
       // The WHOLE workspace, not the viewed party: counting from the view
       // reported every unselected party as empty.
       const state = await this.engineFor(workspacePath).listAllParties();
-      this.registerWorkspaceParties(workspacePath, state.parties || [], state.members || []);
+      const changed = this.registerWorkspaceParties(workspacePath, state.parties || [], state.members || []);
+      if (changed) {
+        this.deps.onPartyGroupsChanged?.();
+      }
+      return changed;
     } catch (error) {
-      log("warn", "party", "could not refresh the party group registry", { workspacePath, error: error instanceof Error ? error.message : String(error) });
+      const detail = error instanceof Error ? error.message : String(error);
+      log("warn", "party", "could not refresh the party group registry", { workspacePath, error: detail });
+      if (options?.surfaceFailure) {
+        throw new Error(`파티 목록을 새로 고치지 못했습니다 (${workspacePath}): ${detail}`);
+      }
+      return false;
     }
   }
 
