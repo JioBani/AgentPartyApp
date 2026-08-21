@@ -1,5 +1,6 @@
 import { sanitizeAttachments } from "../../../shared/attachments";
 import { parseQueueCommand } from "../../../shared/messageQueue";
+import { buildPartyMcpToolSpecs } from "../../../core/partyBridge";
 import { PARTY_ACTION_NAMES } from "../../engine/partyActions";
 import { ApiError, camelAction, optText, required, text, type MethodRoute } from "../methodRegistry";
 
@@ -103,6 +104,39 @@ export const partyRoutes: MethodRoute[] = [
       }
       return ctx.controller.invokePartyToolAs(ctx.workspace, ctx.caller, text(p.tool), p, ctx.partyId);
     },
+  },
+  {
+    // Product-E2E route: launches the shipped stdio MCP relay on the named
+    // member's Windows/WSL execution host and crosses the same transport
+    // boundaries as a real harness tool call.
+    name: "party.invokeMemberMcpTool",
+    http: "POST /api/parties/:partyId/members/:name/mcp-tools/:tool",
+    remote: false,
+    handler: (p, ctx) => ctx.controller.invokeMemberPartyMcpTool(
+      ctx.workspace,
+      text(p.partyId),
+      text(p.name),
+      text(p.tool),
+      p.arguments && typeof p.arguments === "object" ? p.arguments : {},
+    ),
+  },
+  {
+    name: "party.listMemberMcpTools",
+    http: "GET /api/parties/:partyId/members/:name/mcp-tools",
+    remote: false,
+    handler: (p, ctx) => ctx.controller.listMemberPartyMcpTools(
+      ctx.workspace,
+      text(p.partyId),
+      text(p.name),
+    ),
+  },
+  {
+    // Canonical stdio MCP discovery surface. The relay fetches this instead of
+    // carrying a second static list that can omit new tools or stale schemas.
+    name: "party.toolSpec",
+    http: "GET /api/harness/party/tool-spec",
+    remote: false,
+    handler: () => ({ ok: true, tools: buildPartyMcpToolSpecs() }),
   },
   {
     name: "party.message",

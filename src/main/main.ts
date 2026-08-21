@@ -19,9 +19,9 @@ import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { MemberPermissionInput, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
+import type { MemberPermissionInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
-import { sessionsForWindow, windowsServedLocally } from "./sessionListRouting";
+import { sessionsForWindow } from "./sessionListRouting";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
 import { sanitizeAttachments } from "../shared/attachments";
 import { parseQueueCommand } from "../shared/messageQueue";
@@ -42,6 +42,9 @@ import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
+import { memberExecutionLocationCatalog } from "../shared/memberLocation";
+import { getCheckedCwdPreferences, rememberCwd } from "./cwdPreferencesStore";
+import { checkCwd } from "./cwdService";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -90,10 +93,10 @@ installCrashHandlers({
 // live install before the fix: one member holding EIGHT `claude` processes on
 // the same conversation, ~2.5 GB, still climbing hours later.
 //
-// Per-workspace coordination did not go away — state still lives in the
-// workspace's `.agent_party_app/` and discovery is still per-workspace
-// (src/main/discovery.ts), which is what lets a member started here be
-// recognised rather than cloned (PartyApplicationService.startMember).
+// Party/group/member state has one Windows-global source of truth. Per-workspace
+// discovery remains only for standalone sessions, native CLI/auth context and
+// the explicit lazy import of an older cwd-owned party store. A party member's
+// immutable location decides whether its harness runs on Windows or in WSL.
 
 let router: EmbeddedHarnessRouter | undefined;
 let sessionManager: SessionManager | undefined;
@@ -106,6 +109,10 @@ let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
 let mobileLink: MobileLinkService | undefined;
+/** Internal Windows directory whose engine is the party-state source of truth. */
+let partyStorageWorkspace: string | undefined;
+/** Last session list from each WSL worker, merged with desktop-owned party sessions. */
+const remoteSessionsByWorkspace = new Map<string, SessionView[]>();
 /**
  * Which session raised each approval. Built here because this is where BOTH
  * local and WSL engine events pass, which is what lets a phone answer an
@@ -240,6 +247,7 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
     // and drop its discovery entry.
     if (registry().forWorkspace(entry.workspacePath).length === 0) {
       engineRegistry?.dispose(entry.workspacePath);
+      remoteSessionsByWorkspace.delete(workspaceKey(entry.workspacePath));
     }
     reconcileDiscovery();
   });
@@ -463,6 +471,14 @@ ${body}
     // Members reach Discord through their party tools; the bridge itself is
     // desktop-owned (it holds the token and the gateway socket).
     discord: discordBridge,
+    executionLocations: {
+      list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
+      check: (location) => checkCwd(location),
+      remember: (location) => {
+        rememberCwd(location);
+        applyRuntimeSettings();
+      },
+    },
     // Desktop only: a WSL workspace is served by an engine spawned in the distro.
     createRemoteEngine: (location, serialized) => {
       if (location.host.kind !== "wsl") {
@@ -499,13 +515,18 @@ ${body}
         // member two different ways — the desktop's HTTP path and the member's own
         // tool would then bind two separate channels for one member. (Observed:
         // the WSL e2e created a duplicate channel and the agent posted into it.)
-        discordConnect: (input: any) => requireBridge().connectMember({ ...input, workspacePath: serialized }),
+        discordConnect: (input: any) => requireBridge().connectMember({ ...input, workspacePath: partyStorageWorkspace || serialized }),
         discordSend: (_workspacePath: string, party: string, member: string, content: string) =>
-          requireBridge().sendAsMember(serialized, party, member, content),
+          requireBridge().sendAsMember(partyStorageWorkspace || serialized, party, member, content),
         discordSendImage: (_workspacePath: string, party: string, member: string, image: any, caption?: string) =>
-          requireBridge().sendImageAsMember(serialized, party, member, image, caption),
+          requireBridge().sendImageAsMember(partyStorageWorkspace || serialized, party, member, image, caption),
         discordDisconnect: async (_workspacePath: string, party: string, member: string) =>
-          requireBridge().disconnectMember(serialized, party, member),
+          requireBridge().disconnectMember(partyStorageWorkspace || serialized, party, member),
+        // A member harness hosted in this distro still belongs to a party whose
+        // state lives in the desktop engine. Execute every party tool through
+        // the same AppController path used by UI and HTTP automation.
+        partyTool: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) =>
+          controller().invokePartyToolAs(ownerWorkspace, member, tool, args, partyId, true),
         reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
           // Assigned right after createEngineHost returns, and this closure only
           // runs once a workspace resolves — but say so out loud rather than
@@ -531,6 +552,7 @@ ${body}
           workspace: serialized,
           error: error.message,
         });
+        remoteSessionsByWorkspace.delete(workspaceKey(serialized));
         engineRegistry?.dispose(serialized);
       });
       // Stream the distro engine's live session activity to this workspace's windows.
@@ -542,6 +564,8 @@ ${body}
   sessionManager = host.sessionManager;
   workspaceManager = host.workspaceManager;
   engineRegistry = host.engineRegistry;
+  partyStorageWorkspace = path.join(app.getPath("userData"), "party-store");
+  const partyEngine = host.engineRegistry.forWorkspace(partyStorageWorkspace);
   await host.startRouter();
   log("info", "router", "embedded router started", { baseUrl: router.baseUrl, openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY) });
 
@@ -567,20 +591,20 @@ ${body}
   // than merges. See main/sessionListRouting.ts for why that matters.
   sessionManager.on("sessions", () => {
     const sessions = sessionManager!.listSessions();
-    const served = windowsServedLocally(registry().all());
-    for (const entry of served) {
-      pushSessionList(entry, "local", sessionsForWindow(sessions, entry.workspacePath));
+    const windows = registry().all();
+    for (const entry of windows) {
+      pushSessionList(entry, "local", sessionsForAppWindow(sessions, entry.workspacePath));
     }
     // A phone subscribes by WORKSPACE, not by window, so emit once per distinct
     // workspace — two windows on one workspace would otherwise send it twice.
     if (mobileLink?.hasSessions()) {
-      for (const workspacePath of new Set(served.map((entry) => entry.workspacePath))) {
-        mobileLink.publish("session:list", sessionsForWindow(sessions, workspacePath), workspacePath);
+      for (const workspacePath of new Set(windows.map((entry) => entry.workspacePath))) {
+        mobileLink.publish("session:list", sessionsForAppWindow(sessions, workspacePath), workspacePath);
       }
     }
   });
   // A member drove a party tool in-process (member-create / send / remove);
-  // re-broadcast that workspace's party state so its windows update.
+  // global party events are broadcast to every window by broadcastToWorkspace.
   sessionManager.on("party", (payload: { workspace: string }) => {
     void appController?.notifyPartyChanged(payload.workspace);
   });
@@ -647,6 +671,8 @@ ${body}
   appController = new AppController({
     sessionManager,
     engineRegistry: host.engineRegistry,
+    partyEngine,
+    partyStorageWorkspace,
     windowRegistry,
     subscriptionProxy: subscriptionProxyService,
     getRouterBaseUrl: () => router?.baseUrl || getSettings().routerBaseUrl,
@@ -837,6 +863,14 @@ function removeAllDiscovery(): void {
  * fires on every session event, and the answer is only interesting when someone
  * is asking why a member is flickering.
  */
+/** One replacement-safe list: source sessions plus every desktop-owned party session. */
+function sessionsForAppWindow(localSessions: SessionView[], workspacePath: string): SessionView[] {
+  const source = sessionsForWindow(localSessions, workspacePath);
+  const global = partyStorageWorkspace ? sessionsForWindow(localSessions, partyStorageWorkspace) : [];
+  const remote = remoteSessionsByWorkspace.get(workspaceKey(workspacePath)) || [];
+  return [...new Map([...source, ...remote, ...global].map((session) => [session.id, session] as const)).values()];
+}
+
 function pushSessionList(entry: { id: string; workspacePath: string; window: BrowserWindow }, source: "local" | "remote", list: unknown): void {
   log("debug", "window", "session list pushed", {
     source,
@@ -848,14 +882,23 @@ function pushSessionList(entry: { id: string; workspacePath: string; window: Bro
 }
 
 function broadcastToWorkspace(workspacePath: string, channel: string, payload: unknown): void {
-  for (const entry of registry().forWorkspace(workspacePath)) {
+  const globalPartyEvent = Boolean(partyStorageWorkspace)
+    && workspaceKey(workspacePath) === workspaceKey(partyStorageWorkspace as string);
+  const windows = globalPartyEvent ? registry().all() : registry().forWorkspace(workspacePath);
+  for (const entry of windows) {
     entry.window.webContents.send(channel, payload);
   }
   // A paired phone sees the same workspace-scoped stream the windows do, under
   // the same channel names. `forwardRemoteEvent` (WSL engines) also lands here,
   // so local and remote engines reach the phone through one tap. The gateway
   // returns immediately when no phone is connected.
-  mobileLink?.publish(channel, payload, workspacePath);
+  if (globalPartyEvent) {
+    for (const target of new Set(windows.map((entry) => entry.workspacePath))) {
+      mobileLink?.publish(channel, payload, target);
+    }
+  } else {
+    mobileLink?.publish(channel, payload, workspacePath);
+  }
   // Same stream, second reader. The index knows which channel carries approvals,
   // so this stays one unconditional line rather than a channel test here.
   approvals.note(workspacePath, channel, payload);
@@ -868,17 +911,20 @@ function broadcastToWorkspace(workspacePath: string, channel: string, payload: u
  */
 function forwardRemoteEvent(workspacePath: string, channel: string, payload: any): void {
   if (channel === "session:sessions") {
-    const list = Array.isArray(payload) ? payload.map((session) => ({ ...session, workspace: workspacePath })) : payload;
+    const list: SessionView[] = Array.isArray(payload) ? payload.map((session) => ({ ...session, workspace: workspacePath })) : [];
+    remoteSessionsByWorkspace.set(workspaceKey(workspacePath), list);
+    const combined = sessionsForAppWindow(sessionManager?.listSessions() || [], workspacePath);
     for (const entry of registry().forWorkspace(workspacePath)) {
-      pushSessionList(entry, "remote", list);
+      pushSessionList(entry, "remote", combined);
     }
     // This branch returns before `broadcastToWorkspace`, so the phone needs its
     // own emit here — the WSL channel name maps to the renderer's `session:list`.
-    mobileLink?.publish("session:list", list, workspacePath);
+    mobileLink?.publish("session:list", combined, workspacePath);
     return;
   }
   if (channel === "party:changed") {
-    // Re-fetch this remote workspace's party (over RPC) and push party:update.
+    // Legacy/headless fallback: current hosted party tools normally route back
+    // to the desktop controller and mutate the global store directly.
     void appController?.notifyPartyChanged(workspacePath);
     return;
   }
@@ -920,11 +966,10 @@ function registerApplicationMenu(): void {
       label: "View",
       submenu: [
         { label: "Workbench", accelerator: "CmdOrCtrl+1", click: () => navigate("workbench") },
-        { label: "Sessions", accelerator: "CmdOrCtrl+2", click: () => navigate("sessions") },
-        { label: "Token Usage", accelerator: "CmdOrCtrl+3", click: () => navigate("usage") },
-        { label: "Authentication", accelerator: "CmdOrCtrl+4", click: () => navigate("auth") },
-        { label: "Agent", accelerator: "CmdOrCtrl+5", click: () => navigate("agent") },
-        { label: "Settings", accelerator: "CmdOrCtrl+6", click: () => navigate("settings") },
+        { label: "Token Usage", accelerator: "CmdOrCtrl+2", click: () => navigate("usage") },
+        { label: "Authentication", accelerator: "CmdOrCtrl+3", click: () => navigate("auth") },
+        { label: "Agent", accelerator: "CmdOrCtrl+4", click: () => navigate("agent") },
+        { label: "Settings", accelerator: "CmdOrCtrl+5", click: () => navigate("settings") },
         { type: "separator" },
         { label: "가이드", accelerator: "F1", click: () => void controller().openGuideScreen() },
         { type: "separator" },
@@ -936,7 +981,6 @@ function registerApplicationMenu(): void {
       label: "Session",
       submenu: [
         { label: "New Party", accelerator: "CmdOrCtrl+N", click: () => focusedWindow()?.webContents.send("session:new") },
-        { label: "Refresh History", click: () => focusedWindow()?.webContents.send("session:refreshHistory") },
       ],
     },
   ]));
@@ -1013,11 +1057,14 @@ function registerIpc(): void {
   // right rather than a UI copy and an API copy.
   handle("partyGroups:list", async () => controller().listPartyGroups());
   handle("partyGroups:migrate", async (event) => controller().migratePartyGroups([senderWorkspace(event)]));
-  // Moving this window to the workspace a party lives in. Needed because the
-  // party list is app-global now: a party in another workspace is one click away
-  // in the sidebar, and clicking it must actually go there.
+  // Explicitly change this window's execution/migration context. Party selection
+  // never calls this: parties live in the Windows-global store.
   handle("workspace:switch", async (event, workspacePath: string) =>
-    controller().setWindowWorkspace(senderWindowId(event), String(workspacePath || "")));
+    controller().setWindowWorkspace(
+      senderWindowId(event),
+      String(workspacePath || ""),
+      { omitStateWhenUnchanged: true },
+    ));
   handle("partyGroups:create", async (_event, name: string) => controller().createPartyGroup(String(name || "")));
   handle("partyGroups:move", async (_event, partyId: string, groupId: string) => controller().movePartyToGroup(String(partyId || ""), String(groupId || "")));
   handle("partyGroups:rename", async (_event, groupId, name) => controller().renamePartyGroup(String(groupId || ""), String(name || "")));
@@ -1331,20 +1378,19 @@ function parsePort(baseUrl: string): number {
 /**
  * One AgentParty process per machine — a second launch becomes a WINDOW here.
  *
- * The party store lives on disk next to the workspace, but a session id only
- * means anything inside the process that created it. Two processes on one
- * workspace therefore could not see each other's sessions, and each started its
- * own harness for the same member, overwrote the shared binding, and abandoned
- * the other's process. Measured on a live install: one member holding EIGHT
- * `claude` processes on the same conversation, ~2.5 GB, still growing.
+ * Party data now has one Windows-global store, and a session id only means
+ * anything inside the process that created it. Two desktop processes could not
+ * see each other's sessions and each started its own harness for the same
+ * member, overwrote the shared binding, and abandoned the other's process.
+ * Measured on a live install: one member holding EIGHT `claude` processes on
+ * the same conversation, ~2.5 GB, still growing.
  *
  * Multiplexing was never the problem — the app is already built for it.
- * `EngineRegistry.forWorkspace` keys engines BY WORKSPACE, `WindowRegistry`
- * tracks the workspace each window is viewing, and every request already routes
- * through `engineFor(workspacePath)` / `partyForWindow(windowId)`. So one
- * process can hold many workspaces and many parties at once; nothing but this
- * lock was missing. (`main.ts` even documented a `second-instance` handler that
- * did not exist.)
+ * `EngineRegistry.forWorkspace` still keys execution contexts by workspace,
+ * while party/group/member state has one Windows-global engine. WindowRegistry
+ * tracks the execution/migration context each window is viewing. One process can
+ * therefore host Windows and WSL execution locations while every window sees the
+ * same parties. (`main.ts` once documented this handler before it existed.)
  *
  * `AGENTPARTY_ALLOW_MULTI_INSTANCE=1` keeps the old behaviour for QA: the e2e
  * scripts drive several isolated apps at once and pass it already.

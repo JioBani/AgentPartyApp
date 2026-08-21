@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, Users, X } from "lucide-react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -23,6 +23,7 @@ import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, parseMemberLocation, suggestedCwd } from "../../shared/memberLocation";
+import { SIDEBAR_DRAWER_MAX_WIDTH, SIDEBAR_DRAWER_MIN_WIDTH, type SidebarDrawerId, type SidebarDrawerSettings, type SidebarDrawerState } from "../../shared/sidebarDrawers";
 
 export interface CreateMemberInput {
   name: string;
@@ -58,7 +59,6 @@ interface PartySidebarProps {
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
   activePartyId?: string;
-  activePartyName: string;
   views: MemberView[];
   openMembers: Set<string>;
   routes: RouteLike[];
@@ -93,9 +93,9 @@ interface PartySidebarProps {
   onOpenPartyGate: (partyId: string) => void;
   /** Opens the party in another window of this process (shared engine + sessions). */
   onOpenPartyInNewWindow: (partyId: string) => void;
-  /** Which drawers are open, and how to change that. Owned by the app shell. */
-  drawers: { party: boolean; member: boolean };
-  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
+  /** Drawer open/width state, and how to change it. Owned by the app shell. */
+  drawers: SidebarDrawerSettings;
+  onToggleDrawer: (which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) => void;
 }
 
 /**
@@ -117,6 +117,19 @@ export interface CreatePartyInput {
  *  member's current state rather than what it was at right-click time. */
 function memberOf(views: MemberView[], name: string): MemberView | undefined {
   return views.find((view) => view.name === name);
+}
+
+/** Best default for a new member: where this party's main member already runs. */
+function partyExecutionLocation(views: MemberView[]): MemberExecutionLocation | undefined {
+  const stored = (views.find((view) => view.name === "main") || views[0])?.member.location;
+  if (!stored) {
+    return undefined;
+  }
+  try {
+    return parseMemberLocation(stored);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -266,6 +279,42 @@ type CtxMenu =
   | { kind: "party"; partyId: string; name: string; x: number; y: number }
   | { kind: "group"; groupId: string; name: string; isDefault: boolean; x: number; y: number };
 
+interface PositionedCtxMenu {
+  /** The exact menu state this measurement belongs to. */
+  menu: CtxMenu;
+  left: number;
+  top: number;
+}
+
+const CONTEXT_MENU_VIEWPORT_GUTTER = 8;
+const CONTEXT_MENU_ANCHOR_GAP = 4;
+
+/**
+ * Places a context menu next to its pointer anchor without clipping it.
+ *
+ * Opening direction is decided from the measured menu size, not a guessed
+ * item count: member actions vary with session state and destructive actions
+ * can change after the menu opens. If the menu does not fit below/right of the
+ * pointer, it opens above/left, then clamps to the viewport as a final guard.
+ */
+function fitContextMenuToViewport(
+  anchor: { x: number; y: number },
+  menuSize: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const maxLeft = Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, viewport.width - menuSize.width - CONTEXT_MENU_VIEWPORT_GUTTER);
+  const maxTop = Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, viewport.height - menuSize.height - CONTEXT_MENU_VIEWPORT_GUTTER);
+  const fitsRight = anchor.x + CONTEXT_MENU_ANCHOR_GAP + menuSize.width + CONTEXT_MENU_VIEWPORT_GUTTER <= viewport.width;
+  const fitsBelow = anchor.y + CONTEXT_MENU_ANCHOR_GAP + menuSize.height + CONTEXT_MENU_VIEWPORT_GUTTER <= viewport.height;
+  const preferredLeft = fitsRight ? anchor.x + CONTEXT_MENU_ANCHOR_GAP : anchor.x - menuSize.width - CONTEXT_MENU_ANCHOR_GAP;
+  const preferredTop = fitsBelow ? anchor.y + CONTEXT_MENU_ANCHOR_GAP : anchor.y - menuSize.height - CONTEXT_MENU_ANCHOR_GAP;
+
+  return {
+    left: Math.round(Math.min(maxLeft, Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, preferredLeft))),
+    top: Math.round(Math.min(maxTop, Math.max(CONTEXT_MENU_VIEWPORT_GUTTER, preferredTop))),
+  };
+}
+
 /**
  * Each drawer remembers its own width.
  *
@@ -273,26 +322,21 @@ type CtxMenu =
  * plus a count, the member list wants room for a name plus a status, and one
  * width forces the wider need on both.
  */
-const DRAWER_WIDTH_KEY = { party: "agentparty.partyDrawerWidth", member: "agentparty.memberDrawerWidth" } as const;
-const DRAWER_DEFAULT_WIDTH = { party: 236, member: 210 } as const;
-const DRAWER_MIN = 150;
-const DRAWER_MAX = 460;
-
-function loadDrawerWidth(which: "party" | "member"): number {
-  const stored = Number(window.localStorage.getItem(DRAWER_WIDTH_KEY[which]));
-  return Number.isFinite(stored) && stored >= DRAWER_MIN && stored <= DRAWER_MAX ? stored : DRAWER_DEFAULT_WIDTH[which];
-}
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, activePartyName, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
-  const [partyWidth, setPartyWidth] = useState(() => loadDrawerWidth("party"));
-  const [memberWidth, setMemberWidth] = useState(() => loadDrawerWidth("member"));
-  const resizing = useRef<{ which: "party" | "member"; startX: number; startWidth: number } | null>(null);
-
-  // Saved from the value itself rather than at pointer-up, so a width that
-  // changed any other way is stored too and the drag handler needs no refs.
-  useEffect(() => { window.localStorage.setItem(DRAWER_WIDTH_KEY.party, String(partyWidth)); }, [partyWidth]);
-  useEffect(() => { window.localStorage.setItem(DRAWER_WIDTH_KEY.member, String(memberWidth)); }, [memberWidth]);
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  /**
+   * The width being dragged RIGHT NOW, if any.
+   *
+   * The settled width lives in settings; a drag would otherwise write one
+   * setting per pointer move. `undefined` means "no drag in flight, use the
+   * stored width".
+   */
+  const [dragWidth, setDragWidth] = useState<{ which: SidebarDrawerId; width: number } | undefined>(undefined);
+  const resizing = useRef<{ which: SidebarDrawerId; startX: number; startWidth: number } | null>(null);
+  const widthOf = (which: SidebarDrawerId) => (dragWidth?.which === which ? dragWidth.width : drawers[which].width);
+  const partyWidth = widthOf("party");
+  const memberWidth = widthOf("member");
 
   /**
    * Drag-to-resize for one drawer.
@@ -300,17 +344,22 @@ export function PartySidebar(props: PartySidebarProps) {
    * Listeners go on the window, not the handle: the pointer leaves a 4px strip
    * immediately, and a handle-scoped listener drops the drag the moment it does.
    */
-  function startResize(which: "party" | "member", event: React.PointerEvent) {
-    resizing.current = { which, startX: event.clientX, startWidth: which === "party" ? partyWidth : memberWidth };
+  function startResize(which: SidebarDrawerId, event: React.PointerEvent) {
+    resizing.current = { which, startX: event.clientX, startWidth: widthOf(which) };
+    let latest = widthOf(which);
     const move = (moveEvent: PointerEvent) => {
       const ref = resizing.current;
       if (!ref) {
         return;
       }
-      const next = Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, ref.startWidth + (moveEvent.clientX - ref.startX)));
-      (ref.which === "party" ? setPartyWidth : setMemberWidth)(next);
+      latest = Math.min(SIDEBAR_DRAWER_MAX_WIDTH, Math.max(SIDEBAR_DRAWER_MIN_WIDTH, ref.startWidth + (moveEvent.clientX - ref.startX)));
+      setDragWidth({ which: ref.which, width: latest });
     };
     const up = () => {
+      // Persisted once, at the end: the drag itself is local state, so a resize
+      // is one settings write instead of one per pointer move.
+      onToggleDrawer(which, { width: latest });
+      setDragWidth(undefined);
       resizing.current = null;
       window.removeEventListener("pointermove", move);
       document.body.classList.remove("wb-resizing");
@@ -328,6 +377,8 @@ export function PartySidebar(props: PartySidebarProps) {
   const [movingParty, setMovingParty] = useState<PartySummary | null>(null);
   // Right-click context menu, at the cursor, for a member or party row.
   const [menu, setMenu] = useState<CtxMenu | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<PositionedCtxMenu | null>(null);
   // Arms the second, confirming click for the destructive party delete.
   const [confirmParty, setConfirmParty] = useState(false);
   // Same two-step for deleting a group. Separate flag: one shared "confirm"
@@ -375,6 +426,38 @@ export function PartySidebar(props: PartySidebarProps) {
     };
   }, [menu]);
 
+  // Measure the real rendered menu before paint. `visibility: hidden` on the
+  // first render prevents a one-frame flash at the unadjusted cursor position.
+  useLayoutEffect(() => {
+    const element = contextMenuRef.current;
+    if (!menu || !element) {
+      return;
+    }
+
+    const position = () => {
+      const bounds = element.getBoundingClientRect();
+      const next = fitContextMenuToViewport(
+        { x: menu.x, y: menu.y },
+        { width: bounds.width, height: bounds.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      setMenuPosition((current) => (
+        current?.menu === menu && current.left === next.left && current.top === next.top
+          ? current
+          : { menu, ...next }
+      ));
+    };
+
+    position();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
+    observer?.observe(element);
+    window.addEventListener("resize", position);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", position);
+    };
+  }, [menu]);
+
   /**
    * The one-line quick create. It still needs a cwd for the `main` member, so it
    * only completes when a Windows default exists; otherwise it hands over to the
@@ -408,13 +491,13 @@ export function PartySidebar(props: PartySidebarProps) {
 
   return (
     <>
-      {drawers.party ? (
+      {drawers.party.open ? (
         <aside className="wb-drawer wb-party-drawer" style={{ width: partyWidth }}>
           <header className="wb-drawer-head">
             <Users size={14} />
             <span className="wb-drawer-title"><LocalizedText id="STR-3780" /></span>
             <span className="wb-mono wb-drawer-count">{partySummaries.length}</span>
-            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("party", false)}><ChevronsLeft size={15} /></button>
+            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("party", { open: false })}><ChevronsLeft size={15} /></button>
           </header>
 
           <section className="wb-sidebar-section">
@@ -452,26 +535,27 @@ export function PartySidebar(props: PartySidebarProps) {
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("party", event)} />
         </aside>
       ) : (
-        <button type="button" className="wb-drawer-rail is-party" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", true)}>
+        <button type="button" className="wb-drawer-rail is-party" title={localized("STR-2290")} onClick={() => onToggleDrawer("party", { open: true })}>
           <ChevronsRight size={13} />
           <span><LocalizedText id="STR-3781" /></span>
           <span className="wb-mono wb-drawer-rail-count">{partySummaries.length}</span>
         </button>
       )}
 
-      {drawers.member ? (
+      {drawers.member.open ? (
         <aside className="wb-drawer wb-member-drawer" style={{ width: memberWidth }}>
-          {/* The party name lives HERE, not only in the party drawer: with the
-              party drawer collapsed this is the only thing that says which
-              party's members these are. */}
+          {/* Says what the drawer IS, like the party drawer above it. Which
+              party these members belong to is the workbench header's job — it
+              stays visible with either drawer collapsed. */}
           <header className="wb-drawer-head">
-            <span className="wb-drawer-party" title={activePartyName}>{activePartyName}</span>
-            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("member", false)}><ChevronsLeft size={15} /></button>
+            <UserRound size={14} />
+            <span className="wb-drawer-title"><LocalizedText id="STR-2061" /></span>
+            <span className="wb-mono wb-drawer-count">{views.length}</span>
+            <button type="button" className="wb-icon-btn" title={localized("STR-2058")} onClick={() => onToggleDrawer("member", { open: false })}><ChevronsLeft size={15} /></button>
           </header>
 
           <section className="wb-sidebar-section wb-members-section">
             <div className="wb-section-label">
-              <span><LocalizedText id="STR-2061" /></span>
           {!creating && <span className="wb-hint"><LocalizedText id="STR-2062" /></span>}
           <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? localized("STR-2064") : localized("STR-2063")} onClick={() => setCreating((value) => !value)}>
             {creating ? <X size={14} /> : <Plus size={15} />}
@@ -487,6 +571,7 @@ export function PartySidebar(props: PartySidebarProps) {
             harnessDefaults={harnessDefaults}
             cwdPrefs={cwdPrefs}
             appWorkspaceRoot={appWorkspaceRoot}
+            initialLocation={partyExecutionLocation(views)}
             now={now}
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}
@@ -540,16 +625,22 @@ export function PartySidebar(props: PartySidebarProps) {
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("member", event)} />
         </aside>
       ) : (
-        <button type="button" className="wb-drawer-rail is-member" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", true)}>
+        <button type="button" className="wb-drawer-rail is-member" title={localized("STR-2290")} onClick={() => onToggleDrawer("member", { open: true })}>
           <ChevronsRight size={13} />
-          <span>{activePartyName}</span>
+          <span><LocalizedText id="STR-2061" /></span>
           <span className="wb-mono wb-drawer-rail-count">{views.length}</span>
         </button>
       )}
 
       {menu && (
-        // Fixed to the viewport at the cursor; click handlers above close it.
-        <div className="wb-ctx-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+        <div
+          ref={contextMenuRef}
+          className="wb-ctx-menu"
+          style={menuPosition?.menu === menu
+            ? { left: menuPosition.left, top: menuPosition.top }
+            : { left: menu.x, top: menu.y, visibility: "hidden" }}
+          onClick={(event) => event.stopPropagation()}
+        >
           {menu.kind === "group" ? (
             <GroupContextMenuItems
               menu={menu}

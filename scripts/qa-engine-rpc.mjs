@@ -81,12 +81,18 @@ try {
   await client.qaEmit("rpc-1", { events: [{ type: "assistant_text_delta", text: "via rpc" }], status: "working" });
   assert(true, "qaEmit over RPC accepted");
 
-  // The server's engine persisted to the workspace fs (server side, not client).
-  const statePath = path.join(workspace, ".agent_party_app", "state.json");
-  assert(existsSync(statePath), "server engine persisted state.json");
-  if (existsSync(statePath)) {
-    const state = JSON.parse(readFileSync(statePath, "utf8"));
-    assert((state.members || []).some((m) => m.name === "rpc-1"), "persisted state contains rpc-1");
+  // The server's engine persisted the current split store to the workspace fs
+  // (server side, not client): one index plus one detail file per party.
+  const storeRoot = path.join(workspace, ".agent_party_app");
+  const indexPath = path.join(storeRoot, "parties.json");
+  assert(existsSync(indexPath), "server engine persisted the party index");
+  if (existsSync(indexPath)) {
+    const index = JSON.parse(readFileSync(indexPath, "utf8"));
+    const members = (index.parties || []).flatMap((party) => {
+      const detailPath = path.join(storeRoot, "parties", party.id, "party.json");
+      return existsSync(detailPath) ? (JSON.parse(readFileSync(detailPath, "utf8")).members || []) : [];
+    });
+    assert(members.some((m) => m.name === "rpc-1"), "persisted per-party store contains rpc-1");
   }
 
   // Error propagation: an engine-side throw becomes a rejected client promise.

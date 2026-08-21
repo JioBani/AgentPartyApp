@@ -65,7 +65,6 @@ export const guideCommandUi = {
   openMcp: () => refuse("MCP 설정"),
   openStatus: () => refuse("상태 화면"),
   openUsage: () => refuse("사용량 화면"),
-  openSessions: () => refuse("세션 화면"),
   openAutoCompact: () => refuse("자동 압축 설정"),
 } satisfies WorkbenchCommandUi;
 
@@ -77,7 +76,6 @@ interface WorkbenchCommandUi {
   openMcp: () => void;
   openStatus: () => void;
   openUsage: () => void;
-  openSessions: () => void;
   openAutoCompact: () => void;
 }
 

@@ -156,13 +156,16 @@ path and assert that timeouts remain errors with their command and POSIX cwd.
 
 `node scripts/e2e-party-switch-perf.mjs` seeds 8 parties and 96 persisted
 transcripts (~51 MiB of text), with 12 open tabs and six visible panels per
-party. Half the blocks are collapsed tool results. It selects every party
-through the public automation route and locks three milestones: correct layout,
-first usable transcript within 500 ms, then all six sequentially filled within
-5 seconds. It also covers a cached warm return, a cold background-tab click,
-rapid-switch party scoping, progressive convergence to the established
-150-block tail, deferred tool expansion, older-history paging, and a real
-workbench capture. Sleeping fixture members keep it offline and unbilled.
+party. Half the blocks are collapsed tool results. Its first switch is a real
+pointer click on the grouped-sidebar party row; later switches also cover the
+public automation route. This distinction is intentional: a renderer click can
+do expensive work before AppController, which an API-only regression cannot
+observe. The test locks three milestones: correct layout, first usable transcript
+within 500 ms, then all six sequentially filled within 5 seconds. It also covers
+a cached warm return, a cold background-tab click, rapid-switch party scoping,
+progressive convergence to the established 150-block tail, deferred tool
+expansion, older-history paging, and a real workbench capture. Sleeping fixture
+members keep it offline and unbilled.
 
 For an existing workspace, run
 `node scripts/benchmark-party-switch-real-store.mjs <workspace> [installed-exe]`.
@@ -170,8 +173,15 @@ The benchmark copies only `.agent_party_app` into a guarded temporary directory,
 marks copied members sleeping, and launches the real app against that copy; the
 source workspace and its live parties are never written. Omitting `installed-exe`
 measures the current worktree build, while supplying it makes a baseline run.
+Every timed switch is driven through the real grouped-sidebar pointer path, not
+the lower-level party selection API, so the numbers match what a user feels.
 Add `--open` to leave that isolated sleeping-member copy open in the real app
 for hands-on QA; the command prints the copy and user-data paths for cleanup.
+
+`npm run test:e2e:two-window` also clicks a grouped-sidebar party whose home is
+another workspace. It verifies that the main process makes the authoritative
+workspace decision, selects the exact party, and replaces the renderer's
+workspace state while the public same-workspace API still returns full state.
 
 `node scripts/qa-app-mcp-e2e.mjs` verifies the MCP status endpoint against the
 **real** harness adapters (billed — starts a live Claude + Codex member): creates
@@ -185,11 +195,15 @@ boots the real app and opens a `wsl+<distro>:` workspace through the same
 `POST /api/windows` call the `agent-party` CLI makes, then asserts `GET /api/state`
 comes back with the distro, the distro path, AND a session list — the last one is
 what proves the engine **inside** the distro answered, rather than the URI merely
-being parsed on the Windows side. Guards a whole failure class: the engine server
-is bundled as ESM and run by the distro's plain node, so any Electron-only
-dependency reaching its module graph (`import … from "electron"`, `__dirname`)
-kills it at LOAD time and the workspace silently renders as "작업공간 없음".
-Requires the distro; the workspace is created under `/tmp` inside it.
+being parsed on the Windows side. It also seeds pre-existing WSL parties (including
+the legacy id `SEL-6809`), proves the owning engine registers and backfills them,
+moves them repeatedly through `POST /api/parties/:id/group` without losing any
+rows, verifies the native Windows renderer receives them, then relaunches on a
+Windows workspace only and checks the WSL summaries remain visible without opening
+the distro workspace. Guards both load-time engine failures and the regression
+where the desktop treated a WSL URI as a Windows path, leaving a party visible in
+the workbench but absent from the movable global registry. Requires the distro;
+the isolated fixture workspace is created under `/tmp` inside it and removed.
 
 `node scripts/e2e-live-codex-approval-roundtrip.mjs` drives the REAL
 `CodexAdapter` against a real `codex app-server` (billed — one short turn) and

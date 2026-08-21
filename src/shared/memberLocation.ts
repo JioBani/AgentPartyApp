@@ -19,6 +19,38 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation, type WorkspaceLocat
 /** The two environments a member can run in. Windows-first: this is a Windows app. */
 export type ExecutionEnv = "windows" | "wsl";
 
+/**
+ * Public host selector used by automation and member-facing tools.
+ *
+ * This deliberately is not inferred from `cwd`: `/work` does not identify a
+ * WSL distro, and a future Linux or macOS desktop must be able to add its own
+ * local host without changing the `member-create` request shape. Keep supported
+ * host kinds and their metadata here so UI, HTTP and MCP never grow separate
+ * platform lists.
+ */
+export const MEMBER_EXECUTION_HOSTS = ["windows", "wsl"] as const;
+export type MemberExecutionHost = (typeof MEMBER_EXECUTION_HOSTS)[number];
+
+export interface MemberExecutionLocationRequest {
+  host: MemberExecutionHost;
+  /** Absolute path in the selected host's native syntax. */
+  cwd: string;
+  /** Required for WSL; absent for a native host. */
+  distro?: string;
+}
+
+export interface SupportedMemberExecutionHost {
+  host: MemberExecutionHost;
+  label: string;
+  distroRequired: boolean;
+  pathStyle: "win32" | "posix";
+}
+
+export const SUPPORTED_MEMBER_EXECUTION_HOSTS: readonly SupportedMemberExecutionHost[] = [
+  { host: "windows", label: "Windows", distroRequired: false, pathStyle: "win32" },
+  { host: "wsl", label: "WSL", distroRequired: true, pathStyle: "posix" },
+];
+
 /** The most recent cwds we keep per environment (README §6). */
 export const RECENT_CWD_LIMIT = 10;
 
@@ -87,6 +119,20 @@ export interface MemberLocationRow {
   member: string;
   partyName: string;
   location: MemberExecutionLocation;
+}
+
+/** A location an agent may suggest when creating another member. */
+export interface MemberExecutionLocationSuggestion extends MemberExecutionLocationRequest {
+  /** Existing stored wire representation accepted by the UI/HTTP APIs. */
+  location: string;
+  source: "default" | "recent";
+  usedAt?: string;
+  problem?: CwdProblem;
+}
+
+export interface MemberExecutionLocationCatalog {
+  supportedHosts: readonly SupportedMemberExecutionHost[];
+  locations: MemberExecutionLocationSuggestion[];
 }
 
 /**
@@ -169,6 +215,63 @@ export function parseMemberLocation(value: string): MemberExecutionLocation {
     : { env: "windows", cwd: loc.path };
 }
 
+/** Turns the public, explicit host request into the app's internal location. */
+export function memberLocationFromRequest(value: unknown): MemberExecutionLocation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("location must be an object with host and cwd.");
+  }
+  const input = value as Record<string, unknown>;
+  const host = typeof input.host === "string" ? input.host.trim().toLowerCase() : "";
+  if (!(MEMBER_EXECUTION_HOSTS as readonly string[]).includes(host)) {
+    throw new Error(`location.host must be one of: ${MEMBER_EXECUTION_HOSTS.join(", ")}.`);
+  }
+  if (typeof input.cwd !== "string" || !input.cwd.trim()) {
+    throw new Error("location.cwd must be a non-empty string.");
+  }
+  const cwd = input.cwd.trim();
+  if (host === "wsl") {
+    if (typeof input.distro !== "string" || !input.distro.trim()) {
+      throw new Error("location.distro is required when location.host is 'wsl'.");
+    }
+    return { env: "wsl", cwd, distro: input.distro.trim() };
+  }
+  if (input.distro !== undefined && input.distro !== null && String(input.distro).trim()) {
+    throw new Error("location.distro is only valid when location.host is 'wsl'.");
+  }
+  return { env: "windows", cwd };
+}
+
+/** Public automation shape for one internal execution location. */
+export function memberLocationRequestOf(location: MemberExecutionLocation): MemberExecutionLocationRequest {
+  return location.env === "wsl"
+    ? { host: "wsl", cwd: location.cwd, distro: location.distro }
+    : { host: "windows", cwd: location.cwd };
+}
+
+/**
+ * Flattens the current preference store into a host-neutral suggestion list.
+ * Adding Linux/macOS later only requires teaching the preference adapter about
+ * their rows; the MCP response and `member-create.location` contract stay the
+ * same.
+ */
+export function memberExecutionLocationCatalog(prefs: CwdPreferences): MemberExecutionLocationCatalog {
+  const rows: MemberExecutionLocationSuggestion[] = [];
+  const seen = new Set<string>();
+  const append = (location: MemberExecutionLocation, source: "default" | "recent", usedAt?: string, problem?: CwdProblem) => {
+    const key = memberLocationKey(location);
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ ...memberLocationRequestOf(location), location: serializeMemberLocation(location), source, usedAt, problem });
+  };
+  // Most recent suggestions lead, matching the member wizard. Defaults fill a
+  // host only when that exact location was not already a recent success.
+  for (const entry of prefs.windowsRecent) append(entry.location, "recent", entry.usedAt, entry.problem);
+  for (const entry of prefs.wslRecent) append(entry.location, "recent", entry.usedAt, entry.problem);
+  if (prefs.windowsDefault) append(prefs.windowsDefault, "default");
+  if (prefs.wslDefault) append(prefs.wslDefault, "default");
+  return { supportedHosts: SUPPORTED_MEMBER_EXECUTION_HOSTS, locations: rows };
+}
+
 /**
  * Identity for dedup and selection highlighting.
  *
@@ -179,7 +282,10 @@ export function parseMemberLocation(value: string): MemberExecutionLocation {
  */
 export function memberLocationKey(loc: MemberExecutionLocation): string {
   if (loc.env === "wsl") {
-    return `wsl+${loc.distro ?? ""}:${trimTrailing(loc.cwd, "/") || "/"}`;
+    // Distro names follow WSL's case-insensitive identity; the path inside the
+    // distro does not. Without this, one cwd occupied two recent-list slots
+    // merely because one caller wrote `Ubuntu` and another wrote `ubuntu`.
+    return `wsl+${(loc.distro ?? "").toLowerCase()}:${trimTrailing(loc.cwd, "/") || "/"}`;
   }
   return trimTrailing(loc.cwd.replace(/\//g, "\\"), "\\").toLowerCase();
 }

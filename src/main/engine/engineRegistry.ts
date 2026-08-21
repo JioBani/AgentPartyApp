@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { isWslLocation, parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
 import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
@@ -33,6 +34,7 @@ export class EngineRegistry {
   constructor(private readonly deps: EngineRegistryDeps) {}
 
   forWorkspace(workspacePath: string): EngineConnection {
+    assertUsableWorkspaceLocation(workspacePath);
     const key = workspaceKey(workspacePath);
     let engine = this.engines.get(key);
     if (!engine) {
@@ -135,6 +137,25 @@ export class EngineRegistry {
       party: this.deps.workspaceManager.context(workspacePath).party,
       sessionManager: this.deps.sessionManager,
     });
+  }
+}
+
+/**
+ * Rejects a workspace whose meaning would depend on whichever cwd happens to
+ * launch the engine. This boundary covers UI, HTTP, CLI and restored settings;
+ * validating only the launcher left the automation API able to create the same
+ * fabricated relative workspaces the launcher already refuses.
+ */
+function assertUsableWorkspaceLocation(workspacePath: string): void {
+  const location = parseWorkspaceLocation(workspacePath);
+  if (location.host.kind === "wsl") {
+    if (!location.host.distro || !path.posix.isAbsolute(location.path)) {
+      throw new Error(`WSL workspace '${workspacePath}' must name a distro and an absolute POSIX path.`);
+    }
+    return;
+  }
+  if (!path.isAbsolute(location.path)) {
+    throw new Error(`Workspace '${workspacePath}' must be an absolute path.`);
   }
 }
 

@@ -23,6 +23,7 @@ const otherWs = fs.mkdtempSync(path.join(os.tmpdir(), "ap-2win-other-ws-"));
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const sameWindowsPath = (left, right) => String(left || "").toLowerCase() === String(right || "").toLowerCase();
 
 function launch(workspace) {
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), `--workspace=${workspace}`], {
@@ -42,6 +43,15 @@ async function postRaw(baseUrl, u, b) {
   return { status: response.status, body: await response.json() };
 }
 async function get(baseUrl, u) { const r = await fetch(`${baseUrl}${u}`); return r.json(); }
+async function waitFor(probe, matches, attempts = 200) {
+  let value;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    value = await probe();
+    if (matches(value)) return value;
+    await delay(50);
+  }
+  return value;
+}
 
 const proc = launch(ws);
 try {
@@ -67,13 +77,12 @@ try {
   const idB = (await post(base, "/api/parties", { name: "WIN-B" }))?.currentPartyId;
   assert(Boolean(idA && idB && idA !== idB), "created two distinct parties");
 
-  // The user's exact scenario: BOTH windows just VIEW party A (a GET is what a
-  // renderer does on load) — window #1 never explicitly selects. Then window #2
-  // selects B. Window #1 must NOT follow (regression: an unselected window used to
-  // track the shared last-active hint that #2's select moved).
-  await post(base, `/api/parties/${idA}/select?window=${win1}`, {}); // both start on A
+  // Creation legitimately leaves the creating window on the newest party, so
+  // seed both windows explicitly before testing their independent selections.
+  await post(base, `/api/parties/${idA}/select?window=${win1}`, {});
+  await post(base, `/api/parties/${idA}/select?window=${win2}`, {});
   const seed1 = (await get(base, `/api/party?window=${win1}`)).currentPartyId;
-  const seed2 = (await get(base, `/api/party?window=${win2}`)).currentPartyId; // #2 only VIEWS A (pins it)
+  const seed2 = (await get(base, `/api/party?window=${win2}`)).currentPartyId;
   assert(seed1 === idA && seed2 === idA, `both windows start on A (#1=${seed1}, #2=${seed2})`);
 
   // Window #2 selects B — window #1 (which never re-selected) must stay on A.
@@ -92,6 +101,15 @@ try {
   const cur2again = (await get(base, `/api/party?window=${win2}`)).currentPartyId;
   assert(cur2again === idB, `window #2 stayed on B while window #1 moved to B (got ${cur2again})`);
 
+  // The public workspace API still promises a complete state even when it is
+  // already on that workspace. Only the sidebar's internal preparation opts
+  // out of hydrating this duplicate response.
+  const unchangedWorkspaceState = await post(base, `/api/windows/${encodeURIComponent(win1)}/workspace`, { workspacePath: ws });
+  assert(
+    sameWindowsPath(unchangedWorkspaceState?.workspace?.uri, ws) && Array.isArray(unchangedWorkspaceState?.party?.members),
+    "same-workspace public API still returns its documented fresh state",
+  );
+
   // Cross-workspace routing regression: identical party names are legal, but
   // opening must use the exact workspace + id pair. An id from this workspace
   // must never silently fall back to the current party in another workspace.
@@ -101,6 +119,71 @@ try {
   const sameNameHere = (await post(base, `/api/parties?window=${win1}`, { name: "SAME-PARTY-NAME" }))?.currentPartyId;
   const sameNameThere = (await post(base, `/api/parties?window=${otherWindowId}`, { name: "SAME-PARTY-NAME" }))?.currentPartyId;
   assert(Boolean(sameNameHere && sameNameThere && sameNameHere !== sameNameThere), "same party name can exist in two workspaces with distinct ids");
+
+  // The app-global grouped sidebar can point at a party outside this window's
+  // current workspace. Exercise the actual renderer click: it must let the main
+  // process make the authoritative same/different-workspace decision, route the
+  // selection, and replace the renderer's old workspace state.
+  // `otherWindow` is the focused window after opening it. Drive that real
+  // foreground surface back to the original workspace's party.
+  const switchWindowId = otherWindowId;
+  const measureInSwitchWindow = (selector, body = {}) => post(
+    base,
+    `/api/measure?window=${encodeURIComponent(switchWindowId)}`,
+    { selector, ...body },
+  );
+  /**
+   * The workspace the RENDERER has applied.
+   *
+   * Read off `.app-shell[data-workspace]` rather than a path printed in the
+   * header: the workbench header shows the PARTY now, so there is no workspace
+   * text on this screen to read. Still a renderer-side assertion — the attribute
+   * is bound to the renderer's own state, not to the window registry.
+   */
+  const rendererWorkspace = async () => {
+    const measurement = await measureInSwitchWindow(".app-shell", { attributes: ["data-workspace"] });
+    return measurement?.elements?.[0]?.attributes?.["data-workspace"];
+  };
+  const sourceWorkspace = await waitFor(rendererWorkspace, (value) => sameWindowsPath(value, otherWs));
+  assert(sameWindowsPath(sourceWorkspace, otherWs), `source renderer finished its initial workspace load (${sourceWorkspace})`);
+  const crossPartySelector = `.wb-party-row[data-party-id=${JSON.stringify(sameNameHere)}]`;
+  const crossGroupSelector = `.wb-party-group:has(${crossPartySelector}) > .wb-group-row`;
+  const registeredRow = await waitFor(
+    () => measureInSwitchWindow(crossPartySelector),
+    (measurement) => measurement?.elements?.length === 1,
+    100,
+  );
+  assert(registeredRow?.elements?.length === 1, "cross-workspace party reached the grouped sidebar");
+  const crossGroup = await measureInSwitchWindow(crossGroupSelector, {
+    attributes: ["aria-expanded"],
+  });
+  if (crossGroup?.elements?.[0]?.attributes?.["aria-expanded"] !== "true") {
+    await post(base, `/api/qa/pointer?window=${encodeURIComponent(switchWindowId)}`, {
+      steps: [{ selector: crossGroupSelector, action: "click" }],
+      delayMs: 0,
+    });
+  }
+  const visibleRow = await waitFor(
+    () => measureInSwitchWindow(crossPartySelector),
+    (measurement) => measurement?.elements?.[0]?.box?.height > 0,
+    40,
+  );
+  assert(visibleRow?.elements?.[0]?.box?.height > 0, "cross-workspace party row is visible before the real click");
+  const pointer = await post(base, `/api/qa/pointer?window=${encodeURIComponent(switchWindowId)}`, {
+    steps: [{ selector: crossPartySelector, action: "click" }],
+    delayMs: 0,
+  });
+  assert(pointer?.ok === true, "real pointer click reached the cross-workspace party row");
+  const routed = await waitFor(async () => ({
+    window: ((await get(base, "/api/windows")).windows || []).find((entry) => entry.id === switchWindowId),
+    partyId: (await get(base, `/api/party?window=${switchWindowId}`)).currentPartyId,
+  }), (value) => sameWindowsPath(value.window?.workspacePath, ws) && value.partyId === sameNameHere, 400);
+  const renderedWorkspace = await waitFor(rendererWorkspace, (value) => sameWindowsPath(value, ws));
+  const routedWindow = routed?.window;
+  const routedParty = routed?.partyId;
+  assert(sameWindowsPath(routedWindow?.workspacePath, ws), `sidebar click moved the window to the party's workspace (${routedWindow?.workspacePath})`);
+  assert(routedParty === sameNameHere, `sidebar click selected the exact cross-workspace party (${routedParty})`);
+  assert(sameWindowsPath(renderedWorkspace, ws), `renderer applied the destination workspace state (${renderedWorkspace})`);
 
   const exactWindow = await post(base, "/api/windows", { workspacePath: ws, partyId: sameNameHere });
   const exactParty = (await get(base, `/api/party?window=${exactWindow?.id}`)).currentPartyId;

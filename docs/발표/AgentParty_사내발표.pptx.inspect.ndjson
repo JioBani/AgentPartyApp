@@ -1,0 +1,281 @@
+{"kind":"deck","id":"pr/7ltprp","name":"Deck"}
+{"kind":"layout","layoutId":"3529686f-32d2-4289-bd34-85406f31c5a1","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"da4beb7b-dbe0-47fc-acd3-0c93133dbcb3","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/5use0q","slide":1,"title":"AgentParty","textShapes":4}
+{"kind":"textbox","id":"sh/1kn29cjm","slide":1,"name":"text-1","text":"AgentParty","textPreview":"AgentParty","textChars":10,"textLines":1,"bbox":[48,40,400,40]}
+{"kind":"textbox","id":"sh/ehc3ex0b","slide":1,"name":"text-2","text":"역할과 컨텍스트가 분리된\nAI 팀을 운영하다","textPreview":"역할과 컨텍스트가 분리된 | AI 팀을 운영하다","textChars":24,"textLines":2,"bbox":[48,198,980,190]}
+{"kind":"shape","id":"sh/zilk721w","slide":1,"name":"shape-3","bbox":[48,430,180,8]}
+{"kind":"textbox","id":"sh/cfu1c7i5","slide":1,"name":"text-4","text":"사내 발표 · 멀티 에이전트 개발 워크벤치","textPreview":"사내 발표 · 멀티 에이전트 개발 워크벤치","textChars":23,"textLines":1,"bbox":[48,478,720,42]}
+{"kind":"textbox","id":"sh/dg325sjq","slide":1,"name":"text-5","text":"컨텍스트 분리  |  독립 세션  |  직접 협업  |  통제 가능한 자동화","textPreview":"컨텍스트 분리  |  독립 세션  |  직접 협업  |  통제 가능한 자동화","textChars":42,"textLines":1,"bbox":[48,626,900,30]}
+{"kind":"notes","id":"nt/5use0q","slide":1,"text":""}
+{"kind":"slide","id":"sl/qkntb8","slide":2,"title":"01 · 문제","textShapes":14}
+{"kind":"textbox","id":"sh/e1gj6987","slide":2,"name":"text-6","text":"01 · 문제","textPreview":"01 · 문제","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/1or2147y","slide":2,"name":"text-7","text":"한 세션에 모든 일을 맡기면 맥락이 뒤섞인다","textPreview":"한 세션에 모든 일을 맡기면 맥락이 뒤섞인다","textChars":24,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/0ni18zqd","slide":2,"name":"text-8","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/nq9k3epo","slide":2,"name":"shape-9","bbox":[100,310,1060,3]}
+{"kind":"shape","id":"sh/mp0ja983","slide":2,"name":"shape-10","bbox":[72,297,28,28]}
+{"kind":"textbox","id":"sh/9sr25o7u","slide":2,"name":"text-11","text":"요구사항","textPreview":"요구사항","textChars":4,"textLines":1,"bbox":[72,350,220,42]}
+{"kind":"textbox","id":"sh/orilcjq9","slide":2,"name":"text-12","text":"결정과 미결 사항","textPreview":"결정과 미결 사항","textChars":9,"textLines":1,"bbox":[72,400,230,36]}
+{"kind":"shape","id":"sh/bu9k7ep0","slide":2,"name":"shape-13","bbox":[372,297,28,28]}
+{"kind":"textbox","id":"sh/at03et8f","slide":2,"name":"text-14","text":"설계","textPreview":"설계","textChars":2,"textLines":1,"bbox":[372,350,220,42]}
+{"kind":"textbox","id":"sh/0zup83uh","slide":2,"name":"text-15","text":"구조와 정책","textPreview":"구조와 정책","textChars":6,"textLines":1,"bbox":[372,400,230,36]}
+{"kind":"shape","id":"sh/lk3q18v2","slide":2,"name":"shape-16","bbox":[672,297,28,28]}
+{"kind":"textbox","id":"sh/yxc76tcr","slide":2,"name":"text-17","text":"구현","textPreview":"구현","textChars":2,"textLines":1,"bbox":[672,350,220,42]}
+{"kind":"textbox","id":"sh/zyl8zydw","slide":2,"name":"text-18","text":"코드와 예외","textPreview":"코드와 예외","textChars":6,"textLines":1,"bbox":[672,400,230,36]}
+{"kind":"shape","id":"sh/8nu9c3ut","slide":2,"name":"shape-19","bbox":[972,297,28,28]}
+{"kind":"textbox","id":"sh/9o3q58ve","slide":2,"name":"text-20","text":"테스트","textPreview":"테스트","textChars":3,"textLines":1,"bbox":[972,350,220,42]}
+{"kind":"textbox","id":"sh/mlcradcn","slide":2,"name":"text-21","text":"검증과 수정","textPreview":"검증과 수정","textChars":6,"textLines":1,"bbox":[972,400,230,36]}
+{"kind":"shape","id":"sh/nml83yd8","slide":2,"name":"shape-22","bbox":[670,500,480,100]}
+{"kind":"textbox","id":"sh/wre9gnup","slide":2,"name":"text-23","text":"구현 중 누락 발견","textPreview":"구현 중 누락 발견","textChars":10,"textLines":1,"bbox":[700,523,230,32]}
+{"kind":"textbox","id":"sh/xsnq9sva","slide":2,"name":"text-24","text":"다시 조사 → 요구사항·설계 수정","textPreview":"다시 조사 → 요구사항·설계 수정","textChars":18,"textLines":1,"bbox":[700,562,400,26]}
+{"kind":"shape","id":"sh/58jqtsne","slide":2,"name":"shape-25","bbox":[260,550,380,3]}
+{"kind":"textbox","id":"sh/47ap0nmt","slide":2,"name":"text-26","text":"현재 어디까지 왔는지 놓치기 쉽다","textPreview":"현재 어디까지 왔는지 놓치기 쉽다","textChars":18,"textLines":1,"bbox":[72,534,520,55]}
+{"kind":"notes","id":"nt/qkntb8","slide":2,"text":""}
+{"kind":"slide","id":"sl/989geb","slide":3,"title":"01 · 문제","textShapes":13}
+{"kind":"textbox","id":"sh/gbqtoz2h","slide":3,"name":"text-27","text":"01 · 문제","textPreview":"01 · 문제","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/fqxcvu1w","slide":3,"name":"text-28","text":"작은 요구 하나가 여러 종류의 조사로 번진다","textPreview":"작은 요구 하나가 여러 종류의 조사로 번진다","textChars":24,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/epobmpkb","slide":3,"name":"text-29","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/pgzu1ojy","slide":3,"name":"shape-30","bbox":[80,356,1100,2]}
+{"kind":"shape","id":"sh/ofqtsj2d","slide":3,"name":"shape-31","bbox":[90,344,24,24]}
+{"kind":"textbox","id":"sh/3ehcze1s","slide":3,"name":"text-32","text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[90,192,90,30]}
+{"kind":"textbox","id":"sh/2d8bq9kn","slide":3,"name":"text-33","text":"최초 요구","textPreview":"최초 요구","textChars":5,"textLines":1,"bbox":[90,230,300,50]}
+{"kind":"textbox","id":"sh/5kfapk3u","slide":3,"name":"text-34","text":"상품명 매칭 시\n작업 기록을 남긴다","textPreview":"상품명 매칭 시 | 작업 기록을 남긴다","textChars":19,"textLines":2,"bbox":[90,392,320,100]}
+{"kind":"shape","id":"sh/4j6tgf29","slide":3,"name":"shape-35","bbox":[450,344,24,24]}
+{"kind":"textbox","id":"sh/mdo769gv","slide":3,"name":"text-36","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[450,192,90,30]}
+{"kind":"textbox","id":"sh/nex8fexg","slide":3,"name":"text-37","text":"구현 중 발견","textPreview":"구현 중 발견","textChars":7,"textLines":1,"bbox":[450,230,300,50]}
+{"kind":"textbox","id":"sh/of6p8zy1","slide":3,"name":"text-38","text":"코드 매칭과 재고 매칭이라는\n별도 흐름이 존재한다","textPreview":"코드 매칭과 재고 매칭이라는 | 별도 흐름이 존재한다","textChars":27,"textLines":2,"bbox":[450,392,320,100]}
+{"kind":"shape","id":"sh/9gfqh4fm","slide":3,"name":"shape-39","bbox":[810,344,24,24]}
+{"kind":"textbox","id":"sh/ah87a9g7","slide":3,"name":"text-40","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[810,192,90,30]}
+{"kind":"textbox","id":"sh/bih8jexs","slide":3,"name":"text-41","text":"다시 확인할 것","textPreview":"다시 확인할 것","textChars":8,"textLines":1,"bbox":[810,230,300,50]}
+{"kind":"textbox","id":"sh/wjqpcjyd","slide":3,"name":"text-42","text":"덮어쓰기 조건 · 키워드 등록\n기록 시점 · 흐름 간 관계","textPreview":"덮어쓰기 조건 · 키워드 등록 | 기록 시점 · 흐름 간 관계","textChars":32,"textLines":2,"bbox":[810,392,320,100]}
+{"kind":"shape","id":"sh/x4zqlofi","slide":3,"name":"shape-43","bbox":[72,548,1136,76]}
+{"kind":"textbox","id":"sh/y587etg3","slide":3,"name":"text-44","text":"코드 조사 · 요구사항 판단 · 구현 세부를 한 컨텍스트에 쌓지 않는 것이 핵심","textPreview":"코드 조사 · 요구사항 판단 · 구현 세부를 한 컨텍스트에 쌓지 않는 것이 핵심","textChars":44,"textLines":1,"bbox":[104,568,1070,36]}
+{"kind":"notes","id":"nt/989geb","slide":3,"text":""}
+{"kind":"slide","id":"sl/awyiw6","slide":4,"title":"02 · 기존 방식","textShapes":13}
+{"kind":"textbox","id":"sh/rih4nuxw","slide":4,"name":"text-45","text":"02 · 기존 방식","textPreview":"02 · 기존 방식","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/cjqlgzyh","slide":4,"name":"text-46","text":"기존 방식은 결국 메인 세션이나 사람이 중계한다","textPreview":"기존 방식은 결국 메인 세션이나 사람이 중계한다","textChars":26,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/dkzmp4f2","slide":4,"name":"text-47","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/2to3apgf","slide":4,"name":"shape-48","bbox":[48,168,560,430]}
+{"kind":"shape","id":"sh/3uxkjux0","slide":4,"name":"shape-49","bbox":[632,168,600,430]}
+{"kind":"textbox","id":"sh/4v6lczy5","slide":4,"name":"text-50","text":"메인 세션 + 서브에이전트","textPreview":"메인 세션 + 서브에이전트","textChars":14,"textLines":1,"bbox":[80,205,480,45]}
+{"kind":"textbox","id":"sh/pwf2l4fq","slide":4,"name":"text-51","text":"짧고 독립적인 조사에는 유용","textPreview":"짧고 독립적인 조사에는 유용","textChars":15,"textLines":1,"bbox":[80,270,470,34]}
+{"kind":"shape","id":"sh/up436pg3","slide":4,"name":"shape-52","bbox":[80,350,10,10]}
+{"kind":"textbox","id":"sh/fqxkfaxo","slide":4,"name":"text-53","text":"지속적인 역할과 대화 상대가 되기 어렵다","textPreview":"지속적인 역할과 대화 상대가 되기 어렵다","textChars":22,"textLines":1,"bbox":[104,340,446,60]}
+{"kind":"shape","id":"sh/fud83698","slide":4,"name":"shape-54","bbox":[80,424,10,10]}
+{"kind":"textbox","id":"sh/et4ra18n","slide":4,"name":"text-55","text":"후속 질문이 다시 메인 세션으로 모인다","textPreview":"후속 질문이 다시 메인 세션으로 모인다","textChars":21,"textLines":1,"bbox":[104,414,446,60]}
+{"kind":"shape","id":"sh/1wfq5wry","slide":4,"name":"shape-56","bbox":[80,498,10,10]}
+{"kind":"textbox","id":"sh/0v69crqt","slide":4,"name":"text-57","text":"오케스트레이터 컨텍스트가 오염된다","textPreview":"오케스트레이터 컨텍스트가 오염된다","textChars":18,"textLines":1,"bbox":[104,488,446,60]}
+{"kind":"textbox","id":"sh/nix87694","slide":4,"name":"text-58","text":"여러 터미널 세션 직접 운영","textPreview":"여러 터미널 세션 직접 운영","textChars":15,"textLines":1,"bbox":[664,205,500,45]}
+{"kind":"textbox","id":"sh/2hore18j","slide":4,"name":"text-59","text":"역할과 모델을 원하는 대로 분리","textPreview":"역할과 모델을 원하는 대로 분리","textChars":17,"textLines":1,"bbox":[664,270,500,34]}
+{"kind":"shape","id":"sh/pkfq9gra","slide":4,"name":"shape-60","bbox":[664,350,10,10]}
+{"kind":"textbox","id":"sh/oj69gbqp","slide":4,"name":"text-61","text":"결과 파일과 경로를 사람이 복사한다","textPreview":"결과 파일과 경로를 사람이 복사한다","textChars":19,"textLines":1,"bbox":[688,340,476,60]}
+{"kind":"shape","id":"sh/jmt8vm90","slide":4,"name":"shape-62","bbox":[664,424,10,10]}
+{"kind":"textbox","id":"sh/i1k72hsf","slide":4,"name":"text-63","text":"세션 생성·전달·진척 확인을 사람이 맡는다","textPreview":"세션 생성·전달·진척 확인을 사람이 맡는다","textChars":23,"textLines":1,"bbox":[688,414,476,60]}
+{"kind":"shape","id":"sh/mhsbaps3","slide":4,"name":"shape-64","bbox":[664,498,10,10]}
+{"kind":"textbox","id":"sh/7i1c3uto","slide":4,"name":"text-65","text":"창과 실행 환경이 계속 분산된다","textPreview":"창과 실행 환경이 계속 분산된다","textChars":17,"textLines":1,"bbox":[688,488,476,60]}
+{"kind":"notes","id":"nt/awyiw6","slide":4,"text":""}
+{"kind":"slide","id":"sl/7xjfdf","slide":5,"title":"03 · 해법","textShapes":9}
+{"kind":"shape","id":"sh/h07m9sny","slide":5,"bbox":[515,149,710,465]}
+{"kind":"textbox","id":"sh/fyp47i5s","slide":5,"name":"text-66","text":"03 · 해법","textPreview":"03 · 해법","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/svelw36h","slide":5,"name":"text-67","text":"독립 세션을 ‘이름 있는 팀원’으로 운영한다","textPreview":"독립 세션을 ‘이름 있는 팀원’으로 운영한다","textChars":24,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/twnm58nm","slide":5,"name":"text-68","text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"textbox","id":"sh/69w3udob","slide":5,"name":"text-69","text":"서브에이전트가 아니라","textPreview":"서브에이전트가 아니라","textChars":11,"textLines":1,"bbox":[48,188,420,38]}
+{"kind":"textbox","id":"sh/7u543y5w","slide":5,"name":"text-70","text":"지속적인 멤버","textPreview":"지속적인 멤버","textChars":7,"textLines":1,"bbox":[48,226,420,58]}
+{"kind":"shape","id":"sh/k7els365","slide":5,"name":"shape-71","bbox":[48,340,10,10]}
+{"kind":"textbox","id":"sh/58nm18nq","slide":5,"name":"text-72","text":"역할에 필요한 컨텍스트만 유지","textPreview":"역할에 필요한 컨텍스트만 유지","textChars":16,"textLines":1,"bbox":[72,330,396,60]}
+{"kind":"shape","id":"sh/xwraxwbu","slide":5,"name":"shape-73","bbox":[48,414,10,10]}
+{"kind":"textbox","id":"sh/wvit4ru9","slide":5,"name":"text-74","text":"필요한 순간 서로 직접 메시지","textPreview":"필요한 순간 서로 직접 메시지","textChars":16,"textLines":1,"bbox":[72,404,396,60]}
+{"kind":"shape","id":"sh/vu9svmto","slide":5,"name":"shape-75","bbox":[48,488,10,10]}
+{"kind":"textbox","id":"sh/atgr2hcj","slide":5,"name":"text-76","text":"사용자는 전체 흐름과 결정에 집중","textPreview":"사용자는 전체 흐름과 결정에 집중","textChars":18,"textLines":1,"bbox":[72,478,396,60]}
+{"kind":"textbox","id":"sh/9s7atcby","slide":5,"name":"text-77","text":"CLI 실행 능력 + 팀 운영 UI","textPreview":"CLI 실행 능력 + 팀 운영 UI","textChars":19,"textLines":1,"bbox":[48,574,420,32]}
+{"kind":"image","id":"im/b2xcnups","slide":5,"name":"","geometry":"roundRect","alt":"AgentParty split workbench showing multiple members","bbox":[520,154,700,455]}
+{"kind":"notes","id":"nt/7xjfdf","slide":5,"text":""}
+{"kind":"slide","id":"sl/962c95","slide":6,"title":"03 · 해법","textShapes":15}
+{"kind":"textbox","id":"sh/svit47yl","slide":6,"name":"text-78","text":"03 · 해법","textPreview":"03 · 해법","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/7u9cb2hg","slide":6,"name":"text-79","text":"네 가지 개념만 알면 앱의 구조가 보인다","textPreview":"네 가지 개념만 알면 앱의 구조가 보인다","textChars":22,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/6t0b2xgv","slide":6,"name":"text-80","text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/h0buhwzi","slide":6,"name":"shape-81","bbox":[48,168,560,190]}
+{"kind":"textbox","id":"sh/gz2t8ryx","slide":6,"name":"text-82","text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[76,192,60,26]}
+{"kind":"textbox","id":"sh/fytcfmhc","slide":6,"name":"text-83","text":"작업공간","textPreview":"작업공간","textChars":4,"textLines":1,"bbox":[76,230,270,42]}
+{"kind":"textbox","id":"sh/uxkb6hgr","slide":6,"name":"text-84","text":"실제 프로젝트 폴더\n로컬·WSL 경로 지원","textPreview":"실제 프로젝트 폴더 | 로컬·WSL 경로 지원","textChars":23,"textLines":2,"bbox":[338,230,230,78]}
+{"kind":"shape","id":"sh/x47a5szy","slide":6,"name":"shape-85","bbox":[640,168,560,190]}
+{"kind":"textbox","id":"sh/w3ytwnyt","slide":6,"name":"text-86","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[668,192,60,26]}
+{"kind":"textbox","id":"sh/q5cfyp0v","slide":6,"name":"text-87","text":"파티","textPreview":"파티","textChars":2,"textLines":1,"bbox":[668,230,270,42]}
+{"kind":"textbox","id":"sh/b6lg7uhg","slide":6,"name":"text-88","text":"하나의 목적을 위한\nAI 에이전트 팀","textPreview":"하나의 목적을 위한 | AI 에이전트 팀","textChars":20,"textLines":2,"bbox":[930,230,230,78]}
+{"kind":"shape","id":"sh/c7ux0zi1","slide":6,"name":"shape-89","bbox":[48,394,560,190]}
+{"kind":"textbox","id":"sh/d8ny94zm","slide":6,"name":"text-90","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[76,418,60,26]}
+{"kind":"textbox","id":"sh/y9wf2p0r","slide":6,"name":"text-91","text":"멤버","textPreview":"멤버","textChars":2,"textLines":1,"bbox":[76,456,270,42]}
+{"kind":"textbox","id":"sh/za5gbuhc","slide":6,"name":"text-92","text":"역할·모델·권한을 가진\n독립 세션","textPreview":"역할·모델·권한을 가진 | 독립 세션","textChars":18,"textLines":2,"bbox":[338,456,230,78]}
+{"kind":"shape","id":"sh/0bex4zix","slide":6,"name":"shape-93","bbox":[640,394,560,190]}
+{"kind":"textbox","id":"sh/lcnyd4zi","slide":6,"name":"text-94","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[668,418,60,26]}
+{"kind":"textbox","id":"sh/mdwf6903","slide":6,"name":"text-95","text":"워크벤치","textPreview":"워크벤치","textChars":4,"textLines":1,"bbox":[668,456,270,42]}
+{"kind":"textbox","id":"sh/ne5gfeho","slide":6,"name":"text-96","text":"여러 대화와 상태를\n탭·분할 패널로 관찰","textPreview":"여러 대화와 상태를 | 탭·분할 패널로 관찰","textChars":22,"textLines":2,"bbox":[930,456,230,78]}
+{"kind":"notes","id":"nt/962c95","slide":6,"text":""}
+{"kind":"slide","id":"sl/o6s9of","slide":7,"title":"04 · 협업 흐름","textShapes":14}
+{"kind":"textbox","id":"sh/ahgz6d03","slide":7,"name":"text-97","text":"04 · 협업 흐름","textPreview":"04 · 협업 흐름","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/xk7i18zu","slide":7,"name":"text-98","text":"사용자가 전달자가 아니라 의사결정자가 된다","textPreview":"사용자가 전달자가 아니라 의사결정자가 된다","textChars":23,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/wjyh83i9","slide":7,"name":"text-99","text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/jm903ihk","slide":7,"name":"shape-100","bbox":[236,336,170,3]}
+{"kind":"shape","id":"sh/ilgzad0z","slide":7,"name":"shape-101","bbox":[598,256,180,3]}
+{"kind":"shape","id":"sh/5ori5szq","slide":7,"name":"shape-102","bbox":[598,336,180,3]}
+{"kind":"shape","id":"sh/knihcni5","slide":7,"name":"shape-103","bbox":[598,416,180,3]}
+{"kind":"shape","id":"sh/zq5gryhg","slide":7,"name":"shape-104","bbox":[598,256,3,163]}
+{"kind":"shape","id":"sh/epwzyt0v","slide":7,"name":"shape-105","bbox":[56,278,180,120]}
+{"kind":"textbox","id":"sh/cryd0jeh","slide":7,"name":"text-106","text":"사용자","textPreview":"사용자","textChars":3,"textLines":1,"bbox":[56,306,180,38]}
+{"kind":"textbox","id":"sh/dsret4v2","slide":7,"name":"text-107","text":"목표·판단","textPreview":"목표·판단","textChars":5,"textLines":1,"bbox":[56,352,180,26]}
+{"kind":"shape","id":"sh/qpgvy9wr","slide":7,"name":"shape-108","bbox":[406,270,192,136]}
+{"kind":"textbox","id":"sh/rqpwredc","slide":7,"name":"text-109","text":"main","textPreview":"main","textChars":4,"textLines":1,"bbox":[406,298,192,40]}
+{"kind":"textbox","id":"sh/0vid4jet","slide":7,"name":"text-110","text":"조율·진척 관리","textPreview":"조율·진척 관리","textChars":8,"textLines":1,"bbox":[406,350,192,26]}
+{"kind":"shape","id":"sh/1wrexove","slide":7,"name":"shape-111","bbox":[778,196,260,88]}
+{"kind":"textbox","id":"sh/et0v29wn","slide":7,"name":"text-112","text":"explore","textPreview":"explore","textChars":7,"textLines":1,"bbox":[802,214,110,30]}
+{"kind":"textbox","id":"sh/zu9wved8","slide":7,"name":"text-113","text":"코드 조사","textPreview":"코드 조사","textChars":5,"textLines":1,"bbox":[914,218,100,26]}
+{"kind":"shape","id":"sh/gzedszep","slide":7,"name":"shape-114","bbox":[778,316,260,88]}
+{"kind":"textbox","id":"sh/h0nulkvu","slide":7,"name":"text-115","text":"impl","textPreview":"impl","textChars":4,"textLines":1,"bbox":[802,334,110,30]}
+{"kind":"textbox","id":"sh/xkf29wjm","slide":7,"name":"text-116","text":"설계·구현","textPreview":"설계·구현","textChars":5,"textLines":1,"bbox":[914,338,100,26]}
+{"kind":"shape","id":"sh/wj6l0r21","slide":7,"name":"shape-117","bbox":[778,436,260,88]}
+{"kind":"textbox","id":"sh/bidk7mlg","slide":7,"name":"text-118","text":"test","textPreview":"test","textChars":4,"textLines":1,"bbox":[802,454,110,30]}
+{"kind":"textbox","id":"sh/ah4jyhkv","slide":7,"name":"text-119","text":"검증","textPreview":"검증","textChars":2,"textLines":1,"bbox":[914,458,100,26]}
+{"kind":"textbox","id":"sh/l8f2dwji","slide":7,"name":"text-120","text":"멤버끼리 직접 질문 · 결과 전달 · 후속 요청","textPreview":"멤버끼리 직접 질문 · 결과 전달 · 후속 요청","textChars":26,"textLines":1,"bbox":[778,558,390,34]}
+{"kind":"notes","id":"nt/o6s9of","slide":7,"text":""}
+{"kind":"slide","id":"sl/o1cp0u","slide":8,"title":"05 · 핵심 기능","textShapes":8}
+{"kind":"shape","id":"sh/2hgbe9gv","slide":8,"bbox":[485,153,740,475]}
+{"kind":"textbox","id":"sh/ojitgjyl","slide":8,"name":"text-121","text":"05 · 핵심 기능","textPreview":"05 · 핵심 기능","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/bm9srexc","slide":8,"name":"text-122","text":"바쁜 멤버에게 보낸 메시지는 안전하게 줄을 선다","textPreview":"바쁜 멤버에게 보낸 메시지는 안전하게 줄을 선다","textChars":26,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/ql0bi9gr","slide":8,"name":"text-123","text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"textbox","id":"sh/doratofi","slide":8,"name":"text-124","text":"Message Queue","textPreview":"Message Queue","textChars":13,"textLines":1,"bbox":[48,184,380,48]}
+{"kind":"shape","id":"sh/cnitkjyx","slide":8,"name":"shape-125","bbox":[48,285,10,10]}
+{"kind":"textbox","id":"sh/zatsvyx8","slide":8,"name":"text-126","text":"현재 턴이 끝나면 순서대로 전달","textPreview":"현재 턴이 끝나면 순서대로 전달","textChars":17,"textLines":1,"bbox":[72,275,376,60]}
+{"kind":"shape","id":"sh/y9kbmtgn","slide":8,"name":"shape-127","bbox":[48,359,10,10]}
+{"kind":"textbox","id":"sh/oj2t8fyd","slide":8,"name":"text-128","text":"확인·편집·취소·순서 변경·병합","textPreview":"확인·편집·취소·순서 변경·병합","textChars":17,"textLines":1,"bbox":[72,349,376,60]}
+{"kind":"shape","id":"sh/9kbuh0fy","slide":8,"name":"shape-129","bbox":[48,433,10,10]}
+{"kind":"textbox","id":"sh/mhkb65g7","slide":8,"name":"text-130","text":"‘지금 보내기’로 중단 후 즉시 전달","textPreview":"‘지금 보내기’로 중단 후 즉시 전달","textChars":20,"textLines":1,"bbox":[72,423,376,60]}
+{"kind":"shape","id":"sh/nitcfaxs","slide":8,"name":"shape-131","bbox":[48,507,10,10]}
+{"kind":"textbox","id":"sh/w72tcfe9","slide":8,"name":"text-132","text":"앱 재시작 뒤에도 대기열 유지","textPreview":"앱 재시작 뒤에도 대기열 유지","textChars":16,"textLines":1,"bbox":[72,497,376,60]}
+{"kind":"image","id":"im/8fy50ja5","slide":8,"name":"","geometry":"roundRect","alt":"AgentParty message queue controls","bbox":[490,158,730,465]}
+{"kind":"notes","id":"nt/o1cp0u","slide":8,"text":""}
+{"kind":"slide","id":"sl/el0hej","slide":9,"title":"05 · 핵심 기능","textShapes":14}
+{"kind":"shape","id":"sh/0baho7ip","slide":9,"bbox":[755,143,395,520]}
+{"kind":"textbox","id":"sh/e9szmx0z","slide":9,"name":"text-133","text":"05 · 핵심 기능","textPreview":"05 · 핵심 기능","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/d8jydsze","slide":9,"name":"text-134","text":"메시지 품질도 모델에게 맡기되, 우회는 기록한다","textPreview":"메시지 품질도 모델에게 맡기되, 우회는 기록한다","textChars":26,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/c7ahknit","slide":9,"name":"text-135","text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/r61gbih8","slide":9,"name":"shape-136","bbox":[48,174,630,104]}
+{"kind":"textbox","id":"sh/q5szix0n","slide":9,"name":"text-137","text":"Message Gate","textPreview":"Message Gate","textChars":12,"textLines":1,"bbox":[76,194,220,34]}
+{"kind":"textbox","id":"sh/54zy9sz2","slide":9,"name":"text-138","text":"멤버 → 멤버 메시지만 리뷰","textPreview":"멤버 → 멤버 메시지만 리뷰","textChars":15,"textLines":1,"bbox":[76,236,430,26]}
+{"kind":"shape","id":"sh/43qhgnih","slide":9,"name":"shape-139","bbox":[56,328,30,30]}
+{"kind":"textbox","id":"sh/qh0bi90b","slide":9,"name":"text-140","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[56,332,30,20]}
+{"kind":"textbox","id":"sh/bi9srehw","slide":9,"name":"text-141","text":"규칙 검사","textPreview":"규칙 검사","textChars":5,"textLines":1,"bbox":[104,324,220,34]}
+{"kind":"textbox","id":"sh/cjitkjih","slide":9,"name":"text-142","text":"파티 공통 또는 멤버별 규칙","textPreview":"파티 공통 또는 멤버별 규칙","textChars":15,"textLines":1,"bbox":[326,326,350,50]}
+{"kind":"shape","id":"sh/dkratozm","slide":9,"name":"shape-143","bbox":[56,424,30,30]}
+{"kind":"textbox","id":"sh/2dgbe90z","slide":9,"name":"text-144","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[56,428,30,20]}
+{"kind":"textbox","id":"sh/3e9snehk","slide":9,"name":"text-145","text":"위반 시 반려","textPreview":"위반 시 반려","textChars":7,"textLines":1,"bbox":[104,420,220,34]}
+{"kind":"textbox","id":"sh/4fitgji5","slide":9,"name":"text-146","text":"사유와 위반 규칙을 발신자에게 표시","textPreview":"사유와 위반 규칙을 발신자에게 표시","textChars":19,"textLines":1,"bbox":[326,422,350,50]}
+{"kind":"shape","id":"sh/pgrap4zq","slide":9,"name":"shape-147","bbox":[56,520,30,30]}
+{"kind":"textbox","id":"sh/upgbap03","slide":9,"name":"text-148","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[56,524,30,20]}
+{"kind":"textbox","id":"sh/fapsjuho","slide":9,"name":"text-149","text":"필요 시 강제 전송","textPreview":"필요 시 강제 전송","textChars":10,"textLines":1,"bbox":[104,516,220,34]}
+{"kind":"textbox","id":"sh/jul8rqxg","slide":9,"name":"text-150","text":"우회 사실을 카드와 로그에 기록","textPreview":"우회 사실을 카드와 로그에 기록","textChars":17,"textLines":1,"bbox":[326,518,350,50]}
+{"kind":"image","id":"im/at8v2x47","slide":9,"name":"","geometry":"roundRect","alt":"Message Gate rejection and corrected message","bbox":[760,148,385,510]}
+{"kind":"notes","id":"nt/el0hej","slide":9,"text":""}
+{"kind":"slide","id":"sl/jii3du","slide":10,"title":"05 · 핵심 기능","textShapes":7}
+{"kind":"shape","id":"sh/ozuxs7et","slide":10,"bbox":[43,245,570,350]}
+{"kind":"shape","id":"sh/mxcfqxwn","slide":10,"bbox":[667,245,570,350]}
+{"kind":"textbox","id":"sh/0vaxonex","slide":10,"name":"text-151","text":"05 · 핵심 기능","textPreview":"05 · 핵심 기능","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/za1wv2dc","slide":10,"name":"text-152","text":"자율성만큼 컨텍스트와 권한 통제가 중요하다","textPreview":"자율성만큼 컨텍스트와 권한 통제가 중요하다","textChars":23,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/e9sfmxwr","slide":10,"name":"text-153","text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"textbox","id":"sh/d8jetsv6","slide":10,"name":"text-154","text":"Context","textPreview":"Context","textChars":7,"textLines":1,"bbox":[48,174,220,34]}
+{"kind":"textbox","id":"sh/c7axknel","slide":10,"name":"text-155","text":"사용량 표시 · 수동 압축 · Auto-compact","textPreview":"사용량 표시 · 수동 압축 · Auto-compact","textChars":29,"textLines":1,"bbox":[48,212,540,28]}
+{"kind":"textbox","id":"sh/65cje1wr","slide":10,"name":"text-156","text":"Permission","textPreview":"Permission","textChars":10,"textLines":1,"bbox":[672,174,240,34]}
+{"kind":"textbox","id":"sh/7q5knmdw","slide":10,"name":"text-157","text":"샌드박스 · 승인 정책 · 실행 승인 카드","textPreview":"샌드박스 · 승인 정책 · 실행 승인 카드","textChars":23,"textLines":1,"bbox":[672,212,540,28]}
+{"kind":"image","id":"im/ql4vm9kn","slide":10,"name":"","geometry":"roundRect","alt":"Auto-compact settings in AgentParty","bbox":[48,250,560,340]}
+{"kind":"image","id":"im/4zmdkz2h","slide":10,"name":"","geometry":"roundRect","alt":"File change approval card in AgentParty","bbox":[672,250,560,340]}
+{"kind":"notes","id":"nt/jii3du","slide":10,"text":""}
+{"kind":"slide","id":"sl/i10uqb","slide":11,"title":"06 · 실행 환경","textShapes":12}
+{"kind":"shape","id":"sh/0ripszq1","slide":11,"bbox":[43,179,675,396]}
+{"kind":"textbox","id":"sh/ep07qp8v","slide":11,"name":"text-158","text":"06 · 실행 환경","textPreview":"06 · 실행 환경","textChars":10,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/dor6hk7a","slide":11,"name":"text-159","text":"하네스·모델·추론·권한을 멤버별로 조합한다","textPreview":"하네스·모델·추론·권한을 멤버별로 조합한다","textChars":23,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/snipofqp","slide":11,"name":"text-160","text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"textbox","id":"sh/rm9ofap4","slide":11,"name":"text-161","text":"하네스","textPreview":"하네스","textChars":3,"textLines":1,"bbox":[760,188,120,28]}
+{"kind":"textbox","id":"sh/qlg7mp8z","slide":11,"name":"text-162","text":"Claude Code · Codex · Cursor CLI","textPreview":"Claude Code · Codex · Cursor CLI","textChars":32,"textLines":1,"bbox":[760,222,430,46]}
+{"kind":"textbox","id":"sh/xkvqto7e","slide":11,"name":"text-163","text":"모델","textPreview":"모델","textChars":2,"textLines":1,"bbox":[760,278,120,28]}
+{"kind":"textbox","id":"sh/wj2p0jq9","slide":11,"name":"text-164","text":"구독 및 API 연결에 따라 카탈로그 제공","textPreview":"구독 및 API 연결에 따라 카탈로그 제공","textChars":23,"textLines":1,"bbox":[760,312,430,46]}
+{"kind":"textbox","id":"sh/ilozqhgf","slide":11,"name":"text-165","text":"추론","textPreview":"추론","textChars":2,"textLines":1,"bbox":[760,368,120,28]}
+{"kind":"textbox","id":"sh/3mh0jmh0","slide":11,"name":"text-166","text":"Effort · Thinking · 토큰 예산","textPreview":"Effort · Thinking · 토큰 예산","textChars":25,"textLines":1,"bbox":[760,402,430,46]}
+{"kind":"textbox","id":"sh/4nqhsryl","slide":11,"name":"text-167","text":"권한","textPreview":"권한","textChars":2,"textLines":1,"bbox":[760,458,120,28]}
+{"kind":"textbox","id":"sh/58zilwz6","slide":11,"name":"text-168","text":"Claude 모드 · Codex 샌드박스/승인","textPreview":"Claude 모드 · Codex 샌드박스/승인","textChars":25,"textLines":1,"bbox":[760,492,430,46]}
+{"kind":"shape","id":"sh/uhozmhgj","slide":11,"name":"shape-169","bbox":[760,560,420,70]}
+{"kind":"textbox","id":"sh/vixgfmh4","slide":11,"name":"text-170","text":"교차 하네스 조합은 현재 베타 잠금","textPreview":"교차 하네스 조합은 현재 베타 잠금","textChars":19,"textLines":1,"bbox":[786,582,370,28]}
+{"kind":"image","id":"im/eps3ihgf","slide":11,"name":"","geometry":"roundRect","alt":"AgentParty model and runtime selection","bbox":[48,184,665,386]}
+{"kind":"notes","id":"nt/i10uqb","slide":11,"text":""}
+{"kind":"slide","id":"sl/fu094z","slide":12,"title":"06 · 운영","textShapes":12}
+{"kind":"shape","id":"sh/6x0bm58b","slide":12,"bbox":[43,181,730,400]}
+{"kind":"textbox","id":"sh/sz2tofqh","slide":12,"name":"text-171","text":"06 · 운영","textPreview":"06 · 운영","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/fmtsja9s","slide":12,"name":"text-172","text":"운영 비용과 자원 상태도 같은 화면에서 본다","textPreview":"운영 비용과 자원 상태도 같은 화면에서 본다","textChars":24,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/ulkbq587","slide":12,"name":"text-173","text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/hobulkry","slide":12,"name":"shape-174","bbox":[820,194,12,60]}
+{"kind":"textbox","id":"sh/gn2tsfqd","slide":12,"name":"text-175","text":"사용량","textPreview":"사용량","textChars":3,"textLines":1,"bbox":[856,188,160,28]}
+{"kind":"textbox","id":"sh/vq9s7q9o","slide":12,"name":"text-176","text":"멤버·모델별 토큰과 추정 비용","textPreview":"멤버·모델별 토큰과 추정 비용","textChars":16,"textLines":1,"bbox":[856,222,340,48]}
+{"kind":"shape","id":"sh/apgbels3","slide":12,"name":"shape-177","bbox":[820,289,12,60]}
+{"kind":"textbox","id":"sh/oralkbil","slide":12,"name":"text-178","text":"유휴 슬립","textPreview":"유휴 슬립","textChars":5,"textLines":1,"bbox":[856,283,160,28]}
+{"kind":"textbox","id":"sh/psjmtgz6","slide":12,"name":"text-179","text":"안 쓰는 프로세스를 닫아 메모리 절약","textPreview":"안 쓰는 프로세스를 닫아 메모리 절약","textChars":20,"textLines":1,"bbox":[856,317,340,48]}
+{"kind":"shape","id":"sh/2ps3i10f","slide":12,"name":"shape-180","bbox":[820,384,12,60]}
+{"kind":"textbox","id":"sh/nq14r6h0","slide":12,"name":"text-181","text":"MCP","textPreview":"MCP","textChars":3,"textLines":1,"bbox":[856,378,160,28]}
+{"kind":"textbox","id":"sh/cvulobih","slide":12,"name":"text-182","text":"서버·도구·인증·실패 상태 확인","textPreview":"서버·도구·인증·실패 상태 확인","textChars":17,"textLines":1,"bbox":[856,412,340,48]}
+{"kind":"shape","id":"sh/xw3mxgz2","slide":12,"name":"shape-183","bbox":[820,479,12,60]}
+{"kind":"textbox","id":"sh/atc3ml0r","slide":12,"name":"text-184","text":"Discord","textPreview":"Discord","textChars":7,"textLines":1,"bbox":[856,473,160,28]}
+{"kind":"textbox","id":"sh/bul4v6hw","slide":12,"name":"text-185","text":"PC 밖에서 상태 확인과 메시지·이미지 전달","textPreview":"PC 밖에서 상태 확인과 메시지·이미지 전달","textChars":24,"textLines":1,"bbox":[856,507,340,48]}
+{"kind":"textbox","id":"sh/szqlcrid","slide":12,"name":"text-186","text":"※ 비용은 정산값이 아니라 상대적인 사용 추세를 보는 추정치","textPreview":"※ 비용은 정산값이 아니라 상대적인 사용 추세를 보는 추정치","textChars":33,"textLines":1,"bbox":[48,610,780,26]}
+{"kind":"image","id":"im/s7u5s7il","slide":12,"name":"","geometry":"roundRect","alt":"Token usage timeline in AgentParty","bbox":[48,186,720,390]}
+{"kind":"notes","id":"nt/fu094z","slide":12,"text":""}
+{"kind":"slide","id":"sl/vzyr6d","slide":13,"title":"07 · 자동화","textShapes":13}
+{"kind":"textbox","id":"sh/5cvi5cra","slide":13,"name":"text-187","text":"07 · 자동화","textPreview":"07 · 자동화","textChars":8,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/i94zuh8j","slide":13,"name":"text-188","text":"앱 기능 전체를 AI가 같은 경로로 조작할 수 있다","textPreview":"앱 기능 전체를 AI가 같은 경로로 조작할 수 있다","textChars":28,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/jad03m94","slide":13,"name":"text-189","text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/w7mhs7qd","slide":13,"name":"shape-190","bbox":[310,330,170,3]}
+{"kind":"shape","id":"sh/h8vi1cry","slide":13,"name":"shape-191","bbox":[800,330,170,3]}
+{"kind":"shape","id":"sh/a5kzqx8n","slide":13,"name":"shape-192","bbox":[70,246,240,166]}
+{"kind":"textbox","id":"sh/v6t0z298","slide":13,"name":"text-193","text":"UI","textPreview":"UI","textChars":2,"textLines":1,"bbox":[70,274,240,46]}
+{"kind":"textbox","id":"sh/832honqh","slide":13,"name":"text-194","text":"사람이 사용하는 화면","textPreview":"사람이 사용하는 화면","textChars":11,"textLines":1,"bbox":[70,342,240,30]}
+{"kind":"shape","id":"sh/94byxsr2","slide":13,"name":"shape-195","bbox":[480,218,320,222]}
+{"kind":"textbox","id":"sh/psfmlcbi","slide":13,"name":"text-196","text":"AppController","textPreview":"AppController","textChars":13,"textLines":1,"bbox":[480,262,320,48]}
+{"kind":"textbox","id":"sh/or65c7ud","slide":13,"name":"text-197","text":"동일한 애플리케이션 로직","textPreview":"동일한 애플리케이션 로직","textChars":13,"textLines":1,"bbox":[480,328,320,30]}
+{"kind":"shape","id":"sh/3qx4j2ts","slide":13,"name":"shape-198","bbox":[970,246,240,166]}
+{"kind":"textbox","id":"sh/2po3axc7","slide":13,"name":"text-199","text":"HTTP API","textPreview":"HTTP API","textChars":8,"textLines":1,"bbox":[970,274,240,46]}
+{"kind":"textbox","id":"sh/1ofmhsbm","slide":13,"name":"text-200","text":"AI·E2E·진단","textPreview":"AI·E2E·진단","textChars":9,"textLines":1,"bbox":[970,342,240,30]}
+{"kind":"shape","id":"sh/gn6l87u1","slide":13,"name":"shape-201","bbox":[70,520,252,78]}
+{"kind":"textbox","id":"sh/fmx4f2tg","slide":13,"name":"text-202","text":"파티·멤버 구성","textPreview":"파티·멤버 구성","textChars":8,"textLines":1,"bbox":[70,544,252,30]}
+{"kind":"shape","id":"sh/elo36xcv","slide":13,"name":"shape-203","bbox":[356,520,252,78]}
+{"kind":"textbox","id":"sh/tkvmdsbq","slide":13,"name":"text-204","text":"상태·로그 진단","textPreview":"상태·로그 진단","textChars":8,"textLines":1,"bbox":[356,544,252,30]}
+{"kind":"shape","id":"sh/sjml4nu5","slide":13,"name":"shape-205","bbox":[642,520,252,78]}
+{"kind":"textbox","id":"sh/k3q50n21","slide":13,"name":"text-206","text":"실제 앱 E2E QA","textPreview":"실제 앱 E2E QA","textChars":11,"textLines":1,"bbox":[642,544,252,30]}
+{"kind":"shape","id":"sh/54zmtsj6","slide":13,"name":"shape-207","bbox":[928,520,252,78]}
+{"kind":"textbox","id":"sh/i18nydkv","slide":13,"name":"text-208","text":"화면 캡처와 판단","textPreview":"화면 캡처와 판단","textChars":9,"textLines":1,"bbox":[928,544,252,30]}
+{"kind":"notes","id":"nt/vzyr6d","slide":13,"text":""}
+{"kind":"slide","id":"sl/aorf1d","slide":14,"title":"08 · 회고","textShapes":13}
+{"kind":"textbox","id":"sh/hsva1sji","slide":14,"name":"text-209","text":"08 · 회고","textPreview":"08 · 회고","textChars":7,"textLines":1,"bbox":[48,28,260,24]}
+{"kind":"textbox","id":"sh/upkr6d07","slide":14,"name":"text-210","text":"품질은 좋아졌지만, 조율 비용은 공짜가 아니었다","textPreview":"품질은 좋아졌지만, 조율 비용은 공짜가 아니었다","textChars":26,"textLines":1,"bbox":[48,62,1160,70]}
+{"kind":"textbox","id":"sh/vqtszi1s","slide":14,"name":"text-211","text":"14","textPreview":"14","textChars":2,"textLines":1,"bbox":[1180,681,52,18]}
+{"kind":"shape","id":"sh/832943i1","slide":14,"name":"shape-212","bbox":[48,174,560,408]}
+{"kind":"shape","id":"sh/tobax8jm","slide":14,"name":"shape-213","bbox":[632,174,600,408]}
+{"kind":"textbox","id":"sh/61kr2d0v","slide":14,"name":"text-214","text":"분명했던 효과","textPreview":"분명했던 효과","textChars":7,"textLines":1,"bbox":[80,208,470,40]}
+{"kind":"shape","id":"sh/72tsvy1g","slide":14,"name":"shape-215","bbox":[80,298,10,10]}
+{"kind":"textbox","id":"sh/sz6tg7i5","slide":14,"name":"text-216","text":"요구사항과 미결 사항의 누락 감소","textPreview":"요구사항과 미결 사항의 누락 감소","textChars":18,"textLines":1,"bbox":[104,288,446,60]}
+{"kind":"shape","id":"sh/dkfa9cjq","slide":14,"name":"shape-217","bbox":[80,372,10,10]}
+{"kind":"textbox","id":"sh/dw7yl4nq","slide":14,"name":"text-218","text":"역할별로 더 깊은 조사와 판단","textPreview":"역할별로 더 깊은 조사와 판단","textChars":16,"textLines":1,"bbox":[104,362,446,60]}
+{"kind":"shape","id":"sh/svyhszm5","slide":14,"name":"shape-219","bbox":[80,446,10,10]}
+{"kind":"textbox","id":"sh/rupgje5k","slide":14,"name":"text-220","text":"작업 단계와 담당자의 가시성 향상","textPreview":"작업 단계와 담당자의 가시성 향상","textChars":18,"textLines":1,"bbox":[104,436,446,60]}
+{"kind":"textbox","id":"sh/q9gzq94z","slide":14,"name":"text-221","text":"함께 생긴 비용","textPreview":"함께 생긴 비용","textChars":8,"textLines":1,"bbox":[664,208,500,40]}
+{"kind":"shape","id":"sh/58nyh4ne","slide":14,"name":"shape-222","bbox":[664,298,10,10]}
+{"kind":"textbox","id":"sh/47ehozmt","slide":14,"name":"text-223","text":"단일 세션보다 더 많은 시간과 토큰","textPreview":"단일 세션보다 더 많은 시간과 토큰","textChars":19,"textLines":1,"bbox":[688,288,476,60]}
+{"kind":"shape","id":"sh/365gfu58","slide":14,"name":"shape-224","bbox":[664,372,10,10]}
+{"kind":"textbox","id":"sh/i5wzmp43","slide":14,"name":"text-225","text":"재전송·메시지 교차·중복 작업","textPreview":"재전송·메시지 교차·중복 작업","textChars":16,"textLines":1,"bbox":[688,362,476,60]}
+{"kind":"shape","id":"sh/p4ritoni","slide":14,"name":"shape-226","bbox":[664,446,10,10]}
+{"kind":"textbox","id":"sh/o3ih0jmd","slide":14,"name":"text-227","text":"역할 경계가 흐려질 때 오판 증폭","textPreview":"역할 경계가 흐려질 때 오판 증폭","textChars":18,"textLines":1,"bbox":[688,436,476,60]}
+{"kind":"textbox","id":"sh/87q1w7u9","slide":14,"name":"text-228","text":"짧고 명확한 일은 단일 세션이 낫다","textPreview":"짧고 명확한 일은 단일 세션이 낫다","textChars":19,"textLines":1,"bbox":[80,620,500,28]}
+{"kind":"textbox","id":"sh/98z25cbu","slide":14,"name":"text-229","text":"복잡하고 장기적인 일에서 가치가 커진다","textPreview":"복잡하고 장기적인 일에서 가치가 커진다","textChars":21,"textLines":1,"bbox":[664,620,520,28]}
+{"kind":"notes","id":"nt/aorf1d","slide":14,"text":""}
+{"kind":"slide","id":"sl/4zucsi","slide":15,"title":"AgentParty","textShapes":4}
+{"kind":"textbox","id":"sh/gjqt0rm9","slide":15,"name":"text-230","text":"AgentParty","textPreview":"AgentParty","textChars":10,"textLines":1,"bbox":[48,40,360,38]}
+{"kind":"textbox","id":"sh/fihcrmlo","slide":15,"name":"text-231","text":"여러 AI를 동시에 실행하는 앱이 아니라,","textPreview":"여러 AI를 동시에 실행하는 앱이 아니라,","textChars":23,"textLines":1,"bbox":[48,164,1110,62]}
+{"kind":"textbox","id":"sh/uh8byh43","slide":15,"name":"text-232","text":"역할과 컨텍스트를 분리하고\n서로 직접 협업하게 만드는\nAI 개발 워크벤치","textPreview":"역할과 컨텍스트를 분리하고 | 서로 직접 협업하게 만드는 | AI 개발 워크벤치","textChars":40,"textLines":3,"bbox":[48,236,1120,250]}
+{"kind":"shape","id":"sh/pozuxw3q","slide":15,"name":"shape-233","bbox":[48,548,180,8]}
+{"kind":"textbox","id":"sh/4nqd4rm5","slide":15,"name":"text-234","text":"좋은 파티는 멤버 수가 아니라 명확한 역할과 통제로 만들어진다.","textPreview":"좋은 파티는 멤버 수가 아니라 명확한 역할과 통제로 만들어진다.","textChars":35,"textLines":1,"bbox":[48,594,1080,42]}
+{"kind":"notes","id":"nt/4zucsi","slide":15,"text":""}

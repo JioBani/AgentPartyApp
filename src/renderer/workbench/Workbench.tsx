@@ -66,7 +66,7 @@ interface WorkbenchProps {
   /** Settings reviewer default (model + effort) for the Message Gate. */
   gateDefaults: GateReviewer;
   debugEnabled: boolean;
-  drawers: { party: boolean; member: boolean };
+  drawers: SidebarDrawerSettings;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
   layoutRequest?: { panels: string[][]; nonce: number } | null;
   /** QA-driven "open this subagent's detail"; applied whenever `nonce` changes. */
@@ -105,10 +105,9 @@ interface WorkbenchProps {
   onMemberOpened: (member: string) => void;
   /** Members frontmost in a panel — what the user is actually looking at. */
   onVisibleMembersChange: (partyId: string, members: string[]) => void;
-  onToggleDrawer: (which: "party" | "member", open: boolean) => void;
+  onToggleDrawer: (which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
-  onOpenSessions: () => void;
 }
 
 interface DragState {
@@ -147,7 +146,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, onOpenUsage, onOpenSessions } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, onOpenUsage } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -549,7 +548,6 @@ export function Workbench(props: WorkbenchProps) {
   }, []);
 
   const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs)), [layout]);
-  const activePartyName = parties.find((party) => party.id === activePartyId)?.name || "No Party";
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
   const permissionView = permissionTarget ? viewMap.get(permissionTarget) : undefined;
   const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
@@ -620,7 +618,6 @@ export function Workbench(props: WorkbenchProps) {
     >
       <PartySidebar
         activePartyId={activePartyId}
-        activePartyName={activePartyName}
         views={views}
         openMembers={openMembers}
         drawers={drawers}
@@ -695,7 +692,6 @@ export function Workbench(props: WorkbenchProps) {
               onOpenStatus={setStatusTarget}
               onOpenCompact={setCompactTarget}
               onOpenUsage={onOpenUsage}
-              onOpenSessions={onOpenSessions}
               onOpenGate={setGateTarget}
               onTabPointerDown={onTabPointerDown}
               openSubId={subUi.open[panel.active]}
@@ -840,3 +836,5 @@ function aggregateByParty(views: MemberView[], parties: PartyDefinition[]): { wo
 function sameLayout(a: LayoutState, b: LayoutState): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+import type { SidebarDrawerId, SidebarDrawerSettings, SidebarDrawerState } from "../../shared/sidebarDrawers";

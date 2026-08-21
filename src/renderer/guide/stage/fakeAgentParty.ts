@@ -22,6 +22,7 @@ import { DEFAULT_COMPOSER_SETTINGS } from "../../../shared/composerSettings";
 import { DEFAULT_IDLE_SLEEP } from "../../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../../shared/memberMessaging";
 import type { AppLocale } from "../../../shared/appLocale";
+import { DEFAULT_SIDEBAR_DRAWERS } from "../../../shared/sidebarDrawers";
 
 export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
   state: {
@@ -55,6 +56,7 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
       composer: { ...DEFAULT_COMPOSER_SETTINGS },
       memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
       favoriteModels: [],
+      sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
     },
     auth: [],
     sessions: [],
@@ -346,7 +348,6 @@ export function createFakeAgentParty(): FakeAgentParty {
     onNavigate: (callback) => track(navigateListeners, callback),
     onWorkspaceChoose: (callback) => subscribe(callback),
     onNewSession: (callback) => subscribe(callback),
-    onRefreshHistory: (callback) => subscribe(callback),
 
     // Methods the real bridge gained after this fake was first written. The
     // stage demo never reaches them (mobile pairing, party primer, approvals,

@@ -5,6 +5,7 @@ import type { PartyDefinition, PartyMember, PartyMessage, TranscriptSave, Transc
 import { capTranscript } from "../shared/transcriptCap";
 import { externalizeImages, extensionFor, TRANSCRIPT_IMAGE_DIR, type StoredImageSource } from "../shared/transcriptImages";
 import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout";
+import { workspaceKey } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 
@@ -14,7 +15,9 @@ import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
  * on-disk split layout (see below) and consumed exactly as before by the
  * service, so all `requireMember`/`view` logic is unchanged.
  *
- * On-disk layout under `<workspace>/.agent_party_app/` (version 2):
+ * On-disk layout under the repository root's `.agent_party_app/` (version 2).
+ * On the desktop that root is the Windows-global party-store directory; a
+ * former workspace root is used only by the explicit lazy importer:
  *   - `parties.json`                    — SHARED index: `{ parties[], lastActivePartyId? }`
  *   - `parties/<id>/party.json`         — PER-PARTY detail: `{ members[], messages[] }`
  *   - `parties/<id>/members/<name>/transcript.json` — per-member transcript
@@ -44,6 +47,26 @@ interface PartyDetail {
   messages: PartyMessage[];
 }
 
+export interface PartyStoreImportReport {
+  source: string;
+  target: string;
+  found: number;
+  imported: number;
+  alreadyImported: number;
+  backfilledLocations: number;
+  conflicts: Array<{ partyId: string; reason: string }>;
+  completed: boolean;
+}
+
+interface PartyStoreImportManifest {
+  version: 1;
+  sources: Record<string, {
+    source: string;
+    parties: Record<string, string>;
+    completedAt?: string;
+  }>;
+}
+
 const initialState: StoredPartyState = { version: 2, parties: [], members: [], messages: [] };
 
 export class PartyRepository {
@@ -54,6 +77,124 @@ export class PartyRepository {
    * workspace; a cold entry falls back to a real read.
    */
   private readonly lastWritten = new Map<string, unknown[]>();
+
+  /** Whether a cwd contains party data worth offering to the global importer. */
+  hasStore(workspacePath: string): boolean {
+    return fs.existsSync(this.indexPath(workspacePath))
+      || fs.existsSync(path.join(this.rootDir(workspacePath), "state.json"))
+      || fs.existsSync(path.join(workspacePath, LEGACY_ROOT, "state.json"));
+  }
+
+  /**
+   * Copies one legacy cwd-owned party store into the Windows-global store.
+   *
+   * The source is never removed or rewritten by this method. Party ids are the
+   * merge key. A divergent duplicate is reported as a conflict instead of being
+   * overwritten, while a byte-equivalent party left by an interrupted previous
+   * run is recognized and adopted. The manifest is written after every party,
+   * so a crash can resume without duplicating already copied data.
+   */
+  importWorkspace(
+    sourceWorkspacePath: string,
+    targetWorkspacePath: string,
+    sourceIdentity: string,
+    defaultMemberLocation: string,
+  ): PartyStoreImportReport {
+    const report: PartyStoreImportReport = {
+      source: sourceIdentity,
+      target: targetWorkspacePath,
+      found: 0,
+      imported: 0,
+      alreadyImported: 0,
+      backfilledLocations: 0,
+      conflicts: [],
+      completed: false,
+    };
+    if (!this.hasStore(sourceWorkspacePath)) {
+      report.completed = true;
+      return report;
+    }
+
+    const manifest = this.readImportManifest(targetWorkspacePath);
+    const sourceKey = importSourceKey(sourceIdentity);
+    const sourceRecord = manifest.sources[sourceKey] || {
+      source: sourceIdentity,
+      parties: {},
+    };
+    if (sourceRecord.completedAt) {
+      const recorded = Object.keys(sourceRecord.parties).length;
+      return { ...report, found: recorded, alreadyImported: recorded, completed: true };
+    }
+
+    const source = this.readForImport(sourceWorkspacePath);
+    report.found = source.parties.length;
+    const target = this.read(targetWorkspacePath);
+    const targetParties = [...target.parties];
+    const targetMembers = [...target.members];
+    const targetMessages = [...target.messages];
+
+    for (const party of source.parties) {
+      const sourceMembers = source.members.filter((member) => member.partyId === party.id);
+      const members = sourceMembers.map((member) => (
+        member.location ? member : { ...member, location: defaultMemberLocation }
+      ));
+      const backfilledLocations = sourceMembers.filter((member) => !member.location).length;
+      const messages = source.messages.filter((message) => message.partyId === party.id);
+      const fingerprint = partyFingerprint(party, members, messages);
+      if (sourceRecord.parties[party.id] === fingerprint) {
+        report.alreadyImported += 1;
+        continue;
+      }
+
+      const existing = targetParties.find((entry) => entry.id === party.id);
+      if (existing) {
+        const existingMembers = targetMembers.filter((member) => member.partyId === party.id);
+        const existingMessages = targetMessages.filter((message) => message.partyId === party.id);
+        if (partyFingerprint(existing, existingMembers, existingMessages) !== fingerprint) {
+          report.conflicts.push({
+            partyId: party.id,
+            reason: `Global party '${party.id}' differs from the copy in '${sourceIdentity}'.`,
+          });
+          continue;
+        }
+        report.alreadyImported += 1;
+      } else {
+        this.copyPartySupplementalFiles(sourceWorkspacePath, targetWorkspacePath, party.id);
+        this.writeParty(targetWorkspacePath, party.id, members, messages);
+        targetParties.push(party);
+        targetMembers.push(...members);
+        targetMessages.push(...messages);
+        this.writeIndex(
+          targetWorkspacePath,
+          targetParties,
+          target.currentPartyId || source.currentPartyId || party.id,
+        );
+        report.imported += 1;
+        report.backfilledLocations += backfilledLocations;
+      }
+
+      sourceRecord.parties[party.id] = fingerprint;
+      manifest.sources[sourceKey] = sourceRecord;
+      this.writeImportManifest(targetWorkspacePath, manifest);
+    }
+
+    // Both are shared across all parties in one legacy cwd. Merge them once
+    // after the per-party loop, not once per party (large image stores made
+    // the old shape quadratic in the number of parties). Successful parties
+    // still keep their supplemental data when another id is in conflict.
+    if (Object.keys(sourceRecord.parties).length > 0) {
+      this.copyTranscriptImages(sourceWorkspacePath, targetWorkspacePath);
+      this.mergeUsageLedger(sourceWorkspacePath, targetWorkspacePath, new Set(Object.keys(sourceRecord.parties)));
+    }
+    if (report.conflicts.length === 0) {
+      sourceRecord.completedAt = new Date().toISOString();
+      manifest.sources[sourceKey] = sourceRecord;
+      this.writeImportManifest(targetWorkspacePath, manifest);
+      report.completed = true;
+    }
+    log(report.completed ? "info" : "warn", "party", "legacy workspace party import finished", report);
+    return report;
+  }
 
   /**
    * Composes the whole party state from the shared index + each party's detail
@@ -406,6 +547,130 @@ export class PartyRepository {
     return path.join(this.partyDir(workspacePath, partyId), "party.json");
   }
 
+  /**
+   * Reads a migration source without running any of the live store's repair or
+   * split-on-read behavior. Migration must leave the former cwd byte-for-byte
+   * intact so the Windows-global copy is reversible and independently auditable.
+   * Unlike the live reader, this path rejects a missing/corrupt indexed detail
+   * file instead of turning it into an empty party and recording a false success.
+   */
+  private readForImport(workspacePath: string): StoredPartyState {
+    const index = this.readIndexFile(workspacePath);
+    if (!index) {
+      const legacy = this.readLegacyBlob(workspacePath);
+      if (legacy) {
+        return legacy;
+      }
+      throw new Error(`No party store exists in migration source '${workspacePath}'.`);
+    }
+
+    const members: PartyMember[] = [];
+    const messages: PartyMessage[] = [];
+    for (const party of index.parties) {
+      const file = this.partyFilePath(workspacePath, party.id);
+      const parsed = readJsonSurvivingWrite(file) as PartyDetail | undefined;
+      if (!parsed) {
+        throw new Error(`Party '${party.id}' is indexed but its detail file is missing: ${file}`);
+      }
+      if (!Array.isArray(parsed.members) || !Array.isArray(parsed.messages)) {
+        throw new Error(`Party '${party.id}' has an invalid detail file: ${file}`);
+      }
+      members.push(...parsed.members.map((member) => ({ ...member, partyId: party.id })));
+      messages.push(...parsed.messages.map((message) => ({ ...message, partyId: party.id })));
+    }
+    return {
+      version: 2,
+      parties: index.parties,
+      currentPartyId: index.lastActivePartyId,
+      members,
+      messages,
+    };
+  }
+
+  private importManifestPath(workspacePath: string): string {
+    return path.join(this.rootDir(workspacePath), "workspace-imports.json");
+  }
+
+  private readImportManifest(workspacePath: string): PartyStoreImportManifest {
+    try {
+      const parsed = readJsonSurvivingWrite(this.importManifestPath(workspacePath)) as PartyStoreImportManifest | undefined;
+      return parsed?.version === 1 && parsed.sources && typeof parsed.sources === "object"
+        ? parsed
+        : { version: 1, sources: {} };
+    } catch (error) {
+      throw new Error(`Global party migration record is unreadable: ${errMsg(error)}`);
+    }
+  }
+
+  private writeImportManifest(workspacePath: string, manifest: PartyStoreImportManifest): void {
+    this.writeJsonAtomic(workspacePath, this.importManifestPath(workspacePath), manifest);
+  }
+
+  /** Copies role files, layouts and transcripts; party.json is rewritten from normalized data. */
+  private copyPartySupplementalFiles(sourceWorkspacePath: string, targetWorkspacePath: string, partyId: string): void {
+    const source = this.partyDir(sourceWorkspacePath, partyId);
+    if (!fs.existsSync(source)) {
+      return;
+    }
+    const target = this.partyDir(targetWorkspacePath, partyId);
+    fs.mkdirSync(target, { recursive: true });
+    fs.cpSync(source, target, {
+      recursive: true,
+      force: false,
+      errorOnExist: false,
+      filter: (entry) => path.resolve(entry) !== path.resolve(this.partyFilePath(sourceWorkspacePath, partyId)),
+    });
+  }
+
+  /** Transcript images are content-addressed, so merging without overwrite is deterministic. */
+  private copyTranscriptImages(sourceWorkspacePath: string, targetWorkspacePath: string): void {
+    const source = this.imageDir(sourceWorkspacePath);
+    if (!fs.existsSync(source)) {
+      return;
+    }
+    fs.mkdirSync(this.imageDir(targetWorkspacePath), { recursive: true });
+    fs.cpSync(source, this.imageDir(targetWorkspacePath), { recursive: true, force: false, errorOnExist: false });
+  }
+
+  /**
+   * Merges party-attributed usage records exactly once by their serialized
+   * content. Records without a party id belong to standalone sessions, not the
+   * party domain, and intentionally stay with their former execution context.
+   */
+  private mergeUsageLedger(sourceWorkspacePath: string, targetWorkspacePath: string, partyIds: Set<string>): void {
+    const relative = path.join("usage", "turns.jsonl");
+    const sourceFile = path.join(this.rootDir(sourceWorkspacePath), relative);
+    if (!fs.existsSync(sourceFile) || partyIds.size === 0) {
+      return;
+    }
+    const targetFile = path.join(this.rootDir(targetWorkspacePath), relative);
+    const existing = fs.existsSync(targetFile)
+      ? new Set(fs.readFileSync(targetFile, "utf8").split("\n").map((line) => line.trim()).filter(Boolean))
+      : new Set<string>();
+    const additions: string[] = [];
+    for (const raw of fs.readFileSync(sourceFile, "utf8").split("\n")) {
+      const line = raw.trim();
+      if (!line) {
+        continue;
+      }
+      let record: { partyId?: unknown };
+      try {
+        record = JSON.parse(line) as { partyId?: unknown };
+      } catch (error) {
+        throw new Error(`Usage migration source has malformed JSONL: ${sourceFile}: ${errMsg(error)}`);
+      }
+      if (typeof record.partyId === "string" && partyIds.has(record.partyId) && !existing.has(line)) {
+        additions.push(line);
+        existing.add(line);
+      }
+    }
+    if (additions.length > 0) {
+      ensureStorageDir(this.rootDir(targetWorkspacePath));
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.appendFileSync(targetFile, `${additions.join("\n")}\n`, "utf8");
+    }
+  }
+
   private rootDir(workspacePath: string): string {
     return path.join(workspacePath, ROOT_DIR);
   }
@@ -527,6 +792,17 @@ function mustPartyId(record: { partyId?: string; name?: string; id?: string }): 
 
 function sanitizeName(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+function importSourceKey(sourceIdentity: string): string {
+  // Windows paths and WSL distro names are case-insensitive identities. The
+  // opening window registry canonicalizes them, but an explicit HTTP retry may
+  // use different casing; both must hit the same completed migration record.
+  return crypto.createHash("sha256").update(workspaceKey(sourceIdentity)).digest("hex");
+}
+
+function partyFingerprint(party: PartyDefinition, members: PartyMember[], messages: PartyMessage[]): string {
+  return crypto.createHash("sha256").update(JSON.stringify({ party, members, messages })).digest("hex");
 }
 
 /**

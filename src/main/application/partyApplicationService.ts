@@ -17,8 +17,18 @@ import type {
 import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
-import { CWD_PROBLEM_MESSAGE, parseMemberLocation } from "../../shared/memberLocation";
-import { isHostDistro } from "../hostIdentity";
+import {
+  CWD_PROBLEM_MESSAGE,
+  memberLocationFromRequest,
+  memberLocationRequestOf,
+  parseMemberLocation,
+  serializeMemberLocation,
+  type CwdProblem,
+  type MemberExecutionLocation,
+  type MemberExecutionLocationCatalog,
+} from "../../shared/memberLocation";
+import { workspaceKey } from "../../shared/workspaceLocation";
+import { getHostDistro, isHostDistro } from "../hostIdentity";
 import type { ImageAttachment } from "../../shared/attachments";
 import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
 import {
@@ -97,6 +107,18 @@ export interface PartyApplicationDeps {
    * rather than silently doing nothing. See `main/discordBridgeService.ts`.
    */
   discord?: DiscordBridgePort;
+  /**
+   * Desktop-owned cwd catalog and validator used by member-facing tools.
+   * A WSL execution worker deliberately does not own this state: its hosted
+   * tool calls are forwarded to the desktop's global party authority.
+   */
+  executionLocations?: PartyExecutionLocationPort;
+}
+
+export interface PartyExecutionLocationPort {
+  list(): Promise<MemberExecutionLocationCatalog>;
+  check(location: MemberExecutionLocation): Promise<{ location: MemberExecutionLocation; serialized: string; problem?: CwdProblem }>;
+  remember(location: MemberExecutionLocation): void;
 }
 
 /**
@@ -125,9 +147,9 @@ export class PartyApplicationService {
 
   /**
    * "Which party is active" is NOT a property of this service — it is per-WINDOW
-   * state owned by the desktop (AppController), because one engine serves every
-   * window of a workspace (two windows opened by running `agent-party` twice share
-   * this instance). So every view / member operation takes an EXPLICIT `partyId`
+   * state owned by the desktop (AppController), because the global party engine
+   * serves every window (two launches folded into one process share this
+   * instance). So every view / member operation takes an EXPLICIT `partyId`
    * from the calling window; the service never resolves the active party from a
    * single shared field (that made two windows switch in lock-step).
    *
@@ -187,8 +209,8 @@ export class PartyApplicationService {
     // its conversation on the next start. Quitting or closing right after a turn
     // lost it for the same reason. Owning the fact here makes all three cases the
     // same case. See #19.
-    this.deps.sessionManager.on("events", (payload: { sessionId?: string; events?: { type?: string }[] }) => {
-      if (!payload?.sessionId || !payload.events?.length) {
+    this.deps.sessionManager.on("events", (payload: { sessionId?: string; workspace?: string; events?: { type?: string }[] }) => {
+      if (!payload?.sessionId || !payload.events?.length || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
       this.recordTranscriptEvents(payload.sessionId, payload.events);
@@ -202,8 +224,8 @@ export class PartyApplicationService {
     // interrupted, errors out, or is force-stopped never completes — and a queue
     // that only drains on clean completion would strand every message behind
     // one stuck turn, which is precisely the state it exists to make visible.
-    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; snapshot?: { status?: unknown } }) => {
-      if (!payload?.sessionId) {
+    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; workspace?: string; snapshot?: { status?: unknown } }) => {
+      if (!payload?.sessionId || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
       const busy = BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
@@ -226,6 +248,17 @@ export class PartyApplicationService {
       }
     });
     this.startIdleSweep();
+  }
+
+  /**
+   * A SessionManager is shared by every local workspace context. Only the party
+   * service whose storage workspace was put on the session may fold its events,
+   * drain its queue, or persist its harness thread. Without this boundary an old
+   * cwd store left behind after lazy import can react to the global copy's live
+   * session as a second owner.
+   */
+  private ownsSessionEvent(workspace: string | undefined): boolean {
+    return workspace !== undefined && workspaceKey(workspace) === workspaceKey(this.workspacePath());
   }
 
   /**
@@ -431,7 +464,7 @@ export class PartyApplicationService {
   }
 
   /**
-   * Every party in this workspace WITH every member, not just the viewed one.
+   * Every party in this repository WITH every member, not just the viewed one.
    *
    * `list` deliberately returns one party's members — that is what a window
    * renders. The app-global registry needs the other answer: refreshing it from
@@ -441,6 +474,47 @@ export class PartyApplicationService {
   listAll(): { parties: PartyDefinition[]; members: PartyMember[] } {
     const state = this.readState();
     return { parties: state.parties, members: state.members };
+  }
+
+  /**
+   * Gives pre-location members the workspace they have always run in.
+   *
+   * This lives on the workspace engine, rather than in the desktop migration,
+   * because only that engine can read and write its store. In particular a WSL
+   * workspace is a POSIX path inside the distro; treating its serialized URI as
+   * a Windows path made the desktop report a successful migration that found
+   * zero parties. One write per touched party preserves the split-store
+   * isolation guarantee.
+   */
+  backfillMemberLocations(): { backfilled: number } {
+    const workspace = this.workspacePath();
+    const distro = getHostDistro();
+    // A remote engine knows its workspace as `/home/...`; member locations are
+    // cross-host addresses and must retain the distro or the Windows renderer
+    // will misclassify that POSIX path as a native cwd.
+    const memberLocation = distro
+      ? serializeMemberLocation({ env: "wsl", cwd: workspace, distro })
+      : workspace;
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const touched = new Set<string>();
+    let backfilled = 0;
+    for (const member of state.members) {
+      if (member.location) {
+        continue;
+      }
+      member.location = memberLocation;
+      member.updatedAt = new Date().toISOString();
+      touched.add(this.partyIdOf(member));
+      backfilled += 1;
+    }
+    for (const partyId of touched) {
+      this.repository.writeParty(workspace, partyId, this.membersOf(state, partyId), this.messagesOf(state, partyId));
+    }
+    if (backfilled > 0) {
+      this.invalidate();
+      log("info", "party", "backfilled member execution locations", { workspace, backfilled, parties: touched.size });
+    }
+    return { backfilled };
   }
 
   createParty(input: CreatePartyInput): PartyCommandResult {
@@ -1262,12 +1336,28 @@ export class PartyApplicationService {
    * session yet, or the harness does not keep one we can name.
    */
   getHarnessOriginal(name: string, partyId?: string): { ok: true; original: HarnessOriginal | null } {
+    const target = this.getHarnessOriginalTarget(name, partyId);
+    const cwd = target.location ? parseMemberLocation(target.location).cwd : undefined;
+    return { ok: true, original: resolveHarnessOriginal(target.runtime, target.sessionId, cwd) ?? null };
+  }
+
+  /**
+   * Host-neutral coordinates for the harness-owned conversation archive.
+   *
+   * Party data lives in the desktop-global store, while the archive belongs to
+   * the host where this member executes. Keeping discovery coordinates separate
+   * lets AppController dispatch the filesystem lookup to Windows or the member's
+   * WSL engine without moving or duplicating party ownership.
+   */
+  getHarnessOriginalTarget(name: string, partyId?: string) {
     const member = this.requireMember(this.readState(), name, partyId);
     const sessionId = member.harnessSessionId
       || (member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined);
-    // A member's cwd IS its workspace (the locked workspace model), which is
-    // exactly the key Claude Code derives its directory name from.
-    return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
+    return {
+      runtime: member.runtime,
+      sessionId,
+      location: member.location,
+    };
   }
 
   /**
@@ -2540,26 +2630,24 @@ export class PartyApplicationService {
    * honoured rather than treated as a label: without this the picker collected a
    * cwd, validated it, listed it — and every member still ran in the workspace.
    *
-   * A location in a WSL distro can only be honoured BY that distro's engine.
-   * Reached from the desktop it throws, because the alternatives are both worse:
-   * spawning with a POSIX path on Windows fails with a message about a
-   * directory nobody typed, and quietly falling back to the workspace is the
-   * silent substitution this whole feature exists to prevent.
+   * A location in a WSL distro is honoured BY that distro's engine. When this
+   * party is owned by the Windows engine, the return value names a cross-host
+   * target; SessionManager then keeps party/session ownership here while a
+   * transport-backed HarnessSession runs the native provider process there.
    *
    * `undefined` means "no location recorded" — older members, and the value the
    * session manager reads as "use the workspace".
    */
-  private memberCwd(member: PartyMember): { cwd?: string; blocked?: string } {
+  private memberCwd(member: PartyMember): { cwd?: string; crossHostTarget?: string; blocked?: string } {
     if (!member.location) {
       return {};
     }
     const location = parseMemberLocation(member.location);
     if (location.env === "wsl" && !isHostDistro(location.distro)) {
-      return {
-        blocked: `멤버 '${member.name}' 는 WSL 배포판 '${location.distro}' 안에서 실행되어야 합니다. `
-          + `이 워크스페이스의 엔진은 그 배포판이 아니어서 여기서는 시작할 수 없습니다 — `
-          + `해당 배포판의 워크스페이스에서 파티를 여세요.`,
-      };
+      // The party remains owned by this engine. SessionManager supplies a
+      // transport-backed HarnessSession whose native process runs in the distro
+      // and whose event/tool stream comes back to this party owner.
+      return { cwd: location.cwd, crossHostTarget: member.location };
     }
     // The folder was checked when the member was created; it can be gone by the
     // time it starts. A missing cwd surfaces as the missing cwd rather than as
@@ -2575,7 +2663,7 @@ export class PartyApplicationService {
     member: PartyMember,
     input: StartPartyMemberInput,
     options: { mock?: boolean; autoReply?: boolean },
-    cwd: { cwd?: string },
+    cwd: { cwd?: string; crossHostTarget?: string },
   ): SessionView {
     const createInput = {
       workspacePath: workspace,
@@ -2604,11 +2692,19 @@ export class PartyApplicationService {
     // Give the member's session the in-process party tool surface, with its
     // identity closure-bound so `from` is never agent-supplied.
     const binding: SessionPartyBinding = {
-      bridge: this.partyBridgeFor(this.partyIdOf(member), member.name),
+      bridge: this.partyBridgeFor(this.partyIdOf(member), member.name, member.location),
       identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
     };
     // Resume the harness's own thread when we have one, so reopening the member
     // (or the app) continues the conversation with its model context intact.
+    if (cwd.crossHostTarget) {
+      return this.deps.sessionManager.createCrossHostSession(
+        cwd.crossHostTarget,
+        createInput,
+        member.harnessSessionId || undefined,
+        binding,
+      );
+    }
     return this.deps.sessionManager.createSession(createInput, member.harnessSessionId || undefined, binding);
   }
 
@@ -2881,10 +2977,10 @@ export class PartyApplicationService {
       return { ok: false, error: `Member '${member}' is not in this party.` };
     }
     const party = this.partyIdOf(caller);
-    return invokePartyTool(this.partyBridgeFor(party, caller.name), { party, member: caller.name, role: caller.role }, tool, args);
+    return invokePartyTool(this.partyBridgeFor(party, caller.name, caller.location), { party, member: caller.name, role: caller.role }, tool, args);
   }
 
-  private partyBridgeFor(party: string, selfMember: string): PartyBridge {
+  private partyBridgeFor(party: string, selfMember: string, selfLocation?: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
     return {
       send: async (from, to, content, interrupt, force, forceReason) => {
@@ -2919,11 +3015,31 @@ export class PartyApplicationService {
           return { ok: false, error: `Unknown Claude permission mode '${request.permissionMode}'.` };
         }
         try {
+          let location = selfLocation || this.workspacePath();
+          let executionLocation: MemberExecutionLocation | undefined;
+          if (request.location !== undefined) {
+            if (!this.deps.executionLocations) {
+              return { ok: false, error: "Execution-location validation is unavailable in this process." };
+            }
+            const requested = memberLocationFromRequest(request.location);
+            const checked = await this.deps.executionLocations.check(requested);
+            if (checked.problem) {
+              return { ok: false, error: `Cannot use execution location — ${checked.problem.message}: ${checked.serialized}` };
+            }
+            location = checked.serialized;
+            executionLocation = checked.location;
+          }
           this.createMember({
             partyId: party,
             name: request.name,
             requirement: request.role,
             role: request.role,
+            // Before party storage became Windows-global, an agent-created
+            // member naturally inherited the caller's workspace. Preserve that
+            // execution behavior: the global store path is persistence, never a
+            // cwd. A WSL member therefore creates a WSL sibling by default and
+            // a Windows member creates a Windows sibling.
+            location,
             runtime: harness,
             model: request.model,
             effort: request.effort,
@@ -2935,8 +3051,29 @@ export class PartyApplicationService {
             cursorPolicy: request.cursorPolicy,
           });
           const started = this.startMember(request.name, {}, {}, party);
+          const remembered = executionLocation || parseMemberLocation(location);
+          let warning: string | undefined;
+          try {
+            this.deps.executionLocations?.remember(remembered);
+          } catch (error) {
+            warning = `Member was created, but its cwd could not be added to recent locations: ${errorMessage(error)}`;
+            log("warn", "cwd", "member tool could not remember a successful cwd", {
+              member: request.name,
+              location: serializeMemberLocation(remembered),
+              error: errorMessage(error),
+            });
+          }
           notify();
-          return { ok: true, data: { ok: true, name: request.name, status: started.member?.status ?? "running" } };
+          return {
+            ok: true,
+            data: {
+              ok: true,
+              name: request.name,
+              status: started.member?.status ?? "running",
+              location: { ...memberLocationRequestOf(remembered), location: serializeMemberLocation(remembered) },
+              ...(warning ? { warning } : {}),
+            },
+          };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
@@ -3024,11 +3161,24 @@ export class PartyApplicationService {
             model: member.model ?? "",
             permissionMode: member.permissionMode,
             codexPolicy: member.codexPolicy,
+            location: member.location
+              ? { ...memberLocationRequestOf(parseMemberLocation(member.location)), location: member.location }
+              : undefined,
             // The effective Message Gate so a member editing another's gate can
             // read its current on/off + rule + reviewer.
             gate: this.effectiveGateOf(member, state),
           }));
         return { ok: true, data: { members } };
+      },
+      listLocations: async () => {
+        if (!this.deps.executionLocations) {
+          return { ok: false, error: "Execution-location suggestions are unavailable in this process." };
+        }
+        try {
+          return { ok: true, data: await this.deps.executionLocations.list() };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
       },
       listModels: async (query) => partyModelDiscovery(this.deps.sessionManager.getCodexModelState(), query),
       status: async (name) => {
@@ -3103,7 +3253,7 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      discordSendImage: async (imagePath, caption) => {
+      discordSendImage: async (imagePath, caption, hostImage) => {
         const discord = this.deps.discord;
         if (!discord) {
           return { ok: false, error: "The Discord bridge is not available in this process." };
@@ -3112,10 +3262,14 @@ export class PartyApplicationService {
         // path exists only inside the distro, while the bridge (and the token) live
         // on the desktop. Only the decoded bytes cross that boundary.
         let image: { dataBase64: string; filename: string; mediaType: string };
-        try {
-          image = readImageFile(imagePath);
-        } catch (error) {
-          return { ok: false, error: errorMessage(error) };
+        if (hostImage) {
+          image = hostImage;
+        } else {
+          try {
+            image = readImageFile(imagePath);
+          } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+          }
         }
         try {
           const result = await discord.sendImageAsMember(this.workspacePath(), party, selfMember, image, caption);
@@ -3124,7 +3278,7 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      attachImage: async ({ path: imagePath, url, caption }) => {
+      attachImage: async ({ path: imagePath, url, caption, hostImage }) => {
         // A URL is kept as given rather than downloaded, so it renders from its
         // own source and nothing has to be retained for it.
         if (url) {
@@ -3136,10 +3290,14 @@ export class PartyApplicationService {
         // Read HERE, in the process the member runs in: a WSL member's path
         // exists only inside the distro. Only the decoded bytes cross.
         let image: { dataBase64: string; filename: string; mediaType: string };
-        try {
-          image = readImageFile(String(imagePath));
-        } catch (error) {
-          return { ok: false, error: errorMessage(error) };
+        if (hostImage) {
+          image = hostImage;
+        } else {
+          try {
+            image = readImageFile(String(imagePath));
+          } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+          }
         }
         if (base64ByteLength(image.dataBase64) > DEFAULT_MAX_IMAGE_BYTES) {
           return { ok: false, error: `'${image.filename}' is larger than the ${Math.round(DEFAULT_MAX_IMAGE_BYTES / (1024 * 1024))} MB limit for an attached image.` };

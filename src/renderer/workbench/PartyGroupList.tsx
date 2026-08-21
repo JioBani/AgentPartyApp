@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, Folder, FolderOpen, FolderPlus } from "lucide-react";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
@@ -62,6 +62,110 @@ export function PartyGroupList({
   const [draggingGroupId, setDraggingGroupId] = useState<string | undefined>(undefined);
   const [reorderTarget, setReorderTarget] = useState<{ groupId: string; after: boolean } | undefined>(undefined);
 
+  /**
+   * A group created while the list was scrolled down lands at the top, out of
+   * sight, and looks like nothing happened. Scrolling to it is keyed on an id
+   * the list has never seen — a REORDER moves no new id in, so dragging a group
+   * to the top does not yank the view along with it.
+   */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** Where the user last left the list, for the reorder restore below. */
+  const lastScrollTop = useRef(0);
+  /** Pointer position + animation owned by an in-flight native HTML drag. */
+  const dragPointerY = useRef<number | undefined>(undefined);
+  const dragScrollFrame = useRef<number | undefined>(undefined);
+  const seenGroupIds = useRef<Set<string> | undefined>(undefined);
+
+  function stopDragScroll() {
+    dragPointerY.current = undefined;
+    if (dragScrollFrame.current !== undefined) {
+      cancelAnimationFrame(dragScrollFrame.current);
+      dragScrollFrame.current = undefined;
+    }
+  }
+
+  /**
+   * Keeps scrolling while a carried party/group is held near either edge.
+   * Relying on sporadic `dragover` events moved only a few pixels and made a
+   * group outside the viewport unreachable; an animation frame continues until
+   * the pointer leaves the edge or the drag ends.
+   */
+  function runDragScrollFrame() {
+    dragScrollFrame.current = undefined;
+    const box = scrollRef.current;
+    const pointerY = dragPointerY.current;
+    if (!box || pointerY === undefined) return;
+    const bounds = box.getBoundingClientRect();
+    const edge = Math.min(64, Math.max(32, bounds.height / 4));
+    let delta = 0;
+    if (pointerY < bounds.top + edge) {
+      const strength = Math.min(1, Math.max(0, (bounds.top + edge - pointerY) / edge));
+      delta = -Math.ceil(3 + strength * 15);
+    } else if (pointerY > bounds.bottom - edge) {
+      const strength = Math.min(1, Math.max(0, (pointerY - (bounds.bottom - edge)) / edge));
+      delta = Math.ceil(3 + strength * 15);
+    }
+    if (!delta) return;
+    const before = box.scrollTop;
+    box.scrollTop += delta;
+    lastScrollTop.current = box.scrollTop;
+    // Stop at the physical end; a fresh dragover restarts if layout changes.
+    if (box.scrollTop !== before) {
+      dragScrollFrame.current = requestAnimationFrame(runDragScrollFrame);
+    }
+  }
+
+  function updateDragScroll(event: React.DragEvent<HTMLDivElement>) {
+    const ours = event.dataTransfer.types.includes(PARTY_DRAG_TYPE)
+      || event.dataTransfer.types.includes(GROUP_DRAG_TYPE);
+    if (!ours) return;
+    dragPointerY.current = event.clientY;
+    if (dragScrollFrame.current === undefined) {
+      dragScrollFrame.current = requestAnimationFrame(runDragScrollFrame);
+    }
+  }
+
+  useEffect(() => stopDragScroll, []);
+  useEffect(() => {
+    const ids = groups.map(({ group }) => group.id);
+    // The first render establishes the baseline; nothing is "new" yet.
+    if (!seenGroupIds.current) {
+      seenGroupIds.current = new Set(ids);
+      return;
+    }
+    // A UNION that never forgets, rather than "the ids of the previous render".
+    // A refresh renders an empty list for one frame, and a baseline rebuilt from
+    // that frame makes every group look new — which scrolled the list to the top
+    // on a plain reorder.
+    const isNew = ids.length > 0 && !seenGroupIds.current.has(ids[0]);
+    for (const id of ids) {
+      seenGroupIds.current.add(id);
+    }
+    if (isNew) {
+      scrollRef.current?.scrollTo({ top: 0 });
+      // Recorded HERE, not left to the scroll event: that event lands a frame
+      // later, and a re-render in between would see "top, but the user was at
+      // 465" and helpfully undo the scroll we just made.
+      lastScrollTop.current = 0;
+    }
+  }, [groups]);
+
+  /**
+   * Puts the scroll position back after a reorder.
+   *
+   * Nothing scrolls the box — the BROWSER drops the position when the group
+   * nodes are moved: the children leave the box one at a time, it briefly has
+   * less content than scroll offset, and the offset clamps to 0. Measured, not
+   * assumed: an instrumented `scrollTop` setter records no write, and the box
+   * still ends up at 0. Runs before paint so the jump is never drawn.
+   */
+  useLayoutEffect(() => {
+    const box = scrollRef.current;
+    if (box && box.scrollTop === 0 && lastScrollTop.current > 0) {
+      box.scrollTop = lastScrollTop.current;
+    }
+  }, [groups]);
+
   /** The order the list would have if the drag were dropped right now. */
   function orderAfterDrop(dragged: string, target: string, after: boolean): string[] {
     const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged);
@@ -85,10 +189,23 @@ export function PartyGroupList({
 
   return (
     <div className="wb-party-list">
-      {/* The groups scroll; the create button does NOT. With a dozen groups it
-          was below the fold, which is the one place a "make another one" button
-          must never be. */}
-      <div className="wb-party-scroll">
+      {/* The create button heads the list and does NOT scroll, because a new
+          group is created at the top too: the button sits where its result
+          appears. */}
+      <button type="button" className="wb-group-add" onClick={onCreateGroup}>
+        <FolderPlus size={13} />
+        <LocalizedText id="STR-3668" />
+      </button>
+      <div
+        className="wb-party-scroll"
+        ref={scrollRef}
+        onScroll={(event) => { lastScrollTop.current = event.currentTarget.scrollTop; }}
+        onDragOver={updateDragScroll}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) stopDragScroll();
+        }}
+        onDrop={stopDragScroll}
+      >
       {groups.map(({ group, parties }) => {
         const open = openGroupIds.has(group.id);
         return (
@@ -168,7 +285,7 @@ export function PartyGroupList({
                 event.dataTransfer.effectAllowed = "move";
                 setDraggingGroupId(group.id);
               }}
-              onDragEnd={() => { setDraggingGroupId(undefined); setReorderTarget(undefined); }}
+              onDragEnd={() => { stopDragScroll(); setDraggingGroupId(undefined); setReorderTarget(undefined); }}
               onClick={() => onToggleGroup(group.id)}
               onContextMenu={(event) => {
                 if (!onGroupContextMenu) {
@@ -190,6 +307,7 @@ export function PartyGroupList({
                 <button
                   type="button"
                   key={party.id}
+                  data-party-id={party.id}
                   className={
                     "wb-party-row"
                     + (party.id === activePartyId ? " is-active" : "")
@@ -202,7 +320,7 @@ export function PartyGroupList({
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingPartyId(party.id);
                   }}
-                  onDragEnd={() => { setDraggingPartyId(undefined); setDropGroupId(undefined); }}
+                  onDragEnd={() => { stopDragScroll(); setDraggingPartyId(undefined); setDropGroupId(undefined); }}
                   onClick={() => onSelectParty(party.id)}
                   onContextMenu={(event) => {
                     if (!onPartyContextMenu) {
@@ -226,10 +344,6 @@ export function PartyGroupList({
         );
       })}
       </div>
-      <button type="button" className="wb-group-add" onClick={onCreateGroup}>
-        <FolderPlus size={13} />
-        <LocalizedText id="STR-3668" />
-      </button>
     </div>
   );
 }

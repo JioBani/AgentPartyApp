@@ -2,6 +2,7 @@ import type {
   CreateMemberInput,
   CreatePartyInput,
   CreateSessionInput,
+  HostedPartySessionBinding,
   ResumableSessionInfo,
   SessionView,
   StartPartyMemberInput,
@@ -23,6 +24,7 @@ import type { CursorAgentStatus } from "../../core/cursorAgentCli";
 import type { ClaudeNativeAuthState } from "../../core/claudeNativeAuth";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { ApprovalDelivery } from "../../shared/approvals";
+import type { PartyMcpToolSpec, PartyToolResult } from "../../core/partyBridge";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -127,6 +129,8 @@ export interface EngineConnection {
   listParty(viewPartyId?: string): Promise<PartyListing>;
   /** Every party WITH every member — what the app-global registry counts from. */
   listAllParties(): Promise<ReturnType<PartyApplicationService["listAll"]>>;
+  /** Backfills legacy members on the host that owns their workspace store. */
+  backfillMemberLocations(): Promise<ReturnType<PartyApplicationService["backfillMemberLocations"]>>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;
@@ -139,6 +143,10 @@ export interface EngineConnection {
    * than the UI's command result — see `PartyApplicationService.invokePartyToolAs`.
    */
   invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]>;
+  /** Runs the shipped stdio MCP relay on this engine host for deterministic E2E. */
+  invokePartyMcpTransport(member: string, partyId: string, tool: string, args: unknown): Promise<PartyToolResult>;
+  /** Discovers tools through that same host-local stdio MCP relay. */
+  listPartyMcpTools(member: string, partyId: string): Promise<PartyMcpToolSpec[]>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
   sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
   /** Messages addressed to a busy member that it has not been handed yet (shared/messageQueue.ts). */
@@ -166,6 +174,10 @@ export interface EngineConnection {
   getTranscriptImage(file: string): Promise<ReturnType<PartyApplicationService["getTranscriptImage"]>>;
   /** Where the harness keeps its own untrimmed copy of this member's conversation. */
   getHarnessOriginal(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
+  /** Host-neutral lookup coordinates, including the member's real execution location. */
+  getHarnessOriginalTarget(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginalTarget"]>>;
+  /** Resolves a harness archive on this engine's own Windows/WSL filesystem. */
+  resolveHarnessOriginal(harness: string | undefined, sessionId: string | undefined, cwd: string | undefined): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
   /** Resumable native-CLI target, or the concrete reason this member cannot be handed off. */
   getCliContinuationTarget(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getCliContinuationTarget"]>>;
   beginCliContinuation(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["beginCliContinuation"]>>;
@@ -203,6 +215,8 @@ export interface EngineConnection {
 
   // --- Sessions (workspace-scoped) ---------------------------------------
   createSession(input?: CreateSessionInput | string): Promise<SessionView>;
+  /** Internal cross-host entry: reconnects a native session's party tools to its owner engine. */
+  createHostedSession(input: CreateSessionInput, resumeSessionId: string | undefined, binding: HostedPartySessionBinding): Promise<SessionView>;
   listResumableSessions(): Promise<{ sessions: ResumableSessionInfo[]; error?: string }>;
   resumeSession(sessionId: string): Promise<SessionView>;
   listWorkspaceSessions(): Promise<SessionView[]>;
@@ -218,6 +232,7 @@ export interface EngineConnection {
   setSessionEffort(sessionId: string, effort: string): Promise<void>;
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
+  setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   /** Answers a pending approval and reports whether the harness took it. */

@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
+import { invokePartyToolFromExecutionHost, type PartyToolResult } from "../../core/partyBridge";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -20,12 +21,11 @@ import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
 import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
-import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
+import { isWslLocation, parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
 import type { PartyDefinition, PartyMember } from "../../shared/types";
 import type { PartyGroup, RegisteredParty } from "../../shared/partyGroups";
 import { PartyGroupStore, type PartyGroupState } from "../partyGroupStore";
 import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration";
-import { PartyRepository } from "../partyRepository";
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
@@ -33,6 +33,7 @@ import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthS
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
+import { PartyRepository } from "../partyRepository";
 import { getPublicSettings, getSettings, storedThemePreference, updateSettings } from "../settings";
 import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerTotals, partyPrimerView, PARTY_PRIMER_DELIVERY, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
 import { translatePrimerSection } from "../../core/primerTranslator";
@@ -41,7 +42,7 @@ import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
-import type { WindowInfo, WindowRegistry } from "../windowRegistry";
+import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
 import { runSessionAction } from "./sessionActions";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
@@ -84,11 +85,24 @@ import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../sh
 export interface AppControllerDeps {
   sessionManager: SessionManager;
   engineRegistry: EngineRegistry;
+  /**
+   * Desktop-owned party engine backed by the Windows-global party store.
+   * Absent only in a headless execution worker, which never owns global state.
+   */
+  partyEngine?: EngineConnection;
+  /** Filesystem workspace used internally by {@link partyEngine}. */
+  partyStorageWorkspace?: string;
   windowRegistry: WindowRegistry;
   /** Desktop-owned lifecycle. Absent only in the headless remote engine. */
   subscriptionProxy?: SubscriptionProxyController;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
+  /**
+   * Headless execution-worker route for party tools owned by the desktop host.
+   * A WSL worker may still have old workspace-local party files, but those are
+   * migration sources, never an authority after global-party mode was added.
+   */
+  remotePartyTool?: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) => Promise<PartyToolResult>;
   /**
    * Identity of the running build, for diagnostics. Injected rather than read
    * from `electron.app` so this controller still loads headless (WSL engine),
@@ -232,6 +246,9 @@ export class AppController {
   /** App-global party groups + the party summaries filed under them. */
   private readonly partyGroups = new PartyGroupStore();
 
+  /** Reads legacy cwd stores during the lazy move into the global party store. */
+  private readonly partyRepository = new PartyRepository();
+
   /** One poller per persisted handoff, including handoffs recovered after an app restart. */
   private readonly cliContinuationWatchers = new Set<string>();
 
@@ -280,7 +297,7 @@ export class AppController {
     if (existing) {
       return existing;
     }
-    const current = (await this.engineFor(workspacePath).listParty(undefined)).currentPartyId;
+    const current = (await this.partyEngine(workspacePath).listParty(undefined)).currentPartyId;
     if (current) {
       this.activePartyByWindow.set(windowId, current);
     }
@@ -298,6 +315,34 @@ export class AppController {
     return this.deps.engineRegistry.forWorkspace(workspacePath);
   }
 
+  /** Party state is global on the desktop; headless workers keep their local fallback. */
+  private partyEngine(workspacePath: string): EngineConnection {
+    return this.deps.partyEngine || this.engineFor(workspacePath);
+  }
+
+  private partyStorageWorkspace(workspacePath: string): string {
+    return this.deps.partyStorageWorkspace || workspacePath;
+  }
+
+  private globalPartyMode(): boolean {
+    return Boolean(this.deps.partyEngine && this.deps.partyStorageWorkspace);
+  }
+
+  /**
+   * Resolves a session operation by session id. Party sessions live in the
+   * desktop-global engine even when their harness runs in WSL; standalone
+   * sessions remain in the caller's execution workspace.
+   */
+  private async engineForSession(workspacePath: string, sessionId: string): Promise<EngineConnection> {
+    const source = this.engineFor(workspacePath);
+    const party = this.partyEngine(workspacePath);
+    if (source === party) {
+      return source;
+    }
+    const partySessions = await party.listWorkspaceSessions();
+    return partySessions.some((session) => session.id === sessionId) ? party : source;
+  }
+
   private workspaceDisplay(workspacePath: string): WorkspaceDisplay {
     const location = parseWorkspaceLocation(workspacePath);
     return {
@@ -309,10 +354,14 @@ export class AppController {
   }
 
   private async broadcastParty(workspacePath: string): Promise<void> {
-    // Each window gets ITS OWN party's view (per-window active party), so one
-    // window selecting a party never switches another window of the same workspace.
-    const engine = this.engineFor(workspacePath);
-    for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
+    // Each window gets ITS OWN party's view. In desktop global-party mode every
+    // window reads the same store; `workspacePath` is only the legacy cwd that
+    // caused this refresh and must not limit who sees it.
+    const engine = this.partyEngine(workspacePath);
+    const windows = this.globalPartyMode()
+      ? this.deps.windowRegistry.all()
+      : this.deps.windowRegistry.forWorkspace(workspacePath);
+    for (const entry of windows) {
       const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
@@ -320,7 +369,13 @@ export class AppController {
     // the same listing `party.list` answers with. Skipped entirely when no
     // phone is connected, since it costs an extra engine call.
     if (this.deps.mobileLink?.hasSessions()) {
-      this.deps.mobileLink.publish("party:update", await engine.listParty(undefined), workspacePath);
+      const payload = await engine.listParty(undefined);
+      const targets = this.globalPartyMode()
+        ? new Set([...windows.map((entry) => entry.workspacePath), workspacePath])
+        : new Set([workspacePath]);
+      for (const target of targets) {
+        this.deps.mobileLink.publish("party:update", payload, target);
+      }
     }
     void this.reconcileUsageProviders();
   }
@@ -345,12 +400,19 @@ export class AppController {
    * event in main.ts; see the party-communication design §8.
    */
   notifyPartyChanged(workspacePath: string): Promise<void> {
-    return this.broadcastParty(workspacePath);
+    return this.refreshChangedParty(workspacePath);
+  }
+
+  private async refreshChangedParty(workspacePath: string): Promise<void> {
+    // Party state is desktop-global. Remote engines only host harnesses and
+    // their party tools already route back through this controller.
+    await this.syncPartyRegistry(workspacePath);
+    await this.broadcastParty(workspacePath);
   }
 
   /** The party's workbench tab layout, or undefined when none is stored yet. */
   getPartyLayout(workspacePath: string, windowId?: string): Promise<ReturnType<PartyApplicationService["getPartyLayout"]>> {
-    return this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+    return this.partyEngine(workspacePath).getPartyLayout(this.partyForWindow(windowId));
   }
 
   /**
@@ -366,11 +428,12 @@ export class AppController {
    * A layout identical to the stored one broadcasts nothing at all.
    */
   async setPartyLayout(workspacePath: string, layout: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setPartyLayout"]>> {
-    const result = await this.engineFor(workspacePath).setPartyLayout(layout, this.partyForWindow(windowId));
+    const result = await this.partyEngine(workspacePath).setPartyLayout(layout, this.partyForWindow(windowId));
     if (!result.changed || !result.layout || !result.partyId) {
       return result;
     }
-    for (const entry of this.deps.windowRegistry.forWorkspace(workspacePath)) {
+    const windows = this.globalPartyMode() ? this.deps.windowRegistry.all() : this.deps.windowRegistry.forWorkspace(workspacePath);
+    for (const entry of windows) {
       // Only windows actually showing this party — another window of the same
       // workspace may be on a different one, whose tabs must not be replaced.
       //
@@ -383,7 +446,12 @@ export class AppController {
       }
       entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
     }
-    this.deps.mobileLink?.publish("party:layout", { partyId: result.partyId, layout: result.layout }, workspacePath);
+    const mobileTargets = this.globalPartyMode()
+      ? new Set([...windows.map((entry) => entry.workspacePath), workspacePath])
+      : new Set([workspacePath]);
+    for (const target of mobileTargets) {
+      this.deps.mobileLink?.publish("party:layout", { partyId: result.partyId, layout: result.layout }, target);
+    }
     return result;
   }
 
@@ -412,16 +480,20 @@ export class AppController {
     // Boot is the first moment a workspace's parties can be registered, and this
     // is the one call every window makes on open. Idempotent, so the repeat on
     // every window costs a read and changes nothing.
-    this.migratePartyGroups([workspacePath]);
+    await this.migratePartyGroups([workspacePath]);
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
     const codexModels = await engine.listCodexModels();
+    const partyEngine = this.partyEngine(workspacePath);
+    const sourceSessions = await engine.listWorkspaceSessions();
+    const partySessions = partyEngine === engine ? [] : await partyEngine.listWorkspaceSessions();
+    const sessionsById = new Map([...sourceSessions, ...partySessions].map((session) => [session.id, session] as const));
     const state: InitialAppState = {
       ok: true,
       settings: { ...getPublicSettings(), workspacePath },
       workspace: this.workspaceDisplay(workspacePath),
       auth: await this.listAuthProviders(workspacePath),
-      sessions: await engine.listWorkspaceSessions(),
+      sessions: [...sessionsById.values()],
       modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
       modelProviders: [...MODEL_PROVIDERS],
       codexModels,
@@ -443,7 +515,7 @@ export class AppController {
       // — the case where it is otherwise unreachable. Omitted rather than empty
       // when this process keeps no index: "nothing is waiting" is a claim the
       // headless engine cannot make.
-      ...(this.deps.approvals ? { pendingApprovals: this.deps.approvals.pending(workspacePath) } : {}),
+      ...(this.deps.approvals ? { pendingApprovals: this.deps.approvals.pending(this.partyStorageWorkspace(workspacePath)) } : {}),
       ...(await this.getResumableState(workspacePath)),
       guideOffer: getGuideOffer(),
     };
@@ -787,11 +859,18 @@ export class AppController {
       this.applyWindowTheme(validatedPatch.theme as ThemePreference);
       this.broadcastAppearance();
     }
-    // Settings are global — push to EVERY window so a change made over HTTP or in
-    // another window reflects live (e.g. transcript zoom), not only on next load.
-    // (The renderer preserves each window's own workspacePath on merge.)
-    this.broadcastSettings();
-    return getPublicSettings();
+    return this.publishSettings();
+  }
+
+  /** Pushes already-persisted app-global settings to every live consumer. */
+  private publishSettings(): AppSettings {
+    const settings = getPublicSettings();
+    // The renderer preserves each window's own workspacePath on merge.
+    this.deps.mobileLink?.publish("settings:update", settings);
+    for (const entry of this.deps.windowRegistry.all()) {
+      entry.window.webContents.send("settings:update", settings);
+    }
+    return settings;
   }
 
   getLocale(): { locale: AppLocale } {
@@ -877,14 +956,6 @@ export class AppController {
     const windows = typeof this.deps.windowRegistry.all === "function" ? this.deps.windowRegistry.all() : [];
     for (const entry of windows) {
       entry.window.webContents.send("appearance:update", appearance);
-    }
-  }
-
-  private broadcastSettings(): void {
-    const settings = getPublicSettings();
-    this.deps.mobileLink?.publish("settings:update", settings);
-    for (const entry of this.deps.windowRegistry.all()) {
-      entry.window.webContents.send("settings:update", settings);
     }
   }
 
@@ -1242,10 +1313,9 @@ export class AppController {
   /**
    * Opens a window, optionally ON a specific party.
    *
-   * A party id is meaningful only inside its workspace. Validate that pair
-   * before creating the BrowserWindow: PartyApplicationService.list() normally
-   * falls back from an unknown id to the workspace's current party, which would
-   * make a routing bug look like a successful open of an unrelated party.
+   * Party ids are global. Validate after lazily importing the requested cwd and
+   * before creating the BrowserWindow; PartyApplicationService.list() normally
+   * falls back from an unknown id, which would otherwise hide a routing bug.
    *
    * The party is PINNED before the window can ask, because pinning otherwise
    * happens at the window's first `getState` and would capture whatever the
@@ -1255,10 +1325,18 @@ export class AppController {
    */
   async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
     const targetWorkspace = workspacePath || getSettings().workspacePath || process.cwd();
+    // Resolve the engine before creating a BrowserWindow. This is the shared
+    // workspace validity boundary (local + WSL), so an API call with a relative
+    // path fails visibly instead of first returning a window whose renderer can
+    // never hydrate.
+    // Resolve the execution workspace as a validity check, but party lookup is
+    // global and must never re-scope to the cwd used to open this window.
+    this.engineFor(targetWorkspace);
+    await this.migratePartyGroups([targetWorkspace]);
     if (partyId) {
-      const listing = await this.engineFor(targetWorkspace).listParty(undefined);
+      const listing = await this.partyEngine(targetWorkspace).listParty(undefined);
       if (!(listing.parties || []).some((party) => party.id === partyId)) {
-        throw new Error(`Party '${partyId}' does not exist in workspace '${targetWorkspace}'.`);
+        throw new Error(`Party '${partyId}' does not exist in the global party store.`);
       }
     }
 
@@ -1379,35 +1457,68 @@ export class AppController {
     return this.deps.guideChat;
   }
 
-  /** Points a window at a different workspace and returns its fresh state. */
-  async setWindowWorkspace(windowId: string | undefined, workspacePath: string): Promise<InitialAppState> {
+  /** Changes a window's cwd/execution context and imports that former store. */
+  async setWindowWorkspace(windowId: string | undefined, workspacePath: string): Promise<InitialAppState>;
+  async setWindowWorkspace(
+    windowId: string | undefined,
+    workspacePath: string,
+    options: { omitStateWhenUnchanged: true },
+  ): Promise<InitialAppState | undefined>;
+  async setWindowWorkspace(
+    windowId: string | undefined,
+    workspacePath: string,
+    options?: { omitStateWhenUnchanged?: boolean },
+  ): Promise<InitialAppState | undefined> {
     const entry = this.deps.windowRegistry.resolve(windowId);
-    // Already here: return the state without touching anything. The renderer
-    // asks for this switch whenever it selects a party that names a home
-    // workspace, and it cannot reliably tell "same place" — its copy of the
-    // path can be a render behind. Deciding it HERE, against the window the
-    // registry actually holds, is the only answer that cannot be stale; doing
-    // the full switch anyway would drop the window's active party on every
-    // ordinary party click.
+    // The renderer asks whenever a party names a home and cannot reliably
+    // decide whether this window is already there from its asynchronous copy.
+    // Decide here against the authoritative window registry.
     if (entry && workspaceKey(entry.workspacePath) === workspaceKey(workspacePath)) {
+      // The grouped sidebar does not consume a duplicate state when no move
+      // occurred. Other callers retain the documented fresh-state response.
+      if (options?.omitStateWhenUnchanged) {
+        return undefined;
+      }
       return this.getState(entry.workspacePath, entry.id);
     }
     if (entry) {
-      this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
-      // The window's active party belonged to the PREVIOUS workspace — drop it so
-      // the fresh getState below re-pins it to a party of the NEW workspace (else
-      // member ops would carry a party id that doesn't exist here).
+      // Hydrate first. A bad/offline destination must not commit a window move
+      // that its renderer cannot apply.
+      const nextState = await this.getState(workspacePath, this.globalPartyMode() ? entry.id : undefined);
+      this.rebindWindowWorkspace(entry, workspacePath);
+      // In global-party mode a selected party remains valid while the window's
+      // cwd/migration source changes. Headless legacy mode still replaces the
+      // workspace-scoped pin with that destination's current party.
+      const pinnedParty = this.activePartyByWindow.get(entry.id);
       this.forgetWindow(entry.id);
+      if (this.globalPartyMode() && pinnedParty) {
+        this.activePartyByWindow.set(entry.id, pinnedParty);
+      } else if (nextState.party.currentPartyId) {
+        this.activePartyByWindow.set(entry.id, nextState.party.currentPartyId);
+      }
       // The window now serves a different workspace → refresh discovery files.
       this.deps.onWorkspacesChanged();
+      updateSettings({ workspacePath });
+      return nextState;
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });
-    // A workspace this process had not seen may hold parties the registry does
-    // not know yet — registering them here is what makes the global list
-    // complete rather than "whatever happened to be open at boot".
-    this.migratePartyGroups([workspacePath]);
-    return this.getState(workspacePath, entry?.id);
+    // No concrete window to rebind (headless/internal caller): return the same
+    // host-correct snapshot without inventing window ownership.
+    return this.getState(workspacePath);
+  }
+
+  /**
+   * Rebinds one already-validated window and releases the old engine when no
+   * window owns it anymore. A workspace switch bypasses the BrowserWindow close
+   * hook, so without this a WSL child process and its sessions lived forever.
+   */
+  private rebindWindowWorkspace(entry: WindowEntry, workspacePath: string): void {
+    const previousWorkspace = entry.workspacePath;
+    this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
+    if (this.deps.windowRegistry.forWorkspace(previousWorkspace).length === 0) {
+      this.deps.engineRegistry.dispose(previousWorkspace);
+    }
   }
 
   // --- Sessions (addressed globally by session id) ------------------------
@@ -1425,32 +1536,32 @@ export class AppController {
 
   // --- Token usage dashboard ---------------------------------------------
   /**
-   * Aggregated per-turn usage ledger for the Token Usage dashboard — the single
-   * method backing both the UI and `GET /api/token-usage`. Routed to the engine
-   * that owns the workspace so a WSL distro's turns are read on their own host.
+   * Aggregated party-turn ledger for the Token Usage dashboard — the single
+   * method backing both the UI and `GET /api/token-usage`. Party usage follows
+   * the party data into the global store regardless of its member hosts.
    */
   getTokenUsage(workspacePath: string, query: TokenUsageQuery): Promise<TokenUsageAggregate> {
-    return this.engineFor(workspacePath).getTokenUsage(query);
+    return this.partyEngine(workspacePath).getTokenUsage(query);
   }
 
   /** Raw per-turn records for the member drill-in (context curve + expensive turns). */
   getTokenUsageTurns(workspacePath: string, query: TokenUsageTurnsQuery): Promise<TurnUsageRecord[]> {
-    return this.engineFor(workspacePath).getTokenUsageTurns(query);
+    return this.partyEngine(workspacePath).getTokenUsageTurns(query);
   }
 
-  // Session control is routed to the engine that owns the workspace the caller
-  // (window / ?window=) is viewing — the session lives in that engine, local or
-  // a WSL distro. See the WSL remote-engine design §7.
+  // Session control resolves by session id: party sessions live in the global
+  // engine even when their harness runs in WSL; standalone sessions stay with
+  // the window's Windows/WSL execution context.
   async closeSession(workspacePath: string, sessionId: string): Promise<{ ok: boolean }> {
-    return { ok: await this.engineFor(workspacePath).closeSession(sessionId) };
+    return { ok: await (await this.engineForSession(workspacePath, sessionId)).closeSession(sessionId) };
   }
 
-  sendSessionMessage(workspacePath: string, sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
-    return this.engineFor(workspacePath).sendUserTurn(sessionId, text, attachments);
+  async sendSessionMessage(workspacePath: string, sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).sendUserTurn(sessionId, text, attachments);
   }
 
   async handleSessionAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<{ ok: true; result?: unknown }> {
-    const result = await runSessionAction(this.engineFor(workspacePath), sessionId, action, body);
+    const result = await runSessionAction(await this.engineForSession(workspacePath, sessionId), sessionId, action, body);
     // `approve` answers with a delivery verdict; a caller that reported a bare
     // `{ok:true}` would tell the user an expired request had been approved.
     if (action !== "approve") {
@@ -1464,49 +1575,49 @@ export class AppController {
     return { ok: true, result };
   }
 
-  interruptSession(workspacePath: string, sessionId: string): Promise<void> {
-    return this.engineFor(workspacePath).interruptSession(sessionId);
+  async interruptSession(workspacePath: string, sessionId: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).interruptSession(sessionId);
   }
 
   /** Releases a turn the harness never closed (the UI's manual force-stop). */
-  forceStopSession(workspacePath: string, sessionId: string): Promise<void> {
-    return this.engineFor(workspacePath).forceStopSession(sessionId);
+  async forceStopSession(workspacePath: string, sessionId: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).forceStopSession(sessionId);
   }
 
-  restartSession(workspacePath: string, sessionId: string): Promise<void> {
-    return this.engineFor(workspacePath).restartSession(sessionId);
+  async restartSession(workspacePath: string, sessionId: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).restartSession(sessionId);
   }
 
-  compactSession(workspacePath: string, sessionId: string): Promise<void> {
-    return this.engineFor(workspacePath).compactSession(sessionId);
+  async compactSession(workspacePath: string, sessionId: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).compactSession(sessionId);
   }
 
-  setSessionModel(workspacePath: string, sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
-    return this.engineFor(workspacePath).setSessionModel(sessionId, model, providerId, runtimeModel);
+  async setSessionModel(workspacePath: string, sessionId: string, model: string, providerId?: string, runtimeModel?: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionModel(sessionId, model, providerId, runtimeModel);
   }
 
-  setSessionEffort(workspacePath: string, sessionId: string, effort: string): Promise<void> {
-    return this.engineFor(workspacePath).setSessionEffort(sessionId, effort);
+  async setSessionEffort(workspacePath: string, sessionId: string, effort: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionEffort(sessionId, effort);
   }
 
-  setSessionThinking(workspacePath: string, sessionId: string, mode: string, budget?: number): Promise<void> {
-    return this.engineFor(workspacePath).setSessionThinking(sessionId, mode, budget);
+  async setSessionThinking(workspacePath: string, sessionId: string, mode: string, budget?: number): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionThinking(sessionId, mode, budget);
   }
 
-  setSessionPermissionMode(workspacePath: string, sessionId: string, permissionMode: string): Promise<void> {
-    return this.engineFor(workspacePath).setSessionPermissionMode(sessionId, permissionMode);
+  async setSessionPermissionMode(workspacePath: string, sessionId: string, permissionMode: string): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionPermissionMode(sessionId, permissionMode);
   }
 
-  setSessionCodexPolicy(workspacePath: string, sessionId: string, policy: CodexPolicy): Promise<void> {
-    return this.engineFor(workspacePath).setSessionCodexPolicy(sessionId, policy);
+  async setSessionCodexPolicy(workspacePath: string, sessionId: string, policy: CodexPolicy): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionCodexPolicy(sessionId, policy);
   }
 
-  setSessionCursorPolicy(workspacePath: string, sessionId: string, policy: CursorPolicy): Promise<void> {
-    return this.engineFor(workspacePath).setSessionCursorPolicy(sessionId, policy);
+  async setSessionCursorPolicy(workspacePath: string, sessionId: string, policy: CursorPolicy): Promise<void> {
+    return (await this.engineForSession(workspacePath, sessionId)).setSessionCursorPolicy(sessionId, policy);
   }
 
   async approveSession(workspacePath: string, sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalDelivery> {
-    const delivery = await this.engineFor(workspacePath).approveSession(sessionId, requestId, behavior, updatedInput, message);
+    const delivery = await (await this.engineForSession(workspacePath, sessionId)).approveSession(sessionId, requestId, behavior, updatedInput, message);
     if (delivery === "delivered") {
       this.deps.approvals?.markResolved(requestId, behavior);
     }
@@ -1544,7 +1655,7 @@ export class AppController {
       // process cannot make.
       throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
     }
-    const pending = approvals.pending(workspacePath);
+    const pending = approvals.pending(this.globalPartyMode() ? this.partyStorageWorkspace(workspacePath || "") : workspacePath);
     const namesByWorkspace = new Map<string, Map<string, string>>();
     const namesFor = async (workspace: string): Promise<Map<string, string>> => {
       const cached = namesByWorkspace.get(workspace);
@@ -1553,7 +1664,7 @@ export class AppController {
       }
       const names = new Map<string, string>();
       try {
-        const listing = await this.engineFor(workspace).listParty();
+        const listing = await this.partyEngine(workspace).listParty();
         for (const member of listing.members) {
           if (member.sessionId) {
             names.set(member.sessionId, member.name);
@@ -1635,12 +1746,12 @@ export class AppController {
   // --- MCP (external servers a member connects to; by session id) ---------
   // Same AppController method behind the UI panel and the HTTP API, so an agent
   // drives the identical route a user does (route-parity rule).
-  listSessionMcpServers(workspacePath: string, sessionId: string): Promise<McpServerSnapshot> {
-    return this.engineFor(workspacePath).listSessionMcpServers(sessionId);
+  async listSessionMcpServers(workspacePath: string, sessionId: string): Promise<McpServerSnapshot> {
+    return (await this.engineForSession(workspacePath, sessionId)).listSessionMcpServers(sessionId);
   }
 
   async sessionMcpAction(workspacePath: string, sessionId: string, action: string, body: any): Promise<unknown> {
-    const engine = this.engineFor(workspacePath);
+    const engine = await this.engineForSession(workspacePath, sessionId);
     const server = String(body?.server || "");
     switch (action) {
       case "reconnect":
@@ -1656,7 +1767,7 @@ export class AppController {
     }
   }
 
-  // --- Party (scoped to a workspace + the CALLING WINDOW's active party) ---
+  // --- Party (global store + the CALLING WINDOW's active party) ------------
   // `windowId` selects which window's active party the op resolves against, so
   // two windows of one workspace act on different parties independently. When
   // absent (HTTP with no `?window`), the engine falls back to its advisory hint.
@@ -1676,40 +1787,105 @@ export class AppController {
   // was opened from, which is the entire point of the feature.
 
   /**
-   * Registers pre-existing parties into the default group and backfills member
-   * cwds. Idempotent, so it runs on boot and again whenever a workspace this
-   * process had never seen is opened.
+   * Copies pre-existing party data from one explicitly opened former cwd into
+   * the Windows-global store and backfills missing member locations.
    *
-   * Looks only at workspaces it is TOLD about (open windows + what the registry
-   * already knows). Scanning the disk for `.agent_party_app` folders would sweep
-   * up backups and other checkouts and present them as the user's parties.
+   * Desktop-global mode looks only at workspaces it is TOLD about. Scanning the
+   * disk or the old registry would sweep up backups and unopened projects.
    */
-  migratePartyGroups(extraWorkspaces: string[] = []): MigrationReport {
+  async migratePartyGroups(extraWorkspaces: string[] = []): Promise<MigrationReport> {
+    if (this.globalPartyMode()) {
+      const target = this.deps.partyStorageWorkspace as string;
+      const workspaces = [...new Set(extraWorkspaces.filter(Boolean))];
+      const report: MigrationReport = {
+        ok: true,
+        workspaces,
+        registered: 0,
+        backfilled: 0,
+        conflicts: [],
+        failures: [],
+      };
+      const before = JSON.stringify(this.partyGroups.read());
+      for (const sourceIdentity of workspaces) {
+        try {
+          if (workspaceKey(sourceIdentity) === workspaceKey(target)) {
+            continue;
+          }
+          const location = parseWorkspaceLocation(sourceIdentity);
+          const sourceFsPath = location.host.kind === "wsl"
+            ? wslUncPath(location.host.distro, location.path)
+            : location.path;
+          const imported = this.partyRepository.importWorkspace(
+            sourceFsPath,
+            target,
+            serializeWorkspaceLocation(location),
+            serializeWorkspaceLocation(location),
+          );
+          report.registered += imported.imported;
+          report.backfilled += imported.backfilledLocations;
+          for (const conflict of imported.conflicts) {
+            report.ok = false;
+            report.conflicts.push({ partyId: conflict.partyId, workspacePaths: [sourceIdentity, target] });
+            report.failures.push({ workspacePath: sourceIdentity, error: conflict.reason });
+          }
+        } catch (error) {
+          report.ok = false;
+          report.failures.push({ workspacePath: sourceIdentity, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      await this.syncPartyRegistry(target, { surfaceFailure: true });
+      if (JSON.stringify(this.partyGroups.read()) !== before) {
+        this.deps.onPartyGroupsChanged?.();
+      }
+      log(report.ok ? "info" : "warn", "party", "cwd party data migration finished", report);
+      return report;
+    }
+
+    const openWorkspaces = this.deps.windowRegistry.all().map((entry) => entry.workspacePath);
+    const openKeys = new Set(openWorkspaces.map(workspaceKey));
     const workspaces = [...new Set([
-      ...this.partyGroups.knownWorkspaces(),
-      ...this.deps.windowRegistry.all().map((entry) => entry.workspacePath),
+      // Closed local workspaces are cheap to reconcile in-process. A registered,
+      // closed WSL workspace already has a durable summary; starting every known
+      // distro engine on each native Windows boot would turn drawing the list
+      // into opening every party. It is refreshed whenever that workspace opens.
+      ...this.partyGroups.knownWorkspaces().filter((workspace) =>
+        !isWslLocation(parseWorkspaceLocation(workspace)) || openKeys.has(workspaceKey(workspace))),
+      ...openWorkspaces,
       ...extraWorkspaces.filter(Boolean),
     ])];
-    return migratePartyGroups(workspaces, { repository: new PartyRepository(), store: this.partyGroups });
+    const before = JSON.stringify(this.partyGroups.read());
+    const report = await migratePartyGroups(workspaces, {
+      store: this.partyGroups,
+      loadWorkspace: async (workspacePath) => {
+        const engine = this.engineFor(workspacePath);
+        const { backfilled } = await engine.backfillMemberLocations();
+        const state = await engine.listAllParties();
+        return { ...state, backfilled };
+      },
+    });
+    if (JSON.stringify(this.partyGroups.read()) !== before) {
+      this.deps.onPartyGroupsChanged?.();
+    }
+    return report;
   }
 
   listPartyGroups(): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[]; conflicts: PartyGroupState["conflicts"] } {
     const state = this.partyGroups.read();
-    return { ok: true, groups: state.groups, parties: state.parties, conflicts: state.conflicts };
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state), conflicts: state.conflicts };
   }
 
   createPartyGroup(name: string): { ok: true; group: PartyGroup; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const { state, group } = this.partyGroups.createGroup(name);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
-    return { ok: true, group, groups: state.groups, parties: state.parties };
+    return { ok: true, group, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
   renamePartyGroup(groupId: string, name: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const state = this.partyGroups.renameGroup(groupId, name);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
-    return { ok: true, groups: state.groups, parties: state.parties };
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
   /**
@@ -1720,7 +1896,7 @@ export class AppController {
     const { state, moved } = this.partyGroups.removeGroup(groupId);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
-    return { ok: true, moved, groups: state.groups, parties: state.parties };
+    return { ok: true, moved, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
   /** Full new order, ids first-to-last. Idempotent; see the store. */
@@ -1728,30 +1904,39 @@ export class AppController {
     const state = this.partyGroups.reorderGroups(order);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
-    return { ok: true, groups: state.groups, parties: state.parties };
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
-  movePartyToGroup(partyId: string, groupId: string): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+  async movePartyToGroup(partyId: string, groupId: string): Promise<{ ok: true; groups: PartyGroup[]; parties: RegisteredParty[] }> {
+    const isVisible = () => this.visibleRegisteredParties(this.partyGroups.read()).some((party) => party.id === partyId);
+    if (!isVisible()) {
+      // A just-created/imported global party can be visible before its summary
+      // write completes. Reconcile the authoritative store, then retry the move;
+      // do not invent a row or hide a genuinely missing id.
+      await this.syncPartyRegistry(this.partyStorageWorkspace(""), { surfaceFailure: true });
+    }
+    if (!isVisible()) {
+      throw new Error(`Party '${partyId}' does not exist in the global party list.`);
+    }
     const state = this.partyGroups.moveParty(partyId, groupId);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
-    return { ok: true, groups: state.groups, parties: state.parties };
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
   /**
-   * Refreshes one workspace's parties in the global registry.
+   * Refreshes the global store's party summaries in the group registry.
    *
-   * Called after any change to a workspace's party list. Counts come from the
+   * Called after any change to the global party list. Counts come from the
    * state that was just written, so the sidebar can show them for a party it has
    * not opened — which is what removes the "0 members" guess.
    */
-  registerWorkspaceParties(workspacePath: string, parties: PartyDefinition[], members: PartyMember[]): void {
+  registerWorkspaceParties(workspacePath: string, parties: PartyDefinition[], members: PartyMember[]): boolean {
     const now = new Date().toISOString();
-    const known = new Set(parties.map((party) => party.id));
-    for (const party of parties) {
+    const summaries = parties.map((party) => {
       const own = members.filter((member) => member.partyId === party.id);
       const envs = own.map((member) => (member.location ? parseMemberLocation(member.location).env : undefined));
-      this.partyGroups.upsertParty({
+      return {
         id: party.id,
         groupId: party.groupId || "",
         name: party.name,
@@ -1761,16 +1946,17 @@ export class AppController {
         wslCount: envs.filter((env) => env === "wsl").length,
         updatedAt: party.updatedAt || now,
         workspacePath,
-      });
-    }
-    // A party that vanished from ITS OWN workspace is gone; one registered
-    // against a different workspace is left alone, or opening workspace A would
-    // delete workspace B's parties from the list.
-    for (const registered of this.partyGroups.read().parties) {
-      if (registered.workspacePath === workspacePath && !known.has(registered.id)) {
-        this.partyGroups.removeParty(registered.id);
-      }
-    }
+      };
+    });
+    return this.globalPartyMode()
+      ? this.partyGroups.reconcileGlobal(this.partyStorageWorkspace(workspacePath), summaries).changed
+      : this.partyGroups.reconcileWorkspace(workspacePath, summaries).changed;
+  }
+
+  private visibleRegisteredParties(state: PartyGroupState): RegisteredParty[] {
+    return this.globalPartyMode()
+      ? this.partyGroups.globalParties(this.deps.partyStorageWorkspace as string)
+      : state.parties;
   }
 
   // ------------------------------------------------------------ 멤버 실행 위치
@@ -1789,18 +1975,21 @@ export class AppController {
   async setDefaultCwd(location: MemberExecutionLocation): Promise<{ ok: true; preferences: CwdPreferences }> {
     const preferences = await setDefaultCwd(location);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
   clearDefaultCwd(env: ExecutionEnv): { ok: true; preferences: CwdPreferences } {
     const preferences = clearDefaultCwd(env);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
   removeRecentCwd(location: MemberExecutionLocation): { ok: true; preferences: CwdPreferences } {
     const preferences = removeRecentCwd(location);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
@@ -1880,9 +2069,8 @@ export class AppController {
 
   /** Existing members' fixed locations, for the read-only settings list. */
   async memberLocations(workspacePath: string): Promise<{ ok: true; members: MemberLocationRow[] }> {
-    // Whole workspace: the settings list is about members that EXIST, not about
-    // whichever party this window happens to be viewing.
-    const party = await this.engineFor(workspacePath).listAllParties();
+    // All parties: location belongs to a member, never to the cwd that opened a window.
+    const party = await this.partyEngine(workspacePath).listAllParties();
     const nameById = new Map((party.parties || []).map((entry: PartyDefinition) => [entry.id, entry.name] as const));
     const members: MemberLocationRow[] = (party.members || [])
       .filter((member: PartyMember) => Boolean(member.location))
@@ -1898,20 +2086,22 @@ export class AppController {
     // `main` needs a cwd it can actually run in. Checked BEFORE the party is
     // created, so a bad path leaves nothing half-made behind.
     const location = await this.requireUsableLocation(input.location, workspacePath);
-    const result = await this.engineFor(workspacePath).createParty({ ...input, location: location.serialized });
+    const result = await this.partyEngine(workspacePath).createParty({ ...input, location: location.serialized });
     // The window that created the party switches to it (others are untouched).
     if (windowId && result.currentPartyId) {
       this.activePartyByWindow.set(windowId, result.currentPartyId);
     }
     // Only a creation that SUCCEEDED puts the cwd in the recent list (README §6).
     rememberCwd(location.location);
+    this.deps.onSettingsChanged();
+    this.publishSettings();
     await this.syncPartyRegistry(workspacePath);
     await this.broadcastParty(workspacePath);
     return result;
   }
 
   async selectParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["selectParty"]>> {
-    const result = await this.engineFor(workspacePath).selectParty(partyId); // validates the id
+    const result = await this.partyEngine(workspacePath).selectParty(partyId);
     if (windowId) {
       this.activePartyByWindow.set(windowId, partyId);
     }
@@ -1920,7 +2110,7 @@ export class AppController {
   }
 
   async removeParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeParty"]>> {
-    const result = await this.engineFor(workspacePath).removeParty(partyId);
+    const result = await this.partyEngine(workspacePath).removeParty(partyId);
     // Any window that was viewing the deleted party falls back to the default.
     for (const [wid, pid] of this.activePartyByWindow) {
       if (pid === partyId) {
@@ -1949,6 +2139,8 @@ export class AppController {
         log("warn", "cwd", "could not save default cwd", { location: location.serialized, error: error instanceof Error ? error.message : String(error) });
       });
     }
+    this.deps.onSettingsChanged();
+    this.publishSettings();
     await this.syncPartyRegistry(workspacePath);
     return result;
   }
@@ -1961,23 +2153,36 @@ export class AppController {
    * working. What never happens is a stated location being replaced by a
    * working one: an unusable path is an error, not a redirect (README §12).
    */
-  private async requireUsableLocation(value: string | undefined, workspacePath: string) {
-    const check = await checkCwd(parseMemberLocation(value || workspacePath));
+  private async requireUsableLocation(value: unknown, workspacePath: string) {
+    const serialized = value == null || value === "" ? workspacePath : value;
+    if (typeof serialized !== "string") {
+      throw new Error("실행 위치 형식이 잘못되었습니다 — 직렬화된 경로 문자열이 필요합니다.");
+    }
+    const check = await checkCwd(parseMemberLocation(serialized));
     if (check.problem) {
       throw new Error(`실행 위치를 사용할 수 없습니다 — ${check.problem.message}: ${check.serialized}`);
     }
     return check;
   }
 
-  /** Re-publishes one workspace's parties into the app-global registry. */
-  private async syncPartyRegistry(workspacePath: string): Promise<void> {
+  /** Re-publishes the authoritative party store into the app-global registry. */
+  private async syncPartyRegistry(workspacePath: string, options?: { surfaceFailure?: boolean }): Promise<boolean> {
     try {
       // The WHOLE workspace, not the viewed party: counting from the view
       // reported every unselected party as empty.
-      const state = await this.engineFor(workspacePath).listAllParties();
-      this.registerWorkspaceParties(workspacePath, state.parties || [], state.members || []);
+      const state = await this.partyEngine(workspacePath).listAllParties();
+      const changed = this.registerWorkspaceParties(this.partyStorageWorkspace(workspacePath), state.parties || [], state.members || []);
+      if (changed) {
+        this.deps.onPartyGroupsChanged?.();
+      }
+      return changed;
     } catch (error) {
-      log("warn", "party", "could not refresh the party group registry", { workspacePath, error: error instanceof Error ? error.message : String(error) });
+      const detail = error instanceof Error ? error.message : String(error);
+      log("warn", "party", "could not refresh the party group registry", { workspacePath, error: detail });
+      if (options?.surfaceFailure) {
+        throw new Error(`파티 목록을 새로 고치지 못했습니다 (${workspacePath}): ${detail}`);
+      }
+      return false;
     }
   }
 
@@ -1990,7 +2195,45 @@ export class AppController {
    * The party comes from the CALLER's own identity, never from a window: the
    * member's tools act inside its own party regardless of what anyone is viewing.
    */
-  async invokePartyToolAs(workspacePath: string, member: string, tool: string, args: unknown, partyId?: string): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+  async invokePartyToolAs(
+    workspacePath: string,
+    member: string,
+    tool: string,
+    args: unknown,
+    partyId?: string,
+    hostPrepared = false,
+  ): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+    if (this.globalPartyMode()) {
+      // A raw Windows MCP relay also enters through HTTP, so prepare its local
+      // file inputs here. A WSL worker has already prepared them and arrives
+      // through the trusted host channel with `hostPrepared=true`; re-reading
+      // its `/...` path on Windows would recreate the cross-host image bug.
+      if (!hostPrepared) {
+        return invokePartyToolFromExecutionHost(
+          (preparedTool, preparedArgs) => this.mutateParty(
+            workspacePath,
+            (engine) => engine.invokePartyToolAs(member, preparedTool, preparedArgs, partyId),
+          ),
+          tool,
+          args,
+        );
+      }
+      return this.mutateParty(workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
+    }
+    // A headless WSL engine is an execution worker, not a second party owner.
+    // Its local storage can contain the legacy copy that was just migrated. If
+    // we ask `workspaceOwningParty` first, that stale copy wins and a WSL Codex
+    // MCP call sees only the pre-migration members. Route an identity-bound tool
+    // straight to the desktop authority even when that legacy party still
+    // exists locally; the party id is supplied by the member's immutable MCP
+    // environment, not by model-controlled arguments.
+    if (partyId && this.deps.remotePartyTool) {
+      return invokePartyToolFromExecutionHost(
+        (preparedTool, preparedArgs) => this.deps.remotePartyTool!(workspacePath, member, preparedTool, preparedArgs, partyId),
+        tool,
+        args,
+      );
+    }
     // `workspacePath` came from the FOCUSED WINDOW, because an HTTP caller has
     // no window of its own — and one process serves every open window. With a
     // second workspace open, every member of the unfocused one was looked up in
@@ -2000,6 +2243,56 @@ export class AppController {
     return this.mutateParty(owner || workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
   }
 
+  /**
+   * Deterministic E2E entry: launches the real stdio MCP relay on the member's
+   * execution host, rather than calling the party controller directly.
+   */
+  async invokeMemberPartyMcpTool(workspacePath: string, partyId: string, memberName: string, tool: string, args: unknown) {
+    const listing = await this.partyEngine(workspacePath).listParty(partyId);
+    const member = listing.members.find((entry) => entry.partyId === partyId && entry.name === memberName);
+    if (!member) {
+      throw new Error(`Party member '${memberName}' does not exist in party '${partyId}'.`);
+    }
+    if (!member.location) {
+      throw new Error(`Party member '${memberName}' has no execution location.`);
+    }
+    const location = parseWorkspaceLocation(member.location);
+    const result = await this.engineFor(member.location).invokePartyMcpTransport(member.name, partyId, tool, args);
+    return {
+      ...result,
+      transport: "mcp-stdio" as const,
+      member: member.name,
+      partyId,
+      tool,
+      executionLocation: member.location,
+      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+    };
+  }
+
+  /** Product-E2E discovery through the relay on the member's actual host. */
+  async listMemberPartyMcpTools(workspacePath: string, partyId: string, memberName: string) {
+    const listing = await this.partyEngine(workspacePath).listParty(partyId);
+    const member = listing.members.find((entry) => entry.partyId === partyId && entry.name === memberName);
+    if (!member) {
+      throw new Error(`Party member '${memberName}' does not exist in party '${partyId}'.`);
+    }
+    if (!member.location) {
+      throw new Error(`Party member '${memberName}' has no execution location.`);
+    }
+    const location = parseWorkspaceLocation(member.location);
+    return {
+      ok: true as const,
+      tools: await this.engineFor(member.location).listPartyMcpTools(member.name, partyId),
+      transport: "mcp-stdio" as const,
+      member: member.name,
+      partyId,
+      executionLocation: member.location,
+      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+    };
+  }
+
   /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
   sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId), options));
@@ -2007,7 +2300,7 @@ export class AppController {
 
   /** Messages a busy member has been sent but not yet handed (shared/messageQueue.ts). */
   getMemberQueue(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["getMemberQueue"]>> {
-    return this.engineFor(workspacePath).getMemberQueue(name, this.partyForWindow(windowId));
+    return this.partyEngine(workspacePath).getMemberQueue(name, this.partyForWindow(windowId));
   }
 
   /**
@@ -2020,7 +2313,7 @@ export class AppController {
   }
 
   async handlePartyAction(workspacePath: string, name: string, action: string, body: any, windowId?: string, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
-    const result = await this.engineFor(workspacePath).partyAction(name, action, body || {}, partyId || this.partyForWindow(windowId));
+    const result = await this.partyEngine(workspacePath).partyAction(name, action, body || {}, partyId || this.partyForWindow(windowId));
     await this.broadcastParty(workspacePath);
     return result;
   }
@@ -2049,7 +2342,7 @@ export class AppController {
    */
   async openPartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["openMember"]>> {
     const result = await this.mutateParty(workspacePath, (engine) => engine.openMember(name, this.partyForWindow(windowId)));
-    const stored = await this.engineFor(workspacePath).getPartyLayout(this.partyForWindow(windowId));
+    const stored = await this.partyEngine(workspacePath).getPartyLayout(this.partyForWindow(windowId));
     await this.setPartyLayout(workspacePath, openMemberTab(stored ?? EMPTY_LAYOUT, name), windowId);
     return result;
   }
@@ -2125,7 +2418,7 @@ export class AppController {
   /** Persists the party-wide Message Gate default (enablement + rule). */
   async setPartyGate(workspacePath: string, partyId: string, gate: unknown, windowId?: string): Promise<ReturnType<PartyApplicationService["setPartyGate"]>> {
     const target = partyId || this.partyForWindow(windowId);
-    const result = await this.engineFor(workspacePath).setPartyGate(target, gate);
+    const result = await this.partyEngine(workspacePath).setPartyGate(target, gate);
     await this.broadcastParty(workspacePath);
     return result;
   }
@@ -2163,7 +2456,7 @@ export class AppController {
     const listing = await this.listPartyMembers(workspacePath, windowId, target);
     const party = (listing as any)?.parties?.find((entry: any) => entry?.id === target);
     const result = await this.requireDiscord().registerParty({
-      workspacePath,
+      workspacePath: this.partyStorageWorkspace(workspacePath),
       party: target,
       partyLabel: party?.name,
     });
@@ -2175,7 +2468,7 @@ export class AppController {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
     const listing = await this.listPartyMembers(workspacePath, windowId, party);
     const result = await this.requireDiscord().connectMember({
-      workspacePath,
+      workspacePath: this.partyStorageWorkspace(workspacePath),
       party,
       partyLabel: (listing as any)?.parties?.find((entry: any) => entry?.id === party)?.name,
       member: name,
@@ -2194,7 +2487,7 @@ export class AppController {
 
   async discordSendAsMember(workspacePath: string, name: string, content: string, windowId?: string, partyId?: string): Promise<{ ok: true; channel: string }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
-    const result = await this.requireDiscord().sendAsMember(workspacePath, party, name, content);
+    const result = await this.requireDiscord().sendAsMember(this.partyStorageWorkspace(workspacePath), party, name, content);
     return { ok: true, channel: result.channelName };
   }
 
@@ -2208,13 +2501,13 @@ export class AppController {
     partyId?: string,
   ): Promise<{ ok: true; channel: string }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
-    const result = await this.requireDiscord().sendImageAsMember(workspacePath, party, name, image, caption);
+    const result = await this.requireDiscord().sendImageAsMember(this.partyStorageWorkspace(workspacePath), party, name, image, caption);
     return { ok: true, channel: result.channelName };
   }
 
   async discordDisconnectMember(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<{ ok: true; removed: boolean }> {
     const party = await this.partyOfMember(workspacePath, name, windowId, partyId);
-    const result = this.requireDiscord().disconnectMember(workspacePath, party, name);
+    const result = this.requireDiscord().disconnectMember(this.partyStorageWorkspace(workspacePath), party, name);
     return { ok: true, removed: result.removed };
   }
 
@@ -2243,12 +2536,21 @@ export class AppController {
   }
 
   getMemberTranscript(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<unknown[]> {
-    return this.engineFor(workspacePath).getMemberTranscript(name, partyId || this.partyForWindow(windowId));
+    return this.partyEngine(workspacePath).getMemberTranscript(name, partyId || this.partyForWindow(windowId));
   }
 
   /** Where the harness keeps its own untrimmed copy of a member's conversation. */
-  getHarnessOriginal(workspacePath: string, name: string, windowId?: string) {
-    return this.engineFor(workspacePath).getHarnessOriginal(name, this.partyForWindow(windowId));
+  async getHarnessOriginal(workspacePath: string, name: string, windowId?: string) {
+    const partyEngine = this.partyEngine(workspacePath);
+    const target = await partyEngine.getHarnessOriginalTarget(name, this.partyForWindow(windowId));
+    if (!target.sessionId || !target.runtime) {
+      return { ok: true as const, original: null };
+    }
+    if (!target.location) {
+      throw new Error(`Member '${name}' has no execution location.`);
+    }
+    const location = parseWorkspaceLocation(target.location);
+    return this.engineFor(target.location).resolveHarnessOriginal(target.runtime, target.sessionId, location.path);
   }
 
   /**
@@ -2265,15 +2567,19 @@ export class AppController {
     if (action !== "inspect" && action !== "launch") {
       throw new Error(`Unknown CLI continuation action '${String(action)}'.`);
     }
-    const engine = this.engineFor(workspacePath);
+    const engine = this.partyEngine(workspacePath);
     const partyId = this.partyForWindow(windowId);
+    const member = (await engine.listParty(partyId)).members.find((entry) => entry.name === name);
+    if (!member?.location) {
+      throw new Error(`Member '${name}' has no execution location.`);
+    }
     const resolved = action === "launch"
       ? await engine.beginCliContinuation(name, partyId)
       : await engine.getCliContinuationTarget(name, partyId);
     if (!resolved.supported) {
       return { ok: true, supported: false, member: name, reason: resolved.reason, launched: false };
     }
-    const location = parseWorkspaceLocation(workspacePath);
+    const location = parseWorkspaceLocation(member.location);
     const argv = cliContinuationArgv(resolved.target, location.host);
     const details: CliContinuationDetails = {
       ok: true,
@@ -2341,7 +2647,7 @@ export class AppController {
       // Let the harness release its on-disk writer lock after its terminal host
       // exits before the UI becomes messageable again.
       setTimeout(() => {
-        void this.engineFor(workspacePath).finishCliContinuation(name, handoffId, partyId)
+        void this.partyEngine(workspacePath).finishCliContinuation(name, handoffId, partyId)
           .then(() => this.broadcastParty(workspacePath))
           .catch((error) => log("warn", "cli-continuation", "could not release completed handoff", {
             workspacePath,
@@ -2364,7 +2670,7 @@ export class AppController {
     workspacePath: string,
     partyId?: string,
   ): Promise<ReturnType<PartyApplicationService["list"]>> {
-    const engine = this.engineFor(workspacePath);
+    const engine = this.partyEngine(workspacePath);
     let listing = await engine.listParty(partyId);
     let changed = false;
     for (const member of listing.members) {
@@ -2388,11 +2694,11 @@ export class AppController {
 
   /** One screenshot a transcript references, as a data URL (its bytes live out-of-line). */
   getTranscriptImage(workspacePath: string, file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> {
-    return this.engineFor(workspacePath).getTranscriptImage(file);
+    return this.partyEngine(workspacePath).getTranscriptImage(file);
   }
 
   saveMemberTranscript(workspacePath: string, name: string, save: TranscriptSave, windowId?: string): Promise<TranscriptSaveResult> {
-    return this.engineFor(workspacePath).saveMemberTranscript(name, save, this.partyForWindow(windowId));
+    return this.partyEngine(workspacePath).saveMemberTranscript(name, save, this.partyForWindow(windowId));
   }
 
   // --- Window actions (addressed by window id) ----------------------------
@@ -2439,7 +2745,7 @@ export class AppController {
       tab = "automation";
     }
     const tabbed = view === "agent" || view === "settings";
-    const validViews = ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"];
+    const validViews = ["workbench", "guide", "usage", "auth", "agent", "settings"];
     if (!validViews.includes(view)) throw new Error(`Unknown view '${legacyView}'. Known: ${validViews.join(", ")} (legacy aliases: runtime, automation).`);
     if (tab && !tabbed) throw new Error(`The '${view}' screen has no tabs.`);
     if (view === "agent" && tab && !isAgentTabId(tab)) throw new Error(`Unknown agent tab '${tab}'. Known: ${AGENT_TAB_IDS.join(", ")}.`);
@@ -2850,21 +3156,21 @@ export class AppController {
 
   async qaSeed(workspacePath: string, input: { party?: string; members?: QaMemberSpec[] }): Promise<{ ok: true; created: string[] } & ReturnType<PartyApplicationService["list"]>> {
     this.requireQa();
-    const { created, listing } = await this.engineFor(workspacePath).qaSeed(input);
+    const { created, listing } = await this.partyEngine(workspacePath).qaSeed(input);
     await this.broadcastParty(workspacePath);
     return { ok: true, created, ...listing };
   }
 
   async qaCreateMockMember(workspacePath: string, spec: QaMemberSpec): Promise<{ ok: true; sessionId?: string } & ReturnType<PartyApplicationService["list"]>> {
     this.requireQa();
-    const { sessionId, listing } = await this.engineFor(workspacePath).qaCreateMockMember(spec);
+    const { sessionId, listing } = await this.partyEngine(workspacePath).qaCreateMockMember(spec);
     await this.broadcastParty(workspacePath);
     return { ok: true, sessionId, ...listing };
   }
 
   async qaEmit(workspacePath: string, name: string, body: { events?: unknown[]; status?: "working" | "idle" | "approval" }): Promise<{ ok: true }> {
     this.requireQa();
-    await this.engineFor(workspacePath).qaEmit(name, body);
+    await this.partyEngine(workspacePath).qaEmit(name, body);
     return { ok: true };
   }
 
@@ -2874,13 +3180,13 @@ export class AppController {
     if (!scenario) {
       throw new Error("subagent injection requires a 'scenario' name.");
     }
-    const result = await this.engineFor(workspacePath).qaEmitSubagents(name, scenario);
+    const result = await this.partyEngine(workspacePath).qaEmitSubagents(name, scenario);
     return { ok: true, ...result };
   }
 
   async qaInteraction(workspacePath: string, name: string, body: QaInteractionInput): Promise<{ ok: true; requestId: string }> {
     this.requireQa();
-    const { requestId } = await this.engineFor(workspacePath).qaInteraction(name, body);
+    const { requestId } = await this.partyEngine(workspacePath).qaInteraction(name, body);
     return { ok: true, requestId };
   }
 
@@ -3001,12 +3307,12 @@ export class AppController {
    */
   async qaKillHarness(workspacePath: string, name: string): Promise<{ ok: true; sessionId: string; pid: number }> {
     this.requireQa();
-    const party = await this.engineFor(workspacePath).listParty();
+    const party = await this.partyEngine(workspacePath).listParty();
     const sessionId = party.members?.find((member) => member.name === name)?.sessionId;
     if (!sessionId) {
       throw new Error(`Member '${name}' has no live session to end.`);
     }
-    const pid = (await this.engineFor(workspacePath).listWorkspaceSessions())
+    const pid = (await this.partyEngine(workspacePath).listWorkspaceSessions())
       .find((session) => session.id === sessionId)?.snapshot.pid;
     if (!pid) {
       // Refuse rather than simulate. The previous version injected the status
@@ -3039,7 +3345,7 @@ export class AppController {
     // fixture goes in FIRST — otherwise they would render this machine's real
     // state and the states worth reviewing would never appear.
     setMockEnvironmentReport(GALLERY_ENVIRONMENT_REPORT);
-    const built = await this.engineFor(workspacePath).qaDesignGallery();
+    const built = await this.partyEngine(workspacePath).qaDesignGallery();
     await this.broadcastParty(workspacePath);
     return { ok: true, ...built };
   }
@@ -3057,7 +3363,7 @@ export class AppController {
 
   async qaReset(workspacePath: string): Promise<{ ok: true } & ReturnType<PartyApplicationService["list"]>> {
     this.requireQa();
-    const listing = await this.engineFor(workspacePath).qaReset();
+    const listing = await this.partyEngine(workspacePath).qaReset();
     await this.broadcastParty(workspacePath);
     return { ok: true, ...listing };
   }
@@ -3253,7 +3559,7 @@ export class AppController {
     },
   ): Promise<{
     ok: true;
-    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }>;
+    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }>;
   }> {
     this.requireQa();
     const win = this.windowFor(windowId);
@@ -3265,7 +3571,18 @@ export class AppController {
       throw new Error("Pointer input requires between 1 and 64 steps.");
     }
     const delayMs = Math.min(500, Math.max(0, Number.isFinite(body?.delayMs) ? Number(body.delayMs) : 40));
-    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click"; x: number; y: number }> = [];
+    // Electron drops sendInputEvent input for an unfocused BrowserWindow. API
+    // callers often run from a terminal that owns focus, so focus the explicitly
+    // targeted QA window before reporting any pointer step as completed.
+    if (!win.isFocused()) {
+      win.show();
+      win.focus();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+    if (!win.isFocused()) {
+      throw new Error("Target window could not be focused; pointer input was not sent.");
+    }
+    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }> = [];
     let isDown = false;
 
     try {
@@ -3275,7 +3592,7 @@ export class AppController {
         if (!selector) {
           throw new Error(`Pointer step ${index + 1} requires a selector.`);
         }
-        if (action !== "move" && action !== "down" && action !== "up" && action !== "click") {
+        if (action !== "move" && action !== "down" && action !== "up" && action !== "click" && action !== "rightclick") {
           throw new Error(`Pointer step ${index + 1} has unsupported action '${action}'.`);
         }
         const point = await win.webContents.executeJavaScript(
@@ -3315,6 +3632,10 @@ export class AppController {
           if (isDown) throw new Error(`Pointer step ${index + 1} cannot click while already pressed.`);
           win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...coordinates });
           win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...coordinates });
+        } else if (action === "rightclick") {
+          if (isDown) throw new Error(`Pointer step ${index + 1} cannot right-click while already pressed.`);
+          win.webContents.sendInputEvent({ type: "mouseDown", button: "right", clickCount: 1, ...coordinates });
+          win.webContents.sendInputEvent({ type: "mouseUp", button: "right", clickCount: 1, ...coordinates });
         }
         completed.push({ selector, action, ...coordinates });
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -3367,7 +3688,7 @@ export class AppController {
 
   // --- internals ----------------------------------------------------------
   private async mutateParty<T>(workspacePath: string, op: (engine: EngineConnection) => Promise<T> | T): Promise<T> {
-    const result = await op(this.engineFor(workspacePath));
+    const result = await op(this.partyEngine(workspacePath));
     await this.broadcastParty(workspacePath);
     return result;
   }

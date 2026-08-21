@@ -22,9 +22,9 @@ export interface WorkspaceLocation {
 }
 
 /** `wsl+<distro>:<posix-abs-path>` — mirrors VS Code's `wsl+<distro>` authority. */
-const WSL_URI = /^wsl\+([^:]+):(.*)$/;
+const WSL_URI = /^wsl\+([^:]+):(.*)$/i;
 /** Windows UNC view of a distro: `\\wsl$\<distro>\...` or `\\wsl.localhost\<distro>\...`. */
-const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\]+)\\?(.*)$/;
+const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\]+)\\?(.*)$/i;
 
 /**
  * Parses a serialized location into a host + native path:

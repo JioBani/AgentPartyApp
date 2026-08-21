@@ -15,7 +15,7 @@ import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
 import { discoverCodexModels } from "../core/codexModelDiscovery";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
-import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf } from "../shared/types";
+import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf, type HostedPartySessionBinding } from "../shared/types";
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
@@ -118,6 +118,22 @@ export interface SessionPartyBinding {
   identity: PartyIdentity;
 }
 
+export interface CrossHostSessionAdapterInput {
+  id: string;
+  target: string;
+  cwd: string;
+  request: CreateSessionInput;
+  resumeSessionId?: string;
+  binding: HostedPartySessionBinding;
+}
+
+export interface SessionManagerHostOptions {
+  /** Desktop-only factory for a harness that physically runs in another host. */
+  createCrossHostAdapter?: (input: CrossHostSessionAdapterInput) => HarnessSession;
+  /** Execution-engine factory that reconnects a serialized binding to its party owner. */
+  createHostedPartyBridge?: (binding: HostedPartySessionBinding) => PartyBridge;
+}
+
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
   /** Append-only per-turn usage ledger backing the Token Usage dashboard. */
@@ -201,6 +217,7 @@ export class SessionManager extends EventEmitter {
     private readonly userDataDir: string,
     /** Stable host/workspace identity; separates helpers owned by parallel WSL engines. */
     private readonly runtimeScope = "host",
+    private readonly hostOptions: SessionManagerHostOptions = {},
   ) {
     super();
     this.usageLimits = this.loadUsageLimits();
@@ -224,6 +241,54 @@ export class SessionManager extends EventEmitter {
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     const provider = providerOfHarness(requestedHarness);
     return this.registerSession(id, workspace, adapter, provider, binding?.identity);
+  }
+
+  /**
+   * Registers a local session whose HarnessSession is only a transport proxy.
+   * Party state, queues, transcripts and usage ownership stay in this manager;
+   * only the provider harness process is hosted by `target`.
+   */
+  createCrossHostSession(
+    target: string,
+    input: CreateSessionInput,
+    resumeSessionId: string | undefined,
+    binding: SessionPartyBinding,
+  ): SessionView {
+    const factory = this.hostOptions.createCrossHostAdapter;
+    if (!factory) {
+      throw new Error(`Cross-host member execution is not configured for '${target}'.`);
+    }
+    const settings = getSettings();
+    const id = resumeSessionId ? `resume-${Date.now()}` : `session-${Date.now()}`;
+    const request = normalizeCreateSessionInput(input);
+    const workspace = request.workspacePath || settings.workspacePath || process.cwd();
+    const cwd = request.cwd || workspace;
+    const adapter = factory({
+      id,
+      target,
+      cwd,
+      request,
+      resumeSessionId,
+      binding: { ownerWorkspace: workspace, identity: binding.identity },
+    });
+    const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    return this.registerSession(id, workspace, adapter, providerOfHarness(requestedHarness), binding.identity);
+  }
+
+  /** Builds the function-bearing binding after its serializable descriptor crosses RPC. */
+  createHostedSession(
+    input: CreateSessionInput,
+    resumeSessionId: string | undefined,
+    binding: HostedPartySessionBinding,
+  ): SessionView {
+    const createBridge = this.hostOptions.createHostedPartyBridge;
+    if (!createBridge) {
+      throw new Error("This engine cannot connect a hosted session to its party owner.");
+    }
+    return this.createSession(input, resumeSessionId, {
+      identity: binding.identity,
+      bridge: createBridge(binding),
+    });
   }
 
   /**
@@ -1236,6 +1301,11 @@ export class SessionManager extends EventEmitter {
     adapter.setCursorPolicy(policy);
   }
 
+  setSessionDebugMode(id: string, enabled: boolean): void {
+    this.requireAdapter(id).setDebugMode(enabled);
+    this.emit("sessions", this.listSessions());
+  }
+
   // --- MCP (external servers a member connects to as a client) -------------
   private requireAdapter(id: string): HarnessSession {
     const adapter = this.sessions.get(id)?.adapter;
@@ -1332,6 +1402,15 @@ export class SessionManager extends EventEmitter {
    */
   setAutomationBaseUrlProvider(provider: () => string | undefined): void {
     this.automationBaseUrlProvider = provider;
+  }
+
+  /**
+   * Live local endpoint used by the party MCP relay on this engine host.
+   * Exposed to LocalEngine only so the automation E2E route can launch the
+   * exact same stdio relay with the exact same destination as a real member.
+   */
+  partyMcpAutomationBaseUrl(): string {
+    return this.codexAutomationBaseUrl(getSettings().automationApiPort);
   }
 
   /**

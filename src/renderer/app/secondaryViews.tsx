@@ -6,7 +6,7 @@ import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, 
 import { ipcErrorMessage } from "./ipcError";
 import { openUpdateDialog } from "./updateDialog";
 import { UPDATE_FEED, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
-import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting, SessionView } from "../../shared/types";
+import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting } from "../../shared/types";
 import {
   cursorPolicyOf,
   type CursorAgentMode,
@@ -45,48 +45,6 @@ import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
-
-export function SessionsView({ sessions, resumable, resumableError, onOpen, onClose, onRefresh, onResume }: {
-  sessions: SessionView[];
-  resumable: NonNullable<InitialAppState["resumableSessions"]>;
-  resumableError?: string;
-  onOpen: (id: string) => void;
-  onClose: (id: string) => void;
-  onRefresh: () => void;
-  onResume: (id: string) => void;
-}) {
-  return (
-    <section className="legacy-view">
-      <div className="view-toolbar"><button className="ghost-btn" onClick={onRefresh}><RefreshCw size={15} />  <LocalizedText id="STR-0986" /></button></div>
-      <div className="split-grid">
-        <section className="card">
-          <div className="card-title"><LocalizedText id="STR-0987" /></div>
-          <div className="row-list">
-            {sessions.length === 0 && <div className="empty"><LocalizedText id="STR-0988" /></div>}
-            {sessions.map((session) => (
-              <button key={session.id} className="list-row" onClick={() => onOpen(session.id)}>
-                <span><strong>{session.title || "Claude Code"}</strong><small>{session.snapshot.status || "idle"}</small></span>
-                <button type="button" className="row-x" title={localized("STR-0990")} onClick={(event) => { event.stopPropagation(); onClose(session.id); }}><X size={13} /></button>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-title"><LocalizedText id="STR-0991" /></div>
-          <div className="row-list">
-            {resumableError && <div className="soft-error">{resumableError}</div>}
-            {!resumableError && resumable.length === 0 && <div className="empty"><LocalizedText id="STR-0992" /></div>}
-            {resumable.map((session) => (
-              <button className="list-row" key={session.sessionId} onClick={() => onResume(session.sessionId)}>
-                <span><strong>{session.customTitle || session.summary || session.firstPrompt || session.sessionId}</strong><small>{[session.lastModified ? new Date(session.lastModified).toLocaleString() : "", session.gitBranch].filter(Boolean).join(" - ")}</small></span>
-              </button>
-            ))}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
 
 /** Maps an auth provider status to a badge (label + tone + whether it's a check). */
 function authBadge(status: InitialAppState["auth"][number]["status"]): { label: string; tone: "success" | "muted" | "danger"; ok: boolean } {
@@ -774,31 +732,33 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
         <div className="set-tab-panel" hidden={tab !== "general"}>
         <SubtreeVisibility visible={tab === "general"}>
             {/* message input preferences (send key) */}
-            <section className="set-card" data-settings-card="composer">
+            <section className="set-card" data-settings-card="composer" data-layout-card="agent-general-composer">
               <div className="set-card-label">{t("runtime.general.composer")}</div>
               <ComposerSettingsCard settings={settings.composer} onSave={onSaveComposer} />
             </section>
 
-            <section className="set-card" data-settings-card="member-messages">
+            <section className="set-card" data-settings-card="member-messages" data-layout-card="agent-general-member-messages">
               <div className="set-card-label">{t("runtime.general.memberMessages")}</div>
-              <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
-                <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
-                <span className="set-toggle-label">{t("runtime.general.interruptOnSend")}</span>
-              </button>
-              <div className="set-inline-note">
-                <InfoIcon size={14} />
-                <span>{t("runtime.general.interruptHelp")}</span>
+              <div className="set-card-body">
+                <button type="button" className="set-toggle" onClick={() => onSaveMemberMessaging({ interruptOnSend: !settings.memberMessaging?.interruptOnSend })}>
+                  <span className={"set-switch" + (settings.memberMessaging?.interruptOnSend ? " is-on" : "")}><span className="set-switch-knob" /></span>
+                  <span className="set-toggle-label">{t("runtime.general.interruptOnSend")}</span>
+                </button>
+                <div className="set-inline-note">
+                  <InfoIcon size={14} />
+                  <span>{t("runtime.general.interruptHelp")}</span>
+                </div>
               </div>
             </section>
 
             {/* global auto-compact default (inherited by members without their own) */}
-            <section className="set-card" data-settings-card="auto-compact">
+            <section className="set-card" data-settings-card="auto-compact" data-layout-card="agent-general-auto-compact">
               <div className="set-card-label">Auto-compact</div>
               <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
             </section>
 
             {/* idle sleep — release a quiet member's process, keep its conversation */}
-            <section className="set-card" data-settings-card="idle-sleep">
+            <section className="set-card" data-settings-card="idle-sleep" data-layout-card="agent-general-idle-sleep">
               <div className="set-card-label">{t("runtime.general.idleSleep")}</div>
               <SettingsIdleSleep setting={settings.idleSleep} onChange={onSaveIdleSleep} />
             </section>
@@ -863,7 +823,7 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
         {/* The member primer — what every member session is told at start. */}
         <div className="set-tab-panel" hidden={tab !== "primer"}>
         <SubtreeVisibility visible={tab === "primer"}>
-          <section className="set-card">
+          <section className="set-card" data-layout-card="agent-primer">
             <div className="set-card-label"><LocalizedText id="STR-1084" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1083" /></span></div>
             <PartyPrimerSettings
               settings={settings.partyPrimer}
@@ -878,7 +838,7 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
         {/* Message Gate reviewer default (model + effort, no harness — headless) */}
         <div className="set-tab-panel" hidden={tab !== "gate"}>
         <SubtreeVisibility visible={tab === "gate"}>
-          <section className="set-card">
+          <section className="set-card" data-layout-card="agent-gate">
             <div className="set-card-label"><LocalizedText id="STR-1086" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1085" /></span></div>
             <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
           </section>
@@ -888,12 +848,12 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
         {/* Discord bridge — credentials + inbound whitelist */}
         <div className="set-tab-panel" hidden={tab !== "discord"}>
         <SubtreeVisibility visible={tab === "discord"}>
-            <section className="set-card">
+            <section className="set-card" data-layout-card="agent-discord">
               <div className="set-card-label">Discord</div>
               <DiscordBridgeCard status={discord} onSave={onSaveDiscord} onDirtyChange={(value) => markDirty("discord", value)} />
             </section>
             {bindingCount > 0 && (
-              <section className="set-card">
+              <section className="set-card" data-layout-card="agent-discord-bindings">
                 <div className="set-card-label"><LocalizedText id="STR-1087" /></div>
                 <div className="set-link-list">
                   {discord!.bindings.map((binding) => (
@@ -998,7 +958,7 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
         const checks = (report?.checks || []).filter((check) => check.group === group.id);
         if (group.id === "wsl" && !checks.length && !wslChecked) {
           return (
-            <section className="set-card" key={group.id}>
+            <section className="set-card" key={group.id} data-layout-card={`settings-environment-${group.id}`}>
               <div className="set-card-label">{group.label}<span className="set-card-sub wb-mono">{group.hint}</span></div>
               <div className="set-inline-note">
                 <InfoIcon size={14} />
@@ -1016,7 +976,7 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
           return null;
         }
         return (
-          <section className="set-card" key={group.id}>
+          <section className="set-card" key={group.id} data-layout-card={`settings-environment-${group.id}`}>
             <div className="set-card-label">{group.label}<span className="set-card-sub wb-mono">{group.hint}</span></div>
             {checks.map((check) => (
               <EnvironmentCheckRow
@@ -1041,7 +1001,7 @@ function EnvironmentCard({ active, settings, onSaveExecutablePaths }: {
         );
       })}
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-environment-paths">
         <div className="set-card-label"><LocalizedText id="STR-1115" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1114" /></span></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
@@ -1212,8 +1172,9 @@ function DiagnosticsCard({ active }: { active: boolean }) {
         </div>
       )}
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-diagnostics-system">
         <div className="set-card-label"><LocalizedText id="STR-1131" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1132" /></span></div>
+        <div className="set-card-body set-diagnostics-card-body">
         <DiagnosticsRow label="AgentParty" value={versionText} loading={loading} copiedId={copied} copyId="version" onCopy={copy} />
         {report?.versionError && (
           <div className="set-inline-note is-warn">
@@ -1224,9 +1185,10 @@ function DiagnosticsCard({ active }: { active: boolean }) {
         <DiagnosticsRow label="OS" value={report ? `${report.os.platform} ${report.os.release} (${report.os.arch})` : ""} loading={loading} />
         <DiagnosticsRow label={localized("STR-1134")} value={report ? `${report.workspace.kind === "wsl" ? `WSL(${report.workspace.distro || "?"})` : "로컬"} · ${report.workspace.path}` : ""} loading={loading} />
         <DiagnosticsRow label={localized("STR-1135")} value={report?.appRoot || ""} loading={loading} />
+        </div>
       </section>
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-diagnostics-logs">
         <div className="set-card-label"><LocalizedText id="STR-1136" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1137" /></span></div>
         <DiagnosticsRow label={localized("STR-1138")} value={report?.logs.filePath || ""} loading={loading} copiedId={copied} copyId="logFile" onCopy={copy} />
         <div className="set-diag-actions">
@@ -1243,7 +1205,7 @@ function DiagnosticsCard({ active }: { active: boolean }) {
         )}
       </section>
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-diagnostics-report">
         <div className="set-card-label"><LocalizedText id="STR-1141" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1142" /></span></div>
         <div className="set-inline-note">
           <InfoIcon size={14} />
@@ -1373,7 +1335,7 @@ function VersionsCard({ active }: { active: boolean }) {
         <span><LocalizedText id="STR-1150" /> <b><LocalizedText id="STR-1149" /></b><LocalizedText id="STR-1151" /></span>
       </div>
 
-      <section className="set-card set-update-channel-card" data-ver="channel-card">
+      <section className="set-card set-update-channel-card" data-ver="channel-card" data-layout-card="settings-versions-channel">
         <div className="set-card-label"><LocalizedText id="STR-3204" /><span className="set-card-sub"><LocalizedText id="STR-3205" /></span></div>
         <div className="set-update-channel-options" role="radiogroup" aria-label={localized("STR-3206")}>
           <button
@@ -1408,7 +1370,7 @@ function VersionsCard({ active }: { active: boolean }) {
         </div>
       </section>
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-versions-installed">
         <div className="set-card-label"><LocalizedText id="STR-1152" /><span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>
         <div className="set-ver-current">
           <span className="wb-mono set-ver-badge">v{current || "?"}</span>
@@ -1438,7 +1400,7 @@ function VersionsCard({ active }: { active: boolean }) {
         </div>
       )}
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-versions-latest">
         <div className="set-card-label"><LocalizedText id="STR-1160" /><span className="set-card-sub wb-mono">{latest?.publishedAt ? new Date(latest.publishedAt).toLocaleDateString() : ""}</span></div>
         {!latest ? (
           <div className="set-ver-empty">{loading ? "불러오는 중…" : listError ? "목록을 불러오지 못했습니다." : "게시된 릴리스가 없습니다."}</div>
@@ -1460,7 +1422,7 @@ function VersionsCard({ active }: { active: boolean }) {
         )}
       </section>
 
-      <section className="set-card">
+      <section className="set-card" data-layout-card="settings-versions-history">
         <button type="button" className="set-ver-toggle" data-ver="history-toggle" onClick={() => setShowHistory((v) => !v)}>
           <ChevronDown size={14} className={showHistory ? "set-ver-chev is-open" : "set-ver-chev"} />
           <span><LocalizedText id="STR-1168" /></span>
@@ -1562,7 +1524,7 @@ function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undef
   }, []);
 
   return (
-    <>
+    <div className="set-card-body set-font-settings-body">
       <div className="set-inline-note">
         <InfoIcon size={14} />
         <span><LocalizedText id="STR-1177" /> <b><LocalizedText id="STR-1182" /></b><LocalizedText id="STR-1179" /> <b><LocalizedText id="STR-1180" /></b><LocalizedText id="STR-1178" /> <b><LocalizedText id="STR-1181" /></b><LocalizedText id="STR-1176" /></span>
@@ -1587,7 +1549,7 @@ function FontSettingsCard({ settings, onSave }: { settings: FontSettings | undef
         loading={loading}
         onChange={(family) => onSave({ mono: family })}
       />
-    </>
+    </div>
   );
 }
 
@@ -1606,7 +1568,7 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
   const sendKey = settings?.sendKey || "ctrl-enter";
   const interruptOnSend = settings?.interruptOnSend === true;
   return (
-    <>
+    <div className="set-card-body set-composer-settings-body">
       <div className="set-inline-note">
         <InfoIcon size={14} />
         <span>{t("runtime.composer.help")}</span>
@@ -1627,7 +1589,7 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
         <InfoIcon size={14} />
         <span>{t("runtime.composer.interruptHelp")}</span>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1728,7 +1690,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   }
 
   return (
-    <section className="set-harness-card">
+    <section className="set-harness-card" data-layout-card={`agent-defaults-${harnessId}`}>
       <div className="set-harness-head">
         <span className={"set-harness-icon is-" + harnessId}><HarnessIcon harness={harnessId} size={15} /></span>
         <span className="set-harness-title">{label}  <LocalizedText id="STR-1199" /></span>
@@ -1886,31 +1848,35 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
       </div>
       <div className="set-page set-page-tabbed">
         <div className="set-tab-panel" hidden={tab !== "general"}><SubtreeVisibility visible={tab === "general"}>
-          <section className="set-card" data-settings-card="appearance">
+          <section className="set-card" data-settings-card="appearance" data-layout-card="settings-appearance">
             <div className="set-card-label">{t("appearance.title")}</div>
-            <div className="set-inline-note"><InfoIcon size={14} /><span>{t("appearance.description")}</span></div>
-            <label className="set-field">
-              <span className="set-field-label">{t("appearance.themeLabel")}</span>
-              <select
-                className="set-select"
-                data-theme-select
-                value={preference}
-                onChange={(event) => onSaveTheme(event.target.value as ThemePreference)}
-              >
-                {THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
-              </select>
-            </label>
+            <div className="set-card-body">
+              <div className="set-inline-note"><InfoIcon size={14} /><span>{t("appearance.description")}</span></div>
+              <label className="set-field">
+                <span className="set-field-label">{t("appearance.themeLabel")}</span>
+                <select
+                  className="set-select"
+                  data-theme-select
+                  value={preference}
+                  onChange={(event) => onSaveTheme(event.target.value as ThemePreference)}
+                >
+                  {THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
+                </select>
+              </label>
+            </div>
           </section>
-          <section className="set-card" data-settings-card="language">
+          <section className="set-card" data-settings-card="language" data-layout-card="settings-language">
             <div className="set-card-label">{t("runtime.language.title")}</div>
-            <div className="set-inline-note"><InfoIcon size={14} /><span>{t("runtime.language.description")}</span></div>
-            <label className="set-field"><span className="set-field-label">{t("runtime.language.label")}</span>
-              <select className="set-select" data-locale-select value={settings.locale} onChange={(event) => onSaveLocale(event.target.value as AppLocale)}>
-                <option value="ko">{t("runtime.language.ko")}</option><option value="en">{t("runtime.language.en")}</option>
-              </select>
-            </label>
+            <div className="set-card-body">
+              <div className="set-inline-note"><InfoIcon size={14} /><span>{t("runtime.language.description")}</span></div>
+              <label className="set-field"><span className="set-field-label">{t("runtime.language.label")}</span>
+                <select className="set-select" data-locale-select value={settings.locale} onChange={(event) => onSaveLocale(event.target.value as AppLocale)}>
+                  <option value="ko">{t("runtime.language.ko")}</option><option value="en">{t("runtime.language.en")}</option>
+                </select>
+              </label>
+            </div>
           </section>
-          <section className="set-card"><div className="set-card-label"><LocalizedText id="STR-1211" /></div><FontSettingsCard settings={settings.fonts} onSave={onSaveFonts} /></section>
+          <section className="set-card" data-layout-card="settings-fonts"><div className="set-card-label"><LocalizedText id="STR-1211" /></div><FontSettingsCard settings={settings.fonts} onSave={onSaveFonts} /></section>
         </SubtreeVisibility></div>
 
         <div className="set-tab-panel" hidden={tab !== "environment"}><SubtreeVisibility visible={tab === "environment"}>
@@ -1926,11 +1892,11 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
         <div className="set-tab-panel" hidden={tab !== "diagnostics"}><SubtreeVisibility visible={tab === "diagnostics"}><DiagnosticsCard active={tab === "diagnostics"} /></SubtreeVisibility></div>
 
         <div className="set-tab-panel" hidden={tab !== "automation"}><SubtreeVisibility visible={tab === "automation"}>
-          <section className="set-card">
+          <section className="set-card" data-layout-card="settings-automation-router">
             <div className="set-card-label">{t("settings.automation.router")}</div>
             <div className="set-automation-content"><Info label="Router" value={router} /></div>
           </section>
-          <section className="set-card">
+          <section className="set-card" data-layout-card="settings-automation-api">
             <div className="set-card-label"><LocalizedText id="STR-1212" /></div>
             <div className="set-automation-content">
               <Info label="API" value={automationApi?.baseUrl || ""} />

@@ -37,7 +37,7 @@ export function automationApiSpec(
     endpoints,
     methods,
     navigation: {
-      views: ["workbench", "guide", "sessions", "usage", "auth", "agent", "settings"],
+      views: ["workbench", "guide", "usage", "auth", "agent", "settings"],
       tabs: { agent: AGENT_TAB_IDS, settings: SETTINGS_TAB_IDS },
       deprecatedAliases: {
         runtime: "Maps each legacy Runtime tab to its Agent or Settings destination.",

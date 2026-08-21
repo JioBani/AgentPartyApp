@@ -50,6 +50,12 @@ defineGlobal("HTMLElement", window.HTMLElement);
 defineGlobal("getComputedStyle", window.getComputedStyle.bind(window));
 defineGlobal("requestAnimationFrame", window.requestAnimationFrame?.bind(window) || ((cb) => setTimeout(() => cb(Date.now()), 0)));
 defineGlobal("cancelAnimationFrame", window.cancelAnimationFrame?.bind(window) || clearTimeout);
+// Font settings probe canvas metrics. jsdom deliberately omits a canvas
+// implementation; deterministic widths are enough for this renderer smoke.
+window.HTMLCanvasElement.prototype.getContext = () => ({
+  font: "",
+  measureText: (text) => ({ width: String(text).length * 10 }),
+});
 if (!globalThis.crypto?.randomUUID) {
   defineGlobal("crypto", { randomUUID: () => "id-" + Math.random().toString(16).slice(2) });
 }
@@ -361,17 +367,18 @@ const menuItems = [...document.querySelectorAll('[data-panel-id="pb"] .wb-menu-i
 const restartMenuItem = menuItems.find((b) => /세션 재시작/.test(b.textContent || ""));
 const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
 const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || ""));
+const cliMenuItem = menuItems.find((b) => /CLI로 이어가기/.test(b.textContent || ""));
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
 assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
-assert(mcpMenuItem != null && menuItems.length === 4, "⋯ menu has four current actions including MCP and CLI continuation");
+assert(mcpMenuItem != null && cliMenuItem != null && menuItems.length === 4, "⋯ menu has restart, Message Gate, MCP, and CLI continuation actions");
 // A busy member's composer offers 대기열에 추가 — NOT Stop. While a member works,
 // that slot is the only way to put a message in its queue, so Stop cannot own it.
-// Stop moved to the panel toolbar, where it appears only mid-turn.
 const busySend = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-queueing, [data-panel-id="pa"] .wb-send.is-queueing');
 assert(busySend !== null, "a busy member's composer offers 대기열에 추가 (the send slot stays a send)");
 assert(document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-stop') === null, "Stop no longer takes over the composer's send slot");
 assert(document.querySelector('[data-panel-id="pa"] .wb-composer-stop') !== null, "a busy member's composer shows a separate Stop control");
 assert(document.querySelector('[data-panel-id="pb"] .wb-composer-stop') === null, "an idle member's composer has no Stop control");
+assert(document.querySelector('.wb-stop-pill') === null, "obsolete toolbar Stop pills are not rendered");
 
 // Party right-click -> new window carries only the stable party id. The main
 // process derives cwd from the sender window; forwarding settings.workspacePath
@@ -449,7 +456,7 @@ if (restartItem) {
 assert(restartedSessions.includes("s-reviewer"), "하드 리스타트 restarted the member's live session (restart called with its session id)");
 
 // Idle sleep is otherwise reachable only over HTTP, so the menu is the whole UI
-// for it: 계속 켜두기 must pin the member and 지금 재우기 must release it.
+// for it: 항상 실행 상태 유지 must pin the member and 지금 프로세스 종료 must release it.
 if (reviewerRow) {
   reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -463,7 +470,7 @@ if (sleepItem) {
   sleepItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
-assert(sleepCalls.includes("reviewer"), "지금 재우기 released the member's process (sleepPartyMember called)");
+assert(sleepCalls.includes("reviewer"), "지금 프로세스 종료 released the member's process (sleepPartyMember called)");
 if (reviewerRow) {
   reviewerRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -476,7 +483,7 @@ if (pinItem) {
 }
 assert(
   keepAwakeCalls.some((call) => call.name === "reviewer" && call.keepAwake === true),
-  "계속 켜두기 pinned the member awake (setMemberKeepAwake called with true)",
+  "항상 실행 상태 유지 pinned the member awake (setMemberKeepAwake called with true)",
 );
 
 // A window holds the history of members it has OPEN (or that hold a live

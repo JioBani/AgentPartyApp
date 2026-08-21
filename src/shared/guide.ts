@@ -282,7 +282,7 @@ export interface GuideSnapshot {
   discord?: DiscordBridgeStatus;
   /** MCP servers the member's harness reports, for the MCP modal slide. */
   mcp?: McpServerSnapshot;
-  view?: "workbench" | "sessions" | "usage" | "auth" | "agent" | "settings";
+  view?: "workbench" | "usage" | "auth" | "agent" | "settings";
   /** Optional tab for the Agent or Settings screen. */
   viewTab?: AgentTabId | SettingsTabId;
   viewHarness?: HarnessId;

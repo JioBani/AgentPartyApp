@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -14,6 +13,7 @@ process.env.AGENTPARTY_FAKE_CURSOR_ARGS_OUT = argsOut;
 const { CursorAdapter, cursorModelSlug } = await import(pathToFileURL(path.join(root, "dist", "core", "cursorAdapter.js")).href);
 const { inspectCursorAgent } = await import(pathToFileURL(path.join(root, "dist", "core", "cursorAgentCli.js")).href);
 const { prepareCursorPartyRuntime } = await import(pathToFileURL(path.join(root, "dist", "core", "cursorPartyPlugin.js")).href);
+const { buildPartyMcpToolSpecs, PARTY_TOOL_NAMES } = await import(pathToFileURL(path.join(root, "dist", "core", "partyBridge.js")).href);
 
 assert.equal(cursorModelSlug("Grok 4.5", "low"), "cursor-grok-4.5-low");
 assert.equal(cursorModelSlug("Grok 4.5", "medium"), "cursor-grok-4.5-medium");
@@ -56,17 +56,11 @@ assert.equal(path.basename(pluginA.pluginDir), "agentparty-session");
 assert.equal(path.basename(pluginB.pluginDir), path.basename(pluginA.pluginDir));
 assert.notEqual(path.dirname(pluginA.pluginDir), path.dirname(pluginB.pluginDir));
 
-const mcpProtocol = spawnSync(process.execPath, [path.join(root, "scripts", "agentparty-codex-mcp-server.mjs")], {
-  input: [
-    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05" } }),
-    JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
-    "",
-  ].join("\n"),
-  encoding: "utf8",
-});
-assert.equal(mcpProtocol.status, 0);
-const toolList = mcpProtocol.stdout.trim().split(/\r?\n/).map(JSON.parse).find((message) => message.id === 2).result.tools;
-assert.equal(toolList.length, 11);
+// The stdio relay now fetches this canonical spec from the real running app.
+// Product E2E exercises that network/stdio path; this isolated adapter test
+// verifies the source schema without inventing a fake automation server.
+const toolList = buildPartyMcpToolSpecs();
+assert.deepEqual(toolList.map((tool) => tool.name), PARTY_TOOL_NAMES);
 assert(toolList.some((tool) => tool.name === "gate-set"));
 assert(toolList.some((tool) => tool.name === "party-gate-set"));
 for (const name of ["list", "list-models", "member-status"]) {
@@ -173,7 +167,7 @@ const mcp = await failing.listMcpServers();
 assert.equal(mcp.servers[0].state, "connected");
 assert.deepEqual(
   mcp.servers[0].tools.map((tool) => tool.name),
-  ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast"],
+  ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"],
 );
 failing.dispose();
 
@@ -194,7 +188,7 @@ stopping.sendUserTurn("hold then stop");
 await waitFor(() => stopEvents.some((event) => event.type === "status" && event.status === "sent"));
 await waitFor(() => stopping.getSnapshot().status === "responding" || stopping.getSnapshot().pid);
 stopping.interrupt();
-await waitFor(() => stopEvents.some((event) => event.type === "status" && event.status === "interrupted"));
+await waitFor(() => stopEvents.some((event) => event.type === "diagnostic" && event.category === "interrupt"));
 assert.equal(stopping.getSnapshot().status, "idle");
 assert.equal(stopping.getSnapshot().lastError, undefined);
 assert(
@@ -206,7 +200,7 @@ assert(
   "Stop must not emit an error event",
 );
 assert(
-  stopEvents.some((event) => event.type === "status" && event.status === "interrupted" && /replayed with your next message/.test(event.detail)),
+  stopEvents.some((event) => event.type === "diagnostic" && event.category === "interrupt" && typeof event.recovery === "string" && event.recovery.length > 0),
   "Stop says where the unsaved message went",
 );
 stopping.dispose();
@@ -235,7 +229,7 @@ replaying.on("event", (event) => replayEvents.push(event));
 replaying.sendUserTurn("FIRST_LOST_QUESTION");
 await waitFor(() => replayEvents.some((event) => event.type === "assistant_text_delta" && event.text === "PARTIAL_ANSWER_BEFORE_STOP"));
 replaying.interrupt();
-await waitFor(() => replayEvents.some((event) => event.type === "status" && event.status === "interrupted"));
+await waitFor(() => replayEvents.some((event) => event.type === "diagnostic" && event.category === "interrupt"));
 
 // A second stop in a row must accumulate, not overwrite — "stop, rephrase, stop
 // again" is exactly how the bug was hit. Wait for the CLI to actually reach the
@@ -243,7 +237,7 @@ await waitFor(() => replayEvents.some((event) => event.type === "status" && even
 replaying.sendUserTurn("SECOND_LOST_QUESTION");
 await waitFor(() => replayEvents.filter((event) => event.type === "session").length === 2);
 replaying.interrupt();
-await waitFor(() => replayEvents.filter((event) => event.type === "status" && event.status === "interrupted").length === 2);
+await waitFor(() => replayEvents.filter((event) => event.type === "diagnostic" && event.category === "interrupt").length === 2);
 
 delete process.env.AGENTPARTY_FAKE_CURSOR_HOLD_MS;
 delete process.env.AGENTPARTY_FAKE_CURSOR_PARTIAL_TEXT;

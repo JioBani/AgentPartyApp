@@ -450,6 +450,16 @@ scrolls" question), `text`, and whatever `styles`/`attributes` were asked for.
 The response also has `count`, `texts` in document order (list ordering), `gaps`
 between consecutive matches, the active `theme`, and the `viewport`.
 
+**Stable hooks worth knowing.** Some renderer state has no text on screen to
+read, so it is published as an attribute for exactly this endpoint:
+
+| Selector | Attribute | Answers |
+|---|---|---|
+| `.app-shell` | `data-workspace` | the workspace the **renderer** has applied (the window registry's answer is `GET /api/windows`) |
+| `.wb-root` | `data-party-id` | the party the workbench is rendering |
+| `.wb-root` | `data-layout-party` | the party whose saved panel layout has been seeded |
+| `.wb-party-row` | `data-party-id` | which party a sidebar row selects, for pointer-driven runs |
+
 **Not measuring and measuring zero are different facts.** A selector that matches
 nothing is a **500 naming the selector** — never an empty list, never a zero.
 The same for a `within`/`containedBy`/`scroll` target that does not exist, an
@@ -565,6 +575,14 @@ writing its own settings.json.
 0.6–2.0). In the UI it is driven by Ctrl+wheel over a session view; over HTTP it
 is a plain setting, e.g. `{"transcriptFontScale": 1.3}`. It applies on the next
 window load (or immediately in the window that changed it).
+
+`sidebarDrawers` is the workbench sidebar's two drawers — the party list and the
+member list — each with `open` (expanded) and `width` (px, clamped 150–460):
+`{"sidebarDrawers": {"party": {"open": false, "width": 236}, "member": {"open":
+true, "width": 300}}}`. In the UI these are the collapse button on each drawer head
+and the drag handle between them. A collapsed drawer leaves a rail that reopens
+it. Applies live in every open window, so an agent can put the party list away
+and check a narrow layout exactly as a user would.
 
 `fonts` picks the app's UI and code font families by **family name as the OS
 reports it** — `{"fonts": {"sans": "Malgun Gothic", "mono": "D2Coding"}}`. Both
@@ -1998,12 +2016,18 @@ interactive `/mcp` (the SDK doesn't expose an OAuth flow).
 
 Lists parties, the selected party, its members, and recent party messages.
 
-Party state is stored in the targeted window's workspace under
-`.agent_party_app/state.json` (a legacy `.agentparty/state.json` is still read as
-a fallback). Member role files are stored under
-`.agent_party_app/parties/<party>/members`, but member sessions always start with
-cwd set to the workspace root. The result is scoped to the targeted window's
-workspace (`?window=<id>`; focused window when omitted).
+Party state is Windows-desktop-global. Groups, parties, members, messages,
+queues, layouts, transcripts, images, and party-attributed usage live under
+`<userData>/party-store/.agent_party_app/`; a window's cwd does not own them.
+`?window=<id>` only chooses that window's active party. A member session starts
+at its immutable execution `location`, which may be a Windows path or a
+`wsl+<distro>:` path.
+
+When a former workspace is explicitly opened, its `.agent_party_app` (or older
+`.agentparty`) party store is copied into the Windows-global store before the
+window hydrates. The source is left untouched, ids and group filing are
+preserved, and `<userData>/party-store/.agent_party_app/workspace-imports.json`
+makes the import resumable and idempotent.
 
 ```json
 {
@@ -2068,7 +2092,9 @@ falls back to the request's workspace. `groupId` defaults to the default group.
 
 ### `POST /api/parties/:id/select`
 
-Selects the active party for member creation and compatibility endpoints.
+Selects the active party for member creation and compatibility endpoints. Party
+lookup is global and selecting one never changes the window's cwd. A missing id
+fails explicitly after the global registry has been reconciled.
 
 ### `POST /api/parties/:id/delete`
 
@@ -2083,13 +2109,18 @@ returned whichever directory the app was launched from. See
 A **location** is the existing serialized workspace form — `C:\Project\App`, or
 `wsl+Ubuntu-24.04:/home/dev/svc` — and is written in request bodies as
 `{ "env": "windows" | "wsl", "cwd": "...", "distro": "..." }` (`distro` required
-for `wsl`).
+for `wsl`). Workspace locations must be absolute; in particular,
+`wsl+Ubuntu:home/dev/svc` is rejected instead of being resolved against the
+engine process's cwd. Windows workspace identity and WSL distro identity are
+case-insensitive, while the POSIX path inside a distro remains case-sensitive.
 
 ### `GET /api/party-groups`
 
-Every group and every registered party. A party carries `workspacePath` (where
-its members and transcripts live), `memberCount`, `runningCount` and the
-`windowsCount`/`wslCount` split. Reading this never opens a party.
+Every group and every party already present in the Windows-global store. A party
+summary carries `memberCount`, `runningCount` and the `windowsCount`/`wslCount`
+split. Its `workspacePath` is the internal global-store identity, not an owner
+cwd. Legacy registry rows stay hidden until their former workspace is opened
+and imported.
 
 ### `POST /api/party-groups`
 
@@ -2102,11 +2133,16 @@ transcripts are untouched — a group is a folder, not a location.
 
 ### `POST /api/party-groups/migrate`
 
-Registers parties that predate groups, and gives members with no location the
-workspace their party was stored in. Idempotent — it runs at boot and on every
-workspace switch, and re-running reports `registered: 0, backfilled: 0`. Nothing
-moves on disk and no id changes; a party id claimed by two workspaces is
-reported in `conflicts` rather than merged.
+Imports party data from only the explicitly supplied former workspaces. The app
+calls this automatically for the cwd used to open or switch a window; it never
+scans every known folder. Windows paths are read directly and WSL paths through
+their `\\wsl.localhost\<distro>\...` filesystem view.
+
+The source is never removed or rewritten. Party ids, group filing, members,
+messages, roles, queues, layouts, transcripts, images, and party usage records
+are preserved; missing legacy member locations are backfilled with the source
+cwd. Per-source/per-party fingerprints make retries idempotent and resumable.
+A divergent duplicate id is reported in `conflicts` and is never overwritten.
 
 ```json
 { "ok": true, "workspaces": ["C:\proj"], "registered": 2, "backfilled": 3, "conflicts": [], "failures": [] }
@@ -2117,6 +2153,10 @@ reported in `conflicts` rather than merged.
 Default cwd per environment plus the ten most recent. `?check=1` re-probes every
 entry in its own environment (this can start a WSL distro), so the default is the
 cheap read.
+
+Successful party/member creation publishes the updated recent list to every
+open window immediately. Default/recent mutations do the same; a reload is not
+required for another window's picker or Settings screen to reflect them.
 
 The response also carries `appWorkspaceRoot` — `<userData>/workspaces`, created
 on demand. It is what the picker offers when the user has neither a remembered
@@ -2146,7 +2186,9 @@ Installed WSL distros, for the WSL side of the picker.
 `{ order: [groupId, …] }` — the whole new order, first to last. Not a
 "move X before Y": one shape that cannot disagree with itself, and re-sending it
 changes nothing. A group the caller did not mention (created in another window
-mid-drag) keeps its place at the end rather than being dropped.
+mid-drag) keeps its place at the end rather than being dropped. Repeating an id
+is rejected visibly; older registries containing duplicates are de-duplicated
+on read and repaired on the next write.
 
 ### `POST /api/party-groups/:id/rename`
 
@@ -2165,11 +2207,12 @@ deleted — something has to be the place parties land.
 세션의 `workspacePath`(어느 파티에 속하는지, 트랜스크립트가 어디 쓰이는지)와는
 분리되어 있어서, 멤버가 다른 폴더에서 돈다고 저장 위치가 따라 옮겨가지 않는다.
 
-한 가지 경계가 남아 있다: **WSL 위치의 멤버는 그 배포판의 엔진만 시작할 수 있다.**
-Claude 하네스는 Agent SDK 가 프로세스 안에서 CLI 를 띄우므로, 배포판 안에서 돌리려면
-엔진 자체가 그 배포판 안에 있어야 한다. 그래서 Windows 워크스페이스에서
-`POST /api/party/members/:name/start` 를 부르면 조용히 워크스페이스에서 실행하는 대신
-이유를 담은 메시지를 돌려준다. WSL 워크스페이스(엔진이 그 배포판 안)에서는 정상 동작한다.
+Windows 파티의 WSL 멤버는 선택한 배포판에 실행 엔진을 띄우고, 그 안에서 하네스만
+실행한다. 파티 상태·큐·트랜스크립트는 원래 Windows 워크스페이스가 계속 소유하며,
+세션 이벤트와 파티 도구 호출은 엔진 RPC 로 왕복한다. 따라서 같은 파티의 Windows/WSL
+멤버가 서로 메시지를 주고받을 수 있고, WSL 멤버의 응답도 원래 파티 탭에 저장된다.
+배포판 시작이나 원격 하네스 생성이 실패하면 해당 오류가 세션 이벤트와 스냅샷에
+표시되며 다른 cwd 로 대체 실행하지 않는다.
 
 ### `POST /api/cwd/browse`
 
@@ -2653,7 +2696,7 @@ protocol makes the same trade for the rewind snapshot: zero loss, and duplicates
 are the reducer's to absorb.
 
 A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
-`<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
+`<userData>/party-store/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
 reference, because base64-wrapped PNG is both the largest thing a transcript
 holds (measured at 564 KB for one block) and the one payload compression cannot
 shrink. Fetch the bytes with the next endpoint.
@@ -2787,8 +2830,8 @@ it means every tab was closed, and is honoured rather than reseeded.
 Sets that layout. Send `{ "layout": { ... } }` in the shape above.
 
 This is **party state, not window state**. Every window of this process showing
-that party moves with it, and the layout is stored with the workspace — so it
-survives a reinstall and follows the workspace to another machine. It used to
+that party moves with it, and the layout is stored in the Windows-global party
+store. It used to
 live in each renderer's `localStorage`, where two windows on one party each kept
 a private copy of a shared key: a tab closed in one stayed open in the other, and
 that window's next change wrote the closed tab back.
@@ -2802,6 +2845,59 @@ was told anything — re-sending is harmless. Panels with no `id` or no `tabs` a
 dropped, and a `focusedPanelId` naming no surviving panel falls back to the
 first, so a malformed body cannot leave the workbench unable to open anything.
 
+### `POST /api/parties/:partyId/members/:name/mcp-tools/:tool`
+
+Invokes one party tool through the **real stdio MCP transport** on the named
+member's execution host. This endpoint exists for deterministic product E2E: it
+launches the shipped `agentparty-app` MCP relay, performs JSON-RPC
+`initialize` + `tools/call`, lets the relay call that host's local automation
+API, and on WSL crosses the engine host channel back to the Windows-global
+`AppController`. It does not shortcut directly to the party service and does
+not spend a model turn.
+
+The party is explicit in the path so a focused window cannot change test scope.
+Tool arguments belong under `arguments`:
+
+```json
+{
+  "arguments": {
+    "to": "windows-worker",
+    "content": "MCP transport probe",
+    "interrupt": false
+  }
+}
+```
+
+The response identifies the transport and the host that actually ran it:
+
+```json
+{
+  "ok": true,
+  "transport": "mcp-stdio",
+  "member": "wsl-worker",
+  "partyId": "party-...",
+  "tool": "send",
+  "executionLocation": "wsl+Ubuntu-20.04:/home/dev/project",
+  "executionHost": "wsl",
+  "distro": "Ubuntu-20.04"
+}
+```
+
+`ok: false` is the real MCP tool result (for example a missing member or gate
+rejection). A broken relay, JSON-RPC framing error, unreachable host-local API,
+or host-channel failure is an HTTP error instead, so transport failures cannot
+masquerade as an ordinary tool refusal. This endpoint is desktop-local and is
+not published to the mobile RPC table.
+
+### `GET /api/parties/:partyId/members/:name/mcp-tools`
+
+Runs MCP `initialize` + `tools/list` through the same real host-local stdio
+relay. The response contains the canonical `tools` array plus the member's
+`executionLocation`, `executionHost`, optional `distro`, and
+`transport: "mcp-stdio"`. Use this endpoint to prove that the packaged relay on
+Windows or WSL can discover the complete current tool surface; reading the core
+schema directly does not exercise that transport.
+
 ## Harness Party API
 
 Harness skills and tools can call these local endpoints from inside a session. This is a local mechanical identity mechanism, not a public auth system.
@@ -2809,6 +2905,14 @@ Harness skills and tools can call these local endpoints from inside a session. T
 ### `GET /api/harness/party`
 
 Returns the same member/message state as `GET /api/party`.
+
+### `GET /api/harness/party/tool-spec`
+
+Returns the canonical MCP names, descriptions, JSON schemas, and read-only
+annotations. The shipped stdio relay fetches this on every `tools/list`, so it
+cannot retain a stale hand-copied subset when a party tool is added. This is an
+internal discovery endpoint; product E2E should normally use the member-scoped
+stdio endpoint above.
 
 ### `POST /api/harness/party/messages`
 
@@ -2834,6 +2938,49 @@ outside the app process — today Codex, via
 `scripts/agentparty-codex-mcp-server.mjs`. `:tool` is a party tool name
 (`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
 the body is that tool's arguments.
+
+#### `list-locations` and explicit `member-create.location`
+
+`list-locations` returns the currently supported execution hosts and the
+app-global default/recent cwd suggestions. A suggestion with `problem` remains
+visible for diagnosis but is not usable until repaired.
+
+```json
+{
+  "supportedHosts": [
+    { "host": "windows", "distroRequired": false, "pathStyle": "win32" },
+    { "host": "wsl", "distroRequired": true, "pathStyle": "posix" }
+  ],
+  "locations": [
+    { "host": "windows", "cwd": "C:\\Project\\App", "location": "C:\\Project\\App", "source": "recent", "usedAt": "..." },
+    { "host": "wsl", "distro": "Ubuntu-20.04", "cwd": "/home/me/app", "location": "wsl+Ubuntu-20.04:/home/me/app", "source": "recent", "usedAt": "..." }
+  ]
+}
+```
+
+`member-create` accepts that host-native tuple as `location`:
+
+```json
+{
+  "name": "windows-worker",
+  "role": "Build on Windows",
+  "location": { "host": "windows", "cwd": "C:\\Project\\App" }
+}
+```
+
+```json
+{
+  "name": "wsl-worker",
+  "role": "Build in Linux",
+  "location": { "host": "wsl", "distro": "Ubuntu-20.04", "cwd": "/home/me/app" }
+}
+```
+
+The app validates the cwd on the selected host before creating anything. WSL
+requires `distro`; Windows rejects it. Omitting `location` preserves the useful
+agent behavior of inheriting the caller's execution location. The `host` field
+is intentionally independent of cwd syntax, so native Linux/macOS hosts can be
+added later without changing this request shape.
 
 The caller is taken from `X-AgentParty-Member-Base64url` (the member name's
 UTF-8 bytes encoded as base64url) and never from the body, so an agent cannot
@@ -2881,6 +3028,12 @@ result IS part of the conversation, so returning them there would cost exactly
 what this avoids. The member consequently cannot see what it attached, and
 should say in its reply whatever the conversation needs to remember about it.
 
+For a WSL (or future remote-host) member, `path` is read and validated beside
+the harness before only the image envelope crosses to the Windows-global party
+owner. The desktop never tries to open a WSL-only `/...` path. The same rule is
+used by `discord-send-image`; host-local file access remains local even though
+party and Discord authority are desktop-owned.
+
 ## Window
 
 ### `POST /api/window/minimize`
@@ -2908,7 +3061,7 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, guide, sessions, usage, auth, agent, settings
+workbench, guide, usage, auth, agent, settings
 ```
 
 The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a
@@ -2951,11 +3104,12 @@ homes: `harness` becomes `agent/defaults`; `general`, `primer`, `gate`, and
 
 ## Windows & workspaces
 
-The app is one main process with **many windows**. Each window views one
-**workspace** (a cwd directory); its party/members/sessions are scoped to that
-workspace and persisted under `<workspace>/.agent_party_app/`. Several windows
-may be open at once, including multiple on the same workspace (they share one
-in-memory source of truth and live-sync).
+The app is one Windows-native main process with **many windows**. Each window
+retains a cwd/execution context for standalone sessions, CLI/auth probes, folder
+pickers, and lazy import of an old cwd-owned party store. Parties and party
+sessions are not scoped to that cwd: they share the Windows-global party engine
+and live-sync across every window. A party member's own `location` alone decides
+whether its harness runs natively on Windows or through a WSL execution worker.
 
 **Addressing:** workspace-scoped and window-scoped endpoints accept a target
 window via `?window=<id>` (or the `x-agentparty-window` header). When omitted,
@@ -2998,24 +3152,27 @@ Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
 ### `POST /api/windows`
 
 Opens a new window. Body `{ "workspacePath": "C:/path" }` (optional; defaults to
-the last-used workspace). Returns `{ id, workspacePath, focused }`.
+the last-used workspace). Returns `{ id, workspacePath, focused }`. The path
+must be absolute (including the POSIX path in a `wsl+<distro>:/...` URI); an
+invalid workspace is rejected before any window is created.
 
-`{ "partyId": "party-…" }` opens the window ON that party instead of whatever the
-workspace last selected. The party is pinned before the window can ask, so it
+`{ "partyId": "party-…" }` opens the window ON that global party. The party is
+pinned before the window can ask, so it
 cannot land on the party another window happens to be showing. This backs the
 sidebar's party right-click → **새 창에서 열기**, and it is how several parties are
-run side by side: every window belongs to ONE app process, so they share the
-workspace's engine and its sessions — a member already running is reused, not
-started again.
+run side by side: every window belongs to ONE app process and shares the global
+party engine — a member already running is reused, not started again.
 
-When `partyId` is supplied, it must exist in the target `workspacePath`. A
-mismatched pair returns an error and does not open a window; the server never
-silently substitutes that workspace's currently selected party.
+When `partyId` is supplied, it must exist in the global party store after the
+target cwd's lazy import. A missing id returns an error and does not open a
+window; the server never silently substitutes another party.
 
 ### `POST /api/windows/:id/workspace`
 
-Points an existing window at a different workspace. Body
-`{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
+Points an existing window at a different cwd/execution context. Body
+`{ "workspacePath": "C:/path" }`. That specific former workspace is lazily
+imported if it contains party data; the window's selected global party remains
+selected. Returns the window's fresh state.
 
 ## Approvals
 
@@ -3711,7 +3868,9 @@ Sends real Chromium pointer input to elements in the targeted Electron window
 without moving the operating-system cursor. This is the pointer counterpart of
 `/api/qa/input`; use it for controls whose behaviour depends on
 `pointerdown`/`pointerenter`/`pointerup` rather than a synthetic DOM click.
-Window-scoped (`?window=<id>`; focused window when omitted).
+Window-scoped (`?window=<id>`; focused window when omitted). The endpoint
+focuses that window first because Electron discards input sent to an unfocused
+window.
 
 ```json
 {
@@ -3725,7 +3884,9 @@ Window-scoped (`?window=<id>`; focused window when omitted).
 ```
 
 Each selector must match exactly one visible element. Actions are `move`,
-`down`, `up`, and `click` (the default). A sequence may contain 1–64 steps and
+`down`, `up`, `click` (the default), and `rightclick`. Use `rightclick` to open
+the same context menu a user gets from the secondary mouse button. A sequence
+may contain 1–64 steps and
 must finish with the pointer released. `delayMs` defaults to 40 and is capped at
 500 so React can process state between gesture steps. Returns the selector,
 action, and renderer-local coordinates used for every completed step.

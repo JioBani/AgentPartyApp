@@ -68,7 +68,9 @@ if (!hasWsl) {
 }
 
 const distro = process.env.QA_WSL_DISTRO || "";
-const wslWs = process.env.QA_WSL_WS || "/home/dev/agentparty-wsl-e2e";
+// Resolve through the distro's own $HOME. `/home/dev` was a machine-specific
+// assumption and made the WSL leg fail before the engine even launched.
+const wslWs = process.env.QA_WSL_WS || `$HOME/.agentparty-qa/workspaces/engine-e2e-${process.pid}`;
 const distroArgs = distro ? ["-d", distro] : [];
 const toWsl = (p) => execFileSync("wsl.exe", [...distroArgs, "-e", "wslpath", "-a", p], { encoding: "utf8" }).trim();
 const wslBundle = toWsl(bundlePath);
@@ -84,13 +86,13 @@ const script = [
   `mkdir -p "${wslWs}"`,
   `node "$QA/engine-e2e-driver.mjs" "${wslWs}" "$QA/storage" "$QA/engine-host.mjs"`,
   "echo '--- workspace fs check ---'",
-  `test -f "${wslWs}/.agent_party_app/state.json" && echo STATE_OK`,
+  `test -f "${wslWs}/.agent_party_app/parties.json" && echo PARTY_STORE_OK`,
   `df -T "${wslWs}/.agent_party_app" | tail -1`,
 ].join(" && ");
 const wslOut = execFileSync("wsl.exe", [...distroArgs, "-e", "bash", "-lc", script], { encoding: "utf8" });
 process.stdout.write(wslOut);
 
-const ok = wslOut.includes("ENGINE E2E PASSED") && wslOut.includes("STATE_OK") && /\bext4\b/.test(wslOut);
+const ok = wslOut.includes("ENGINE E2E PASSED") && wslOut.includes("PARTY_STORE_OK") && /\bext4\b/.test(wslOut);
 console.log("");
 if (!ok) {
   console.error("WSL ENGINE E2E FAILED");

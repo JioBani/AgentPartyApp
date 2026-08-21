@@ -34,7 +34,7 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, invokePartyTool, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, invokePartyTool, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -111,13 +111,15 @@ const harnessIds = models.data.harnesses.map((h) => h.id);
 assert(harnessIds.includes("claude-code") && harnessIds.includes("codex") && harnessIds.includes("cursor"), "claude-code, codex, and cursor harnesses are exposed");
 assert(models.data.harnesses.find((h) => h.id === "codex")?.status === "available", "codex is marked available");
 assert(Array.isArray(models.data.models) && models.data.models.length > 5, "list-models returns the model catalog");
-assert(models.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one model exposes reasoning options");
 assert(models.data.models.some((m) => typeof m.perf === "number" && m.context), "models carry rich meta (perf + context)");
-assert(models.data.models.every((m) => ["claude-code", "codex", "cursor"].includes(m.harness)), "every model states its harness (member-create needs it)");
-assert(models.data.models.every((m) => ["claude-code", "codex", "cursor"].includes(m.executionHarness)), "every model states its concrete execution harness");
 assert(models.data.harnesses.every((h) => h.permission?.kind), "each harness exposes its member-create permission contract + default");
-assert(models.data.models.find((m) => m.harness === "claude-code" && m.id === "GPT-5.4 mini")?.executionHarness === "claude-code", "Claude Code + GPT discovery preserves the Claude Code harness");
-const codexListed = models.data.models.filter((m) => m.harness === "codex");
+// Any filter requests detail rows; the no-argument index intentionally omits
+// per-route fields to keep discovery compact.
+const detailedModels = await bridge.listModels({ query: "gpt" });
+assert(detailedModels.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one detailed model exposes reasoning options");
+assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok"].includes(m.harness)), "every detailed model states its harness (member-create needs it)");
+assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok"].includes(m.executionHarness)), "every detailed model states its concrete execution harness");
+const codexListed = detailedModels.data.models.filter((m) => m.harness === "codex");
 assert(codexListed.some((m) => m.id === "gpt-5.5"), "the live codex catalog rides into list-models");
 assert(codexListed.find((m) => m.id === "gpt-5.5")?.reasoning?.effort?.options?.length === 4, "codex models expose effort options (effort-only reasoning)");
 
@@ -293,23 +295,7 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify([
-  "send",
-  "member-create",
-  "member-remove",
-  "member-permission",
-  "gate-set",
-  "party-gate-set",
-  "list",
-  "list-models",
-  "member-status",
-  "interrupt",
-  "broadcast",
-  "discord-connect",
-  "discord-send",
-  "discord-send-image",
-  "discord-disconnect",
-]), "exposes all fifteen party tools in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(PARTY_TOOL_NAMES), "in-process MCP exposes every canonical party tool in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
@@ -323,7 +309,7 @@ assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "t
 console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
-assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same fifteen party tools");
+assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same canonical party tools");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");

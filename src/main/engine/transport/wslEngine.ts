@@ -37,18 +37,19 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
   let child: ChildProcess | undefined;
 
   const transport: Promise<RemoteTransport> = (async () => {
+    assertWslEngineOptions(options);
     await assertNode(options.distro);
     const wslBundle = await wslpath(options.distro, options.serverBundleWinPath);
     const serverDir = "$HOME/.agent_party_app/server";
     const serverPath = `${serverDir}/engine-server.mjs`;
-    await runBash(options.distro, `mkdir -p "${serverDir}" && cp "${wslBundle}" "${serverPath}"`);
+    await runBash(options.distro, `mkdir -p "${serverDir}" && cp ${bashQuote(wslBundle)} "${serverPath}"`);
     if (options.codexMcpServerWinPath) {
       const wslMcpScript = await wslpath(options.distro, options.codexMcpServerWinPath);
-      await runBash(options.distro, `cp "${wslMcpScript}" "${serverDir}/agentparty-codex-mcp-server.mjs"`);
+      await runBash(options.distro, `cp ${bashQuote(wslMcpScript)} "${serverDir}/agentparty-codex-mcp-server.mjs"`);
     }
     if (options.acpRelayWinPath) {
       const wslRelayScript = await wslpath(options.distro, options.acpRelayWinPath);
-      await runBash(options.distro, `cp "${wslRelayScript}" "${serverDir}/agentparty-acp-mcp-relay.mjs"`);
+      await runBash(options.distro, `cp ${bashQuote(wslRelayScript)} "${serverDir}/agentparty-acp-mcp-relay.mjs"`);
     }
     await ensureSdk(options.distro, serverDir);
 
@@ -94,7 +95,7 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
         "-d", options.distro, "-e", "bash", "-lc",
         // cd into the server dir so the engine resolves @anthropic-ai/claude-agent-sdk
         // from ~/.agent_party_app/server/node_modules (provisioned for real sessions).
-        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}${options.acpRelayWinPath ? 'export AGENTPARTY_ACP_RELAY_SCRIPT="$HOME/.agent_party_app/server/agentparty-acp-mcp-relay.mjs" && ' : ""}exec node engine-server.mjs --workspace "${options.workspacePosix}" --storage "$HOME/.agent_party_app" --distro "${options.distro}"`,
+        `${codexRuntimeExports.join(" ")} cd "${serverDir}" && ${options.codexMcpServerWinPath ? 'export AGENTPARTY_CODEX_MCP_SERVER="$HOME/.agent_party_app/server/agentparty-codex-mcp-server.mjs" && ' : ""}${options.acpRelayWinPath ? 'export AGENTPARTY_ACP_RELAY_SCRIPT="$HOME/.agent_party_app/server/agentparty-acp-mcp-relay.mjs" && ' : ""}exec node engine-server.mjs --workspace ${bashQuote(options.workspacePosix)} --storage "$HOME/.agent_party_app" --distro ${bashQuote(options.distro)}`,
       ],
       { stdio: ["pipe", "pipe", "pipe"], env },
     );
@@ -117,6 +118,16 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
       }
     },
   };
+}
+
+/** Refuses values before any of them are interpolated into the Bash command. */
+function assertWslEngineOptions(options: WslEngineOptions): void {
+  if (!options.distro.trim()) {
+    throw new Error("A WSL engine requires a distro name.");
+  }
+  if (!options.workspacePosix.startsWith("/")) {
+    throw new Error(`WSL engine workspace '${options.workspacePosix}' must be an absolute POSIX path.`);
+  }
 }
 
 

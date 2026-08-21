@@ -49,7 +49,7 @@ async function computedFont(selector) {
  * `/api/capture` refuses to produce on its own.
  */
 async function fontCardOffset() {
-  const result = await post("/api/measure", { selector: ".set-font-field", limit: 1, scroll: { selector: ".legacy-view", to: 0 } });
+  const result = await post("/api/measure", { selector: ".set-font-field", limit: 1, scroll: { selector: ".program-scroll", to: 0 } });
   if (!result?.ok) throw new Error(`could not locate the 글꼴 card: ${result?.error || "no result"}`);
   // Leave room above the first field for the card's own "글꼴" header — a shot
   // that starts mid-card does not show which card is being reviewed.
@@ -132,10 +132,10 @@ async function main() {
     // Show the picker and capture it. Scroll to the card and PROVE it is on
     // screen — a screenshot of the wrong part of a settings screen looks exactly
     // as plausible as the right one.
-    await post("/api/navigation", { view: "automation" });
+    await post("/api/navigation", { view: "settings", tab: "general" });
     await delay(700);
     const shotBefore = path.join(outDir, "font-family-picker.png");
-    assert((await post("/api/capture", { path: shotBefore, scrollY: await fontCardOffset(), scrollSelector: ".legacy-view" })).ok, `captured 글꼴 카드 → ${shotBefore}`);
+    assert((await post("/api/capture", { path: shotBefore, scrollY: await fontCardOffset(), scrollSelector: ".program-scroll" })).ok, `captured 글꼴 카드 → ${shotBefore}`);
     assert(await fontCardOnScreen(), "the 글꼴 card is fully inside the viewport in that capture");
 
     // --- the picker itself lists the enumerated fonts --------------------
@@ -167,7 +167,7 @@ async function main() {
     assert(/Malgun Gothic/i.test(bodyMalgun), `body switched to 맑은 고딕 live (${bodyMalgun.slice(0, 60)}…)`);
     assert(!/Maplestory/i.test(bodyMalgun), "the previous family is gone from the stack");
     const shotAfter = path.join(outDir, "font-family-malgun.png");
-    assert((await post("/api/capture", { path: shotAfter, scrollY: await fontCardOffset(), scrollSelector: ".legacy-view" })).ok, `captured after UI font change → ${shotAfter}`);
+    assert((await post("/api/capture", { path: shotAfter, scrollY: await fontCardOffset(), scrollSelector: ".program-scroll" })).ok, `captured after UI font change → ${shotAfter}`);
 
     // --- the code font is independent of the UI font ---------------------
     await post("/api/settings", { fonts: { sans: "Malgun Gothic", mono: "Consolas" } });

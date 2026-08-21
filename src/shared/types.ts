@@ -10,6 +10,7 @@ import type { MemberQueueState } from "./messageQueue";
 import type { MemberStatus } from "./memberDisplayStatus";
 import type { PendingApproval } from "./approvals";
 import type { DiscordBridgeSettings } from "./discordBridge";
+import type { SidebarDrawerSettings } from "./sidebarDrawers";
 import type { PartyGroup } from "./partyGroups";
 import type { CwdPreferences } from "./memberLocation";
 import type { MobileSettings } from "./mobileProtocol";
@@ -18,7 +19,7 @@ import type { FontSettings } from "./appFonts";
 import type { ThemePreference } from "./appTheme";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
-import type { PartyPrimerSettings } from "./partyPrimer";
+import type { PartyIdentity, PartyPrimerSettings } from "./partyPrimer";
 import type { UpdateChannel } from "./appUpdate";
 import type { AppLocale } from "./appLocale";
 import type { EnvironmentCheck, EnvironmentProbeStep } from "./environment";
@@ -106,6 +107,13 @@ export interface AppSettings {
    * See `shared/appTheme.ts`.
    */
   theme: ThemePreference;
+  /**
+   * The sidebar's party and member drawers: expanded or collapsed, and how
+   * wide. Settings rather than renderer-local storage so an agent can collapse
+   * a drawer over the API exactly as the user does. See
+   * `shared/sidebarDrawers.ts`.
+   */
+  sidebarDrawers: SidebarDrawerSettings;
   /**
    * The UI and code fonts, as catalog ids. Applied by writing the selected
    * stacks into `--font-sans` / `--font-mono`, which every surface already
@@ -463,6 +471,13 @@ export interface PartyCommandResult {
   partyMessage?: PartyMessage;
   session?: SessionView;
   /**
+   * Fresh destination snapshot when selecting this party also moved the
+   * calling window to another workspace. Selection and the move are committed
+   * together by AppController, so the renderer never has to perform a fragile
+   * switch-then-select pair.
+   */
+  switchedState?: InitialAppState;
+  /**
    * True when the message was parked in the member's queue instead of being
    * delivered, because the member was busy. The caller MUST distinguish the two:
    * the renderer echoes a delivered message into the transcript, but a queued one
@@ -584,6 +599,20 @@ export interface CreateSessionInput {
   /** Codex two-axis safety model; used only when the harness is Codex. */
   codexPolicy?: CodexPolicy;
   cursorPolicy?: CursorPolicy;
+}
+
+/**
+ * Serializable half of a party session binding.
+ *
+ * A cross-host member runs its harness in another engine process, so the
+ * in-process {@link import("../core/partyBridge").PartyBridge} functions cannot
+ * cross the RPC boundary. The execution engine receives this identity instead
+ * and rebuilds a bridge that delegates each party tool to the engine that owns
+ * `ownerWorkspace`.
+ */
+export interface HostedPartySessionBinding {
+  ownerWorkspace: string;
+  identity: PartyIdentity;
 }
 
 export interface WindowInfo {

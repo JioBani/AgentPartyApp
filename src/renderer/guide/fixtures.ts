@@ -17,6 +17,7 @@ import type { PartyGate } from "../../shared/messageGate";
 import type { TranscriptBlock } from "../../shared/transcript";
 import type { WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { ClaudeSessionSnapshot } from "../../core/events";
+import { DEFAULT_SIDEBAR_DRAWERS } from "../../shared/sidebarDrawers";
 
 
 export const WORKSPACE = "C:\\work\\todo-api";
@@ -256,6 +257,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
       composer: { ...DEFAULT_COMPOSER_SETTINGS },
       memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
       favoriteModels: [],
+      sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
     },
     workspace: { uri: WORKSPACE, kind: "local", path: WORKSPACE },
     auth,

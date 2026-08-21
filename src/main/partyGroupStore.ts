@@ -5,12 +5,10 @@
  * whole point: opening the app from a different directory must show the same
  * groups and the same parties (README §4.3).
  *
- * What it does NOT hold is as important. A party's members, messages, layout and
- * transcripts stay exactly where they are — under that party's own workspace
- * `.agent_party_app/` — so this change costs no party id, session id or
- * transcript (README §10.5). The registry stores only what the LIST needs plus
- * the `workspacePath` that says where the detail is, which is what lets the
- * sidebar draw a hundred parties without opening one.
+ * The registry stores only sidebar summaries and group filing. Full party,
+ * member, message, layout, queue, transcript and usage data live in the one
+ * Windows-global party store. `workspacePath` remains in the row as an internal
+ * storage identity and as a legacy migration hint; it is not party ownership.
  *
  * Writes are atomic and last-writer-wins. Several windows share one file, and a
  * group rename is not worth a lock protocol; the loser of a race loses one
@@ -21,6 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getUserDataDir } from "./userDataDir";
 import { DEFAULT_PARTY_GROUP_ID, type PartyGroup, type RegisteredParty } from "../shared/partyGroups";
+import { workspaceKey } from "../shared/workspaceLocation";
 import { log } from "./logger";
 
 export type { RegisteredParty };
@@ -97,7 +96,10 @@ export class PartyGroupStore {
       updatedAt: now,
     };
     log("info", "party", "party group created", { groupId: group.id, name: group.name });
-    return { state: this.write({ ...state, groups: [...state.groups, group] }), group };
+    // PREPENDED, not appended: the new group appears at the top, next to the
+    // button that made it, instead of below however many groups already
+    // exist — where the user would have to go looking for it.
+    return { state: this.write({ ...state, groups: [group, ...state.groups] }), group };
   }
 
   moveParty(partyId: string, groupId: string): PartyGroupState {
@@ -156,6 +158,16 @@ export class PartyGroupStore {
    */
   reorderGroups(order: string[]): PartyGroupState {
     const state = this.read();
+    const requested = new Set<string>();
+    for (const id of order) {
+      if (requested.has(id)) {
+        // Repeating an id used to persist the same folder twice. Reject the
+        // malformed whole-order command visibly; silently de-duplicating it
+        // would tell an automation caller its invalid mutation succeeded.
+        throw new Error(`Group order contains duplicate id '${id}'.`);
+      }
+      requested.add(id);
+    }
     const known = new Map(state.groups.map((group) => [group.id, group] as const));
     const ordered = order.map((id) => known.get(id)).filter((group): group is PartyGroup => Boolean(group));
     const seen = new Set(ordered.map((group) => group.id));
@@ -199,33 +211,90 @@ export class PartyGroupStore {
   }
 
   /**
-   * Adds or refreshes one party's summary.
+   * Reconciles the complete party list for one workspace in ONE registry write.
    *
-   * `groupId` is a SEED for a party this store has never seen; it never moves
-   * one that is already filed. Which folder a party is in belongs to this
-   * registry, and {@link moveParty} is the only thing that changes it.
-   *
-   * The workspace's own `party.json` also carries a `groupId`, written when the
-   * party was created. That value goes stale the moment the user moves the
-   * party, and every routine counts-refresh passed it back in — which filed the
-   * party back into the group it was BORN in as soon as anyone created the next
-   * member or party. Ignoring it here is what makes a move stick.
+   * The desktop receives this snapshot from the workspace's own engine, which
+   * is the only correct reader for a remote WSL path. Keeping the whole replace
+   * here also prevents consumers from observing a half-registered workspace
+   * while several parties are added one at a time. An incoming `groupId` seeds
+   * only a new party; an existing party keeps its registry filing, so refreshing
+   * stale workspace metadata can never undo an explicit {@link moveParty}.
    */
-  upsertParty(summary: RegisteredParty): PartyGroupState {
+  reconcileWorkspace(workspacePath: string, summaries: RegisteredParty[]): { state: PartyGroupState; changed: boolean } {
     const state = this.read();
-    const existing = state.parties.find((party) => party.id === summary.id);
-    if (existing && existing.workspacePath !== summary.workspacePath) {
-      return this.write(recordConflict(state, summary.id, [existing.workspacePath, summary.workspacePath]));
+    const targetKey = workspaceKey(workspacePath);
+    const incomingIds = new Set(summaries.map((party) => party.id));
+    let parties = state.parties.filter((party) => workspaceKey(party.workspacePath) !== targetKey || incomingIds.has(party.id));
+    let conflicts = state.conflicts;
+
+    for (const summary of summaries) {
+      const at = parties.findIndex((party) => party.id === summary.id);
+      const existing = at >= 0 ? parties[at] : undefined;
+      if (existing && workspaceKey(existing.workspacePath) !== targetKey) {
+        const conflicted = recordConflict({ ...state, parties, conflicts }, summary.id, [existing.workspacePath, summary.workspacePath]);
+        conflicts = conflicted.conflicts;
+        continue;
+      }
+      const merged: RegisteredParty = existing
+        ? { ...existing, ...summary, workspacePath, groupId: existing.groupId }
+        : { ...summary, workspacePath, groupId: summary.groupId || DEFAULT_PARTY_GROUP_ID };
+      if (at >= 0) {
+        parties = parties.map((party, index) => (index === at ? merged : party));
+      } else {
+        parties = [...parties, merged];
+      }
     }
-    const merged: RegisteredParty = existing
-      ? { ...existing, ...summary, groupId: existing.groupId }
-      : { ...summary, groupId: summary.groupId || DEFAULT_PARTY_GROUP_ID };
-    return this.write({
-      ...state,
-      parties: existing
-        ? state.parties.map((party) => (party.id === summary.id ? merged : party))
-        : [...state.parties, merged],
-    });
+
+    const next = withDefaultGroup({ ...state, parties, conflicts });
+    if (JSON.stringify(next) === JSON.stringify(state)) {
+      return { state, changed: false };
+    }
+    return { state: this.write(next), changed: true };
+  }
+
+  /**
+   * Publishes the parties now held by the Windows-global party store.
+   *
+   * A legacy row may name the cwd it used to live under. Matching by party id
+   * deliberately adopts that row instead of treating the copy as a conflict:
+   * the importer already proved/copies the complete party, and preserving the
+   * row is what preserves the user's group filing. Rows for workspaces the user
+   * has not opened yet stay on disk as migration hints, but callers hide them
+   * until their data has actually reached the global store.
+   */
+  reconcileGlobal(workspacePath: string, summaries: RegisteredParty[]): { state: PartyGroupState; changed: boolean } {
+    const state = this.read();
+    let parties = [...state.parties];
+    const incomingIds = new Set(summaries.map((party) => party.id));
+
+    // Remove global rows whose party was deleted, without removing legacy rows
+    // that have not yet been imported from their cwd.
+    parties = parties.filter((party) => workspaceKey(party.workspacePath) !== workspaceKey(workspacePath) || incomingIds.has(party.id));
+    for (const summary of summaries) {
+      const at = parties.findIndex((party) => party.id === summary.id);
+      const existing = at >= 0 ? parties[at] : undefined;
+      const merged: RegisteredParty = existing
+        ? { ...existing, ...summary, workspacePath, groupId: existing.groupId }
+        : { ...summary, workspacePath, groupId: summary.groupId || DEFAULT_PARTY_GROUP_ID };
+      if (at >= 0) {
+        parties[at] = merged;
+      } else {
+        parties.push(merged);
+      }
+    }
+
+    const conflicts = state.conflicts?.filter((entry) => !incomingIds.has(entry.partyId));
+    const next = withDefaultGroup({ ...state, parties, conflicts: conflicts?.length ? conflicts : undefined });
+    if (JSON.stringify(next) === JSON.stringify(state)) {
+      return { state, changed: false };
+    }
+    return { state: this.write(next), changed: true };
+  }
+
+  /** Only parties already present in the global store are user-visible. */
+  globalParties(workspacePath: string): RegisteredParty[] {
+    const target = workspaceKey(workspacePath);
+    return this.read().parties.filter((party) => workspaceKey(party.workspacePath) === target);
   }
 
   removeParty(partyId: string): PartyGroupState {
@@ -275,9 +344,18 @@ export class PartyGroupStore {
  */
 function withDefaultGroup(state: PartyGroupState): PartyGroupState {
   const now = new Date().toISOString();
-  const groups = state.groups.some((group) => group.kind === "default")
-    ? state.groups
-    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default" as const, createdAt: now, updatedAt: now }, ...state.groups];
+  // Repair registries written by older versions whose reorder endpoint could
+  // persist one group id more than once. First occurrence wins because that is
+  // the position the caller explicitly placed first.
+  const seen = new Set<string>();
+  const uniqueGroups = state.groups.filter((group) => {
+    if (seen.has(group.id)) return false;
+    seen.add(group.id);
+    return true;
+  });
+  const groups = uniqueGroups.some((group) => group.kind === "default")
+    ? uniqueGroups
+    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default" as const, createdAt: now, updatedAt: now }, ...uniqueGroups];
   const fallback = groups.find((group) => group.kind === "default")?.id ?? DEFAULT_PARTY_GROUP_ID;
   const known = new Set(groups.map((group) => group.id));
   const parties = state.parties.map((party) => (known.has(party.groupId) ? party : { ...party, groupId: fallback }));

@@ -1,4 +1,4 @@
-import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
+import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, HostedPartySessionBinding, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import { requireCodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -24,6 +24,8 @@ import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
 import { log } from "../logger";
 import type { ApprovalDelivery } from "../../shared/approvals";
+import { resolveHarnessOriginal } from "../harnessOriginal";
+import { invokePartyMcpTransport as runPartyMcpTransport, listPartyMcpTransport } from "../partyMcpTransport";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -67,6 +69,10 @@ export class LocalEngine implements EngineConnection {
     return this.party.listAll();
   }
 
+  async backfillMemberLocations() {
+    return this.party.backfillMemberLocations();
+  }
+
   async createParty(input: CreatePartyInput) {
     return this.party.createParty(input);
   }
@@ -95,6 +101,24 @@ export class LocalEngine implements EngineConnection {
 
   async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string) {
     return this.party.invokePartyToolAs(member, tool, args, partyId);
+  }
+
+  async invokePartyMcpTransport(member: string, partyId: string, tool: string, args: unknown) {
+    return runPartyMcpTransport({
+      automationBaseUrl: this.deps.sessionManager.partyMcpAutomationBaseUrl(),
+      member,
+      party: partyId,
+      tool,
+      args,
+    });
+  }
+
+  async listPartyMcpTools(member: string, partyId: string) {
+    return listPartyMcpTransport({
+      automationBaseUrl: this.deps.sessionManager.partyMcpAutomationBaseUrl(),
+      member,
+      party: partyId,
+    });
   }
 
   async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }) {
@@ -153,6 +177,14 @@ export class LocalEngine implements EngineConnection {
     return this.party.getHarnessOriginal(name, partyId);
   }
 
+  async getHarnessOriginalTarget(name: string, partyId?: string) {
+    return this.party.getHarnessOriginalTarget(name, partyId);
+  }
+
+  async resolveHarnessOriginal(harness: string | undefined, sessionId: string | undefined, cwd: string | undefined) {
+    return { ok: true as const, original: resolveHarnessOriginal(harness, sessionId, cwd) ?? null };
+  }
+
   async getCliContinuationTarget(name: string, partyId?: string) {
     return this.party.getCliContinuationTarget(name, partyId);
   }
@@ -204,6 +236,10 @@ export class LocalEngine implements EngineConnection {
   // --- Sessions -----------------------------------------------------------
   async createSession(input?: CreateSessionInput | string): Promise<SessionView> {
     return this.deps.sessionManager.createSession(this.withWorkspace(input));
+  }
+
+  async createHostedSession(input: CreateSessionInput, resumeSessionId: string | undefined, binding: HostedPartySessionBinding): Promise<SessionView> {
+    return this.deps.sessionManager.createHostedSession(this.withWorkspace(input), resumeSessionId, binding);
   }
 
   listResumableSessions() {
@@ -278,6 +314,10 @@ export class LocalEngine implements EngineConnection {
     // Capture the runtime change on the owning member so a reopen/restart
     // restores the user's chosen mode instead of reverting to the start-time value.
     this.party.syncMemberPermissionMode(sessionId, permissionMode);
+  }
+
+  async setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void> {
+    this.deps.sessionManager.setSessionDebugMode(sessionId, enabled);
   }
 
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {

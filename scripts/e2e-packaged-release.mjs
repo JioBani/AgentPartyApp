@@ -39,10 +39,10 @@ try {
   const native = await get("/api/auth/native/claude?refresh=1");
   const environment = await get("/api/environment?refresh=1");
   assert(update.update?.currentVersion === expectedVersion, `packaged app reports version ${update.update?.currentVersion}`);
-  assert(state.settings.workspacePath === workspace, "packaged app serves the isolated QA workspace");
+  assert(samePath(state.settings.workspacePath, workspace), "packaged app serves the isolated QA workspace");
   assert(native.host?.label === "Windows", "native Claude auth identifies the Windows execution host");
   assert(environment.checks?.every((check) => check.host?.kind === "windows"), "packaged diagnostics identify every local check as Windows");
-  assert(environment.checks?.every((check) => check.host?.workspace === workspace), "packaged diagnostics preserve the exact workspace cwd");
+  assert(environment.checks?.every((check) => samePath(check.host?.workspace, workspace)), "packaged diagnostics preserve the exact workspace cwd");
   await post("/api/navigation", { view: "runtime", tab: "environment" });
   await delay(2_000);
   const capture = await post("/api/capture", { path: capturePath });
@@ -84,6 +84,16 @@ function kill() {
 function assert(value, message) {
   if (!value) throw new Error(`Assertion failed: ${message}`);
   console.log(`  ok: ${message}`);
+}
+
+function samePath(actual, expected) {
+  if (typeof actual !== "string" || typeof expected !== "string") return false;
+  const normalize = (value) => path.resolve(value).replaceAll("\\", "/");
+  const normalizedActual = normalize(actual);
+  const normalizedExpected = normalize(expected);
+  return process.platform === "win32"
+    ? normalizedActual.toLowerCase() === normalizedExpected.toLowerCase()
+    : normalizedActual === normalizedExpected;
 }
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
