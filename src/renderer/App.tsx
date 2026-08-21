@@ -1049,11 +1049,13 @@ export function App() {
       });
       await applyPartyResult(result);
       setCurrentView("workbench");
+      return true;
     } catch (error) {
       // The sidebar clears its input on submit, which is indistinguishable from
       // success — so a swallowed failure here read as "the party was created"
       // while the list stayed empty.
       noticeOnFailure("파티를 만들지 못했습니다")(error);
+      return false;
     }
   }
 
@@ -1216,8 +1218,10 @@ export function App() {
         location: location ? serializeMemberLocation(location) : undefined,
       });
       await applyPartyResult(result);
+      return true;
     } catch (error) {
       noticeOnFailure(`'${input.name}' 멤버를 만들지 못했습니다`)(error);
+      return false;
     }
   }
 
@@ -2065,7 +2069,7 @@ export function App() {
                 cwdPrefs={cwdPrefs}
                 appWorkspaceRoot={appWorkspaceRoot}
                 now={nowTick}
-                onCreateParty={(input) => void createParty(input)}
+                onCreateParty={(input) => createParty(input)}
                 onCreateGroup={(name) => void createPartyGroup(name)}
                 onMovePartyToGroup={(partyId, groupId) => void movePartyToGroup(partyId, groupId)}
                 onRenameGroup={(groupId, name) => void renamePartyGroup(groupId, name)}
@@ -2073,7 +2077,7 @@ export function App() {
                 onReorderGroups={(order) => void reorderPartyGroups(order)}
                 onBrowseCwd={browseCwd}
                 wsl={wslBrowsing}
-                onCreateMember={(input) => void createMemberInline(input)}
+                onCreateMember={(input) => createMemberInline(input)}
                 onRemoveMember={(name) => void removeMemberDirect(name)}
                 onSetMemberKeepAwake={(name, keepAwake) => void setMemberKeepAwake(name, keepAwake)}
                 onSleepMember={(name) => void sleepMember(name)}

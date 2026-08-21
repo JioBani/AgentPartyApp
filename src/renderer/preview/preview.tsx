@@ -117,7 +117,7 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
           wsl={{ distros: GALLERY_WSL_DISTROS }}
           onCreateGroup={noop}
           onCancel={noop}
-          onCreate={noop}
+          onCreate={async () => true}
         />
       </ModalStage>
     ),

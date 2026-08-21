@@ -60,6 +60,7 @@ interface MemberWizardProps {
    * can land the user on the step it prefilled.
    */
   startStep?: number;
+  submitting?: boolean;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -118,7 +119,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
@@ -268,7 +269,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   }
 
   function create() {
-    if (!canCreate) {
+    if (!canCreate || submitting) {
       return;
     }
     onCreate({
@@ -303,7 +304,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * choice they just made would be worse than no button at all.
    */
   function createWithDefaults() {
-    if (!canCreate || !cwdPrefs.windowsDefault) {
+    if (!canCreate || !cwdPrefs.windowsDefault || submitting) {
       return;
     }
     // The cwd is the one field the defaults CANNOT fill in silently: a member
@@ -514,7 +515,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         </div>
 
         <footer className="wb-modal-foot wb-wizard-foot">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-1764" /></button>
+          <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-1764" /></button>
           <div className="wb-modal-actions">
             {stepIndex > 0 && (
               <button type="button" className="wb-btn wb-btn-ghost wb-wizard-back" onClick={() => setStepIndex((current) => current - 1)}>
@@ -525,7 +526,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               <button
                 type="button"
                 className="wb-btn wb-btn-ghost"
-                disabled={!canCreate}
+                disabled={!canCreate || submitting}
                 title={localized("STR-1766", [defaultSummary])}
                 onClick={createWithDefaults}
               >
@@ -533,7 +534,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               </button>
             )}
             {isLastStep ? (
-              <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
+              <button type="button" className="wb-btn wb-btn-accent" aria-busy={submitting} disabled={!canCreate || submitting} onClick={create}>
                 <UserPlus size={14} />  <LocalizedText id="STR-1768" />
               </button>
             ) : (

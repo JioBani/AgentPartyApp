@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Folder, FolderOpen, FolderPlus } from "lucide-react";
+import { ChevronDown, Folder, FolderOpen, FolderPlus, Plus } from "lucide-react";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -44,6 +44,10 @@ export interface PartyGroupListProps {
   /** The whole new order, first to last, after a group was dragged. */
   onReorderGroups?: (order: string[]) => void;
   onCreateGroup: () => void;
+  /** Opens the existing new-party flow with this group preselected. */
+  onCreateParty?: (groupId: string) => void;
+  /** Prevents a second create flow while one is already being submitted. */
+  createPartyDisabled?: boolean;
   /** Marks the party row the context menu is currently open on. */
   menuPartyId?: string;
   /** Marks the group the context menu is currently open on. */
@@ -52,7 +56,8 @@ export interface PartyGroupListProps {
 
 export function PartyGroupList({
   groups, activePartyId, openGroupIds, now, onToggleGroup, onSelectParty,
-  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, menuPartyId, menuGroupId,
+  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, onCreateParty,
+  createPartyDisabled = false, menuPartyId, menuGroupId,
 }: PartyGroupListProps) {
   /** The group under the pointer during a drag, for the drop outline. */
   const [dropGroupId, setDropGroupId] = useState<string | undefined>(undefined);
@@ -303,6 +308,19 @@ export function PartyGroupList({
               <span className="wb-mono wb-group-count">{parties.length}</span>
             </button>
             <div className="wb-group-parties">
+              {onCreateParty && (
+                <button
+                  type="button"
+                  className="wb-group-add wb-party-add"
+                  title={localized("STR-2084")}
+                  aria-label={`${localized("STR-2084")}: ${group.name}`}
+                  disabled={createPartyDisabled}
+                  onClick={() => onCreateParty(group.id)}
+                >
+                  <Plus size={13} />
+                  <LocalizedText id="STR-2084" />
+                </button>
+              )}
               {parties.map((party) => (
                 <button
                   type="button"
