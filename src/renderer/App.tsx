@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, BookOpen, FolderOpen, KeyRound, Maximize2, Minus, Palette, Settings, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { BarChart3, BookOpen, Flag, KeyRound, Maximize2, Minus, Palette, Settings, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
@@ -45,7 +45,7 @@ import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
-import { displayPath, initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
+import { initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
 import type { ApprovalDelivery } from "../shared/approvals";
 import { AgentSettingsView, AuthView, SettingsView } from "./app/secondaryViews";
@@ -128,7 +128,15 @@ export function App() {
    * splitting them is that you can put the party list away while working with a
    * party's members — and get it back in one click.
    */
-  const drawers = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
+  const [drawerOpen, setDrawerOpen] = useState(() => ({
+    party: (state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS).party.open,
+    member: (state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS).member.open,
+  }));
+  const savedDrawers = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
+  const drawers = {
+    party: { ...savedDrawers.party, open: drawerOpen.party },
+    member: { ...savedDrawers.member, open: drawerOpen.member },
+  };
   // The members whose tabs are FRONTMOST in a panel (drives unread counting).
   const [visibleMemberScope, setVisibleMemberScope] = useState<{ partyId: string; names: string[] }>({ partyId: "", names: [] });
   // Transcript data and transcript DOM have separate lifecycles. The former is
@@ -1304,9 +1312,13 @@ export function App() {
    * window is told about it instead of drifting until reload.
    */
   async function saveDrawer(which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) {
+    if (typeof patch.open === "boolean") {
+      setDrawerOpen((current) => ({ ...current, [which]: patch.open as boolean }));
+    }
+    if (patch.width === undefined) return;
     const current = state.settings.sidebarDrawers || DEFAULT_SIDEBAR_DRAWERS;
     const settings = await window.agentParty.updateSettings({
-      sidebarDrawers: { ...current, [which]: { ...current[which], ...patch } },
+      sidebarDrawers: { ...current, [which]: { ...current[which], width: patch.width } },
     });
     setState((existing) => ({ ...existing, settings }));
   }
@@ -1608,6 +1620,12 @@ export function App() {
       const result = await window.agentParty.sendMemberMessage(name, text, attachments, {
         interrupt: options?.interrupt ?? state.settings.composer?.interruptOnSend === true,
       });
+      if (!result.ok) {
+        if (known) {
+          setLogsBySession((current) => removeBlock(current, known, echoId));
+        }
+        throw new Error(result.message || `Could not send a message to ${name}.`);
+      }
       await applyPartyResult(result, false);
       if (result.queued) {
         // The member was busy, so this is WAITING — not sent. It belongs in the
@@ -1957,7 +1975,7 @@ export function App() {
     <div className="app-shell" data-workspace={state.settings.workspacePath}>
       <div className="app-titlebar">
         <div className="titlebar-drag">
-          <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span><small className="brand-sub">{viewTitle(currentView, t)}</small></div>
+          <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span>{currentView !== "workbench" && <small className="brand-sub">{viewTitle(currentView, t)}</small>}</div>
           <div className="titlebar-theme-wrap no-drag" ref={themeMenuRef}>
             <button
               ref={themeMenuTriggerRef}
@@ -2028,19 +2046,19 @@ export function App() {
         <main className="program-main">
           {currentView === "workbench" ? (
             <>
-              <header className="screen-header">
-                <div className="screen-title">
-                  <h1>{viewTitle("workbench", t)}</h1>
+              <header className="screen-header screen-header-party">
+                <div className="screen-title screen-title-party">
                   {/* The PARTY, not the workspace path. Parties are app-global
                       now and every member runs in its own cwd, so the directory
                       the app was launched from described nothing on screen. */}
-                  <span className="screen-party" title={activePartyName}>{activePartyName}</span>
+                  <span className="screen-party" title={`현재 파티: ${activePartyName || "선택 없음"}`}>
+                    <span className="screen-party-label">현재 파티</span>
+                    <Flag size={12} strokeWidth={2.5} />
+                    <strong>{activePartyName || "선택 없음"}</strong>
+                  </span>
                   <p>{t("shell.workbenchDescription")}</p>
                 </div>
-                <div className="screen-actions">
-                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> {t("shell.workspace")}</button>
-                  {usagePill}
-                </div>
+                <div className="screen-actions">{usagePill}</div>
               </header>
               <Workbench
                 parties={state.party.parties || []}
@@ -2097,18 +2115,8 @@ export function App() {
                 <div className="screen-title">
                   <h1>{viewTitle(currentView, t)}</h1>
                   <p>{viewSubtitle(currentView, t)}</p>
-                  <div className="screen-chips">
-                    <span className="screen-chip">
-                      <FolderOpen size={13} />
-                      <span className="wb-mono">
-                        {state.workspace?.kind === "wsl" && <span className="host-badge" title={localized("STR-0825", [state.workspace.distro])}>WSL · {state.workspace.distro}</span>}
-                        {state.workspace?.path || displayPath(state.settings.workspacePath) || t("shell.noWorkspace")}
-                      </span>
-                    </span>
-                  </div>
                 </div>
                 <div className="screen-actions">
-                  <button className="ghost-btn" onClick={chooseWorkspace}><FolderOpen size={15} /> {t("shell.workspace")}</button>
                   {usagePill}
                 </div>
               </header>

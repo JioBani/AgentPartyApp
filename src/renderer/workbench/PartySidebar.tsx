@@ -18,7 +18,7 @@ import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { PartyGroupList } from "./PartyGroupList";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
-import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
+import { CwdPicker, ENV_LABEL, EnvIcon, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
@@ -798,7 +798,8 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
   const [rule, setRule] = useState("간결하게 보내세요. 오케스트레이터를 거치지 말고 담당 멤버에게 직접 소통하세요.");
   // A party cannot be created without somewhere for `main` to run (README §7).
   const locationProblem = location ? checkLocationShape(location) : undefined;
-  const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem;
+  const distroProblem = selectableWslDistroError(location, wsl);
+  const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem && !distroProblem;
 
   function create() {
     if (!canCreate || !location) {
@@ -859,7 +860,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             wsl={wsl}
             hint={<><LocalizedText id="STR-3693" /> <b>main</b> <LocalizedText id="STR-3692" /></>}
           />
-          {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+          {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
 
           <div className="wb-gate-block">
             <label className="wb-gate-toggle-row">
