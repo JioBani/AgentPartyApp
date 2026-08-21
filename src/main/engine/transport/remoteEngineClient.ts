@@ -234,6 +234,8 @@ export class RemoteEngineClient implements EngineConnection {
   getMemberTranscript(name: string, partyId?: string) { return this.call<Result<"getMemberTranscript">>("getMemberTranscript", name, partyId); }
   getTranscriptImage(file: string) { return this.call<Result<"getTranscriptImage">>("getTranscriptImage", file); }
   getHarnessOriginal(name: string, partyId?: string) { return this.call<Result<"getHarnessOriginal">>("getHarnessOriginal", name, partyId); }
+  getHarnessOriginalTarget(name: string, partyId?: string) { return this.call<Result<"getHarnessOriginalTarget">>("getHarnessOriginalTarget", name, partyId); }
+  resolveHarnessOriginal(harness: string | undefined, sessionId: string | undefined, cwd: string | undefined) { return this.call<Result<"resolveHarnessOriginal">>("resolveHarnessOriginal", harness, sessionId, cwd); }
   getCliContinuationTarget(name: string, partyId?: string) { return this.call<Result<"getCliContinuationTarget">>("getCliContinuationTarget", name, partyId); }
   beginCliContinuation(name: string, partyId?: string) { return this.call<Result<"beginCliContinuation">>("beginCliContinuation", name, partyId); }
   recordCliContinuationProcess(name: string, handoffId: string, process: { terminalPid: number; host: "local" | "wsl"; distro?: string }, partyId?: string) { return this.call<Result<"recordCliContinuationProcess">>("recordCliContinuationProcess", name, handoffId, process, partyId); }

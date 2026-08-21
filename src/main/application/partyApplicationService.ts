@@ -18,6 +18,7 @@ import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../s
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
 import { CWD_PROBLEM_MESSAGE, parseMemberLocation, serializeMemberLocation } from "../../shared/memberLocation";
+import { workspaceKey } from "../../shared/workspaceLocation";
 import { getHostDistro, isHostDistro } from "../hostIdentity";
 import type { ImageAttachment } from "../../shared/attachments";
 import { DEFAULT_MAX_IMAGE_BYTES, base64ByteLength } from "../../shared/attachments";
@@ -125,9 +126,9 @@ export class PartyApplicationService {
 
   /**
    * "Which party is active" is NOT a property of this service — it is per-WINDOW
-   * state owned by the desktop (AppController), because one engine serves every
-   * window of a workspace (two windows opened by running `agent-party` twice share
-   * this instance). So every view / member operation takes an EXPLICIT `partyId`
+   * state owned by the desktop (AppController), because the global party engine
+   * serves every window (two launches folded into one process share this
+   * instance). So every view / member operation takes an EXPLICIT `partyId`
    * from the calling window; the service never resolves the active party from a
    * single shared field (that made two windows switch in lock-step).
    *
@@ -187,8 +188,8 @@ export class PartyApplicationService {
     // its conversation on the next start. Quitting or closing right after a turn
     // lost it for the same reason. Owning the fact here makes all three cases the
     // same case. See #19.
-    this.deps.sessionManager.on("events", (payload: { sessionId?: string; events?: { type?: string }[] }) => {
-      if (!payload?.sessionId || !payload.events?.length) {
+    this.deps.sessionManager.on("events", (payload: { sessionId?: string; workspace?: string; events?: { type?: string }[] }) => {
+      if (!payload?.sessionId || !payload.events?.length || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
       this.recordTranscriptEvents(payload.sessionId, payload.events);
@@ -202,8 +203,8 @@ export class PartyApplicationService {
     // interrupted, errors out, or is force-stopped never completes — and a queue
     // that only drains on clean completion would strand every message behind
     // one stuck turn, which is precisely the state it exists to make visible.
-    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; snapshot?: { status?: unknown } }) => {
-      if (!payload?.sessionId) {
+    this.deps.sessionManager.on("snapshot", (payload: { sessionId?: string; workspace?: string; snapshot?: { status?: unknown } }) => {
+      if (!payload?.sessionId || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
       const busy = BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
@@ -226,6 +227,17 @@ export class PartyApplicationService {
       }
     });
     this.startIdleSweep();
+  }
+
+  /**
+   * A SessionManager is shared by every local workspace context. Only the party
+   * service whose storage workspace was put on the session may fold its events,
+   * drain its queue, or persist its harness thread. Without this boundary an old
+   * cwd store left behind after lazy import can react to the global copy's live
+   * session as a second owner.
+   */
+  private ownsSessionEvent(workspace: string | undefined): boolean {
+    return workspace !== undefined && workspaceKey(workspace) === workspaceKey(this.workspacePath());
   }
 
   /**
@@ -431,7 +443,7 @@ export class PartyApplicationService {
   }
 
   /**
-   * Every party in this workspace WITH every member, not just the viewed one.
+   * Every party in this repository WITH every member, not just the viewed one.
    *
    * `list` deliberately returns one party's members — that is what a window
    * renders. The app-global registry needs the other answer: refreshing it from
@@ -1303,12 +1315,28 @@ export class PartyApplicationService {
    * session yet, or the harness does not keep one we can name.
    */
   getHarnessOriginal(name: string, partyId?: string): { ok: true; original: HarnessOriginal | null } {
+    const target = this.getHarnessOriginalTarget(name, partyId);
+    const cwd = target.location ? parseMemberLocation(target.location).cwd : undefined;
+    return { ok: true, original: resolveHarnessOriginal(target.runtime, target.sessionId, cwd) ?? null };
+  }
+
+  /**
+   * Host-neutral coordinates for the harness-owned conversation archive.
+   *
+   * Party data lives in the desktop-global store, while the archive belongs to
+   * the host where this member executes. Keeping discovery coordinates separate
+   * lets AppController dispatch the filesystem lookup to Windows or the member's
+   * WSL engine without moving or duplicating party ownership.
+   */
+  getHarnessOriginalTarget(name: string, partyId?: string) {
     const member = this.requireMember(this.readState(), name, partyId);
     const sessionId = member.harnessSessionId
       || (member.sessionId ? this.deps.sessionManager.harnessSessionId(member.sessionId) : undefined);
-    // A member's cwd IS its workspace (the locked workspace model), which is
-    // exactly the key Claude Code derives its directory name from.
-    return { ok: true, original: resolveHarnessOriginal(member.runtime, sessionId, this.workspacePath()) ?? null };
+    return {
+      runtime: member.runtime,
+      sessionId,
+      location: member.location,
+    };
   }
 
   /**

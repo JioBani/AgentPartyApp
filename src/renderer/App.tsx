@@ -63,8 +63,8 @@ import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState 
  * delete+recreate reuses the same name. Keying by `(partyId, name, createdAt)`
  * isolates same-named members across parties (feedback #5: party-switch bleed)
  * and treats a recreated member as fresh (feedback #7: recreate keeps old
- * messages), while the on-disk store — already partitioned by (workspace, party,
- * member) — stays the source of truth.
+ * messages), while the global on-disk store — partitioned by (party, member) —
+ * stays the source of truth.
  */
 function memberKey(member: { partyId?: string; name: string; createdAt?: string }): string {
   return `${member.partyId || "default"}::${member.name}::${member.createdAt || ""}`;
@@ -960,19 +960,11 @@ export function App() {
     }
   }
 
-  /**
-   * Switches to a party, following it to another workspace when it lives there.
-   *
-   * The list is app-global now, so a row in the sidebar may belong to a
-   * directory this window is not open on. Selecting it there would fail with
-   * "no such party" — the workspace moves first, and only then the selection.
-   */
+  /** Selects from the Windows-global party store without changing this window's cwd. */
   async function selectParty(partyId: string) {
     try {
-      // Main resolves the app-global party's home, validates the party and
-      // hydrates that workspace before committing the window move. Keeping this
-      // as one call prevents a stale row from moving main while this renderer
-      // remains on its old workspace after selection fails.
+      // Main validates the global row and returns the selected party atomically,
+      // so a stale sidebar row cannot partially change renderer state.
       const result = await window.agentParty.selectParty(partyId);
       await applyPartyResult(result, true, result.switchedState);
     } catch (error) {
@@ -1855,11 +1847,9 @@ export function App() {
 
   return (
     <I18nProvider locale={state.settings.locale}>
-    {/* `data-workspace` is the workspace the RENDERER has applied, which is
-        not the same question as "which workspace does the window registry
-        say". A cross-workspace party switch has to replace this side's state
-        too, and the header stopped showing a path when the party name took
-        its place — so this attribute is what a QA run asserts on. */}
+    {/* `data-workspace` is the execution/migration context the renderer has
+        applied. Party selection is global and deliberately does not change it;
+        QA uses this attribute to verify that separation. */}
     <div className="app-shell" data-workspace={state.settings.workspacePath}>
       <div className="app-titlebar">
         <div className="titlebar-drag">

@@ -169,7 +169,9 @@ try {
   );
   assert(staleRow.elements?.length === 1, "the registered cross-workspace party is visible in the second window");
 
-  const partyIndexPath = path.join(workspace, ".agent_party_app", "parties.json");
+  // Parties are Windows-global now; the current window cwd must not influence
+  // which index selection validates against.
+  const partyIndexPath = path.join(userData, "party-store", ".agent_party_app", "parties.json");
   const partyIndex = JSON.parse(fs.readFileSync(partyIndexPath, "utf8"));
   partyIndex.parties = partyIndex.parties.filter((party) => party.id !== partyId);
   if (partyIndex.lastActivePartyId === partyId) delete partyIndex.lastActivePartyId;

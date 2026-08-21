@@ -119,6 +119,19 @@ function memberOf(views: MemberView[], name: string): MemberView | undefined {
   return views.find((view) => view.name === name);
 }
 
+/** Best default for a new member: where this party's main member already runs. */
+function partyExecutionLocation(views: MemberView[]): MemberExecutionLocation | undefined {
+  const stored = (views.find((view) => view.name === "main") || views[0])?.member.location;
+  if (!stored) {
+    return undefined;
+  }
+  try {
+    return parseMemberLocation(stored);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The member half of the sidebar's right-click menu.
  *
@@ -558,6 +571,7 @@ export function PartySidebar(props: PartySidebarProps) {
             harnessDefaults={harnessDefaults}
             cwdPrefs={cwdPrefs}
             appWorkspaceRoot={appWorkspaceRoot}
+            initialLocation={partyExecutionLocation(views)}
             now={now}
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}

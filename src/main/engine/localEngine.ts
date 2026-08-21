@@ -24,6 +24,7 @@ import { getSettings } from "../settings";
 import { aggregateUsage, selectTurns, type TokenUsageAggregate, type TokenUsageQuery, type TokenUsageTurnsQuery, type TurnUsageRecord } from "../../shared/tokenUsage";
 import { log } from "../logger";
 import type { ApprovalDelivery } from "../../shared/approvals";
+import { resolveHarnessOriginal } from "../harnessOriginal";
 
 export interface LocalEngineDeps {
   workspacePath: string;
@@ -155,6 +156,14 @@ export class LocalEngine implements EngineConnection {
 
   async getHarnessOriginal(name: string, partyId?: string) {
     return this.party.getHarnessOriginal(name, partyId);
+  }
+
+  async getHarnessOriginalTarget(name: string, partyId?: string) {
+    return this.party.getHarnessOriginalTarget(name, partyId);
+  }
+
+  async resolveHarnessOriginal(harness: string | undefined, sessionId: string | undefined, cwd: string | undefined) {
+    return { ok: true as const, original: resolveHarnessOriginal(harness, sessionId, cwd) ?? null };
   }
 
   async getCliContinuationTarget(name: string, partyId?: string) {

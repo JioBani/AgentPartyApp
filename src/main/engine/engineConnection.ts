@@ -169,6 +169,10 @@ export interface EngineConnection {
   getTranscriptImage(file: string): Promise<ReturnType<PartyApplicationService["getTranscriptImage"]>>;
   /** Where the harness keeps its own untrimmed copy of this member's conversation. */
   getHarnessOriginal(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
+  /** Host-neutral lookup coordinates, including the member's real execution location. */
+  getHarnessOriginalTarget(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getHarnessOriginalTarget"]>>;
+  /** Resolves a harness archive on this engine's own Windows/WSL filesystem. */
+  resolveHarnessOriginal(harness: string | undefined, sessionId: string | undefined, cwd: string | undefined): Promise<ReturnType<PartyApplicationService["getHarnessOriginal"]>>;
   /** Resumable native-CLI target, or the concrete reason this member cannot be handed off. */
   getCliContinuationTarget(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getCliContinuationTarget"]>>;
   beginCliContinuation(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["beginCliContinuation"]>>;

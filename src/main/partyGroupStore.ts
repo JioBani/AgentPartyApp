@@ -5,12 +5,10 @@
  * whole point: opening the app from a different directory must show the same
  * groups and the same parties (README §4.3).
  *
- * What it does NOT hold is as important. A party's members, messages, layout and
- * transcripts stay exactly where they are — under that party's own workspace
- * `.agent_party_app/` — so this change costs no party id, session id or
- * transcript (README §10.5). The registry stores only what the LIST needs plus
- * the `workspacePath` that says where the detail is, which is what lets the
- * sidebar draw a hundred parties without opening one.
+ * The registry stores only sidebar summaries and group filing. Full party,
+ * member, message, layout, queue, transcript and usage data live in the one
+ * Windows-global party store. `workspacePath` remains in the row as an internal
+ * storage identity and as a legacy migration hint; it is not party ownership.
  *
  * Writes are atomic and last-writer-wins. Several windows share one file, and a
  * group rename is not worth a lock protocol; the loser of a race loses one
@@ -252,6 +250,51 @@ export class PartyGroupStore {
       return { state, changed: false };
     }
     return { state: this.write(next), changed: true };
+  }
+
+  /**
+   * Publishes the parties now held by the Windows-global party store.
+   *
+   * A legacy row may name the cwd it used to live under. Matching by party id
+   * deliberately adopts that row instead of treating the copy as a conflict:
+   * the importer already proved/copies the complete party, and preserving the
+   * row is what preserves the user's group filing. Rows for workspaces the user
+   * has not opened yet stay on disk as migration hints, but callers hide them
+   * until their data has actually reached the global store.
+   */
+  reconcileGlobal(workspacePath: string, summaries: RegisteredParty[]): { state: PartyGroupState; changed: boolean } {
+    const state = this.read();
+    let parties = [...state.parties];
+    const incomingIds = new Set(summaries.map((party) => party.id));
+
+    // Remove global rows whose party was deleted, without removing legacy rows
+    // that have not yet been imported from their cwd.
+    parties = parties.filter((party) => workspaceKey(party.workspacePath) !== workspaceKey(workspacePath) || incomingIds.has(party.id));
+    for (const summary of summaries) {
+      const at = parties.findIndex((party) => party.id === summary.id);
+      const existing = at >= 0 ? parties[at] : undefined;
+      const merged: RegisteredParty = existing
+        ? { ...existing, ...summary, workspacePath, groupId: existing.groupId }
+        : { ...summary, workspacePath, groupId: summary.groupId || DEFAULT_PARTY_GROUP_ID };
+      if (at >= 0) {
+        parties[at] = merged;
+      } else {
+        parties.push(merged);
+      }
+    }
+
+    const conflicts = state.conflicts?.filter((entry) => !incomingIds.has(entry.partyId));
+    const next = withDefaultGroup({ ...state, parties, conflicts: conflicts?.length ? conflicts : undefined });
+    if (JSON.stringify(next) === JSON.stringify(state)) {
+      return { state, changed: false };
+    }
+    return { state: this.write(next), changed: true };
+  }
+
+  /** Only parties already present in the global store are user-visible. */
+  globalParties(workspacePath: string): RegisteredParty[] {
+    const target = workspaceKey(workspacePath);
+    return this.read().parties.filter((party) => workspaceKey(party.workspacePath) === target);
   }
 
   removeParty(partyId: string): PartyGroupState {

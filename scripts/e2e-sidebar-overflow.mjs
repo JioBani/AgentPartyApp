@@ -25,7 +25,7 @@ import { firstBaseUrl } from "./lib/discovery.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-sidebar-overflow-e2e-workspace");
 const userData = path.join(os.tmpdir(), "agentparty-sidebar-overflow-e2e-user-data");
-const PARTIES = 16;
+const PARTIES = 24;
 const MEMBERS = 26;
 
 let base = "";
@@ -63,6 +63,13 @@ async function main() {
     await post("/api/party/members/main/open");
     await delay(800);
     cdp = await attachRenderer();
+    const dismissedGuideOffer = await cdp.eval(`(() => {
+      const dismiss = document.querySelector("[data-guide-offer] .ghost-btn");
+      if (!(dismiss instanceof HTMLElement)) return false;
+      dismiss.click();
+      return true;
+    })()`);
+    if (dismissedGuideOffer) await delay(150);
 
     // Overflowing POPUPS are the other half of #11: a menu must be bounded and
     // fully on-window, otherwise its tail is unreachable the same way. Checked
@@ -159,7 +166,7 @@ async function main() {
     assert(counts.members === MEMBERS + 1, `sidebar renders all ${MEMBERS + 1} members (got ${counts.members})`);
 
     for (const [label, list, row] of [
-      ["party", ".wb-party-list", ".wb-party-row"],
+      ["party", ".wb-party-scroll", ".wb-party-row"],
       ["member", ".wb-member-list", ".wb-member-row"],
     ]) {
       const m = await cdp.eval(measureList(list, row));
@@ -171,10 +178,51 @@ async function main() {
       assert(m.lastRowReachable, `last ${label} row is reachable by click after scrolling to the bottom (hit "${m.hitText}")`);
     }
 
+    // Reproduce the exact lower-row context-menu bug with native pointer input.
+    // The previous measurement left the member list at its bottom; the last row
+    // is therefore the lowest reachable member in the real viewport.
+    const lastMember = await cdp.eval(`(() => {
+      const rows = document.querySelectorAll(".wb-member-list .wb-member-row");
+      const row = rows[rows.length - 1];
+      if (!row) return undefined;
+      const rect = row.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, top: rect.top, bottom: rect.bottom };
+    })()`);
+    assert(Boolean(lastMember), "the bottom member row has a native pointer target");
+    if (lastMember) {
+      await cdp.rightClick(lastMember.x, lastMember.y);
+      await delay(250);
+    }
+    const contextMenu = await cdp.eval(`(() => {
+      const el = document.querySelector(".wb-ctx-menu");
+      if (!el) return { found: false };
+      const rect = el.getBoundingClientRect();
+      return {
+        found: true,
+        visible: getComputedStyle(el).visibility !== "hidden",
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      };
+    })()`);
+    assert(contextMenu.found && contextMenu.visible, "right-click opens the bottom member's context menu");
+    assert(
+      contextMenu.found
+        && contextMenu.top >= 0
+        && contextMenu.left >= 0
+        && contextMenu.bottom <= contextMenu.viewport.height
+        && contextMenu.right <= contextMenu.viewport.width,
+      "the bottom member context menu stays fully inside the viewport",
+    );
+    assert(contextMenu.found && lastMember && contextMenu.bottom < lastMember.y, "when it would be clipped below, the context menu opens upward");
+    await cdp.eval(`document.dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+
     // The parties section must not eat the whole sidebar: Members has to stay
     // visible and usable next to it (this is what `flex:none` + the cap buy).
     const sections = await cdp.eval(`(() => {
-      const label = [...document.querySelectorAll(".wb-section-label")].find((el) => el.textContent.includes("Members"));
+      const label = document.querySelector(".wb-member-drawer .wb-drawer-head");
       const list = document.querySelector(".wb-member-list");
       const r = label?.getBoundingClientRect();
       return {
@@ -182,7 +230,7 @@ async function main() {
         memberListHeight: list ? list.clientHeight : 0,
       };
     })()`);
-    assert(sections.labelVisible, "the Members section label is still on screen with 16 parties listed");
+    assert(sections.labelVisible, `the Members drawer header is still on screen with ${PARTIES} parties listed`);
     assert(sections.memberListHeight > 100, `the Members list keeps usable height (${sections.memberListHeight}px)`);
 
     const shot = path.join(os.tmpdir(), "sidebar-overflow-e2e.png");
@@ -289,6 +337,11 @@ async function attachRenderer() {
       }
       return result.result.value;
     },
+    async rightClick(x, y) {
+      const point = { x: Math.round(x), y: Math.round(y), button: "right", clickCount: 1 };
+      await send("Input.dispatchMouseEvent", { type: "mousePressed", buttons: 2, ...point });
+      await send("Input.dispatchMouseEvent", { type: "mouseReleased", buttons: 0, ...point });
+    },
     close() { socket.close(); },
   };
 }
@@ -306,7 +359,7 @@ async function waitForApi() {
 async function getJson(u) { const r = await fetch(base + u); if (!r.ok) throw new Error(`${u} returned ${r.status}`); return r.json(); }
 async function post(u, b) { const r = await fetch(base + u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); if (!r.ok) throw new Error(`${u} returned ${r.status}: ${await r.text()}`); return r.json(); }
 async function removePath(target) { for (let i = 0; i < 10; i += 1) { try { fs.rmSync(target, { recursive: true, force: true }); return; } catch (e) { if (e?.code !== "EBUSY" || i === 9) return; await delay(300); } } }
-function waitForExit(child) { return new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("App did not exit after close API.")), 10000); child.once("exit", () => { clearTimeout(t); resolve(); }); }); }
+function waitForExit(child) { return new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("App did not exit after close API.")), 30000); child.once("exit", () => { clearTimeout(t); resolve(); }); }); }
 function killProcessTree(pid) { if (!pid) return; try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { try { process.kill(pid); } catch { /* gone */ } } }
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 

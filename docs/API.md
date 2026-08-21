@@ -1952,15 +1952,18 @@ interactive `/mcp` (the SDK doesn't expose an OAuth flow).
 
 Lists parties, the selected party, its members, and recent party messages.
 
-Party state is stored in the targeted window's workspace as a shared
-`.agent_party_app/parties.json` index plus per-party
-`.agent_party_app/parties/<id>/party.json` detail files. Legacy
-`.agent_party_app/state.json` and `.agentparty/state.json` stores are imported
-into that split layout on first read. Member role and transcript files remain
-under `.agent_party_app/parties/<id>/members`; a member session starts at its
-stored execution `location` (legacy members are backfilled with their owning
-workspace). The result is scoped to the targeted window's workspace
-(`?window=<id>`; focused window when omitted).
+Party state is Windows-desktop-global. Groups, parties, members, messages,
+queues, layouts, transcripts, images, and party-attributed usage live under
+`<userData>/party-store/.agent_party_app/`; a window's cwd does not own them.
+`?window=<id>` only chooses that window's active party. A member session starts
+at its immutable execution `location`, which may be a Windows path or a
+`wsl+<distro>:` path.
+
+When a former workspace is explicitly opened, its `.agent_party_app` (or older
+`.agentparty`) party store is copied into the Windows-global store before the
+window hydrates. The source is left untouched, ids and group filing are
+preserved, and `<userData>/party-store/.agent_party_app/workspace-imports.json`
+makes the import resumable and idempotent.
 
 ```json
 {
@@ -2025,13 +2028,9 @@ falls back to the request's workspace. `groupId` defaults to the default group.
 
 ### `POST /api/parties/:id/select`
 
-Selects the active party for member creation and compatibility endpoints. For a
-desktop window, the id is resolved through the app-global party registry: if its
-party lives in another workspace, AgentParty validates and hydrates that
-workspace **before** committing the window move, then returns `switchedState` in
-the command result. A stale/missing party therefore fails without leaving the
-main process and renderer on different workspaces. Calls with no desktop window
-remain scoped to the request workspace and never move a person's UI.
+Selects the active party for member creation and compatibility endpoints. Party
+lookup is global and selecting one never changes the window's cwd. A missing id
+fails explicitly after the global registry has been reconciled.
 
 ### `POST /api/parties/:id/delete`
 
@@ -2053,9 +2052,11 @@ case-insensitive, while the POSIX path inside a distro remains case-sensitive.
 
 ### `GET /api/party-groups`
 
-Every group and every registered party. A party carries `workspacePath` (where
-its members and transcripts live), `memberCount`, `runningCount` and the
-`windowsCount`/`wslCount` split. Reading this never opens a party.
+Every group and every party already present in the Windows-global store. A party
+summary carries `memberCount`, `runningCount` and the `windowsCount`/`wslCount`
+split. Its `workspacePath` is the internal global-store identity, not an owner
+cwd. Legacy registry rows stay hidden until their former workspace is opened
+and imported.
 
 ### `POST /api/party-groups`
 
@@ -2068,17 +2069,16 @@ transcripts are untouched — a group is a folder, not a location.
 
 ### `POST /api/party-groups/migrate`
 
-Registers parties that predate groups, and gives members with no location the
-workspace their party was stored in. Idempotent — it runs at boot and on every
-workspace switch, and re-running reports `registered: 0, backfilled: 0`. Nothing
-moves on disk and no id changes; a party id claimed by two workspaces is
-reported in `conflicts` rather than merged.
+Imports party data from only the explicitly supplied former workspaces. The app
+calls this automatically for the cwd used to open or switch a window; it never
+scans every known folder. Windows paths are read directly and WSL paths through
+their `\\wsl.localhost\<distro>\...` filesystem view.
 
-The migration reads through the workspace's owning engine. Windows workspaces
-are read in the desktop process and `wsl+<distro>:` workspaces are read by the
-engine inside that distro; the desktop never treats a WSL URI as a Windows file
-path. Once registered, WSL summaries remain in the app-global list on later
-native Windows launches without starting the distro merely to draw the list.
+The source is never removed or rewritten. Party ids, group filing, members,
+messages, roles, queues, layouts, transcripts, images, and party usage records
+are preserved; missing legacy member locations are backfilled with the source
+cwd. Per-source/per-party fingerprints make retries idempotent and resumable.
+A divergent duplicate id is reported in `conflicts` and is never overwritten.
 
 ```json
 { "ok": true, "workspaces": ["C:\proj"], "registered": 2, "backfilled": 3, "conflicts": [], "failures": [] }
@@ -2632,7 +2632,7 @@ protocol makes the same trade for the rewind snapshot: zero loss, and duplicates
 are the reducer's to absorb.
 
 A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
-`<workspace>/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
+`<userData>/party-store/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
 reference, because base64-wrapped PNG is both the largest thing a transcript
 holds (measured at 564 KB for one block) and the one payload compression cannot
 shrink. Fetch the bytes with the next endpoint.
@@ -2766,8 +2766,8 @@ it means every tab was closed, and is honoured rather than reseeded.
 Sets that layout. Send `{ "layout": { ... } }` in the shape above.
 
 This is **party state, not window state**. Every window of this process showing
-that party moves with it, and the layout is stored with the workspace — so it
-survives a reinstall and follows the workspace to another machine. It used to
+that party moves with it, and the layout is stored in the Windows-global party
+store. It used to
 live in each renderer's `localStorage`, where two windows on one party each kept
 a private copy of a shared key: a tab closed in one stayed open in the other, and
 that window's next change wrote the closed tab back.
@@ -2930,11 +2930,12 @@ homes: `harness` becomes `agent/defaults`; `general`, `primer`, `gate`, and
 
 ## Windows & workspaces
 
-The app is one main process with **many windows**. Each window views one
-**workspace** (a cwd directory); its party/members/sessions are scoped to that
-workspace and persisted under `<workspace>/.agent_party_app/`. Several windows
-may be open at once, including multiple on the same workspace (they share one
-in-memory source of truth and live-sync).
+The app is one Windows-native main process with **many windows**. Each window
+retains a cwd/execution context for standalone sessions, CLI/auth probes, folder
+pickers, and lazy import of an old cwd-owned party store. Parties and party
+sessions are not scoped to that cwd: they share the Windows-global party engine
+and live-sync across every window. A party member's own `location` alone decides
+whether its harness runs natively on Windows or through a WSL execution worker.
 
 **Addressing:** workspace-scoped and window-scoped endpoints accept a target
 window via `?window=<id>` (or the `x-agentparty-window` header). When omitted,
@@ -2981,22 +2982,23 @@ the last-used workspace). Returns `{ id, workspacePath, focused }`. The path
 must be absolute (including the POSIX path in a `wsl+<distro>:/...` URI); an
 invalid workspace is rejected before any window is created.
 
-`{ "partyId": "party-…" }` opens the window ON that party instead of whatever the
-workspace last selected. The party is pinned before the window can ask, so it
+`{ "partyId": "party-…" }` opens the window ON that global party. The party is
+pinned before the window can ask, so it
 cannot land on the party another window happens to be showing. This backs the
 sidebar's party right-click → **새 창에서 열기**, and it is how several parties are
-run side by side: every window belongs to ONE app process, so they share the
-workspace's engine and its sessions — a member already running is reused, not
-started again.
+run side by side: every window belongs to ONE app process and shares the global
+party engine — a member already running is reused, not started again.
 
-When `partyId` is supplied, it must exist in the target `workspacePath`. A
-mismatched pair returns an error and does not open a window; the server never
-silently substitutes that workspace's currently selected party.
+When `partyId` is supplied, it must exist in the global party store after the
+target cwd's lazy import. A missing id returns an error and does not open a
+window; the server never silently substitutes another party.
 
 ### `POST /api/windows/:id/workspace`
 
-Points an existing window at a different workspace. Body
-`{ "workspacePath": "C:/path" }`. Returns the window's fresh state.
+Points an existing window at a different cwd/execution context. Body
+`{ "workspacePath": "C:/path" }`. That specific former workspace is lazily
+imported if it contains party data; the window's selected global party remains
+selected. Returns the window's fresh state.
 
 ## Approvals
 

@@ -40,6 +40,8 @@ interface MemberWizardProps {
   /** Default + recent cwds per environment, used to seed and offer the location. */
   cwdPrefs: CwdPreferences;
   appWorkspaceRoot: string;
+  /** Active party's execution context, preferred over an unrelated app fallback. */
+  initialLocation?: MemberExecutionLocation;
   /** Frozen "now" for the recency column, so previews render deterministically. */
   now: number;
   /**
@@ -116,7 +118,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
@@ -124,14 +126,13 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   const [harness, setHarness] = useState<string>(defaultProfile.harness || "claude-code");
   const [role, setRole] = useState("");
   /**
-   * Where this member will run, forever. Seeded from the Windows default because
-   * this is a Windows app; an environment with no default starts EMPTY rather
-   * than borrowing the other environment's path, which would create the member
-   * somewhere the user never chose.
+   * Where this member will run, forever. Prefer the active party's main member:
+   * a WSL party opened from a Windows-native app should still suggest WSL.
    */
   // Starts on the last cwd that worked, not empty: an empty field made every
   // new member a folder hunt. See `suggestedCwd`.
-  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() => suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
+  const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() =>
+    initialLocation ? { ...initialLocation } : suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   /** Steps already reached, so the rail can jump back to one without re-walking. */
   const [maxStep, setMaxStep] = useState(startStep);
