@@ -252,6 +252,24 @@ console.log("\nharness-held messages are disclosed, not hidden:");
   });
   assert(cutInView.rows[0].cutIn === true && cutInView.rows[1].cutIn === false, "cut-in rows are flagged in the view model");
   assert(/지금 처리/.test(cutInView.note), "the header note explains why cut-in rows are ahead");
+
+  // Merging needs a second message to mean anything. With one waiting, the
+  // preference is remembered but nothing merges — and the row must not render
+  // as a merge block, which would say "these go together" about a single item.
+  const queued = (n) => ({
+    items: Array.from({ length: n }, (_, index) => ({ id: `q${index}`, text: `m${index}`, from: null, at: "2026-08-02T00:00:00.000Z" })),
+    merge: true,
+  });
+  const one = V.buildQueueView({ queue: queued(1), density: "wide", working: true, detached: false, memberName: "backend", openRows: new Set() });
+  const two = V.buildQueueView({ queue: queued(2), density: "wide", working: true, detached: false, memberName: "backend", openRows: new Set() });
+  assert(one.canMerge === false, "one waiting message cannot be merged with anything");
+  assert(one.merge === false, "…so the effective merge is off however the preference is set");
+  assert(two.canMerge === true && two.merge === true, "a second message makes the preference effective");
+  assert(one.mergeNote !== two.mergeNote, "the note says why the control is inert instead of describing a merge that will not happen");
+  assert(!/건/.test(one.sendAllLabel), "the whole-queue button does not name a merged count for a single item");
+  assert(/2건/.test(two.sendAllLabel), "…and does name it once a merge is real");
+  assert(one.rows[0].highlighted === true, "with nothing to merge, the single row is still the one going next");
+  assert(one.rows[0].onRail === false, "…but it is not drawn as part of a merge block");
 }
 
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "All message queue assertions passed"}`);

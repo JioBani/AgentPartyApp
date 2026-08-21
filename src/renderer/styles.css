@@ -9848,3 +9848,135 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-composer-bar .wb-composer-input {
   min-width: 96px;
 }
+
+/* ── 대기열: 헤더 · compact 카드 · 전체 동작 ───────────────────────────── */
+
+/* The header wraps as bands rather than crushing one of them. The status line
+   is the elastic one: at a width where it cannot hold a readable amount, it
+   takes its own row and the title and the controls stay put. */
+.wb-queue-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.wb-queue-title {
+  flex: none;
+}
+
+.wb-queue-note,
+.wb-queue-preview {
+  flex: 1 1 140px;
+}
+
+/* 접기 and 모두 취소 are both whole-queue controls, so they travel together
+   instead of drifting to opposite ends when the row rewraps. */
+.wb-queue-head-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.wb-queue-flat:focus-visible,
+.wb-queue-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 5px;
+}
+
+/* Below two messages the switch has only one outcome. Kept in place and legible
+   — the setting is still true, it just has nothing to act on yet — but not
+   pressable, and not pretending to be. */
+.wb-queue-merge.is-inert .wb-queue-switch-btn {
+  cursor: default;
+  opacity: .55;
+}
+
+.wb-queue-merge.is-inert .wb-queue-merge-note {
+  font-style: italic;
+}
+
+/* The whole-queue send, ruled off from the item cards above it and from the
+   composer below. Inside the merge row it read as part of that setting. */
+.wb-queue-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-queue-footer .wb-queue-send-all {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- compact rows ---- */
+
+/* Height follows the content. The head carried a 26px floor and 26px buttons
+   for the sake of a one-line message, which left a short card mostly empty with
+   its controls floating in the middle of it. */
+.wb-queue-row {
+  gap: 2px;
+  padding: 5px 6px 5px 7px;
+}
+
+.wb-queue-row-head {
+  min-height: 0;
+  gap: 6px;
+}
+
+.wb-queue-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.wb-queue-grip {
+  height: 20px;
+}
+
+/* The body sits directly under the metadata band rather than being centred in
+   leftover space, so one short line makes one short card. */
+.wb-queue-row-head + .wb-queue-text {
+  margin-top: 0;
+  align-self: stretch;
+}
+
+/* Narrow panels: the same bands, one step tighter. */
+.wb-queue.is-narrow .wb-queue-row {
+  padding: 4px 5px;
+}
+
+/* Narrow rows use the same bands as the wide ones; only the scale differs. The
+   old flat markup put every child on its own line inside a column box, which is
+   what stacked a number, a dot, a pencil and an × down the middle of a card
+   holding one short sentence. */
+.wb-queue.is-narrow .wb-queue-row-head {
+  gap: 5px;
+}
+
+.wb-queue.is-narrow .wb-queue-ord {
+  min-width: 0;
+}
+
+.wb-queue.is-narrow .wb-queue-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.wb-queue.is-narrow .wb-queue-meta .wb-queue-dot {
+  flex: none;
+}
+
+.wb-queue.is-narrow .wb-queue-footer {
+  padding-top: 5px;
+}
+
+/* Same inert treatment as the wide switch, so the two densities do not disagree
+   about whether merging is available. */
+.wb-queue-pill.is-inert {
+  cursor: default;
+  opacity: .55;
+}
