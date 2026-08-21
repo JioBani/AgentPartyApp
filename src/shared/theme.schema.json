@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentparty.dev/schemas/theme.schema.json",
+  "title": "AgentParty Theme",
+  "description": "Declarative contract for one AgentParty color theme.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "label", "scheme", "color", "shape"],
+  "properties": {
+    "$schema": { "type": "string", "pattern": ".*\\S.*" },
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "label": { "type": "string", "pattern": ".*\\S.*" },
+    "scheme": { "enum": ["light", "dark"] },
+    "color": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bg-0", "bg-1", "bg-2", "bg-3", "bg-4", "bg-input", "border-subtle", "border", "border-strong", "text-0", "text-1", "text-2", "text-3", "accent", "accent-dim", "accent-bd", "accent-fg", "selection", "selection-fg", "status", "status-fg", "live", "live-dim", "live-bd", "compact-zone", "success", "success-dim", "success-bd", "danger", "danger-dim", "danger-bd", "danger-fg", "warning", "warning-dim", "warning-bd", "warning-fg", "grid", "scrim", "shadow", "shadow-strong"],
+      "properties": {
+        "bg-0": { "$ref": "#/$defs/cssValue" }, "bg-1": { "$ref": "#/$defs/cssValue" }, "bg-2": { "$ref": "#/$defs/cssValue" }, "bg-3": { "$ref": "#/$defs/cssValue" }, "bg-4": { "$ref": "#/$defs/cssValue" }, "bg-input": { "$ref": "#/$defs/cssValue" },
+        "border-subtle": { "$ref": "#/$defs/cssValue" }, "border": { "$ref": "#/$defs/cssValue" }, "border-strong": { "$ref": "#/$defs/cssValue" },
+        "text-0": { "$ref": "#/$defs/cssValue" }, "text-1": { "$ref": "#/$defs/cssValue" }, "text-2": { "$ref": "#/$defs/cssValue" }, "text-3": { "$ref": "#/$defs/cssValue" },
+        "accent": { "$ref": "#/$defs/cssValue" }, "accent-dim": { "$ref": "#/$defs/cssValue" }, "accent-bd": { "$ref": "#/$defs/cssValue" }, "accent-fg": { "$ref": "#/$defs/cssValue" },
+        "selection": { "$ref": "#/$defs/cssValue" }, "selection-fg": { "$ref": "#/$defs/cssValue" }, "status": { "$ref": "#/$defs/cssValue" }, "status-fg": { "$ref": "#/$defs/cssValue" },
+        "live": { "$ref": "#/$defs/cssValue" }, "live-dim": { "$ref": "#/$defs/cssValue" }, "live-bd": { "$ref": "#/$defs/cssValue" }, "compact-zone": { "$ref": "#/$defs/cssValue" },
+        "success": { "$ref": "#/$defs/cssValue" }, "success-dim": { "$ref": "#/$defs/cssValue" }, "success-bd": { "$ref": "#/$defs/cssValue" },
+        "danger": { "$ref": "#/$defs/cssValue" }, "danger-dim": { "$ref": "#/$defs/cssValue" }, "danger-bd": { "$ref": "#/$defs/cssValue" }, "danger-fg": { "$ref": "#/$defs/cssValue" },
+        "warning": { "$ref": "#/$defs/cssValue" }, "warning-dim": { "$ref": "#/$defs/cssValue" }, "warning-bd": { "$ref": "#/$defs/cssValue" }, "warning-fg": { "$ref": "#/$defs/cssValue" },
+        "grid": { "$ref": "#/$defs/cssValue" }, "scrim": { "$ref": "#/$defs/cssValue" }, "shadow": { "$ref": "#/$defs/cssValue" }, "shadow-strong": { "$ref": "#/$defs/cssValue" }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius-window", "radius-panel", "radius-card", "radius-button", "radius-input", "radius-pill", "radius-badge", "border-width", "focus-ring-width"],
+      "properties": {
+        "radius-window": { "$ref": "#/$defs/cssValue" }, "radius-panel": { "$ref": "#/$defs/cssValue" }, "radius-card": { "$ref": "#/$defs/cssValue" },
+        "radius-button": { "$ref": "#/$defs/cssValue" }, "radius-input": { "$ref": "#/$defs/cssValue" }, "radius-pill": { "$ref": "#/$defs/cssValue" }, "radius-badge": { "$ref": "#/$defs/cssValue" },
+        "border-width": { "$ref": "#/$defs/cssValue" }, "focus-ring-width": { "$ref": "#/$defs/cssValue" }
+      }
+    }
+  },
+  "$defs": {
+    "cssValue": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[;{}\\r\\n])(?!.*(?:[uU][rR][lL]|[vV][aA][rR]|[eE][xX][pP][rR][eE][sS][sS][iI][oO][nN])\\s*\\()(?!.*(?:/\\*|\\*/)).+$"
+    }
+  }
+}

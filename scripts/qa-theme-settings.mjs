@@ -1,6 +1,6 @@
 /* Seven-preset theme model, migration, first paint, ownership, and token checks. */
 import { build } from "esbuild";
-import { writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { qaTempDir } from "./lib/qaTemp.mjs";
@@ -18,7 +18,47 @@ async function bundle(entry, name) {
 
 const theme = await bundle("src/shared/appTheme.ts", "app-theme.mjs");
 const registry = await bundle("src/renderer/theme/themes.ts", "theme-registry.mjs");
+const schema = await bundle("src/shared/themeSchema.ts", "theme-schema.mjs");
 const expected = ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"];
+
+function definitionError(mutator, expectedPath, message) {
+  const candidate = structuredClone(registry.THEMES[0]);
+  mutator(candidate);
+  let error;
+  try { schema.parseThemeDefinition(candidate, "candidate.json"); } catch (caught) { error = caught; }
+  assert(error instanceof schema.ThemeDefinitionError && error.message.includes(`candidate.json.${expectedPath}`), message);
+}
+
+console.log("\ndeclarative JSON schema + strict parser:");
+const themesDirectory = path.join(root, "src/shared/themes");
+const jsonFiles = readdirSync(themesDirectory).filter((file) => file.endsWith(".json"));
+const jsonThemes = jsonFiles.map((file) => JSON.parse(readFileSync(path.join(themesDirectory, file), "utf8")));
+const parsedJsonThemes = schema.parseThemeCatalog(jsonThemes, jsonFiles);
+assert(jsonFiles.length === 7, "exactly seven built-in JSON theme files exist");
+assert(parsedJsonThemes.every(({ schemaVersion }) => schemaVersion === 1), "every built-in JSON uses schemaVersion 1");
+assert(expected.every((id) => parsedJsonThemes.some((entry) => entry.id === id)), "JSON catalog contains the exact public ids");
+assert(registry.THEMES.every((entry) => JSON.stringify(entry) === JSON.stringify(parsedJsonThemes.find(({ id }) => id === entry.id))), "runtime catalog exactly matches the JSON definitions");
+const jsonSchema = JSON.parse(readFileSync(path.join(root, "src/shared/theme.schema.json"), "utf8"));
+assert(jsonSchema.$schema === "https://json-schema.org/draft/2020-12/schema" && jsonSchema.additionalProperties === false, "editor JSON Schema uses draft 2020-12 and strict root keys");
+const schemaOptional = structuredClone(registry.THEMES[0]);
+delete schemaOptional.$schema;
+assert(schema.parseThemeDefinition(schemaOptional).id === "agentparty-light", "$schema is optional at runtime");
+definitionError((value) => { delete value.color["bg-0"]; }, "color.bg-0", "missing color token reports its full path");
+definitionError((value) => { value.color.surprise = "#fff"; }, "color.surprise", "unknown color token reports its full path");
+definitionError((value) => { delete value.shape["radius-card"]; }, "shape.radius-card", "missing shape token reports its full path");
+definitionError((value) => { value.shape.surprise = "1px"; }, "shape.surprise", "unknown shape token reports its full path");
+definitionError((value) => { value.surprise = true; }, "surprise", "unknown root property reports its full path");
+definitionError((value) => { value.id = "Bad Theme"; }, "id", "invalid id format is rejected");
+definitionError((value) => { value.color.accent = ""; }, "color.accent", "empty CSS values are rejected");
+definitionError((value) => { value.color.accent = "red; } body { color: red"; }, "color.accent", "unsafe CSS declaration syntax is rejected");
+definitionError((value) => { value.color.accent = "url(https://example.test/a)"; }, "color.accent", "CSS url values are rejected before stylesheet generation");
+definitionError((value) => { value.schemaVersion = 2; }, "schemaVersion", "unsupported schema versions are rejected");
+let duplicateError;
+try { schema.parseThemeCatalog([registry.THEMES[0], registry.THEMES[0]], ["one.json", "two.json"]); } catch (caught) { duplicateError = caught; }
+assert(duplicateError instanceof schema.ThemeDefinitionError && duplicateError.message.includes("two.json.id") && duplicateError.message.includes("duplicate id 'agentparty-light'"), "duplicate ids are rejected before lookup-map construction with the source path");
+let defaultError;
+try { schema.requireThemeInCatalog(parsedJsonThemes, "missing-default"); } catch (caught) { defaultError = caught; }
+assert(defaultError instanceof schema.ThemeDefinitionError && defaultError.message.includes("theme catalog.default"), "a missing default theme fails catalog initialization visibly");
 
 console.log("\nseven preset ids + strict API validation:");
 assert(theme.DEFAULT_THEME_PREFERENCE === "agentparty-light", "AgentParty Light is the safe default");

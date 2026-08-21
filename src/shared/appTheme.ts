@@ -1,43 +1,20 @@
-export const THEME_PREFERENCES = [
-  "agentparty-light",
-  "agentparty-dark",
-  "github-light",
-  "github-dark",
-  "dracula",
-  "nord",
-  "solarized-dark",
-] as const;
+import {
+  DEFAULT_THEME_PREFERENCE,
+  THEME_BACKGROUNDS,
+  THEME_METADATA,
+  THEME_PREFERENCES,
+  isRegisteredThemeId,
+  type ThemePreference,
+} from "./themeCatalog";
 
-export type ThemePreference = (typeof THEME_PREFERENCES)[number];
+export { DEFAULT_THEME_PREFERENCE, THEME_BACKGROUNDS, THEME_METADATA, THEME_PREFERENCES } from "./themeCatalog";
+export type { ThemePreference } from "./themeCatalog";
 export type AppliedTheme = ThemePreference;
 
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = "agentparty-light";
 export const THEME_STORAGE_KEY = "agentparty.theme";
 export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
 export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
 export const THEME_SYNC_PAINT_VALUE = "sync";
-
-export interface ThemeMetadata {
-  id: ThemePreference;
-  label: string;
-  scheme: "light" | "dark";
-  background: string;
-}
-
-/** Shared preset metadata used by BrowserWindow chrome and renderer themes. */
-export const THEME_METADATA: readonly ThemeMetadata[] = [
-  { id: "agentparty-light", label: "AgentParty Light", scheme: "light", background: "#e7e8eb" },
-  { id: "agentparty-dark", label: "AgentParty Dark", scheme: "dark", background: "#0a0b0e" },
-  { id: "github-light", label: "GitHub Light", scheme: "light", background: "#f6f8fa" },
-  { id: "github-dark", label: "GitHub Dark", scheme: "dark", background: "#0d1117" },
-  { id: "dracula", label: "Dracula", scheme: "dark", background: "#282a36" },
-  { id: "nord", label: "Nord", scheme: "dark", background: "#2e3440" },
-  { id: "solarized-dark", label: "Solarized Dark", scheme: "dark", background: "#002b36" },
-];
-
-export const THEME_BACKGROUNDS = Object.fromEntries(
-  THEME_METADATA.map(({ id, background }) => [id, background]),
-) as Record<ThemePreference, string>;
 
 export interface AppearanceBoot {
   preference: ThemePreference;
@@ -129,7 +106,7 @@ export function appearanceAccess(input: { appearance?: unknown; appearanceRemote
 export function appearanceOwnerError(): AppearanceOwnerError { return new AppearanceOwnerError(); }
 
 export function isThemePreference(value: unknown): value is ThemePreference {
-  return typeof value === "string" && (THEME_PREFERENCES as readonly string[]).includes(value);
+  return isRegisteredThemeId(value);
 }
 
 /** Converts persisted values from the original System/Light/Dark themes safely. */

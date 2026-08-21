@@ -1,0 +1,20 @@
+{
+  "$schema": "../theme.schema.json",
+  "schemaVersion": 1,
+  "id": "github-light",
+  "label": "GitHub Light",
+  "scheme": "light",
+  "color": {
+    "bg-0": "#f6f8fa", "bg-1": "#ffffff", "bg-2": "#ffffff", "bg-3": "#f6f8fa", "bg-4": "#eaeef2", "bg-input": "#ffffff",
+    "border-subtle": "#d8dee4", "border": "#d0d7de", "border-strong": "#afb8c1",
+    "text-0": "#1f2328", "text-1": "#424a53", "text-2": "#59636e", "text-3": "#6e7781",
+    "accent": "#0969da", "accent-dim": "rgba(9,105,218,.12)", "accent-bd": "rgba(9,105,218,.38)", "accent-fg": "#ffffff",
+    "selection": "#b6d7ff", "selection-fg": "#1f2328", "status": "#0969da", "status-fg": "#ffffff",
+    "live": "#9a6700", "live-dim": "rgba(154,103,0,.12)", "live-bd": "rgba(154,103,0,.32)", "compact-zone": "rgba(154,103,0,.25)",
+    "success": "#1a7f37", "success-dim": "rgba(26,127,55,.12)", "success-bd": "rgba(26,127,55,.3)",
+    "danger": "#cf222e", "danger-dim": "rgba(207,34,46,.11)", "danger-bd": "rgba(207,34,46,.3)", "danger-fg": "#ffffff",
+    "warning": "#9a6700", "warning-dim": "rgba(154,103,0,.12)", "warning-bd": "rgba(154,103,0,.32)", "warning-fg": "#ffffff",
+    "grid": "rgba(31,35,40,.08)", "scrim": "rgba(31,35,40,.45)", "shadow": "rgba(31,35,40,.14)", "shadow-strong": "rgba(31,35,40,.24)"
+  },
+  "shape": { "radius-window": "9px", "radius-panel": "11px", "radius-card": "10px", "radius-button": "7px", "radius-input": "8px", "radius-pill": "6px", "radius-badge": "5px", "border-width": "1px", "focus-ring-width": "2px" }
+}

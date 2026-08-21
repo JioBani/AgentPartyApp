@@ -506,7 +506,9 @@ the same validation.
 ### `GET /api/appearance/theme`
 
 The persisted VS Code-style color theme and the theme the UI is painting. This
-is the same `AppController.getAppearance` method used by Settings > General >
+catalog is backed by the strict declarative JSON contract documented in
+[`docs/THEMES.md`](THEMES.md); the API does not install or load theme files.
+It is the same `AppController.getAppearance` method used by Settings > General >
 Appearance and the titlebar theme menu.
 
 ```json
