@@ -23,6 +23,7 @@ const otherWs = fs.mkdtempSync(path.join(os.tmpdir(), "ap-2win-other-ws-"));
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const sameWindowsPath = (left, right) => String(left || "").toLowerCase() === String(right || "").toLowerCase();
 
 function launch(workspace) {
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), `--workspace=${workspace}`], {
@@ -105,7 +106,7 @@ try {
   // out of hydrating this duplicate response.
   const unchangedWorkspaceState = await post(base, `/api/windows/${encodeURIComponent(win1)}/workspace`, { workspacePath: ws });
   assert(
-    unchangedWorkspaceState?.workspace?.uri === ws && Array.isArray(unchangedWorkspaceState?.party?.members),
+    sameWindowsPath(unchangedWorkspaceState?.workspace?.uri, ws) && Array.isArray(unchangedWorkspaceState?.party?.members),
     "same-workspace public API still returns its documented fresh state",
   );
 
@@ -143,8 +144,8 @@ try {
     const measurement = await measureInSwitchWindow(".app-shell", { attributes: ["data-workspace"] });
     return measurement?.elements?.[0]?.attributes?.["data-workspace"];
   };
-  const sourceWorkspace = await waitFor(rendererWorkspace, (value) => value === otherWs);
-  assert(sourceWorkspace === otherWs, `source renderer finished its initial workspace load (${sourceWorkspace})`);
+  const sourceWorkspace = await waitFor(rendererWorkspace, (value) => sameWindowsPath(value, otherWs));
+  assert(sameWindowsPath(sourceWorkspace, otherWs), `source renderer finished its initial workspace load (${sourceWorkspace})`);
   const crossPartySelector = `.wb-party-row[data-party-id=${JSON.stringify(sameNameHere)}]`;
   const crossGroupSelector = `.wb-party-group:has(${crossPartySelector}) > .wb-group-row`;
   const registeredRow = await waitFor(
@@ -176,13 +177,13 @@ try {
   const routed = await waitFor(async () => ({
     window: ((await get(base, "/api/windows")).windows || []).find((entry) => entry.id === switchWindowId),
     partyId: (await get(base, `/api/party?window=${switchWindowId}`)).currentPartyId,
-  }), (value) => value.window?.workspacePath === ws && value.partyId === sameNameHere, 400);
-  const renderedWorkspace = await waitFor(rendererWorkspace, (value) => value === ws);
+  }), (value) => sameWindowsPath(value.window?.workspacePath, ws) && value.partyId === sameNameHere, 400);
+  const renderedWorkspace = await waitFor(rendererWorkspace, (value) => sameWindowsPath(value, ws));
   const routedWindow = routed?.window;
   const routedParty = routed?.partyId;
-  assert(routedWindow?.workspacePath === ws, `sidebar click moved the window to the party's workspace (${routedWindow?.workspacePath})`);
+  assert(sameWindowsPath(routedWindow?.workspacePath, ws), `sidebar click moved the window to the party's workspace (${routedWindow?.workspacePath})`);
   assert(routedParty === sameNameHere, `sidebar click selected the exact cross-workspace party (${routedParty})`);
-  assert(renderedWorkspace === ws, `renderer applied the destination workspace state (${renderedWorkspace})`);
+  assert(sameWindowsPath(renderedWorkspace, ws), `renderer applied the destination workspace state (${renderedWorkspace})`);
 
   const exactWindow = await post(base, "/api/windows", { workspacePath: ws, partyId: sameNameHere });
   const exactParty = (await get(base, `/api/party?window=${exactWindow?.id}`)).currentPartyId;

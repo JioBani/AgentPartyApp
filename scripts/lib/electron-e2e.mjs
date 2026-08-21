@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-export function createElectronE2eApp({ root, workspace, userData, port, env = {} }) {
+export function createElectronE2eApp({ root, workspace, userData, port, env = {}, args = [] }) {
   const baseUrl = `http://127.0.0.1:${port}`;
   let child;
 
@@ -67,7 +67,7 @@ export function createElectronE2eApp({ root, workspace, userData, port, env = {}
     if (child && child.exitCode === null) {
       throw new Error("Electron E2E app is already running.");
     }
-    child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
+    child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", ...(args.length ? ["--", ...args] : [])], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -121,7 +121,7 @@ export async function removePath(target) {
       fs.rmSync(target, { recursive: true, force: true });
       return;
     } catch (error) {
-      if (error?.code !== "EBUSY" || attempt === 9) {
+      if (!["EBUSY", "EPERM", "ENOTEMPTY"].includes(error?.code) || attempt === 9) {
         throw error;
       }
       await delay(300);

@@ -31,9 +31,17 @@ export { parseWorkspaceLocation, serializeWorkspaceLocation, isWslLocation } fro
  */
 export function workspaceLocationKey(loc: WorkspaceLocation): string {
   if (loc.host.kind === "wsl") {
-    return `wsl+${loc.host.distro}:${path.posix.normalize(loc.path || "/")}`;
+    // WSL resolves distro names case-insensitively (`Ubuntu` and `ubuntu` start
+    // the same distro), while its POSIX paths remain case-sensitive. Folding
+    // only the authority keeps one engine/window/session owner for that host
+    // without merging `/srv/A` and `/srv/a`.
+    return `wsl+${loc.host.distro.toLowerCase()}:${path.posix.normalize(loc.path || "/")}`;
   }
-  return path.resolve(loc.path || ".");
+  const resolved = path.resolve(loc.path || ".");
+  // Windows paths are case-insensitive. Keeping the caller's spelling as the
+  // cache key let `C:\Project` and `c:\project` spawn two engines for one store.
+  // A native engine running inside WSL must retain POSIX case sensitivity.
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 /** Convenience: identity key straight from a serialized string. */
@@ -96,6 +104,9 @@ export function workspaceArgFromArgv(argv: string[]): { location?: string; warni
     return index >= 0 && !inline ? { warning: "--workspace present but no path could be resolved from argv (dropped/reordered by launcher) — using default workspace" } : {};
   }
   const location = parseWorkspaceLocation(value);
+  if (location.host.kind === "wsl" && (!location.host.distro || !path.posix.isAbsolute(location.path))) {
+    return { warning: `ignoring invalid WSL --workspace value (absolute path required): ${value}` };
+  }
   if (location.host.kind === "local" && !path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
     return { warning: `ignoring non-absolute --workspace value: ${value}` };
   }

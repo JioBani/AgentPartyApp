@@ -42,6 +42,19 @@ function check(label, condition, detail) {
 }
 let failures = 0;
 
+function sameWorkspace(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  const wslA = /^wsl\+([^:]+):(.*)$/i.exec(a);
+  const wslB = /^wsl\+([^:]+):(.*)$/i.exec(b);
+  if (wslA || wslB) {
+    return Boolean(wslA && wslB)
+      && wslA[1].toLowerCase() === wslB[1].toLowerCase()
+      && path.posix.normalize(wslA[2]) === path.posix.normalize(wslB[2]);
+  }
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+}
+
 const fixtureScript = String.raw`
 const fs = require("node:fs");
 const path = require("node:path");
@@ -71,16 +84,16 @@ await app.launch();
 let restarted;
 try {
   const nativeWindow = (await app.get("/api/windows")).windows?.[0];
-  check("the app initially opens a native Windows workspace", nativeWindow?.workspacePath === localWorkspace, nativeWindow?.workspacePath);
+  check("the app initially opens a native Windows workspace", sameWorkspace(nativeWindow?.workspacePath, localWorkspace), nativeWindow?.workspacePath);
 
   // The exact call `agent-party` makes when the app is already running.
   const win = await app.post("/api/windows", { workspacePath: wslUri });
-  check("POST /api/windows returns the WSL workspace", win.workspacePath === wslUri, `${win.workspacePath}`);
+  check("POST /api/windows returns the WSL workspace", sameWorkspace(win.workspacePath, wslUri), `${win.workspacePath}`);
 
   // What the header renders from: an empty `workspace` is the "작업공간 없음" bug.
   const state = await app.get(`/api/state?window=${encodeURIComponent(win.id)}`);
   check("state resolves a workspace at all", Boolean(state.workspace), JSON.stringify(state.workspace));
-  check("workspace host is the distro", state.workspace?.kind === "wsl" && state.workspace?.distro === distro, `${state.workspace?.kind}/${state.workspace?.distro}`);
+  check("workspace host is the distro", state.workspace?.kind === "wsl" && state.workspace?.distro?.toLowerCase() === distro.toLowerCase(), `${state.workspace?.kind}/${state.workspace?.distro}`);
   check("workspace path is the distro path", state.workspace?.path === wslWorkspacePosix, `${state.workspace?.path}`);
 
   // Proof the in-distro engine actually answered (not just a parsed URI): this
@@ -94,14 +107,14 @@ try {
   // "파티 'SEL-6809' 이 목록에 없습니다."
   const expectedIds = ["SEL-6809", "SEL-6884"];
   const grouped = await app.get("/api/party-groups");
-  const registeredIds = grouped.parties?.filter((party) => party.workspacePath === wslUri).map((party) => party.id).sort() || [];
+  const registeredIds = grouped.parties?.filter((party) => sameWorkspace(party.workspacePath, wslUri)).map((party) => party.id).sort() || [];
   check("pre-existing WSL parties enter the app-global registry", JSON.stringify(registeredIds) === JSON.stringify(expectedIds), registeredIds.join(","));
 
   const locations = await app.get(`/api/cwd/members?window=${encodeURIComponent(win.id)}`);
   const legacyLocations = locations.members?.filter((member) => expectedIds.includes(member.partyName)) || [];
   check(
     "legacy WSL members are backfilled on the distro-owned store",
-    legacyLocations.length === expectedIds.length && legacyLocations.every((member) => member.location?.env === "wsl" && member.location?.distro === distro),
+    legacyLocations.length === expectedIds.length && legacyLocations.every((member) => member.location?.env === "wsl" && member.location?.distro?.toLowerCase() === distro.toLowerCase()),
     JSON.stringify(legacyLocations),
   );
 
@@ -121,7 +134,7 @@ try {
     const partyId = expectedIds[index % expectedIds.length];
     const groupId = index % 2 === 0 ? targetGroup : "default";
     const moved = await app.post(`/api/parties/${encodeURIComponent(partyId)}/group`, { groupId });
-    const ids = moved.parties?.filter((party) => party.workspacePath === wslUri).map((party) => party.id).sort() || [];
+    const ids = moved.parties?.filter((party) => sameWorkspace(party.workspacePath, wslUri)).map((party) => party.id).sort() || [];
     check(`move ${index + 1} keeps every WSL party visible`, JSON.stringify(ids) === JSON.stringify(expectedIds), ids.join(","));
   }
 
@@ -144,10 +157,10 @@ try {
   restarted = createElectronE2eApp({ root, workspace: localWorkspace, userData, port });
   await restarted.launch();
   const afterRestart = await restarted.get("/api/party-groups");
-  const persistedIds = afterRestart.parties?.filter((party) => party.workspacePath === wslUri).map((party) => party.id).sort() || [];
+  const persistedIds = afterRestart.parties?.filter((party) => sameWorkspace(party.workspacePath, wslUri)).map((party) => party.id).sort() || [];
   check("native-only restart still lists WSL parties", JSON.stringify(persistedIds) === JSON.stringify(expectedIds), persistedIds.join(","));
   const restartWindows = (await restarted.get("/api/windows")).windows || [];
-  check("native-only restart did not open a WSL workspace", restartWindows.length === 1 && restartWindows[0].workspacePath === localWorkspace, JSON.stringify(restartWindows));
+  check("native-only restart did not open a WSL workspace", restartWindows.length === 1 && sameWorkspace(restartWindows[0].workspacePath, localWorkspace), JSON.stringify(restartWindows));
 } finally {
   await restarted?.close().catch(() => undefined);
   restarted?.kill();

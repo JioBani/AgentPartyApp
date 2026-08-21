@@ -37,10 +37,14 @@ const local = W.parseWorkspaceLocation(winPath);
 assert(local.host.kind === "local", "a Windows path parses as local");
 assert(local.path === winPath, "local keeps the raw path");
 assert(W.serializeWorkspaceLocation(local) === winPath, "local serializes back to the raw path (no URI)");
-assert(W.workspaceKey(winPath) === path.resolve(winPath), "local key equals the platform path.resolve (identical to old logic)");
+const nativeKey = (value) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+assert(W.workspaceKey(winPath) === nativeKey(winPath), "local key follows the native filesystem's case identity");
 
 // a relative-ish local path still resolves like before
-assert(W.workspaceKey("C:\\a\\b\\..\\c") === path.resolve("C:\\a\\b\\..\\c"), "local key normalizes via the platform path.resolve");
+assert(W.workspaceKey("C:\\a\\b\\..\\c") === nativeKey("C:\\a\\b\\..\\c"), "local key normalizes via the platform path.resolve");
+if (process.platform === "win32") {
+  assert(W.workspaceKey("C:\\Project\\AgentPartyApp") === W.workspaceKey("c:\\project\\agentpartyapp"), "Windows casing cannot split one workspace into two engines");
+}
 
 // --- wsl: URI round-trips and gets a stable, non-Windows identity ---------
 const uri = "wsl+Ubuntu:/home/user/project";
@@ -48,12 +52,13 @@ const wsl = W.parseWorkspaceLocation(uri);
 assert(wsl.host.kind === "wsl" && wsl.host.distro === "Ubuntu", "wsl URI parses distro");
 assert(wsl.path === "/home/user/project", "wsl URI parses the posix path");
 assert(W.serializeWorkspaceLocation(wsl) === uri, "wsl serializes back to the same URI");
-assert(W.workspaceKey(uri) === "wsl+Ubuntu:/home/user/project", "wsl key is the normalized URI, not a Windows path");
+assert(W.workspaceKey(uri) === "wsl+ubuntu:/home/user/project", "wsl key is the normalized URI, not a Windows path");
 assert(!W.workspaceKey(uri).includes("C:\\"), "wsl key is never mangled into a Windows path");
 
 // distro with a dash; posix normalization in the key
 const uri2 = "wsl+Ubuntu-22.04:/home/user/./a/../proj";
-assert(W.workspaceKey(uri2) === "wsl+Ubuntu-22.04:/home/user/proj", "wsl key posix-normalizes the path");
+assert(W.workspaceKey(uri2) === "wsl+ubuntu-22.04:/home/user/proj", "wsl key posix-normalizes the path");
+assert(W.workspaceKey("wsl+Ubuntu-22.04:/home/user/proj") === W.workspaceKey("wsl+ubuntu-22.04:/home/user/proj"), "WSL distro casing cannot split one workspace into two engines");
 
 // --- UNC: a \\wsl$\ / \\wsl.localhost\ folder pick becomes a WSL location ---
 const unc1 = W.parseWorkspaceLocation("\\\\wsl$\\Ubuntu-22.04\\home\\dev\\project");
@@ -62,6 +67,8 @@ assert(unc1.path === "/home/dev/project", "\\\\wsl$ UNC parses the posix path");
 assert(W.serializeWorkspaceLocation(unc1) === "wsl+Ubuntu-22.04:/home/dev/project", "\\\\wsl$ UNC serializes to the wsl URI");
 const unc2 = W.parseWorkspaceLocation("\\\\wsl.localhost\\Debian\\srv\\app");
 assert(unc2.host.kind === "wsl" && unc2.host.distro === "Debian" && unc2.path === "/srv/app", "\\\\wsl.localhost UNC parses to wsl location");
+const uncUpper = W.parseWorkspaceLocation("\\\\WSL$\\Ubuntu-22.04\\home\\dev\\project");
+assert(uncUpper.host.kind === "wsl" && uncUpper.path === "/home/dev/project", "WSL UNC host spelling is case-insensitive like Windows");
 
 // --- isolation: local and wsl with the same tail are different identities -
 assert(W.workspaceKey("/home/user/project") !== W.workspaceKey("wsl+Ubuntu:/home/user/project"), "local vs wsl with same path are distinct identities");
@@ -78,6 +85,8 @@ const argv = (...rest) => [".", ...rest];
 assert(W.workspaceArgFromArgv(argv("--workspace", "C:\\Project\\custom jira")).location === "C:\\Project\\custom jira", "`--workspace <abs>` resolves the path (spaces ok)");
 assert(W.workspaceArgFromArgv(argv("--workspace=C:\\Project\\x")).location === "C:\\Project\\x", "`--workspace=<abs>` resolves the path");
 assert(W.workspaceArgFromArgv(argv("--workspace", "wsl+Ubuntu:/home/dev/p")).location === "wsl+Ubuntu:/home/dev/p", "a wsl+ URI is accepted");
+const relativeWsl = W.workspaceArgFromArgv(argv("--workspace", "wsl+Ubuntu:home/dev/p"));
+assert(relativeWsl.location === undefined && /absolute path required/i.test(relativeWsl.warning || ""), "a relative WSL workspace is rejected instead of depending on engine cwd");
 // THE reported bug (reproduced from a live log): Electron's appendSwitch injects
 // Chromium flags between `--workspace` and its value and moves the real path to
 // the end. Recover it from the trailing positional — never consume a flag.

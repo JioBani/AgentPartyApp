@@ -71,7 +71,61 @@ export function PartyGroupList({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   /** Where the user last left the list, for the reorder restore below. */
   const lastScrollTop = useRef(0);
+  /** Pointer position + animation owned by an in-flight native HTML drag. */
+  const dragPointerY = useRef<number | undefined>(undefined);
+  const dragScrollFrame = useRef<number | undefined>(undefined);
   const seenGroupIds = useRef<Set<string> | undefined>(undefined);
+
+  function stopDragScroll() {
+    dragPointerY.current = undefined;
+    if (dragScrollFrame.current !== undefined) {
+      cancelAnimationFrame(dragScrollFrame.current);
+      dragScrollFrame.current = undefined;
+    }
+  }
+
+  /**
+   * Keeps scrolling while a carried party/group is held near either edge.
+   * Relying on sporadic `dragover` events moved only a few pixels and made a
+   * group outside the viewport unreachable; an animation frame continues until
+   * the pointer leaves the edge or the drag ends.
+   */
+  function runDragScrollFrame() {
+    dragScrollFrame.current = undefined;
+    const box = scrollRef.current;
+    const pointerY = dragPointerY.current;
+    if (!box || pointerY === undefined) return;
+    const bounds = box.getBoundingClientRect();
+    const edge = Math.min(64, Math.max(32, bounds.height / 4));
+    let delta = 0;
+    if (pointerY < bounds.top + edge) {
+      const strength = Math.min(1, Math.max(0, (bounds.top + edge - pointerY) / edge));
+      delta = -Math.ceil(3 + strength * 15);
+    } else if (pointerY > bounds.bottom - edge) {
+      const strength = Math.min(1, Math.max(0, (pointerY - (bounds.bottom - edge)) / edge));
+      delta = Math.ceil(3 + strength * 15);
+    }
+    if (!delta) return;
+    const before = box.scrollTop;
+    box.scrollTop += delta;
+    lastScrollTop.current = box.scrollTop;
+    // Stop at the physical end; a fresh dragover restarts if layout changes.
+    if (box.scrollTop !== before) {
+      dragScrollFrame.current = requestAnimationFrame(runDragScrollFrame);
+    }
+  }
+
+  function updateDragScroll(event: React.DragEvent<HTMLDivElement>) {
+    const ours = event.dataTransfer.types.includes(PARTY_DRAG_TYPE)
+      || event.dataTransfer.types.includes(GROUP_DRAG_TYPE);
+    if (!ours) return;
+    dragPointerY.current = event.clientY;
+    if (dragScrollFrame.current === undefined) {
+      dragScrollFrame.current = requestAnimationFrame(runDragScrollFrame);
+    }
+  }
+
+  useEffect(() => stopDragScroll, []);
   useEffect(() => {
     const ids = groups.map(({ group }) => group.id);
     // The first render establishes the baseline; nothing is "new" yet.
@@ -142,7 +196,16 @@ export function PartyGroupList({
         <FolderPlus size={13} />
         <LocalizedText id="STR-3668" />
       </button>
-      <div className="wb-party-scroll" ref={scrollRef} onScroll={(event) => { lastScrollTop.current = event.currentTarget.scrollTop; }}>
+      <div
+        className="wb-party-scroll"
+        ref={scrollRef}
+        onScroll={(event) => { lastScrollTop.current = event.currentTarget.scrollTop; }}
+        onDragOver={updateDragScroll}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) stopDragScroll();
+        }}
+        onDrop={stopDragScroll}
+      >
       {groups.map(({ group, parties }) => {
         const open = openGroupIds.has(group.id);
         return (
@@ -222,7 +285,7 @@ export function PartyGroupList({
                 event.dataTransfer.effectAllowed = "move";
                 setDraggingGroupId(group.id);
               }}
-              onDragEnd={() => { setDraggingGroupId(undefined); setReorderTarget(undefined); }}
+              onDragEnd={() => { stopDragScroll(); setDraggingGroupId(undefined); setReorderTarget(undefined); }}
               onClick={() => onToggleGroup(group.id)}
               onContextMenu={(event) => {
                 if (!onGroupContextMenu) {
@@ -257,7 +320,7 @@ export function PartyGroupList({
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingPartyId(party.id);
                   }}
-                  onDragEnd={() => { setDraggingPartyId(undefined); setDropGroupId(undefined); }}
+                  onDragEnd={() => { stopDragScroll(); setDraggingPartyId(undefined); setDropGroupId(undefined); }}
                   onClick={() => onSelectParty(party.id)}
                   onContextMenu={(event) => {
                     if (!onPartyContextMenu) {

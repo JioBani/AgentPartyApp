@@ -465,6 +465,13 @@ export interface PartyCommandResult {
   partyMessage?: PartyMessage;
   session?: SessionView;
   /**
+   * Fresh destination snapshot when selecting this party also moved the
+   * calling window to another workspace. Selection and the move are committed
+   * together by AppController, so the renderer never has to perform a fragile
+   * switch-then-select pair.
+   */
+  switchedState?: InitialAppState;
+  /**
    * True when the message was parked in the member's queue instead of being
    * delivered, because the member was busy. The caller MUST distinguish the two:
    * the renderer echoes a delivered message into the transcript, but a queued one

@@ -40,7 +40,7 @@ import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
-import type { WindowInfo, WindowRegistry } from "../windowRegistry";
+import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
 import { runSessionAction } from "./sessionActions";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
@@ -756,10 +756,13 @@ export class AppController {
     if (validatedPatch?.memberMessaging) {
       void this.deps.engineRegistry.setMemberMessaging(getSettings().memberMessaging);
     }
+    return this.publishSettings();
+  }
+
+  /** Pushes already-persisted app-global settings to every live consumer. */
+  private publishSettings(): AppSettings {
     const settings = getPublicSettings();
-    // Settings are global — push to EVERY window so a change made over HTTP or in
-    // another window reflects live (e.g. transcript zoom), not only on next load.
-    // (The renderer preserves each window's own workspacePath on merge.)
+    // The renderer preserves each window's own workspacePath on merge.
     this.deps.mobileLink?.publish("settings:update", settings);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("settings:update", settings);
@@ -1142,8 +1145,13 @@ export class AppController {
    */
   async openWindow(workspacePath?: string, partyId?: string): Promise<WindowInfo> {
     const targetWorkspace = workspacePath || getSettings().workspacePath || process.cwd();
+    // Resolve the engine before creating a BrowserWindow. This is the shared
+    // workspace validity boundary (local + WSL), so an API call with a relative
+    // path fails visibly instead of first returning a window whose renderer can
+    // never hydrate.
+    const targetEngine = this.engineFor(targetWorkspace);
     if (partyId) {
-      const listing = await this.engineFor(targetWorkspace).listParty(undefined);
+      const listing = await targetEngine.listParty(undefined);
       if (!(listing.parties || []).some((party) => party.id === partyId)) {
         throw new Error(`Party '${partyId}' does not exist in workspace '${targetWorkspace}'.`);
       }
@@ -1291,19 +1299,40 @@ export class AppController {
       return this.getState(entry.workspacePath, entry.id);
     }
     if (entry) {
-      this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
-      // The window's active party belonged to the PREVIOUS workspace — drop it so
-      // the fresh getState below re-pins it to a party of the NEW workspace (else
-      // member ops would carry a party id that doesn't exist here).
+      // Hydrate first. A bad/offline destination must not commit a window move
+      // that its renderer cannot apply.
+      const nextState = await this.getState(workspacePath);
+      this.rebindWindowWorkspace(entry, workspacePath);
+      // The old pin belonged to the previous workspace. Replace it with the
+      // party from the destination snapshot so later member operations cannot
+      // carry an id that does not exist there.
       this.forgetWindow(entry.id);
+      if (nextState.party.currentPartyId) {
+        this.activePartyByWindow.set(entry.id, nextState.party.currentPartyId);
+      }
       // The window now serves a different workspace → refresh discovery files.
       this.deps.onWorkspacesChanged();
+      updateSettings({ workspacePath });
+      return nextState;
     }
     // Remember as the default workspace for newly opened windows.
     updateSettings({ workspacePath });
-    // getState performs the host-correct migration after the window is rebound.
-    // Do not run it twice here: a WSL migration crosses the engine RPC boundary.
-    return this.getState(workspacePath, entry?.id);
+    // No concrete window to rebind (headless/internal caller): return the same
+    // host-correct snapshot without inventing window ownership.
+    return this.getState(workspacePath);
+  }
+
+  /**
+   * Rebinds one already-validated window and releases the old engine when no
+   * window owns it anymore. A workspace switch bypasses the BrowserWindow close
+   * hook, so without this a WSL child process and its sessions lived forever.
+   */
+  private rebindWindowWorkspace(entry: WindowEntry, workspacePath: string): void {
+    const previousWorkspace = entry.workspacePath;
+    this.deps.windowRegistry.setWorkspace(entry.id, workspacePath);
+    if (this.deps.windowRegistry.forWorkspace(previousWorkspace).length === 0) {
+      this.deps.engineRegistry.dispose(previousWorkspace);
+    }
   }
 
   // --- Sessions (addressed globally by session id) ------------------------
@@ -1708,18 +1737,21 @@ export class AppController {
   async setDefaultCwd(location: MemberExecutionLocation): Promise<{ ok: true; preferences: CwdPreferences }> {
     const preferences = await setDefaultCwd(location);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
   clearDefaultCwd(env: ExecutionEnv): { ok: true; preferences: CwdPreferences } {
     const preferences = clearDefaultCwd(env);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
   removeRecentCwd(location: MemberExecutionLocation): { ok: true; preferences: CwdPreferences } {
     const preferences = removeRecentCwd(location);
     this.deps.onSettingsChanged();
+    this.publishSettings();
     return { ok: true, preferences };
   }
 
@@ -1824,18 +1856,46 @@ export class AppController {
     }
     // Only a creation that SUCCEEDED puts the cwd in the recent list (README §6).
     rememberCwd(location.location);
+    this.deps.onSettingsChanged();
+    this.publishSettings();
     await this.syncPartyRegistry(workspacePath);
     await this.broadcastParty(workspacePath);
     return result;
   }
 
   async selectParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["selectParty"]>> {
-    const result = await this.engineFor(workspacePath).selectParty(partyId); // validates the id
-    if (windowId) {
-      this.activePartyByWindow.set(windowId, partyId);
+    const entry = this.deps.windowRegistry.resolve(windowId);
+    // A desktop row comes from the app-global registry and may live outside the
+    // calling window's workspace. Calls without a window remain explicitly
+    // workspace-scoped; an HTTP/mobile read must never move a person's UI.
+    const registeredHome = entry
+      ? this.partyGroups.read().parties.find((party) => party.id === partyId)?.workspacePath
+      : undefined;
+    const targetWorkspace = registeredHome || workspacePath;
+    const switchingWorkspace = Boolean(entry && workspaceKey(entry.workspacePath) !== workspaceKey(targetWorkspace));
+
+    // Validate and fully hydrate the destination BEFORE changing WindowRegistry.
+    // A stale registry row can therefore fail visibly without leaving main on
+    // one workspace and the renderer on another.
+    const result = await this.engineFor(targetWorkspace).selectParty(partyId);
+    const switchedState = switchingWorkspace ? await this.getState(targetWorkspace) : undefined;
+
+    if (switchingWorkspace && entry) {
+      // Existing destination windows receive their own party views. The moving
+      // renderer is still scoped to its old workspace and receives the complete
+      // destination snapshot exactly once in this response.
+      await this.broadcastParty(targetWorkspace);
+      this.rebindWindowWorkspace(entry, targetWorkspace);
+      this.activePartyByWindow.set(entry.id, partyId);
+      this.deps.onWorkspacesChanged();
+      updateSettings({ workspacePath: targetWorkspace });
+    } else {
+      if (windowId) {
+        this.activePartyByWindow.set(windowId, partyId);
+      }
+      await this.broadcastParty(targetWorkspace);
     }
-    await this.broadcastParty(workspacePath);
-    return result;
+    return switchedState ? { ...result, switchedState } : result;
   }
 
   async removeParty(workspacePath: string, partyId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeParty"]>> {
@@ -1868,6 +1928,8 @@ export class AppController {
         log("warn", "cwd", "could not save default cwd", { location: location.serialized, error: error instanceof Error ? error.message : String(error) });
       });
     }
+    this.deps.onSettingsChanged();
+    this.publishSettings();
     await this.syncPartyRegistry(workspacePath);
     return result;
   }

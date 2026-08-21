@@ -2025,7 +2025,13 @@ falls back to the request's workspace. `groupId` defaults to the default group.
 
 ### `POST /api/parties/:id/select`
 
-Selects the active party for member creation and compatibility endpoints.
+Selects the active party for member creation and compatibility endpoints. For a
+desktop window, the id is resolved through the app-global party registry: if its
+party lives in another workspace, AgentParty validates and hydrates that
+workspace **before** committing the window move, then returns `switchedState` in
+the command result. A stale/missing party therefore fails without leaving the
+main process and renderer on different workspaces. Calls with no desktop window
+remain scoped to the request workspace and never move a person's UI.
 
 ### `POST /api/parties/:id/delete`
 
@@ -2040,7 +2046,10 @@ returned whichever directory the app was launched from. See
 A **location** is the existing serialized workspace form — `C:\Project\App`, or
 `wsl+Ubuntu-24.04:/home/dev/svc` — and is written in request bodies as
 `{ "env": "windows" | "wsl", "cwd": "...", "distro": "..." }` (`distro` required
-for `wsl`).
+for `wsl`). Workspace locations must be absolute; in particular,
+`wsl+Ubuntu:home/dev/svc` is rejected instead of being resolved against the
+engine process's cwd. Windows workspace identity and WSL distro identity are
+case-insensitive, while the POSIX path inside a distro remains case-sensitive.
 
 ### `GET /api/party-groups`
 
@@ -2081,6 +2090,10 @@ Default cwd per environment plus the ten most recent. `?check=1` re-probes every
 entry in its own environment (this can start a WSL distro), so the default is the
 cheap read.
 
+Successful party/member creation publishes the updated recent list to every
+open window immediately. Default/recent mutations do the same; a reload is not
+required for another window's picker or Settings screen to reflect them.
+
 The response also carries `appWorkspaceRoot` — `<userData>/workspaces`, created
 on demand. It is what the picker offers when the user has neither a remembered
 cwd nor a default, so a first run has somewhere real to put a party instead of
@@ -2109,7 +2122,9 @@ Installed WSL distros, for the WSL side of the picker.
 `{ order: [groupId, …] }` — the whole new order, first to last. Not a
 "move X before Y": one shape that cannot disagree with itself, and re-sending it
 changes nothing. A group the caller did not mention (created in another window
-mid-drag) keeps its place at the end rather than being dropped.
+mid-drag) keeps its place at the end rather than being dropped. Repeating an id
+is rejected visibly; older registries containing duplicates are de-duplicated
+on read and repaired on the next write.
 
 ### `POST /api/party-groups/:id/rename`
 
@@ -2961,7 +2976,9 @@ Lists open windows: `{ windows: [{ id, workspacePath, focused }] }`.
 ### `POST /api/windows`
 
 Opens a new window. Body `{ "workspacePath": "C:/path" }` (optional; defaults to
-the last-used workspace). Returns `{ id, workspacePath, focused }`.
+the last-used workspace). Returns `{ id, workspacePath, focused }`. The path
+must be absolute (including the POSIX path in a `wsl+<distro>:/...` URI); an
+invalid workspace is rejected before any window is created.
 
 `{ "partyId": "party-…" }` opens the window ON that party instead of whatever the
 workspace last selected. The party is pinned before the window can ask, so it

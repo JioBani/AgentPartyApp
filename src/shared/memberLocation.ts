@@ -179,7 +179,10 @@ export function parseMemberLocation(value: string): MemberExecutionLocation {
  */
 export function memberLocationKey(loc: MemberExecutionLocation): string {
   if (loc.env === "wsl") {
-    return `wsl+${loc.distro ?? ""}:${trimTrailing(loc.cwd, "/") || "/"}`;
+    // Distro names follow WSL's case-insensitive identity; the path inside the
+    // distro does not. Without this, one cwd occupied two recent-list slots
+    // merely because one caller wrote `Ubuntu` and another wrote `ubuntu`.
+    return `wsl+${(loc.distro ?? "").toLowerCase()}:${trimTrailing(loc.cwd, "/") || "/"}`;
   }
   return trimTrailing(loc.cwd.replace(/\//g, "\\"), "\\").toLowerCase();
 }

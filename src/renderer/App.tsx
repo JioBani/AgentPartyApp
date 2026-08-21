@@ -649,6 +649,9 @@ export function App() {
     });
     const offSettingsUpdate = window.agentParty.onSettingsUpdate?.((payload) => {
       const incoming = payload as InitialAppState["settings"];
+      if (incoming.cwdPreferences) {
+        setCwdPrefs(incoming.cwdPreferences);
+      }
       setState((current) => ({ ...current, settings: { ...current.settings, ...incoming, workspacePath: current.settings.workspacePath } }));
     });
     // The group registry is app-global: a create/rename/delete/move in another
@@ -966,20 +969,12 @@ export function App() {
    */
   async function selectParty(partyId: string) {
     try {
-      // Always ask the main process when a globally registered party names a
-      // home. The renderer's workspace copy can be one render behind; only the
-      // window registry can safely decide whether this is a real move. A
-      // same-workspace call returns no state cheaply, while a real move returns
-      // the destination state that must replace this window's old state.
-      const home = groupState.parties.find((entry) => entry.id === partyId)?.workspacePath;
-      const switchedState: InitialAppState | undefined = home
-        ? await window.agentParty.switchWorkspace(home)
-        : undefined;
+      // Main resolves the app-global party's home, validates the party and
+      // hydrates that workspace before committing the window move. Keeping this
+      // as one call prevents a stale row from moving main while this renderer
+      // remains on its old workspace after selection fails.
       const result = await window.agentParty.selectParty(partyId);
-      // A real cross-workspace move does need its fresh global/session state.
-      // Apply it together with the requested party so React never paints the
-      // destination workspace's incidental default party in between.
-      await applyPartyResult(result, true, switchedState);
+      await applyPartyResult(result, true, result.switchedState);
     } catch (error) {
       noticeOnFailure("파티를 전환하지 못했습니다")(error);
     }

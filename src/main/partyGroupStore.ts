@@ -160,6 +160,16 @@ export class PartyGroupStore {
    */
   reorderGroups(order: string[]): PartyGroupState {
     const state = this.read();
+    const requested = new Set<string>();
+    for (const id of order) {
+      if (requested.has(id)) {
+        // Repeating an id used to persist the same folder twice. Reject the
+        // malformed whole-order command visibly; silently de-duplicating it
+        // would tell an automation caller its invalid mutation succeeded.
+        throw new Error(`Group order contains duplicate id '${id}'.`);
+      }
+      requested.add(id);
+    }
     const known = new Map(state.groups.map((group) => [group.id, group] as const));
     const ordered = order.map((id) => known.get(id)).filter((group): group is PartyGroup => Boolean(group));
     const seen = new Set(ordered.map((group) => group.id));
@@ -291,9 +301,18 @@ export class PartyGroupStore {
  */
 function withDefaultGroup(state: PartyGroupState): PartyGroupState {
   const now = new Date().toISOString();
-  const groups = state.groups.some((group) => group.kind === "default")
-    ? state.groups
-    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default" as const, createdAt: now, updatedAt: now }, ...state.groups];
+  // Repair registries written by older versions whose reorder endpoint could
+  // persist one group id more than once. First occurrence wins because that is
+  // the position the caller explicitly placed first.
+  const seen = new Set<string>();
+  const uniqueGroups = state.groups.filter((group) => {
+    if (seen.has(group.id)) return false;
+    seen.add(group.id);
+    return true;
+  });
+  const groups = uniqueGroups.some((group) => group.kind === "default")
+    ? uniqueGroups
+    : [{ id: DEFAULT_PARTY_GROUP_ID, name: "기본 그룹", kind: "default" as const, createdAt: now, updatedAt: now }, ...uniqueGroups];
   const fallback = groups.find((group) => group.kind === "default")?.id ?? DEFAULT_PARTY_GROUP_ID;
   const known = new Set(groups.map((group) => group.id));
   const parties = state.parties.map((party) => (known.has(party.groupId) ? party : { ...party, groupId: fallback }));

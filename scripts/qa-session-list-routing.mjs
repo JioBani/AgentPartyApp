@@ -72,18 +72,17 @@ assert(forLocal.length === 2, "its own workspace's sessions", forLocal.map((s) =
 assert(!forLocal.some((s) => s.id === "s-other"), "and no other workspace's");
 
 // Path spelling must not decide ownership: splitting one workspace into two
-// identities resurrects the two-producer bug under a new name. `workspaceKey`
-// resolves the path, so a trailing separator is the same workspace.
-//
-// NOT asserted here: case. `path.resolve` does not case-fold, so on Windows
-// `c:\project\...` keys differently from `C:\Project\...` even though the OS
-// treats them as one folder. That is a separate defect in workspace identity,
-// not in this routing seam — see §7-2 of
-// docs/BUG-REPORT-2026-08-07-CROSS-WORKSPACE-SESSION-LIST-FLAP.md.
+// identities resurrects the two-producer bug under a new name.
 assert(
   sessionsForWindow(sessions, LOCAL + "\\").length === 2,
   "workspace identity survives a trailing separator",
 );
+if (process.platform === "win32") {
+  assert(
+    sessionsForWindow(sessions, LOCAL.toLowerCase()).length === 2,
+    "workspace identity follows Windows case-insensitivity",
+  );
+}
 
 console.log("");
 if (failures) {
