@@ -647,11 +647,11 @@ function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
  * One wording per outcome, so the tooltip, the accessible label and the inline
  * badge cannot describe the same result three different ways.
  */
-const TOOL_OUTCOME_STR: Record<ToolOutcome, "STR-3787" | "STR-3788" | "STR-3789" | "STR-3790"> = {
-  ok: "STR-3787",
-  failed: "STR-3788",
-  denied: "STR-3789",
-  running: "STR-3790",
+const TOOL_OUTCOME_STR: Record<ToolOutcome, "STR-3788" | "STR-3789" | "STR-3790" | "STR-3791"> = {
+  ok: "STR-3788",
+  failed: "STR-3789",
+  denied: "STR-3790",
+  running: "STR-3791",
 };
 
 function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; density: PanelDensity; detail: "full" | "answers" }) {

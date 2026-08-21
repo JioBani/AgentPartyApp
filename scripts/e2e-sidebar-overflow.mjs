@@ -71,6 +71,84 @@ async function main() {
     })()`);
     if (dismissedGuideOffer) await delay(150);
 
+    // Creation entry points stay visible without relying on context menus.
+    const emptyGroupName = "empty-group-with-a-deliberately-long-name";
+    const existingEmptyGroup = (await getJson("/api/party-groups")).groups.find((group) => group.name === emptyGroupName);
+    const emptyGroup = existingEmptyGroup
+      ? { group: existingEmptyGroup }
+      : await post("/api/party-groups", { name: emptyGroupName });
+    await delay(300);
+    const creationEntries = await cdp.eval(`(() => {
+      const member = document.querySelector(".wb-member-add");
+      const groupButtons = [...document.querySelectorAll(".wb-party-add")];
+      const empty = groupButtons.find((button) => button.getAttribute("aria-label")?.includes("empty-group-with-a-deliberately-long-name"));
+      const memberRect = member?.getBoundingClientRect();
+      const emptyRect = empty?.getBoundingClientRect();
+      return {
+        memberFound: member instanceof HTMLButtonElement,
+        memberText: member?.textContent?.trim(),
+        oldHintFound: Boolean(document.querySelector(".wb-members-section .wb-section-label .wb-hint")),
+        groupButtonCount: groupButtons.length,
+        groupCount: document.querySelectorAll(".wb-party-group.is-open").length,
+        emptyFound: empty instanceof HTMLButtonElement,
+        memberInsideDrawer: Boolean(memberRect && memberRect.left >= 0 && memberRect.right <= document.querySelector(".wb-member-drawer")?.getBoundingClientRect().right),
+        emptyInsideDrawer: Boolean(emptyRect && emptyRect.left >= 0 && emptyRect.right <= document.querySelector(".wb-party-drawer")?.getBoundingClientRect().right),
+      };
+    })()`);
+    assert(creationEntries.memberFound && creationEntries.memberText === "\uBA64\uBC84 \uB9CC\uB4E4\uAE30", "the member drawer exposes the labeled create button");
+    assert(!creationEntries.oldHintFound, "the former member-selection hint is removed");
+    assert(creationEntries.groupButtonCount === creationEntries.groupCount, "every expanded group exposes one party-create button");
+    assert(creationEntries.emptyFound, "an empty group exposes its party-create button");
+    assert(creationEntries.memberInsideDrawer && creationEntries.emptyInsideDrawer, "creation buttons fit inside narrow drawer geometry");
+
+    const memberFlow = await cdp.eval(`(async () => {
+      const button = document.querySelector(".wb-member-add");
+      button?.focus();
+      const keyboardFocusable = document.activeElement === button;
+      button?.click();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return {
+        keyboardFocusable,
+        expanded: button?.getAttribute("aria-expanded"),
+        wizard: Boolean(document.querySelector(".wb-members-section .wb-wizard")),
+      };
+    })()`);
+    assert(memberFlow.keyboardFocusable && memberFlow.expanded === "true" && memberFlow.wizard, "the keyboard-focusable member button opens the existing member wizard");
+    await cdp.eval(`document.querySelector(".wb-member-add")?.click()`);
+
+    const partyFlow = await cdp.eval(`(async () => {
+      const button = [...document.querySelectorAll(".wb-party-add")].find((item) => item.getAttribute("aria-label")?.includes("empty-group-with-a-deliberately-long-name"));
+      button?.focus();
+      const keyboardFocusable = document.activeElement === button;
+      button?.click();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const modal = document.querySelector(".wb-new-party-modal");
+      return {
+        keyboardFocusable,
+        opened: Boolean(modal),
+        groupId: modal?.querySelector(".wb-group-select")?.value,
+      };
+    })()`);
+    assert(partyFlow.keyboardFocusable && partyFlow.opened && partyFlow.groupId === emptyGroup.group.id, "a keyboard-focusable group button opens party creation with that group selected");
+    await cdp.eval(`document.querySelector(".wb-new-party-modal .wb-modal-head .wb-icon-btn")?.click()`);
+
+    await post("/api/appearance/theme", { theme: "agentparty-dark" });
+    await delay(200);
+    const darkGeometry = await cdp.eval(`(() => {
+      const member = document.querySelector(".wb-member-add")?.getBoundingClientRect();
+      const party = document.querySelector(".wb-party-add")?.getBoundingClientRect();
+      return {
+        theme: document.documentElement.getAttribute("data-theme"),
+        memberVisible: Boolean(member && member.width > 0 && member.height > 0),
+        partyVisible: Boolean(party && party.width > 0 && party.height > 0),
+      };
+    })()`);
+    assert(darkGeometry.theme === "agentparty-dark" && darkGeometry.memberVisible && darkGeometry.partyVisible, "creation entries remain visible in the dark theme");
+    await post("/api/appearance/theme", { theme: "agentparty-light" });
+    await delay(150);
+    const creationShot = await post("/api/capture", { path: path.join(os.tmpdir(), "create-actions-e2e.png") });
+    assert(creationShot.ok && creationShot.bytes > 0, "saved the creation-entry layout screenshot");
+
     // Overflowing POPUPS are the other half of #11: a menu must be bounded and
     // fully on-window, otherwise its tail is unreachable the same way. Checked
     // first, while one member owns a full-width panel — the panel's dropdowns
@@ -165,6 +243,17 @@ async function main() {
     assert(counts.parties === PARTIES, `sidebar renders all ${PARTIES} parties (got ${counts.parties})`);
     assert(counts.members === MEMBERS + 1, `sidebar renders all ${MEMBERS + 1} members (got ${counts.members})`);
 
+    const moreBefore = await cdp.eval(`(() => {
+      const button = document.querySelector(".wb-party-more");
+      const list = document.querySelector(".wb-party-scroll");
+      return { visible: Boolean(button), top: list?.scrollTop || 0, label: button?.getAttribute("aria-label") || "" };
+    })()`);
+    assert(moreBefore.visible && moreBefore.label.length > 0, "party overflow affordance is visible and keyboard-labelled while content remains below");
+    await cdp.eval(`document.querySelector(".wb-party-more")?.click()`);
+    await delay(700);
+    const moreAfter = await cdp.eval(`document.querySelector(".wb-party-scroll")?.scrollTop || 0`);
+    assert(moreAfter > moreBefore.top, `party overflow button advances to the next hidden area (scrollTop ${moreBefore.top} → ${moreAfter})`);
+
     for (const [label, list, row] of [
       ["party", ".wb-party-scroll", ".wb-party-row"],
       ["member", ".wb-member-list", ".wb-member-row"],
@@ -177,6 +266,9 @@ async function main() {
       // The complaint itself: the last row must be hit-testable after scrolling.
       assert(m.lastRowReachable, `last ${label} row is reachable by click after scrolling to the bottom (hit "${m.hitText}")`);
     }
+    await delay(250);
+    const moreAtBottom = await cdp.eval(`Boolean(document.querySelector(".wb-party-more"))`);
+    assert(!moreAtBottom, "party overflow affordance disappears at the actual bottom");
 
     // Reproduce the exact lower-row context-menu bug with native pointer input.
     // The previous measurement left the member list at its bottom; the last row
@@ -239,6 +331,8 @@ async function main() {
     // imply otherwise (the endpoint reports no scroll outcome today).
     const cap = await post("/api/capture", { path: shot, scrollSelector: ".wb-party-list", scrollY: "bottom" });
     assert(cap.ok && cap.bytes > 0, `saved a screenshot for the record → ${cap.path} (${cap.bytes} bytes)`);
+
+    await del(`/api/party-groups/${encodeURIComponent(emptyGroup.group.id)}`);
 
     cdp.close();
     await post("/api/window/close", {});
@@ -358,6 +452,7 @@ async function waitForApi() {
 
 async function getJson(u) { const r = await fetch(base + u); if (!r.ok) throw new Error(`${u} returned ${r.status}`); return r.json(); }
 async function post(u, b) { const r = await fetch(base + u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); if (!r.ok) throw new Error(`${u} returned ${r.status}: ${await r.text()}`); return r.json(); }
+async function del(u) { const r = await fetch(base + u, { method: "DELETE" }); if (!r.ok) throw new Error(`${u} returned ${r.status}: ${await r.text()}`); return r.json(); }
 async function removePath(target) { for (let i = 0; i < 10; i += 1) { try { fs.rmSync(target, { recursive: true, force: true }); return; } catch (e) { if (e?.code !== "EBUSY" || i === 9) return; await delay(300); } } }
 function waitForExit(child) { return new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("App did not exit after close API.")), 30000); child.once("exit", () => { clearTimeout(t); resolve(); }); }); }
 function killProcessTree(pid) { if (!pid) return; try { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { try { process.kill(pid); } catch { /* gone */ } } }

@@ -14,7 +14,7 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { PartyGroupList } from "./PartyGroupList";
 import { MemberCwdTree } from "./MemberCwdTree";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
-import { CwdPicker, ENV_LABEL, EnvIcon, type WslBrowsing } from "./CwdPicker";
+import { CwdPicker, ENV_LABEL, EnvIcon, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { groupParties } from "../../shared/partyGroups";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
@@ -64,7 +64,7 @@ interface PartySidebarProps {
   defaultProfile: DefaultMemberProfile;
   harnessDefaults: Record<string, HarnessDefaults>;
   onSelectParty: (partyId: string) => void;
-  onCreateParty: (input: CreatePartyInput) => void;
+  onCreateParty: (input: CreatePartyInput) => Promise<boolean>;
   onCreateGroup: (name: string) => void;
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
   onRenameGroup: (groupId: string, name: string) => void;
@@ -73,7 +73,7 @@ interface PartySidebarProps {
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
-  onCreateMember: (input: CreateMemberInput) => void;
+  onCreateMember: (input: CreateMemberInput) => Promise<boolean>;
   onOpenMember: (member: string) => void;
   /** Hard restart (in-place harness restart); enabled only with a live session. */
   onRestartMember: (member: string) => void;
@@ -367,6 +367,8 @@ export function PartySidebar(props: PartySidebarProps) {
 
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const [memberSubmitting, setMemberSubmitting] = useState(false);
+  const memberSubmittingRef = useRef(false);
   const [newPartyOpen, setNewPartyOpen] = useState(false);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   /** The party the 그룹으로 이동 dialog is open for. */
@@ -508,6 +510,18 @@ export function PartySidebar(props: PartySidebarProps) {
     });
   }
 
+  async function createMember(input: CreateMemberInput) {
+    if (memberSubmittingRef.current) return;
+    memberSubmittingRef.current = true;
+    setMemberSubmitting(true);
+    try {
+      if (await onCreateMember(input)) setCreating(false);
+    } finally {
+      memberSubmittingRef.current = false;
+      setMemberSubmitting(false);
+    }
+  }
+
   return (
     <>
       {drawers.party.open ? (
@@ -539,6 +553,8 @@ export function PartySidebar(props: PartySidebarProps) {
           onToggleGroup={toggleGroup}
           onSelectParty={onSelectParty}
           onCreateGroup={() => setNewGroupOpen(true)}
+          onCreateParty={(groupId) => { setNewPartyGroupId(groupId); setNewPartyOpen(true); }}
+          createPartyDisabled={newPartyOpen}
           onDropParty={onMovePartyToGroup}
           onReorderGroups={onReorderGroups}
           onPartyContextMenu={(party, event) => {
@@ -574,10 +590,19 @@ export function PartySidebar(props: PartySidebarProps) {
           </header>
 
           <section className="wb-sidebar-section wb-members-section">
-            <div className="wb-section-label">
-          {!creating && <span className="wb-hint"><LocalizedText id="STR-2062" /></span>}
-          <button type="button" className={"wb-icon-btn wb-section-add" + (creating ? " is-open" : "")} title={creating ? localized("STR-2064") : localized("STR-2063")} onClick={() => setCreating((value) => !value)}>
-            {creating ? <X size={14} /> : <Plus size={15} />}
+            <div className="wb-member-create-head">
+          <button
+            type="button"
+            className={"wb-group-add wb-member-add" + (creating ? " is-open" : "")}
+            title={creating ? localized("STR-2064") : localized("STR-3783")}
+            aria-label={creating ? localized("STR-2064") : localized("STR-3783")}
+            aria-expanded={creating}
+            aria-busy={memberSubmitting}
+            disabled={memberSubmitting}
+            onClick={() => setCreating((value) => !value)}
+          >
+            {creating ? <X size={13} /> : <Plus size={13} />}
+            <LocalizedText id={creating ? "STR-2064" : "STR-3783"} />
           </button>
         </div>
 
@@ -594,8 +619,9 @@ export function PartySidebar(props: PartySidebarProps) {
             now={now}
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}
+            submitting={memberSubmitting}
             onCancel={() => setCreating(false)}
-            onCreate={(input) => { onCreateMember(input); setCreating(false); }}
+            onCreate={(input) => { void createMember(input); }}
           />
         )}
 
@@ -730,7 +756,13 @@ export function PartySidebar(props: PartySidebarProps) {
           wsl={wsl}
           onCreateGroup={() => { setNewPartyOpen(false); setNewGroupOpen(true); }}
           onCancel={() => { setNewPartyOpen(false); setNewPartyGroupId(null); }}
-          onCreate={(input) => { onCreateParty(input); setDraft(""); setNewPartyOpen(false); setNewPartyGroupId(null); }}
+          onCreate={async (input) => {
+            if (!await onCreateParty(input)) return false;
+            setDraft("");
+            setNewPartyOpen(false);
+            setNewPartyGroupId(null);
+            return true;
+          }}
         />
       )}
 
@@ -776,22 +808,32 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
   /** Chosen from the group dropdown's last entry; hands over to the group dialog. */
   onCreateGroup: () => void;
   onCancel: () => void;
-  onCreate: (input: CreatePartyInput) => void;
+  onCreate: (input: CreatePartyInput) => Promise<boolean>;
 }) {
   const [name, setName] = useState(initialName);
   const [groupId, setGroupId] = useState(initialGroupId || groups[0]?.id || "");
   const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() => suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [gateOn, setGateOn] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [rule, setRule] = useState("간결하게 보내세요. 오케스트레이터를 거치지 말고 담당 멤버에게 직접 소통하세요.");
   // A party cannot be created without somewhere for `main` to run (README §7).
   const locationProblem = location ? checkLocationShape(location) : undefined;
-  const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem;
+  const distroProblem = selectableWslDistroError(location, wsl);
+  const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem && !distroProblem;
 
-  function create() {
-    if (!canCreate || !location) {
+  async function create() {
+    if (!canCreate || !location || submittingRef.current) {
       return;
     }
-    onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined });
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined });
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   }
 
   function changeEnv(env: ExecutionEnv) {
@@ -806,7 +848,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             <Users size={16} />
             <strong><LocalizedText id="STR-2075" /></strong>
           </div>
-          <button type="button" className="wb-icon-btn" title={localized("STR-2076")} onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-2076")} disabled={submitting} onClick={onCancel}><X size={16} /></button>
         </header>
         <div className="wb-modal-body wb-gate-modal-body">
           <div className="wb-modal-label"><LocalizedText id="STR-2077" /></div>
@@ -816,7 +858,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             autoFocus
             placeholder={localized("STR-2078")}
             onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") create(); }}
+            onKeyDown={(event) => { if (event.key === "Enter") void create(); }}
           />
 
           <div className="wb-modal-label"><LocalizedText id="STR-3689" /></div>
@@ -846,7 +888,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
             wsl={wsl}
             hint={<><LocalizedText id="STR-3693" /> <b>main</b> <LocalizedText id="STR-3692" /></>}
           />
-          {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+          {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
 
           <div className="wb-gate-block">
             <label className="wb-gate-toggle-row">
@@ -871,8 +913,8 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
         <footer className="wb-modal-foot">
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
-            <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-2083" /></button>
-            <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}><LocalizedText id="STR-2084" /></button>
+            <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-2083" /></button>
+            <button type="button" className="wb-btn wb-btn-accent" aria-busy={submitting} disabled={!canCreate || submitting} onClick={() => void create()}><LocalizedText id="STR-2084" /></button>
           </div>
         </footer>
       </div>

@@ -285,17 +285,21 @@
    rather than pushing the description around: a party name has no length
    limit. */
 .screen-party {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-1);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   max-width: 320px;
+  padding: 4px 9px 4px 5px;
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.screen-party-label { flex: none; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-0); font-size: 9px; font-weight: var(--weight-bold); letter-spacing: .04em; }
+.screen-party strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-0); font-size: var(--font-body-sm); font-weight: var(--weight-bold); }
 
 .host-badge {
   font-family: var(--font-sans);
@@ -599,6 +603,10 @@
 .wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
 /* Only the groups scroll; the create button above this box stays put. */
 .wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
+.wb-party-scroll.has-more-below { padding-bottom: 48px; }
+.wb-party-more { position: absolute; z-index: 3; left: 7px; right: 7px; bottom: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 38px; border: 1px solid var(--accent-bd); border-radius: var(--radius-button); background: color-mix(in srgb, var(--bg-2) 88%, var(--accent)); color: var(--accent); box-shadow: 0 -10px 20px 8px var(--bg-0), 0 3px 10px var(--shadow); font-size: var(--font-caption); font-weight: var(--weight-bold); cursor: pointer; }
+.wb-party-more:hover { border-color: var(--accent); background: color-mix(in srgb, var(--bg-3) 76%, var(--accent)); }
+.wb-party-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* A narrow drawer must not turn a one-line hint into a two-line block that
    pushes the list down. It clips instead. */
@@ -793,6 +801,7 @@
 /* Same fix as .wb-member-list, but the parties section is not the flexible one:
  * cap it so a long party list scrolls instead of pushing Members off-screen. */
 .wb-party-list {
+  position: relative;
   max-height: 30vh;
   min-height: 0;
   overflow-y: auto;
@@ -800,7 +809,7 @@
 
 .wb-party-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -816,8 +825,13 @@
 
 .wb-party-row.is-active {
   background: var(--accent-dim);
-  border-color: var(--accent-bd);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+.screen-header-party { min-height: 54px; }
+.screen-title-party { gap: var(--space-2); }
+.screen-title-party > p { width: auto; margin-left: var(--space-2); }
 
 .wb-party-name {
   font-size: 12.5px;
@@ -833,6 +847,8 @@
   font-size: 10.5px;
   color: var(--text-3);
 }
+
+.wb-party-current { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-0); font-size: 9px; font-weight: var(--weight-bold); letter-spacing: .02em; }
 
 .wb-party-check {
   grid-row: 1 / span 2;
@@ -9252,6 +9268,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-group:not(.is-open) .wb-group-parties { display: none; }
 .wb-group-add { display: flex; align-items: center; gap: 5px; width: 100%; padding: 5px 6px; margin-top: 4px; background: none; border: 1px dashed var(--border); border-radius: var(--radius-button); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
 .wb-group-add:hover { border-color: var(--accent-bd); color: var(--accent); }
+.wb-group-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wb-group-add:disabled { opacity: .5; cursor: not-allowed; }
+.wb-party-add { flex: none; min-width: 0; margin: 0 0 3px; padding: 4px 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wb-party-add svg { flex: none; }
+.wb-member-create-head { flex: none; }
+.wb-member-add { min-width: 0; margin: 0; padding: 6px 8px; font-weight: var(--weight-semibold); }
+.wb-member-add.is-open { border-style: solid; border-color: var(--border-strong); color: var(--text-1); }
 .wb-env-seg { display: flex; flex: none; gap: 4px; margin-top: 6px; padding: 3px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-button); }
 .wb-env-seg button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; height: 26px; background: none; border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-body); cursor: pointer; }
 .wb-env-seg button.is-active { background: var(--bg-2); border-color: var(--border); color: var(--text-0); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px var(--shadow); }
@@ -9263,11 +9286,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-cwd-list { flex: none; margin-top: 6px; overflow: hidden; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
 .wb-cwd-list-label { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
 .wb-cwd-list-label span { margin-left: auto; color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
-.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 5px 8px; background: none; border: 0; border-top: 1px solid var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 6px 8px; background: none; border: 1px solid transparent; border-top-color: var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
 .wb-cwd-item:first-of-type { border-top: 0; }
 .wb-cwd-item:hover { background: var(--bg-3); }
-.wb-cwd-item.is-selected { background: var(--accent-dim); color: var(--text-0); }
+.wb-cwd-item.is-selected { position: relative; z-index: 1; background: var(--accent-dim); border-color: var(--accent); color: var(--text-0); box-shadow: inset 3px 0 0 var(--accent); }
 .wb-cwd-item.is-broken { color: var(--text-3); }
+.wb-cwd-choice { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 17px; height: 17px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--bg-input); color: var(--bg-0); }
+.wb-cwd-item.is-selected .wb-cwd-choice { border-color: var(--accent); background: var(--accent); }
 .wb-cwd-item-path { flex: 1 1 80px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-cwd-pin { flex: none; color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
 .wb-cwd-warn { display: flex; flex: none; align-items: center; gap: 3px; color: var(--danger); font-size: var(--font-micro); }
@@ -9291,13 +9316,24 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    목업에 없는 컨트롤이라 값은 위 블록에서 가져온다: 칩은 .wb-env-seg 버튼과
    같은 높이·여백을 쓴다. 새 숫자를 만들면 같은 컨트롤이 두 벌의 치수를 갖는다.
    경로 자체는 OS 폴더 대화상자로 고른다(WSL 은 \wsl$\<배포판> 으로 열린다). */
-.wb-cwd-distros { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; margin-top: 6px; }
+.wb-cwd-distros { display: flex; flex: none; flex-direction: column; align-items: stretch; gap: 5px; margin-top: 6px; }
+.wb-cwd-distro-select { display: flex; align-items: center; gap: 8px; }
 .wb-cwd-distros-label { flex: none; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
 .wb-cwd-distros-note { display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--font-caption); }
 .wb-cwd-distros-note.is-warn { color: var(--danger); }
-.wb-cwd-distro-chip { display: flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
-.wb-cwd-distro-chip:hover { border-color: var(--border-strong); color: var(--text-0); }
-.wb-cwd-distro-chip.is-active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); font-weight: var(--weight-semibold); }
+.wb-cwd-distro-control { position: relative; display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; height: 30px; padding-left: 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-input); color: var(--accent); }
+.wb-cwd-distro-control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.wb-cwd-distro-control select { flex: 1; min-width: 0; height: 100%; padding: 0 28px 0 0; appearance: none; background: transparent; border: 0; outline: 0; color: var(--text-0); font: inherit; font-size: var(--font-body-sm); cursor: pointer; }
+.wb-cwd-distro-control select:disabled { cursor: not-allowed; color: var(--text-3); }
+.wb-cwd-distro-control option { background: var(--bg-input); color: var(--text-0); }
+.wb-cwd-distro-chevron { position: absolute; right: 8px; pointer-events: none; color: var(--text-3); }
+.wb-cwd-default { flex: none; margin-top: 6px; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); }
+.wb-cwd-default-label { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .04em; }
+.wb-cwd-default-label span:last-child { color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
+.wb-cwd-default-value { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; border: 1px solid transparent; background: transparent; color: var(--text-1); text-align: left; cursor: pointer; }
+.wb-cwd-default-value:hover { background: var(--bg-3); }
+.wb-cwd-default-value.is-selected { background: var(--accent-dim); border-color: var(--accent-bd); }
+.wb-cwd-default-empty { margin: 0; padding: 7px 8px; color: var(--text-3); font-size: var(--font-caption); }
 /* 배포판을 아직 안 골랐을 때 비활성. 사라지지 않고 눌리지 않는 상태로 남는다. */
 .wb-cwd-browse:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -9310,11 +9346,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    sized to one row and the rest of the list simply vanished. */
 .wb-party-group { flex: none; margin-bottom: 6px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); overflow: hidden; }
 .wb-party-group.is-menu { border-color: var(--border-strong); }
-.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-1); font-size: var(--font-body-sm); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 34px; padding: 0 9px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-0); font-size: 13px; font-weight: var(--weight-bold); cursor: pointer; }
 .wb-party-group.is-open .wb-group-row { border-bottom: 1px solid var(--border-subtle); }
 .wb-group-row:hover { background: var(--bg-4, var(--bg-3)); color: var(--text-0); }
-.wb-group-icon { flex: none; color: var(--accent); }
-.wb-group-count { flex: none; min-width: 18px; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--font-micro); text-align: center; }
+.wb-group-icon { flex: none; color: var(--accent); filter: drop-shadow(0 0 5px var(--accent-dim)); }
+.wb-group-count { flex: none; min-width: 22px; padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-0); font-size: 11px; font-weight: var(--weight-bold); text-align: center; }
 /* 파티는 그룹 상자 안에 들어간다 — 왼쪽 세로선 대신 상자가 소속을 말한다. */
 .wb-group-parties { gap: 1px; padding: 4px; margin-left: 0; border-left: 0; }
 .wb-group-empty { margin: 0; padding: 8px 6px; color: var(--text-3); font-size: var(--font-caption); text-align: center; }

@@ -27,8 +27,8 @@ export const SIDEBAR_DRAWER_MIN_WIDTH = 150;
 export const SIDEBAR_DRAWER_MAX_WIDTH = 460;
 
 export const DEFAULT_SIDEBAR_DRAWERS: SidebarDrawerSettings = {
-  party: { open: true, width: 236 },
-  member: { open: true, width: 210 },
+  party: { open: true, width: 256 },
+  member: { open: true, width: 256 },
 };
 
 /**

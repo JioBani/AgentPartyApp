@@ -98,10 +98,20 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
+interface SavedComposerDraft {
+  text: string;
+  attachments: ImageAttachment[];
+  references: FileReference[];
+}
+
+const savedComposerDrafts = new Map<string, SavedComposerDraft>();
+
 export function Composer({ view, density, actions, commandUi, permission: showPermission = true }: ComposerProps) {
-  const [draft, setDraft] = useState("");
+  const draftKey = `${view.member.partyId || "default"}:${view.name}`;
+  const savedDraft = savedComposerDrafts.get(draftKey);
+  const [draft, setDraft] = useState(() => savedDraft?.text || "");
   const [expanded, setExpanded] = useState(false);
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>(() => savedDraft?.attachments || []);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const prefs = useComposerPrefs();
@@ -112,10 +122,18 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
    * from outside (queue edit) can turn its paths back into chips; the editor's
    * own chips remain the source of truth for what gets sent.
    */
-  const knownRefs = useRef<FileReference[]>([]);
+  const knownRefs = useRef<FileReference[]>(savedDraft?.references || []);
   /** Last text pushed INTO the editor, so we only rebuild on external changes. */
   const renderedRef = useRef("");
   const harness = harnessForRuntime(view.member.runtime);
+
+  useEffect(() => {
+    if (!draft && attachments.length === 0) {
+      savedComposerDrafts.delete(draftKey);
+      return;
+    }
+    savedComposerDrafts.set(draftKey, { text: draft, attachments, references: [...knownRefs.current] });
+  }, [draftKey, draft, attachments]);
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
   // until the turn actually closes, so anything past the grace period is a turn
@@ -314,6 +332,11 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     }
     const text = serializeDraft(root);
     renderedRef.current = text;
+    if (!text && attachments.length === 0) {
+      savedComposerDrafts.delete(draftKey);
+    } else {
+      savedComposerDrafts.set(draftKey, { text, attachments, references: [...knownRefs.current] });
+    }
     setDraft(text);
     if (attachError) {
       setAttachError("");
@@ -710,6 +733,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     }
     if (palette.typedAction) {
       runPaletteAction(palette.typedAction);
+      savedComposerDrafts.delete(draftKey);
       setDraft("");
       knownRefs.current = [];
       setAttachments([]);
@@ -717,6 +741,8 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       return;
     }
     const images = attachments.length ? attachments : undefined;
+    const references = [...knownRefs.current];
+    savedComposerDrafts.delete(draftKey);
     setDraft("");
     knownRefs.current = [];
     setAttachments([]);
@@ -725,6 +751,9 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     // keeps whatever the composer setting says (App resolves that).
     void actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined)
       .catch((error) => {
+        knownRefs.current = references;
+        setDraft((current) => current || text);
+        setAttachments((current) => current.length ? current : attachments);
         setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
       });
   }

@@ -448,9 +448,9 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     count or an id, so it says which one out loud; the width is
                     fixed so the metadata beside it starts on one line down the
                     whole list. */}
-                <span className="wb-queue-ord" title={localized("STR-3785", [row.n])} aria-label={localized("STR-3785", [row.n])}>
+                <span className="wb-queue-ord" title={localized("STR-3786", [row.n])} aria-label={localized("STR-3786", [row.n])}>
                   <span className="wb-queue-n">{row.n}</span>
-                  <span className="wb-queue-ord-suffix" aria-hidden="true"><LocalizedText id="STR-3786" /></span>
+                  <span className="wb-queue-ord-suffix" aria-hidden="true"><LocalizedText id="STR-3787" /></span>
                 </span>
                 {/* Everything ABOUT this row's turn, in one band between the
                     order and the controls: who sent it, and whether it cut in or

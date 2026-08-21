@@ -78,7 +78,7 @@ function HostSection({
       <button
         type="button"
         className="wb-host-row"
-        title={localized("STR-3783")}
+        title={localized("STR-3784")}
         aria-expanded={open}
         onClick={() => onToggleGroup(host.id)}
       >
@@ -87,7 +87,7 @@ function HostSection({
           ? <Folder size={13} className="wb-host-icon" />
           : <EnvIcon env={host.host} size={13} />}
         <span className="wb-host-name">
-          {host.host === "unknown" ? <LocalizedText id="STR-3784" /> : ENV_LABEL[host.host]}
+          {host.host === "unknown" ? <LocalizedText id="STR-3785" /> : ENV_LABEL[host.host]}
         </span>
         {!open && attention && <span className="wb-group-alert" />}
         {!open && !attention && busy && <span className="wb-dot is-working wb-group-live" />}
@@ -127,7 +127,7 @@ function CwdSection({
       <button
         type="button"
         className="wb-cwd-row"
-        title={full || localized("STR-3784")}
+        title={full || localized("STR-3785")}
         aria-expanded={open}
         onClick={() => onToggleGroup(group.id)}
       >
