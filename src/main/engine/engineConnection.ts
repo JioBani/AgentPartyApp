@@ -2,6 +2,7 @@ import type {
   CreateMemberInput,
   CreatePartyInput,
   CreateSessionInput,
+  HostedPartySessionBinding,
   ResumableSessionInfo,
   SessionView,
   StartPartyMemberInput,
@@ -205,6 +206,8 @@ export interface EngineConnection {
 
   // --- Sessions (workspace-scoped) ---------------------------------------
   createSession(input?: CreateSessionInput | string): Promise<SessionView>;
+  /** Internal cross-host entry: reconnects a native session's party tools to its owner engine. */
+  createHostedSession(input: CreateSessionInput, resumeSessionId: string | undefined, binding: HostedPartySessionBinding): Promise<SessionView>;
   listResumableSessions(): Promise<{ sessions: ResumableSessionInfo[]; error?: string }>;
   resumeSession(sessionId: string): Promise<SessionView>;
   listWorkspaceSessions(): Promise<SessionView[]>;
@@ -220,6 +223,7 @@ export interface EngineConnection {
   setSessionEffort(sessionId: string, effort: string): Promise<void>;
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
+  setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   /** Answers a pending approval and reports whether the harness took it. */

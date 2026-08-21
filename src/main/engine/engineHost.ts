@@ -6,6 +6,9 @@ import { setUserDataDir } from "../userDataDir";
 import { EngineRegistry } from "./engineRegistry";
 import type { EngineRegistryDeps } from "./engineRegistry";
 import type { DiscordBridgePort } from "../application/partyApplicationService";
+import type { PartyBridge } from "../../core/partyBridge";
+import type { HostedPartySessionBinding } from "../../shared/types";
+import { RemoteHarnessSession, type RemoteHarnessSessionOptions } from "../harness/remoteHarnessSession";
 
 export interface EngineHostConfig {
   /** Base dir for harness debug logs (Electron userData on desktop; an
@@ -25,6 +28,8 @@ export interface EngineHostConfig {
   };
   /** Desktop-only: builds a connection to an engine in another host (WSL). */
   createRemoteEngine?: EngineRegistryDeps["createRemoteEngine"];
+  /** Headless execution-engine hook that delegates hosted member tools to their owner. */
+  createHostedPartyBridge?: (binding: HostedPartySessionBinding) => PartyBridge;
   /**
    * Overrides how the Message Gate reaches a reviewer model. Set by a headless
    * engine running away from the desktop's loopback (a WSL distro), where the
@@ -70,9 +75,23 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
         }
       : undefined,
   });
-  const sessionManager = new SessionManager(router, config.storageDir, config.runtimeScope);
+  let engineRegistry!: EngineRegistry;
+  const sessionManager = new SessionManager(router, config.storageDir, config.runtimeScope, {
+    createCrossHostAdapter: config.createRemoteEngine
+      ? (input) => {
+          const engine = engineRegistry.forWorkspace(input.target) as ReturnType<EngineRegistry["forWorkspace"]> & {
+            onEvent?: (listener: (channel: string, payload: unknown) => void) => () => void;
+          };
+          if (typeof engine.onEvent !== "function") {
+            throw new Error(`Execution engine '${input.target}' does not expose a session event stream.`);
+          }
+          return new RemoteHarnessSession({ ...input, engine: engine as RemoteHarnessSessionOptions["engine"] });
+        }
+      : undefined,
+    createHostedPartyBridge: config.createHostedPartyBridge,
+  });
   const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord);
-  const engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
+  engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {
     router,

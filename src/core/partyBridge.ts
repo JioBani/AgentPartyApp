@@ -149,6 +149,35 @@ export interface PartyBridge {
   attachImage(input: { path?: string; url?: string; caption?: string }): Promise<PartyToolResult>;
 }
 
+/**
+ * Rebuilds the PartyBridge capability surface around one transport-neutral tool
+ * invoker. Cross-host sessions use this in the execution engine: the model sees
+ * the exact same tools as an in-process member, while every mutation is still
+ * executed by the original party owner.
+ */
+export function partyBridgeFromInvoker(
+  invoke: (tool: PartyToolName, args: unknown) => Promise<PartyToolResult>,
+): PartyBridge {
+  return {
+    send: (_from, to, content, interrupt, force, forceReason) => invoke("send", { to, content, interrupt, force, forceReason }),
+    createMember: (request) => invoke("member-create", request),
+    removeMember: (name) => invoke("member-remove", { name }),
+    setPermission: (name, request) => invoke("member-permission", { name, ...request }),
+    gateSet: (name, patch) => invoke("gate-set", { name, ...patch }),
+    partyGateSet: (patch) => invoke("party-gate-set", patch),
+    list: () => invoke("list", {}),
+    listModels: (query) => invoke("list-models", query || {}),
+    status: (name) => invoke("member-status", name ? { name } : {}),
+    interrupt: (target) => invoke("interrupt", { target }),
+    broadcast: (content, interrupt) => invoke("broadcast", { content, interrupt }),
+    discordConnect: (channelName) => invoke("discord-connect", channelName ? { channelName } : {}),
+    discordSend: (content) => invoke("discord-send", { content }),
+    discordSendImage: (path, caption) => invoke("discord-send-image", { path, caption }),
+    discordDisconnect: () => invoke("discord-disconnect", {}),
+    attachImage: (input) => invoke("attach-image", input),
+  };
+}
+
 export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 

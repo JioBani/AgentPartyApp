@@ -481,6 +481,11 @@ ${body}
           requireBridge().sendImageAsMember(serialized, party, member, image, caption),
         discordDisconnect: async (_workspacePath: string, party: string, member: string) =>
           requireBridge().disconnectMember(serialized, party, member),
+        // A member harness hosted in this distro still belongs to a party whose
+        // state is owned by the desktop engine. Execute every party tool through
+        // the same AppController path used by UI and HTTP automation.
+        partyTool: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) =>
+          controller().invokePartyToolAs(ownerWorkspace, member, tool, args, partyId),
         reviewGate: (message: GateReviewMessage, reviewer: GateReviewer) => {
           // Assigned right after createEngineHost returns, and this closure only
           // runs once a workspace resolves — but say so out loud rather than

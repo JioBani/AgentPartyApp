@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
+import type { PartyToolResult } from "../../core/partyBridge";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -74,6 +75,8 @@ export interface AppControllerDeps {
   subscriptionProxy?: SubscriptionProxyController;
   getRouterBaseUrl: () => string;
   getAutomationBaseUrl: () => string;
+  /** Headless execution-engine fallback for tools owned by a party on the desktop host. */
+  remotePartyTool?: (ownerWorkspace: string, member: string, tool: string, args: unknown, partyId?: string) => Promise<PartyToolResult>;
   /**
    * Identity of the running build, for diagnostics. Injected rather than read
    * from `electron.app` so this controller still loads headless (WSL engine),
@@ -1942,8 +1945,12 @@ export class AppController {
    * working. What never happens is a stated location being replaced by a
    * working one: an unusable path is an error, not a redirect (README §12).
    */
-  private async requireUsableLocation(value: string | undefined, workspacePath: string) {
-    const check = await checkCwd(parseMemberLocation(value || workspacePath));
+  private async requireUsableLocation(value: unknown, workspacePath: string) {
+    const serialized = value == null || value === "" ? workspacePath : value;
+    if (typeof serialized !== "string") {
+      throw new Error("실행 위치 형식이 잘못되었습니다 — 직렬화된 경로 문자열이 필요합니다.");
+    }
+    const check = await checkCwd(parseMemberLocation(serialized));
     if (check.problem) {
       throw new Error(`실행 위치를 사용할 수 없습니다 — ${check.problem.message}: ${check.serialized}`);
     }
@@ -1987,6 +1994,9 @@ export class AppController {
     // the wrong place ("Member 'refactor' is not in this party."). The party the
     // member names is the reliable key, so it decides which engine runs the tool.
     const owner = partyId ? await this.deps.engineRegistry.workspaceOwningParty(partyId, workspacePath) : undefined;
+    if (!owner && partyId && this.deps.remotePartyTool) {
+      return this.deps.remotePartyTool(workspacePath, member, tool, args, partyId);
+    }
     return this.mutateParty(owner || workspacePath, (engine) => engine.invokePartyToolAs(member, tool, args, partyId));
   }
 

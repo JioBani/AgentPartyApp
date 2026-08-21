@@ -1,5 +1,5 @@
 import type { Readable, Writable } from "node:stream";
-import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, StartPartyMemberInput, TranscriptSave } from "../../../shared/types";
+import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, HostedPartySessionBinding, StartPartyMemberInput, TranscriptSave } from "../../../shared/types";
 import type { CodexPolicy } from "../../../shared/codexPolicy";
 import type { CursorPolicy } from "../../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../../shared/attachments";
@@ -124,6 +124,12 @@ export class RemoteEngineClient implements EngineConnection {
       pending: this.pending.size,
       error: lost.message,
     });
+    // Session facades hosted through this connection must stop claiming their
+    // harness is alive. A transport loss has no per-session event to forward,
+    // so publish one engine-scoped terminal signal before rejecting RPC calls.
+    for (const listener of this.eventListeners) {
+      listener("engine:lost", { error: lost.message });
+    }
     this.failAll(lost);
     this.onTransportLost?.(lost);
   }
@@ -239,6 +245,7 @@ export class RemoteEngineClient implements EngineConnection {
   getCursorStatus() { return this.call<Result<"getCursorStatus">>("getCursorStatus"); }
   getClaudeNativeAuth(force?: boolean) { return this.call<Result<"getClaudeNativeAuth">>("getClaudeNativeAuth", force); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }
+  createHostedSession(input: CreateSessionInput, resumeSessionId: string | undefined, binding: HostedPartySessionBinding) { return this.call<Result<"createHostedSession">>("createHostedSession", input, resumeSessionId, binding); }
   listResumableSessions() { return this.call<Result<"listResumableSessions">>("listResumableSessions"); }
   resumeSession(sessionId: string) { return this.call<Result<"resumeSession">>("resumeSession", sessionId); }
   listWorkspaceSessions() { return this.call<Result<"listWorkspaceSessions">>("listWorkspaceSessions"); }
@@ -253,6 +260,7 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionEffort(sessionId: string, effort: string) { return this.call<void>("setSessionEffort", sessionId, effort); }
   setSessionThinking(sessionId: string, mode: string, budget?: number) { return this.call<void>("setSessionThinking", sessionId, mode, budget); }
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
+  setSessionDebugMode(sessionId: string, enabled: boolean) { return this.call<void>("setSessionDebugMode", sessionId, enabled); }
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy) { return this.call<void>("setSessionCursorPolicy", sessionId, policy); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<ApprovalDelivery>("approveSession", sessionId, requestId, behavior, updatedInput, message); }

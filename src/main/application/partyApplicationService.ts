@@ -2581,26 +2581,24 @@ export class PartyApplicationService {
    * honoured rather than treated as a label: without this the picker collected a
    * cwd, validated it, listed it — and every member still ran in the workspace.
    *
-   * A location in a WSL distro can only be honoured BY that distro's engine.
-   * Reached from the desktop it throws, because the alternatives are both worse:
-   * spawning with a POSIX path on Windows fails with a message about a
-   * directory nobody typed, and quietly falling back to the workspace is the
-   * silent substitution this whole feature exists to prevent.
+   * A location in a WSL distro is honoured BY that distro's engine. When this
+   * party is owned by the Windows engine, the return value names a cross-host
+   * target; SessionManager then keeps party/session ownership here while a
+   * transport-backed HarnessSession runs the native provider process there.
    *
    * `undefined` means "no location recorded" — older members, and the value the
    * session manager reads as "use the workspace".
    */
-  private memberCwd(member: PartyMember): { cwd?: string; blocked?: string } {
+  private memberCwd(member: PartyMember): { cwd?: string; crossHostTarget?: string; blocked?: string } {
     if (!member.location) {
       return {};
     }
     const location = parseMemberLocation(member.location);
     if (location.env === "wsl" && !isHostDistro(location.distro)) {
-      return {
-        blocked: `멤버 '${member.name}' 는 WSL 배포판 '${location.distro}' 안에서 실행되어야 합니다. `
-          + `이 워크스페이스의 엔진은 그 배포판이 아니어서 여기서는 시작할 수 없습니다 — `
-          + `해당 배포판의 워크스페이스에서 파티를 여세요.`,
-      };
+      // The party remains owned by this engine. SessionManager supplies a
+      // transport-backed HarnessSession whose native process runs in the distro
+      // and whose event/tool stream comes back to this party owner.
+      return { cwd: location.cwd, crossHostTarget: member.location };
     }
     // The folder was checked when the member was created; it can be gone by the
     // time it starts. A missing cwd surfaces as the missing cwd rather than as
@@ -2616,7 +2614,7 @@ export class PartyApplicationService {
     member: PartyMember,
     input: StartPartyMemberInput,
     options: { mock?: boolean; autoReply?: boolean },
-    cwd: { cwd?: string },
+    cwd: { cwd?: string; crossHostTarget?: string },
   ): SessionView {
     const createInput = {
       workspacePath: workspace,
@@ -2650,6 +2648,14 @@ export class PartyApplicationService {
     };
     // Resume the harness's own thread when we have one, so reopening the member
     // (or the app) continues the conversation with its model context intact.
+    if (cwd.crossHostTarget) {
+      return this.deps.sessionManager.createCrossHostSession(
+        cwd.crossHostTarget,
+        createInput,
+        member.harnessSessionId || undefined,
+        binding,
+      );
+    }
     return this.deps.sessionManager.createSession(createInput, member.harnessSessionId || undefined, binding);
   }
 

@@ -1,4 +1,4 @@
-import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
+import type { CreateMemberInput, CreatePartyInput, CreateSessionInput, HostedPartySessionBinding, SessionView, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import { requireCodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -210,6 +210,10 @@ export class LocalEngine implements EngineConnection {
     return this.deps.sessionManager.createSession(this.withWorkspace(input));
   }
 
+  async createHostedSession(input: CreateSessionInput, resumeSessionId: string | undefined, binding: HostedPartySessionBinding): Promise<SessionView> {
+    return this.deps.sessionManager.createHostedSession(this.withWorkspace(input), resumeSessionId, binding);
+  }
+
   listResumableSessions() {
     return this.deps.sessionManager.listResumableSessions(this.workspacePath);
   }
@@ -282,6 +286,10 @@ export class LocalEngine implements EngineConnection {
     // Capture the runtime change on the owning member so a reopen/restart
     // restores the user's chosen mode instead of reverting to the start-time value.
     this.party.syncMemberPermissionMode(sessionId, permissionMode);
+  }
+
+  async setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void> {
+    this.deps.sessionManager.setSessionDebugMode(sessionId, enabled);
   }
 
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {

@@ -10,6 +10,7 @@ import { HostChannel } from "./hostChannel";
 import { writeLine } from "./rpc";
 import type { GateReviewResult } from "../../../shared/messageGate";
 import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
+import { partyBridgeFromInvoker } from "../../../core/partyBridge";
 
 /**
  * Standalone engine server: builds an Electron-free engine host and serves one
@@ -71,6 +72,8 @@ async function main(): Promise<void> {
       cursorAcpRelayScriptPath: process.env.AGENTPARTY_ACP_RELAY_SCRIPT || undefined,
     },
     reviewGate: (message, reviewer) => hostChannel.call<GateReviewResult>("reviewGate", message, reviewer),
+    createHostedPartyBridge: (binding) => partyBridgeFromInvoker((tool, args) =>
+      hostChannel.call("partyTool", binding.ownerWorkspace, binding.identity.member, tool, args, binding.identity.party)),
     // The Discord bridge is desktop-owned for the same reason as the gate: it
     // holds the bot token and one long-lived gateway socket, and the desktop —
     // not this distro — is what the user configured. Delegating upward keeps a
@@ -108,6 +111,8 @@ async function main(): Promise<void> {
     windowRegistry,
     getRouterBaseUrl: () => host.router.baseUrl,
     getAutomationBaseUrl: () => automationApi?.baseUrl || "",
+    remotePartyTool: (ownerWorkspace, member, tool, args, partyId) =>
+      hostChannel.call("partyTool", ownerWorkspace, member, tool, args, partyId),
     openWindow: () => Promise.reject(new Error("openWindow is not supported in the headless engine server")),
     onSettingsChanged: () => undefined,
     onWorkspacesChanged: () => undefined,

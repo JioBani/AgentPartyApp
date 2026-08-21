@@ -18,7 +18,7 @@ import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
 import type { FavoriteModels } from "./favoriteModels";
 import type { MemberMessagingSettings } from "./memberMessaging";
-import type { PartyPrimerSettings } from "./partyPrimer";
+import type { PartyIdentity, PartyPrimerSettings } from "./partyPrimer";
 import type { UpdateChannel } from "./appUpdate";
 import type { AppLocale } from "./appLocale";
 import type { EnvironmentCheck, EnvironmentProbeStep } from "./environment";
@@ -593,6 +593,20 @@ export interface CreateSessionInput {
   /** Codex two-axis safety model; used only when the harness is Codex. */
   codexPolicy?: CodexPolicy;
   cursorPolicy?: CursorPolicy;
+}
+
+/**
+ * Serializable half of a party session binding.
+ *
+ * A cross-host member runs its harness in another engine process, so the
+ * in-process {@link import("../core/partyBridge").PartyBridge} functions cannot
+ * cross the RPC boundary. The execution engine receives this identity instead
+ * and rebuilds a bridge that delegates each party tool to the engine that owns
+ * `ownerWorkspace`.
+ */
+export interface HostedPartySessionBinding {
+  ownerWorkspace: string;
+  identity: PartyIdentity;
 }
 
 export interface WindowInfo {

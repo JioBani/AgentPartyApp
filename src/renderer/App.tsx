@@ -14,7 +14,7 @@ import type { ComposerSettings } from "../shared/composerSettings";
 import { fontStackFor, normalizeFontSettings, type FontSettings } from "../shared/appFonts";
 import { publishFontProbe } from "./app/fontProbe";
 import { reportNotice, useNoticeSink } from "./app/appNotice";
-import type { CreatePartyInput } from "./workbench/PartySidebar";
+import type { CreateMemberInput, CreatePartyInput } from "./workbench/PartySidebar";
 import { DEFAULT_PARTY_GROUP_ID, type PartyGroup, type RegisteredParty } from "../shared/partyGroups";
 import { EMPTY_CWD_PREFERENCES, memberLocationsEqual, parseMemberLocation, serializeMemberLocation, type CwdPreferences, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../shared/memberLocation";
 import { useUpdateDialogSink } from "./app/updateDialog";
@@ -1114,20 +1114,18 @@ export function App() {
     await refreshParty();
   }
 
-  async function createMemberInline(input: {
-    name: string;
-    requirement: string;
-    runtime: string;
-    model?: string;
-    effort?: string;
-    reasoning?: string;
-    reasoningBudget?: number;
-    permissionMode?: import("../shared/types").PermissionModeSetting;
-    codexPolicy?: import("../shared/codexPolicy").CodexPolicy;
-    cursorPolicy?: import("../shared/cursorPolicy").CursorPolicy;
-  }) {
+  async function createMemberInline(input: CreateMemberInput) {
     try {
-      const result = await window.agentParty.createPartyMember({ ...input, partyId: selectedParty?.id });
+      // The wizard owns an object-shaped location because it edits environment,
+      // distro, and cwd independently. IPC/API own the serialized string shape.
+      // Keep that conversion at the renderer boundary, exactly as party creation
+      // does, so neither Windows nor WSL objects reach the string parser.
+      const { location, ...member } = input;
+      const result = await window.agentParty.createPartyMember({
+        ...member,
+        partyId: selectedParty?.id,
+        location: location ? serializeMemberLocation(location) : undefined,
+      });
       await applyPartyResult(result);
     } catch (error) {
       noticeOnFailure(`'${input.name}' 멤버를 만들지 못했습니다`)(error);
