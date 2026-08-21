@@ -23,6 +23,14 @@ export type ThemeColorToken = (typeof THEME_COLOR_TOKENS)[number];
 export type ThemeShapeToken = (typeof THEME_SHAPE_TOKENS)[number];
 export type ThemeScheme = "light" | "dark";
 
+const RGB_CHANNEL = "(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)";
+const RGB_ALPHA = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+)";
+export const THEME_COLOR_VALUE_PATTERN = `^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|rgb\\( *${RGB_CHANNEL} *, *${RGB_CHANNEL} *, *${RGB_CHANNEL} *\\)|rgba\\( *${RGB_CHANNEL} *, *${RGB_CHANNEL} *, *${RGB_CHANNEL} *, *${RGB_ALPHA} *\\))$`;
+export const THEME_SHAPE_VALUE_PATTERN = "^(?:0|(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|rem|em))$";
+
+const THEME_COLOR_VALUE = new RegExp(THEME_COLOR_VALUE_PATTERN);
+const THEME_SHAPE_VALUE = new RegExp(THEME_SHAPE_VALUE_PATTERN);
+
 export interface ThemeDefinition {
   readonly $schema?: string;
   readonly schemaVersion: typeof THEME_SCHEMA_VERSION;
@@ -43,7 +51,6 @@ export class ThemeDefinitionError extends Error {
 
 const ROOT_KEYS = ["$schema", "schemaVersion", "id", "label", "scheme", "color", "shape"] as const;
 const THEME_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const UNSAFE_CSS_VALUE = /[;{}\r\n]|\/\*|\*\/|(?:url|var|expression)\s*\(/i;
 
 function recordAt(value: unknown, source: string, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -64,17 +71,22 @@ function stringAt(value: unknown, source: string, path: string): string {
   return value;
 }
 
-function cssValueAt(value: unknown, source: string, path: string): string {
-  const cssValue = stringAt(value, source, path);
-  if (cssValue !== cssValue.trim()) throw new ThemeDefinitionError(source, path, "must not have leading or trailing whitespace");
-  if (UNSAFE_CSS_VALUE.test(cssValue)) throw new ThemeDefinitionError(source, path, "contains unsafe CSS syntax");
-  return cssValue;
+export function isThemeColorValue(value: unknown): value is string {
+  return typeof value === "string" && THEME_COLOR_VALUE.test(value);
 }
 
-function tokenRecord<T extends string>(value: unknown, tokens: readonly T[], source: string, path: string): Readonly<Record<T, string>> {
+export function isThemeShapeValue(value: unknown): value is string {
+  return typeof value === "string" && THEME_SHAPE_VALUE.test(value);
+}
+
+function tokenRecord<T extends string>(value: unknown, tokens: readonly T[], source: string, path: string, accepts: (value: unknown) => value is string, grammar: string): Readonly<Record<T, string>> {
   const record = recordAt(value, source, path);
   assertExactKeys(record, tokens, tokens, source, path);
-  return Object.freeze(Object.fromEntries(tokens.map((token) => [token, cssValueAt(record[token], source, `${path}.${token}`)]))) as Readonly<Record<T, string>>;
+  return Object.freeze(Object.fromEntries(tokens.map((token) => {
+    const tokenValue = record[token];
+    if (!accepts(tokenValue)) throw new ThemeDefinitionError(source, `${path}.${token}`, grammar);
+    return [token, tokenValue];
+  }))) as Readonly<Record<T, string>>;
 }
 
 /**
@@ -98,8 +110,8 @@ export function parseThemeDefinition(value: unknown, source = "theme"): ThemeDef
     id,
     label,
     scheme: root.scheme,
-    color: tokenRecord(root.color, THEME_COLOR_TOKENS, source, "color"),
-    shape: tokenRecord(root.shape, THEME_SHAPE_TOKENS, source, "shape"),
+    color: tokenRecord(root.color, THEME_COLOR_TOKENS, source, "color", isThemeColorValue, "must be #RGB, #RGBA, #RRGGBB, #RRGGBBAA, rgb(0-255, ...), or rgba(0-255, ..., 0-1)"),
+    shape: tokenRecord(root.shape, THEME_SHAPE_TOKENS, source, "shape", isThemeShapeValue, "must be a nonnegative CSS length: 0 or a px/rem/em value"),
   });
 }
 

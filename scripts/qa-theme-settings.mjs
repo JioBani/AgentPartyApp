@@ -1,5 +1,6 @@
 /* Seven-preset theme model, migration, first paint, ownership, and token checks. */
 import { build } from "esbuild";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -18,6 +19,7 @@ async function bundle(entry, name) {
 
 const theme = await bundle("src/shared/appTheme.ts", "app-theme.mjs");
 const registry = await bundle("src/renderer/theme/themes.ts", "theme-registry.mjs");
+const catalog = await bundle("src/shared/themeCatalog.ts", "theme-catalog.mjs");
 const schema = await bundle("src/shared/themeSchema.ts", "theme-schema.mjs");
 const expected = ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"];
 
@@ -40,6 +42,26 @@ assert(expected.every((id) => parsedJsonThemes.some((entry) => entry.id === id))
 assert(registry.THEMES.every((entry) => JSON.stringify(entry) === JSON.stringify(parsedJsonThemes.find(({ id }) => id === entry.id))), "runtime catalog exactly matches the JSON definitions");
 const jsonSchema = JSON.parse(readFileSync(path.join(root, "src/shared/theme.schema.json"), "utf8"));
 assert(jsonSchema.$schema === "https://json-schema.org/draft/2020-12/schema" && jsonSchema.additionalProperties === false, "editor JSON Schema uses draft 2020-12 and strict root keys");
+assert(jsonSchema.$defs.colorValue.pattern === schema.THEME_COLOR_VALUE_PATTERN, "JSON Schema and runtime parser share the exact color grammar");
+assert(jsonSchema.$defs.shapeValue.pattern === schema.THEME_SHAPE_VALUE_PATTERN, "JSON Schema and runtime parser share the exact shape grammar");
+assert(Object.values(jsonSchema.properties.color.properties).every((entry) => entry.$ref === "#/$defs/colorValue"), "every JSON Schema color token uses the color grammar");
+assert(Object.values(jsonSchema.properties.shape.properties).every((entry) => entry.$ref === "#/$defs/shapeValue"), "every JSON Schema shape token uses the length grammar");
+const colorSchemaPattern = new RegExp(jsonSchema.$defs.colorValue.pattern);
+const shapeSchemaPattern = new RegExp(jsonSchema.$defs.shapeValue.pattern);
+for (const [value, accepted] of [
+  ["#abc", true], ["#abcd", true], ["#aabbcc", true], ["#aabbccdd", true],
+  ["rgb(0, 128, 255)", true], ["rgba(255,0,1,.5)", true], ["rgba(1,2,3,1.0)", true],
+  ["#ab", false], ["#abcde", false], ["red", false], ["rgb(256,0,0)", false],
+  ["rgb(-1,0,0)", false], ["rgba(0,0,0,1.01)", false], ["rgba(0,0,0,50%)", false],
+]) {
+  assert(schema.isThemeColorValue(value) === accepted && colorSchemaPattern.test(value) === accepted, `color parser/schema parity: ${value}`);
+}
+for (const [value, accepted] of [
+  ["0", true], ["0px", true], ["12.5px", true], [".5rem", true], ["2em", true],
+  ["-1px", false], ["1", false], ["1%", false], ["calc(1px)", false], ["auto", false],
+]) {
+  assert(schema.isThemeShapeValue(value) === accepted && shapeSchemaPattern.test(value) === accepted, `shape parser/schema parity: ${value}`);
+}
 const schemaOptional = structuredClone(registry.THEMES[0]);
 delete schemaOptional.$schema;
 assert(schema.parseThemeDefinition(schemaOptional).id === "agentparty-light", "$schema is optional at runtime");
@@ -52,6 +74,8 @@ definitionError((value) => { value.id = "Bad Theme"; }, "id", "invalid id format
 definitionError((value) => { value.color.accent = ""; }, "color.accent", "empty CSS values are rejected");
 definitionError((value) => { value.color.accent = "red; } body { color: red"; }, "color.accent", "unsafe CSS declaration syntax is rejected");
 definitionError((value) => { value.color.accent = "url(https://example.test/a)"; }, "color.accent", "CSS url values are rejected before stylesheet generation");
+definitionError((value) => { value.color.accent = "rgb(256,0,0)"; }, "color.accent", "out-of-range color channels are rejected at the token path");
+definitionError((value) => { value.shape["radius-card"] = "-1px"; }, "shape.radius-card", "negative shape lengths are rejected at the token path");
 definitionError((value) => { value.schemaVersion = 2; }, "schemaVersion", "unsupported schema versions are rejected");
 let duplicateError;
 try { schema.parseThemeCatalog([registry.THEMES[0], registry.THEMES[0]], ["one.json", "two.json"]); } catch (caught) { duplicateError = caught; }
@@ -59,6 +83,18 @@ assert(duplicateError instanceof schema.ThemeDefinitionError && duplicateError.m
 let defaultError;
 try { schema.requireThemeInCatalog(parsedJsonThemes, "missing-default"); } catch (caught) { defaultError = caught; }
 assert(defaultError instanceof schema.ThemeDefinitionError && defaultError.message.includes("theme catalog.default"), "a missing default theme fails catalog initialization visibly");
+assert(catalog.requireRegisteredThemeId("nord") === "nord", "registered ids are branded only after catalog lookup");
+let unregisteredError;
+try { catalog.requireRegisteredThemeId("arbitrary-string"); } catch (caught) { unregisteredError = caught; }
+assert(unregisteredError?.code === "invalid_theme_definition" && unregisteredError.message.includes("unregistered theme id"), "arbitrary strings cannot enter the registered theme-id boundary");
+assert(Object.isFrozen(theme.THEME_METADATA) && theme.THEME_METADATA.every(Object.isFrozen), "theme metadata array and every entry are frozen");
+
+const gate = spawnSync(process.execPath, [path.join(root, "scripts/validate-theme-catalog.mjs")], { cwd: root, encoding: "utf8" });
+assert(gate.status === 0 && gate.stdout.includes("validated 7 built-in themes"), "dedicated catalog validation command executes successfully");
+const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+assert(packageJson.scripts.build.startsWith("npm run validate:theme-catalog &&"), "npm build runs catalog validation as its first gate");
+const packageWinSource = readFileSync(path.join(root, "scripts/package-win.mjs"), "utf8");
+assert(packageWinSource.indexOf("scripts/validate-theme-catalog.mjs") < packageWinSource.indexOf('name: "타입 체크 (renderer)"'), "package:win validates the catalog before compilation and packaging");
 
 console.log("\nseven preset ids + strict API validation:");
 assert(theme.DEFAULT_THEME_PREFERENCE === "agentparty-light", "AgentParty Light is the safe default");

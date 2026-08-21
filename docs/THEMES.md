@@ -22,19 +22,27 @@ or runtime loading feature yet.
    `light` or `dark`.
 3. Define every `color` and `shape` token exactly once. The linked built-in JSON
    is a complete valid JSON example; the schema lists and describes the exact
-   token set. `color.bg-0` is also the Electron BrowserWindow background.
+   token set. Every color must use `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`,
+   `rgb(r, g, b)` with integer channels from 0 through 255, or
+   `rgba(r, g, b, a)` with the same channels and alpha from 0 through 1.
+   Named colors, percentages, CSS variables, and color functions outside that
+   list are not supported. Every shape must be a nonnegative `px`, `rem`, or
+   `em` length; unitless `0` is also supported. `color.bg-0` is also the
+   Electron BrowserWindow background.
 4. Add one static JSON import, source label, and ordered entry to
    [`themeCatalog.ts`](../src/shared/themeCatalog.ts). Static registration is
    required so first paint never waits on filesystem or asynchronous work.
-5. Run `npm run test:theme-settings` and `npm run test:e2e:theme`. The first
+5. Run `npm run validate:theme-catalog`, `npm run test:theme-settings`, and
+   `npm run test:e2e:theme`. `npm run build` and `npm run package:win` run the
+   catalog command as a mandatory first gate, before compilation or packaging.
+   The theme-settings test
    checks schema/catalog exactness, token completeness, contrast, native
-   background agreement, and migration; the second checks the real Settings and
-   titlebar UI, restart, synchronous first paint, and multi-window broadcast.
+   background agreement, and migration; the E2E test checks the real Settings
+   and titlebar UI, restart, synchronous first paint, and multi-window broadcast.
 
 The parser rejects unknown or missing root/token keys, unsupported schema
-versions, malformed ids, duplicate ids, empty values, and CSS values containing
-declaration/block injection or indirect `url()`, `var()`, and `expression()`
-syntax. Errors include the source and property path, for example:
+versions, malformed ids, duplicate ids, and any color or shape outside the
+grammars above. Errors include the source and property path, for example:
 
 ```text
 my-theme.json.color.bg-0: missing required property

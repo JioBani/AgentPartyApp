@@ -74,6 +74,7 @@ function localPathHints(names) {
 // Each step is a discrete command. Weights approximate relative duration so the
 // bar advances at a believable pace.
 const buildSteps = () => [
+  { name: "테마 카탈로그 검증", weight: 1, cmd: process.execPath, args: ["scripts/validate-theme-catalog.mjs"] },
   { name: "타입 체크 (renderer)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.json", "--noEmit"] },
   { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", mainTsconfig(), "--noEmit"] },
   { name: "렌더러 빌드 (vite)", weight: 3, cmd: localTool("vite"), args: ["build"] },

@@ -4,6 +4,7 @@ import {
   THEME_METADATA,
   THEME_PREFERENCES,
   isRegisteredThemeId,
+  requireRegisteredThemeId,
   type ThemePreference,
 } from "./themeCatalog";
 
@@ -15,6 +16,9 @@ export const THEME_STORAGE_KEY = "agentparty.theme";
 export const THEME_PREFERENCE_STORAGE_KEY = "agentparty.themePreference";
 export const THEME_SYNC_PAINT_ATTRIBUTE = "data-theme-paint";
 export const THEME_SYNC_PAINT_VALUE = "sync";
+
+const LEGACY_LIGHT_THEME = requireRegisteredThemeId("agentparty-light", "theme migration.light");
+const LEGACY_DARK_THEME = requireRegisteredThemeId("agentparty-dark", "theme migration.dark");
 
 export interface AppearanceBoot {
   preference: ThemePreference;
@@ -112,8 +116,8 @@ export function isThemePreference(value: unknown): value is ThemePreference {
 /** Converts persisted values from the original System/Light/Dark themes safely. */
 export function migrateLegacyThemeId(value: unknown): ThemePreference | null {
   if (isThemePreference(value)) return value;
-  if (value === "dark") return "agentparty-dark";
-  if (value === "light" || value === "system") return "agentparty-light";
+  if (value === "dark") return LEGACY_DARK_THEME;
+  if (value === "light" || value === "system") return LEGACY_LIGHT_THEME;
   return null;
 }
 
