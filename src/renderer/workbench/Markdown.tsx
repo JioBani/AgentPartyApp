@@ -9,6 +9,44 @@ import { isWindowsDrivePath } from "../../shared/windowsDrivePath";
 import { isLocalFileUrl, isPreservedLocalHref } from "../../shared/localFileHref";
 import { localized, useI18n } from "../i18n/I18nProvider";
 
+type PositionedMarkdownNode = {
+  type?: string;
+  url?: string;
+  children?: PositionedMarkdownNode[];
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
+};
+
+/**
+ * CommonMark treats a backslash before ASCII punctuation as an escape. That is
+ * correct for prose, but destructive inside a Windows link destination:
+ * `novel\[4060182]` reaches the link node as `novel[4060182]`, so the OS is
+ * handed a path with a missing directory separator.
+ *
+ * The parsed link node keeps source offsets. Inspect only that original slice,
+ * and only angle-bracketed drive paths that actually contain such an ambiguous
+ * separator. Converting the destination to forward slashes before the URL
+ * transform is lossless on Windows and leaves prose, code, web URLs, and normal
+ * backslash paths untouched.
+ */
+function remarkPreserveWindowsPathSeparators() {
+  return (tree: PositionedMarkdownNode, file: { value?: unknown }) => {
+    const source = typeof file.value === "string" ? file.value : "";
+    const visit = (node: PositionedMarkdownNode) => {
+      const start = node.position?.start?.offset;
+      const end = node.position?.end?.offset;
+      if (node.type === "link" && typeof start === "number" && typeof end === "number") {
+        const raw = source.slice(start, end);
+        const destination = /\]\(<([a-z]:\\[^>\r\n]*)>/i.exec(raw)?.[1] || "";
+        if (/\\[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]/.test(destination)) {
+          node.url = destination.replace(/\\/g, "/");
+        }
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 /**
  * Renders model-authored text as GitHub-flavored markdown (headings, lists,
  * tables, fenced code, links) with app-styled elements. Used for assistant
@@ -27,7 +65,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="wb-md">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkPreserveWindowsPathSeparators]}
         // react-markdown treats `C:` and `file:` as unsafe schemes and erases
         // the href before our link component can classify it. Preserve the
         // narrow local-file grammar; every other URL keeps the library's
