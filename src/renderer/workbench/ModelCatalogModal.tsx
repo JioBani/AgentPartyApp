@@ -493,7 +493,7 @@ export function ModelCatalogModal({
                       <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
                       <ProviderIcon
                         provider={group.provider === "custom" ? undefined : group.provider}
-                        size={13}
+                        size={9}
                         style={{ color: PROVIDER_DOTS[group.provider!] }}
                       />
                       <span className="wb-model-provider-name">{group.label}</span>
@@ -533,7 +533,7 @@ export function ModelCatalogModal({
                           title={unavailable ? entry.route.unavailableReason : entry.route.description}
                           onClick={() => setSelectedKey(key)}
                         >
-                          <ModelIcon route={entry.route} size={17} />
+                          <ModelIcon route={entry.route} size={12} />
                           <span className="wb-model-name">
                             <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
                             {/* A starred model is also pinned at the top, so the
@@ -541,7 +541,7 @@ export function ModelCatalogModal({
                             <small className="wb-model-origin">
                               <ProviderIcon
                                 provider={entry.meta.provider === "custom" ? undefined : entry.meta.provider}
-                                size={9}
+                                size={6}
                                 style={{ color: PROVIDER_DOTS[entry.meta.provider] }}
                               />
                               {PROVIDER_LABELS[entry.meta.provider]}
@@ -582,7 +582,7 @@ export function ModelCatalogModal({
                       boxShadow: `0 0 0 4px ${dotHalo(PROVIDER_DOTS[selectedMeta.provider], 0.16)}`,
                     }}
                   >
-                    <ModelIcon route={selected?.route} model={selectedMeta.id} size={22} />
+                    <ModelIcon route={selected?.route} model={selectedMeta.id} size={15} />
                   </span>
                   <div className="wb-detail-ident">
                     <div className="wb-detail-name-row">

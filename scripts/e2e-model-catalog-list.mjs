@@ -198,20 +198,30 @@ async function main() {
       model: r.dataset.model,
       name: r.querySelector(".wb-model-name .wb-mono")?.textContent || "",
       mark: r.querySelector(".wb-model-icon")?.getAttribute("data-model-mark") || "",
+      size: r.querySelector(".wb-model-icon")?.getBoundingClientRect().width || 0,
     }))`);
-    const markByName = new Map(renderedMarks.map((row) => [row.name, row.mark]));
+    const markByName = new Map(renderedMarks.map((row) => [row.name, row]));
     for (const [name, mark] of Object.entries(MODEL_MARKS)) {
-      assert(markByName.get(name) === mark, `${name} renders the ${mark} model mark in the real catalog`);
+      assert(markByName.get(name)?.mark === mark, `${name} renders the ${mark} model mark in the real catalog`);
+      near(markByName.get(name)?.size || 0, 12, 0.5, `${name} model mark is rendered at the reduced size`);
     }
     for (const name of GENERIC_MODEL_MARKS) {
-      assert(markByName.get(name) === "generic", `${name} renders the neutral model mark in the real catalog`);
+      assert(markByName.get(name)?.mark === "generic", `${name} renders the neutral model mark in the real catalog`);
     }
     const providerMarks = await cdp.eval(`[...document.querySelectorAll(".wb-model-provider-btn .wb-provider-icon")].map(i => ({
       provider: i.getAttribute("data-provider"),
       mark: i.getAttribute("data-vendor-mark") || "generic",
+      size: i.getBoundingClientRect().width,
     }))`);
     assert(providerMarks.some((icon) => icon.provider === "openrouter" && icon.mark === "openrouter"), "OpenRouter renders its dedicated provider mark in the real catalog");
     assert(providerMarks.some((icon) => icon.provider === "deepseek" && icon.mark === "deepseek"), "DeepSeek renders its dedicated provider mark in the real catalog");
+    assert(providerMarks.every((icon) => Math.abs(icon.size - 9) <= 0.5), "provider-group marks are rendered at the reduced 9px size");
+    const detailMark = await cdp.eval(`(() => ({
+      icon: document.querySelector(".wb-detail-model-mark .wb-model-icon")?.getBoundingClientRect().width || 0,
+      box: document.querySelector(".wb-detail-model-mark")?.getBoundingClientRect().width || 0,
+    }))()`);
+    near(detailMark.icon, 15, 0.5, "detail model mark is rendered at the reduced size");
+    near(detailMark.box, 22, 0.5, "detail model mark container is reduced with it");
     const selectedId = await cdp.eval(`document.querySelector(".wb-model-row.is-selected")?.dataset.model || ""`);
     const firstId = visible.find((id) => id && id !== selectedId);
     assert(!!firstId, `the catalog offers models in scope (${visible.length} of ${modelRoutes.length} routes; starring ${firstId})`);

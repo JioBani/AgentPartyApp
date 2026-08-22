@@ -5628,13 +5628,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 /* The maker mark anchors the model identity; its tint still comes from the
    route-provider group so maker and billing path remain distinct signals. */
 .wb-detail-model-mark {
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   flex: none;
   margin-top: 1px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 7px;
 }
 
 .wb-detail-ident {
