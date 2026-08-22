@@ -18,6 +18,7 @@ const outDir = qaTempDir();
 const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-codex-sqlite-qa-"));
 const envOut = path.join(runtimeDir, "spawn-env.jsonl");
 const sqliteFailOnce = path.join(runtimeDir, "sqlite-failed-once");
+const stalledBackfillFailOnce = path.join(runtimeDir, "stalled-backfill-failed-once");
 const fakeServer = path.join(root, "scripts", "fake-codex-appserver.mjs");
 const failures = [];
 const assert = (condition, message) => {
@@ -46,7 +47,7 @@ process.env.CODEX_SQLITE_HOME = path.join(runtimeDir, "shared-poison");
 
 const { CodexAdapter } = await bundle("src/core/codexAdapter.ts", "codex-adapter.mjs");
 const { discoverCodexModels } = await bundle("src/core/codexModelDiscovery.ts", "codex-discovery.mjs");
-const { agentPartyCodexSqliteHome } = await bundle("src/core/codexSqliteHome.ts", "codex-sqlite-home.mjs");
+const { agentPartyCodexSqliteHome, withAgentPartyCodexStartup } = await bundle("src/core/codexSqliteHome.ts", "codex-sqlite-home.mjs");
 
 const memberAHome = agentPartyCodexSqliteHome(runtimeDir, "party:qa:member:a");
 const memberBHome = agentPartyCodexSqliteHome(runtimeDir, "party:qa:member:b");
@@ -103,17 +104,55 @@ try {
   delete process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE;
 }
 
+// Codex can leave a fresh DB marked `running` after its own 30-second backfill
+// timeout. The failed DB stays recoverable on disk, while the member moves to
+// a stable sibling that is selected again after an app restart.
+const memberCScope = "party:qa:member:c";
+const memberCHome = agentPartyCodexSqliteHome(runtimeDir, memberCScope);
+process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE = stalledBackfillFailOnce;
+process.env.AGENTPARTY_FAKE_CODEX_SQLITE_STALLED_BACKFILL = "1";
+const c1 = adapter("c-1", "c", memberCHome);
+try {
+  c1.start();
+  await waitForReady(c1, 8_000);
+} finally {
+  c1.dispose();
+  delete process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE;
+  delete process.env.AGENTPARTY_FAKE_CODEX_SQLITE_STALLED_BACKFILL;
+}
+const memberCRecoveryHome = agentPartyCodexSqliteHome(runtimeDir, memberCScope);
+const c2 = adapter("c-2", "c", memberCRecoveryHome);
+try {
+  c2.start();
+  await waitForReady(c2);
+} finally {
+  c2.dispose();
+}
+
+let activeStarts = 0;
+let maxActiveStarts = 0;
+await Promise.all([1, 2, 3].map(() => withAgentPartyCodexStartup(async () => {
+  activeStarts += 1;
+  maxActiveStarts = Math.max(maxActiveStarts, activeStarts);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  activeStarts -= 1;
+})));
+
 const records = fs.readFileSync(envOut, "utf8").trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
 const homes = records.map((record) => path.resolve(record.sqliteHome));
-assert(records.length === 6, `normal starts plus one failed/retried app-server spawn were recorded (${records.length}/6)`);
+assert(records.length === 9, `normal starts plus both retry shapes were recorded (${records.length}/9)`);
 assert(homes[0] === path.resolve(memberAHome) && homes[2] === path.resolve(memberAHome), "the same member reuses one stable SQLite home after respawn");
 assert(homes[1] === path.resolve(memberBHome), "a second member receives a different SQLite home");
 assert(homes[3] === path.resolve(discoveryHome), "model discovery receives its own SQLite home");
-assert(new Set(homes).size === 3, "member A, member B, and discovery do not contend on one SQLite runtime");
+assert(new Set(homes.slice(0, 4)).size === 3, "member A, member B, and discovery do not contend on one SQLite runtime");
 assert(homes.every((home) => home !== path.resolve(process.env.CODEX_SQLITE_HOME)), "child processes override an inherited shared CODEX_SQLITE_HOME");
 assert(homes.every((home) => fs.existsSync(home)), "each runtime directory exists before Codex starts");
 assert(homes[4] === path.resolve(memberAHome) && homes[5] === path.resolve(memberAHome), "SQLite startup retry preserves the member's stable runtime directory");
 assert(a3.getSnapshot().lastError === undefined, "a transient SQLite startup handoff is recovered without a visible session error");
+assert(homes[6] === path.resolve(memberCHome) && homes[7] === path.resolve(`${memberCHome}-recovery`), "a stalled backfill switches to a fresh sibling without deleting the failed DB");
+assert(path.resolve(memberCRecoveryHome) === path.resolve(`${memberCHome}-recovery`) && homes[8] === path.resolve(memberCRecoveryHome), "the recovered SQLite home remains stable after restart");
+assert(c1.getSnapshot().lastError === undefined && c2.getSnapshot().lastError === undefined, "stalled-backfill recovery stays invisible after recovery and restart");
+assert(maxActiveStarts === 1, "fresh Codex startup initialization is serialized inside AgentParty");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nCODEX SQLITE ISOLATION PASSED");
 fs.rmSync(runtimeDir, { recursive: true, force: true });

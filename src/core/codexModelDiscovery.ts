@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import readline from "node:readline";
 import { normalizeCodexModels, type CodexModelInfo } from "../shared/codexModels";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
+import { withAgentPartyCodexStartup } from "./codexSqliteHome";
 
 /**
  * Live Codex account-catalog discovery: spawns a short-lived `codex app-server`,
@@ -25,6 +26,10 @@ export interface CodexModelDiscoveryOptions {
 const DEFAULT_TIMEOUT_MS = 20000;
 
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
+  return withAgentPartyCodexStartup(() => discoverCodexModelsWithStartupLease(options));
+}
+
+async function discoverCodexModelsWithStartupLease(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
   const requested = codexExecutable(options.executablePath);
   const resolved = resolveCodexExecutable(requested);
   const args = [...resolved.argsPrefix, ...codexExtraArgs(options.executableArgs), "-c", 'cli_auth_credentials_store="file"', "app-server"];

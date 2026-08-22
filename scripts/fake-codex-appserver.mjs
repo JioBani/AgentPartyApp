@@ -40,7 +40,10 @@ if (envOutFile) {
 if (sqliteFailOnceFile && !fs.existsSync(sqliteFailOnceFile)) {
   fs.writeFileSync(sqliteFailOnceFile, String(process.pid));
   const sqliteHome = process.env.CODEX_SQLITE_HOME || "";
-  process.stderr.write(`Error: failed to initialize sqlite state runtime under ${sqliteHome}: failed to initialize state runtime at ${sqliteHome}\n`);
+  const detail = process.env.AGENTPARTY_FAKE_CODEX_SQLITE_STALLED_BACKFILL === "1"
+    ? `state db backfill is running at ${sqliteHome}; waiting up to 30s before retrying startup initialization Error: failed to initialize sqlite state runtime under ${sqliteHome}: timed out waiting for state db backfill at ${sqliteHome} after 30s (status: running)`
+    : `Error: failed to initialize sqlite state runtime under ${sqliteHome}: failed to initialize state runtime at ${sqliteHome}`;
+  process.stderr.write(`${detail}\n`);
   process.exit(1);
 }
 

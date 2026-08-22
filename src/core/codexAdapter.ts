@@ -41,6 +41,7 @@ import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usa
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
+import { nextAgentPartyCodexSqliteHome, withAgentPartyCodexStartup } from "./codexSqliteHome";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -628,8 +629,13 @@ export class CodexAdapter extends EventEmitter {
     if (this.currentProvider()?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
       await assertSubscriptionModelAvailable(this.options.model, "claude", this.subscriptionProxy());
     }
-    this.ensureProcess();
-    await this.initializeServer();
+    await withAgentPartyCodexStartup(async () => {
+      if (this.disposed) {
+        throw new Error("Codex session was stopped before startup initialization.");
+      }
+      this.ensureProcess();
+      await this.initializeServer();
+    });
     if (this.sessionId) {
       await this.resumeThread();
     } else {
@@ -653,6 +659,11 @@ export class CodexAdapter extends EventEmitter {
         const delayMs = CodexAdapter.SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
         if (delayMs === undefined || this.disposed || !isSqliteStateRuntimeStartupError(error)) {
           throw error;
+        }
+        if (this.options.sqliteHome && isStalledSqliteBackfillError(error)) {
+          const stalledHome = this.options.sqliteHome;
+          this.options.sqliteHome = nextAgentPartyCodexSqliteHome(stalledHome);
+          this.log("sqlite_backfill_recovery", { stalledHome, recoveryHome: this.options.sqliteHome });
         }
         this.log("sqlite_startup_retry", { attempt: attempt + 1, delayMs, sqliteHome: this.options.sqliteHome });
         this.shutdownProcess();
@@ -1736,6 +1747,11 @@ function isSqliteStateRuntimeStartupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /failed to initialize (?:sqlite )?state runtime/iu.test(message)
     || /failed to initialize state runtime at/iu.test(message);
+}
+
+function isStalledSqliteBackfillError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out waiting for state db backfill/iu.test(message);
 }
 
 /** Maps a sandbox mode to the app-server `sandboxPolicy` object. */
