@@ -164,6 +164,21 @@ export type ClaudeNormalizedEvent =
    * it optional (`post_tokens`, `duration_ms`) and Codex sends none of them.
    */
   | { type: "compact_state"; state: "running" | "done" | "failed"; trigger?: "manual" | "auto"; preTokens?: number; postTokens?: number; durationMs?: number; keptCount?: number; reason?: string; at: string }
+  /**
+   * A member's session START, structured.
+   *
+   * It used to be a `spawned` STATUS line whose detail was the entire spawn
+   * command — executable path, every CLI argument, the party MCP wiring with
+   * its local port, and the party/member ids — rendered verbatim in the
+   * conversation. The card that replaced it reads from these fields only, so
+   * the plumbing has no route to a user surface; the raw command still goes to
+   * the session debug log, which the user opens deliberately.
+   *
+   * `starting` opens a card, `running`/`failed` close it. Both terminal states
+   * update the SAME card rather than adding one, so a restart reads as one
+   * attempt per card. See src/shared/sessionSpawn.ts.
+   */
+  | ({ type: "session_spawn"; at: string } & import("../shared/sessionSpawn").SessionSpawnFacts)
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   // The app-level queue has just been handed to the harness. Authored by the
   // app, not by any harness — it is the only record that queued messages became

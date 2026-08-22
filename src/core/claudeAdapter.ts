@@ -33,6 +33,7 @@ import type { RouterTurnUsage } from "./routerShim";
 import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { probeClaudeNativeAuth, type ClaudeNativeAuthState } from "./claudeNativeAuth";
+import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
 
 export interface ClaudeAdapterOptions {
   id: string;
@@ -272,6 +273,10 @@ export class ClaudeAdapter extends EventEmitter {
     this.started = true;
     this.hasStarted = true;
     this.currentStatus = "starting";
+    // The card the user sees for this attempt opens HERE, before any probing —
+    // a start that dies during the auth probe still has a card to fail into,
+    // instead of appearing only if it got far enough to reach the harness.
+    this.emitSessionSpawn("starting");
     this.abortController = new AbortController();
     this.input = new AsyncInputQueue();
     this.ensureLogger();
@@ -731,6 +736,10 @@ export class ClaudeAdapter extends EventEmitter {
             at: now(),
           });
           this.log("auth_required", { host: auth.host.label, workspace: auth.workspace, executable: auth.executable });
+          // Not-signed-in ends the attempt as surely as a crash does; the card
+          // must not be left reading "시작 중". The environment card next to it
+          // is what carries the remedy.
+          this.emitSessionSpawn("failed", new Error("auth required"));
           return;
         }
         if (!auth.authenticated) {
@@ -853,7 +862,10 @@ export class ClaudeAdapter extends EventEmitter {
       this.query = sdk.query({ prompt: this.input, options });
       activeQuery = this.query;
       this.currentStatus = "spawned";
-      this.emitEvent({ type: "status", status: "spawned", detail: executable, at: now() });
+      // `executable` — an absolute path to the harness binary — stays in the
+      // debug log above and out of the conversation. The card says the session
+      // is running; which file on disk serves it is not the user's question.
+      this.emitSessionSpawn("running");
 
       void this.initializeQueryMetadata();
       for await (const message of this.query) {
@@ -864,6 +876,13 @@ export class ClaudeAdapter extends EventEmitter {
       this.emitEvent({ type: "status", status: "closed", at: now() });
       this.clearInFlightTurn(activeQuery);
     } catch (error) {
+      // A throw before the query came up is a FAILED START, so the open card
+      // has to reach its terminal state rather than sit on "시작 중" forever.
+      // After it is up, the same throw is an ordinary turn error and the card
+      // stays as it is — the session did start.
+      if (this.currentStatus !== "spawned" && this.currentStatus !== "closed") {
+        this.emitSessionSpawn("failed", error);
+      }
       this.emitError(error);
       this.clearInFlightTurn(activeQuery);
     } finally {
@@ -1588,6 +1607,31 @@ export class ClaudeAdapter extends EventEmitter {
       at: now(),
     });
     this.log("interrupted_notice", rawDetail || "interrupted");
+  }
+
+  /**
+   * Reports this session's start as STRUCTURED facts (src/shared/sessionSpawn.ts).
+   *
+   * Deliberately narrow: harness, model, host and a shortened cwd. The spawn
+   * command, the executable path, the SDK options and the router endpoint are
+   * all logged for debugging and none of them are passed here — a card cannot
+   * leak a field it was never given. A failure is classified into a fixed
+   * sentence before it travels, so an OS error carrying the command line cannot
+   * arrive as "detail".
+   */
+  private emitSessionSpawn(state: "starting" | "running" | "failed", error?: unknown): void {
+    const failure = state === "failed" ? spawnFailureSummary(error) : undefined;
+    this.emitEvent({
+      type: "session_spawn",
+      state,
+      harness: "claude-code",
+      model: this.model,
+      host: currentSpawnHost(),
+      cwd: shortCwd(this.options.cwd),
+      reason: failure?.reason,
+      retryable: failure?.retryable,
+      at: now(),
+    });
   }
 
   private emitError(error: unknown): void {

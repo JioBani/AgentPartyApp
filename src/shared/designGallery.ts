@@ -157,4 +157,18 @@ export const GALLERY_CASES: GalleryCase[] = [
       { type: "error", message: "Grok Build CLI가 설치되어 있지 않습니다.", environment: { checkId: "harness.grok", raw: "attempt 3" } },
     ],
   },
+
+  // --- 세션 시작 --------------------------------------------------------
+  // The card that replaced the raw `spawned: <command line>` line. Every state
+  // is here because each is a different shape (a note while starting, a bare
+  // fact when up, a reason + retry line when it fails), and the long-cwd case
+  // is what a narrow panel has to survive.
+  { member: "27-세션-시작중", runtime: "claude-code", caption: "세션 시작 중 — 준비 표시", events: [{ type: "session_spawn", state: "starting", harness: "claude-code", model: "claude-opus-5", host: "windows", cwd: "…/AgentPartyApp" }] },
+  { member: "28-세션-실행중", runtime: "codex", caption: "세션 시작됨 — 하네스·모델·호스트·작업 폴더", events: [{ type: "session_spawn", state: "running", harness: "codex", model: "gpt-5.4-codex", host: "windows", cwd: "…/AgentPartyApp" }] },
+  { member: "29-세션-WSL", runtime: "codex", caption: "세션 시작됨 — WSL + 긴 작업 폴더(좁은 패널 확인)", events: [{ type: "session_spawn", state: "running", harness: "codex", model: "gpt-5.4-codex", host: "wsl", cwd: "…/projects/very-long-workspace-directory-name" }] },
+  { member: "30-세션-실패", runtime: "claude-code", caption: "세션 시작 실패 — 안전한 요약 + 재시도 가능", events: [{ type: "session_spawn", state: "failed", harness: "claude-code", model: "claude-opus-5", host: "windows", cwd: "…/AgentPartyApp", reason: "하네스가 시작 중 종료되었습니다 (코드 1).", retryable: true }] },
+  // The card names the harness from its EVENT, so this case shows the Grok
+  // wording while running on a gallery harness that has recordings.
+  { member: "31-세션-실패-설정", runtime: "codex", caption: "세션 시작 실패 — 재시도로 풀리지 않는 경우", events: [{ type: "session_spawn", state: "failed", harness: "grok", model: "grok-4.6", host: "windows", cwd: "…/AgentPartyApp", reason: "하네스 실행 파일을 찾지 못했습니다. 설치 상태를 확인하세요.", retryable: false }] },
+
 ];

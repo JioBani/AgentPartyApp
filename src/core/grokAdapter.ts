@@ -27,6 +27,7 @@ import {
 import { resolveGrokCli, validateGrokReasoningEffort, type GrokReasoningEffort } from "./grokAgentCli";
 import { grokUsageWindow, type GrokBillingResult } from "./grokUsage";
 import { errorEventPayload } from "./environmentError";
+import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
 
 export interface GrokAdapterOptions {
   sessionId: string;
@@ -109,13 +110,14 @@ export class GrokAdapter extends EventEmitter {
       return;
     }
     this.starting = this.launch().catch((error) => {
+      this.emitSessionSpawn("failed", error);
       this.emitEvent({ type: "error", ...errorEventPayload(error), at: now() });
       this.patch({ status: "error", harnessAlive: false });
     });
   }
 
   private async launch(): Promise<void> {
-    this.emitEvent({ type: "status", status: "spawning", at: now() });
+    this.emitSessionSpawn("starting");
     const cli = this.options.sessionFactory ? undefined : await resolveGrokCli(this.options.executablePath);
     const session = this.options.sessionFactory?.() ?? new GrokAcpSession({
       command: cli!.command,
@@ -160,10 +162,34 @@ export class GrokAdapter extends EventEmitter {
       permissionMode: this.snapshot.permissionMode,
       at: now(),
     });
+    // The ACP session is live and the model is settled — which is exactly when
+    // the card can name it, so it is reported here rather than at launch.
+    this.emitSessionSpawn("running", undefined, model);
     this.warnAboutHarnessLimits(cli?.version || "test");
     void this.refreshUsageLimits();
     this.startUsagePolling();
     this.drain();
+  }
+
+  /**
+   * Reports this session's start as STRUCTURED facts (src/shared/sessionSpawn.ts).
+   *
+   * Grok's CLI resolution, its env overrides and its ACP handshake stay out of
+   * the conversation; the card carries harness, model, host and a shortened cwd.
+   */
+  private emitSessionSpawn(state: "starting" | "running" | "failed", error?: unknown, model?: string): void {
+    const failure = state === "failed" ? spawnFailureSummary(error) : undefined;
+    this.emitEvent({
+      type: "session_spawn",
+      state,
+      harness: "grok",
+      model: model || this.snapshot.model,
+      host: currentSpawnHost(),
+      cwd: shortCwd(this.options.cwd),
+      reason: failure?.reason,
+      retryable: failure?.retryable,
+      at: now(),
+    });
   }
 
   /** Vendor-side boundaries that the ACP permission bridge cannot change. */

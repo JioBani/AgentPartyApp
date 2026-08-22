@@ -8536,6 +8536,61 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    own: card radius 8 / row padding 8×10 / gap 8, and a 2px sweep while running.
    `flex:none` because the transcript is a flex column and a one-line card is
    the first thing it would squeeze. */
+/* Session start card — replaces the raw `spawned: <command line>` status line.
+   Two bands: what happened (state, member, time) and what it runs as (harness,
+   model, host, directory). Chips wrap instead of scrolling, so a narrow panel
+   stacks them rather than clipping the state, and every value is truncatable —
+   a long member name or directory shortens itself, never the panel. Colors are
+   theme tokens, so light and dark follow the app. */
+.wb-spawn {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: var(--border-width) solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.wb-spawn.is-live { border-color: var(--live-bd); background: var(--live-dim); }
+.wb-spawn.is-danger { border-color: var(--danger-bd); }
+.wb-spawn-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.wb-spawn-icon { flex: none; display: inline-flex; color: var(--text-2); }
+.wb-spawn.is-ok .wb-spawn-icon { color: var(--success); }
+.wb-spawn.is-live .wb-spawn-icon { color: var(--live); }
+.wb-spawn.is-danger .wb-spawn-icon { color: var(--danger); }
+.wb-spawn-spin { animation: wb-spin 2.2s linear infinite; }
+.wb-spawn-title { flex: none; font-size: 12px; font-weight: 600; color: var(--text-0); white-space: nowrap; }
+.wb-spawn-member {
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-spawn-spacer { flex: 1 1 auto; }
+.wb-spawn-time { flex: none; font-size: 10.5px; color: var(--text-3); }
+.wb-spawn-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.wb-spawn-chip {
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The directory is the one field that can be long enough to own a whole row,
+   so it yields first — the harness/model chips stay readable next to it. */
+.wb-spawn-cwd { max-width: min(100%, 22ch); }
+.wb-spawn-note { font-size: 11px; color: var(--text-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-spawn-fail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.wb-spawn-reason { font-size: 11.5px; color: var(--danger); }
+.wb-spawn-retry { font-size: 11px; color: var(--text-3); }
+
 .wb-compact {
   flex: none;
   border: var(--border-width) solid var(--border);

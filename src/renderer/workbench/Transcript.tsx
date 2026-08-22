@@ -8,7 +8,7 @@ import { isToolProblem, toolOutcomeOf, type ToolOutcome } from "./toolOutcome";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
-import { harnessShort } from "./harnessLabel";
+import { harnessLabel, harnessShort } from "./harnessLabel";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
@@ -18,6 +18,7 @@ import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
+import type { SessionSpawnState } from "../../shared/sessionSpawn";
 
 interface TranscriptProps {
   view: MemberView;
@@ -270,8 +271,15 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
       return <GateBlock block={block} view={view} />;
     case "compact":
       return <CompactBlock block={block} view={view} actions={actions} />;
+    case "sessionSpawn":
+      // Session plumbing, like the status lines below: the guide's reader came
+      // for an answer and never started this member, so the card is a workbench
+      // surface only.
+      return detail === "full" ? <SessionSpawnBlock block={block} view={view} density={density} /> : null;
     case "status":
-      // Harness plumbing: spawned / requesting / responding / turn complete.
+      // Harness plumbing: requesting / responding / turn complete. Spawn lines
+      // are NOT here any more — a session start is its own card, and a legacy
+      // raw one is rewritten into that card on restore (shared/sessionSpawn.ts).
       return detail === "full" ? (
         <div className="wb-block wb-status">
           <Search size={13} /> <span className="wb-mono">{block.text}</span>
@@ -307,6 +315,9 @@ export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean 
   // These cards name their owning member even when their immutable block did
   // not change. Approval also shows the live runtime/model in its origin label.
   if (previous.block.kind === "assistant" || previous.block.kind === "channel" || previous.block.kind === "gate") {
+    return previous.view.name === next.view.name;
+  }
+  if (previous.block.kind === "sessionSpawn") {
     return previous.view.name === next.view.name;
   }
   if (previous.block.kind === "compact") {
@@ -388,6 +399,94 @@ export function compactReduction(pre: number | undefined, post: number | undefin
  * so every numeric part is conditional. Printing a zero where a number never
  * arrived would be a claim about the conversation that nothing supports.
  */
+/**
+ * State wording for the session card. Kept as data so the card body has one
+ * shape for three states — and so the words the user reads live next to each
+ * other rather than inside three branches of JSX.
+ */
+const SESSION_SPAWN_META: Record<SessionSpawnState, { title: string; tone: string; note: string }> = {
+  starting: { title: "세션 시작 중", tone: "live", note: "하네스를 준비하는 중입니다" },
+  running: { title: "세션 시작됨", tone: "ok", note: "" },
+  failed: { title: "세션 시작 실패", tone: "danger", note: "" },
+};
+
+const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL" };
+
+/**
+ * A member's session START.
+ *
+ * Replaces the raw `spawned: <the entire command line>` status line: the
+ * executable path, the CLI arguments, the MCP wiring with its local port, the
+ * party/member ids and the auth-store settings are not fields of this block, so
+ * there is nothing here to print or to hang in a tooltip — see
+ * shared/sessionSpawn.ts for where that decision is enforced.
+ *
+ * What it shows instead is what a reader actually wants from a start: whether
+ * it worked, who started, on what harness and model, on which side of the
+ * machine, in roughly which directory, and when. A failure adds a classified
+ * one-line reason and says whether trying again is worth it — never the command
+ * that failed. Detailed diagnosis stays in the session debug log, which is
+ * opened deliberately rather than pushed into the conversation.
+ *
+ * One attempt owns one card (`applyEvents` upserts it), so a start that
+ * progresses or dies REPLACES its own line rather than stacking a second.
+ */
+function SessionSpawnBlock({ block, view, density }: { block: Extract<TranscriptBlock, { kind: "sessionSpawn" }>; view: MemberView; density: PanelDensity }) {
+  const meta = SESSION_SPAWN_META[block.state] || SESSION_SPAWN_META.running;
+  const harness = harnessLabel(block.harness || view.member.runtime);
+  const host = block.host ? SESSION_SPAWN_HOSTS[block.host] : "";
+  const retryNote = block.state === "failed"
+    ? (block.retryable ? "다시 시작할 수 있습니다" : "설정을 고친 뒤 다시 시작하세요")
+    : "";
+  // One sentence for a screen reader, because the visual card is a row of
+  // chips: read apart they are a list of words, not a state.
+  const label = [meta.title, view.name, harness, block.model, host, block.cwd, block.reason]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <div
+      className={"wb-block wb-spawn is-" + meta.tone}
+      role="group"
+      aria-label={label}
+      // A start in flight is the one state that changes under the reader, so it
+      // is the only one announced; a settled card would re-announce on scroll.
+      aria-live={block.state === "starting" ? "polite" : undefined}
+    >
+      <div className="wb-spawn-head">
+        <span className="wb-spawn-icon" aria-hidden="true">
+          {block.state === "starting" && <LoaderCircle size={13} className="wb-spawn-spin" />}
+          {block.state === "running" && <Check size={13} />}
+          {block.state === "failed" && <AlertTriangle size={13} />}
+        </span>
+        <span className="wb-spawn-title">{meta.title}</span>
+        {/* Whose session it is, except in a narrow panel: there the name has
+            room for a character and an ellipsis, which says less than nothing
+            — and the panel header above it already names the member. The
+            screen-reader label keeps the name in every width. */}
+        {density !== "narrow" && <span className="wb-spawn-member">{view.name}</span>}
+        <span className="wb-spawn-spacer" />
+        {block.at && <span className="wb-mono wb-time wb-spawn-time">{block.at}</span>}
+      </div>
+      <div className="wb-spawn-facts">
+        {harness && <span className="wb-spawn-chip">{harness}</span>}
+        {block.model && <span className="wb-spawn-chip wb-mono">{block.model}</span>}
+        {host && <span className="wb-spawn-chip">{host}</span>}
+        {/* The path is already shortened to its last segments upstream; the
+            chip still truncates so a long segment cannot widen a narrow panel. */}
+        {block.cwd && <span className="wb-spawn-chip wb-mono wb-spawn-cwd">{block.cwd}</span>}
+        {meta.note && <span className="wb-spawn-note">{meta.note}</span>}
+      </div>
+      {block.state === "failed" && (
+        <div className="wb-spawn-fail">
+          <span className="wb-spawn-reason">{block.reason || "세션을 시작하지 못했습니다."}</span>
+          {retryNote && <span className="wb-spawn-retry">{retryNote}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CompactBlock({ block, view, actions }: { block: Extract<TranscriptBlock, { kind: "compact" }>; view: MemberView; actions: WorkbenchActions }) {
   const running = block.state === "running";
   const [elapsed, setElapsed] = useState(() => compactElapsed(startedAtMs(block), Date.now()));

@@ -40,6 +40,7 @@ import { classifyDiagnostic } from "../shared/codexDiagnostics";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
+import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -189,6 +190,7 @@ export class CodexAdapter extends EventEmitter {
     }
     this.started = true;
     this.status = "starting";
+    this.emitSessionSpawn("starting");
     this.emitEvent({
       type: "session",
       sessionId: this.sessionId || this.options.id,
@@ -598,6 +600,12 @@ export class CodexAdapter extends EventEmitter {
     return true;
   }
 
+  /**
+   * How far THIS session's start got, so a later failure can tell a failed
+   * start from a failed turn: only the former closes the session card.
+   */
+  private spawnState: "starting" | "running" | "failed" = "starting";
+
   private async ensureThread(): Promise<void> {
     if (this.currentProvider()?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
       await assertSubscriptionModelAvailable(this.options.model, "claude", this.subscriptionProxy());
@@ -663,7 +671,11 @@ export class CodexAdapter extends EventEmitter {
     this.process.stderr.on("data", (chunk) => this.readStderr(String(chunk)));
     this.process.on("error", (error) => this.finishWithError(error));
     this.process.on("exit", (code, signal) => this.handleExit(code, signal));
-    this.emitEvent({ type: "status", status: "spawned", detail: [resolved.command, ...spawnArgs].join(" "), at: now() });
+    // The command line — node's absolute path, the party MCP `-c` wiring with
+    // its automation URL and port, the party/member ids, the auth-store setting
+    // — is written to this session's debug log by `ensureLogger`, and goes
+    // nowhere near the conversation. The card states that the session is up.
+    this.emitSessionSpawn("running");
   }
 
   private partyMcpConfigArgs(): string[] {
@@ -1530,6 +1542,30 @@ export class CodexAdapter extends EventEmitter {
     this.drainQueuedTurn();
   }
 
+  /**
+   * Reports this session's start as STRUCTURED facts (src/shared/sessionSpawn.ts).
+   *
+   * Only harness, model, host and a shortened cwd travel. The spawn command and
+   * every `-c` argument stay in the debug log; a failure is classified into a
+   * fixed sentence first, so a spawn error that quotes the command line cannot
+   * carry it onto the card.
+   */
+  private emitSessionSpawn(state: "starting" | "running" | "failed", error?: unknown): void {
+    this.spawnState = state;
+    const failure = state === "failed" ? spawnFailureSummary(error) : undefined;
+    this.emitEvent({
+      type: "session_spawn",
+      state,
+      harness: "codex",
+      model: this.options.model,
+      host: currentSpawnHost(),
+      cwd: shortCwd(this.options.cwd),
+      reason: failure?.reason,
+      retryable: failure?.retryable,
+      at: now(),
+    });
+  }
+
   private finishWithError(error: unknown): void {
     // A spawn that cannot find `codex` is a setup problem, not a session
     // failure: reported as an environment blocker so the transcript offers the
@@ -1546,6 +1582,12 @@ export class CodexAdapter extends EventEmitter {
     this.status = "error";
     this.turnState = "error";
     this.activeTurn = false;
+    // A failure before the app-server ever came up is a failed START — close
+    // the open card on it. A failure afterwards belongs to the turn, not to the
+    // start, and leaves the card saying (correctly) that the session ran.
+    if (this.spawnState === "starting") {
+      this.emitSessionSpawn("failed", error);
+    }
     this.emitEvent({ type: "error", ...errorEventPayload(blocked), at: now() });
     this.drainQueuedTurn();
   }

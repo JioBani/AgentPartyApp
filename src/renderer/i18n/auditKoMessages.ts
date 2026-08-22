@@ -1543,7 +1543,14 @@ export const auditKoMessages = {
   "STR-3788": "성공",
   "STR-3789": "실패",
   "STR-3790": "거부됨",
-  "STR-3791": "실행 중"
+  "STR-3791": "실행 중",
+  "STR-3792": "세션 시작 중",
+  "STR-3793": "하네스를 준비하는 중입니다",
+  "STR-3794": "세션 시작됨",
+  "STR-3795": "세션 시작 실패",
+  "STR-3796": "다시 시작할 수 있습니다",
+  "STR-3797": "설정을 고친 뒤 다시 시작하세요",
+  "STR-3798": "세션을 시작하지 못했습니다."
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

@@ -311,6 +311,13 @@ try {
   emit("events", { sessionId: "s-tester", events: [
     { type: "assistant_text_delta", text: "regression suite running" },
   ] });
+  // Session start: the structured event AND the legacy raw status an older
+  // engine can still send. Neither may put the spawn command on the feed.
+  emit("events", { sessionId: "s-backend", events: [
+    { type: "session_spawn", state: "starting", harness: "claude-code", model: "gpt-5", host: "windows", cwd: "…/acme-api" },
+    { type: "session_spawn", state: "running", harness: "claude-code", model: "gpt-5" },
+    { type: "status", status: "spawned", detail: "C:\Program Files\nodejs\node.exe app-server -c mcp_servers.agentparty-app.env.AGENTPARTY_AUTOMATION_BASE_URL=\"http://127.0.0.1:51733\"" },
+  ] });
 } catch (error) {
   crashed = error;
 }
@@ -334,6 +341,16 @@ assert(text.includes("verifyRefresh"), "backend assistant transcript streamed");
 assert(text.includes("read_file"), "tool block rendered");
 // The heading names the approval TYPE now, in Korean like the rest of the card.
 assert(text.includes("승인"), "reviewer approval card rendered");
+// Session start renders as a card, and the spawn command has no route to the
+// screen — neither from the structured event nor from a legacy status line.
+const spawnCards = [...document.querySelectorAll(".wb-spawn")];
+assert(spawnCards.length >= 1, "session start renders as a card");
+assert(spawnCards.some((card) => /세션 시작됨/.test(card.textContent || "")), "…that reads as a state, not as a command");
+assert(spawnCards.every((card) => (card.getAttribute("aria-label") || "").length > 0), "each session card carries a screen-reader label");
+for (const needle of ["node.exe", "app-server", "mcp_servers", "127.0.0.1", "51733", "AGENTPARTY_AUTOMATION_BASE_URL"]) {
+  assert(!text.includes(needle), `the spawn command's '${needle}' is not on the user feed`);
+}
+
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
 
