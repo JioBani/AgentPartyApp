@@ -31,6 +31,8 @@ const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const asst = (text) => ({ type: "assistant_text_delta", text });
+const backslashFile = path.join(ws, "samples", "windows-backslash.md");
+const encodedBackslashHref = backslashFile.replace(/\\/g, "%5C");
 
 async function getJson(u) { const r = await fetch(`${base}${u}`); return r.json(); }
 async function post(u, b) { const r = await fetch(`${base}${u}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); return r.json(); }
@@ -114,6 +116,9 @@ const LINKS = [
   // bundle, which is why these files are written into the scratch workspace.
   { label: "relative-md", href: "./samples/sample.md", markdown: "[relative-md](./samples/sample.md)", expect: "opened" },
   { label: "bare-file", href: "samples/sample.json", markdown: "[bare-file](samples/sample.json)", expect: "opened" },
+  // react-markdown percent-encodes backslashes before the renderer classifies
+  // the href. It must remain a file link (with its icon), not become a `C:` URI.
+  { label: "windows-backslash", href: encodedBackslashHref, markdown: `[windows-backslash](<${backslashFile}>)`, expect: "opened" },
   // Never launched, only revealed — a link written by a model must not be able
   // to run a script.
   { label: "script", href: "./samples/danger.ps1", markdown: "[script](./samples/danger.ps1)", expect: "revealed" },
@@ -127,7 +132,7 @@ async function main() {
   // browser and open the default mail client once. Suppressing that under a QA
   // flag would leave the actual fix untested.
   console.log("  ⚠ this test really opens things — that IS the behaviour under test:");
-  console.log("    a browser tab (example.com), the mail client, two small sample files in");
+  console.log("    a browser tab (example.com), the mail client, three small sample files in");
   console.log("    their default apps, and one Explorer window. Close them afterwards.\n");
 
   for (const p of [ws, userData]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
@@ -137,6 +142,7 @@ async function main() {
   // workspace rather than the app bundle.
   fs.writeFileSync(path.join(ws, "samples", "sample.md"), "# e2e sample\n");
   fs.writeFileSync(path.join(ws, "samples", "sample.json"), '{"e2e":true}\n');
+  fs.writeFileSync(backslashFile, "# encoded backslash e2e sample\n");
   fs.writeFileSync(path.join(ws, "samples", "danger.ps1"), 'Write-Output "this must never run"\n');
 
   const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", "--", "--workspace", ws], {
@@ -208,7 +214,9 @@ async function main() {
         if (link.expect !== "error") {
           // Resolution is the part that silently goes wrong: a relative link
           // resolved against the app bundle points at a file that is not there.
-          assert(latest?.target?.startsWith(ws), `${link.label}: resolved inside the workspace (${latest?.target})`);
+          const target = String(latest?.target || "").replace(/\\/g, "/").toLowerCase();
+          const workspace = ws.replace(/\\/g, "/").toLowerCase();
+          assert(target.startsWith(workspace), `${link.label}: resolved inside the workspace (${latest?.target})`);
         }
       } else {
         assert(latest?.kind === "web" && latest?.target === link.expect,
