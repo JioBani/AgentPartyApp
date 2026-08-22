@@ -46,6 +46,7 @@ import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
 import { initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
+import { NAV_ICONS, NavRail, TitleBar, WorkbenchScreenHeader } from "./app/AppChrome";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
 import type { ApprovalDelivery } from "../shared/approvals";
 import { AgentSettingsView, AuthView, SettingsView } from "./app/secondaryViews";
@@ -2019,14 +2020,9 @@ export function App() {
 
   // doctor will add "문제 해결" on the same rail; keep this list a flat append,
   // no new abstraction.
-  const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = [
-    { id: "workbench", label: viewTitle("workbench", t), icon: <Sparkles size={18} /> },
-    { id: "guide", label: viewTitle("guide", t), icon: <BookOpen size={18} /> },
-    { id: "usage", label: viewTitle("usage", t), icon: <BarChart3 size={18} /> },
-    { id: "auth", label: viewTitle("auth", t), icon: <KeyRound size={18} /> },
-    { id: "agent", label: viewTitle("agent", t), icon: <SlidersHorizontal size={18} /> },
-    { id: "settings", label: viewTitle("settings", t), icon: <Settings size={18} /> },
-  ];
+  const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = (
+    ["workbench", "guide", "usage", "auth", "agent", "settings"] as ViewId[]
+  ).map((id) => ({ id, label: viewTitle(id, t), icon: NAV_ICONS[id] }));
 
   // Party members driving each harness subscription/account indicator. Models
   // routed through OpenRouter do not replace the selected harness process.
@@ -2071,93 +2067,47 @@ export function App() {
         applied. Party selection is global and deliberately does not change it;
         QA uses this attribute to verify that separation. */}
     <div className="app-shell" data-workspace={state.settings.workspacePath}>
-      <div className="app-titlebar">
-        <div className="titlebar-drag">
-          <div className="titlebar-brand"><span className="brand-mark"><span className="brand-mark-dot" /></span><span className="brand-name">AgentParty</span>{currentView !== "workbench" && <small className="brand-sub">{viewTitle(currentView, t)}</small>}</div>
-          <div className="titlebar-theme-wrap no-drag" ref={themeMenuRef}>
-            <button
-              ref={themeMenuTriggerRef}
-              type="button"
-              className="titlebar-action"
-              data-theme-menu-trigger
-              aria-haspopup="menu"
-              aria-expanded={themeMenuOpen}
-              aria-label={`${t("appearance.title")}: ${theme.themes.find((item) => item.id === theme.preference)?.label || theme.preference}`}
-              onClick={() => setThemeMenuOpen((open) => !open)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setThemeMenuOpen(true);
-                }
-              }}
-            >
-              <Palette size={14} />
-            </button>
-            {themeMenuOpen && (
-              <div className="titlebar-theme-menu" data-theme-menu role="menu" aria-label={t("appearance.themeLabel")} onKeyDown={moveThemeMenuFocus}>
-                {theme.themes.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={theme.preference === item.id}
-                    data-theme-menu-option={item.id}
-                    className={theme.preference === item.id ? "is-active" : ""}
-                    onClick={() => {
-                      void saveTheme(item.id);
-                      setThemeMenuOpen(false);
-                      themeMenuTriggerRef.current?.focus();
-                    }}
-                  >
-                    <span className="titlebar-theme-swatch" style={{ background: item.color.accent }} />
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      <TitleBar
+        subtitle={currentView !== "workbench" ? viewTitle(currentView, t) : undefined}
+        themes={theme.themes}
+        preference={theme.preference}
+        onPickTheme={(id) => { void saveTheme(id as never); }}
+        pills={<>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
           {/* Renders only while a phone is connected — see MobileDrivingPill. */}
           {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
-        </div>
-        <div className="window-controls">
-          <button type="button" className="window-button" title={t("shell.minimize")} onClick={() => window.agentParty.minimizeWindow()}><Minus size={15} /></button>
-          <button type="button" className="window-button" title={t("shell.maximize")} onClick={() => window.agentParty.maximizeWindow()}><Maximize2 size={14} /></button>
-          <button type="button" className="window-button close" title={t("shell.close")} onClick={() => window.agentParty.closeWindow()}><X size={16} /></button>
-        </div>
-      </div>
+        </>}
+        onMinimize={() => window.agentParty.minimizeWindow()}
+        onMaximize={() => window.agentParty.maximizeWindow()}
+        onClose={() => window.agentParty.closeWindow()}
+        labels={{
+          appearanceTitle: t("appearance.title"),
+          themeLabel: t("appearance.themeLabel"),
+          minimize: t("shell.minimize"),
+          maximize: t("shell.maximize"),
+          close: t("shell.close"),
+        }}
+      />
 
       <div className="app-body">
-        <nav className="nav-rail" aria-label={t("shell.navigation")}>
-          <div className="nav-items">
-            {navItems.map((item) => (
-              <button key={item.id} data-view={item.id} className={"nav-item " + (currentView === item.id ? "active" : "")} onClick={() => { if (item.id === "guide") void openGuide(); else setCurrentView(item.id); }} title={item.label}>
-                {item.icon}
-              </button>
-            ))}
-          </div>
-          <div className="nav-spacer" />
-          <div className="nav-avatar" title={t("shell.account")}>JD</div>
-        </nav>
+        <NavRail
+          items={navItems}
+          current={currentView}
+          onSelect={(id) => { if (id === "guide") void openGuide(); else setCurrentView(id as ViewId); }}
+          avatar="JD"
+          labels={{ navigation: t("shell.navigation"), account: t("shell.account") }}
+        />
 
         <main className="program-main">
           {currentView === "workbench" ? (
             <>
-              <header className="screen-header screen-header-party">
-                <div className="screen-title screen-title-party">
-                  {/* The PARTY, not the workspace path. Parties are app-global
-                      now and every member runs in its own cwd, so the directory
-                      the app was launched from described nothing on screen. */}
-                  <span className="screen-party" title={`현재 파티: ${activePartyName || "선택 없음"}`}>
-                    <span className="screen-party-label">현재 파티</span>
-                    <Flag size={12} strokeWidth={2.5} />
-                    <strong>{activePartyName || "선택 없음"}</strong>
-                  </span>
-                  <p>{t("shell.workbenchDescription")}</p>
-                </div>
-                <div className="screen-actions">{usagePill}</div>
-              </header>
+              <WorkbenchScreenHeader
+                party={activePartyName}
+                description={t("shell.workbenchDescription")}
+                actions={usagePill}
+                labels={{ partyLabel: "현재 파티", none: "선택 없음" }}
+              />
               <Workbench
                 parties={state.party.parties || []}
                 activePartyId={state.party.currentPartyId}
