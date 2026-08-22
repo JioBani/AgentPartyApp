@@ -379,6 +379,43 @@
       }
     },
     {
+      "id": "Ox Alpha",
+      "label": "Ox Alpha",
+      "provider": "openrouter",
+      "runtimeModel": "claude-ox-alpha",
+      "orModelId": "stealth/ox-alpha",
+      "subscription": false,
+      "description": "OpenRouter preview of an anonymous 'Stealth' provider's reasoning model for coding and long-horizon agentic work. Free while the preview lasts; the provider retains prompts and completions but states it does not train on them. Reasoning cannot be turned off.",
+      "context": "1.05M",
+      "perf": 5,
+      "costTier": 1,
+      "inPerM": 0,
+      "outPerM": 0,
+      "ioPerM": 0,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "max"
+        },
+        "thinking": {
+          "modes": [
+            "enabled"
+          ],
+          "default": "enabled"
+        }
+      },
+      "vision": {
+        "image": true,
+        "video": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "Inkling",
       "label": "Inkling",
       "provider": "openrouter",
