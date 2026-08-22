@@ -103,13 +103,17 @@ async function attachRenderer() {
  * card-sized: the app shell is a viewport-tall flex column, so a chain that
  * reaches it turns a 28px pill into a 900px card.
  */
-const LIFT = `(function lift(selector, context, height, width) {
+const LIFT = `(function lift(selector, context, height, width, nodeStyle) {
   const el = document.querySelector(selector);
   if (!el) return null;
   const stop = context ? el.closest(context) : el;
   if (!stop) return null;
   let node = el.cloneNode(true);
   node.querySelectorAll("[contenteditable]").forEach((n) => n.removeAttribute("contenteditable"));
+  // Placement is not the component. A dropdown menu is position:absolute, so the
+  // parent it is lifted inside measures 0 and the specimen comes out empty.
+  // nodeStyle lets a variant neutralise the placement and show the thing itself.
+  if (nodeStyle) { node.setAttribute("style", (node.getAttribute("style") || "") + ";" + nodeStyle); }
   let current = el;
   while (current !== stop) {
     current = current.parentElement;
@@ -236,9 +240,9 @@ async function main() {
       { type: "assistant_text_delta", text: "빌드 로그부터 확인했습니다.\n\n## 원인\n\n`moduleResolution` 이 `bundler` 인데 이 패키지는 `node16` 을 기대합니다.\n\n```ts\n{ \"compilerOptions\": { \"moduleResolution\": \"node16\" } }\n```\n" },
       { type: "tool_call", id: "c-bash", name: "Bash", status: "completed", input: { command: "npm run build" }, result: "✓ built in 3.41s", exitCode: 0, durationMs: 3410, cwd: "C:/Project/AgentPartyApp" },
       { type: "plan", steps: [
-        { title: "tsconfig 조정", status: "completed" },
-        { title: "빌드 재실행", status: "inProgress" },
-        { title: "실패한 테스트만 재실행", status: "pending" },
+        { step: "tsconfig 조정", status: "completed" },
+        { step: "빌드 재실행", status: "inProgress" },
+        { step: "실패한 테스트만 재실행", status: "pending" },
       ] },
       { type: "status", status: "idle", contextTokens: 118_400, contextWindow: 200_000, at: new Date().toISOString() },
     ],
@@ -277,7 +281,7 @@ async function main() {
       continue;
     }
     for (const { component, variant } of entries) {
-      const html = await cdp.eval(`${LIFT}(${JSON.stringify(variant.selector)}, ${JSON.stringify(variant.context || "")}, ${JSON.stringify(variant.height || "")}, ${JSON.stringify(variant.width || "")})`);
+      const html = await cdp.eval(`${LIFT}(${JSON.stringify(variant.selector)}, ${JSON.stringify(variant.context || "")}, ${JSON.stringify(variant.height || "")}, ${JSON.stringify(variant.width || "")}, ${JSON.stringify(variant.nodeStyle || "")})`);
       if (!html) {
         problems.push(`${component} / ${variant.label}: '${variant.selector}' matched nothing in scene '${scene}'`);
         continue;

@@ -23,6 +23,10 @@ export default defineConfig({
         // so the design can be reviewed without running the feature. Its own
         // document because it must NOT boot the app (no window.agentParty).
         preview: path.join(here, "src/renderer/preview/index.html"),
+        // 디자인 시스템: the shipping components rendered from fixture props.
+        // Its own document for the same reason as the preview — it must never
+        // boot the app, so a design page opens with nothing running.
+        studio: path.join(here, "src/renderer/studio/index.html"),
       },
     },
   },
