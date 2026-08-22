@@ -25,8 +25,14 @@ const SOURCE_ROOTS = ["src/renderer", "src/shared", "src/core", "src/main", "src
  * reviewed ("최근 목록의 마지막 항목은 시작할 수 없는 배포판"), and putting them
  * in the product's translation inventory would ask a translator to localize
  * notes to ourselves.
+ *
+ * `src/renderer/studio` is the design system and app mockup — the same kind of
+ * surface for the same reason: its own vite document, never linked from the app,
+ * and its text IS the design documentation ("좁은 폭은 기능을 빼는 것이 아니라
+ * 같은 블록을 다시 흐르게 한다"). The components it MOUNTS are the shipping ones,
+ * so their strings are still audited where they live.
  */
-const SKIP_DIRS = ["src/renderer/preview"];
+const SKIP_DIRS = ["src/renderer/preview", "src/renderer/studio"];
 const GUIDE_ROOT = "guide/knowledge";
 const CATALOG_FILE = "src/shared/modelCatalog.json";
 
