@@ -19,9 +19,6 @@ import { routeKey } from "./routes";
 /** Provider order in the list; unlisted providers fall into `custom`. */
 const PROVIDER_ORDER: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "xai", "custom"];
 
-/** How many model names a collapsed provider header previews. */
-const PREVIEW_LIMIT = 3;
-
 export interface CatalogGroup {
   /** Stable key: the provider id, or `favorites` for the pinned section. */
   id: string;
@@ -34,8 +31,6 @@ export interface CatalogGroup {
   open: boolean;
   /** Favourites cannot be collapsed; provider groups can. */
   collapsible: boolean;
-  /** Model names shown on a collapsed provider header (already truncated). */
-  preview: string;
   /** Whether the selected row is inside this group (badges a collapsed header). */
   hasSelected: boolean;
 }
@@ -80,14 +75,6 @@ function matches(entry: RouteEntry, needle: string): boolean {
   return searchAxes(entry).some((axis) => (axis || "").toLowerCase().includes(needle));
 }
 
-/** Collapsed-header preview, e.g. `opus-4.1 · haiku-4`. */
-function previewOf(entries: RouteEntry[]): string {
-  const names = entries
-    .slice(0, PREVIEW_LIMIT)
-    .map((entry) => (entry.route.label || entry.meta.name).replace(/^claude-/, ""));
-  return names.join(" · ") + (entries.length > PREVIEW_LIMIT ? " …" : "");
-}
-
 /**
  * Builds the rendered group list.
  *
@@ -126,7 +113,6 @@ export function buildCatalogView({ entries, query, favorites, provOpen, selected
       entries: favoriteEntries,
       open: true,
       collapsible: false,
-      preview: "",
       hasSelected: holdsSelection(favoriteEntries),
     });
   }
@@ -156,7 +142,6 @@ export function buildCatalogView({ entries, query, favorites, provOpen, selected
       entries: bucket,
       open: searching ? true : Boolean(provOpen[provider]),
       collapsible: true,
-      preview: previewOf(bucket),
       hasSelected: holdsSelection(bucket),
     });
   }

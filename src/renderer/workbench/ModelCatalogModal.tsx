@@ -493,13 +493,12 @@ export function ModelCatalogModal({
                       <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
                       <ProviderIcon
                         provider={group.provider === "custom" ? undefined : group.provider}
-                        size={9}
+                        size={12}
                         style={{ color: PROVIDER_DOTS[group.provider!] }}
                       />
                       <span className="wb-model-provider-name">{group.label}</span>
                       <span className="wb-mono">{group.entries.length}</span>
                       {!group.open && group.hasSelected && <span className="wb-model-inuse"><LocalizedText id="STR-1874" /></span>}
-                      {!group.open && <span className="wb-model-preview wb-mono">{group.preview}</span>}
                     </button>
                   )}
 

@@ -172,14 +172,14 @@ async function main() {
       return {
         count: heads.length,
         expanded: heads.map(h => h.getAttribute("aria-expanded")),
-        previews: heads.map(h => (h.querySelector(".wb-model-preview")||{}).textContent || ""),
+        rightLists: heads.filter(h => h.querySelector(".wb-model-preview")).length,
         rows: document.querySelectorAll(".wb-model-scroll .wb-model-row").length,
         inUse: heads.filter(h => h.querySelector(".wb-model-inuse")).length,
       };
     })()`);
     assert(collapsed.count > 0, `provider groups render (${collapsed.count})`);
     assert(collapsed.expanded.filter((v) => v === "true").length <= 1, "at most one group is expanded on open (the current model's)");
-    assert(collapsed.previews.some((p) => p.length > 0), "a collapsed header previews the names it hides");
+    assert(collapsed.rightLists === 0, "provider headers do not render a right-side model-name list");
     console.log(`  · groups=${collapsed.count} expanded=${collapsed.expanded.join(",")} rows=${collapsed.rows} 사용중배지=${collapsed.inUse}`);
 
     // --- R-6: favourites, both directions ---------------------------------
@@ -215,7 +215,7 @@ async function main() {
     }))`);
     assert(providerMarks.some((icon) => icon.provider === "openrouter" && icon.mark === "openrouter"), "OpenRouter renders its dedicated provider mark in the real catalog");
     assert(providerMarks.some((icon) => icon.provider === "deepseek" && icon.mark === "deepseek"), "DeepSeek renders its dedicated provider mark in the real catalog");
-    assert(providerMarks.every((icon) => Math.abs(icon.size - 9) <= 0.5), "provider-group marks are rendered at the reduced 9px size");
+    assert(providerMarks.every((icon) => Math.abs(icon.size - 12) <= 0.5), "provider-group marks are rendered at the emphasized 12px size");
     const detailMark = await cdp.eval(`(() => ({
       icon: document.querySelector(".wb-detail-model-mark .wb-model-icon")?.getBoundingClientRect().width || 0,
       box: document.querySelector(".wb-detail-model-mark")?.getBoundingClientRect().width || 0,
@@ -356,7 +356,8 @@ async function main() {
       console.log("  · (list fits without scrolling at this size — clip check not applicable)");
     }
 
-    // Narrow window: the preview text must give way, not push the header out.
+    // Narrow window: the emphasized provider identity must stay inside the
+    // column now that no model-name preview competes for its row.
     // Deliberately NOT wrapped in a catch — a resize that silently fails would
     // turn this into a check that always passes at the default width.
     // 1100 is the app's enforced minimum window width, so it is the narrowest a
@@ -375,7 +376,7 @@ async function main() {
       };
     })()`);
     assert(narrow.headsInside, "provider headers stay inside the column when the window narrows");
-    assert(narrow.namesVisible, "the provider name survives narrowing (the preview is what shrinks)");
+    assert(narrow.namesVisible, "the emphasized provider name survives narrowing");
 
     // --- side-by-side captures --------------------------------------------
     // Reproduce the confirmed screenshot's state: two favourites pinned on top,

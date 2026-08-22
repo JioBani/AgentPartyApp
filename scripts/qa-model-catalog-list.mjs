@@ -134,7 +134,7 @@ console.log("\nProvider collapse (R-5):");
 {
   const collapsed = buildCatalogView({ entries: ENTRIES, query: "", favorites: [], provOpen: {}, selectedKey: "" });
   assert(collapsed.groups.every((g) => g.kind === "favorites" || !g.open), "provider groups start COLLAPSED");
-  assert(groupNamed(collapsed, "anthropic").preview === "sonnet-4.5 · opus-4.1 · haiku-4", "collapsed header previews model names with the claude- prefix stripped");
+  assert(!("preview" in groupNamed(collapsed, "anthropic")), "collapsed provider headers carry no right-side model-name list");
 
   const many = buildCatalogView({ entries: ENTRIES, query: "", favorites: [], provOpen: {}, selectedKey: keyOf("claude-haiku-4") });
   assert(groupNamed(many, "anthropic").hasSelected === true, "a collapsed group holding the current model is flagged (사용 중 badge)");
