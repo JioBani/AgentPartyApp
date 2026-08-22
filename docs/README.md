@@ -7,10 +7,9 @@ listed here.
 ## Start here
 
 - [기능정의서.md](기능정의서.md): current product capability definition.
-- [현황.md](현황.md): current work status, active blockers, and shared-workspace
-  operating rules. It supersedes the one-off 2026-08-01 work-lane documents.
-- [아이디어/아이디어.md](아이디어/아이디어.md): proposed product work.
-- [FEEDBACK.md](FEEDBACK.md): open defects and verified improvements.
+- [../TODO/README.md](../TODO/README.md): current ideas, improvements, and bugs.
+- [현황.md](현황.md), [아이디어/아이디어.md](아이디어/아이디어.md), and
+  [FEEDBACK.md](FEEDBACK.md): compatibility pointers to the unified TODO.
 
 ## Engineering references
 
