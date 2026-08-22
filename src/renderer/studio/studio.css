@@ -1,0 +1,161 @@
+/*
+ * Studio CHROME only.
+ *
+ * Every rule here is prefixed `st-` and none of them reach inside `.st-stage`.
+ * The stages must be styled by the app's own `styles.css` and nothing else —
+ * a studio that touches its specimens stops being evidence about the app.
+ */
+.st-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+/* ------------------------------------------------------------------ top bar */
+.st-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-1);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.st-brand { font-size: 13px; letter-spacing: -0.01em; }
+
+.st-surface { display: flex; gap: 2px; padding: 2px; background: var(--bg-2); border-radius: var(--radius-pill); }
+.st-surface button {
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.st-surface button.is-on { color: var(--accent-fg); background: var(--accent); }
+
+.st-theme {
+  margin-left: auto;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-0);
+  background: var(--bg-input);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-input);
+}
+
+/* --------------------------------------------------------------- two panes */
+.st-body { flex: 1; display: flex; min-height: 0; }
+
+.st-nav {
+  flex: none;
+  width: 244px;
+  padding: var(--space-4) var(--space-3) var(--space-6);
+  overflow-y: auto;
+  background: var(--bg-1);
+  border-right: var(--border-width) solid var(--border);
+}
+
+.st-search {
+  width: 100%;
+  margin-bottom: var(--space-4);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-0);
+  background: var(--bg-input);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-input);
+}
+
+.st-nav-group { margin-bottom: var(--space-5); }
+.st-nav-title {
+  margin: 0 0 var(--space-2);
+  padding: 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.st-nav-title em { font-style: normal; opacity: 0.6; }
+
+.st-nav-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-button);
+  cursor: pointer;
+}
+.st-nav-item:hover { background: var(--bg-2); }
+.st-nav-item.is-on { color: var(--text-0); background: var(--selection); }
+
+/* ------------------------------------------------------------- story stage */
+.st-main { flex: 1; min-width: 0; overflow: auto; padding: var(--space-6); }
+
+.st-story { max-width: 100%; }
+.st-story-head { display: flex; align-items: center; gap: var(--space-4); }
+.st-story-head h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+
+.st-density { display: flex; gap: 4px; }
+.st-density button {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.st-density button.is-on { color: var(--accent-fg); background: var(--accent); border-color: var(--accent-bd); }
+
+.st-note {
+  max-width: 74ch;
+  margin: var(--space-3) 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+
+/* The stage gives the component the width it really gets — and nothing else. */
+.st-stage {
+  margin-top: var(--space-5);
+  max-width: 100%;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.st-measure { margin: var(--space-2) 0 0; font-size: 11px; color: var(--text-3); }
+.st-empty { padding: var(--space-5) 8px; font-size: 12px; color: var(--text-2); }
+
+/*
+ * A screen stage gets a WINDOW, because that is what the app gives it: the
+ * workbench is a flex column that fills the program area and sizes its panels
+ * from that box. Without a height it would collapse — the same failure the old
+ * capture bundle papered over with a made-up width.
+ */
+.st-screen {
+  display: flex;
+  flex-direction: column;
+  height: 880px;
+  background: var(--bg-0);
+}
+.st-screen > * { flex: 1; min-height: 0; }
+
+/* The app window mockup gets a window: the shell is a viewport-tall flex column. */
+.st-window { height: 100%; }
+.st-hint { margin: var(--space-3) 0 0; font-size: 11px; color: var(--text-3); }
