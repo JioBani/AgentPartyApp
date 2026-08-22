@@ -1528,6 +1528,7 @@ export class SessionManager extends EventEmitter {
         cwd,
         model: executionModelFor(selectedModel, "codex"),
         effort: request.effort || harnessDefaults.effort,
+        serviceTier: request.serviceTier || harnessDefaults.serviceTier,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         policy: request.codexPolicy || harnessDefaults.codexPolicy,
         debugEnabled: settings.debugEnabled,

@@ -298,6 +298,22 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
           : { supported: false, mutableDuringSession: false, options: [] },
       thinking: { supported: false, mutableDuringSession: false },
       permission: { supported: false, mutableDuringSession: false, options: [] },
+      serviceTier:
+        model.serviceTiers.length > 0
+          ? {
+              supported: true,
+              mutableDuringSession: true,
+              // Codex represents its ordinary tier as null on the wire. The
+              // explicit app-level id lets a person turn Fast back off.
+              defaultValue: "standard",
+              options: [
+                { id: "standard", label: "Standard", description: "Codex default serving speed" },
+                ...model.serviceTiers
+                  .filter((tier) => tier.id !== "standard" && tier.id !== "default")
+                  .map((tier) => ({ id: tier.id, label: tier.name, description: tier.description })),
+              ],
+            }
+          : { supported: false, mutableDuringSession: false, options: [] },
       // A live Codex account model (e.g. "gpt-5.4") inherits vision from its
       // catalog twin; unknown when it has no catalog entry (honestly reported).
       vision: catalogTwin ? visionFromCatalog(catalogTwin) : {},

@@ -73,6 +73,8 @@ assert(codexRoutes[0].model === "gpt-5.5" && codexRoutes[0].label === "GPT-5.5",
 assert(codexRoutes.every((route) => !route.modelProvider), "account-catalog codex routes have no custom provider (built-in openai)");
 const gpt54 = codexRoutes.find((route) => route.model === "gpt-5.4");
 assert(gpt54?.capabilities.effort.supported && gpt54.capabilities.effort.defaultValue === "medium", "effort capability carries the model's own default");
+assert(gpt54?.capabilities.serviceTier?.options.map((option) => option.id).join(",") === "standard,priority", "Codex service tiers expose Standard plus the native Fast id");
+assert(gpt54?.capabilities.serviceTier?.defaultValue === "standard", "Standard is the reversible Codex service-tier default");
 assert(gpt54?.capabilities.thinking.supported === false && gpt54?.capabilities.permission.supported === false, "thinking/permission stay unsupported on the codex harness");
 const mini = codexRoutes.find((route) => route.model === "gpt-5.4-mini");
 assert(mini?.meta?.perf === 1 && mini?.meta?.costTier === 3, "leaderboard meta enriched from the shared catalog ('GPT-5.4 mini' spelling variant)");

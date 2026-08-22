@@ -139,6 +139,7 @@
     "test:codex-discovery": "node scripts/qa-codex-discovery.mjs",
     "test:codex-diagnostics": "node scripts/qa-codex-diagnostics.mjs",
     "test:codex-models": "node scripts/qa-codex-models.mjs",
+    "test:codex-fast-mode": "node scripts/qa-codex-fast-mode.mjs",
     "test:cursor": "npm run build && node scripts/qa-cursor-adapter.mjs",
     "test:grok-tools": "node scripts/qa-grok-tool-normalization.mjs",
     "test:codex-dedup": "node scripts/qa-codex-dedup.mjs",

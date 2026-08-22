@@ -47,6 +47,8 @@ export interface CodexAdapterOptions {
   cwd: string;
   model: string;
   effort: ClaudeEffort;
+  /** Native Codex serving tier id from model/list (for example `priority` / Fast). */
+  serviceTier?: string;
   permissionMode?: string;
   /** Explicit two-axis safety model; falls back to deriving from permissionMode. */
   policy?: CodexPolicy;
@@ -168,6 +170,18 @@ export class CodexAdapter extends EventEmitter {
     this.debugMode = options.debugEnabled;
     this.policy = options.policy ?? codexPolicyFromPermissionMode(options.permissionMode);
     this.authenticationGeneration = options.authenticationGeneration || "";
+  }
+
+  /**
+   * AgentParty gives the UI an explicit Standard choice, while app-server uses
+   * JSON null to clear a previously selected Fast tier. An absent member value
+   * remains undefined so legacy sessions keep following the user's Codex
+   * config instead of AgentParty silently overriding it.
+   */
+  private serviceTierParam(): string | null | undefined {
+    const tier = this.options.serviceTier?.trim();
+    if (!tier) return undefined;
+    return tier === "standard" || tier === "default" ? null : tier;
   }
 
   /**
@@ -738,6 +752,7 @@ export class CodexAdapter extends EventEmitter {
     const result = await this.request("thread/start", {
       model: this.options.model,
       modelProvider: this.resolveModelProvider(),
+      serviceTier: this.serviceTierParam(),
       cwd: this.options.cwd,
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
@@ -753,6 +768,7 @@ export class CodexAdapter extends EventEmitter {
       threadId: this.sessionId,
       model: this.options.model,
       modelProvider: this.resolveModelProvider(),
+      serviceTier: this.serviceTierParam(),
       cwd: this.options.cwd,
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
@@ -961,6 +977,10 @@ export class CodexAdapter extends EventEmitter {
         sandboxPolicy: sandboxPolicyObject(this.policy.sandbox),
         model: this.options.model,
         effort: effortFor(this.options.model, this.options.effort),
+        // The model catalog owns the wire id (`priority` is labelled Fast).
+        // Re-send it per turn because Codex allows this setting to change at
+        // turn scope and a resumed thread may have a different prior value.
+        serviceTier: this.serviceTierParam(),
       });
       this.activeTurnId = String(result?.turn?.id || this.activeTurnId || "");
     } catch (error) {

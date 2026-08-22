@@ -4035,6 +4035,27 @@ The concrete Cursor CLI model is selected without fallback:
 `cursor-grok-4.5-{effort}` for Standard and
 `cursor-grok-4.5-{effort}-fast` for Fast.
 
+### Codex Fast mode
+
+Codex account models expose their native serving tiers through `GET /api/models`
+and the party `list-models` tool. Use the option id returned by that model's
+`capabilities.serviceTier` field; current Codex catalogs label `priority` as
+**Fast**. The same value is accepted by member creation and respawn:
+
+```json
+{
+  "runtime": "codex",
+  "model": "GPT-5.6 Luna",
+  "effort": "medium",
+  "serviceTier": "priority"
+}
+```
+
+AgentParty forwards the tier at thread start/resume and on every turn. Omitting
+`serviceTier` preserves Codex's Standard/default behavior. Fast availability is
+account- and model-dependent, so callers should use the options returned by the
+live model catalog rather than hard-coding a tier.
+
 Use MiniMax M3 for live calls:
 
 ```powershell
