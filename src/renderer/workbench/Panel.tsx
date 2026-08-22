@@ -289,7 +289,7 @@ export function Panel(props: PanelProps) {
             actions={actions}
           />
           <Composer
-            key={`${view.member.partyId || "default"}:${view.name}`}
+            key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
             view={view}
             density={density}
             actions={actions}

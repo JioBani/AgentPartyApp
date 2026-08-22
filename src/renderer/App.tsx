@@ -63,6 +63,7 @@ import { localized } from "./i18n/I18nProvider";
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
 import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
 import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState } from "../shared/sidebarDrawers";
+import { clearComposerDraftsForMember, clearComposerDraftsForParty } from "./workbench/composerDraftStore";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -1236,8 +1237,10 @@ export function App() {
   // Direct removal for the Workbench sidebar, which owns its own confirm UI.
   async function removeMemberDirect(name: string) {
     try {
+      const member = state.party.members.find((candidate) => candidate.name === name && candidate.partyId === activePartyId);
       const result = await window.agentParty.removePartyMember(name);
       await applyPartyResult(result);
+      clearComposerDraftsForMember(member?.partyId || activePartyId, name);
     } catch (error) {
       noticeOnFailure(`'${name}' 멤버를 삭제하지 못했습니다`)(error);
     }
@@ -1288,6 +1291,7 @@ export function App() {
     try {
       const result = await window.agentParty.deleteParty(partyId);
       await applyPartyResult(result);
+      clearComposerDraftsForParty(partyId);
     } catch (error) {
       noticeOnFailure("파티를 삭제하지 못했습니다")(error);
     }

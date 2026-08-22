@@ -3448,9 +3448,15 @@ body.wb-resizing {
   color: var(--member);
 }
 
+/* A fixed cap, and it does not shrink. The metadata band is sized by its
+   contents now that the message shares the row, so the old `40%` measured
+   itself and collapsed the chip to a sliver; letting it flex did the same
+   thing the moment an expanded body asked for the width. The name of the
+   sender is not the part of the row that gives way. */
 .wb-queue-from {
   flex: none;
-  max-width: min(180px, 40%);
+  min-width: 0;
+  max-width: 140px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -9429,20 +9435,23 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-group.is-drop-target { border-color: var(--accent-bd); background: var(--accent-dim); }
 .wb-party-group.is-drop-target .wb-group-row { background: var(--accent-dim); color: var(--accent); }
 
-/* ── 멤버 목록: 실행 호스트 · 작업 디렉터리 트리 ─────────────────────────── */
+/* ── 멤버 목록: 실행 환경 · 작업 디렉터리 트리 ───────────────────────────── */
 
-/* Two levels, one drawer. The host section says WHERE the members below it run
-   (Windows / WSL) and each directory group says which checkout — stated once
-   per group instead of once per row, which is what the flat list could not do
-   without turning every member into two lines of path. */
-.wb-host-group {
+/* Two levels, one drawer. The environment section says WHERE the members below
+   it run — Windows, or ONE WSL distro named on its own — and each directory
+   group says which checkout, stated once per group instead of once per row.
+   With a single native environment the section disappears entirely (see
+   `.wb-member-list.is-flat`) and the directory groups become the top level: at
+   256px a header repeating what the whole list already is costs a row and an
+   indent for nothing. */
+.wb-env-group {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.wb-host-row,
+.wb-env-row,
 .wb-cwd-row {
   display: flex;
   align-items: center;
@@ -9458,12 +9467,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   text-align: left;
 }
 
-.wb-host-row {
-  height: 26px;
-  font-size: 10.5px;
+/* Not uppercased: the label is a distro's real name now, and "Ubuntu-22.04"
+   shouted as "UBUNTU-22.04" is a name the user cannot match against the one
+   `wsl -l` gave them. Weight and the mark carry the section instead. */
+.wb-env-row {
+  height: 24px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: .5px;
-  text-transform: uppercase;
 }
 
 .wb-cwd-row {
@@ -9473,15 +9483,15 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--text-3);
 }
 
-.wb-host-row:hover,
+.wb-env-row:hover,
 .wb-cwd-row:hover {
   background: var(--bg-2);
   color: var(--text-1);
 }
 
-.wb-host-row > svg,
+.wb-env-row > svg,
 .wb-cwd-row > svg,
-.wb-host-icon {
+.wb-env-icon {
   flex: none;
 }
 
@@ -9492,25 +9502,44 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   transition: transform var(--motion-fast);
 }
 
-.wb-host-group:not(.is-open) > .wb-host-row .wb-group-caret,
+.wb-env-group:not(.is-open) > .wb-env-row .wb-group-caret,
 .wb-cwd-group:not(.is-open) > .wb-cwd-row .wb-group-caret {
   transform: rotate(-90deg);
 }
 
-.wb-host-group:not(.is-open) .wb-host-groups,
+.wb-env-group:not(.is-open) .wb-env-groups,
 .wb-cwd-group:not(.is-open) .wb-cwd-members {
   display: none;
 }
 
-.wb-host-name {
-  flex: none;
+/* Gives way before the count does: a distro name can be long, and pushing the
+   member count off the drawer to show two more characters of it is the wrong
+   trade. The full name stays on the row's tooltip. */
+.wb-env-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: inherit;
 }
 
-.wb-host-groups {
+/* A label we had to invent because the location did not name itself. Marked as
+   a stand-in so it is never mistaken for a distro actually called this. */
+.wb-env-name.is-unnamed {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+/* One small step, not a whole tab stop. The section above is the only thing
+   these rows hang off, and the drawer's width is worth more than the
+   redundancy of a deep indent. */
+.wb-env-groups {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-left: 6px;
 }
 
 .wb-cwd-group {
@@ -9519,15 +9548,26 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   gap: 1px;
 }
 
-/* Indented under its host and hung off a hairline, so nesting is visible at a
-   glance without a second background colour competing with the member rows. */
+/* Indented under its directory and hung off a hairline, so nesting is visible
+   at a glance without a second background colour competing with the member
+   rows. Kept shallow deliberately: at 256px every pixel spent here comes off
+   the member's own name. */
 .wb-cwd-members {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding-left: 6px;
-  margin-left: 12px;
+  padding-left: 5px;
+  margin-left: 6px;
   border-left: var(--border-width) solid var(--border-subtle);
+}
+
+/* One native environment, no header: the directory rows ARE the top level now,
+   so they carry the weight the environment row would have had. Without this
+   the list opens on its faintest text, which reads as a list of captions
+   rather than a list of groups. */
+.wb-member-list.is-flat > .wb-cwd-group > .wb-cwd-row {
+  color: var(--text-2);
+  font-weight: 700;
 }
 
 .wb-cwd-distro {
@@ -9708,36 +9748,23 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   max-width: 100%;
 }
 
-/* ── 대기열 항목: 순서 → 메타 → 내용 → 동작 ───────────────────────────── */
+/* ── 대기열 항목: 한 줄에 순서 → 보낸이 → 내용 → 동작 ─────────────────── */
 
-/* The ordinal owns a fixed slot at the head of the row and says what it is.
-   A bare badge could be read as a count, an id or a position; with the suffix
-   beside it there is only one reading, and the fixed width means the sender
-   chips line up down the whole list instead of stepping with the digit count. */
+/* The ordinal leads the row and nothing more. It was carrying a "번째" suffix
+   and a 40px slot to say out loud that the number is a position — true, but
+   paid for out of the message body's width on every row. The tooltip and the
+   accessible name say it now, and the badge goes back to being a badge. */
 .wb-queue-ord {
   flex: none;
   display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  min-width: 40px;
+  align-items: center;
+  min-width: 0;
 }
 
-.wb-queue-ord-suffix {
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-
-.wb-queue-row.is-next .wb-queue-ord-suffix {
-  color: var(--member);
-}
-
-/* Everything about the TURN — who sent it, whether it cut in, whether it is
-   next — between the order and the controls. It takes the slack, so the row's
-   two fixed ends stay put however long a member's name is. */
+/* Who sent it, and whether the turn was jumped. Fixed: the sender chip already
+   caps its own width, and the slack belongs to the message. */
 .wb-queue-meta {
-  flex: 1 1 auto;
+  flex: none;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -9746,7 +9773,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 
 /* One control well, same order on every row: expand, edit, delete. Fixed, so a
-   long name in the meta band can never push the delete off the panel. */
+   long name or a long message can never push the delete off the panel. */
 .wb-queue-row-actions {
   flex: none;
   display: flex;
@@ -9760,21 +9787,26 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   outline-offset: -2px;
 }
 
-/* The message body reads as the row's content, not as one more chip in the
-   header: it starts under the metadata band and gets the full width. */
-.wb-queue-row-head + .wb-queue-text {
-  margin-top: 2px;
-  padding-left: 2px;
+/* The message shares the row with everything else and takes what is left. On
+   its own band below the metadata it turned a five-word message into a
+   two-line card with the controls floating beside empty space. */
+.wb-queue-row-head > .wb-queue-text {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 32px;
 }
 
-/* Narrow panels drop the suffix rather than the number — the ordinal still
-   leads the row, and the aria-label keeps saying what it means. */
-.wb-queue.is-narrow .wb-queue-ord-suffix {
-  display: none;
+/* Expanded, the body wraps to as many lines as it needs, so the row's fixed
+   ends align with the FIRST line rather than drifting to the middle of a
+   paragraph. */
+.wb-queue-row.is-expanded .wb-queue-row-head {
+  align-items: flex-start;
 }
 
-.wb-queue.is-narrow .wb-queue-ord {
-  min-width: 0;
+.wb-queue-row.is-expanded .wb-queue-ord,
+.wb-queue-row.is-expanded .wb-queue-meta,
+.wb-queue-row.is-expanded .wb-queue-row-actions {
+  margin-top: 1px;
 }
 
 /* ── 도구 실행 결과: 결과의 의미를 형태로 말한다 ───────────────────────── */
@@ -9797,8 +9829,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   animation: wb-spin 1s linear infinite;
 }
 
-/* The word beside the mark. Only for the outcomes that are NOT success: a badge
-   on every row would be noise, and success is already the resting state. */
+/* Denial keeps a word because it is meaningfully different from a failure.
+   Failed calls use the red X alone; repeating "실패" beside it is noise. */
 .wb-tool-outcome {
   flex: none;
   padding: 1px 6px;
@@ -9919,11 +9951,12 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   min-width: 96px;
 }
 
-/* ── 대기열: 헤더 · compact 카드 · 전체 동작 ───────────────────────────── */
+/* ── 대기열: 한 줄 헤더 · 얇은 병합 밴드 · compact 카드 ─────────────────── */
 
-/* The header wraps as bands rather than crushing one of them. The status line
-   is the elastic one: at a width where it cannot hold a readable amount, it
-   takes its own row and the title and the controls stay put. */
+/* One compact line at the widths a panel actually gets: title, what will
+   happen, and the two whole-queue buttons. The status is the elastic one and
+   shrinks to an ellipsis rather than wrapping the header into a three-row band
+   — wrapping is the last resort, not the layout. */
 .wb-queue-head {
   flex-wrap: wrap;
   row-gap: 4px;
@@ -9935,7 +9968,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-queue-note,
 .wb-queue-preview {
-  flex: 1 1 140px;
+  flex: 1 1 60px;
 }
 
 /* 접기 and 모두 취소 are both whole-queue controls, so they travel together
@@ -9955,6 +9988,20 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-radius: 5px;
 }
 
+/* ---- merge band ---- */
+
+/* One thin auxiliary strip between the header and the cards: the setting on the
+   left, and at the right end the whole-queue send that names its own count. */
+.wb-queue-merge {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 4px 6px 4px 8px;
+}
+
+.wb-queue-merge .wb-queue-send-all {
+  margin-left: auto;
+}
+
 /* Below two messages the switch has only one outcome. Kept in place and legible
    — the setting is still true, it just has nothing to act on yet — but not
    pressable, and not pretending to be. */
@@ -9967,35 +10014,17 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   font-style: italic;
 }
 
-/* The whole-queue send, ruled off from the item cards above it and from the
-   composer below. Inside the merge row it read as part of that setting. */
-.wb-queue-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 6px;
-  margin-top: 2px;
-  border-top: var(--border-width) solid var(--border-subtle);
-}
-
-.wb-queue-footer .wb-queue-send-all {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ---- compact rows ---- */
 
-/* Height follows the content. The head carried a 26px floor and 26px buttons
-   for the sake of a one-line message, which left a short card mostly empty with
-   its controls floating in the middle of it. */
+/* Height follows the content, and the content is one line. */
 .wb-queue-row {
-  gap: 2px;
-  padding: 5px 6px 5px 7px;
+  gap: 0;
+  padding: 4px 5px 4px 6px;
 }
 
 .wb-queue-row-head {
   min-height: 0;
-  gap: 6px;
+  gap: 7px;
 }
 
 .wb-queue-btn {
@@ -10007,28 +10036,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   height: 20px;
 }
 
-/* The body sits directly under the metadata band rather than being centred in
-   leftover space, so one short line makes one short card. */
-.wb-queue-row-head + .wb-queue-text {
-  margin-top: 0;
-  align-self: stretch;
-}
-
-/* Narrow panels: the same bands, one step tighter. */
+/* Narrow panels: the same single line, one step tighter. */
 .wb-queue.is-narrow .wb-queue-row {
-  padding: 4px 5px;
+  padding: 3px 4px;
 }
 
-/* Narrow rows use the same bands as the wide ones; only the scale differs. The
-   old flat markup put every child on its own line inside a column box, which is
-   what stacked a number, a dot, a pencil and an × down the middle of a card
-   holding one short sentence. */
 .wb-queue.is-narrow .wb-queue-row-head {
   gap: 5px;
-}
-
-.wb-queue.is-narrow .wb-queue-ord {
-  min-width: 0;
 }
 
 .wb-queue.is-narrow .wb-queue-btn {
@@ -10038,10 +10052,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-queue.is-narrow .wb-queue-meta .wb-queue-dot {
   flex: none;
-}
-
-.wb-queue.is-narrow .wb-queue-footer {
-  padding-top: 5px;
 }
 
 /* Same inert treatment as the wide switch, so the two densities do not disagree
