@@ -71,7 +71,10 @@ async function main() {
     const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
     assert(Boolean(appRoot) && within, `running build is THIS worktree (appRoot=${appRoot || "<missing>"})`);
     const windows = (await get("/api/windows")).windows || [];
-    assert(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
+    // Case-insensitive: the app reports the workspace lowercased, and on
+    // Windows `C:\Users` and `c:\users` are one directory. An exact compare
+    // failed against the very instance this script launched.
+    assert(String(windows[0]?.workspacePath || "").toLowerCase() === ws.toLowerCase(), `window serves the e2e workspace (${windows[0]?.workspacePath})`);
 
     await post("/api/qa/seed", {
       party: "queue e2e",

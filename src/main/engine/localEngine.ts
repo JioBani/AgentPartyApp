@@ -10,7 +10,7 @@ import { workspaceKey } from "../../shared/workspaceLocation";
 import { expandScenarioByName, scenarioNames } from "../../shared/subagentScenarios";
 import { APPROVAL_SCENARIOS, approvalScenarioNames } from "../../shared/approvalScenarios";
 import { claudeApprovalFields, codexApprovalFields } from "../../shared/approvalRequest";
-import { GALLERY_CASES, GALLERY_MODELS, GALLERY_PARTY } from "../../shared/designGallery";
+import { GALLERY_CASES, GALLERY_MODELS, GALLERY_PARTY, type GalleryCase } from "../../shared/designGallery";
 import { fileEditsFrom } from "../../shared/codexItems";
 import type { PartyApplicationService } from "../application/partyApplicationService";
 import type { SessionManager } from "../sessionManager";
@@ -456,7 +456,12 @@ export class LocalEngine implements EngineConnection {
     } else {
       this.party.createParty({ name: GALLERY_PARTY });
     }
+    // Every member first, then every card. A queue case names the member that
+    // SENT the waiting message, and a sender that does not exist yet renders in
+    // the fallback grey the chip exists to avoid — so nothing is injected until
+    // the whole cast is on stage.
     const members: string[] = [];
+    const sessions = new Map<string, string>();
     for (const item of GALLERY_CASES) {
       const model = GALLERY_MODELS[item.runtime];
       if (!model) {
@@ -467,11 +472,17 @@ export class LocalEngine implements EngineConnection {
         role: item.caption,
         runtime: item.runtime,
         model,
+        location: item.location,
         autoReply: false,
       });
       if (!sessionId) {
         throw new Error(`Gallery member '${item.member}' could not be started — the gallery must not be shown half-built.`);
       }
+      sessions.set(item.member, sessionId);
+      members.push(item.member);
+    }
+    for (const item of GALLERY_CASES) {
+      const sessionId = sessions.get(item.member) as string;
       if (item.scenario) {
         const { requestId } = await this.qaInjectApproval(item.member, item.scenario);
         if (item.resolve) {
@@ -485,10 +496,53 @@ export class LocalEngine implements EngineConnection {
         }
       }
       this.applyBlocks(sessionId, item.events);
-      members.push(item.member);
+      await this.buildGalleryQueue(item, sessionId);
     }
     log("info", "qa", "design gallery built", { party: GALLERY_PARTY, members: members.length });
     return { party: GALLERY_PARTY, members };
+  }
+
+  /**
+   * Leaves a gallery case's messages WAITING in front of it.
+   *
+   * The preference is set before the messages arrive: turning merging on after
+   * three items are already queued is a second state change the panel animates
+   * through, and a gallery should open on the state it names, not travel to it.
+   *
+   * Everything goes through the same send and queue-command paths the UI and
+   * the HTTP API use. A gallery that wrote queue items straight into the store
+   * would be the one place whose queue could disagree with the product's.
+   */
+  private async buildGalleryQueue(item: GalleryCase, sessionId: string): Promise<void> {
+    if (!item.queue?.length) {
+      return;
+    }
+    // Folding is left to the panel width by default, which means a case opened
+    // in a narrow panel shows a chip and no rows — the gallery would then be
+    // hiding the thing it exists to show. Cases state it outright, and the one
+    // case ABOUT the folded state asks for it.
+    await this.party.runQueueCommand(item.member, {
+      action: "preference",
+      collapsed: false,
+      ...item.queuePreference,
+    });
+    // A message only WAITS while the member is mid-turn; delivered to an idle
+    // member it would be answered and the panel would never appear.
+    this.applyStatus(sessionId, "working");
+    const cast = new Set(this.party.list().members.map((member) => member.name));
+    for (const message of item.queue) {
+      if (!message.from) {
+        await this.party.sendUserMessage(item.member, message.text);
+        continue;
+      }
+      // A sender that is not in the party renders in the fallback grey the
+      // sender chip exists to avoid, and the case would quietly stop showing
+      // what it is named for. Renaming a case must break here, not on screen.
+      if (!cast.has(message.from)) {
+        throw new Error(`Gallery case '${item.member}' queues a message from '${message.from}', which is not a member of the gallery — add the sender as a case or fix the name.`);
+      }
+      await this.party.sendGatedMessage(item.member, message.text, message.from);
+    }
   }
 
   async qaReset(): Promise<PartyListing> {

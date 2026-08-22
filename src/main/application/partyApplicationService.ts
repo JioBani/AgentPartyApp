@@ -824,7 +824,14 @@ export class PartyApplicationService {
     }
     // Where this process may run it, decided BEFORE anything is written: a
     // member the desktop cannot start must leave no half-started state behind.
-    const runtimeCwd = this.memberCwd(member);
+    //
+    // A MOCK session is exempt, because the check has no subject: nothing is
+    // spawned, no directory is entered and no distro is reached. Enforcing it
+    // there meant a mock member could only be placed somewhere this machine
+    // happens to have — so the design gallery could not show the member list's
+    // own environment tree, which is a drawing of stored locations and not of
+    // reachable ones. The location itself is untouched and still shown.
+    const runtimeCwd = options.mock ? {} : this.memberCwd(member);
     if (runtimeCwd.blocked) {
       log("warn", "party", "member start blocked by its execution location", { workspace, partyId: member.partyId, member: member.name, location: member.location });
       return this.result(runtimeCwd.blocked, state, member);

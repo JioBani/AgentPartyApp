@@ -14,6 +14,13 @@
  * Approval payloads are named recordings from src/shared/approvalScenarios.ts;
  * questions and compactions are shaped like the events their harnesses send
  * (Claude's AskUserQuestion, the SDK's `compact_metadata`).
+ *
+ * Not every design surface is a card in a transcript. Two of them are states a
+ * member is IN rather than something it says — a queue only exists while the
+ * member is mid-turn, and the member list's environment tree only takes shape
+ * when the party is spread across more than one of them. Those are cases here
+ * too: a design that can only be reached by timing a send against a live answer,
+ * or by hand-making members in three directories, is a design nobody reviews.
  */
 
 import type { HarnessId } from "./types";
@@ -34,6 +41,26 @@ export interface GalleryCase {
   answers?: Record<string, string>;
   /** Normalized events to inject directly (compaction states). */
   events?: unknown[];
+  /**
+   * Where this member RUNS, as the stored location string.
+   *
+   * The member list groups by execution environment and then by directory, and
+   * that tree is a design surface of its own: a party all in one folder can
+   * only ever show one of its shapes. Cases that carry a location are what put
+   * Windows, each WSL distro and the unidentified bucket on screen at once.
+   */
+  location?: string;
+  /**
+   * Messages left WAITING for this member.
+   *
+   * Setting this also puts the member in a working turn, because that is the
+   * only state in which a message queues rather than being delivered — the
+   * queue panel cannot be looked at any other way. `from` names the sender;
+   * omit it for the user's own turn ("나").
+   */
+  queue?: { text: string; from?: string }[];
+  /** Queue panel state for the case: merging on/off, folded or open. */
+  queuePreference?: { merge?: boolean; collapsed?: boolean };
 }
 
 /**
@@ -173,5 +200,63 @@ export const GALLERY_CASES: GalleryCase[] = [
   // A member name long enough to lose the race for the header row — the case
   // that used to leave one character and an ellipsis in a narrow panel.
   { member: "32-세션-긴멤버명-데이터파이프라인-리뷰어", runtime: "codex", caption: "세션 시작됨 — 긴 멤버명(좁은 패널에서 이름이 자기 줄을 갖는다)", events: [{ type: "session_spawn", state: "running", harness: "codex", model: "gpt-5.4-codex", host: "wsl", cwd: "…/projects/very-long-workspace-directory-name" }] },
+
+  // --- 대기열 ------------------------------------------------------------
+  // The queue is the one panel that cannot be seen by asking for it: a message
+  // only waits while the member is mid-turn. These cases put a member in that
+  // state and leave real items in front of it, so the row, the merge band and
+  // the header can be judged without timing a send against a live answer.
+  {
+    member: "33-대기열-한건", runtime: "claude-code", caption: "대기열 — 1건(병합은 상대가 없어 비활성)",
+    queue: [{ text: "401 전환 패치 끝나면 refresh 토큰 회전 로직도 같은 방식으로 정리해줘." }],
+  },
+  {
+    member: "34-대기열-병합", runtime: "claude-code", caption: "대기열 — 같은 보낸이 여러 건(병합 켬 + 합쳐지는 구간 레일)",
+    queue: [
+      { text: "리뷰 끝나면 이어서 부탁해" },
+      { text: "릴리스 노트 초안도 같이 봐줘" },
+      { text: "마지막으로 통합 브랜치 상태만 확인해줘" },
+    ],
+    queuePreference: { merge: true },
+  },
+  {
+    member: "35-대기열-보낸이혼합", runtime: "claude-code", caption: "대기열 — 보낸이가 섞인 경우(합쳐지는 건 같은 보낸이끼리)",
+    queue: [
+      { text: "수정 후 auth 스위트만 다시 돌리고 결과를 3줄로 요약해줘." },
+      { text: "좁은 catch 로 가되 TokenExpiredError 외 에러는 그대로 상위로 던져줘.", from: "36-대기열-보낸이" },
+    ],
+    queuePreference: { merge: true },
+  },
+  {
+    // The sender behind the chip in the case above. A member colour is only
+    // real if the sender is a real member, and a fabricated name would render
+    // in the fallback grey the chip exists to avoid.
+    member: "36-대기열-보낸이", runtime: "claude-code", caption: "대기열 — 위 카드의 '다른 멤버가 보낸 메시지' 발신자",
+  },
+  {
+    member: "37-대기열-긴메시지", runtime: "claude-code", caption: "대기열 — 긴 메시지 한 줄 말줄임(펼치면 전문)",
+    queue: [{ text: "통합 브랜치 상태를 확인하고 병합 요청을 준비해줘. https://example.com/a/very/long/path/that/should/not/escape/the/card 그리고 very-long-token-without-a-natural-break-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ 도 카드 밖으로 넘치면 안 된다." }],
+    queuePreference: { merge: false },
+  },
+  {
+    member: "38-대기열-접힘", runtime: "claude-code", caption: "대기열 — 접힌 한 줄(미리보기 + 펼치기)",
+    queue: [
+      { text: "접힌 상태에서 첫 메시지가 미리보기로 나온다" },
+      { text: "두 번째 메시지는 '외 N건'으로 센다" },
+    ],
+    queuePreference: { collapsed: true },
+  },
+
+  // --- 실행 환경 · 작업 디렉터리 ------------------------------------------
+  // The member list groups by environment and then by directory. A gallery
+  // whose members all sit in one folder shows exactly one of that tree's
+  // shapes, so these five put the rest of them on screen: a second Windows
+  // checkout, two DIFFERENT distros (which are peers, not children of a "WSL"
+  // parent), and a member whose location cannot be read.
+  { member: "39-위치-Windows-다른폴더", runtime: "claude-code", caption: "멤버 목록 — 같은 Windows의 다른 작업 폴더", location: "C:\\Project\\AgentPartyApp" },
+  { member: "40-위치-Ubuntu", runtime: "codex", caption: "멤버 목록 — WSL 배포판 하나(배포판 이름이 곧 최상위 환경)", location: "wsl+Ubuntu-24.04:/home/dev/services/gateway" },
+  { member: "41-위치-Ubuntu-다른폴더", runtime: "codex", caption: "멤버 목록 — 같은 배포판 안의 다른 폴더", location: "wsl+Ubuntu-24.04:/srv/app" },
+  { member: "42-위치-Debian", runtime: "codex", caption: "멤버 목록 — 두 번째 배포판(첫 배포판과 형제 관계)", location: "wsl+Debian:/srv/edge" },
+  { member: "43-위치-긴경로-데이터파이프라인-워크트리", runtime: "claude-code", caption: "멤버 목록 — 긴 경로(조상만 줄고 폴더 이름은 남는다)", location: "C:\\Users\\Dev\\AppData\\Roaming\\AgentParty\\worktrees\\design-platform-groups" },
 
 ];

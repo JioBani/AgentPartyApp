@@ -3912,14 +3912,27 @@ restored first, since bounds are ignored while maximized. Returns the resulting
 
 ### `POST /api/qa/design-gallery`
 
-Builds the **card design gallery**: a party named `카드 디자인 갤러리` with one
-mock member per transcript-card case, each already showing its card — approval
-requests, their allowed/denied states, question cards (single / multi / free /
-secret / multi-step), answered questions, and the compaction block (running /
-done / no-figures / failed).
+Builds the **design gallery**: a party named `카드 디자인 갤러리` with one mock
+member per design case, each already showing what it is for — approval requests,
+their allowed/denied states, question cards (single / multi / free / secret /
+multi-step), answered questions, the compaction block (running / done /
+no-figures / failed), environment blockers, and session-start cards.
+
+Two of the cases are states a member is IN rather than something it says, and
+neither can be reached by asking for it:
+
+- **대기열** — a case with `queue` puts its member in a working turn and leaves
+  real messages waiting in front of it, so the queue panel (row, merge band,
+  header, folded preview) can be reviewed without timing a send against a live
+  answer. `queuePreference` sets merging and folding before the messages arrive.
+- **실행 환경 · 작업 디렉터리** — a case with `location` runs its member
+  somewhere else, so the member list's tree shows Windows, each WSL distro as a
+  top-level peer, several directories inside one environment, and a long path,
+  instead of the single shape a party in one folder can produce.
 
 Every member is a mock session, so nothing launches a harness, calls a model, or
-runs a command. Approval payloads are the recordings in
+runs a command; queued messages travel the same send and queue-command paths the
+UI and the HTTP API use. Approval payloads are the recordings in
 `src/shared/approvalScenarios.ts`; the case list is `src/shared/designGallery.ts`,
 read by both this route and the scripts, so there is no second copy to drift.
 

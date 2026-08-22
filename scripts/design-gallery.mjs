@@ -95,7 +95,13 @@ if (!served) {
   console.error(`Refusing to drive ${base}: /api/state reported no workspace, so the target cannot be verified.`);
   process.exit(1);
 }
-if (path.resolve(served) !== path.resolve(ws)) {
+// Compared case-insensitively on Windows, where `C:\Users` and `c:\users` are
+// the same directory. The app lowercases the workspace it reports, so an exact
+// match rejected the very instance this script had just launched.
+const samePath = (a, b) => (process.platform === "win32"
+  ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+  : path.resolve(a) === path.resolve(b));
+if (!samePath(served, ws)) {
   console.error(`Refusing to drive ${base}: it serves ${served}, not ${ws}.`);
   process.exit(1);
 }
