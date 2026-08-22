@@ -45,6 +45,20 @@ const MOCKUP = {
   columnTiers: 3,
 };
 
+const MODEL_MARKS = {
+  "Gemini 3.7 Flash": "gemini",
+  "Kimi K3": "kimi",
+  "Qwen3.7 Max": "qwen",
+  "DeepSeek V4 Flash": "deepseek",
+  "Muse Spark 1.1": "meta",
+  "Laguna XS 2.1": "poolside",
+  "GLM-5.2": "zai",
+  "MiniMax M3": "minimax",
+  "Grok 4.5 (Cursor)": "grok",
+};
+
+const GENERIC_MODEL_MARKS = ["Ox Alpha", "KAT-Coder-Air V2.5", "Aion-3.0", "Inkling", "Tencent Hy3", "Nex-N2-Mini"];
+
 async function main() {
   await rm(ws); await rm(userData);
   fs.mkdirSync(ws, { recursive: true });
@@ -180,6 +194,24 @@ async function main() {
     // a model cross-routed to another harness shares its label but not its id,
     // so label matching silently picks a route this list never shows.
     const visible = await cdp.eval(`[...document.querySelectorAll(".wb-model-scroll .wb-model-row")].map(r => r.dataset.model)`);
+    const renderedMarks = await cdp.eval(`[...document.querySelectorAll(".wb-model-scroll .wb-model-row")].map(r => ({
+      model: r.dataset.model,
+      name: r.querySelector(".wb-model-name .wb-mono")?.textContent || "",
+      mark: r.querySelector(".wb-model-icon")?.getAttribute("data-model-mark") || "",
+    }))`);
+    const markByName = new Map(renderedMarks.map((row) => [row.name, row.mark]));
+    for (const [name, mark] of Object.entries(MODEL_MARKS)) {
+      assert(markByName.get(name) === mark, `${name} renders the ${mark} model mark in the real catalog`);
+    }
+    for (const name of GENERIC_MODEL_MARKS) {
+      assert(markByName.get(name) === "generic", `${name} renders the neutral model mark in the real catalog`);
+    }
+    const providerMarks = await cdp.eval(`[...document.querySelectorAll(".wb-model-provider-btn .wb-provider-icon")].map(i => ({
+      provider: i.getAttribute("data-provider"),
+      mark: i.getAttribute("data-vendor-mark") || "generic",
+    }))`);
+    assert(providerMarks.some((icon) => icon.provider === "openrouter" && icon.mark === "openrouter"), "OpenRouter renders its dedicated provider mark in the real catalog");
+    assert(providerMarks.some((icon) => icon.provider === "deepseek" && icon.mark === "deepseek"), "DeepSeek renders its dedicated provider mark in the real catalog");
     const selectedId = await cdp.eval(`document.querySelector(".wb-model-row.is-selected")?.dataset.model || ""`);
     const firstId = visible.find((id) => id && id !== selectedId);
     assert(!!firstId, `the catalog offers models in scope (${visible.length} of ${modelRoutes.length} routes; starring ${firstId})`);
@@ -341,6 +373,13 @@ async function main() {
     // position would be comparing two different screens.
     console.log("\nCaptures for the side-by-side:");
     await post("/api/qa/window/bounds", { width: 1400, height: 900 });
+    const markFavs = renderedMarks.filter((row) => MODEL_MARKS[row.name]).map((row) => row.model);
+    assert(markFavs.length === Object.keys(MODEL_MARKS).length, `all ${Object.keys(MODEL_MARKS).length} requested model marks are available for visual review`);
+    await post("/api/settings", { favoriteModels: markFavs });
+    await reopenCatalog(cdp);
+    await capture("catalog-app-model-marks-light.png", "light");
+    await capture("catalog-app-model-marks-dark.png", "dark");
+
     const twoFavs = visible.filter((id) => id).slice(0, 2);
     await post("/api/settings", { favoriteModels: twoFavs });
     await reopenCatalog(cdp);
@@ -398,7 +437,16 @@ async function reopenCatalog(cdp) {
 
 async function capture(name, theme) {
   const body = { path: path.join(shots, name) };
-  if (theme) { body.theme = theme; }
+  if (theme) {
+    // The app's current preset ids are explicit. `/api/capture { theme }` still
+    // accepts the retired `light`/`dark` names, which no longer have token
+    // blocks and therefore produces two identical light screenshots. Drive the
+    // real appearance path and prove what actually reached the renderer.
+    const preset = theme === "dark" ? "agentparty-dark" : "agentparty-light";
+    const appearance = await post("/api/appearance/theme", { theme: preset });
+    assert(appearance?.applied === preset, `applied ${preset} before ${name}`);
+    await delay(250);
+  }
   const res = await post("/api/capture", body);
   // A capture that quietly fails leaves the reviewer comparing a stale file.
   assert(res?.ok !== false && fs.existsSync(body.path), `captured ${name}`);

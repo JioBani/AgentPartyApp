@@ -12,6 +12,8 @@ import { buildCatalogView, catalogCountLabel, initialProvOpen } from "./modelCat
 import { toggleFavoriteModelId, useFavoriteModels } from "../app/favoriteModelPrefs";
 import { HARNESS_IDS, harnessLabel } from "../../shared/types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { ModelIcon } from "./ModelIcon";
+import { ProviderIcon } from "./ProviderIcon";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -489,7 +491,11 @@ export function ModelCatalogModal({
                       onClick={() => setProviderOpen(group.id, !group.open)}
                     >
                       <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
-                      <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[group.provider!] }} />
+                      <ProviderIcon
+                        provider={group.provider === "custom" ? undefined : group.provider}
+                        size={13}
+                        style={{ color: PROVIDER_DOTS[group.provider!] }}
+                      />
                       <span className="wb-model-provider-name">{group.label}</span>
                       <span className="wb-mono">{group.entries.length}</span>
                       {!group.open && group.hasSelected && <span className="wb-model-inuse"><LocalizedText id="STR-1874" /></span>}
@@ -527,12 +533,17 @@ export function ModelCatalogModal({
                           title={unavailable ? entry.route.unavailableReason : entry.route.description}
                           onClick={() => setSelectedKey(key)}
                         >
+                          <ModelIcon route={entry.route} size={17} />
                           <span className="wb-model-name">
                             <span className="wb-mono">{entry.route.label || entry.meta.name}</span>
                             {/* A starred model is also pinned at the top, so the
                                 row says which provider it belongs to. */}
                             <small className="wb-model-origin">
-                              <span className="wb-provider-dot" style={{ background: PROVIDER_DOTS[entry.meta.provider] }} />
+                              <ProviderIcon
+                                provider={entry.meta.provider === "custom" ? undefined : entry.meta.provider}
+                                size={9}
+                                style={{ color: PROVIDER_DOTS[entry.meta.provider] }}
+                              />
                               {PROVIDER_LABELS[entry.meta.provider]}
                             </small>
                           </span>
@@ -564,12 +575,15 @@ export function ModelCatalogModal({
               <>
                 <div className="wb-detail-head">
                   <span
-                    className="wb-provider-dot wb-detail-dot"
+                    className="wb-detail-model-mark"
                     style={{
-                      background: PROVIDER_DOTS[selectedMeta.provider],
+                      color: PROVIDER_DOTS[selectedMeta.provider],
+                      background: dotHalo(PROVIDER_DOTS[selectedMeta.provider], 0.10),
                       boxShadow: `0 0 0 4px ${dotHalo(PROVIDER_DOTS[selectedMeta.provider], 0.16)}`,
                     }}
-                  />
+                  >
+                    <ModelIcon route={selected?.route} model={selectedMeta.id} size={22} />
+                  </span>
                   <div className="wb-detail-ident">
                     <div className="wb-detail-name-row">
                       <strong className="wb-mono">{selectedMeta.name}</strong>
