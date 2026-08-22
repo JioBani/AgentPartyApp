@@ -688,8 +688,8 @@ async function narrowPanelCollapses(cdp) {
       rows: q.querySelectorAll(".wb-queue-row").length,
       // narrow deliberately drops reorder/edit/merge rather than shrinking them
       // into unhittable targets; delete must survive at EVERY width.
-      edits: q.querySelectorAll(".wb-queue-btn").length,
-      deletes: q.querySelectorAll(".wb-queue-del").length,
+      edits: q.querySelectorAll('[data-queue-action="edit"]').length,
+      deletes: q.querySelectorAll('[data-queue-action="remove"]').length,
       overflows: q.scrollWidth > q.clientWidth + 1,
     };
   })()`);
@@ -711,9 +711,9 @@ async function narrowPanelCollapses(cdp) {
     const q = document.querySelector(".wb-queue");
     return {
       rows: q.querySelectorAll(".wb-queue-row").length,
-      edits: q.querySelectorAll(".wb-queue-btn").length,
-      deletes: q.querySelectorAll(".wb-queue-del").length,
-      sendAllBlock: Boolean(q.querySelector(".wb-queue-send-all.is-block")),
+      edits: q.querySelectorAll('[data-queue-action="edit"]').length,
+      deletes: q.querySelectorAll('[data-queue-action="remove"]').length,
+      sendAllBlock: Boolean(q.querySelector(".wb-queue-footer .wb-queue-send-all.is-block")),
       overflows: q.scrollWidth > q.clientWidth + 1,
     };
   })()`);

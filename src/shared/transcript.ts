@@ -75,6 +75,18 @@ export type TranscriptBlock =
        * count from and would have restarted on every remount.
        */
       startedMs?: number }
+  /**
+   * A member's session START, as one card that is replaced in place.
+   *
+   * Replaces the raw `spawned: <whole command line>` status line: the card
+   * carries only {@link import("./sessionSpawn").SessionSpawnFacts}, so an
+   * executable path, a CLI argument, an env var, a local port or a party/member
+   * id has no field to travel in. `cwd` is already shortened for display.
+   *
+   * A start attempt owns ONE card: `starting` appends it and a terminal state
+   * updates it, so a restart adds a second card rather than mutating the first.
+   */
+  | { id: string; kind: "sessionSpawn"; state: import("./sessionSpawn").SessionSpawnState; harness?: string; model?: string; host?: "windows" | "wsl"; cwd?: string; reason?: string; retryable?: boolean; at?: string }
   | {
       id: string;
       kind: "approval";

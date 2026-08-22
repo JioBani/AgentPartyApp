@@ -1,5 +1,6 @@
 import type { SessionView, TranscriptSave } from "./types";
 import type { TranscriptBlock } from "./transcript";
+import { isLegacySpawnLine, legacySpawnFacts, SPAWN_STATUSES, type SessionSpawnFacts } from "./sessionSpawn";
 
 // The party write-tools as the agent sees them (mcp__<server>__<tool>). Mirrors
 // PARTY_TOOL_PREFIX in src/core/partyBridge.ts; inlined so the renderer bundle
@@ -17,6 +18,15 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
     } else if (event.type === "reasoning_delta") {
       next = appendText(next, sessionId, "reasoning", event.text || "");
     } else if (event.type === "status") {
+      // A spawn status is no longer a status line at all: it is a
+      // `session_spawn` event with a card of its own. An adapter that still
+      // emits one (an older engine on the other side of the transport, a
+      // replayed fixture) must not put its detail — the whole spawn command —
+      // back on the feed, so it folds into the same card instead.
+      if (SPAWN_STATUSES.has(String(event.status || ""))) {
+        next = upsertSessionSpawnBlock(next, sessionId, legacySpawnFacts());
+        continue;
+      }
       // An inbound inter-member message arrives as a "sent" turn carrying the
       // <channel> envelope; render it as a clean message card, not raw XML.
       const channel = event.status === "sent" ? parseChannel(event.detail) : null;
@@ -118,6 +128,8 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
       next = appendBlock(next, sessionId, { id: event.requestId || crypto.randomUUID(), kind: "approval", requestId: event.requestId, toolName: event.toolName, title: event.title, description: event.description, input: event.input, codex: event.codex, suggestions: event.suggestions, blockedPath: event.blockedPath, agentID: event.agentID, at: nowTime() });
     } else if (event.type === "approval_resolved") {
       next = markApprovalResolved(next, sessionId, event.requestId, event.decision, event.answers);
+    } else if (event.type === "session_spawn") {
+      next = upsertSessionSpawnBlock(next, sessionId, event as SessionSpawnFacts);
     } else if (event.type === "compact_state") {
       next = applyCompactState(next, sessionId, event);
     } else if (event.type === "turn_complete") {
@@ -463,6 +475,89 @@ function upsertChannelSendBlock(current: Record<string, TranscriptBlock[]>, sess
  * single party-action card. `member`/`role`/`model`/`harness` come from the tool
  * input; state + error come from the bridge's result envelope.
  */
+/**
+ * Folds a session-start event into the ONE card that attempt owns.
+ *
+ * `starting` opens a card. Any later state updates the card already open, so a
+ * start that progresses `starting → running` (or dies `starting → failed`)
+ * moves one card through its states instead of stacking three. A restart emits
+ * `starting` again and therefore gets its own card, which is what the user
+ * means by "it started again" — a second attempt, in order, below the first.
+ *
+ * An adapter that reports only a terminal state (nothing opened a card: a
+ * reconnect that attaches to an already-running session, or a legacy `spawned`
+ * status replayed from an older engine) updates the last card when that card is
+ * still open, and otherwise appends its own. Nothing here can produce two live
+ * cards for one attempt.
+ */
+function upsertSessionSpawnBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, facts: SessionSpawnFacts): Record<string, TranscriptBlock[]> {
+  const items = current[sessionId] || [];
+  const index = lastSessionSpawnIndex(items);
+  const open = index >= 0 && (items[index] as Extract<TranscriptBlock, { kind: "sessionSpawn" }>).state === "starting";
+  const state = facts.state || "running";
+  if (state === "starting" || !open) {
+    if (state !== "starting" && index >= 0 && sameAttempt(items[index] as Extract<TranscriptBlock, { kind: "sessionSpawn" }>, facts)) {
+      // A terminal state for the card that is already terminal — a harness that
+      // reports its liveness twice. Refreshing it in place beats a duplicate.
+      return replaceSessionSpawnBlock(current, sessionId, items, index, facts);
+    }
+    return appendBlock(current, sessionId, {
+      id: crypto.randomUUID(),
+      kind: "sessionSpawn",
+      state,
+      harness: facts.harness,
+      model: facts.model,
+      host: facts.host,
+      cwd: facts.cwd,
+      reason: state === "failed" ? facts.reason : undefined,
+      retryable: state === "failed" ? facts.retryable : undefined,
+      at: nowTime(),
+    });
+  }
+  return replaceSessionSpawnBlock(current, sessionId, items, index, facts);
+}
+
+/**
+ * Rewrites an open card into its new state, keeping the facts it already had.
+ *
+ * A terminal event names only what it learned — Codex knows its model after the
+ * handshake, a failure knows only why — so unset fields must not blank the ones
+ * the `starting` card was drawn with.
+ */
+function replaceSessionSpawnBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, items: TranscriptBlock[], index: number, facts: SessionSpawnFacts): Record<string, TranscriptBlock[]> {
+  const prior = items[index] as Extract<TranscriptBlock, { kind: "sessionSpawn" }>;
+  const state = facts.state || prior.state;
+  const merged: Extract<TranscriptBlock, { kind: "sessionSpawn" }> = {
+    ...prior,
+    state,
+    harness: facts.harness || prior.harness,
+    model: facts.model || prior.model,
+    host: facts.host || prior.host,
+    cwd: facts.cwd || prior.cwd,
+    reason: state === "failed" ? (facts.reason || prior.reason) : undefined,
+    retryable: state === "failed" ? (facts.retryable ?? prior.retryable) : undefined,
+  };
+  const next = items.slice();
+  next[index] = merged;
+  return { ...current, [sessionId]: next };
+}
+
+/** The most recent session card, or -1 when the member has never started here. */
+function lastSessionSpawnIndex(items: TranscriptBlock[]): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index].kind === "sessionSpawn") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/** Whether a terminal event plausibly belongs to the card that is already terminal. */
+function sameAttempt(block: Extract<TranscriptBlock, { kind: "sessionSpawn" }>, facts: SessionSpawnFacts): boolean {
+  return block.state === facts.state
+    && (!facts.harness || !block.harness || facts.harness === block.harness);
+}
+
 function upsertPartyActionBlock(current: Record<string, TranscriptBlock[]>, sessionId: string, event: any, action: "create" | "remove"): Record<string, TranscriptBlock[]> {
   const id = event.id || crypto.randomUUID();
   const items = current[sessionId] || [];
@@ -624,6 +719,20 @@ export function normalizeTranscriptBlocks(blocks: TranscriptBlock[]): Transcript
   for (const block of blocks) {
     const priorIndex = indexById.get(block.id);
     const prior = priorIndex === undefined ? undefined : next[priorIndex];
+
+    // A transcript persisted before the session card existed still holds the
+    // raw `spawned: <whole command line>` status block, and a restore would
+    // draw it verbatim — the one thing this change exists to stop. Rewrite it
+    // into the card, dropping the detail rather than trying to scrub it. Only
+    // the two statuses that ever carried spawn plumbing qualify, so an ordinary
+    // status line is never promoted into a session card by mistake.
+    if (block.kind === "status" && isLegacySpawnLine(block.text)) {
+      const card: TranscriptBlock = { id: block.id, kind: "sessionSpawn", ...legacySpawnFacts(), at: block.at };
+      next.push(card);
+      indexById.set(block.id, next.length - 1);
+      changed = true;
+      continue;
+    }
 
     if (prior?.kind === "channel" && block.kind === "channel" && prior.direction === "out" && block.direction === "out") {
       next[priorIndex!] = {

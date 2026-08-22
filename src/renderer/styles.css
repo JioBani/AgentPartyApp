@@ -285,17 +285,21 @@
    rather than pushing the description around: a party name has no length
    limit. */
 .screen-party {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-1);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   max-width: 320px;
+  padding: 4px 9px 4px 5px;
+  border: 1px solid var(--accent-bd);
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.screen-party-label { flex: none; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-0); font-size: 9px; font-weight: var(--weight-bold); letter-spacing: .04em; }
+.screen-party strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-0); font-size: var(--font-body-sm); font-weight: var(--weight-bold); }
 
 .host-badge {
   font-family: var(--font-sans);
@@ -599,6 +603,10 @@
 .wb-party-drawer .wb-party-list { max-height: none; flex: 1; min-height: 0; }
 /* Only the groups scroll; the create button above this box stays put. */
 .wb-party-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
+.wb-party-scroll.has-more-below { padding-bottom: 48px; }
+.wb-party-more { position: absolute; z-index: 3; left: 7px; right: 7px; bottom: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 38px; border: 1px solid var(--accent-bd); border-radius: var(--radius-button); background: color-mix(in srgb, var(--bg-2) 88%, var(--accent)); color: var(--accent); box-shadow: 0 -10px 20px 8px var(--bg-0), 0 3px 10px var(--shadow); font-size: var(--font-caption); font-weight: var(--weight-bold); cursor: pointer; }
+.wb-party-more:hover { border-color: var(--accent); background: color-mix(in srgb, var(--bg-3) 76%, var(--accent)); }
+.wb-party-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* A narrow drawer must not turn a one-line hint into a two-line block that
    pushes the list down. It clips instead. */
@@ -793,6 +801,7 @@
 /* Same fix as .wb-member-list, but the parties section is not the flexible one:
  * cap it so a long party list scrolls instead of pushing Members off-screen. */
 .wb-party-list {
+  position: relative;
   max-height: 30vh;
   min-height: 0;
   overflow-y: auto;
@@ -800,7 +809,7 @@
 
 .wb-party-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -816,8 +825,13 @@
 
 .wb-party-row.is-active {
   background: var(--accent-dim);
-  border-color: var(--accent-bd);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+.screen-header-party { min-height: 54px; }
+.screen-title-party { gap: var(--space-2); }
+.screen-title-party > p { width: auto; margin-left: var(--space-2); }
 
 .wb-party-name {
   font-size: 12.5px;
@@ -833,6 +847,8 @@
   font-size: 10.5px;
   color: var(--text-3);
 }
+
+.wb-party-current { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-0); font-size: 9px; font-weight: var(--weight-bold); letter-spacing: .02em; }
 
 .wb-party-check {
   grid-row: 1 / span 2;
@@ -4193,12 +4209,11 @@ body.wb-resizing {
     flex: 1 0 100%;
   }
 
-  /* The toolbar's copy of the member name is the one thing here that IS
-     duplicated — the tab directly above it says the same name. Squeezed to a few
-     pixels it was neither readable nor informative, so at this width it gives
-     the row back to the controls, which have no second home. The status dot
-     stays: it is the only live-state mark in the header. */
-  .wb-toolbar-id strong {
+  /* The duplicated member name that used to be squeezed to a few pixels here is
+     gone entirely — the tab directly above says it. What is left is the member's
+     cwd, which appears nowhere else; at this width it keeps only the folder name
+     and the environment icon, with the full path still in the tooltip. */
+  .wb-toolbar-cwd .wb-cwd-head {
     display: none;
   }
 }
@@ -4249,17 +4264,6 @@ body.wb-resizing {
   align-items: center;
   justify-content: space-between;
   margin-top: 7px;
-}
-
-.wb-composer-tools {
-  display: flex;
-  gap: 3px;
-}
-
-.wb-composer-tools .wb-icon-btn {
-  width: 26px;
-  height: 26px;
-  color: var(--text-3);
 }
 
 .wb-send {
@@ -8532,6 +8536,76 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    own: card radius 8 / row padding 8×10 / gap 8, and a 2px sweep while running.
    `flex:none` because the transcript is a flex column and a one-line card is
    the first thing it would squeeze. */
+/* Session start card — replaces the raw `spawned: <command line>` status line.
+   Two bands: what happened (state, member, time) and what it runs as (harness,
+   model, host, directory). Chips wrap instead of scrolling, so a narrow panel
+   stacks them rather than clipping the state, and every value is truncatable —
+   a long member name or directory shortens itself, never the panel. Colors are
+   theme tokens, so light and dark follow the app. */
+.wb-spawn {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: var(--border-width) solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.wb-spawn.is-live { border-color: var(--live-bd); background: var(--live-dim); }
+.wb-spawn.is-danger { border-color: var(--danger-bd); }
+.wb-spawn-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.wb-spawn-icon { flex: none; display: inline-flex; color: var(--text-2); }
+.wb-spawn.is-ok .wb-spawn-icon { color: var(--success); }
+.wb-spawn.is-live .wb-spawn-icon { color: var(--live); }
+.wb-spawn.is-danger .wb-spawn-icon { color: var(--danger); }
+.wb-spawn-spin { animation: wb-spin 2.2s linear infinite; }
+.wb-spawn-title { flex: none; font-size: 12px; font-weight: 600; color: var(--text-0); white-space: nowrap; }
+/* Shares the first row with the state and the time. It yields space before
+   they do, but never below ~6 characters: a name clipped to one character and
+   an ellipsis is not a shorter name, it is no name at all. Under that width the
+   card gives it its own row instead (.wb-spawn-who). */
+.wb-spawn-member {
+  flex: 0 1 auto;
+  min-width: 6em;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The narrow-panel home for the member name: a full-width line of its own, so
+   a long name shortens against the whole card rather than against whatever the
+   state and the clock left over. */
+.wb-spawn-who {
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-spawn-spacer { flex: 1 1 auto; }
+.wb-spawn-time { flex: none; font-size: 10.5px; color: var(--text-3); }
+.wb-spawn-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.wb-spawn-chip {
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The directory is the one field that can be long enough to own a whole row,
+   so it yields first — the harness/model chips stay readable next to it. */
+.wb-spawn-cwd { max-width: min(100%, 22ch); }
+.wb-spawn-note { font-size: 11px; color: var(--text-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-spawn-fail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.wb-spawn-reason { font-size: 11.5px; color: var(--danger); }
+.wb-spawn-retry { font-size: 11px; color: var(--text-3); }
+
 .wb-compact {
   flex: none;
   border: var(--border-width) solid var(--border);
@@ -9264,6 +9338,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-group:not(.is-open) .wb-group-parties { display: none; }
 .wb-group-add { display: flex; align-items: center; gap: 5px; width: 100%; padding: 5px 6px; margin-top: 4px; background: none; border: 1px dashed var(--border); border-radius: var(--radius-button); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
 .wb-group-add:hover { border-color: var(--accent-bd); color: var(--accent); }
+.wb-group-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wb-group-add:disabled { opacity: .5; cursor: not-allowed; }
+.wb-party-add { flex: none; min-width: 0; margin: 0 0 3px; padding: 4px 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wb-party-add svg { flex: none; }
+.wb-member-create-head { flex: none; }
+.wb-member-add { min-width: 0; margin: 0; padding: 6px 8px; font-weight: var(--weight-semibold); }
+.wb-member-add.is-open { border-style: solid; border-color: var(--border-strong); color: var(--text-1); }
 .wb-env-seg { display: flex; flex: none; gap: 4px; margin-top: 6px; padding: 3px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-button); }
 .wb-env-seg button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; height: 26px; background: none; border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-body); cursor: pointer; }
 .wb-env-seg button.is-active { background: var(--bg-2); border-color: var(--border); color: var(--text-0); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px var(--shadow); }
@@ -9275,11 +9356,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-cwd-list { flex: none; margin-top: 6px; overflow: hidden; background: var(--bg-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }
 .wb-cwd-list-label { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
 .wb-cwd-list-label span { margin-left: auto; color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
-.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 5px 8px; background: none; border: 0; border-top: 1px solid var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-cwd-item { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; width: 100%; padding: 6px 8px; background: none; border: 1px solid transparent; border-top-color: var(--border-subtle); color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
 .wb-cwd-item:first-of-type { border-top: 0; }
 .wb-cwd-item:hover { background: var(--bg-3); }
-.wb-cwd-item.is-selected { background: var(--accent-dim); color: var(--text-0); }
+.wb-cwd-item.is-selected { position: relative; z-index: 1; background: var(--accent-dim); border-color: var(--accent); color: var(--text-0); box-shadow: inset 3px 0 0 var(--accent); }
 .wb-cwd-item.is-broken { color: var(--text-3); }
+.wb-cwd-choice { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 17px; height: 17px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--bg-input); color: var(--bg-0); }
+.wb-cwd-item.is-selected .wb-cwd-choice { border-color: var(--accent); background: var(--accent); }
 .wb-cwd-item-path { flex: 1 1 80px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-cwd-pin { flex: none; color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
 .wb-cwd-warn { display: flex; flex: none; align-items: center; gap: 3px; color: var(--danger); font-size: var(--font-micro); }
@@ -9303,13 +9386,24 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    목업에 없는 컨트롤이라 값은 위 블록에서 가져온다: 칩은 .wb-env-seg 버튼과
    같은 높이·여백을 쓴다. 새 숫자를 만들면 같은 컨트롤이 두 벌의 치수를 갖는다.
    경로 자체는 OS 폴더 대화상자로 고른다(WSL 은 \wsl$\<배포판> 으로 열린다). */
-.wb-cwd-distros { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 5px 6px; margin-top: 6px; }
+.wb-cwd-distros { display: flex; flex: none; flex-direction: column; align-items: stretch; gap: 5px; margin-top: 6px; }
+.wb-cwd-distro-select { display: flex; align-items: center; gap: 8px; }
 .wb-cwd-distros-label { flex: none; color: var(--text-3); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .05em; }
 .wb-cwd-distros-note { display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--font-caption); }
 .wb-cwd-distros-note.is-warn { color: var(--danger); }
-.wb-cwd-distro-chip { display: flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; background: var(--bg-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--font-caption); cursor: pointer; }
-.wb-cwd-distro-chip:hover { border-color: var(--border-strong); color: var(--text-0); }
-.wb-cwd-distro-chip.is-active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); font-weight: var(--weight-semibold); }
+.wb-cwd-distro-control { position: relative; display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; height: 30px; padding-left: 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-input); color: var(--accent); }
+.wb-cwd-distro-control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.wb-cwd-distro-control select { flex: 1; min-width: 0; height: 100%; padding: 0 28px 0 0; appearance: none; background: transparent; border: 0; outline: 0; color: var(--text-0); font: inherit; font-size: var(--font-body-sm); cursor: pointer; }
+.wb-cwd-distro-control select:disabled { cursor: not-allowed; color: var(--text-3); }
+.wb-cwd-distro-control option { background: var(--bg-input); color: var(--text-0); }
+.wb-cwd-distro-chevron { position: absolute; right: 8px; pointer-events: none; color: var(--text-3); }
+.wb-cwd-default { flex: none; margin-top: 6px; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); }
+.wb-cwd-default-label { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; background: var(--bg-3); border-bottom: 1px solid var(--border-subtle); color: var(--text-2); font-size: var(--font-micro); font-weight: var(--weight-semibold); letter-spacing: .04em; }
+.wb-cwd-default-label span:last-child { color: var(--text-3); font-weight: var(--weight-regular); letter-spacing: 0; }
+.wb-cwd-default-value { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; border: 1px solid transparent; background: transparent; color: var(--text-1); text-align: left; cursor: pointer; }
+.wb-cwd-default-value:hover { background: var(--bg-3); }
+.wb-cwd-default-value.is-selected { background: var(--accent-dim); border-color: var(--accent-bd); }
+.wb-cwd-default-empty { margin: 0; padding: 7px 8px; color: var(--text-3); font-size: var(--font-caption); }
 /* 배포판을 아직 안 골랐을 때 비활성. 사라지지 않고 눌리지 않는 상태로 남는다. */
 .wb-cwd-browse:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -9322,11 +9416,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    sized to one row and the rest of the list simply vanished. */
 .wb-party-group { flex: none; margin-bottom: 6px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-2); overflow: hidden; }
 .wb-party-group.is-menu { border-color: var(--border-strong); }
-.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-1); font-size: var(--font-body-sm); font-weight: var(--weight-semibold); cursor: pointer; }
+.wb-group-row { display: flex; align-items: center; gap: 7px; width: 100%; height: 34px; padding: 0 9px; background: var(--bg-3); border: 0; border-radius: 0; color: var(--text-0); font-size: 13px; font-weight: var(--weight-bold); cursor: pointer; }
 .wb-party-group.is-open .wb-group-row { border-bottom: 1px solid var(--border-subtle); }
 .wb-group-row:hover { background: var(--bg-4, var(--bg-3)); color: var(--text-0); }
-.wb-group-icon { flex: none; color: var(--accent); }
-.wb-group-count { flex: none; min-width: 18px; padding: 1px 6px; border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--font-micro); text-align: center; }
+.wb-group-icon { flex: none; color: var(--accent); filter: drop-shadow(0 0 5px var(--accent-dim)); }
+.wb-group-count { flex: none; min-width: 22px; padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-0); font-size: 11px; font-weight: var(--weight-bold); text-align: center; }
 /* 파티는 그룹 상자 안에 들어간다 — 왼쪽 세로선 대신 상자가 소속을 말한다. */
 .wb-group-parties { gap: 1px; padding: 4px; margin-left: 0; border-left: 0; }
 .wb-group-empty { margin: 0; padding: 8px 6px; color: var(--text-3); font-size: var(--font-caption); text-align: center; }
@@ -9334,3 +9428,625 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-row.is-dragging { opacity: .4; }
 .wb-party-group.is-drop-target { border-color: var(--accent-bd); background: var(--accent-dim); }
 .wb-party-group.is-drop-target .wb-group-row { background: var(--accent-dim); color: var(--accent); }
+
+/* ── 멤버 목록: 실행 호스트 · 작업 디렉터리 트리 ─────────────────────────── */
+
+/* Two levels, one drawer. The host section says WHERE the members below it run
+   (Windows / WSL) and each directory group says which checkout — stated once
+   per group instead of once per row, which is what the flat list could not do
+   without turning every member into two lines of path. */
+.wb-host-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-host-row,
+.wb-cwd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-host-row {
+  height: 26px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+.wb-cwd-row {
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.wb-host-row:hover,
+.wb-cwd-row:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.wb-host-row > svg,
+.wb-cwd-row > svg,
+.wb-host-icon {
+  flex: none;
+}
+
+/* The caret is the only thing that says a group can be folded, so it turns
+   rather than disappearing: a rotated caret still reads as "there is more". */
+.wb-group-caret {
+  flex: none;
+  transition: transform var(--motion-fast);
+}
+
+.wb-host-group:not(.is-open) > .wb-host-row .wb-group-caret,
+.wb-cwd-group:not(.is-open) > .wb-cwd-row .wb-group-caret {
+  transform: rotate(-90deg);
+}
+
+.wb-host-group:not(.is-open) .wb-host-groups,
+.wb-cwd-group:not(.is-open) .wb-cwd-members {
+  display: none;
+}
+
+.wb-host-name {
+  flex: none;
+  color: inherit;
+}
+
+.wb-host-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-cwd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Indented under its host and hung off a hairline, so nesting is visible at a
+   glance without a second background colour competing with the member rows. */
+.wb-cwd-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: 6px;
+  margin-left: 12px;
+  border-left: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-cwd-distro {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--radius-badge);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font: 600 9.5px/1.5 var(--font-mono);
+}
+
+/* The path gives up its width first — it is the only elastic thing in the row —
+   and gives it up from the LEFT, where the ancestors are. */
+.wb-cwd-path,
+.wb-toolbar-cwd-path {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* The prefix is already shortened to a root plus one ellipsis (see
+   `splitPathTail`), so it is a handful of characters and must NOT shrink: a
+   flexible prefix is one CSS truncates to a bare `C`, which then runs into the
+   directory name and reads as a path that does not exist. The name beside it is
+   the part that gives way. */
+.wb-cwd-head {
+  flex: none;
+  white-space: nowrap;
+  opacity: .68;
+}
+
+/* Never shrinks: two worktrees under one long parent are told apart by exactly
+   this, and truncating it is how the list starts showing identical rows. */
+.wb-cwd-tail {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.wb-group-count {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* A folded group still has to report what is happening inside it — otherwise
+   collapsing a host is how you stop noticing an approval that is waiting. */
+.wb-group-alert {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.wb-group-live {
+  flex: none;
+}
+
+/* The provider mark that replaced the status dot in front of a member's name.
+   Slightly larger than the dot was: it now carries identity, not just liveness,
+   and a 10px brand mark is a smudge. The slot is fixed so names still start on
+   one vertical line whatever mark lands in it. */
+.wb-member-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-2);
+}
+
+.wb-member-row.is-open .wb-member-mark,
+.wb-tab.is-active .wb-member-mark {
+  color: var(--text-0);
+}
+
+.wb-vendor-mark { display: block; flex: none; }
+.wb-vendor-mark-tone { fill: color-mix(in srgb, currentColor 55%, var(--bg-0)); }
+
+/* One neutral mark for every provider we hold no artwork for — OpenRouter
+   today, whatever is added next. A blank slot reads as a bug and the nearest
+   brand we happen to own would be a lie; the provider's name stays reachable
+   from the wrapper's tooltip and label either way. */
+.wb-provider-icon-generic { opacity: .75; }
+
+/* ── 멤버 패널 보조 헤더: 실행 위치 ─────────────────────────────────────── */
+
+/* Replaces the member name, which the tab directly above already said. The cwd
+   appears nowhere else in the panel and decides which files this member edits. */
+.wb-toolbar-cwd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.wb-toolbar-cwd > svg {
+  flex: none;
+}
+
+.wb-toolbar-id .wb-status-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Below the wide tier the chip keeps its tone and its pulse but drops the word,
+   so the location gets the row instead of both of them being clipped. */
+.wb-toolbar-id .wb-status-pill .wb-dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* ── Composer 하단: 좁은 폭 ─────────────────────────────────────────────── */
+
+/* The row wraps as a whole instead of crushing its buttons. Without this the
+   flex row shrank the primary button below its own text and the Korean label
+   broke one character per line — the control was still there, and unreadable. */
+.wb-composer-row {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.wb-composer-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Labels stay on one line. A button narrower than its own word is not a smaller
+   button, it is a broken one. */
+.wb-send-labeled {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Icon-only Stop, immediately right of send/queue. Small, but never smaller
+   than a comfortable target. */
+.wb-composer-stop.is-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.wb-composer-stop.is-icon:focus-visible {
+  outline: 2px solid var(--danger-bd, var(--danger));
+  outline-offset: 1px;
+}
+
+/* Mid-interrupt the button stays visible but stops inviting a second press. */
+.wb-composer-stop.is-interrupting {
+  opacity: .6;
+}
+
+/* The permission control is the one thing here that may still be clipped; it
+   truncates its own label instead of pushing the row out of the panel. */
+.wb-composer-actions .wb-pill,
+.wb-composer-actions .wb-dd {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ── 대기열 항목: 순서 → 메타 → 내용 → 동작 ───────────────────────────── */
+
+/* The ordinal owns a fixed slot at the head of the row and says what it is.
+   A bare badge could be read as a count, an id or a position; with the suffix
+   beside it there is only one reading, and the fixed width means the sender
+   chips line up down the whole list instead of stepping with the digit count. */
+.wb-queue-ord {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 40px;
+}
+
+.wb-queue-ord-suffix {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-queue-row.is-next .wb-queue-ord-suffix {
+  color: var(--member);
+}
+
+/* Everything about the TURN — who sent it, whether it cut in, whether it is
+   next — between the order and the controls. It takes the slack, so the row's
+   two fixed ends stay put however long a member's name is. */
+.wb-queue-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+/* One control well, same order on every row: expand, edit, delete. Fixed, so a
+   long name in the meta band can never push the delete off the panel. */
+.wb-queue-row-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.wb-queue-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The message body reads as the row's content, not as one more chip in the
+   header: it starts under the metadata band and gets the full width. */
+.wb-queue-row-head + .wb-queue-text {
+  margin-top: 2px;
+  padding-left: 2px;
+}
+
+/* Narrow panels drop the suffix rather than the number — the ordinal still
+   leads the row, and the aria-label keeps saying what it means. */
+.wb-queue.is-narrow .wb-queue-ord-suffix {
+  display: none;
+}
+
+.wb-queue.is-narrow .wb-queue-ord {
+  min-width: 0;
+}
+
+/* ── 도구 실행 결과: 결과의 의미를 형태로 말한다 ───────────────────────── */
+
+/* A check that only changes colour says "done" in both cases, and "done" is not
+   what a refused call means. The shape carries the outcome now; the tone only
+   reinforces it, so the distinction survives a colour-blind reader and a
+   screenshot in the wrong theme. */
+.wb-tool-check.is-denied {
+  background: var(--warning-dim, var(--danger-dim));
+  color: var(--warning, var(--danger));
+}
+
+.wb-tool-check.is-running {
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+.wb-tool-check.is-running svg {
+  animation: wb-spin 1s linear infinite;
+}
+
+/* The word beside the mark. Only for the outcomes that are NOT success: a badge
+   on every row would be noise, and success is already the resting state. */
+.wb-tool-outcome {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background: var(--danger-dim);
+  color: var(--danger);
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wb-tool-check.is-denied + .wb-tool-outcome {
+  background: var(--warning-dim, var(--danger-dim));
+  color: var(--warning, var(--danger));
+}
+
+/* ── 전달·병합 카드: 좁은 폭 ───────────────────────────────────────────── */
+
+/* Participants and delivery status are two facts. On one nowrap line the status
+   chips pushed the names until a member name broke a character per line and ran
+   into the arrow; now each band keeps its own line when the card is narrow. */
+.wb-channel-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.wb-channel-route {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+/* A name is an atom. It shortens with an ellipsis or not at all — never mid
+   syllable — and the full name stays in the title. */
+.wb-channel-peer {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-channel-icon,
+.wb-channel-arrow {
+  flex: none;
+}
+
+/* Status chips wrap as whole chips, in their own band, and never steal width
+   from the names beside them. */
+.wb-channel-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.wb-channel-flags .wb-time {
+  margin-left: 0;
+}
+
+.wb-channel-tag,
+.wb-channel-source {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Long paths, branch names and URLs stay inside the card, but Korean prose is
+   not broken mid-word to achieve it: `anywhere` only breaks where nothing else
+   fits, which is exactly the unbreakable-token case. */
+.wb-channel-bubble {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* "전체 보기" is an action on the body, not part of it. */
+.wb-channel-bubble .wb-expand-inline {
+  display: inline-flex;
+  margin-top: 4px;
+}
+
+/* ── 탭 드래그 중 레이아웃 안정 ────────────────────────────────────────── */
+
+/* The new-panel drop target used to be a flex SIBLING of the panels. Every
+   panel therefore lost 120px+ of width the moment a drag began, re-flowed its
+   composer to the narrow layout mid-gesture, and flowed back on drop — which is
+   what read as "dragging a tab breaks the composer". It is an overlay now: it
+   occupies no layout space, so panel widths are identical before, during and
+   after a drag, and nothing has to be restored when the drag ends. */
+.wb-newpanel-zone {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  bottom: var(--space-5);
+  width: 120px;
+  margin-left: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--bg-1) 86%, transparent);
+}
+
+/* ── Composer 안내 문구: 한 줄 유지 ─────────────────────────────────────── */
+
+/* An empty composer's hint is a label, not content: it shortens rather than
+   stacking three lines of one-word rows in a narrow panel. Typed text still
+   wraps normally — that is the user's own material. */
+.wb-composer-bar .wb-composer-editor:empty::before {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below its own comfortable minimum the editor stops shrinking and the controls
+   take the next line instead (the container query above), so neither the hint
+   nor the buttons are ever crushed. */
+.wb-composer-bar .wb-composer-input {
+  min-width: 96px;
+}
+
+/* ── 대기열: 헤더 · compact 카드 · 전체 동작 ───────────────────────────── */
+
+/* The header wraps as bands rather than crushing one of them. The status line
+   is the elastic one: at a width where it cannot hold a readable amount, it
+   takes its own row and the title and the controls stay put. */
+.wb-queue-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.wb-queue-title {
+  flex: none;
+}
+
+.wb-queue-note,
+.wb-queue-preview {
+  flex: 1 1 140px;
+}
+
+/* 접기 and 모두 취소 are both whole-queue controls, so they travel together
+   instead of drifting to opposite ends when the row rewraps. */
+.wb-queue-head-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.wb-queue-flat:focus-visible,
+.wb-queue-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 5px;
+}
+
+/* Below two messages the switch has only one outcome. Kept in place and legible
+   — the setting is still true, it just has nothing to act on yet — but not
+   pressable, and not pretending to be. */
+.wb-queue-merge.is-inert .wb-queue-switch-btn {
+  cursor: default;
+  opacity: .55;
+}
+
+.wb-queue-merge.is-inert .wb-queue-merge-note {
+  font-style: italic;
+}
+
+/* The whole-queue send, ruled off from the item cards above it and from the
+   composer below. Inside the merge row it read as part of that setting. */
+.wb-queue-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-queue-footer .wb-queue-send-all {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- compact rows ---- */
+
+/* Height follows the content. The head carried a 26px floor and 26px buttons
+   for the sake of a one-line message, which left a short card mostly empty with
+   its controls floating in the middle of it. */
+.wb-queue-row {
+  gap: 2px;
+  padding: 5px 6px 5px 7px;
+}
+
+.wb-queue-row-head {
+  min-height: 0;
+  gap: 6px;
+}
+
+.wb-queue-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.wb-queue-grip {
+  height: 20px;
+}
+
+/* The body sits directly under the metadata band rather than being centred in
+   leftover space, so one short line makes one short card. */
+.wb-queue-row-head + .wb-queue-text {
+  margin-top: 0;
+  align-self: stretch;
+}
+
+/* Narrow panels: the same bands, one step tighter. */
+.wb-queue.is-narrow .wb-queue-row {
+  padding: 4px 5px;
+}
+
+/* Narrow rows use the same bands as the wide ones; only the scale differs. The
+   old flat markup put every child on its own line inside a column box, which is
+   what stacked a number, a dot, a pencil and an × down the middle of a card
+   holding one short sentence. */
+.wb-queue.is-narrow .wb-queue-row-head {
+  gap: 5px;
+}
+
+.wb-queue.is-narrow .wb-queue-ord {
+  min-width: 0;
+}
+
+.wb-queue.is-narrow .wb-queue-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.wb-queue.is-narrow .wb-queue-meta .wb-queue-dot {
+  flex: none;
+}
+
+.wb-queue.is-narrow .wb-queue-footer {
+  padding-top: 5px;
+}
+
+/* Same inert treatment as the wide switch, so the two densities do not disagree
+   about whether merging is available. */
+.wb-queue-pill.is-inert {
+  cursor: default;
+  opacity: .55;
+}

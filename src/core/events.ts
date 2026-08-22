@@ -123,7 +123,14 @@ export type ClaudeNormalizedEvent =
   | { type: "assistant_text_delta"; text: string; blockIndex?: number; at: string }
   | { type: "reasoning_delta"; text: string; blockIndex?: number; at: string }
   | { type: "thinking_tokens"; estimatedTokens: number; delta?: number; at: string }
-  | { type: "tool_call"; id: string; name: string; input?: unknown; status: "started" | "completed" | "failed"; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; outputDelta?: string; at: string }
+  | { type: "tool_call"; id: string; name: string; input?: unknown; /**
+   * What happened to the call. `completed` says the call CLOSED without the
+   * harness reporting an error — it is not a claim that the work succeeded; a
+   * non-zero `exitCode` still rides alongside it. `denied` is kept apart from
+   * `failed` because a refusal is a decision, not a fault, and the UI must not
+   * show the two the same way.
+   */
+  status: "started" | "completed" | "failed" | "denied"; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; outputDelta?: string; at: string }
   | { type: "plan"; steps: import("../shared/codexItems").CodexPlanStep[]; explanation?: string; at: string }
   | { type: "diagnostic"; severity: "info" | "warning" | "error"; category: string; title: string; detail?: string; recovery?: string; at: string }
   // Account/provider-scoped rate-limit usage (NOT per-session context). Emitted
@@ -157,6 +164,21 @@ export type ClaudeNormalizedEvent =
    * it optional (`post_tokens`, `duration_ms`) and Codex sends none of them.
    */
   | { type: "compact_state"; state: "running" | "done" | "failed"; trigger?: "manual" | "auto"; preTokens?: number; postTokens?: number; durationMs?: number; keptCount?: number; reason?: string; at: string }
+  /**
+   * A member's session START, structured.
+   *
+   * It used to be a `spawned` STATUS line whose detail was the entire spawn
+   * command — executable path, every CLI argument, the party MCP wiring with
+   * its local port, and the party/member ids — rendered verbatim in the
+   * conversation. The card that replaced it reads from these fields only, so
+   * the plumbing has no route to a user surface; the raw command still goes to
+   * the session debug log, which the user opens deliberately.
+   *
+   * `starting` opens a card, `running`/`failed` close it. Both terminal states
+   * update the SAME card rather than adding one, so a restart reads as one
+   * attempt per card. See src/shared/sessionSpawn.ts.
+   */
+  | ({ type: "session_spawn"; at: string } & import("../shared/sessionSpawn").SessionSpawnFacts)
   | { type: "control_response"; requestId?: string; response: unknown; at: string }
   // The app-level queue has just been handed to the harness. Authored by the
   // app, not by any harness — it is the only record that queued messages became

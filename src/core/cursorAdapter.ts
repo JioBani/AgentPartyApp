@@ -17,6 +17,7 @@ import {
   requireCursorPolicy,
   type CursorPolicy,
 } from "../shared/cursorPolicy";
+import { currentSpawnHost, shortCwd } from "../shared/sessionSpawn";
 
 export interface CursorAdapterOptions {
   id: string;
@@ -132,7 +133,19 @@ export class CursorAdapter extends EventEmitter {
     if (this.started || this.disposed) return;
     this.started = true;
     this.status = "idle";
-    this.emitEvent({ type: "status", status: "ready", detail: "Cursor Agent CLI", at: now() });
+    // Cursor runs one CLI process PER TURN, so there is no long-lived spawn to
+    // report and no failure that belongs to "starting" — the session is simply
+    // open. One card, at open, keeps the surface consistent with the other
+    // harnesses without a card per turn.
+    this.emitEvent({
+      type: "session_spawn",
+      state: "running",
+      harness: "cursor",
+      model: this.model,
+      host: currentSpawnHost(),
+      cwd: shortCwd(this.options.cwd),
+      at: now(),
+    });
     // Account plan usage is an HTTP read of the CLI's own credential — no CLI
     // process needed, so the meter works even for the turn-less background
     // poller (SessionManager.startUsageAdapter).

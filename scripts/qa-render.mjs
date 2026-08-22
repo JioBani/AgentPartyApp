@@ -47,6 +47,7 @@ function defineGlobal(name, value) {
 defineGlobal("window", window);
 defineGlobal("document", window.document);
 defineGlobal("HTMLElement", window.HTMLElement);
+defineGlobal("Node", window.Node);
 defineGlobal("getComputedStyle", window.getComputedStyle.bind(window));
 defineGlobal("requestAnimationFrame", window.requestAnimationFrame?.bind(window) || ((cb) => setTimeout(() => cb(Date.now()), 0)));
 defineGlobal("cancelAnimationFrame", window.cancelAnimationFrame?.bind(window) || clearTimeout);
@@ -156,6 +157,8 @@ const wakeCalls = [];
 // session. Activating it prewarms a resumed session; navigating away, losing
 // that session, and returning must prewarm again without dropping the history.
 const startedMembers = [];
+const sentPartyMessages = [];
+let failNextMemberSend = false;
 const frontendHistory = [
   { id: "front-old-user", kind: "user", text: "keep this old question", at: "09:00" },
   { id: "front-old-answer", kind: "assistant", text: "KEEP_FRONTEND_HISTORY", at: "09:01" },
@@ -181,6 +184,15 @@ window.agentParty = {
   resumeSession: async () => sessions[0],
   closeSession: noop,
   sendMessage: noop,
+  sendMemberMessage: async (...args) => {
+    sentPartyMessages.push(args);
+    if (failNextMemberSend) {
+      failNextMemberSend = false;
+      return { ok: false, message: "simulated send failure", ...initialState.party };
+    }
+    const member = members.find((item) => item.name === args[0]);
+    return { ok: true, message: "", ...initialState.party, member };
+  },
   interrupt: noop,
   restart: async (sessionId) => { restartedSessions.push(sessionId); return { ok: true }; },
   compact: noop,
@@ -201,7 +213,10 @@ window.agentParty = {
   createParty: async () => ({ ok: true, message: "", ...initialState.party }),
   selectParty: async () => ({ ok: true, message: "", ...initialState.party }),
   createPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
-  sendPartyMessage: async () => ({ ok: true, message: "", ...initialState.party }),
+  sendPartyMessage: async (...args) => {
+    sentPartyMessages.push(args);
+    return { ok: true, message: "", ...initialState.party };
+  },
   bindPartyMember: noop,
   openPartyMember: async () => ({ ok: true, message: "", ...initialState.party }),
   closePartyMember: async (name) => { closedMembers.push(name); return { ok: true, message: "", ...initialState.party }; },
@@ -296,6 +311,13 @@ try {
   emit("events", { sessionId: "s-tester", events: [
     { type: "assistant_text_delta", text: "regression suite running" },
   ] });
+  // Session start: the structured event AND the legacy raw status an older
+  // engine can still send. Neither may put the spawn command on the feed.
+  emit("events", { sessionId: "s-backend", events: [
+    { type: "session_spawn", state: "starting", harness: "claude-code", model: "gpt-5", host: "windows", cwd: "…/acme-api" },
+    { type: "session_spawn", state: "running", harness: "claude-code", model: "gpt-5" },
+    { type: "status", status: "spawned", detail: "C:\Program Files\nodejs\node.exe app-server -c mcp_servers.agentparty-app.env.AGENTPARTY_AUTOMATION_BASE_URL=\"http://127.0.0.1:51733\"" },
+  ] });
 } catch (error) {
   crashed = error;
 }
@@ -308,7 +330,7 @@ assert(!crashed, `mount did not throw${crashed ? `: ${crashed.stack || crashed}`
 const html = document.getElementById("root").innerHTML;
 const text = document.getElementById("root").textContent || "";
 assert(html.length > 2000, "root rendered substantial markup");
-assert(text.includes("Workbench"), "workbench nav label shown");
+assert(text.includes("파티") && !text.includes("Workbench"), "party navigation is present without exposed Workbench terminology");
 assert(text.includes("Refactor Auth"), "active party name shown in sidebar");
 assert(document.querySelectorAll('[data-panel-id]').length === 2, "two panels rendered from seeded layout");
 
@@ -319,6 +341,16 @@ assert(text.includes("verifyRefresh"), "backend assistant transcript streamed");
 assert(text.includes("read_file"), "tool block rendered");
 // The heading names the approval TYPE now, in Korean like the rest of the card.
 assert(text.includes("승인"), "reviewer approval card rendered");
+// Session start renders as a card, and the spawn command has no route to the
+// screen — neither from the structured event nor from a legacy status line.
+const spawnCards = [...document.querySelectorAll(".wb-spawn")];
+assert(spawnCards.length >= 1, "session start renders as a card");
+assert(spawnCards.some((card) => /세션 시작됨/.test(card.textContent || "")), "…that reads as a state, not as a command");
+assert(spawnCards.every((card) => (card.getAttribute("aria-label") || "").length > 0), "each session card carries a screen-reader label");
+for (const needle of ["node.exe", "app-server", "mcp_servers", "127.0.0.1", "51733", "AGENTPARTY_AUTOMATION_BASE_URL"]) {
+  assert(!text.includes(needle), `the spawn command's '${needle}' is not on the user feed`);
+}
+
 assert(document.querySelector(".wb-tab") !== null, "tabs rendered");
 assert(document.querySelector(".wb-model-pill") !== null, "model pill rendered in toolbar");
 
@@ -333,12 +365,17 @@ assert(!/working/.test(workingRow?.textContent || ""), "…instead of the grey w
 const idleRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.textContent.includes("frontend"));
 assert(/not started|idle/.test(idleRow?.textContent || "") && !idleRow?.querySelector(".wb-working-dots"), "a member that is not running keeps its status label and shows no indicator");
 
-// [P-8] The model alone does not identify a member — the same model behaves
-// differently per harness — so the harness is shown where the member is named.
-const rowChip = workingRow?.querySelector(".wb-harness-chip");
-assert(rowChip?.querySelector('svg[data-harness="claude-code"]') && rowChip?.getAttribute("title") === "Claude Code", "sidebar row shows the official harness mark + full name on hover");
-const tabChip = document.querySelector(".wb-tab .wb-harness-chip");
-assert(tabChip?.querySelector('svg[data-harness="claude-code"]'), "tab strip shows the harness mark");
+// [P-8] The mark beside a member's name is its MODEL PROVIDER, not the harness
+// that runs it: a Codex-harness member on an Anthropic model was being badged
+// OpenAI. The harness is still named, in the tab's tooltip.
+const rowChip = workingRow?.querySelector(".wb-member-mark");
+assert(rowChip?.querySelector('svg[data-vendor-mark="claude"]') && rowChip?.getAttribute("title") === "Anthropic", "sidebar row shows the model provider's mark + provider name on hover");
+assert(!workingRow?.querySelector(".wb-dot"), "…and the status dot no longer duplicates the row's status label");
+const testerRow = [...document.querySelectorAll(".wb-member-row")].find((row) => row.querySelector(".wb-member-name")?.textContent === "tester");
+assert(testerRow?.querySelector('svg[data-vendor-mark="openai"]'), "a member on an OpenAI model gets the OpenAI mark, not its harness's");
+const tabChip = document.querySelector(".wb-tab .wb-member-mark");
+assert(tabChip?.querySelector('svg[data-vendor-mark="claude"]'), "tab strip carries the same provider mark");
+assert(!document.querySelector(".wb-tab .wb-harness-chip"), "…and does not also carry a second, harness-shaped brand mark");
 const activeTab = document.querySelector(".wb-tab.is-active");
 assert(/Claude Code/.test(activeTab?.getAttribute("title") || ""), "the tab's tooltip names the harness in full");
 // The context indicator is now a DONUT (ring), not a bar. Clicking it opens the
@@ -537,6 +574,56 @@ assert(persistedLayouts.length === pushesBeforeBroadcast, "and is not pushed bac
 
 // Settings → Runtime carries the only UI for the global idle-sleep policy, so a
 // card that fails to render leaves the feature on with no way to turn it off.
+const frontendEditor = document.querySelector(".wb-composer-editor");
+assert(frontendEditor != null, "frontend composer is available for draft persistence QA");
+if (frontendEditor) {
+  frontendEditor.textContent = "FRONTEND_UNSENT_DRAFT";
+  frontendEditor.dispatchEvent(new window.InputEvent("input", { bubbles: true, inputType: "insertText", data: "FRONTEND_UNSENT_DRAFT" }));
+}
+window.dispatchEvent(new window.Event("resize"));
+emit("nav", { view: "usage" });
+await new Promise((resolve) => setTimeout(resolve, 80));
+emit("nav", { view: "workbench" });
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "draft survives navigation and resize remounts");
+
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "reviewer", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+const reviewerEditor = document.querySelector(".wb-composer-editor");
+if (reviewerEditor) {
+  reviewerEditor.textContent = "REVIEWER_UNSENT_DRAFT";
+  reviewerEditor.dispatchEvent(new window.InputEvent("input", { bubbles: true, inputType: "insertText", data: "REVIEWER_UNSENT_DRAFT" }));
+}
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "member switch restores only the original member draft");
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "reviewer", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "REVIEWER_UNSENT_DRAFT", "second member keeps an isolated draft");
+document.querySelector(".wb-composer-editor")?.closest("form")?.dispatchEvent(new window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 80));
+assert(sentPartyMessages.length > 0, "sending the active member draft reaches the party action");
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "", "successful send clears the active member draft");
+emit("partyLayout", {
+  partyId: "p1",
+  layout: { panels: [{ id: "pa", tabs: ["frontend", "reviewer"], active: "frontend", weight: 1 }], focusedPanelId: "pa" },
+});
+await new Promise((resolve) => setTimeout(resolve, 120));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "sending another member does not clear this member draft");
+failNextMemberSend = true;
+document.querySelector(".wb-composer-editor")?.closest("form")?.dispatchEvent(new window.SubmitEvent("submit", { bubbles: true, cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 80));
+assert(document.querySelector(".wb-composer-editor")?.getAttribute("data-draft") === "FRONTEND_UNSENT_DRAFT", "failed send restores the active member draft");
+
 emit("nav", { view: "agent", tab: "general" });
 await new Promise((resolve) => setTimeout(resolve, 120));
 const runtimeText = document.getElementById("root").textContent || "";

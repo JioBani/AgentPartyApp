@@ -74,7 +74,7 @@ interface WorkbenchProps {
   /** QA-driven "open a Message Gate modal" (member editor / party manager); applied on `nonce` change. */
   gateOpenRequest?: { kind: "member" | "party"; member: string; nonce: number } | null;
   actions: WorkbenchActions;
-  onCreateParty: (input: CreatePartyInput) => void;
+  onCreateParty: (input: CreatePartyInput) => Promise<boolean>;
   onCreateGroup: (name: string) => void;
   onMovePartyToGroup: (partyId: string, groupId: string) => void;
   onRenameGroup: (groupId: string, name: string) => void;
@@ -92,7 +92,7 @@ interface WorkbenchProps {
   appWorkspaceRoot: string;
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
-  onCreateMember: (input: CreateMemberInput) => void;
+  onCreateMember: (input: CreateMemberInput) => Promise<boolean>;
   onRemoveMember: (member: string) => void;
   /** Idle-sleep controls for one member (pin awake, sleep now, wake now). */
   onSetMemberKeepAwake: (member: string, keepAwake: boolean) => void;
@@ -424,9 +424,9 @@ export function Workbench(props: WorkbenchProps) {
   }
 
   function handleCreateMember(input: CreateMemberInput) {
-    onCreateMember(input);
     // The new member is opened in its own panel by the new-member effect below,
     // once it arrives via the party broadcast (uniform for wizard + agent creates).
+    return onCreateMember(input);
   }
 
   // --- Tab drag-and-drop --------------------------------------------------

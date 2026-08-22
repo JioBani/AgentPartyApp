@@ -305,7 +305,7 @@ async function waitForMemberReady(panelId, member, partyId, windowId, timeoutMs,
   const query = `?window=${encodeURIComponent(windowId)}`;
   while (performance.now() < deadline) {
     const heading = await post(`/api/measure${query}`, {
-      selector: `[data-panel-id="${panelId}"] .wb-toolbar-id strong`, limit: 1,
+      selector: `[data-panel-id="${panelId}"] .wb-tab.is-active .wb-tab-name`, limit: 1,
     }).catch(() => ({}));
     const tail = await post(`/api/measure${query}`, {
       selector: `[data-panel-id="${panelId}"] .wb-transcript > .wb-assistant:last-child, [data-panel-id="${panelId}"] .wb-transcript > .wb-transcript-empty`,

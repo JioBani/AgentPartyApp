@@ -27,8 +27,8 @@ export const COMPONENTS = [
 색은 멤버의 **정체성 색**(\`--member\`)이고, 상태는 색이 아니라 **움직임**으로 말한다 —
 작업 중이면 맥동한다. 상태별로 색을 바꾸면 멤버를 색으로 구분하는 규칙과 충돌한다.`,
     variants: [
-      v("idle", "workbench", ".wb-member-row:not(.is-working) .wb-dot", { context: ".wb-member-row" }),
-      v("working", "workbench", ".wb-dot.is-working", { context: ".wb-member-row" }),
+      v("idle", "workbench", ".wb-assistant-head .wb-dot", { context: ".wb-assistant-head" }),
+      v("working", "workbench", ".wb-tab.is-working .wb-dot", { context: ".wb-tab" }),
     ],
   },
   {

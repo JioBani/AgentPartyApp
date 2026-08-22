@@ -1,5 +1,5 @@
 import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, AtSign, CircleStop, FileText, ImageOff, Maximize2, Send, Users, X } from "lucide-react";
+import { ArrowDownToLine, CircleStop, FileText, ImageOff, Maximize2, Send, Users, X } from "lucide-react";
 import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -98,10 +98,20 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
+interface SavedComposerDraft {
+  text: string;
+  attachments: ImageAttachment[];
+  references: FileReference[];
+}
+
+const savedComposerDrafts = new Map<string, SavedComposerDraft>();
+
 export function Composer({ view, density, actions, commandUi, permission: showPermission = true }: ComposerProps) {
-  const [draft, setDraft] = useState("");
+  const draftKey = `${view.member.partyId || "default"}:${view.name}`;
+  const savedDraft = savedComposerDrafts.get(draftKey);
+  const [draft, setDraft] = useState(() => savedDraft?.text || "");
   const [expanded, setExpanded] = useState(false);
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>(() => savedDraft?.attachments || []);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
   const prefs = useComposerPrefs();
@@ -112,10 +122,18 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
    * from outside (queue edit) can turn its paths back into chips; the editor's
    * own chips remain the source of truth for what gets sent.
    */
-  const knownRefs = useRef<FileReference[]>([]);
+  const knownRefs = useRef<FileReference[]>(savedDraft?.references || []);
   /** Last text pushed INTO the editor, so we only rebuild on external changes. */
   const renderedRef = useRef("");
   const harness = harnessForRuntime(view.member.runtime);
+
+  useEffect(() => {
+    if (!draft && attachments.length === 0) {
+      savedComposerDrafts.delete(draftKey);
+      return;
+    }
+    savedComposerDrafts.set(draftKey, { text: draft, attachments, references: [...knownRefs.current] });
+  }, [draftKey, draft, attachments]);
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
   // until the turn actually closes, so anything past the grace period is a turn
@@ -314,6 +332,11 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     }
     const text = serializeDraft(root);
     renderedRef.current = text;
+    if (!text && attachments.length === 0) {
+      savedComposerDrafts.delete(draftKey);
+    } else {
+      savedComposerDrafts.set(draftKey, { text, attachments, references: [...knownRefs.current] });
+    }
     setDraft(text);
     if (attachError) {
       setAttachError("");
@@ -412,35 +435,6 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     syncDraft();
   }
 
-  /**
-   * Types `:m` at the caret for the toolbar button, adding a leading space when
-   * needed so the trigger starts a word (mid-word the popover correctly refuses
-   * to open).
-   */
-  function insertMentionTrigger() {
-    const root = editorRef.current;
-    if (!root) {
-      return;
-    }
-    root.focus();
-    const point = caretPoint();
-    const doc = root.ownerDocument;
-    const range = doc.createRange();
-    if (point) {
-      const before = (point.node.nodeValue || "").slice(0, point.offset);
-      const inserted = before.length > 0 && !/[\s(\[{"']$/.test(before) ? " :m" : ":m";
-      point.node.nodeValue = before + inserted + (point.node.nodeValue || "").slice(point.offset);
-      range.setStart(point.node, before.length + inserted.length);
-    } else {
-      const node = doc.createTextNode(root.textContent ? " :m" : ":m");
-      root.appendChild(node);
-      range.setStart(node, node.nodeValue!.length);
-    }
-    range.collapse(true);
-    setCaret(root, range);
-    setCompletionDismissed(false);
-    syncDraft();
-  }
 
   /**
    * Returns true when the completion popover consumed the key.
@@ -739,6 +733,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     }
     if (palette.typedAction) {
       runPaletteAction(palette.typedAction);
+      savedComposerDrafts.delete(draftKey);
       setDraft("");
       knownRefs.current = [];
       setAttachments([]);
@@ -746,6 +741,8 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       return;
     }
     const images = attachments.length ? attachments : undefined;
+    const references = [...knownRefs.current];
+    savedComposerDrafts.delete(draftKey);
     setDraft("");
     knownRefs.current = [];
     setAttachments([]);
@@ -754,6 +751,9 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     // keeps whatever the composer setting says (App resolves that).
     void actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined)
       .catch((error) => {
+        knownRefs.current = references;
+        setDraft((current) => current || text);
+        setAttachments((current) => current.length ? current : attachments);
         setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
       });
   }
@@ -906,9 +906,23 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   // can run for minutes with no way to call it off, because Stop keyed on
   // `busy` alone and a compacting member is not busy. The compact card
   // deliberately carries no cancel of its own — this is where stopping lives.
+  // Icon only, and sitting immediately after the send/queue control rather than
+  // before it. As a labelled button it was the widest thing in the row, and in a
+  // narrow panel the row had to give that width up somewhere: the Korean label
+  // on the primary button broke a character per line. What Stop does is not
+  // ambiguous once it is red and shaped like a stop — the words were paying for
+  // themselves in the one place where there is no room. Tooltip and aria-label
+  // keep the full wording, including the "중단 중" in-flight state.
+  const stopLabelBeside = interrupting ? localized("STR-1599") : localized("STR-1600");
   const stopBeside = (view.busy || view.compacting || interrupting) && !forceStop ? (
-    <button type="button" className="wb-composer-stop" title={interrupting ? localized("STR-1599") : localized("STR-1600")} onClick={onStop}>
-      <CircleStop size={14} /> {interrupting ? "중단 중" : "Stop"}
+    <button
+      type="button"
+      className={"wb-composer-stop is-icon" + (interrupting ? " is-interrupting" : "")}
+      title={stopLabelBeside}
+      aria-label={stopLabelBeside}
+      onClick={onStop}
+    >
+      <CircleStop size={15} />
     </button>
   ) : null;
   const sendTitle = queueing ? "대기열에 추가" : "Send";
@@ -978,12 +992,8 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
         <div className="wb-composer-bar">
           {editor("wb-composer-input", false, queueing ? `${view.name} 작업 중 — 대기열에 쌓입니다` : `${view.name}에게…`)}
           <button type="button" className="wb-icon-btn" title="Expand" onClick={() => setExpanded(true)}><Maximize2 size={13} /></button>
-          {stopBeside && (
-            <button type="button" className="wb-composer-stop is-icon" title={interrupting ? localized("STR-1608") : localized("STR-1609")} onClick={onStop}>
-              <CircleStop size={14} />
-            </button>
-          )}
           {iconOnly}
+          {stopBeside}
           {permission}
         </div>
       </form>
@@ -1009,16 +1019,15 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
               ? `${view.name}에게 메시지 보내기… (파일·폴더 끌어놓기 가능)`
               : `${view.name}에게 메시지 보내기… (이미지·파일·폴더 끌어놓기 가능)`,
         )}
+        {/* One well, right-aligned. The `@` button that used to hold the left
+            end is gone: typing `@` opens the same popover, and an icon whose
+            only job is to type one character was costing the row width it did
+            not have at narrow panel sizes. Nothing else moved into the gap, so
+            the tab order goes straight from the editor to the actions. */}
         <div className="wb-composer-row">
-          <div className="wb-composer-tools">
-            {/* This button existed but did nothing. It is the entry point for
-                anyone who does not know the `@` shortcut, so it types the `@`
-                at the caret and lets the popover open exactly as typing would. */}
-            <button type="button" className="wb-icon-btn" title={localized("STR-1613")} aria-label={localized("STR-1613")} onClick={insertMentionTrigger}><AtSign size={14} /></button>
-          </div>
           <div className="wb-composer-actions">
-            {stopBeside}
             {labeled}
+            {stopBeside}
             {showPermission ? permission : null}
           </div>
         </div>

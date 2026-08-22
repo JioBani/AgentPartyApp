@@ -3,7 +3,8 @@ import { AlignLeft, ChevronDown, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
-import { HarnessIcon } from "./HarnessIcon";
+import { ProviderIcon } from "./ProviderIcon";
+import { providerLabel } from "./modelProvider";
 import { splitTabs } from "./tabOverflow";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
@@ -101,16 +102,14 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
               title={cliOwned ? localized("STR-2145", [member]) : `${member} · ${harnessLabel(view.member.runtime)}`}
             >
               <span className="wb-tab-accent" />
-              <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
+              {/* Whose MODEL is answering, ahead of the name — the same identity
+                  mark the sidebar row carries, so a member looks like itself in
+                  both places. It replaces the status dot that used to sit here:
+                  the tab already shows its own working state. */}
+              <span className="wb-member-mark" title={providerLabel(view.provider)} aria-label={providerLabel(view.provider)}>
+                <ProviderIcon provider={view.provider} size={15} />
+              </span>
               <span className="wb-tab-name">{member}</span>
-              {/* Which harness this tab's member runs on — the model alone does
-                  not identify a member, since the same model behaves differently
-                  per harness. Full name is in the tab tooltip above. */}
-              {density !== "narrow" && (
-                <span className="wb-harness-chip" aria-label={harnessLabel(view.member.runtime)}>
-                  <HarnessIcon harness={view.member.runtime} />
-                </span>
-              )}
               <TabMarkers view={view} />
               <button
                 type="button"
@@ -167,7 +166,9 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                       onClick={() => { if (!cliOwned) { setOverflowOpen(false); onPromote(member); } }}
                       aria-disabled={cliOwned}
                     >
-                      <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
+                      <span className="wb-member-mark" title={providerLabel(view.provider)} aria-label={providerLabel(view.provider)}>
+                        <ProviderIcon provider={view.provider} size={14} />
+                      </span>
                       <span className="wb-tab-overflow-name">{member}</span>
                       <TabMarkers view={view} />
                       <button

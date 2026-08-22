@@ -57,19 +57,23 @@ const { TabStrip } = await bundle("src/renderer/workbench/TabStrip.tsx", "harnes
 const React = await import("react");
 const reactDom = await import("react-dom/client");
 
-const view = (name, runtime) => [name, {
+// `provider` is the MODEL's company, resolved when the view is built. It is
+// deliberately not derived from `runtime` here: the pairing below is the whole
+// point — a Codex-harness member answering with an Anthropic model must show
+// Anthropic, which is exactly what the old harness badge got wrong.
+const view = (name, runtime, provider) => [name, {
   name, color: "#888", member: { name, partyId: "p1", status: "idle", runtime, role: "" },
   status: "idle", transcript: [], subagents: [], unread: 0, pendingApproval: false, busy: false,
-  model: "sonnet", effort: "medium", permissionMode: "default", effortOptions: [], autoCompact: { on: false, at: 80 }, compacting: false,
+  model: "sonnet", effort: "medium", permissionMode: "default", effortOptions: [], provider, autoCompact: { on: false, at: 80 }, compacting: false,
 }];
-const views = new Map([view("claudey", "claude-code"), view("codexy", "codex"), view("cursory", "cursor")]);
+const views = new Map([view("claudey", "claude-code", "anthropic"), view("codexy", "codex", "anthropic"), view("cursory", "cursor", "openrouter")]);
 const panel = { id: "p", tabs: ["claudey", "codexy", "cursory"], active: "claudey" };
 const noop = () => {};
 const mount = (density) => {
   const host = document.createElement("div");
   document.body.appendChild(host);
   reactDom.createRoot(host).render(React.createElement(TabStrip, {
-    panel, views, density, draggingMember: null, canAdd: true,
+    panel, views, density, width: 900, draggingMember: null, canAdd: true,
     onSelect: noop, onClose: noop, onAdd: noop, onSplit: noop, onTabPointerDown: noop,
   }));
   return host;
@@ -79,18 +83,20 @@ const settle = () => new Promise((r) => setTimeout(r, 60));
 console.log("\nTabStrip DOM:");
 const wide = mount("wide");
 await settle();
-const badges = [...wide.querySelectorAll(".wb-tab .wb-harness-icon")].map((el) => el.getAttribute("data-harness"));
-assert(badges.join(",") === "claude-code,codex,cursor", "each tab carries ITS OWN harness mark (not the panel's or the first tab's)");
-assert(wide.querySelectorAll(".wb-tab .wb-harness-chip svg").length === 3, "known harnesses render vector brand marks, not text abbreviations");
+const marks = [...wide.querySelectorAll(".wb-tab .wb-member-mark")].map((el) => el.getAttribute("title"));
+assert(marks.join(",") === "Anthropic,Anthropic,OpenRouter", "each tab names ITS OWN model provider — the Codex-harness member on an Anthropic model included");
+assert(wide.querySelectorAll('.wb-tab .wb-member-mark svg[data-vendor-mark]').length === 2, "providers we hold artwork for render their vector brand mark");
+assert(wide.querySelectorAll('.wb-tab .wb-provider-icon-generic').length === 1, "…and one we do not (OpenRouter) gets the neutral mark, not a blank slot or another company's logo");
+assert(wide.querySelectorAll(".wb-tab .wb-harness-chip").length === 0, "no second brand mark competes with it on the same tab");
 const tips = [...wide.querySelectorAll(".wb-tab")].map((el) => el.getAttribute("title"));
-assert(tips[1] === "codexy · Codex", "the tab tooltip names the member and its harness in full");
+assert(tips[1] === "codexy · Codex", "the harness is still named in full, in the tab's tooltip");
 
 const narrow = mount("narrow");
 await settle();
-assert(narrow.querySelectorAll(".wb-tab").length === 3 && narrow.querySelectorAll(".wb-harness-chip").length === 0,
-  "when narrow the badge yields to the member name (tooltip still carries the harness)");
+assert(narrow.querySelectorAll(".wb-tab").length === 3 && narrow.querySelectorAll(".wb-tab .wb-member-mark").length === 3,
+  "the provider mark is identity, so it survives the narrow density the harness badge used to be dropped at");
 assert([...narrow.querySelectorAll(".wb-tab")].every((el) => /Claude Code|Codex|Cursor CLI/.test(el.getAttribute("title") || "")),
-  "…so the harness is still reachable at every width");
+  "…and the harness stays reachable at every width");
 
 console.log(failures.length ? `\nHARNESS BADGE FAILED (${failures.length})` : "\nHARNESS BADGE PASSED");
 process.exit(failures.length ? 1 : 0);

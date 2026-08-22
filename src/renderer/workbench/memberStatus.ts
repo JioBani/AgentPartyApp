@@ -6,6 +6,7 @@ import { resolveAutoCompact, type AutoCompactSetting } from "../../shared/autoCo
 import { harnessCapabilities } from "../../shared/harnessCapabilities";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import { findRoute, type RouteLike, type RouteVision } from "./routes";
+import { providerForModel } from "./modelProvider";
 
 const BUSY_STATUSES = new Set(["requesting", "responding", "interrupting"]);
 
@@ -180,6 +181,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     thinkingBudget: session?.snapshot.thinkingBudget ?? member.reasoningBudget,
     permissionMode: String(session?.snapshot.permissionMode || member.permissionMode || ""),
     cursorPolicy: session?.snapshot.cursorPolicy || member.cursorPolicy,
+    provider: providerForModel(model, routes) || providerForModel(String(member.model || ""), routes),
     vision: visionFor(model, routes),
     effortOptions: effortOptionsFor(model, routes),
     context: contextFor(session, member, model, String(member.model || ""), routes),

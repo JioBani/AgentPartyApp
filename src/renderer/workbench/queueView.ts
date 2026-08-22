@@ -88,7 +88,18 @@ export interface QueueView {
    */
   handedOver: number;
   collapsed: boolean;
+  /** The merge PREFERENCE, already gated by {@link canMerge}. */
   merge: boolean;
+  /**
+   * Merging can actually do something here.
+   *
+   * One waiting message cannot be merged with anything, so a live merge switch
+   * beside it was offering a choice with no second outcome — and worse, the
+   * row rendered as a merge block, which reads as "these go together" about a
+   * single item. The preference is remembered either way; only the control and
+   * the block styling wait for a second message.
+   */
+  canMerge: boolean;
   narrow: boolean;
   /** "대기열 3" */
   title: string;
@@ -130,7 +141,11 @@ export function buildQueueView(input: QueueViewInput): QueueView {
   const { queue, density, working, detached, memberName, openRows } = input;
   const handedOver = Math.max(0, input.handedOver || 0);
   const items = queue.items;
-  const merge = mergeOn(queue);
+  // Preference vs. effect: the switch stores what the user wants, but nothing
+  // merges below two items, and the UI must not claim otherwise.
+  const mergePreference = mergeOn(queue);
+  const canMerge = items.length > 1;
+  const merge = mergePreference && canMerge;
   const narrow = density === "narrow";
   // Narrow panels start collapsed: at that width the queue would eat the
   // transcript it exists to protect. Wider ones start open, because the whole
@@ -151,11 +166,12 @@ export function buildQueueView(input: QueueViewInput): QueueView {
     handedOver,
     collapsed,
     merge,
+    canMerge,
     narrow,
     title: `대기열 ${items.length}`,
     chipLabel: `대기열 ${items.length}건`,
     note: headerNote({ memberName, working, detached, merge, count: items.length, cutInCount }),
-    mergeNote: mergeNote({ merge, mixed, count: items.length }),
+    mergeNote: mergeNote({ merge: mergePreference, canMerge, mixed, count: items.length }),
     // Naming a count that is not actually a merge would overstate what the
     // button does, so a single-item send is just "지금 보내기". While the member
     // is working, sending sooner means stopping the turn — see
@@ -290,7 +306,12 @@ function headerNote(args: {
   return `${args.memberName} 응답이 끝나면 ${how} 전송됩니다`;
 }
 
-function mergeNote(args: { merge: boolean; mixed: boolean; count: number }): string {
+function mergeNote(args: { merge: boolean; canMerge: boolean; mixed: boolean; count: number }): string {
+  if (!args.canMerge) {
+    // Says why the control is inert instead of leaving a dead switch to be
+    // clicked at: nothing is wrong, there is simply nothing to merge with yet.
+    return "합칠 메시지가 하나 더 쌓이면 사용할 수 있습니다";
+  }
   if (!args.merge) {
     return "한 건씩 순서대로 보냅니다";
   }

@@ -13,6 +13,8 @@ import { MessageGateIcon } from "./MessageGateIcon";
 import { SubagentDetail } from "./SubagentDetail";
 import { ContextDonut } from "./ContextDonut";
 import { WorkingDots } from "./StatusIndicator";
+import { ENV_LABEL, EnvIcon } from "./CwdPicker";
+import { memberLocationOf, splitPathTail } from "./memberGroups";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
 import { CliContinuationModal } from "./CliContinuationModal";
@@ -107,6 +109,16 @@ export function Panel(props: PanelProps) {
   const wide = density === "wide";
   const narrow = density === "narrow";
 
+  // Where this member RUNS. Read from the member record on every render, so a
+  // member that arrives before its location was backfilled — or one whose party
+  // was just reloaded — picks the real path up as soon as it is known instead of
+  // caching the gap.
+  const location = view ? memberLocationOf(view) : undefined;
+  const cwdParts = splitPathTail(location?.cwd || "");
+  const locationTitle = location
+    ? (location.distro ? `${ENV_LABEL[location.env]} · ${location.distro}: ${location.cwd}` : `${ENV_LABEL[location.env]}: ${location.cwd}`)
+    : "";
+
   return (
     <div
       ref={ref}
@@ -137,13 +149,30 @@ export function Panel(props: PanelProps) {
         // visible, so no control becomes unreachable by making a panel narrow.
         <div className="wb-toolbar">
           <div className="wb-toolbar-id">
-            <span className={"wb-dot" + (view.busy ? " is-working" : "")} />
-            <strong>{view.name}</strong>
-            {/* A running turn shows motion instead of the word "working"; every
-                other state is a stable fact and stays a label. */}
-            {wide && (
-              <span className={"wb-status-pill is-" + view.status}>
-                {view.status === "working" ? <WorkingDots label={localized("STR-1963")} /> : statusLabel(view.status)}
+            {/* Status leads the row. It is the one thing here that changes on its
+                own, and reading it should not mean scanning past the location
+                first. A running turn shows motion instead of the word "working";
+                every other state is a stable fact and stays a label. Below wide
+                the label is dropped, never the chip: the tone and the pulse
+                still carry the state, and the tooltip spells it out. */}
+            <span className={"wb-status-pill is-" + view.status} title={statusLabel(view.status)}>
+              {view.status === "working"
+                ? <WorkingDots label={localized("STR-1963")} />
+                : wide ? statusLabel(view.status) : <span className="wb-dot" />}
+            </span>
+            {/* The member's NAME used to sit here, repeating the tab directly
+                above it. Its cwd does not appear anywhere else in the panel, and
+                it is what decides which files this member is actually editing —
+                so the duplicated name gives the slot to the location. */}
+            {location && (
+              <span className="wb-toolbar-cwd" title={locationTitle} aria-label={locationTitle}>
+                <EnvIcon env={location.env} size={12} />
+                <span className="wb-toolbar-cwd-path">
+                  {/* Ancestors absorb the ellipsis; the directory name is what
+                      tells two checkouts apart and must survive a narrow panel. */}
+                  <span className="wb-cwd-head">{cwdParts.head}</span>
+                  <span className="wb-cwd-tail">{cwdParts.tail}</span>
+                </span>
               </span>
             )}
             {wide && (() => {
@@ -260,6 +289,7 @@ export function Panel(props: PanelProps) {
             actions={actions}
           />
           <Composer
+            key={`${view.member.partyId || "default"}:${view.name}`}
             view={view}
             density={density}
             actions={actions}

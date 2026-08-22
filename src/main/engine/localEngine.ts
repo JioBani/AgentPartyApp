@@ -512,6 +512,7 @@ export class LocalEngine implements EngineConnection {
         runtime: spec.runtime || "claude-code",
         model: spec.model,
         effort: spec.effort,
+        location: spec.location,
       });
     }
     const result = this.party.startMember(

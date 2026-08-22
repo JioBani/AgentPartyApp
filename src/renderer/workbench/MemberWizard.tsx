@@ -12,7 +12,7 @@ import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { harnessLabel } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
-import { CwdPicker, type WslBrowsing } from "./CwdPicker";
+import { CwdPicker, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, suggestedCwd } from "../../shared/memberLocation";
 
@@ -60,6 +60,7 @@ interface MemberWizardProps {
    * can land the user on the step it prefilled.
    */
   startStep?: number;
+  submitting?: boolean;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -118,7 +119,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
@@ -230,7 +231,9 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * and a green button here never means the path was verified.
    */
   const locationProblem = location ? checkLocationShape(location) : undefined;
-  const hasLocation = Boolean(location?.cwd) && !locationProblem;
+  const distroProblem = selectableWslDistroError(location, wsl);
+  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem;
+  const canSubmit = canCreate && hasLocation;
   // Name gates the first step, location the second; the permission step is
   // pre-seeded from the saved defaults and cannot be left unusable.
   const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation : true;
@@ -268,7 +271,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
   }
 
   function create() {
-    if (!canCreate) {
+    if (!canSubmit || submitting) {
       return;
     }
     onCreate({
@@ -303,7 +306,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
    * choice they just made would be worse than no button at all.
    */
   function createWithDefaults() {
-    if (!canCreate || !cwdPrefs.windowsDefault) {
+    if (!canCreate || !cwdPrefs.windowsDefault || submitting) {
       return;
     }
     // The cwd is the one field the defaults CANNOT fill in silently: a member
@@ -490,7 +493,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
                 hint={localized("STR-3664")}
               />
-              {locationProblem && <p className="wb-wizard-error">{locationProblem.message}</p>}
+              {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
             </section>
             )}
 
@@ -514,7 +517,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
         </div>
 
         <footer className="wb-modal-foot wb-wizard-foot">
-          <button type="button" className="wb-btn wb-btn-ghost" onClick={onCancel}><LocalizedText id="STR-1764" /></button>
+          <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-1764" /></button>
           <div className="wb-modal-actions">
             {stepIndex > 0 && (
               <button type="button" className="wb-btn wb-btn-ghost wb-wizard-back" onClick={() => setStepIndex((current) => current - 1)}>
@@ -525,7 +528,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               <button
                 type="button"
                 className="wb-btn wb-btn-ghost"
-                disabled={!canCreate}
+                disabled={!canCreate || submitting}
                 title={localized("STR-1766", [defaultSummary])}
                 onClick={createWithDefaults}
               >
@@ -533,7 +536,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
               </button>
             )}
             {isLastStep ? (
-              <button type="button" className="wb-btn wb-btn-accent" disabled={!canCreate} onClick={create}>
+              <button type="button" className="wb-btn wb-btn-accent" aria-busy={submitting} disabled={!canSubmit || submitting} onClick={create}>
                 <UserPlus size={14} />  <LocalizedText id="STR-1768" />
               </button>
             ) : (

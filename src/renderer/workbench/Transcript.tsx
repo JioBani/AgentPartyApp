@@ -1,13 +1,14 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, AlignLeft, ArrowDownLeft, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, AlignLeft, ArrowDownLeft, Ban, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Loader, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { Markdown } from "./Markdown";
 import { CopyButton } from "./copy";
+import { isToolProblem, toolOutcomeOf, type ToolOutcome } from "./toolOutcome";
 import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } from "../../shared/codexApproval";
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
-import { harnessShort } from "./harnessLabel";
+import { harnessLabel, harnessShort } from "./harnessLabel";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
@@ -17,6 +18,7 @@ import { MessageText } from "./messageTokens";
 import { usePartyMembers } from "../app/partyMemberPrefs";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
+import type { SessionSpawnState } from "../../shared/sessionSpawn";
 
 interface TranscriptProps {
   view: MemberView;
@@ -269,8 +271,15 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
       return <GateBlock block={block} view={view} />;
     case "compact":
       return <CompactBlock block={block} view={view} actions={actions} />;
+    case "sessionSpawn":
+      // Session plumbing, like the status lines below: the guide's reader came
+      // for an answer and never started this member, so the card is a workbench
+      // surface only.
+      return detail === "full" ? <SessionSpawnBlock block={block} view={view} density={density} /> : null;
     case "status":
-      // Harness plumbing: spawned / requesting / responding / turn complete.
+      // Harness plumbing: requesting / responding / turn complete. Spawn lines
+      // are NOT here any more — a session start is its own card, and a legacy
+      // raw one is rewritten into that card on restore (shared/sessionSpawn.ts).
       return detail === "full" ? (
         <div className="wb-block wb-status">
           <Search size={13} /> <span className="wb-mono">{block.text}</span>
@@ -306,6 +315,9 @@ export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean 
   // These cards name their owning member even when their immutable block did
   // not change. Approval also shows the live runtime/model in its origin label.
   if (previous.block.kind === "assistant" || previous.block.kind === "channel" || previous.block.kind === "gate") {
+    return previous.view.name === next.view.name;
+  }
+  if (previous.block.kind === "sessionSpawn") {
     return previous.view.name === next.view.name;
   }
   if (previous.block.kind === "compact") {
@@ -387,6 +399,100 @@ export function compactReduction(pre: number | undefined, post: number | undefin
  * so every numeric part is conditional. Printing a zero where a number never
  * arrived would be a claim about the conversation that nothing supports.
  */
+/**
+ * State wording for the session card. Kept as data so the card body has one
+ * shape for three states — and so the words the user reads live next to each
+ * other rather than inside three branches of JSX.
+ */
+const SESSION_SPAWN_META: Record<SessionSpawnState, { title: string; tone: string; note: string }> = {
+  starting: { title: "세션 시작 중", tone: "live", note: "하네스를 준비하는 중입니다" },
+  running: { title: "세션 시작됨", tone: "ok", note: "" },
+  failed: { title: "세션 시작 실패", tone: "danger", note: "" },
+};
+
+const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL" };
+
+/**
+ * A member's session START.
+ *
+ * Replaces the raw `spawned: <the entire command line>` status line: the
+ * executable path, the CLI arguments, the MCP wiring with its local port, the
+ * party/member ids and the auth-store settings are not fields of this block, so
+ * there is nothing here to print or to hang in a tooltip — see
+ * shared/sessionSpawn.ts for where that decision is enforced.
+ *
+ * What it shows instead is what a reader actually wants from a start: whether
+ * it worked, who started, on what harness and model, on which side of the
+ * machine, in roughly which directory, and when. A failure adds a classified
+ * one-line reason and says whether trying again is worth it — never the command
+ * that failed. Detailed diagnosis stays in the session debug log, which is
+ * opened deliberately rather than pushed into the conversation.
+ *
+ * One attempt owns one card (`applyEvents` upserts it), so a start that
+ * progresses or dies REPLACES its own line rather than stacking a second.
+ */
+function SessionSpawnBlock({ block, view, density }: { block: Extract<TranscriptBlock, { kind: "sessionSpawn" }>; view: MemberView; density: PanelDensity }) {
+  const meta = SESSION_SPAWN_META[block.state] || SESSION_SPAWN_META.running;
+  const harness = harnessLabel(block.harness || view.member.runtime);
+  const host = block.host ? SESSION_SPAWN_HOSTS[block.host] : "";
+  // Below `mid` the panel is barely wider than the chips, so the layout has to
+  // give something its own line rather than share.
+  const narrow = density === "narrow";
+  const retryNote = block.state === "failed"
+    ? (block.retryable ? "다시 시작할 수 있습니다" : "설정을 고친 뒤 다시 시작하세요")
+    : "";
+  // One sentence for a screen reader, because the visual card is a row of
+  // chips: read apart they are a list of words, not a state.
+  const label = [meta.title, view.name, harness, block.model, host, block.cwd, block.reason]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <div
+      className={"wb-block wb-spawn is-" + meta.tone}
+      role="group"
+      aria-label={label}
+      // A start in flight is the one state that changes under the reader, so it
+      // is the only one announced; a settled card would re-announce on scroll.
+      aria-live={block.state === "starting" ? "polite" : undefined}
+    >
+      <div className="wb-spawn-head">
+        <span className="wb-spawn-icon" aria-hidden="true">
+          {block.state === "starting" && <LoaderCircle size={13} className="wb-spawn-spin" />}
+          {block.state === "running" && <Check size={13} />}
+          {block.state === "failed" && <AlertTriangle size={13} />}
+        </span>
+        <span className="wb-spawn-title">{meta.title}</span>
+        {/* Three things compete for the first row: the state, whose session it
+            is, and when. State and time are short and fixed, so they keep the
+            row. The member name is the one field that can be long, so in a
+            narrow panel it takes its own line below instead of being squeezed
+            to a single character and an ellipsis. The full name is on the
+            element either way, for the pointer and the screen reader. */}
+        {!narrow && <span className="wb-spawn-member" title={view.name}>{view.name}</span>}
+        <span className="wb-spawn-spacer" />
+        {block.at && <span className="wb-mono wb-time wb-spawn-time">{block.at}</span>}
+      </div>
+      {narrow && <div className="wb-spawn-who" title={view.name}>{view.name}</div>}
+      <div className="wb-spawn-facts">
+        {harness && <span className="wb-spawn-chip">{harness}</span>}
+        {block.model && <span className="wb-spawn-chip wb-mono">{block.model}</span>}
+        {host && <span className="wb-spawn-chip">{host}</span>}
+        {/* The path is already shortened to its last segments upstream; the
+            chip still truncates so a long segment cannot widen a narrow panel. */}
+        {block.cwd && <span className="wb-spawn-chip wb-mono wb-spawn-cwd">{block.cwd}</span>}
+        {meta.note && <span className="wb-spawn-note">{meta.note}</span>}
+      </div>
+      {block.state === "failed" && (
+        <div className="wb-spawn-fail">
+          <span className="wb-spawn-reason">{block.reason || "세션을 시작하지 못했습니다."}</span>
+          {retryNote && <span className="wb-spawn-retry">{retryNote}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CompactBlock({ block, view, actions }: { block: Extract<TranscriptBlock, { kind: "compact" }>; view: MemberView; actions: WorkbenchActions }) {
   const running = block.state === "running";
   const [elapsed, setElapsed] = useState(() => compactElapsed(startedAtMs(block), Date.now()));
@@ -484,27 +590,35 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
   const failed = block.state === "failed";
   return (
     <div className={"wb-block wb-channel" + (incoming ? " is-in" : " is-out") + (failed ? " is-failed" : "") + (fromDiscord ? " is-discord" : "")}>
+      {/* Two bands, not one line. Who sent it to whom is one fact and how it
+          was delivered is another; sharing a single nowrap row meant the status
+          chips pushed the participants until a member name broke a character
+          per line and collided with the arrow between them. */}
       <div className="wb-channel-head">
-        <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
         <span className="wb-channel-route">
+          <span className="wb-channel-icon">{incoming ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}</span>
           {/* Same card as a member-to-member message, but the origin is stated:
               a Discord message comes from the USER on another device, not a peer. */}
           {fromDiscord && <span className="wb-channel-source">Discord</span>}
-          <span className="wb-channel-peer">{from || "?"}</span>
+          <span className="wb-channel-peer" title={from || "?"}>{from || "?"}</span>
           <ArrowRight size={12} className="wb-channel-arrow" />
-          <span className="wb-channel-peer">{to || "?"}</span>
+          <span className="wb-channel-peer" title={to || "?"}>{to || "?"}</span>
         </span>
-        <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
-        {/* This one waited in the queue before it was handed over — permanent,
-            because in scrollback it is what explains why replies above it do
-            not answer it. */}
-        {block.fromQueue && (
-          <span className="wb-user-origin" title={localized("STR-2181")}>
-            <AlignLeft size={9} />  <LocalizedText id="STR-2182" />
-          </span>
-        )}
-        {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2183" /></span>}
-        {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+        {/* Delivery facts. They wrap as whole chips onto their own line rather
+            than squeezing the names beside them. */}
+        <span className="wb-channel-flags">
+          <span className="wb-channel-tag">{incoming ? "수신" : "송신"}</span>
+          {/* This one waited in the queue before it was handed over — permanent,
+              because in scrollback it is what explains why replies above it do
+              not answer it. */}
+          {block.fromQueue && (
+            <span className="wb-user-origin" title={localized("STR-2181")}>
+              <AlignLeft size={9} />  <LocalizedText id="STR-2182" />
+            </span>
+          )}
+          {(block.queuedN || 0) > 1 && <span className="wb-user-origin">{block.queuedN}<LocalizedText id="STR-2183" /></span>}
+          {block.at && <span className="wb-mono wb-time">{block.at}</span>}
+        </span>
       </div>
       {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
       {failed && <div className="wb-channel-failed"><LocalizedText id="STR-2185" />{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
@@ -634,13 +748,27 @@ function toolPresentationFor(block: ToolTranscriptBlock): ToolPresentation {
   return presentation;
 }
 
+/**
+ * One wording per outcome, so the tooltip, the accessible label and the inline
+ * badge cannot describe the same result three different ways.
+ */
+const TOOL_OUTCOME_STR: Record<ToolOutcome, "STR-3788" | "STR-3789" | "STR-3790" | "STR-3791"> = {
+  ok: "STR-3788",
+  failed: "STR-3789",
+  denied: "STR-3790",
+  running: "STR-3791",
+};
+
 function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; density: PanelDensity; detail: "full" | "answers" }) {
   const [full, setFull] = useState(false);
   const { arg, fullInput, result, hasImages, meta, hasMore } = toolPresentationFor(block);
   // The summary `arg` is ellipsis-clipped; the body shows a clipped PREVIEW of the
   // command/result. The full command + output live in the "전체 보기" popup so a
   // long bash run never floods the transcript inline.
-  const failed = block.status === "failed";
+  // What HAPPENED, not merely whether the call closed. A red check still reads
+  // as "done, fine", so a refusal and a clean run must not share a glyph.
+  const outcome = toolOutcomeOf(block);
+  const failed = isToolProblem(outcome);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
   // Pictures returned by a tool are evidence the agent consumed, not a message
   // to the user. Even a native image_view in a wide workbench stays collapsed.
@@ -661,7 +789,16 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
     >
       <summary>
         <ChevronRight size={13} className="wb-caret" />
-        <span className={"wb-tool-check" + (failed ? " failed" : "")}><Check size={11} /></span>
+        <span
+          className={"wb-tool-check is-" + outcome + (failed ? " failed" : "")}
+          title={localized(TOOL_OUTCOME_STR[outcome])}
+          aria-label={localized(TOOL_OUTCOME_STR[outcome])}
+        >
+          {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} /> : <Check size={11} />}
+        </span>
+        {/* Colour alone cannot carry this: the whole point is that the two red
+            states mean different things, and one of them is not a fault. */}
+        {failed && <span className="wb-tool-outcome"><LocalizedText id={TOOL_OUTCOME_STR[outcome]} /></span>}
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}

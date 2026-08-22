@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Folder, FolderOpen, FolderPlus } from "lucide-react";
+import { ChevronDown, FolderPlus, FolderTree, Pin, Plus } from "lucide-react";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -44,6 +44,10 @@ export interface PartyGroupListProps {
   /** The whole new order, first to last, after a group was dragged. */
   onReorderGroups?: (order: string[]) => void;
   onCreateGroup: () => void;
+  /** Opens the existing new-party flow with this group preselected. */
+  onCreateParty?: (groupId: string) => void;
+  /** Prevents a second create flow while one is already being submitted. */
+  createPartyDisabled?: boolean;
   /** Marks the party row the context menu is currently open on. */
   menuPartyId?: string;
   /** Marks the group the context menu is currently open on. */
@@ -52,7 +56,8 @@ export interface PartyGroupListProps {
 
 export function PartyGroupList({
   groups, activePartyId, openGroupIds, now, onToggleGroup, onSelectParty,
-  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, menuPartyId, menuGroupId,
+  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, onCreateParty,
+  createPartyDisabled = false, menuPartyId, menuGroupId,
 }: PartyGroupListProps) {
   /** The group under the pointer during a drag, for the drop outline. */
   const [dropGroupId, setDropGroupId] = useState<string | undefined>(undefined);
@@ -75,6 +80,13 @@ export function PartyGroupList({
   const dragPointerY = useRef<number | undefined>(undefined);
   const dragScrollFrame = useRef<number | undefined>(undefined);
   const seenGroupIds = useRef<Set<string> | undefined>(undefined);
+  const [hasMoreBelow, setHasMoreBelow] = useState(false);
+
+  function updateMoreBelow() {
+    const box = scrollRef.current;
+    if (!box) return;
+    setHasMoreBelow(box.scrollHeight - box.scrollTop - box.clientHeight > 2);
+  }
 
   function stopDragScroll() {
     dragPointerY.current = undefined;
@@ -166,6 +178,20 @@ export function PartyGroupList({
     }
   }, [groups]);
 
+  useLayoutEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    updateMoreBelow();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(updateMoreBelow);
+    observer?.observe(box);
+    box.querySelectorAll<HTMLElement>(".wb-party-group").forEach((group) => observer?.observe(group));
+    const frame = requestAnimationFrame(updateMoreBelow);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [groups, openGroupIds]);
+
   /** The order the list would have if the drag were dropped right now. */
   function orderAfterDrop(dragged: string, target: string, after: boolean): string[] {
     const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged);
@@ -197,9 +223,9 @@ export function PartyGroupList({
         <LocalizedText id="STR-3668" />
       </button>
       <div
-        className="wb-party-scroll"
+        className={"wb-party-scroll" + (hasMoreBelow ? " has-more-below" : "")}
         ref={scrollRef}
-        onScroll={(event) => { lastScrollTop.current = event.currentTarget.scrollTop; }}
+        onScroll={(event) => { lastScrollTop.current = event.currentTarget.scrollTop; updateMoreBelow(); }}
         onDragOver={updateDragScroll}
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) stopDragScroll();
@@ -297,12 +323,25 @@ export function PartyGroupList({
               }}
             >
               <ChevronDown size={13} className="wb-group-caret" />
-              {open ? <FolderOpen size={14} className="wb-group-icon" /> : <Folder size={14} className="wb-group-icon" />}
+              <FolderTree size={15} strokeWidth={2.2} className="wb-group-icon" />
               <span className="wb-group-name">{group.name}</span>
               {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3666" /></span>}
               <span className="wb-mono wb-group-count">{parties.length}</span>
             </button>
             <div className="wb-group-parties">
+              {onCreateParty && (
+                <button
+                  type="button"
+                  className="wb-group-add wb-party-add"
+                  title={localized("STR-2084")}
+                  aria-label={`${localized("STR-2084")}: ${group.name}`}
+                  disabled={createPartyDisabled}
+                  onClick={() => onCreateParty(group.id)}
+                >
+                  <Plus size={13} />
+                  <LocalizedText id="STR-2084" />
+                </button>
+              )}
               {parties.map((party) => (
                 <button
                   type="button"
@@ -333,6 +372,12 @@ export function PartyGroupList({
                 >
                   <span className={"wb-live-dot" + (party.runningCount > 0 ? " is-live" : "")} />
                   <span className="wb-party-name">{party.name}</span>
+                  {party.id === activePartyId && (
+                    <span className="wb-party-current" aria-label="현재 선택된 파티">
+                      <Pin size={10} strokeWidth={2.8} />
+                      현재
+                    </span>
+                  )}
                   <span className="wb-mono wb-party-sub">{partySummaryLine(party, now)}</span>
                 </button>
               ))}
@@ -344,6 +389,21 @@ export function PartyGroupList({
         );
       })}
       </div>
+      {hasMoreBelow && (
+        <button
+          type="button"
+          className="wb-party-more"
+          title="아래에 파티 그룹이 더 있습니다"
+          aria-label="아래의 다음 파티 그룹 보기"
+          onClick={() => {
+            const box = scrollRef.current;
+            box?.scrollBy({ top: Math.max(120, box.clientHeight * 0.72), behavior: "smooth" });
+          }}
+        >
+          <ChevronDown size={18} strokeWidth={2.6} />
+          <span>아래 파티 더 보기</span>
+        </button>
+      )}
     </div>
   );
 }
