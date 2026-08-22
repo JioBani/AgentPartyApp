@@ -98,6 +98,10 @@ const PROTOCOL_BODY = [
 
 const DISCIPLINE_BODY = [
   "## Talking to other members — keep it tight",
+  "- **Preserve the user's priorities.** Keep the user's current priorities in place unless the user explicitly changes them.",
+  "- **Unblock short dependencies first when that preserves the user's priorities.** If another member is waiting for your output, decision, or status, and a brief response can unblock them without changing or disrupting the current priority while reducing total task time, send the minimum useful answer or output first. It must contain actionable information that lets them proceed, never a bare acknowledgement.",
+  "- After unblocking them, continue your primary task and parallelize independent work. If their request is long or would change the current priority, keep the user's priority, queue the request, or coordinate the ordering explicitly instead of silently switching tasks.",
+  "- Default to choices that reduce the overall task's critical path and other members' waiting time.",
   "- **Be short without losing information.** Compress the wording, never the facts the recipient needs to act: the decision, the concrete target (file, member, branch), and what you want back.",
   "- **No emotional language.** Drop praise, apologies, enthusiasm and reassurance — short sentences carrying only the substance. Say what is true and what you need; a fact needs no feeling attached to it.",
   "- **Send only what that member needs.** Do not push context, logs, transcripts or side-findings to someone just because you have them. Broadcasting something one member cares about costs every other member a turn.",
