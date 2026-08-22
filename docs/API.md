@@ -3916,7 +3916,8 @@ Builds the **design gallery**: a party named `카드 디자인 갤러리` with o
 member per design case, each already showing what it is for — approval requests,
 their allowed/denied states, question cards (single / multi / free / secret /
 multi-step), answered questions, the compaction block (running / done /
-no-figures / failed), environment blockers, and session-start cards.
+no-figures / failed), environment blockers, session-start cards, and tool
+results whose output is long enough to earn a 전체 보기 popup.
 
 Two of the cases are states a member is IN rather than something it says, and
 neither can be reached by asking for it:
@@ -3929,6 +3930,12 @@ neither can be reached by asking for it:
   somewhere else, so the member list's tree shows Windows, each WSL distro as a
   top-level peer, several directories inside one environment, and a long path,
   instead of the single shape a party in one folder can produce.
+
+A case may also carry `events`, streamed into the member exactly as
+`/api/qa/members/:name/emit` streams them. That is how the **도구 결과** cases are
+built: a `tool_call` whose result exceeds the inline preview is the only way the
+전체 보기 button renders at all, so without such a case that button had no mockup
+to be reviewed in.
 
 Every member is a mock session, so nothing launches a harness, calls a model, or
 runs a command; queued messages travel the same send and queue-command paths the

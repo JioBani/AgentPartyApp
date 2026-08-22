@@ -787,7 +787,8 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
   const images = hasImages && (open || full) ? collectDisplayImages(block.result) : NO_TOOL_IMAGES;
 
   return (
-    <details
+    <>
+      <details
       className={"wb-block wb-tool density-" + density}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
@@ -820,10 +821,15 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
           {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
           {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
           {images.map((image) => <ToolImage key={image.key} image={image} />)}
-          {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
         </>
       )}
-    </details>
+      </details>
+      {/* Outside the <details>. A closed disclosure hides every child but its
+          summary, so a popup rendered in there stayed invisible until the block
+          happened to be open — which made the expand button look dead on
+          exactly the collapsed rows it exists for. */}
+      {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
+    </>
   );
 }
 

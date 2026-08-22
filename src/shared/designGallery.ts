@@ -247,6 +247,34 @@ export const GALLERY_CASES: GalleryCase[] = [
     queuePreference: { collapsed: true },
   },
 
+  {
+    // The cap only shows itself on a body that would otherwise run off the
+    // panel — a pasted log, which is exactly what gets queued in practice.
+    member: "44-대기열-긴본문-스크롤", runtime: "claude-code", caption: "대기열 — 아주 긴 본문(펼쳐도 높이 상한 + 본문 안 스크롤)",
+    queue: [{ text: "병합 전 검증 로그를 그대로 붙여넣은 경우다. 펼쳐도 대기열이 화면을 삼키면 안 된다.\n[01] panel-01.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[02] panel-02.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[03] panel-03.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[04] panel-04.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[05] panel-05.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[06] panel-06.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[07] panel-07.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[08] panel-08.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[09] panel-09.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[10] panel-10.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[11] panel-11.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[12] panel-12.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[13] panel-13.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[14] panel-14.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[15] panel-15.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[16] panel-16.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[17] panel-17.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n[18] panel-18.tsx — 렌더 경계 확인, 재치수 0건, 경고 없음\n이 아래로도 계속 이어지지만, 본문 안에서 스크롤되어야 한다." }],
+    queuePreference: { merge: false },
+  },
+
+  // --- 도구 실행 결과 -----------------------------------------------------
+  // The transcript's most common block, and the one whose "전체 보기" popup had
+  // no case of its own: the button only appears when the command or the output
+  // is longer than the card shows, so a gallery of short results never renders
+  // it at all. These two put it on screen in both states it has to work from.
+  {
+    member: "45-도구결과-접힘", runtime: "claude-code", caption: "도구 결과 — 접힌 상태에서 전체 보기(팝업이 바로 떠야 한다)",
+    events: [{ type: "tool_call", id: "gal-tool-1", name: "Bash", status: "completed", exitCode: 0, durationMs: 8420,
+      cwd: "C:\\Project\\AgentPartyApp",
+      input: { command: "npm run test:layout -- --reporter=verbose --panel=wb-panel --assert-overflow --assert-contained --shot-dir=C:\\Users\\Dev\\AppData\\Local\\Temp\\layout-shots" },
+      result: "$ npm run test:layout\n  ok  01  wb-panel/01  — measured 1, 0 overflow\n  ok  02  wb-panel/02  — measured 1, 0 overflow\n  ok  03  wb-panel/03  — measured 1, 0 overflow\n  ok  04  wb-panel/04  — measured 1, 0 overflow\n  ok  05  wb-panel/05  — measured 1, 0 overflow\n  ok  06  wb-panel/06  — measured 1, 0 overflow\n  ok  07  wb-panel/07  — measured 1, 0 overflow\n  ok  08  wb-panel/08  — measured 1, 0 overflow\n  ok  09  wb-panel/09  — measured 1, 0 overflow\n  ok  10  wb-panel/10  — measured 1, 0 overflow\n  ok  11  wb-panel/11  — measured 1, 0 overflow\n  ok  12  wb-panel/12  — measured 1, 0 overflow\n  ok  13  wb-panel/13  — measured 1, 0 overflow\n  ok  14  wb-panel/14  — measured 1, 0 overflow\n  ok  15  wb-panel/15  — measured 1, 0 overflow\n\n15 assertions, 0 failures" }],
+  },
+  {
+    member: "46-도구결과-실패", runtime: "codex", caption: "도구 결과 — 실패한 호출의 긴 출력",
+    events: [{ type: "tool_call", id: "gal-tool-2", name: "shell", status: "failed", exitCode: 1, durationMs: 1310,
+      cwd: "/srv/app",
+      input: { command: "pnpm -r build" },
+      result: "$ npm run test:layout\n  ok  01  wb-panel/01  — measured 1, 0 overflow\n  ok  02  wb-panel/02  — measured 1, 0 overflow\n  ok  03  wb-panel/03  — measured 1, 0 overflow\n  ok  04  wb-panel/04  — measured 1, 0 overflow\n  ok  05  wb-panel/05  — measured 1, 0 overflow\n  ok  06  wb-panel/06  — measured 1, 0 overflow\n  ok  07  wb-panel/07  — measured 1, 0 overflow\n  ok  08  wb-panel/08  — measured 1, 0 overflow\n  ok  09  wb-panel/09  — measured 1, 0 overflow\n  ok  10  wb-panel/10  — measured 1, 0 overflow\n  ok  11  wb-panel/11  — measured 1, 0 overflow\n  ok  12  wb-panel/12  — measured 1, 0 overflow\n  ok  13  wb-panel/13  — measured 1, 0 overflow\n  ok  14  wb-panel/14  — measured 1, 0 overflow\n  ok  15  wb-panel/15  — measured 1, 0 overflow\n\n15 assertions, 0 failures" }],
+  },
+
   // --- 실행 환경 · 작업 디렉터리 ------------------------------------------
   // The member list groups by environment and then by directory. A gallery
   // whose members all sit in one folder shows exactly one of that tree's

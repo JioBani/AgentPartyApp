@@ -10172,3 +10172,28 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-color: var(--border-subtle);
   color: var(--text-3);
 }
+
+/* ── 대기열: 펼친 본문에도 바닥이 있다 ───────────────────── */
+
+/* Expanding a message answered "what does it say" by taking the whole panel: a
+   pasted log grew the row until the queue WAS the screen and the conversation
+   underneath it was gone. The body still opens in full, but past about nine
+   lines it stops growing and scrolls inside itself, so the queue keeps the size
+   it promised no matter what was pasted into it. The scroll is contained, so
+   reaching the end of one message does not then scroll the transcript.
+
+   A scrollable body is also a reading surface, not a toggle — clicking into it
+   to select text must not fold it back up, so the caret is normal, the text is
+   selectable, and collapsing is left to the button that says so. */
+.wb-queue-text.is-open {
+  max-height: calc(1.45em * 9);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  cursor: auto;
+  user-select: text;
+}
+
+.wb-queue.is-narrow .wb-queue-text.is-open {
+  max-height: calc(1.4em * 7);
+}

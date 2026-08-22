@@ -9,7 +9,7 @@
  *
  * Legs, one per lane item: [P-3]5 external links · [P-3]3 one-click copy ·
  * [P-3]7 progress indicator · [#6] long subagent prompt · [#16] modals ignoring
- * an outside click · [P-8] harness badge · [#14] a code block surviving a
+ * an outside click · 전체 보기 on a COLLAPSED tool block · [P-8] harness badge · [#14] a code block surviving a
  * message sent mid-stream · [#13] a dead member reading as disconnected.
  *
  * Every click asserts `applied.clicked`. A selector that matches nothing now
@@ -95,6 +95,7 @@ async function main() {
     await harnessIsVisible();
     await codeBlockSurvivesInterjection();
     await modalsIgnoreOutsideClicks();
+    await collapsedToolOpensItsPopup();
     await deadMemberReadsAsDisconnected();
 
     await post("/api/window/close", {}).catch(() => {});
@@ -288,6 +289,60 @@ async function codeBlockSurvivesInterjection() {
  * afterwards. Both clicks assert `applied.clicked`, so a mistyped selector fails
  * instead of "proving" the modal survived a click that never happened.
  */
+/**
+ * 전체 보기 must work from a tool block that is CLOSED — the state the button
+ * exists for, since a block whose output already fits needs no popup at all.
+ *
+ * It did not. The popup was rendered among the <details> children, and a closed
+ * disclosure hides every child but its summary, so one click set the state and
+ * painted nothing; only opening the block first made the same click "work".
+ * That reads as a dead button, which is why the assertion here is not "the
+ * state changed" but "the popup has a box on screen while the block stays shut".
+ */
+async function collapsedToolOpensItsPopup() {
+  console.log("\n… 전체 보기 works while the tool block is collapsed:");
+  await post("/api/qa/open", { panels: [["renderer"]] });
+  await post("/api/qa/members/renderer/emit", {
+    events: [{
+      type: "tool_call", id: "e2e-collapsed-tool", name: "Bash", status: "completed", exitCode: 0,
+      input: { command: "npm run test:layout -- --reporter=verbose" },
+      // Longer than the 6-line / 320-char inline preview, which is what makes
+      // the button appear in the first place.
+      result: "$ npm run test:layout\n" + "  ok  wb-panel — measured 1, 0 overflow\n".repeat(18) + "18 assertions, 0 failures",
+    }],
+  });
+  await delay(700);
+
+  // A wide panel opens tool blocks by default; close it, because closed is the
+  // case under test.
+  const before = await measureOne(".wb-tool", ["open"]);
+  if (before?.attributes?.open !== null && before?.attributes?.open !== undefined) {
+    await clickAndCapture(".wb-tool > summary .wb-tool-name", "tool-collapse.png", "collapsed the tool block");
+  }
+  const closed = await measureOne(".wb-tool", ["open"]);
+  ok(closed?.attributes?.open === null || closed?.attributes?.open === undefined, "the tool block is closed");
+
+  await clickAndCapture(".wb-tool > summary .wb-tool-expand", "tool-expand-collapsed.png", "clicked 전체 보기 once, on the closed block");
+
+  const modal = await measureOne(".wb-tool-modal", []);
+  ok(Boolean(modal && modal.box?.height > 0), `the popup is on screen (${modal ? Math.round(modal.box.width) + "×" + Math.round(modal.box.height) : "not rendered"})`);
+
+  const still = await measureOne(".wb-tool", ["open"]);
+  ok(still?.attributes?.open === null || still?.attributes?.open === undefined, "…and the block behind it did not spring open");
+
+  await clickAndCapture(".wb-tool-modal-head .wb-icon-btn", "tool-expand-closed.png", "the popup closes on its own 닫기 button");
+}
+
+/** One measured element, or null when the selector matches nothing. */
+async function measureOne(selector, attributes) {
+  try {
+    const result = await post("/api/measure", { selector, attributes });
+    return (result.elements || result.nodes || [])[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 async function modalsIgnoreOutsideClicks() {
   console.log("\n[#16] modals ignore a click outside:");
   await post("/api/qa/open", { panels: [["renderer"]] });

@@ -375,7 +375,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     />
                     {row.cutIn && <span className="wb-queue-cutin" title={localized("STR-1817")}><LocalizedText id="STR-1816" /></span>}
                   </div>
-                  <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
+                  <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : row.text} onClick={() => { if (!row.open) { toggleRow(row.id); } }}>{row.text}</span>
                   <div className="wb-queue-row-actions">
                     <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-label={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
                       {row.open ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -541,7 +541,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     message and left the controls floating beside empty space;
                     here it takes the row's slack and clips, and the full text
                     is one click (or the tooltip) away. */}
-                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
+                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : row.text} onClick={() => { if (!row.open) { toggleRow(row.id); } }}>{row.text}</span>
                 {/* One control well, right-aligned and in the same order on
                     every row, so the delete never lands where the expand was. */}
                 <div className="wb-queue-row-actions">
