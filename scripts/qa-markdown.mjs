@@ -58,6 +58,8 @@ const md = [
   "[Windows 드라이브 경로](C:/Project/AgentPartyApp/docs/발표/demo.html)",
   "",
   "[Windows encoded backslash path](<C:\\Project\\AgentPartyApp\\docs\\demo.html>)",
+  "",
+  "[Windows bracket folder](<C:\\Project\\novel\\[4060182] title\\file.pdf>)",
 ].join("\n");
 
 const view = {
@@ -108,16 +110,20 @@ assert(clickEvent.defaultPrevented, "the in-app navigation is prevented (no Elec
 const windowsUrlLink = body?.querySelector('a[href="/C:/Project/AgentPartyApp/docs/%EB%B0%9C%ED%91%9C/demo.html"], a[href="/C:/Project/AgentPartyApp/docs/발표/demo.html"]');
 const windowsDriveLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows 드라이브 경로");
 const encodedBackslashLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows encoded backslash path");
+const bracketFolderLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows bracket folder");
 windowsUrlLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 windowsDriveLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 encodedBackslashLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+bracketFolderLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(openedPaths.some((value) => /^\/C:\/Project/.test(value)), "URL-shaped /C:/ markdown link is handed to the local-file controller");
 assert(openedPaths.some((value) => /^C:\/Project/i.test(value)), `bare C:/ markdown link is not mistaken for a foreign URI scheme (href=${windowsDriveLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 assert(openedPaths.some((value) => /^C:%5CProject/i.test(value)), `encoded-backslash drive link is handed to the local-file controller (href=${encodedBackslashLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
+assert(openedPaths.some((value) => /^C:\/Project\/novel\/%5B4060182%5D%20title\/file\.pdf$/i.test(value)), `a separator before a bracketed folder survives markdown parsing (href=${bracketFolderLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 const driveReveal = windowsDriveLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
 assert(Boolean(driveReveal), "a local-file link carries a reveal control");
 assert(Boolean(encodedBackslashLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal")), "an encoded-backslash drive link carries a reveal control");
+assert(Boolean(bracketFolderLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal")), "a bracketed-folder drive link carries a reveal control");
 driveReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(revealed.some((value) => /^C:\/Project/i.test(value)), "the reveal control hands the file path to revealPath");

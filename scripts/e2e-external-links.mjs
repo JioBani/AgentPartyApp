@@ -33,6 +33,8 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const asst = (text) => ({ type: "assistant_text_delta", text });
 const backslashFile = path.join(ws, "samples", "windows-backslash.md");
 const encodedBackslashHref = backslashFile.replace(/\\/g, "%5C");
+const bracketFolderFile = path.join(ws, "samples", "[4060182] bracket folder", "file.md");
+const bracketFolderHref = encodeURI(bracketFolderFile.replace(/\\/g, "/"));
 
 async function getJson(u) { const r = await fetch(`${base}${u}`); return r.json(); }
 async function post(u, b) { const r = await fetch(`${base}${u}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }); return r.json(); }
@@ -119,6 +121,7 @@ const LINKS = [
   // react-markdown percent-encodes backslashes before the renderer classifies
   // the href. It must remain a file link (with its icon), not become a `C:` URI.
   { label: "windows-backslash", href: encodedBackslashHref, markdown: `[windows-backslash](<${backslashFile}>)`, expect: "opened" },
+  { label: "windows-bracket-folder", href: bracketFolderHref, markdown: `[windows-bracket-folder](<${bracketFolderFile}>)`, expect: "opened" },
   // Never launched, only revealed — a link written by a model must not be able
   // to run a script.
   { label: "script", href: "./samples/danger.ps1", markdown: "[script](./samples/danger.ps1)", expect: "revealed" },
@@ -132,7 +135,7 @@ async function main() {
   // browser and open the default mail client once. Suppressing that under a QA
   // flag would leave the actual fix untested.
   console.log("  ⚠ this test really opens things — that IS the behaviour under test:");
-  console.log("    a browser tab (example.com), the mail client, three small sample files in");
+  console.log("    a browser tab (example.com), the mail client, four small sample files in");
   console.log("    their default apps, and one Explorer window. Close them afterwards.\n");
 
   for (const p of [ws, userData]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
@@ -143,6 +146,8 @@ async function main() {
   fs.writeFileSync(path.join(ws, "samples", "sample.md"), "# e2e sample\n");
   fs.writeFileSync(path.join(ws, "samples", "sample.json"), '{"e2e":true}\n');
   fs.writeFileSync(backslashFile, "# encoded backslash e2e sample\n");
+  fs.mkdirSync(path.dirname(bracketFolderFile), { recursive: true });
+  fs.writeFileSync(bracketFolderFile, "# bracket folder e2e sample\n");
   fs.writeFileSync(path.join(ws, "samples", "danger.ps1"), 'Write-Output "this must never run"\n');
 
   const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", "--", "--workspace", ws], {
