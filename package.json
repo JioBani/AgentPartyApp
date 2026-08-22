@@ -187,6 +187,7 @@
     "qa:seed": "node scripts/qa-frontend.mjs",
     "dist:win": "npm run build && electron-builder --win --x64",
     "release:win": "npm run build && electron-builder --win --x64 --publish always",
+    "release:publish": "node scripts/release-publish.mjs",
     "package:win": "node scripts/package-win.mjs",
     "test:packaged-mcp-runtime": "node scripts/qa-packaged-mcp-runtime.mjs",
     "test:member-start-model": "node scripts/qa-member-start-model.mjs",
