@@ -125,8 +125,9 @@ async function main() {
     // picture. It is normalized to kind:"image" (not a tool box) and must keep
     // its immediate display behavior while native inspection becomes lazy.
     const attachedFile = "mcp-attached.png";
-    fs.mkdirSync(path.join(ws, ".agent_party_app", "images"), { recursive: true });
-    fs.copyFileSync(imagePath, path.join(ws, ".agent_party_app", "images", attachedFile));
+    const imageStore = path.join(userData, "party-store", ".agent_party_app", "images");
+    fs.mkdirSync(imageStore, { recursive: true });
+    fs.copyFileSync(imagePath, path.join(imageStore, attachedFile));
     await post("/api/qa/members/viewer/emit", {
       events: [{
         type: "tool_call",
@@ -141,6 +142,53 @@ async function main() {
     await delay(500);
     const mcpImage = await post("/api/measure", { selector: ".wb-attached-image img.wb-msg-image", limit: 5, attributes: ["src"] });
     assert(mcpImage.ok && mcpImage.count === 1, "AgentParty attach-image MCP remains immediately visible");
+
+    // Drive the enlarged image through Chromium pointer/key input, not only
+    // synthetic DOM events, so the close-button path stays covered end to end.
+    const openViewer = async () => {
+      const opened = await post("/api/qa/pointer", { steps: [{ selector: ".wb-attached-image .wb-msg-image-hit", action: "click" }] });
+      assert(opened.ok && opened.steps?.length === 1, "MCP image opens through real pointer input");
+      await delay(250);
+    };
+    await openViewer();
+    const dialog = await post("/api/measure", {
+      selector: ".wb-tool-modal[role=dialog]",
+      limit: 1,
+      attributes: ["aria-modal", "aria-labelledby"],
+    });
+    assert(dialog.ok && dialog.count === 1 && dialog.elements?.[0]?.attributes?.["aria-modal"] === "true",
+      "the enlarged image exposes modal dialog semantics");
+    assert(Boolean(dialog.elements?.[0]?.attributes?.["aria-labelledby"]), "the enlarged image has an accessible title");
+
+    const zoomed = await post("/api/qa/pointer", { steps: [{ selector: "[data-image-zoom=fit]", action: "click" }] });
+    assert(zoomed.ok, "fit/actual-size toggles through real pointer input");
+    const actual = await post("/api/measure", { selector: ".wb-image-viewer.is-actual", limit: 1 });
+    assert(actual.ok && actual.count === 1, "actual-size mode remains available");
+
+    const closed = await post("/api/qa/pointer", { steps: [{ selector: ".wb-tool-modal-actions > button:last-child", action: "click" }] });
+    assert(closed.ok, "the enlarged image close button receives real pointer input");
+    await delay(250);
+    const afterClose = await post("/api/measure", { selector: ".wb-tool-modal", limit: 1 });
+    assert(afterClose.ok === false, "the close button removes the enlarged image modal");
+
+    await openViewer();
+    const escaped = await post("/api/qa/input", { key: "Escape" });
+    assert(escaped.ok && escaped.key === "Escape", "Escape is sent through the real keyboard path");
+    const afterEscape = await post("/api/measure", { selector: ".wb-tool-modal", limit: 1 });
+    assert(afterEscape.ok === false, "Escape closes the enlarged image modal");
+
+    const narrow = await post("/api/qa/window/bounds", { width: 1100, height: 720 });
+    assert(narrow.ok && narrow.bounds?.width === 1100, "the real window enters its minimum supported size");
+    await openViewer();
+    const narrowDialog = await post("/api/measure", {
+      selector: ".wb-tool-modal.is-wide",
+      limit: 1,
+      containedBy: "body",
+    });
+    assert(narrowDialog.ok && narrowDialog.elements?.[0]?.containedBy?.fully === true,
+      "the enlarged image stays inside a narrow viewport");
+    await post("/api/qa/pointer", { steps: [{ selector: ".wb-tool-modal-actions > button:last-child", action: "click" }] });
+    await post("/api/qa/window/bounds", { width: 1480, height: 960 });
 
     // --- native image_view is inspection evidence, so it stays lazy -------
     await post("/api/qa/members/viewer/emit", { events: [imageViewEvent(imageContentResult, imagePath)] });

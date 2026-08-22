@@ -92,11 +92,16 @@ assert(copies.length === 1, "실패한 복사는 브리지에 남지 않는다")
 
 console.log("\nEnlarge overlay:");
 assert(!document.querySelector(".wb-tool-modal"), "크게 보기 전에는 오버레이가 없다");
-document.querySelector(".wb-msg-image-hit").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+const imageHit = document.querySelector(".wb-msg-image-hit");
+imageHit.focus();
+imageHit.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
 assert(Boolean(modal), "이미지 클릭이 전체 보기 오버레이를 연다");
 assert(modal.classList.contains("is-wide"), "이미지용으로 넓은 셸을 쓴다");
+assert(modal.getAttribute("role") === "dialog" && modal.getAttribute("aria-modal") === "true", "확대 뷰가 모달 대화상자로 노출된다");
+assert(Boolean(modal.getAttribute("aria-labelledby")) && Boolean(document.getElementById(modal.getAttribute("aria-labelledby"))), "대화상자 제목이 접근성 이름에 연결된다");
+assert(document.activeElement?.getAttribute("aria-label") === "닫기", "열리면 닫기 버튼으로 포커스가 이동한다");
 assert(Boolean(document.querySelector(".wb-image-viewer.is-fit")), "기본은 화면에 맞춤");
 const zoom = document.querySelector("[data-image-zoom]");
 assert(zoom?.getAttribute("data-image-zoom") === "fit", "맞춤/실제크기 토글이 있다");
@@ -104,10 +109,13 @@ zoom.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(Boolean(document.querySelector(".wb-image-viewer.is-actual")), "토글하면 실제 크기로 바뀐다");
 
-document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
-assert(Boolean(document.querySelector(".wb-tool-modal")), "바깥 클릭으로는 닫히지 않는다");
+assert(!document.querySelector(".wb-tool-modal"), "이미지 확대 뷰는 배경 클릭으로 닫힌다");
+assert(document.activeElement === imageHit, "닫히면 이미지를 열었던 버튼으로 포커스가 돌아간다");
 
+imageHit.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((res) => setTimeout(res, 40));
 window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
 assert(!document.querySelector(".wb-tool-modal"), "Esc 로 닫힌다");

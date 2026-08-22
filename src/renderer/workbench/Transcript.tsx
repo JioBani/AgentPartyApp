@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, Ban, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Loader, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -1086,23 +1086,47 @@ export function ExpandableText({ text, title, markdown, chips }: { text: string;
 /**
  * A centered popup with a titled body — the shared shell for "전체 보기" overlays.
  *
- * The backdrop does not dismiss: selecting text inside a long command or result
- * regularly ends with the pointer outside the popup, which closed it and lost
- * the selection. Closing is explicit (✕) or Escape — a key the user presses on
- * purpose, unlike a stray click.
+ * Text-detail backdrops do not dismiss: selecting text inside a long command or
+ * result regularly ends with the pointer outside the popup. Image viewers opt
+ * into backdrop dismissal because there is no text selection to preserve.
  *
  * `actions` sits in the header before ✕ so image fit/copy controls reuse this
  * shell instead of inventing a second overlay (R-19).
  */
-function DetailModal({ title, onClose, actions, wide, children }: {
+function DetailModal({ title, onClose, actions, wide, dismissOnBackdrop = false, children }: {
   title: string;
   onClose: () => void;
   actions?: ReactNode;
   wide?: boolean;
+  dismissOnBackdrop?: boolean;
   children: ReactNode;
 }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Tab" && dialogRef.current) {
+        const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ));
+        if (focusable.length) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
       if (event.key !== "Escape") {
         return;
       }
@@ -1110,19 +1134,33 @@ function DetailModal({ title, onClose, actions, wide, children }: {
       // while this overlay is open (R-13: popup first).
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previousFocus?.focus();
+    };
+  }, []);
   return (
-    <div className="wb-tool-modal-backdrop">
-      <div className={"wb-tool-modal" + (wide ? " is-wide" : "")}>
+    <div
+      className="wb-tool-modal-backdrop"
+      onMouseDown={(event) => {
+        if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className={"wb-tool-modal" + (wide ? " is-wide" : "")}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="wb-tool-modal-head">
-          <span className="wb-mono wb-tool-name">{title}</span>
+          <span id={titleId} className="wb-mono wb-tool-name">{title}</span>
           <div className="wb-tool-modal-actions">
             {actions}
-            <button type="button" className="wb-icon-btn" title={localized("STR-2203")} aria-label={localized("STR-2203")} onClick={onClose}><X size={15} /></button>
+            <button ref={closeRef} type="button" className="wb-icon-btn" title={localized("STR-2203")} aria-label={localized("STR-2203")} onClick={onClose}><X size={15} /></button>
           </div>
         </div>
         <div className="wb-tool-modal-body">{children}</div>
@@ -1278,6 +1316,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
         <DetailModal
           title={label}
           wide
+          dismissOnBackdrop
           onClose={() => setViewer(false)}
           actions={
             <>
