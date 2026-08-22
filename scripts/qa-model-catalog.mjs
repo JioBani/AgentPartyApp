@@ -26,6 +26,7 @@ const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, cl
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
 const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
+const { modelMarkForModel } = await load("src/renderer/workbench/modelMark.ts", "model-mark.mjs");
 const { claudeRuntimeModelFor } = await load("src/core/claudeAdapter.ts", "claude-adapter.mjs");
 
 const failures = [];
@@ -49,6 +50,29 @@ const groupedProviders = groupByProvider(
     .map((route) => ({ route, meta: { id: route.model, name: route.label, provider: route.providerId, context: "—" } })),
 ).map((group) => group.provider);
 assert(groupedProviders.includes("cursor"), "renderer provider grouping keeps the Cursor bucket visible");
+
+// Model maker and route provider are separate identities. OpenRouter-routed
+// models keep their maker mark; the deliberately excluded families stay on the
+// neutral model fallback rather than borrowing a related company's logo.
+console.log("\nModel-maker mark assertions:");
+for (const [model, mark] of [
+  ["Gemini 3.7 Flash", "gemini"],
+  ["google/gemini-3.7-flash", "gemini"],
+  ["Kimi K3", "kimi"],
+  ["Kimi K2.6", "kimi"],
+  ["Qwen3.7 Max", "qwen"],
+  ["DeepSeek V4 Flash", "deepseek"],
+  ["Muse Spark 1.1", "meta"],
+  ["Laguna XS 2.1", "poolside"],
+  ["GLM-5.2", "zai"],
+  ["MiniMax M3", "minimax"],
+  ["Grok 4.5 Cursor", "grok"],
+]) {
+  assert(modelMarkForModel(model) === mark, `${model} resolves to the ${mark} model mark`);
+}
+for (const model of ["Ox Alpha", "KAT-Coder-Air V2.5", "Aion-3.0", "Inkling", "Tencent Hy3", "Nex-N2-Mini"]) {
+  assert(modelMarkForModel(model) === undefined, `${model} stays on the neutral model mark`);
+}
 
 // Leaderboard OR-O set must be exactly these, with concrete OR ids.
 const expectedOr = ["GLM-5.2", "Gemini 3.5 Flash", "Qwen3.7 Max", "DeepSeek V4 Pro", "MiniMax M3", "Gemini 3.x Pro", "Kimi K2.7 Code", "Kimi K2.6", "Grok Build 0.1", "Qwen3.7 Plus", "Grok 4.3"];

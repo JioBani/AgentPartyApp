@@ -15,16 +15,18 @@ interface ProviderIconProps extends Omit<SVGProps<SVGSVGElement>, "children"> {
  * running Opus and "Claude Code" for one running a DeepSeek model: the icon
  * named the wrong company.
  *
- * Providers we hold no artwork for (OpenRouter today, anything added tomorrow)
- * get ONE neutral mark rather than a blank slot, a broken image, or — worst —
- * the nearest brand we happen to have. The provider's name is always reachable
- * from the wrapper's tooltip and label, so the fallback loses no information.
+ * Providers we hold no artwork for get ONE neutral mark rather than a blank
+ * slot, a broken image, or — worst — the nearest brand we happen to have. The
+ * provider's name is always reachable from the wrapper's tooltip and label, so
+ * the fallback loses no information.
  */
 const PROVIDER_MARK: Partial<Record<ModelProvider, VendorMark>> = {
   anthropic: "claude",
   openai: "openai",
   xai: "grok",
   cursor: "cursor",
+  openrouter: "openrouter",
+  deepseek: "deepseek",
 };
 
 export function ProviderIcon({ provider, size = 15, className = "", ...props }: ProviderIconProps) {

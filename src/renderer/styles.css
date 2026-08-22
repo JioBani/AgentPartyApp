@@ -5330,6 +5330,10 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   background: var(--bg-3);
 }
 
+.wb-model-provider-btn .wb-provider-icon {
+  flex: none;
+}
+
 .wb-model-caret {
   flex: none;
   color: var(--text-3);
@@ -5341,7 +5345,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 
 .wb-model-provider-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: .5px;
   text-transform: uppercase;
@@ -5366,18 +5370,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--accent);
   font-size: 9.5px;
   font-weight: 700;
-}
-
-/* Names hidden inside the collapsed group. Shrinks before anything else. */
-.wb-model-preview {
-  margin-left: auto;
-  min-width: 0;
-  font-size: 10px;
-  color: var(--text-3);
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .wb-model-row {
@@ -5424,6 +5416,20 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   text-align: left;
 }
 
+.wb-model-pick > .wb-model-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wb-model-pick > .wb-model-icon-generic {
+  color: var(--text-3);
+  opacity: .62;
+}
+
+.wb-model-row.is-selected .wb-model-pick > .wb-model-icon {
+  color: var(--text-0);
+}
+
 .wb-model-star {
   flex: none;
   display: inline-flex;
@@ -5458,9 +5464,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--text-3);
 }
 
-.wb-model-origin .wb-provider-dot {
-  width: 5px;
-  height: 5px;
+.wb-model-origin .wb-provider-icon {
+  flex: none;
 }
 
 .wb-model-row:hover {
@@ -5608,13 +5613,16 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   padding-bottom: 2px;
 }
 
-/* Aligned to the model name's cap height rather than to the flex line, so the
-   dot reads as a bullet on the title and not as a marker for the whole block. */
-.wb-detail-dot {
-  width: 10px;
-  height: 10px;
+/* The maker mark anchors the model identity; its tint still comes from the
+   route-provider group so maker and billing path remain distinct signals. */
+.wb-detail-model-mark {
+  width: 22px;
+  height: 22px;
   flex: none;
-  margin-top: var(--space-3);
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
 }
 
 .wb-detail-ident {
@@ -9653,13 +9661,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--text-0);
 }
 
-.wb-vendor-mark { display: block; flex: none; }
+.wb-vendor-mark,
+.wb-model-icon { display: block; flex: none; }
 .wb-vendor-mark-tone { fill: color-mix(in srgb, currentColor 55%, var(--bg-0)); }
 
-/* One neutral mark for every provider we hold no artwork for — OpenRouter
-   today, whatever is added next. A blank slot reads as a bug and the nearest
-   brand we happen to own would be a lie; the provider's name stays reachable
-   from the wrapper's tooltip and label either way. */
+/* One neutral mark for every provider we hold no artwork for. A blank slot
+   reads as a bug and the nearest brand we happen to own would be a lie; the
+   provider's name stays reachable from the wrapper's tooltip and label. */
 .wb-provider-icon-generic { opacity: .75; }
 
 /* ── 멤버 패널 보조 헤더: 실행 위치 ─────────────────────────────────────── */
