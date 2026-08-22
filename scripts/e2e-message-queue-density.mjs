@@ -79,7 +79,7 @@ function overlaps(a, b) {
 }
 
 async function auditRows(viewport, state) {
-  const rows = await measure(".wb-queue-row", { attributes: ["data-queue-index"], containedBy: ".wb-queue-list" });
+  const rows = await measure(".wb-queue-row", { attributes: ["data-queue-index", "class"], containedBy: ".wb-queue-list" });
   assert(rows.elements.every((item) => item.containedBy?.fully), `${state}: queue cards stay inside the list`);
   assert(!rows.elements.some((item) => item.scrollable.horizontal), `${state}: cards have no horizontal overflow`);
   const rowMetrics = [];
@@ -88,10 +88,11 @@ async function auditRows(viewport, state) {
   for (const row of rows.elements) {
     const index = Number(row.attributes?.["data-queue-index"]);
     const cardSelector = `.wb-queue-row[data-queue-index="${index}"]`;
-    const bodyResult = await measure(`${cardSelector} > .wb-queue-text`, { containedBy: cardSelector });
+    const bodyResult = await measure(`${cardSelector} .wb-queue-text`, { containedBy: cardSelector });
     const identityResult = await measure(`${cardSelector} .wb-queue-from`, { containedBy: cardSelector });
     const headerResult = baseline ? null : await measure(`${cardSelector} > [data-queue-header]`, { containedBy: cardSelector });
     const controlsResult = await measure(`${cardSelector} button`, { containedBy: cardSelector });
+    const wellResult = baseline ? null : await measure(`${cardSelector} .wb-queue-row-actions button`, { containedBy: cardSelector });
     const body = bodyResult.elements[0]?.box;
     const identity = identityResult.elements[0]?.box;
     const header = headerResult?.elements[0]?.box;
@@ -105,8 +106,10 @@ async function auditRows(viewport, state) {
     const rightInset = row.box.right - body.right;
     const closing = row.box.bottom - body.bottom;
     const widthRatio = body.width / Math.max(1, row.box.width - 16);
+    const well = wellResult?.elements.map((item) => item.box) || [];
     rowMetrics.push({
       index,
+      expanded: /is-expanded/.test(row.attributes?.class || ""),
       row: row.box,
       body,
       identity,
@@ -115,7 +118,12 @@ async function auditRows(viewport, state) {
       rightInset,
       closing,
       widthRatio,
-      bodyBelowHeader: header ? body.top >= header.bottom - 1 : false,
+      // The restored layout puts the body ON the header line, between the
+      // sender chip and the control well, rather than on a band of its own.
+      bodyInHeader: header ? body.top >= header.top - 1 && body.bottom <= header.bottom + 1 : false,
+      identityBeforeBody: identity ? identity.right <= body.left + 1 : false,
+      controlsAfterBody: well.length > 0 && well.every((box) => box.left >= body.right - 1),
+      bodyOverlapsControls: well.some((box) => overlaps(body, box)),
       identityInHeader: header ? identity.top >= header.top - 1 && identity.bottom <= header.bottom + 1 : false,
     });
   }
@@ -127,13 +135,17 @@ async function auditRows(viewport, state) {
   if (baseline) {
     assert(rowMetrics.some((metric) => metric.leftInset >= 80), `${state}: baseline reproduces the reserved vertical identity column`);
   } else {
-    assert(rowMetrics.every((metric) => metric.header), `${state}: every card has one compact header`);
-    assert(rowMetrics.every((metric) => metric.leftInset >= 6 && metric.leftInset <= 10), `${state}: body begins on the card content inset (${rowMetrics.map((m) => m.leftInset.toFixed(1)).join(", ")}px)`);
-    assert(rowMetrics.every((metric) => metric.rightInset >= 6 && metric.rightInset <= 10), `${state}: body ends on the card content inset (${rowMetrics.map((m) => m.rightInset.toFixed(1)).join(", ")}px)`);
-    assert(rowMetrics.every((metric) => metric.widthRatio >= 0.98), `${state}: body uses the full available width below the header`);
-    assert(rowMetrics.every((metric) => metric.closing >= 5 && metric.closing <= 9), `${state}: card closing gutter is preserved`);
-    assert(rowMetrics.every((metric) => metric.bodyBelowHeader), `${state}: body does not overlap the compact header`);
-    assert(rowMetrics.every((metric) => metric.identityInHeader), `${state}: member identity is contained by the compact header only`);
+    assert(rowMetrics.every((metric) => metric.header), `${state}: every card is one compact band`);
+    assert(rowMetrics.every((metric) => metric.identityInHeader), `${state}: the sender chip sits in that band`);
+    assert(rowMetrics.every((metric) => metric.bodyInHeader), `${state}: the message shares the band rather than taking one of its own`);
+    assert(rowMetrics.every((metric) => metric.identityBeforeBody), `${state}: the sender reads before the message it belongs to`);
+    assert(rowMetrics.every((metric) => metric.controlsAfterBody && !metric.bodyOverlapsControls), `${state}: the control well stays clear to the right of the message`);
+    // A collapsed one-line message must not produce a card with room to spare;
+    // an expanded one is allowed the lines it asked for.
+    const collapsed = rowMetrics.filter((metric) => !metric.expanded);
+    assert(collapsed.every((metric) => metric.row.height <= 34), `${state}: a collapsed row is one line tall (${collapsed.map((m) => Math.round(m.row.height)).join(", ")}px)`);
+    assert(rowMetrics.every((metric) => metric.leftInset >= 6), `${state}: the message begins clear of the grip and the ordinal (${rowMetrics.map((m) => m.leftInset.toFixed(1)).join(", ")}px)`);
+    assert(rowMetrics.every((metric) => metric.rightInset >= 6), `${state}: and ends clear of the card edge (${rowMetrics.map((m) => m.rightInset.toFixed(1)).join(", ")}px)`);
   }
 }
 

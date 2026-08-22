@@ -112,10 +112,18 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
     });
   }
 
-  /** The slot the pointer is over, against the frozen layout. */
+  /**
+   * The slot the pointer is over, against the frozen layout.
+   *
+   * The midpoint belongs to the row it is the midpoint OF, with a pixel of
+   * slack: pointer coordinates are whole numbers and a row's centre rarely is,
+   * so on a one-line row — where the whole card is barely thirty pixels — a
+   * half-pixel would otherwise decide which of two messages goes first, and
+   * aiming squarely at a row would land the drop below it.
+   */
   function slotUnder(clientY: number, slots: Array<{ top: number; height: number }>): number {
     for (let index = 0; index < slots.length; index += 1) {
-      if (clientY < slots[index].top + slots[index].height / 2) {
+      if (clientY <= slots[index].top + slots[index].height / 2 + 1) {
         return index;
       }
     }
@@ -348,11 +356,10 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
         </div>
         {!model.collapsed && (
           <>
-            {/* Same three bands as the wide row — order and sender, then the
-                message, with the controls in one right-hand well. Flat children
-                in a column box gave every one of them a line of its own, which
-                is how a one-line message became a tall card with a number, a
-                dot, a pencil and an × stacked down the middle of it. */}
+            {/* One line, like the wide row: order, sender, message, controls.
+                Flat children in a column box gave every one of them a line of
+                its own, which is how a one-line message became a tall card with
+                a number, a dot and an × stacked down the middle of it. */}
             {model.rows.map((row) => (
               <div className={rowClass(row, null)} key={row.id} role="listitem">
                 <div className="wb-queue-row-head">
@@ -368,6 +375,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     />
                     {row.cutIn && <span className="wb-queue-cutin" title={localized("STR-1817")}><LocalizedText id="STR-1816" /></span>}
                   </div>
+                  <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
                   <div className="wb-queue-row-actions">
                     <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-label={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
                       {row.open ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -375,13 +383,11 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     <button type="button" className="wb-queue-btn is-danger" data-queue-action="remove" title={localized("STR-1818")} aria-label={localized("STR-1818")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={12} /></button>
                   </div>
                 </div>
-                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
               </div>
             ))}
-            {/* Whole-queue, so it is ruled off from the cards above it here too. */}
-            <div className="wb-queue-footer">
-              <button type="button" className="wb-queue-send-all is-block" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
-            </div>
+            {/* No room here for the wide layout's merge band, so the whole-queue
+                send is its own full-width row under the list. */}
+            <button type="button" className="wb-queue-send-all is-block" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
           </>
         )}
         {handedOver}
@@ -461,6 +467,12 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
               <span className={"wb-queue-switch-label" + (model.merge ? " is-on" : "")}><LocalizedText id="STR-1827" /></span>
             </button>
             <span className="wb-queue-merge-note">{model.mergeNote}</span>
+            {/* The whole-queue send, at the right end of the same thin band.
+                Its own footer strip below the list cost a rule, a row and the
+                vertical space the queue exists to save, for a control that was
+                already legible here: it names the count it will send, which is
+                what tells it apart from the setting beside it. */}
+            <button type="button" className="wb-queue-send-all" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
           </div>
 
           <div className="wb-queue-list" ref={listRef}>
@@ -492,14 +504,13 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                 ) : (
                   <span className="wb-queue-grip is-idle" aria-hidden="true" />
                 )}
-                {/* Delivery order, first and in a fixed slot. A bare badge left
-                    the reader to guess whether the number was a position, a
-                    count or an id, so it says which one out loud; the width is
-                    fixed so the metadata beside it starts on one line down the
-                    whole list. */}
+                {/* Delivery order, first and in a fixed slot. What the number
+                    MEANS — a position, not a count or an id — is said by the
+                    tooltip and the accessible name rather than by a "번째" the
+                    row cannot spare the width for: on one line the message
+                    body is what that space is worth. */}
                 <span className="wb-queue-ord" title={localized("STR-3786", [row.n])} aria-label={localized("STR-3786", [row.n])}>
                   <span className="wb-queue-n">{row.n}</span>
-                  <span className="wb-queue-ord-suffix" aria-hidden="true"><LocalizedText id="STR-3787" /></span>
                 </span>
                 {/* Everything ABOUT this row's turn, in one band between the
                     order and the controls: who sent it, and whether it cut in or
@@ -525,6 +536,12 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                   )}
                   {row.showNextBadge && <span className="wb-queue-next"><LocalizedText id="STR-1835" /></span>}
                 </div>
+                {/* The message, on the SAME line as everything else. Given a
+                    band of its own it made a two-line card out of a five-word
+                    message and left the controls floating beside empty space;
+                    here it takes the row's slack and clips, and the full text
+                    is one click (or the tooltip) away. */}
+                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
                 {/* One control well, right-aligned and in the same order on
                     every row, so the delete never lands where the expand was. */}
                 <div className="wb-queue-row-actions">
@@ -540,17 +557,8 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                   <button type="button" className="wb-queue-btn is-danger" data-queue-action="remove" title={localized("STR-1837")} aria-label={localized("STR-1837")} onClick={() => void run({ action: "cancel", itemId: row.id })}><X size={13} /></button>
                 </div>
               </div>
-              <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.text} onClick={() => toggleRow(row.id)}>{row.text}</span>
             </div>
           ))}
-          </div>
-
-          {/* A WHOLE-QUEUE action. It sits under the list rather than inside the
-              merge row it used to share — where it read as part of that setting
-              — and is ruled off from the item cards above and the composer
-              below, both of which act on something else. */}
-          <div className="wb-queue-footer">
-            <button type="button" className="wb-queue-send-all" onClick={() => void run({ action: "send" })}>{model.sendAllLabel}</button>
           </div>
         </>
       )}
