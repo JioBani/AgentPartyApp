@@ -5345,7 +5345,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 
 .wb-model-provider-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: .5px;
   text-transform: uppercase;

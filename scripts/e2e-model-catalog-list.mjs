@@ -215,7 +215,9 @@ async function main() {
     }))`);
     assert(providerMarks.some((icon) => icon.provider === "openrouter" && icon.mark === "openrouter"), "OpenRouter renders its dedicated provider mark in the real catalog");
     assert(providerMarks.some((icon) => icon.provider === "deepseek" && icon.mark === "deepseek"), "DeepSeek renders its dedicated provider mark in the real catalog");
-    assert(providerMarks.every((icon) => Math.abs(icon.size - 12) <= 0.5), "provider-group marks are rendered at the emphasized 12px size");
+    assert(providerMarks.every((icon) => Math.abs(icon.size - 14) <= 0.5), "provider-group marks are rendered at the emphasized 14px size");
+    const providerNameSize = await cdp.eval(`parseFloat(getComputedStyle(document.querySelector(".wb-model-provider-name")).fontSize)`);
+    near(providerNameSize, 13, 0.5, "provider-group names are rendered at the emphasized size");
     const detailMark = await cdp.eval(`(() => ({
       icon: document.querySelector(".wb-detail-model-mark .wb-model-icon")?.getBoundingClientRect().width || 0,
       box: document.querySelector(".wb-detail-model-mark")?.getBoundingClientRect().width || 0,
