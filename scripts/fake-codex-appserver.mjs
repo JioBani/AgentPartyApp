@@ -23,6 +23,7 @@ const outFile = process.env.AGENTPARTY_FAKE_CODEX_OUT || "";
 const toolOutFile = process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT || "";
 const authLifecycleOut = process.env.AGENTPARTY_FAKE_CODEX_AUTH_OUT || "";
 const envOutFile = process.env.AGENTPARTY_FAKE_CODEX_ENV_OUT || "";
+const sqliteFailOnceFile = process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE || "";
 
 if (envOutFile) {
   try {
@@ -34,6 +35,13 @@ if (envOutFile) {
   } catch {
     // Best effort: individual tests still surface a missing record explicitly.
   }
+}
+
+if (sqliteFailOnceFile && !fs.existsSync(sqliteFailOnceFile)) {
+  fs.writeFileSync(sqliteFailOnceFile, String(process.pid));
+  const sqliteHome = process.env.CODEX_SQLITE_HOME || "";
+  process.stderr.write(`Error: failed to initialize sqlite state runtime under ${sqliteHome}: failed to initialize state runtime at ${sqliteHome}\n`);
+  process.exit(1);
 }
 
 recordAuthLifecycle({ event: "spawn", argv: process.argv.slice(2), accountId: currentAccountId() });

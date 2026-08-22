@@ -115,6 +115,8 @@ const CODEX_COMMANDS: HarnessCommand[] = [
 ];
 
 export class CodexAdapter extends EventEmitter {
+  /** Brief backoff for a just-stopped app-server releasing its SQLite handles. */
+  private static readonly SQLITE_STARTUP_RETRY_DELAYS_MS = [250, 750, 2_000, 5_000] as const;
   private process: ChildProcessWithoutNullStreams | undefined;
   private lineReader: readline.Interface | undefined;
   private started = false;
@@ -213,8 +215,10 @@ export class CodexAdapter extends EventEmitter {
       slashCommands: this.inventory,
       at: now(),
     });
-    this.initializing = this.ensureThread();
-    this.initializing.catch((error) => this.finishWithError(error));
+    this.initializing = this.ensureThreadWithSqliteRetry();
+    this.initializing.catch((error) => {
+      if (!this.disposed) this.finishWithError(error);
+    });
     this.emit("snapshot", this.getSnapshot());
   }
 
@@ -630,6 +634,32 @@ export class CodexAdapter extends EventEmitter {
       await this.resumeThread();
     } else {
       await this.startThread();
+    }
+  }
+
+  /**
+   * A runtime-profile change respawns the member immediately. On Windows the
+   * old Codex process can be gone while SQLite is still releasing the member's
+   * stable runtime directory. Preserve that directory (and its state), then
+   * retry only the concrete transient startup failure instead of asking the
+   * user to click restart again or deleting databases.
+   */
+  private async ensureThreadWithSqliteRetry(): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.ensureThread();
+        return;
+      } catch (error) {
+        const delayMs = CodexAdapter.SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
+        if (delayMs === undefined || this.disposed || !isSqliteStateRuntimeStartupError(error)) {
+          throw error;
+        }
+        this.log("sqlite_startup_retry", { attempt: attempt + 1, delayMs, sqliteHome: this.options.sqliteHome });
+        this.shutdownProcess();
+        this.status = "starting";
+        this.turnState = "sqlite-retry";
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
   }
 
@@ -1663,7 +1693,11 @@ export class CodexAdapter extends EventEmitter {
       pending.reject(new Error(message));
     }
     this.pendingRequests.clear();
-    if (!this.disposed && this.status !== "idle" && this.status !== "initialized") {
+    // During startup the initialize request owns this failure. It may retry a
+    // transient SQLite handoff; emitting here as well used to show the same
+    // error twice before the retry path had a chance to recover.
+    const sqliteStartupFailure = this.status === "starting" && isSqliteStateRuntimeStartupError(message);
+    if (!this.disposed && this.status !== "idle" && this.status !== "initialized" && !sqliteStartupFailure) {
       this.finishWithError(new Error(message));
     }
   }
@@ -1696,6 +1730,12 @@ export class CodexAdapter extends EventEmitter {
     this.emit("event", event);
     this.emit("snapshot", this.getSnapshot());
   }
+}
+
+function isSqliteStateRuntimeStartupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to initialize (?:sqlite )?state runtime/iu.test(message)
+    || /failed to initialize state runtime at/iu.test(message);
 }
 
 /** Maps a sandbox mode to the app-server `sandboxPolicy` object. */

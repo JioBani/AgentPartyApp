@@ -17,6 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = qaTempDir();
 const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentparty-codex-sqlite-qa-"));
 const envOut = path.join(runtimeDir, "spawn-env.jsonl");
+const sqliteFailOnce = path.join(runtimeDir, "sqlite-failed-once");
 const fakeServer = path.join(root, "scripts", "fake-codex-appserver.mjs");
 const failures = [];
 const assert = (condition, message) => {
@@ -88,15 +89,31 @@ try {
 
 await discoverCodexModels({ cwd: runtimeDir, sqliteHome: discoveryHome });
 
+// A profile change (including Standard -> Fast) immediately respawns the same
+// logical member. Model the old process releasing SQLite a moment late: the
+// first app-server exits with Codex's real error, and the adapter must recover
+// without deleting or rotating the stable runtime directory.
+process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE = sqliteFailOnce;
+const a3 = adapter("a-3", "a", memberAHome);
+try {
+  a3.start();
+  await waitForReady(a3, 8_000);
+} finally {
+  a3.dispose();
+  delete process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE;
+}
+
 const records = fs.readFileSync(envOut, "utf8").trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
 const homes = records.map((record) => path.resolve(record.sqliteHome));
-assert(records.length === 4, `all four app-server spawns recorded their runtime home (${records.length}/4)`);
+assert(records.length === 6, `normal starts plus one failed/retried app-server spawn were recorded (${records.length}/6)`);
 assert(homes[0] === path.resolve(memberAHome) && homes[2] === path.resolve(memberAHome), "the same member reuses one stable SQLite home after respawn");
 assert(homes[1] === path.resolve(memberBHome), "a second member receives a different SQLite home");
 assert(homes[3] === path.resolve(discoveryHome), "model discovery receives its own SQLite home");
 assert(new Set(homes).size === 3, "member A, member B, and discovery do not contend on one SQLite runtime");
 assert(homes.every((home) => home !== path.resolve(process.env.CODEX_SQLITE_HOME)), "child processes override an inherited shared CODEX_SQLITE_HOME");
 assert(homes.every((home) => fs.existsSync(home)), "each runtime directory exists before Codex starts");
+assert(homes[4] === path.resolve(memberAHome) && homes[5] === path.resolve(memberAHome), "SQLite startup retry preserves the member's stable runtime directory");
+assert(a3.getSnapshot().lastError === undefined, "a transient SQLite startup handoff is recovered without a visible session error");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nCODEX SQLITE ISOLATION PASSED");
 fs.rmSync(runtimeDir, { recursive: true, force: true });
