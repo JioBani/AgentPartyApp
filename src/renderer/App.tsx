@@ -116,6 +116,8 @@ export function App() {
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
   const [partyNotice, setPartyNotice] = useState("");
   const [currentView, setCurrentView] = useState<ViewId>("workbench");
+  // Stable identity: this lands in every panel's memoized composer commandUi.
+  const openUsageView = useCallback(() => setCurrentView("usage"), []);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const themeMenuRef = useRef<HTMLDivElement>(null);
   const themeMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -591,21 +593,58 @@ export function App() {
     return () => clearTimeout(timer);
   }, [activePartyId, members, restoredByMember, revealedMembers, visibleMembers]);
 
-  const views = useMemo<MemberView[]>(
-    () => members.map((member) => buildMemberView({
-      member,
-      sessions,
-      transcriptBySession: logsBySession,
-      subagentsBySession,
-      seenCount: seenLengths[member.name] ?? 0,
-      restored: restoredByMember[memberKey(member)],
-      transcriptReady: revealedMembers.has(member.name),
-      routes,
-      compactDefault: state.settings.compactDefault,
-      compacting: compactingByMember[member.name],
-    })),
-    [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember],
-  );
+  // Identity-preserving view rebuild. One session's stream batch changes only
+  // that member's inputs; every OTHER member gets its previous view object back,
+  // which is what keeps memoized panel surfaces (Transcript, Composer, blocks)
+  // out of React's walk during someone else's streaming. `buildMemberView` is
+  // pure over exactly the inputs captured in the signature, so input identity
+  // equality implies view equality.
+  const viewCacheRef = useRef(new Map<string, { signature: unknown[]; view: MemberView }>());
+  const views = useMemo<MemberView[]>(() => {
+    const cache = viewCacheRef.current;
+    const nextCache = new Map<string, { signature: unknown[]; view: MemberView }>();
+    const result = members.map((member) => {
+      const key = memberKey(member);
+      const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
+      const seenCount = seenLengths[member.name] ?? 0;
+      const restored = restoredByMember[key];
+      const transcriptReady = revealedMembers.has(member.name);
+      const compacting = compactingByMember[member.name];
+      const signature = [
+        member,
+        session,
+        session ? logsBySession[session.id] : undefined,
+        session ? subagentsBySession[session.id] : undefined,
+        seenCount,
+        restored,
+        transcriptReady,
+        routes,
+        state.settings.compactDefault,
+        compacting,
+      ];
+      const cached = cache.get(key);
+      if (cached && cached.signature.every((input, index) => input === signature[index])) {
+        nextCache.set(key, cached);
+        return cached.view;
+      }
+      const view = buildMemberView({
+        member,
+        sessions,
+        transcriptBySession: logsBySession,
+        subagentsBySession,
+        seenCount,
+        restored,
+        transcriptReady,
+        routes,
+        compactDefault: state.settings.compactDefault,
+        compacting,
+      });
+      nextCache.set(key, { signature, view });
+      return view;
+    });
+    viewCacheRef.current = nextCache;
+    return result;
+  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember]);
 
   // Auto-compaction trigger: when a member's live occupancy crosses its
   // threshold, fire ONE compaction (hysteresis via autoArmedRef so it never
@@ -2110,7 +2149,7 @@ export function App() {
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
                 onToggleDrawer={(which, patch) => void saveDrawer(which, patch)}
-                onOpenUsage={() => setCurrentView("usage")}
+                onOpenUsage={openUsageView}
               />
             </>
           ) : currentView === "guide" ? (
