@@ -51,6 +51,8 @@ interface ManagedSession {
   provider?: UsageProviderId;
   queuedEvents: ClaudeNormalizedEvent[];
   flushTimer?: NodeJS.Timeout;
+  /** Coalesces the per-event snapshot flood into one 33ms broadcast (latest wins). */
+  snapshotTimer?: NodeJS.Timeout;
   closed?: boolean;
   /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
   lastActivityAt: number;
@@ -136,6 +138,8 @@ export interface SessionManagerHostOptions {
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  /** Pending coalesced session-list broadcast (see scheduleSessionsBroadcast). */
+  private sessionsBroadcastTimer?: NodeJS.Timeout;
   /** Append-only per-turn usage ledger backing the Token Usage dashboard. */
   private ledger = new UsageLedger();
   /**
@@ -1239,6 +1243,9 @@ export class SessionManager extends EventEmitter {
     if (session.flushTimer) {
       clearTimeout(session.flushTimer);
     }
+    if (session.snapshotTimer) {
+      clearTimeout(session.snapshotTimer);
+    }
     session.closed = true;
     session.adapter.dispose();
     this.sessions.delete(id);
@@ -1385,9 +1392,16 @@ export class SessionManager extends EventEmitter {
     for (const provider of [...this.usageAdapters.keys()]) {
       this.disposeUsageAdapter(provider);
     }
+    if (this.sessionsBroadcastTimer) {
+      clearTimeout(this.sessionsBroadcastTimer);
+      this.sessionsBroadcastTimer = undefined;
+    }
     for (const session of this.sessions.values()) {
       if (session.flushTimer) {
         clearTimeout(session.flushTimer);
+      }
+      if (session.snapshotTimer) {
+        clearTimeout(session.snapshotTimer);
       }
       session.adapter.dispose();
     }
@@ -1580,8 +1594,12 @@ export class SessionManager extends EventEmitter {
         return;
       }
       this.queueEvent(session, event);
-      if (event.type === "session" || event.type === "turn_complete" || event.type === "error" || event.type === "status") {
-        this.emit("sessions", this.listSessions());
+      if (event.type === "session" || event.type === "turn_complete" || event.type === "error") {
+        // Lifecycle boundaries broadcast at once — a closed turn or an error
+        // must not sit in a coalescing window.
+        this.broadcastSessions();
+      } else if (event.type === "status") {
+        this.scheduleSessionsBroadcast();
       }
     });
     session.adapter.on("snapshot", (snapshot: ClaudeSessionSnapshot) => {
@@ -1589,9 +1607,48 @@ export class SessionManager extends EventEmitter {
         return;
       }
       session.lastSnapshot = snapshot;
-      this.emit("snapshot", { sessionId: session.id, workspace: session.workspace, snapshot });
-      this.emit("sessions", this.listSessions());
+      // Adapters emit a snapshot alongside EVERY normalized event, so a
+      // streaming turn produces dozens per second — each of which used to
+      // serialize the full session list and cross IPC on its own. One 33ms
+      // window (matching the event flush cadence) carries the LATEST snapshot;
+      // nothing is lost because a snapshot is whole-state, not a delta.
+      this.scheduleSnapshotBroadcast(session);
+      this.scheduleSessionsBroadcast();
     });
+  }
+
+  /** Broadcasts the latest snapshot at most once per 33ms window per session. */
+  private scheduleSnapshotBroadcast(session: ManagedSession): void {
+    if (session.snapshotTimer) {
+      return;
+    }
+    session.snapshotTimer = setTimeout(() => {
+      session.snapshotTimer = undefined;
+      if (session.closed || !this.sessions.has(session.id) || !session.lastSnapshot) {
+        return;
+      }
+      this.emit("snapshot", { sessionId: session.id, workspace: session.workspace, snapshot: session.lastSnapshot });
+    }, 33);
+  }
+
+  /** Coalesced session-list broadcast for high-frequency snapshot/status churn. */
+  private scheduleSessionsBroadcast(): void {
+    if (this.sessionsBroadcastTimer) {
+      return;
+    }
+    this.sessionsBroadcastTimer = setTimeout(() => {
+      this.sessionsBroadcastTimer = undefined;
+      this.emit("sessions", this.listSessions());
+    }, 33);
+  }
+
+  /** Immediate session-list broadcast; supersedes any pending coalesced one. */
+  private broadcastSessions(): void {
+    if (this.sessionsBroadcastTimer) {
+      clearTimeout(this.sessionsBroadcastTimer);
+      this.sessionsBroadcastTimer = undefined;
+    }
+    this.emit("sessions", this.listSessions());
   }
 
   /**

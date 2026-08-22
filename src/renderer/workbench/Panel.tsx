@@ -1,4 +1,4 @@
-import { PointerEvent, useEffect, useState } from "react";
+import { PointerEvent, useEffect, useMemo, useState } from "react";
 import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -73,6 +73,16 @@ export function Panel(props: PanelProps) {
   // meaningful panel lifecycle transition.
   const activeName = view?.name;
   const hasSession = Boolean(view?.session);
+  // One object identity per (member, handlers) — the composer is memoized and an
+  // inline literal here would re-render every open composer on every commit.
+  const commandUi = useMemo(() => ({
+    openRuntime: () => activeName && onOpenRuntime(activeName),
+    openPermissions: () => activeName && onOpenPermissions(activeName),
+    openMcp: () => activeName && onOpenMcp(activeName),
+    openStatus: () => activeName && onOpenStatus(activeName),
+    openUsage: onOpenUsage,
+    openAutoCompact: () => activeName && onOpenCompact(activeName),
+  }), [activeName, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenUsage, onOpenCompact]);
   useEffect(() => {
     if (activeName && !hasSession) {
       actions.prewarm(activeName);
@@ -293,14 +303,7 @@ export function Panel(props: PanelProps) {
             view={view}
             density={density}
             actions={actions}
-            commandUi={{
-              openRuntime: () => onOpenRuntime(view.name),
-              openPermissions: () => onOpenPermissions(view.name),
-              openMcp: () => onOpenMcp(view.name),
-              openStatus: () => onOpenStatus(view.name),
-              openUsage: onOpenUsage,
-              openAutoCompact: () => onOpenCompact(view.name),
-            }}
+            commandUi={commandUi}
           />
         </>
       ) : (

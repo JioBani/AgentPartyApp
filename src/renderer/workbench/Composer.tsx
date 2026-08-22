@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, KeyboardEvent, ClipboardEvent, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, CircleStop, FileText, ImageOff, Maximize2, Send, Users, X } from "lucide-react";
 import { MessageQueue } from "./MessageQueue";
 import type { MemberView, PanelDensity } from "./types";
@@ -104,7 +104,7 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
-export function Composer({ view, density, actions, commandUi, permission: showPermission = true }: ComposerProps) {
+function ComposerView({ view, density, actions, commandUi, permission: showPermission = true }: ComposerProps) {
   const draftKey = composerDraftKey(view.member);
   const savedDraft = readComposerDraft(draftKey);
   const [draft, setDraft] = useState(() => savedDraft?.text || "");
@@ -1059,6 +1059,31 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     </form>
   );
 }
+
+/**
+ * A transcript delta rebuilds the member view ~30×/sec while a member streams,
+ * but almost none of that touches the composer. The comparator lists the FULL
+ * set of view fields this component (and its MessageQueue/permission children)
+ * reads — mirror any new view read here, exactly like Transcript's comparator.
+ * `member` and `session` are compared by identity: the party store and the
+ * session merge layer both preserve object identity when no fact changed.
+ */
+export const Composer = memo(ComposerView, (previous, next) => (
+  previous.density === next.density
+  && previous.actions === next.actions
+  && previous.commandUi === next.commandUi
+  && previous.permission === next.permission
+  && previous.view.name === next.view.name
+  && previous.view.member === next.view.member
+  && previous.view.session === next.view.session
+  && previous.view.busy === next.view.busy
+  && previous.view.compacting === next.view.compacting
+  && previous.view.model === next.view.model
+  && previous.view.permissionMode === next.view.permissionMode
+  && previous.view.vision?.image === next.view.vision?.image
+  && previous.view.vision?.maxImages === next.view.vision?.maxImages
+  && previous.view.vision?.maxBytesPerImage === next.view.vision?.maxBytesPerImage
+));
 
 /** Reads a File to its base64 body (strips the `data:...;base64,` prefix). */
 function fileToBase64(file: File): Promise<string> {

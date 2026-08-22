@@ -1,5 +1,6 @@
 import type { SessionView, TranscriptSave } from "./types";
 import type { TranscriptBlock } from "./transcript";
+import { capTranscript } from "./transcriptCap";
 import { isLegacySpawnLine, legacySpawnFacts, SPAWN_STATUSES, type SessionSpawnFacts } from "./sessionSpawn";
 
 // The party write-tools as the agent sees them (mcp__<server>__<tool>). Mirrors
@@ -145,6 +146,19 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
         : appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
     }
   }
+  // Persistence already trims to the retention window at write time, but the
+  // IN-MEMORY fold (renderer state, main's recordedBlocks) used to grow without
+  // bound for the life of the session — a long-running member held far more
+  // than any view or save would ever use. Keep memory on the same window.
+  if (next !== current) {
+    const folded = next[sessionId];
+    if (folded) {
+      const trimmed = capTranscript(folded);
+      if (trimmed.length !== folded.length) {
+        next = { ...next, [sessionId]: trimmed };
+      }
+    }
+  }
   return next;
 }
 
@@ -223,6 +237,51 @@ function appendDiagnosticBlock(current: Record<string, TranscriptBlock[]>, sessi
 }
 
 /**
+ * Hard ceiling on the tool TEXT one transcript block retains — the streamed
+ * `output` accumulation and a string `result`. Real transcripts held single
+ * 14.8MB shell outputs; every copy of such a block (renderer state per window,
+ * main's fold state, the JSON on disk, the restore parse) paid that in full.
+ * The transcript is a conversation view, not the system of record: the
+ * harness's own log keeps the complete output, and the cut is announced in the
+ * block itself — never a silent drop.
+ */
+export const TOOL_TEXT_CAP = 256 * 1024;
+
+const TOOL_TEXT_CAP_NOTICE = `\n… [출력이 ${Math.round(TOOL_TEXT_CAP / 1024)}KB를 넘어 이후 내용은 보관하지 않았습니다 — 전체 출력은 하네스 원본 기록에 있습니다]`;
+
+/**
+ * Caps one tool text. Idempotent: a capped text re-caps to itself (the slice
+ * point sits before the appended notice), so re-folding a restored block is
+ * safe. Only strings are touched — structured results (party-tool envelopes,
+ * image content arrays) pass through untouched.
+ */
+function capToolText<T>(value: T): T {
+  if (typeof value !== "string" || value.length <= TOOL_TEXT_CAP) {
+    return value;
+  }
+  return (value.slice(0, TOOL_TEXT_CAP) + TOOL_TEXT_CAP_NOTICE) as T;
+}
+
+/** True once an output accumulation has been cut — further deltas are dropped. */
+function toolOutputCapped(output: string | undefined): boolean {
+  return typeof output === "string" && output.length > TOOL_TEXT_CAP;
+}
+
+/**
+ * A shell tool's terminal `result` repeats the bytes its `output` stream
+ * already accumulated — measured transcripts stored the identical string twice
+ * in 40MB of blocks. Rendering prefers `output` and falls back to `result`, and
+ * outcome derivation reads only `result`, so when the two are equal the
+ * accumulation is the redundant copy.
+ */
+function dropDuplicateToolOutput(block: Extract<TranscriptBlock, { kind: "tool" }>): Extract<TranscriptBlock, { kind: "tool" }> {
+  if (typeof block.result === "string" && block.output && block.output === block.result) {
+    return { ...block, output: undefined };
+  }
+  return block;
+}
+
+/**
  * The adapter emits several `tool_call` events for one tool use across its
  * lifecycle (start → stop → assistant/user snapshot → tool_result), all sharing
  * the same `id`. Appending each one stacks duplicate (often empty) boxes in the
@@ -234,26 +293,30 @@ function upsertToolBlock(current: Record<string, TranscriptBlock[]>, sessionId: 
   const items = current[sessionId] || [];
   const index = items.findIndex((item) => item.kind === "tool" && item.id === id);
   if (index < 0) {
-    return appendBlock(current, sessionId, {
-      id, kind: "tool", name: event.name, status: event.status, input: event.input, result: event.result,
+    return appendBlock(current, sessionId, dropDuplicateToolOutput({
+      id, kind: "tool", name: event.name, status: event.status, input: event.input, result: capToolText(event.result),
       source: event.source, cwd: event.cwd, exitCode: event.exitCode, durationMs: event.durationMs,
-      output: event.outputDelta || undefined, at: nowTime(),
-    });
+      output: capToolText(event.outputDelta || undefined), at: nowTime(),
+    }));
   }
   const prev = items[index] as Extract<TranscriptBlock, { kind: "tool" }>;
-  const merged: TranscriptBlock = {
+  const merged = dropDuplicateToolOutput({
     ...prev,
     name: preferToolName(prev.name, event.name),
     status: preferToolStatus(prev.status, event.status),
     input: preferInput(prev.input, event.input),
-    result: event.result ?? prev.result,
+    result: capToolText(event.result ?? prev.result),
     source: event.source ?? prev.source,
     cwd: event.cwd ?? prev.cwd,
     // Command live output streams in as deltas — append rather than replace.
-    output: event.outputDelta ? (prev.output || "") + event.outputDelta : prev.output,
+    // Once the accumulation is cut at the cap, later deltas are dropped (the
+    // notice in the text says so); appending on would regrow past the ceiling.
+    output: event.outputDelta
+      ? (toolOutputCapped(prev.output) ? prev.output : capToolText((prev.output || "") + event.outputDelta))
+      : prev.output,
     exitCode: typeof event.exitCode === "number" ? event.exitCode : prev.exitCode,
     durationMs: typeof event.durationMs === "number" ? event.durationMs : prev.durationMs,
-  };
+  });
   const next = items.slice();
   next[index] = merged;
   return { ...current, [sessionId]: next };
@@ -803,6 +866,20 @@ export function normalizeTranscriptBlocks(blocks: TranscriptBlock[]): Transcript
       return false;
     }
     return true;
+  }).map((block) => {
+    // Transcripts persisted before the tool-text ceiling existed carry multi-MB
+    // outputs, most of them stored TWICE (stream accumulation + identical
+    // terminal result). Shrink them on restore so neither the renderer state
+    // nor the next full save keeps paying for history no view ever shows.
+    if (block.kind !== "tool") {
+      return block;
+    }
+    const slim = dropDuplicateToolOutput({ ...block, output: capToolText(block.output), result: capToolText(block.result) });
+    if (slim.output === block.output && slim.result === block.result) {
+      return block;
+    }
+    changed = true;
+    return slim;
   });
   return changed ? filtered : blocks;
 }
