@@ -174,7 +174,7 @@ export const COMPONENTS = [
     prompt: `떠 있는 목록. 그림자는 테마 토큰(\`--shadow\`)을 쓴다 — 밝은 배경 위의
 검정 그림자는 깊이가 아니라 더러운 테두리로 보인다. 선택된 항목은 체크로 표시하고,
 목록 아래에는 그 목록의 규칙을 한 줄로 적는다("선택한 탭은 맨 앞으로 이동합니다").`,
-    variants: [v("드롭다운", "menu-open", ".wb-dd-menu", { context: ".wb-dd" })],
+    variants: [v("드롭다운", "menu-open", ".wb-dd-menu", { context: ".wb-dd", width: "220px", nodeStyle: "position: static" })],
   },
 
   // -------------------------------------------------------------------- Blocks
@@ -200,7 +200,7 @@ export const COMPONENTS = [
     id: "block-plan", group: "Blocks", name: "Plan", subtitle: "단계 체크리스트",
     prompt: `모델이 세운 계획. 단계마다 상태(완료·진행 중·대기)를 아이콘으로 들고 있고,
 갱신될 때 카드를 새로 쌓지 않고 **같은 카드가 변한다** — 계획은 목록이 아니라 상태다.`,
-    variants: [v("진행 중", "workbench", ".wb-plan", { context: ".wb-transcript" })],
+    variants: [v("진행 중", "workbench", ".wb-plan", { context: ".wb-transcript", width: "820px" })],
   },
   {
     id: "block-approval", group: "Blocks", name: "Approval card", subtitle: "하네스별 · 결정 후 상태",
@@ -264,14 +264,14 @@ Codex 는 사유·규칙을 주고, Claude 는 막힌 경로를 준다. **없는
     prompt: `멤버가 작업 중일 때 보낸 메시지가 쌓이는 곳. 대화에 섞지 않고 여기 세워두는
 이유는, 아직 **읽히지 않았기** 때문이다 — 전달되는 순간 대화에 들어간다.
 행은 순서를 바꿀 수 있고, 편집하면 입력창으로 돌아온다.`,
-    variants: [v("2건 대기", "queue", ".wb-queue", { context: ".wb-panel" })],
+    variants: [v("2건 대기", "queue", ".wb-queue", { context: ".wb-panel", width: "920px" })],
   },
   {
     id: "subagent-dock", group: "Blocks", name: "Subagent dock", subtitle: "서브에이전트 목록 + 현재 동작",
     prompt: `멤버가 띄운 서브에이전트들. 각 줄은 지금 무엇을 하는지 한 줄로 말하고,
 클릭하면 그 에이전트의 대화로 들어간다. 부모 대화와 **분리된 슬라이스**로 보관하므로
 서브에이전트의 출력이 부모 트랜스크립트를 밀어내지 않는다.`,
-    variants: [v("5개 실행 중", "workbench", ".wb-subdock", { context: ".wb-panel" })],
+    variants: [v("5개 실행 중", "workbench", ".wb-subdock", { context: ".wb-panel", width: "920px" })],
   },
 
   // ---------------------------------------------------------------- Composites
@@ -281,14 +281,14 @@ Codex 는 사유·규칙을 주고, Claude 는 막힌 경로를 준다. **없는
 대기열에 넣는 것이 가능해야 하기 때문이다. 권한 컨트롤이 여기 있는 이유는 지금 말을
 거는 대상의 권한이기 때문이고, 이 멤버의 권한을 바꿀 수 있는 **유일한 자리**라 좁아져도
 숨기지 않는다(좁으면 줄이 접힌다).`,
-    variants: [v("기본", "workbench", ".wb-composer", { context: ".wb-panel" })],
+    variants: [v("기본", "workbench", ".wb-composer", { context: ".wb-panel", width: "920px" })],
   },
   {
     id: "panel", group: "Composites", name: "Panel", subtitle: "탭 + 툴바 + 대화 + 입력",
     prompt: `멤버 하나를 보는 단위. 폭에 따라 안쪽이 줄어들되(상태 필 → 추론 필 → 하네스
 칩 순으로 사라진다) **어떤 컨트롤도 도달 불가능해지지 않는다.** 아주 좁아지면 툴바의
 멤버 이름은 생략한다 — 바로 위 탭이 같은 이름을 이미 말하고 있기 때문.`,
-    variants: [v("기본", "workbench", ".wb-panel", { context: ".wb-workarea", height: "620px" })],
+    variants: [v("기본", "workbench", ".wb-panel", { context: ".wb-workarea", width: "980px", height: "620px" })],
   },
   {
     id: "sidebar", group: "Composites", name: "Party sidebar", subtitle: "파티 · 멤버 목록",
