@@ -51,7 +51,12 @@ interface TranscriptProps {
 // what the user looks at first. Older history is revealed on demand, one page at
 // a time, without disturbing scroll position. See docs research on tail-first
 // message rendering; this bounds the switch-time render cost to a constant.
-const TAIL_BLOCKS = 150;
+//
+// 450 rather than the original 150: the window tripled once tool text gained a
+// hard per-block ceiling and streaming stopped re-rendering mounted cards —
+// the two things that made a large window expensive. First paint is still
+// INITIAL_PAINT_BLOCKS; the rest of the window fills frame by frame.
+const TAIL_BLOCKS = 450;
 const INITIAL_PAINT_BLOCKS = 20;
 
 function TranscriptView({ view, density, actions, detail = "full" }: TranscriptProps) {

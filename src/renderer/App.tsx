@@ -1023,6 +1023,57 @@ export function App() {
     return () => clearTimeout(timer);
   }, [logsBySession, persistTranscript]);
 
+  // Sessions routinely end WITHOUT an explicit close — respawn, idle sleep, a
+  // harness crash, an engine restart — and only closeSession() ever evicted
+  // their fold state. Every replaced session left its full transcript (and
+  // subagents) in renderer memory for the life of the window, which is how a
+  // day of member churn grew a renderer to gigabytes. A session that is gone
+  // from the live list and bound to no member has nothing left to show: the
+  // MAIN process owns persistence, so dropping the renderer copy loses nothing.
+  useEffect(() => {
+    const liveIds = new Set(sessions.map((session) => session.id));
+    const boundIds = new Set(members.map((member) => member.sessionId).filter(Boolean));
+    const deadIds = [...new Set([...Object.keys(logsBySession), ...Object.keys(subagentsBySession)])]
+      .filter((id) => !liveIds.has(id) && !boundIds.has(id));
+    if (!deadIds.length) {
+      return;
+    }
+    for (const id of deadIds) {
+      const ownerKey = transcriptOwnerBySessionRef.current.get(id);
+      transcriptOwnerBySessionRef.current.delete(id);
+      delete pendingEventsBySessionRef.current[id];
+      if (!ownerKey) {
+        continue;
+      }
+      // The owner's restored mirror was last synced from this session's live
+      // blocks. If the member is still around WITHOUT a replacement session,
+      // that mirror is what its panel shows — drop it together with the fetch
+      // marker so the next look re-reads the (main-maintained) disk copy
+      // instead of showing the seed-time snapshot forever. A member already
+      // rebound to a new session keeps its mirror: activation already used it.
+      const owner = members.find((member) => memberKey(member) === ownerKey);
+      if (owner && !owner.sessionId) {
+        restoreRequestedRef.current.delete(ownerKey);
+        setRestoredByMember((current) => {
+          if (current[ownerKey] === undefined) return current;
+          const next = { ...current };
+          delete next[ownerKey];
+          return next;
+        });
+      }
+    }
+    setLogsBySession((current) => {
+      const next = { ...current };
+      for (const id of deadIds) delete next[id];
+      return next;
+    });
+    setSubagentsBySession((current) => {
+      const next = { ...current };
+      for (const id of deadIds) delete next[id];
+      return next;
+    });
+  }, [sessions, members, logsBySession, subagentsBySession]);
+
   /**
    * `.catch` handler for an action dispatched as `void promise`.
    *
