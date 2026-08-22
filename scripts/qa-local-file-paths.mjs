@@ -30,6 +30,8 @@ assert(local.normalizeLocalFileTarget("/home/dev/발표.html", "linux") === "/ho
 assert(local.normalizeLocalFileTarget("/C:/literal-posix-name", "linux") === "/C:/literal-posix-name", "drive-like POSIX filename is unchanged off Windows");
 assert(local.normalizeLocalFileTarget("\\\\server\\share\\발표.html", "win32") === "\\\\server\\share\\발표.html", "UNC path is unchanged");
 assert(local.isWindowsDrivePath("C:/Project/a.html") && local.isWindowsDrivePath("/C:/Project/a.html"), "plain and URL-shaped drive paths are classified as files");
+assert(local.isWindowsDrivePath("C:%5CProject%5Ca.txt"), "markdown-encoded backslash drive path is classified as a file");
+assert(local.decodeLocalFileTarget("C:%5CProject%5Ca.txt") === "C:\\Project\\a.txt", "markdown-encoded backslashes are restored before filesystem resolution");
 
 // --- which host owns a link's target (the WSL bug: `/home/…` read as `C:\home\…`) ---
 const wslWindow = "wsl+Ubuntu-20.04:/home/me/proj";

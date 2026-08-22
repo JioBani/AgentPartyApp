@@ -56,6 +56,8 @@ const md = [
   "[Windows URL 경로](/C:/Project/AgentPartyApp/docs/발표/demo.html)",
   "",
   "[Windows 드라이브 경로](C:/Project/AgentPartyApp/docs/발표/demo.html)",
+  "",
+  "[Windows encoded backslash path](<C:\\Project\\AgentPartyApp\\docs\\demo.html>)",
 ].join("\n");
 
 const view = {
@@ -105,13 +107,17 @@ assert(opened[0] === "https://example.com", "clicking a link hands the URL to sh
 assert(clickEvent.defaultPrevented, "the in-app navigation is prevented (no Electron window navigation)");
 const windowsUrlLink = body?.querySelector('a[href="/C:/Project/AgentPartyApp/docs/%EB%B0%9C%ED%91%9C/demo.html"], a[href="/C:/Project/AgentPartyApp/docs/발표/demo.html"]');
 const windowsDriveLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows 드라이브 경로");
+const encodedBackslashLink = [...(body?.querySelectorAll("a") || [])].find((anchor) => anchor.textContent === "Windows encoded backslash path");
 windowsUrlLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 windowsDriveLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+encodedBackslashLink?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(openedPaths.some((value) => /^\/C:\/Project/.test(value)), "URL-shaped /C:/ markdown link is handed to the local-file controller");
 assert(openedPaths.some((value) => /^C:\/Project/i.test(value)), `bare C:/ markdown link is not mistaken for a foreign URI scheme (href=${windowsDriveLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
+assert(openedPaths.some((value) => /^C:%5CProject/i.test(value)), `encoded-backslash drive link is handed to the local-file controller (href=${encodedBackslashLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 const driveReveal = windowsDriveLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
 assert(Boolean(driveReveal), "a local-file link carries a reveal control");
+assert(Boolean(encodedBackslashLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal")), "an encoded-backslash drive link carries a reveal control");
 driveReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(revealed.some((value) => /^C:\/Project/i.test(value)), "the reveal control hands the file path to revealPath");
