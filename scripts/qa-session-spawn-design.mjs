@@ -45,6 +45,7 @@ const RUNNING = "28-세션-실행중";
 const WSL = "29-세션-WSL";
 const FAILED = "30-세션-실패";
 const FAILED_SETUP = "31-세션-실패-설정";
+const LONG_NAME = "32-세션-긴멤버명-데이터파이프라인-리뷰어";
 
 /** Strings from the spawn command that must never appear on this surface. */
 const PLUMBING = ["node.exe", "app-server", "mcp_servers", "127.0.0.1", "AGENTPARTY_", "C:\\Users", "--", "-c "];
@@ -142,6 +143,11 @@ async function states() {
   await open([[RUNNING]]);
   const single = (await measure(".wb-spawn")).elements;
   assert(single.length === 1, `one attempt draws exactly one card (${single.length})`);
+
+  // Wide: the name shares the header row, and shares it legibly.
+  const named = (await measure(".wb-spawn-member", { attributes: ["title"] })).elements;
+  assert(named.length === 1 && named[0].box.width >= 50, `the member name keeps a readable share of the header row (${named[0]?.box.width}px)`);
+  assert((named[0]?.attributes.title || "") === RUNNING, "…with the full name on the element");
 }
 
 async function themes() {
@@ -179,7 +185,7 @@ async function theme(id) {
 /** A narrow panel with a long directory is where a card overflows if it can. */
 async function narrow() {
   console.log("\nnarrow panel:");
-  await open([[WSL], [RUNNING], [FAILED_SETUP], [STARTING]]);
+  await open([[LONG_NAME], [WSL], [FAILED_SETUP], [STARTING]]);
   await shot("04-narrow", "좁은 패널 4분할 — 긴 CWD/멤버명");
 
   const cards = (await measure(".wb-spawn")).elements;
@@ -193,6 +199,23 @@ async function narrow() {
   const cwd = (await measure(".wb-spawn-cwd")).elements;
   assert(cwd.length > 0, "the working directory is shown");
   assert(cwd.every((chip) => !chip.text.includes("Users") && chip.text.startsWith("…/")), "…as its last segments only, never the full path");
+
+  // The member name: the field that used to be squeezed to one character.
+  const who = (await measure(".wb-spawn-who", { attributes: ["title"], styles: ["text-overflow", "overflow-x"] })).elements;
+  assert(who.length === 4, `each narrow card gives the member name its own row (${who.length})`);
+  // The row clips its own text (scrollWidth exceeding clientWidth is what an
+  // ellipsis looks like), and the CARD is what must not grow — asserted above.
+  assert(who.every((row) => row.styles["text-overflow"] === "ellipsis" && row.styles["overflow-x"] === "hidden"), "…which shortens with an ellipsis instead of widening the card");
+  assert(who.every((row, index) => row.box.width <= cards[index].box.width), "…and never reaches past its card");
+  const rendered = await measure(".wb-spawn-who", { styles: ["width"], containedBy: ".wb-spawn" });
+  assert(rendered.elements.every((row) => row.box.width > 60), "…and keeps a readable width, not a single character");
+  assert(who.every((row) => (row.attributes.title || "").length >= (row.text || "").length), "the full name is on the element for the pointer");
+  const longName = who.find((row) => (row.attributes.title || "").startsWith(LONG_NAME.slice(0, 6)));
+  assert(Boolean(longName), "the long-named member is one of them");
+  assert((longName?.text || "").replace(/…$/, "").length >= 6, `a long name still shows its beginning (got '${longName?.text}')`);
+  // The header row keeps only what is short and fixed.
+  const inline = await measure(".wb-spawn-member").catch(() => ({ elements: [] }));
+  assert((inline.elements || []).length === 0, "…and no squeezed copy is left in the header row");
 }
 
 async function accessibility() {

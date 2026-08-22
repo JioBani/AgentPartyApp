@@ -170,5 +170,8 @@ export const GALLERY_CASES: GalleryCase[] = [
   // The card names the harness from its EVENT, so this case shows the Grok
   // wording while running on a gallery harness that has recordings.
   { member: "31-세션-실패-설정", runtime: "codex", caption: "세션 시작 실패 — 재시도로 풀리지 않는 경우", events: [{ type: "session_spawn", state: "failed", harness: "grok", model: "grok-4.6", host: "windows", cwd: "…/AgentPartyApp", reason: "하네스 실행 파일을 찾지 못했습니다. 설치 상태를 확인하세요.", retryable: false }] },
+  // A member name long enough to lose the race for the header row — the case
+  // that used to leave one character and an ellipsis in a narrow panel.
+  { member: "32-세션-긴멤버명-데이터파이프라인-리뷰어", runtime: "codex", caption: "세션 시작됨 — 긴 멤버명(좁은 패널에서 이름이 자기 줄을 갖는다)", events: [{ type: "session_spawn", state: "running", harness: "codex", model: "gpt-5.4-codex", host: "wsl", cwd: "…/projects/very-long-workspace-directory-name" }] },
 
 ];

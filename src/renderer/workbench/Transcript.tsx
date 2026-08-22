@@ -435,6 +435,9 @@ function SessionSpawnBlock({ block, view, density }: { block: Extract<Transcript
   const meta = SESSION_SPAWN_META[block.state] || SESSION_SPAWN_META.running;
   const harness = harnessLabel(block.harness || view.member.runtime);
   const host = block.host ? SESSION_SPAWN_HOSTS[block.host] : "";
+  // Below `mid` the panel is barely wider than the chips, so the layout has to
+  // give something its own line rather than share.
+  const narrow = density === "narrow";
   const retryNote = block.state === "failed"
     ? (block.retryable ? "다시 시작할 수 있습니다" : "설정을 고친 뒤 다시 시작하세요")
     : "";
@@ -460,14 +463,17 @@ function SessionSpawnBlock({ block, view, density }: { block: Extract<Transcript
           {block.state === "failed" && <AlertTriangle size={13} />}
         </span>
         <span className="wb-spawn-title">{meta.title}</span>
-        {/* Whose session it is, except in a narrow panel: there the name has
-            room for a character and an ellipsis, which says less than nothing
-            — and the panel header above it already names the member. The
-            screen-reader label keeps the name in every width. */}
-        {density !== "narrow" && <span className="wb-spawn-member">{view.name}</span>}
+        {/* Three things compete for the first row: the state, whose session it
+            is, and when. State and time are short and fixed, so they keep the
+            row. The member name is the one field that can be long, so in a
+            narrow panel it takes its own line below instead of being squeezed
+            to a single character and an ellipsis. The full name is on the
+            element either way, for the pointer and the screen reader. */}
+        {!narrow && <span className="wb-spawn-member" title={view.name}>{view.name}</span>}
         <span className="wb-spawn-spacer" />
         {block.at && <span className="wb-mono wb-time wb-spawn-time">{block.at}</span>}
       </div>
+      {narrow && <div className="wb-spawn-who" title={view.name}>{view.name}</div>}
       <div className="wb-spawn-facts">
         {harness && <span className="wb-spawn-chip">{harness}</span>}
         {block.model && <span className="wb-spawn-chip wb-mono">{block.model}</span>}

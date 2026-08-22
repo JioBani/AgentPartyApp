@@ -1651,7 +1651,9 @@ export const nonRendererKoMessages = {
   "STR-3815": "로그인이 필요해 시작하지 못했습니다.",
   "STR-3816": "필요한 로컬 자원이 이미 사용 중입니다.",
   "STR-3817": "세션을 시작하지 못했습니다.",
-  "STR-3818": "하네스가 시작 중 종료되었습니다 (코드 ${…})."
+  "STR-3818": "하네스가 시작 중 종료되었습니다 (코드 ${…}).",
+  "STR-3819": "32-세션-긴멤버명-데이터파이프라인-리뷰어",
+  "STR-3820": "세션 시작됨 — 긴 멤버명(좁은 패널에서 이름이 자기 줄을 갖는다)"
 } as const;
 
 export type NonRendererMessageKey = keyof typeof nonRendererKoMessages;
