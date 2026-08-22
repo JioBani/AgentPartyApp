@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, FolderPlus, FolderTree, Pin, Plus } from "lucide-react";
+import { ChevronDown, FolderPlus, Pin, Plus, SquareStack, type LucideIcon } from "lucide-react";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -28,6 +28,22 @@ const PARTY_DRAG_TYPE = "application/x-agentparty-party";
  *  tell "file this party here" from "put this folder here". */
 const GROUP_DRAG_TYPE = "application/x-agentparty-group";
 
+/**
+ * The mark a party GROUP carries.
+ *
+ * Stacked cards, not a folder tree: what a group holds is several parties, and
+ * a stack says that in three strokes. The tree's branch lines were four strokes
+ * too many at the 15px this row actually renders at — they closed up into a
+ * smudge beside a bold label. A plain folder was the other obvious answer and
+ * is spoken for: the member list uses it for working directories, and one glyph
+ * cannot mean two containers in one drawer.
+ *
+ * Named here rather than written inline, so the glyph has a single definition —
+ * and so the design preview can put candidates beside it in real rows instead
+ * of a swatch sheet.
+ */
+export const PARTY_GROUP_ICON: LucideIcon = SquareStack;
+
 export interface PartyGroupListProps {
   groups: PartyGroupView[];
   activePartyId?: string;
@@ -50,6 +66,12 @@ export interface PartyGroupListProps {
   createPartyDisabled?: boolean;
   /** Marks the party row the context menu is currently open on. */
   menuPartyId?: string;
+  /**
+   * The mark beside a group's name. Only the design preview passes it, to put
+   * candidates side by side in real rows rather than in a swatch sheet — the
+   * app always ships {@link PARTY_GROUP_ICON}.
+   */
+  groupIcon?: LucideIcon;
   /** Marks the group the context menu is currently open on. */
   menuGroupId?: string;
 }
@@ -57,7 +79,7 @@ export interface PartyGroupListProps {
 export function PartyGroupList({
   groups, activePartyId, openGroupIds, now, onToggleGroup, onSelectParty,
   onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, onCreateParty,
-  createPartyDisabled = false, menuPartyId, menuGroupId,
+  createPartyDisabled = false, menuPartyId, menuGroupId, groupIcon: GroupIcon = PARTY_GROUP_ICON,
 }: PartyGroupListProps) {
   /** The group under the pointer during a drag, for the drop outline. */
   const [dropGroupId, setDropGroupId] = useState<string | undefined>(undefined);
@@ -323,7 +345,7 @@ export function PartyGroupList({
               }}
             >
               <ChevronDown size={13} className="wb-group-caret" />
-              <FolderTree size={15} strokeWidth={2.2} className="wb-group-icon" />
+              <GroupIcon size={15} strokeWidth={2.2} className="wb-group-icon" />
               <span className="wb-group-name">{group.name}</span>
               {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3666" /></span>}
               <span className="wb-mono wb-group-count">{parties.length}</span>

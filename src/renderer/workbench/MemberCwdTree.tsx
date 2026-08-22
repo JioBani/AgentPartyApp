@@ -219,8 +219,12 @@ function MemberRow({
       {/* Whose MODEL is answering, ahead of the name — the icon reads as part of
           the member's identity, and the harness that used to sit here named the
           wrong company for every cross-routed member. */}
+      {/* A notch under the 18px slot it sits in, so the mark reads as a mark
+          rather than as a second glyph competing with the member's name. The
+          slot itself does not change — the names stay on one line down the
+          whole list. */}
       <span className="wb-member-mark" title={provider} aria-label={provider}>
-        <ProviderIcon provider={view.provider} size={16} />
+        <ProviderIcon provider={view.provider} size={14.5} />
       </span>
       {/* The name is the one thing a narrow drawer must not silently clip past
           recognition, so the full name is always on the tooltip. */}

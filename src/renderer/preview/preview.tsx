@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
 import { I18nProvider } from "../i18n/I18nProvider";
 import { PartyGroupList } from "../workbench/PartyGroupList";
+import { Boxes, Folder, FolderTree, Group, Layers, SquareStack, Tag, type LucideIcon } from "lucide-react";
 import { MoveGroupModal, NewGroupModal } from "../workbench/PartyGroupModals";
 import { NewPartyModal } from "../workbench/PartySidebar";
 import { MemberWizard } from "../workbench/MemberWizard";
@@ -49,6 +50,13 @@ const stages: Array<{ id: string; title: string; note: string; width?: number; r
     note: "그룹 3개 · 파티 9개. 세 번째 그룹은 접힌 상태.",
     width: 236,
     render: () => <SidebarStage />,
+  },
+  {
+    id: "group-icon-candidates",
+    title: "파티 그룹 아이콘 시안",
+    note: "같은 행, 같은 15px, 같은 CSS. 고른 하나가 PARTY_GROUP_ICON 이 된다.",
+    width: 236,
+    render: () => <GroupIconStage />,
   },
   {
     id: "cwd-picker-wsl",
@@ -208,7 +216,6 @@ function SidebarStage() {
         <span className="wb-mono wb-drawer-count">{GALLERY_PARTIES.length}</span>
       </header>
       <section className="wb-sidebar-section">
-        <p className="wb-drawer-hint">앱 전역 · cwd와 무관</p>
         <form className="wb-new-party" onSubmit={(event) => event.preventDefault()}>
           <input placeholder="새 파티 이름…" readOnly />
           <button type="button" className="wb-icon-btn is-accent" title="새 파티 만들기">＋</button>
@@ -228,6 +235,53 @@ function SidebarStage() {
         />
       </section>
     </aside>
+  );
+}
+
+/**
+ * Icon candidates for a party GROUP, drawn as the rows they would really be.
+ *
+ * A swatch sheet compares glyphs; this compares ROWS — same 15px, same weight,
+ * same caret and count beside them, same drawer width. An icon that reads at
+ * 24px on a white square and turns to lint at 15px next to a bold label is
+ * exactly what a swatch sheet cannot show.
+ */
+const GROUP_ICON_CANDIDATES: Array<{ label: string; icon: LucideIcon }> = [
+  { label: "A · FolderTree", icon: FolderTree },
+  { label: "B · Folder", icon: Folder },
+  { label: "C · Layers", icon: Layers },
+  { label: "D · SquareStack (현재)", icon: SquareStack },
+  { label: "E · Boxes", icon: Boxes },
+  { label: "F · Group", icon: Group },
+  { label: "G · Tag", icon: Tag },
+];
+
+function GroupIconStage() {
+  // Collapsed on purpose: what is being compared is the HEADER row, and a list
+  // of open groups would put six party cards between every two candidates.
+  const grouped = groupParties(GALLERY_GROUPS.slice(0, 1), GALLERY_PARTIES.slice(0, 2));
+  return (
+    <div className="pv-icon-candidates">
+      {GROUP_ICON_CANDIDATES.map((candidate) => (
+        <div key={candidate.label} className="pv-icon-candidate">
+          <div className="pv-icon-candidate-label">{candidate.label}</div>
+          <aside className="wb-drawer wb-party-drawer" style={{ width: 236 }}>
+            <section className="wb-sidebar-section">
+              <PartyGroupList
+                groups={grouped}
+                activePartyId="p-agentparty"
+                openGroupIds={new Set()}
+                now={GALLERY_NOW}
+                groupIcon={candidate.icon}
+                onToggleGroup={noop}
+                onSelectParty={noop}
+                onCreateGroup={noop}
+              />
+            </section>
+          </aside>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -268,6 +322,19 @@ function ModalStage({ children, tall }: { children: JSX.Element; tall?: boolean 
   return <div className={"pv-modal-stage" + (tall ? " is-tall" : "")}>{children}</div>;
 }
 
+/**
+ * `?only=<stage id>` narrows the page to one stage.
+ *
+ * A screenshot of a single surface is what a design review actually asks for,
+ * and cropping one out of a page of twelve is how a review ends up looking at
+ * last week's version of it.
+ */
+function shownStages(): typeof stages {
+  const only = new URLSearchParams(window.location.search).get("only");
+  const picked = only ? stages.filter((stage) => stage.id === only) : stages;
+  return picked.length ? picked : stages;
+}
+
 function Preview() {
   const { themeId, themes, setTheme } = useTheme();
   return (
@@ -280,7 +347,7 @@ function Preview() {
         </select>
       </header>
       <div className="pv-stages">
-        {stages.map((stage) => (
+        {shownStages().map((stage) => (
           <section key={stage.id} className="pv-stage" data-preview={stage.id}>
             <div className="pv-stage-head">
               <h2>{stage.title}</h2>

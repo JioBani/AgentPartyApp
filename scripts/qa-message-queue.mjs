@@ -265,11 +265,17 @@ console.log("\nharness-held messages are disclosed, not hidden:");
   assert(one.canMerge === false, "one waiting message cannot be merged with anything");
   assert(one.merge === false, "…so the effective merge is off however the preference is set");
   assert(two.canMerge === true && two.merge === true, "a second message makes the preference effective");
-  assert(one.mergeNote !== two.mergeNote, "the note says why the control is inert instead of describing a merge that will not happen");
+  assert(one.mergeNote === "", "with nothing to merge the row says nothing — the single visible item already says it");
+  assert(two.mergeNote !== "", "…and describes the merge once there is one");
   assert(!/건/.test(one.sendAllLabel), "the whole-queue button does not name a merged count for a single item");
   assert(/2건/.test(two.sendAllLabel), "…and does name it once a merge is real");
   assert(one.rows[0].highlighted === true, "with nothing to merge, the single row is still the one going next");
   assert(one.rows[0].onRail === false, "…but it is not drawn as part of a merge block");
+  // An idle member with a queue: the button beside the header already reads
+  // 지금 보내기, so the line that restated it is gone.
+  const idleView = V.buildQueueView({ queue: queued(2), density: "wide", working: false, detached: false, memberName: "backend", openRows: new Set() });
+  assert(idleView.note === "", "nothing is being waited for, so the header states nothing");
+  assert(/지금 보내기/.test(idleView.sendAllLabel), "…and the action itself still says what pressing it does");
 }
 
 console.log(`\n${failures.length ? `FAILED (${failures.length})` : "All message queue assertions passed"}`);

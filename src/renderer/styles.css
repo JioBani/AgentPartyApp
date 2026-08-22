@@ -831,7 +831,6 @@
 
 .screen-header-party { min-height: 54px; }
 .screen-title-party { gap: var(--space-2); }
-.screen-title-party > p { width: auto; margin-left: var(--space-2); }
 
 .wb-party-name {
   font-size: 12.5px;
@@ -10067,4 +10066,109 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-queue-pill.is-inert {
   cursor: default;
   opacity: .55;
+}
+
+/* ── 탭 표식 · 헤더 파티 칩 · 파티 그룹 상자 ─────────────────────────────── */
+
+/* A tab's markers never shrink and never wrap; the NAME is the elastic part.
+   Without this the badge lost the width fight inside the tab's flex row and
+   broke 승인 across two lines, which made the marker taller than the tab it
+   sits in — a 28px pill in a 37px tab. */
+.wb-tab-badge,
+.wb-tab-unread,
+.wb-member-badge,
+.wb-member-unread {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* One shape for all three tab markers, so 승인 / 안 읽음 / 대기열 read as a set
+   instead of three chips of different heights stacked along one row. The queue
+   chip already had it; the other two are brought to the same line. */
+.wb-tab-badge,
+.wb-tab-unread {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 6px;
+  line-height: 1;
+}
+
+/* The name gives its width up first at EVERY width, not only once tabs start
+   folding away — that rule only existed in the overflow case, which is why a
+   single tab could squeeze its own badge. */
+.wb-tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* One chip, one border. "현재 파티" was a solid accent pill inside a tinted,
+   bordered pill: three layers of chrome around a party name, and the name —
+   the only part that changes — was the quietest thing in it. The wording
+   stays; the box around it goes, and the padding stops being lopsided. */
+.screen-party {
+  padding: 4px 10px;
+}
+
+.screen-party-label {
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+}
+
+/* The group is one surface, not a titlebar over a body. The header carried its
+   own fill, a bottom rule, a glowing icon and a bordered count pill, which made
+   a 34px label the loudest thing in a drawer whose subject is the parties
+   underneath it. */
+.wb-group-row {
+  height: 30px;
+  background: transparent;
+  font-size: 12px;
+}
+
+.wb-party-group.is-open .wb-group-row {
+  border-bottom: 0;
+}
+
+.wb-group-icon {
+  filter: none;
+}
+
+/* The same plain count the member drawer's groups use — a number beside a
+   label, not a control. */
+.wb-party-group .wb-group-count {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--font-micro);
+  font-weight: var(--weight-semibold);
+}
+
+/* The active party was marked four times over — a tint, a border, an inset bar
+   and an outer ring. The bar is the one that says WHICH; the rest only thickened
+   the card and made the list look like it had two selections. */
+.wb-party-row.is-active {
+  border-color: transparent;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Outlined rather than filled: a solid block of the accent sat inside a card
+   already tinted with it, so the badge read as a button on top of a selection. */
+.wb-party-current {
+  padding: 1px 6px;
+  background: var(--accent-dim);
+  border: var(--border-width) solid var(--accent-bd);
+  color: var(--accent);
+}
+
+/* A secondary action above the parties it creates. It keeps the dashed outline
+   — that is what says "this makes a new one" — but stops competing with the
+   cards for attention until it is pointed at. */
+.wb-party-add {
+  border-color: var(--border-subtle);
+  color: var(--text-3);
 }

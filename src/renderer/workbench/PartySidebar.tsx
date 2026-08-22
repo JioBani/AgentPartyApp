@@ -534,11 +534,6 @@ export function PartySidebar(props: PartySidebarProps) {
           </header>
 
           <section className="wb-sidebar-section">
-            {/* The count and the name live in the drawer header now; what stays
-                is the hint, because it is the whole point of the change: the
-                list no longer depends on which directory the app was launched
-                from. */}
-            <p className="wb-drawer-hint"><LocalizedText id="STR-3686" /></p>
             <form className="wb-new-party" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={localized("STR-2059")} />
           <button type="button" className="wb-icon-btn is-accent" title={localized("STR-2060")} onClick={() => setNewPartyOpen(true)}><Plus size={15} /></button>

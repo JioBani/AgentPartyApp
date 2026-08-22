@@ -2104,7 +2104,6 @@ export function App() {
             <>
               <WorkbenchScreenHeader
                 party={activePartyName}
-                description={t("shell.workbenchDescription")}
                 actions={usagePill}
                 labels={{ partyLabel: "현재 파티", none: "선택 없음" }}
               />

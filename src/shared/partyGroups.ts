@@ -10,7 +10,6 @@
  * See `docs/기획/파티 그룹 및 멤버별 작업공간/README.md` §4, §9.
  */
 
-import { relativeDay } from "./relativeTime";
 
 /** The default group is created once and cannot be renamed or removed. */
 export const DEFAULT_PARTY_GROUP_ID = "default";
@@ -96,29 +95,17 @@ export function groupParties(groups: PartyGroup[], parties: PartySummary[]): Par
 }
 
 /**
- * The one-line summary under a party name: `9 members · Win 6 · WSL 3`.
+ * The one-line summary under a party name: `9 members`.
  *
- * The environment split only appears for environments the party actually uses,
- * and the recency only for a party that is NOT running — a live party's own dot
- * already says "now", and "2 members · 방금" next to a pulsing dot is noise. A
- * party the list has counts for but no split (nothing loaded yet) simply omits
- * the split rather than printing `Win 0 · WSL 0`, which would read as a fact.
+ * How many members, and nothing else. It also carried the Windows/WSL split and
+ * a recency, which made a three-clause line under every card in a list read top
+ * to bottom for the one thing being compared — the party's name. Where each
+ * member runs is stated in the member list, per group, at the moment it
+ * matters; a card in the party picker is not that moment.
  */
-export function partySummaryLine(party: PartySummary, now: number): string {
-  const parts = party.memberCount === undefined
-    ? []
-    : [`${party.memberCount} ${party.memberCount === 1 ? "member" : "members"}`];
-  if (party.windowsCount > 0) {
-    parts.push(`Win ${party.windowsCount}`);
+export function partySummaryLine(party: PartySummary, _now: number): string {
+  if (party.memberCount === undefined) {
+    return "";
   }
-  if (party.wslCount > 0) {
-    parts.push(`WSL ${party.wslCount}`);
-  }
-  if (party.runningCount === 0) {
-    const when = relativeDay(party.updatedAt, now);
-    if (when) {
-      parts.push(when);
-    }
-  }
-  return parts.join(" · ");
+  return `${party.memberCount} ${party.memberCount === 1 ? "member" : "members"}`;
 }

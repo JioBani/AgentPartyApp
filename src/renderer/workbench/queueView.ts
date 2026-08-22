@@ -299,18 +299,22 @@ function headerNote(args: {
     }
     return `${head} — 지금 보내기를 누르면 그 순서로 전송됩니다`;
   }
+  // Nothing is being waited for, and the button beside this line already reads
+  // 지금 보내기. A sentence that only restates the control next to it is one
+  // more thing to read in a strip whose whole point is to be glanced at.
   if (!args.working) {
-    return "지금 보내기를 누르면 전송됩니다";
+    return "";
   }
   const how = args.merge && args.count > 1 ? "합쳐서 한 번에" : "순서대로";
   return `${args.memberName} 응답이 끝나면 ${how} 전송됩니다`;
 }
 
 function mergeNote(args: { merge: boolean; canMerge: boolean; mixed: boolean; count: number }): string {
+  // One waiting message. The switch is already visibly inert beside a queue the
+  // user can see has a single row, so an explanation adds a line of text to say
+  // what the row count says on its own.
   if (!args.canMerge) {
-    // Says why the control is inert instead of leaving a dead switch to be
-    // clicked at: nothing is wrong, there is simply nothing to merge with yet.
-    return "합칠 메시지가 하나 더 쌓이면 사용할 수 있습니다";
+    return "";
   }
   if (!args.merge) {
     return "한 건씩 순서대로 보냅니다";

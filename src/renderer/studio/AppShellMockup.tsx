@@ -75,7 +75,6 @@ export function AppShellMockup({ panels }: { panels?: string[][] }) {
         <main className="program-main">
           <WorkbenchScreenHeader
             party="improve"
-            description="멤버를 만들고 여러 세션을 한 화면에서 관리합니다."
             actions={
               <UsageLimitPill
                 usage={USAGE as never}

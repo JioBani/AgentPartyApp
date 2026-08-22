@@ -334,7 +334,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           <button
             type="button"
             className={"wb-queue-pill" + (model.merge ? " is-on" : "") + (model.canMerge ? "" : " is-inert")}
-            title={model.canMerge ? localized("STR-1812") : model.mergeNote}
+            title={model.canMerge ? localized("STR-1812") : undefined}
             aria-pressed={model.merge}
             disabled={!model.canMerge}
             onClick={() => void run({ action: "preference", merge: !model.merge })}
@@ -426,9 +426,9 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
           <button type="button" className="wb-queue-preview" title={localized("STR-1822")} onClick={() => void run({ action: "preference", collapsed: false })}>
             {model.collapsedPreview}
           </button>
-        ) : (
+        ) : model.note ? (
           <span className="wb-queue-note">{model.note}</span>
-        )}
+        ) : null}
         {/* One well, so the two whole-queue controls stay together however the
             row wraps. */}
         <div className="wb-queue-head-actions">
@@ -458,7 +458,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
             <button
               type="button"
               className="wb-queue-switch-btn"
-              title={model.canMerge ? localized("STR-1826") : model.mergeNote}
+              title={model.canMerge ? localized("STR-1826") : undefined}
               aria-pressed={model.merge}
               disabled={!model.canMerge}
               onClick={() => void run({ action: "preference", merge: !model.merge })}
@@ -466,7 +466,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
               <span className={"wb-queue-switch" + (model.merge ? " is-on" : "")}><span className="wb-queue-knob" /></span>
               <span className={"wb-queue-switch-label" + (model.merge ? " is-on" : "")}><LocalizedText id="STR-1827" /></span>
             </button>
-            <span className="wb-queue-merge-note">{model.mergeNote}</span>
+            {model.mergeNote && <span className="wb-queue-merge-note">{model.mergeNote}</span>}
             {/* The whole-queue send, at the right end of the same thin band.
                 Its own footer strip below the list cost a rule, a row and the
                 vertical space the queue exists to save, for a control that was

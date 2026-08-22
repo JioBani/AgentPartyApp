@@ -89,3 +89,10 @@ body {
    measure so the picker inside wraps exactly as it does in the dialog. */
 .pv-modal { width: 100%; }
 .pv-static-menu { position: static; }
+
+/* Icon candidates: one collapsed group header each, stacked tightly so the
+   glyphs can be compared without scrolling past a party list between them. The
+   create-group button belongs to the drawer, not to the comparison. */
+.pv-icon-candidates { display: flex; flex-direction: column; gap: 10px; }
+.pv-icon-candidates .wb-group-add:not(.wb-party-add) { display: none; }
+.pv-icon-candidate-label { margin-bottom: 3px; font-size: 10px; letter-spacing: .04em; opacity: .7; }

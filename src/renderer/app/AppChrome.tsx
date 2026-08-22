@@ -189,12 +189,11 @@ export function NavRail({ items, current, onSelect, avatar, labels }: NavRailPro
 interface ScreenHeaderProps {
   /** The PARTY, not the workspace path — every member runs in its own cwd. */
   party: string;
-  description: string;
   actions?: ReactNode;
   labels: { partyLabel: string; none: string };
 }
 
-export function WorkbenchScreenHeader({ party, description, actions, labels }: ScreenHeaderProps) {
+export function WorkbenchScreenHeader({ party, actions, labels }: ScreenHeaderProps) {
   return (
     <header className="screen-header screen-header-party">
       <div className="screen-title screen-title-party">
@@ -203,7 +202,6 @@ export function WorkbenchScreenHeader({ party, description, actions, labels }: S
           <Flag size={12} strokeWidth={2.5} />
           <strong>{party || labels.none}</strong>
         </span>
-        <p>{description}</p>
       </div>
       <div className="screen-actions">{actions}</div>
     </header>
