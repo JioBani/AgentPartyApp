@@ -78,6 +78,8 @@ export const koMessages = {
   "runtime.composer.enter": "Enter로 전송 (Shift+Enter는 줄바꿈)",
   "runtime.composer.interrupt": "전송할 때 진행 중인 작업 중단",
   "runtime.composer.interruptHelp": "켜면 진행 중인 작업을 중단하고 새 메시지를 바로 처리합니다. 끄면 현재 작업이 끝난 뒤 처리합니다. 압축 중에는 이 설정과 관계없이 중단하지 않습니다. 이 설정은 앱 입력창에만 적용되며 HTTP API 호출에는 interrupt 값을 직접 지정해야 합니다.",
+  "member.env.unnamedDistro": "배포판 미확인",
+  "member.env.wslTitle": "WSL 배포판 {distro} — 그룹 접기 / 펼치기",
 } as const;
 
 export type MessageKey = keyof typeof koMessages;
@@ -163,4 +165,6 @@ export const enMessages: Record<MessageKey, string> = {
   "runtime.composer.enter": "Enter to send (Shift+Enter for a new line)",
   "runtime.composer.interrupt": "Interrupt active work when sending",
   "runtime.composer.interruptHelp": "When enabled, active work stops and the new message is handled immediately. When disabled, the message waits for the current turn to finish. Compaction is never interrupted. This setting applies only to the app composer; HTTP API calls must set interrupt explicitly.",
+  "member.env.unnamedDistro": "Unidentified distro",
+  "member.env.wslTitle": "WSL distro {distro} — collapse / expand group",
 };

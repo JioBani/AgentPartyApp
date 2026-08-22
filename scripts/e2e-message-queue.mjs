@@ -713,7 +713,7 @@ async function narrowPanelCollapses(cdp) {
       rows: q.querySelectorAll(".wb-queue-row").length,
       edits: q.querySelectorAll('[data-queue-action="edit"]').length,
       deletes: q.querySelectorAll('[data-queue-action="remove"]').length,
-      sendAllBlock: Boolean(q.querySelector(".wb-queue-footer .wb-queue-send-all.is-block")),
+      sendAllBlock: Boolean(q.querySelector(".wb-queue-send-all.is-block")),
       overflows: q.scrollWidth > q.clientWidth + 1,
     };
   })()`);

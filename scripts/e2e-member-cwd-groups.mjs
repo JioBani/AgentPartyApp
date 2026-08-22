@@ -26,6 +26,7 @@ const shots = path.join(os.tmpdir(), "agentparty-member-cwd-groups-e2e");
 const LONG_WIN = "C:\\Users\\Dev\\AppData\\Roaming\\AgentParty\\worktrees\\member-cwd-groups";
 const OTHER_WIN = "C:\\Project\\AgentPartyApp";
 const WSL_CWD = "wsl+Ubuntu-24.04:/home/dev/services/gateway";
+const SECOND_WSL = "wsl+Debian:/srv/edge";
 
 let base = "";
 const failures = [];
@@ -69,12 +70,12 @@ async function main() {
     cdp = await attachRenderer();
     await dismissGuideOffer(cdp);
 
-    console.log("\nmember list \u2014 host / directory tree:");
+    console.log("\nmember list \u2014 environment / directory tree:");
     const tree = await cdp.eval(`(() => {
-      const hosts = [...document.querySelectorAll(".wb-member-list .wb-host-group")].map((host) => ({
+      const hosts = [...document.querySelectorAll(".wb-member-list .wb-env-group")].map((host) => ({
         host: host.dataset.host,
         open: host.classList.contains("is-open"),
-        label: host.querySelector(".wb-host-name")?.textContent,
+        label: host.querySelector(".wb-env-name")?.textContent,
         count: host.querySelector(".wb-group-count")?.textContent,
         groups: [...host.querySelectorAll(".wb-cwd-group")].map((group) => ({
           open: group.classList.contains("is-open"),
@@ -88,8 +89,8 @@ async function main() {
       const anyCwdOnRow = [...document.querySelectorAll(".wb-member-row")].some((row) => (row.textContent || "").indexOf(String.fromCharCode(92)) >= 0 || (row.textContent || "").indexOf("/") >= 0);
       return { hosts, rows, anyCwdOnRow };
     })()`);
-    assert(tree.hosts.length === 2, `Windows and WSL are separate top-level sections (got ${tree.hosts.length})`);
-    assert(tree.hosts[0]?.host === "windows" && tree.hosts[1]?.host === "wsl", "Windows leads, WSL follows");
+    assert(tree.hosts.length === 2, `Windows and the distro are separate top-level sections (got ${tree.hosts.length})`);
+    assert(tree.hosts[0]?.host === "windows" && tree.hosts[1]?.host === "wsl", "Windows leads, the distro follows");
     assert(tree.hosts.every((host) => host.open) && tree.hosts.every((host) => host.groups.every((group) => group.open)),
       "every group starts expanded");
     // `main` is created with the party itself, in the workspace directory, so
@@ -101,9 +102,22 @@ async function main() {
     assert(worktree?.members.join(",") === "api-worker", "members sit under the directory they run in");
     const other = tree.hosts[0]?.groups.find((group) => group.tail === "AgentPartyApp");
     assert(other?.members.join(",") === "docs-writer", "…and a member in another checkout is in another group");
-    assert(tree.hosts[1]?.groups[0]?.distro === "Ubuntu-24.04", "a WSL group names its distro");
+    assert(tree.hosts[1]?.label === "Ubuntu-24.04", `the distro IS the section, named by itself (got ${tree.hosts[1]?.label})`);
+    assert(!/WSL/i.test(tree.hosts[1]?.label || ""), "\u2026without a 'WSL' word repeated in front of it");
+    assert(tree.hosts[1]?.groups[0]?.distro === null, "\u2026and the directory row below no longer repeats the distro as a badge");
     assert(tree.rows === 4, `every member is still listed exactly once (got ${tree.rows})`);
     assert(!tree.anyCwdOnRow, "no member row repeats the path its group already states");
+
+    // Windows-only is the common party, and the one the flat rule exists for.
+    const flat = await cdp.eval(`(() => {
+      const list = document.querySelector(".wb-member-list");
+      return {
+        flat: list.classList.contains("is-flat"),
+        envs: list.querySelectorAll(".wb-env-group").length,
+        topLevelCwds: [...list.children].filter((el) => el.classList.contains("wb-cwd-group")).length,
+      };
+    })()`);
+    assert(!flat.flat && flat.envs === 2 && flat.topLevelCwds === 0, "with two environments the tree keeps its headers and nests nothing at the root");
 
     console.log("\nprovider marks replace the status dot:");
     const marks = await cdp.eval(`(() => {
@@ -132,26 +146,26 @@ async function main() {
 
     console.log("\ncollapsing a group:");
     const collapsed = await cdp.eval(`(() => {
-      const host = document.querySelector('.wb-member-list .wb-host-group[data-host="wsl"]');
-      host.querySelector(".wb-host-row").click();
+      const host = document.querySelector('.wb-member-list .wb-env-group[data-host="wsl"]');
+      host.querySelector(".wb-env-row").click();
       return null;
     })()`);
     void collapsed;
     await delay(120);
     const afterCollapse = await cdp.eval(`(() => {
-      const host = document.querySelector('.wb-member-list .wb-host-group[data-host="wsl"]');
+      const host = document.querySelector('.wb-member-list .wb-env-group[data-host="wsl"]');
       const rows = host.querySelectorAll(".wb-member-row");
       return {
         open: host.classList.contains("is-open"),
         visible: [...rows].filter((row) => row.getClientRects().length > 0).length,
         count: host.querySelector(".wb-group-count")?.textContent,
-        windowsRows: document.querySelectorAll('.wb-host-group[data-host="windows"] .wb-member-row').length,
+        windowsRows: document.querySelectorAll('.wb-env-group[data-host="windows"] .wb-member-row').length,
       };
     })()`);
-    assert(!afterCollapse.open && afterCollapse.visible === 0, "folding a host hides its members");
+    assert(!afterCollapse.open && afterCollapse.visible === 0, "folding an environment hides its members");
     assert(afterCollapse.count === "1", "\u2026while the folded header still reports how many are inside");
-    assert(afterCollapse.windowsRows === 3, "\u2026and the other host is untouched");
-    await cdp.eval(`document.querySelector('.wb-host-group[data-host="wsl"] .wb-host-row').click()`);
+    assert(afterCollapse.windowsRows === 3, "\u2026and the other environment is untouched");
+    await cdp.eval(`document.querySelector('.wb-env-group[data-host="wsl"] .wb-env-row').click()`);
     await delay(120);
 
     console.log("\npanel header shows WHERE the member runs, not its name again:");
@@ -184,6 +198,113 @@ async function main() {
     assert(header.insidePanel, "the header stays inside its panel");
 
     await capture("01-tree-and-header.png");
+
+    console.log("\nseveral distros are peers, and each folds on its own:");
+    await post("/api/qa/members", { name: "edge-proxy", role: "e2e", location: SECOND_WSL, model: "sonnet" });
+    await delay(600);
+    const distros = await cdp.eval(`(() => {
+      const envs = [...document.querySelectorAll(".wb-member-list .wb-env-group")];
+      return {
+        labels: envs.map((env) => env.querySelector(".wb-env-name")?.textContent),
+        hosts: envs.map((env) => env.dataset.host),
+        ids: envs.map((env) => env.querySelector(".wb-env-row")?.getAttribute("aria-controls")),
+        // Every section is a labelled group whose header says whether it is
+        // open and what it opens — the hierarchy a screen reader reads.
+        groups: envs.every((env) => env.getAttribute("role") === "group" && (env.getAttribute("aria-label") || "").length > 0),
+        buttons: envs.every((env) => {
+          const row = env.querySelector(".wb-env-row");
+          return row?.tagName === "BUTTON" && row.getAttribute("aria-expanded") !== null && document.getElementById(row.getAttribute("aria-controls"));
+        }),
+        cwdGroups: [...document.querySelectorAll(".wb-member-list .wb-cwd-group")].every((group) => {
+          const row = group.querySelector(".wb-cwd-row");
+          return group.getAttribute("role") === "group" && row?.getAttribute("aria-expanded") !== null && document.getElementById(row.getAttribute("aria-controls"));
+        }),
+        focusables: [...document.querySelectorAll(".wb-member-list .wb-env-row, .wb-member-list .wb-cwd-row")].every((el) => el.tabIndex >= 0),
+      };
+    })()`);
+    assert(distros.labels.join(",") === "Windows,Debian,Ubuntu-24.04", `each distro is a top-level section beside Windows (got ${distros.labels.join(",")})`);
+    assert(distros.hosts.join(",") === "windows,wsl,wsl", "…and both distros are marked as the WSL family for their icon");
+    assert(new Set(distros.ids).size === distros.ids.length, "each section controls its own body, so the collapse keys cannot collide");
+    assert(distros.groups && distros.buttons, "every environment section is a labelled group with an expandable header");
+    assert(distros.cwdGroups, "…and so is every directory group inside it");
+    assert(distros.focusables, "both levels are reachable with the keyboard");
+
+    await cdp.eval(`document.querySelector('.wb-env-group[data-distro="Debian"] .wb-env-row').click()`);
+    await delay(150);
+    const foldOne = await cdp.eval(`(() => {
+      const at = (distro) => document.querySelector('.wb-env-group[data-distro="' + distro + '"]');
+      return {
+        debian: at("Debian").classList.contains("is-open"),
+        ubuntu: at("Ubuntu-24.04").classList.contains("is-open"),
+        debianExpanded: at("Debian").querySelector(".wb-env-row").getAttribute("aria-expanded"),
+      };
+    })()`);
+    assert(!foldOne.debian && foldOne.ubuntu, "folding one distro leaves the other open");
+    assert(foldOne.debianExpanded === "false", "…and the folded header says so out loud");
+    await cdp.eval(`document.querySelector('.wb-env-group[data-distro="Debian"] .wb-env-row').click()`);
+    await delay(150);
+
+    console.log("\nthe drawer is narrow, and the tree still reads:");
+    const fit = await cdp.eval(`(() => {
+      const list = document.querySelector(".wb-member-list");
+      const listBox = list.getBoundingClientRect();
+      const inside = (el) => {
+        const box = el.getBoundingClientRect();
+        return box.left >= listBox.left - 1 && box.right <= listBox.right + 1;
+      };
+      const names = [...list.querySelectorAll(".wb-member-name")];
+      const deepest = [...list.querySelectorAll(".wb-member-row")]
+        .map((row) => row.getBoundingClientRect().left - listBox.left)
+        .reduce((most, indent) => Math.max(most, indent), 0);
+      return {
+        width: Math.round(listBox.width),
+        noScroll: list.scrollWidth <= list.clientWidth + 1,
+        rowsInside: [...list.querySelectorAll(".wb-env-row, .wb-cwd-row, .wb-member-row")].every(inside),
+        indent: Math.round(deepest),
+        nameWidth: Math.min(...names.map((el) => Math.round(el.getBoundingClientRect().width))),
+        titled: names.every((el) => (el.getAttribute("title") || "").length > 0),
+        pathTitled: [...list.querySelectorAll(".wb-cwd-row")].every((el) => (el.getAttribute("title") || "").length > 0),
+      };
+    })()`);
+    assert(fit.width <= 300, `the member drawer really is narrow (${fit.width}px)`);
+    assert(fit.noScroll && fit.rowsInside, "nothing in the tree spills out of it sideways");
+    assert(fit.indent <= 24, `a member row is at most a shallow indent from the edge (${fit.indent}px)`);
+    assert(fit.nameWidth >= 60, `…so the member name still has room to be read (${fit.nameWidth}px)`);
+    assert(fit.titled, "a clipped member name is recoverable from its tooltip");
+    assert(fit.pathTitled, "…and so is a clipped path");
+    await capture("05-environment-sections.png");
+    // The real theme, not a capture-time flag: the section headers, the
+    // fallback label and the hairline that hangs the members off their
+    // directory are all token colours, and a token that resolves to the same
+    // ink as its background only shows up when the app is actually painted in
+    // that theme.
+    for (const theme of ["agentparty-dark", "agentparty-light"]) {
+      await post("/api/appearance/theme", { theme });
+      await delay(250);
+      const painted = await cdp.eval(`(() => {
+        const list = document.querySelector(".wb-member-list");
+        const env = list.querySelector(".wb-env-row");
+        const name = list.querySelector(".wb-member-name");
+        const read = (el, prop) => getComputedStyle(el)[prop];
+        return {
+          theme: document.documentElement.getAttribute("data-theme"),
+          envInk: read(env, "color"),
+          listPaint: read(list.closest(".wb-drawer, aside") || document.body, "backgroundColor"),
+          nameInk: read(name, "color"),
+          rowsInside: [...list.querySelectorAll(".wb-env-row, .wb-cwd-row, .wb-member-row")].every((el) => {
+            const box = el.getBoundingClientRect();
+            const outer = list.getBoundingClientRect();
+            return box.left >= outer.left - 1 && box.right <= outer.right + 1;
+          }),
+        };
+      })()`);
+      assert(painted.theme === theme, `the app is really painted ${theme} (got ${painted.theme})`);
+      assert(painted.envInk !== painted.listPaint && painted.nameInk !== painted.listPaint, `…and the tree's ink is not its own background in ${theme}`);
+      assert(painted.rowsInside, `…with every row still inside the drawer in ${theme}`);
+      await post("/api/capture", { path: `${shots}/06-environment-sections-${theme}.png` });
+    }
+    assert(fs.existsSync(`${shots}/06-environment-sections-agentparty-dark.png`), "the tree is captured in both themes");
+
 
     console.log("\nnarrow panels \u2014 composer and queue keep their controls:");
     // Four panels side by side is the pressure case: each lands near the
@@ -252,7 +373,11 @@ async function main() {
         ordLabel: ord?.getAttribute("aria-label") || "",
         ordText: ord?.textContent || "",
         metaAfterOrd: Boolean(ord && row.querySelector(".wb-queue-meta") && (ord.compareDocumentPosition(row.querySelector(".wb-queue-meta")) & Node.DOCUMENT_POSITION_FOLLOWING)),
-        textIsOwnRow: row.querySelector(".wb-queue-text")?.parentElement === row,
+        textInHead: row.querySelector(".wb-queue-text")?.parentElement === row.querySelector(".wb-queue-row-head"),
+        rowLines: (() => {
+          const text = row.querySelector(".wb-queue-text");
+          return text ? Math.round(row.getBoundingClientRect().height / text.getBoundingClientRect().height) : 0;
+        })(),
         actionsInside: actions ? actions.getBoundingClientRect().right <= panelBox.right + 1 : null,
         actionLabels: [...(actions?.querySelectorAll("button") || [])].map((el) => el.getAttribute("aria-label")),
       };
@@ -261,7 +386,8 @@ async function main() {
       assert(/\\d/.test(queue.ordText), "a queue row leads with its delivery position");
       assert(queue.ordLabel.length > 0, "\u2026labelled so the number cannot be read as a count or an id");
       assert(queue.metaAfterOrd, "sender and state come after the position, in their own band");
-      assert(queue.textIsOwnRow, "the message body is its own row, under the metadata");
+      assert(queue.textInHead, "the message body shares the row with the position, the sender and the controls");
+      assert(queue.rowLines <= 2, `\u2026so a short message makes a short card (${queue.rowLines} text-heights tall)`);
       assert(queue.actionsInside, "the row's controls stay inside the panel");
       assert(queue.actionLabels.every(Boolean), "\u2026and every one of them is labelled");
     } else {

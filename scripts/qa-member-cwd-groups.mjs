@@ -40,23 +40,56 @@ const outcome = await load("src/renderer/workbench/toolOutcome.ts", "tool-outcom
 
 const member = (name, location) => ({ name, member: location === undefined ? {} : { location } });
 
-console.log("\nhost / cwd grouping:");
+console.log("\nenvironment / cwd grouping:");
 {
   const tree = groups.groupMembersByLocation([
-    member("api", "C:\\Project\\App"),
-    member("web", "c:\\project\\app"),
+    member("api", "C:\Project\App"),
+    member("web", "c:\project\app"),
     member("svc", "wsl+Ubuntu-24.04:/srv/app"),
     member("legacy", undefined),
-    member("docs", "C:\\Project\\Docs"),
+    member("docs", "C:\Project\Docs"),
+    member("edge", "wsl+Debian:/srv/edge"),
   ]);
-  assert(tree.map((host) => host.host).join(",") === "windows,wsl,unknown", "hosts come out in a fixed order, unknown last");
-  const windows = tree[0];
-  assert(windows.count === 3, "the host section counts every member under it");
+  const kinds = tree.envs.map((env) => env.kind).join(",");
+  assert(kinds === "windows,wsl,wsl,unknown", `each distro is its own top-level environment, unknown last (got ${kinds})`);
+  assert(tree.envs.map((env) => env.distro || "").join(",") === ",Debian,Ubuntu-24.04,", "distros sort by name, so adding a member never reorders the sections above it");
+  assert(!tree.flat, "a party spanning several environments keeps its environment headers");
+  const windows = tree.envs[0];
+  assert(windows.count === 3, "the environment section counts every member under it");
   assert(windows.groups.length === 2, "two Windows directories, not three");
   const app = windows.groups.find((group) => group.cwd.toLowerCase().endsWith("app"));
   assert(app.members.map((view) => view.name).join(",") === "api,web", "case differences are one Windows directory, and member order is preserved");
-  assert(tree[1].groups[0].distro === "Ubuntu-24.04", "a WSL group carries the distro a POSIX path alone cannot identify");
-  assert(tree[2].groups[0].members[0].name === "legacy", "a member with no stored location still appears, under its own bucket");
+  assert(tree.envs[2].groups[0].distro === "Ubuntu-24.04", "a WSL group still carries the distro a POSIX path alone cannot identify");
+  assert(tree.envs[3].groups[0].members[0].name === "legacy", "a member with no stored location still appears, under its own bucket");
+  assert(tree.envs[1].id !== tree.envs[2].id, "two distros get two collapse keys, so folding one cannot fold the other");
+}
+{
+  // Windows-only: the header would be one line saying what every row already is.
+  const flat = groups.groupMembersByLocation([member("api", "C:\Project\App"), member("docs", "C:\Project\Docs")]);
+  assert(flat.flat, "a party entirely on native Windows hides the environment header");
+  assert(flat.envs[0].groups.length === 2, "\u2026and its directory groups become the top level");
+}
+{
+  // One distro is still an environment worth naming: it is the only thing
+  // saying these members are not on the desktop's own filesystem.
+  const wslOnly = groups.groupMembersByLocation([member("svc", "wsl+Ubuntu-24.04:/srv/app")]);
+  assert(!wslOnly.flat, "a single WSL distro keeps its header");
+  assert(wslOnly.envs[0].distro === "Ubuntu-24.04" && !wslOnly.envs[0].unnamed, "\u2026labelled by the distro, which is the environment's identity");
+}
+{
+  const unknownOnly = groups.groupMembersByLocation([member("legacy", undefined)]);
+  assert(!unknownOnly.flat, "a party we cannot locate does not get its one honest heading hidden");
+  assert(unknownOnly.envs[0].unnamed, "\u2026and the section is marked as needing a fallback label");
+}
+{
+  // Distro identity follows WSL's own case rules, or one section becomes two
+  // and the collapse key flips between them.
+  const cased = groups.groupMembersByLocation([member("a", "wsl+Ubuntu:/srv/a"), member("b", "wsl+ubuntu:/srv/b")]);
+  assert(cased.envs.length === 1, "Ubuntu and ubuntu are one environment section");
+  assert(groups.envGroupId("wsl", "Ubuntu") === groups.envGroupId("wsl", "ubuntu"), "\u2026so they share one stable collapse key");
+  assert(groups.envGroupId("wsl") === groups.envGroupId("wsl", ""), "a blank distro name is the same missing distro, not a second section");
+  assert(groups.envGroupId("wsl") !== groups.envGroupId("wsl", "unnamed"), "…and its key cannot be claimed by a distro actually called that");
+  assert(groups.envGroupId("windows") !== groups.cwdGroupId({ env: "windows", cwd: "C:\App" }), "environment keys and directory keys cannot collide");
 }
 {
   const same = (a, b) => groups.cwdGroupId(a) === groups.cwdGroupId(b);
