@@ -45,6 +45,7 @@ const view = {
     { id: "t2", kind: "tool", name: "Bash", status: "completed", input: { command: "echo hi" }, result: [{ type: "text", text: longOutput }], at: "10:01" },
     // Short result → no expand control, full content inline.
     { id: "t3", kind: "tool", name: "Bash", status: "completed", input: { command: "echo hi" }, result: "hello world", at: "10:02" },
+    { id: "t4", kind: "tool", name: "shell", status: "failed", input: { command: "exit 1" }, result: "failed", at: "10:03" },
   ],
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(Transcript, { view, density: "wide", actions: {} }));
@@ -52,7 +53,10 @@ await new Promise((res) => setTimeout(res, 120));
 
 console.log("\nTool output rendering (preview inline):");
 const details = [...document.querySelectorAll(".wb-tool")];
-assert(details.length === 3, "three tool blocks rendered");
+assert(details.length === 4, "four tool blocks rendered");
+const failedSummary = details[3]?.querySelector("summary");
+assert(Boolean(failedSummary?.querySelector(".wb-tool-check.is-failed svg")), "failed tool keeps its red X mark");
+assert(!failedSummary?.querySelector(".wb-tool-outcome"), "failed tool does not repeat the word 실패 beside the X");
 
 const cmd = document.querySelector(".wb-tool-cmd");
 assert(Boolean(cmd), "tool body shows a command line");
@@ -61,7 +65,7 @@ assert((cmd?.textContent || "").includes("for f in"), "command preview keeps the
 assert(!(cmd?.textContent || "").includes("x".repeat(300)), "the long command tail is NOT dumped inline (previewed)");
 
 const results = [...document.querySelectorAll(".wb-tool-result")];
-assert(results.length === 3, "all tool results rendered");
+assert(results.length === 4, "all tool results rendered");
 // The two long results are previewed: first line present, last line NOT (clipped).
 assert((results[0].textContent || "").includes("line 0:"), "long result preview shows the first line");
 assert(!(results[0].textContent || "").includes("line 149:"), "long result preview clips the tail (not dumped inline)");

@@ -9797,8 +9797,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   animation: wb-spin 1s linear infinite;
 }
 
-/* The word beside the mark. Only for the outcomes that are NOT success: a badge
-   on every row would be noise, and success is already the resting state. */
+/* Denial keeps a word because it is meaningfully different from a failure.
+   Failed calls use the red X alone; repeating "실패" beside it is noise. */
 .wb-tool-outcome {
   flex: none;
   padding: 1px 6px;
