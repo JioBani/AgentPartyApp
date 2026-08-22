@@ -10197,3 +10197,52 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-queue.is-narrow .wb-queue-text.is-open {
   max-height: calc(1.4em * 7);
 }
+
+/* ── 패널 헤더: 줄어드는 쪽은 경로다 ───────────────────────────────────── */
+
+/* Both halves of the header were shrinkable, so the browser split the shortage
+   between them and the MODEL button lost — squeezed to a sliver beside a cwd
+   that was still spelling out its folder name in full. That is the wrong way
+   round: the model pill is a control, and a control narrower than its own label
+   is unusable, while a path is information that reads perfectly well shortened.
+   The controls now keep their width and the location gives it up. */
+.wb-toolbar-controls {
+  flex: none;
+}
+
+.wb-toolbar-id {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* …and it has to give it up as an ELLIPSIS. The tail is `flex: none` in the
+   member list, where truncating it would make two worktrees under one parent
+   read as the same row; here the tail is backed by a tooltip carrying the whole
+   path, so shortening it costs nothing that cannot be recovered by hovering. */
+.wb-toolbar-cwd {
+  flex: 0 1 auto;
+}
+
+.wb-toolbar-cwd .wb-cwd-tail {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Shrinking is not the same as disappearing. Left to take whatever was over,
+   the folder name reached zero and the header showed an environment icon with
+   nothing after it — which reads as a missing path, not a shortened one. It
+   keeps enough room for a few characters and the ellipsis, so what is on screen
+   is always a recognisable beginning of a name. */
+.wb-toolbar-cwd .wb-cwd-tail {
+  min-width: 4.5em;
+}
+
+/* Below this the header genuinely cannot seat a name AND the controls, so the
+   path steps aside as a whole rather than being cut to two letters. The icon
+   stays — the environment is one glyph and still worth saying — and the full
+   path is on the tooltip, where it has been all along. */
+@container (max-width: 250px) {
+  .wb-toolbar-cwd-path {
+    display: none;
+  }
+}

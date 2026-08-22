@@ -394,6 +394,84 @@ async function main() {
       console.log("  (no queued row to inspect \u2014 skipped)");
     }
 
+
+    console.log("\nthe panel header: the model button is the one thing that never shrinks:");
+    // Both halves of the header were shrinkable, so the browser split the
+    // shortage between them and the MODEL button lost — squeezed under its own
+    // label beside a cwd still spelling out its folder name in full. A control
+    // narrower than its label is unusable; a path reads fine shortened.
+    const toolbar = await cdp.eval(`(() => {
+      const panel = [...document.querySelectorAll(".wb-panel")][0];
+      const panelBox = panel.getBoundingClientRect();
+      const pill = panel.querySelector(".wb-model-pill");
+      const label = pill?.querySelector(".wb-mono");
+      const more = panel.querySelector(".wb-header-more");
+      const controls = panel.querySelector(".wb-toolbar-controls");
+      const path = panel.querySelector(".wb-toolbar-cwd-path");
+      const tail = panel.querySelector(".wb-toolbar-cwd .wb-cwd-tail");
+      const inside = (el) => {
+        if (!el) return null;
+        const box = el.getBoundingClientRect();
+        return box.left >= panelBox.left - 1 && box.right <= panelBox.right + 1;
+      };
+      return {
+        panelWidth: Math.round(panelBox.width),
+        labelWidth: label ? Math.round(label.getBoundingClientRect().width) : 0,
+        labelScrollWidth: label ? label.scrollWidth : 0,
+        pillInside: inside(pill),
+        moreInside: inside(more),
+        controlsWidth: controls ? Math.round(controls.getBoundingClientRect().width) : 0,
+        controlsScrollWidth: controls ? controls.scrollWidth : 0,
+        pathShown: path ? getComputedStyle(path).display !== "none" : false,
+        tailWidth: tail ? Math.round(tail.getBoundingClientRect().width) : 0,
+        envIcon: Boolean(panel.querySelector(".wb-toolbar-cwd > svg")),
+        cwdTitle: panel.querySelector(".wb-toolbar-cwd")?.getAttribute("title") || "",
+      };
+    })()`);
+    assert(toolbar.labelWidth + 1 >= toolbar.labelScrollWidth,
+      "the model button is never squeezed under its own label",
+      `${toolbar.labelWidth}px for ${toolbar.labelScrollWidth}px of label at ${toolbar.panelWidth}px`);
+    assert(toolbar.pillInside && toolbar.moreInside, "\u2026and it, and the \u22ef button, stay inside the panel");
+    assert(toolbar.controlsWidth + 1 >= toolbar.controlsScrollWidth,
+      "nothing else in the controls well is clipped either",
+      `${toolbar.controlsWidth}px for ${toolbar.controlsScrollWidth}px`);
+    // The location is what gives way — but shortened, not erased: either a
+    // readable stretch of the folder name, or the path steps aside as a whole,
+    // leaving the environment icon and the full path on the tooltip.
+    assert(toolbar.pathShown ? toolbar.tailWidth >= 40 : toolbar.envIcon,
+      toolbar.pathShown
+        ? "the cwd gives up the width instead, and keeps a readable name"
+        : "the cwd steps aside entirely, leaving the environment icon",
+      toolbar.pathShown ? `${toolbar.tailWidth}px of folder name` : "icon only");
+    assert(toolbar.cwdTitle.length > 0, "\u2026with the whole path still on the tooltip");
+
+    // Two panels instead of four is the other side of the same rule: here there
+    // IS room for a folder name, so the path must be SHORTENED rather than
+    // dropped. Without this the leg above would go green on a build that simply
+    // hid the location at every width.
+    await post("/api/qa/open", { panels: [["gateway-with-a-deliberately-long-name"], ["docs-writer"]] });
+    await delay(600);
+    const wider = await cdp.eval(`(() => {
+      const panel = [...document.querySelectorAll(".wb-panel")][0];
+      const label = panel.querySelector(".wb-model-pill .wb-mono");
+      const path = panel.querySelector(".wb-toolbar-cwd-path");
+      const tail = panel.querySelector(".wb-toolbar-cwd .wb-cwd-tail");
+      return {
+        panelWidth: Math.round(panel.getBoundingClientRect().width),
+        labelWidth: label ? Math.round(label.getBoundingClientRect().width) : 0,
+        labelScrollWidth: label ? label.scrollWidth : 0,
+        pathShown: path ? getComputedStyle(path).display !== "none" : false,
+        tailWidth: tail ? Math.round(tail.getBoundingClientRect().width) : 0,
+        tailScrollWidth: tail ? tail.scrollWidth : 0,
+      };
+    })()`);
+    assert(wider.labelWidth + 1 >= wider.labelScrollWidth,
+      "with room to spare the model button is still whole",
+      `${wider.labelWidth}px for ${wider.labelScrollWidth}px at ${wider.panelWidth}px`);
+    assert(wider.pathShown && wider.tailWidth >= 40,
+      "\u2026and the folder name is shown, not dropped",
+      `${wider.tailWidth}px of a ${wider.tailScrollWidth}px name`);
+
     await capture("02-narrow-composer-queue.png");
 
     console.log("\ntool cards say what HAPPENED, not merely that the call closed:");
