@@ -493,7 +493,7 @@ export function ModelCatalogModal({
                       <ChevronRight size={10} className={"wb-model-caret" + (group.open ? " is-open" : "")} aria-hidden="true" />
                       <ProviderIcon
                         provider={group.provider === "custom" ? undefined : group.provider}
-                        size={14}
+                        size={12}
                         style={{ color: PROVIDER_DOTS[group.provider!] }}
                       />
                       <span className="wb-model-provider-name">{group.label}</span>
