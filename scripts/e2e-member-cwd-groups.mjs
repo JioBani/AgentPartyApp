@@ -425,7 +425,7 @@ async function main() {
       assert(outcomes.classes.includes("ok"), "a clean run still reads as a success");
       assert(outcomes.classes.includes("running"), "an in-flight call reads as progress");
       assert(outcomes.labels.every(Boolean), "every mark carries its meaning in words, not only in colour");
-      assert(outcomes.badges >= 3, "non-success outcomes also print a short status badge");
+      assert(outcomes.badges === 1, "only denial prints a status word; failures use the red X alone");
     } else {
       console.log("  (no tool cards to inspect - skipped)");
     }

@@ -796,9 +796,10 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
         >
           {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} /> : <Check size={11} />}
         </span>
-        {/* Colour alone cannot carry this: the whole point is that the two red
-            states mean different things, and one of them is not a fault. */}
-        {failed && <span className="wb-tool-outcome"><LocalizedText id={TOOL_OUTCOME_STR[outcome]} /></span>}
+        {/* A failed call already has an unmistakable red X plus a textual
+            tooltip/aria-label. Keep a visible word only for denial, whose Ban
+            mark describes a different outcome rather than a fault. */}
+        {outcome === "denied" && <span className="wb-tool-outcome"><LocalizedText id={TOOL_OUTCOME_STR[outcome]} /></span>}
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}

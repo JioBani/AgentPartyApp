@@ -49,6 +49,12 @@ import {
 import { HarnessIcon } from "./HarnessIcon";
 import { queryVariants } from "./hangulKeys";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import {
+  clearComposerDraft,
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from "./composerDraftStore";
 
 interface ComposerProps {
   view: MemberView;
@@ -98,17 +104,9 @@ const TEXTAREA_MAX_HEIGHT = 220;
  */
 const FORCE_STOP_AFTER_MS = 5_000;
 
-interface SavedComposerDraft {
-  text: string;
-  attachments: ImageAttachment[];
-  references: FileReference[];
-}
-
-const savedComposerDrafts = new Map<string, SavedComposerDraft>();
-
 export function Composer({ view, density, actions, commandUi, permission: showPermission = true }: ComposerProps) {
-  const draftKey = `${view.member.partyId || "default"}:${view.name}`;
-  const savedDraft = savedComposerDrafts.get(draftKey);
+  const draftKey = composerDraftKey(view.member);
+  const savedDraft = readComposerDraft(draftKey);
   const [draft, setDraft] = useState(() => savedDraft?.text || "");
   const [expanded, setExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>(() => savedDraft?.attachments || []);
@@ -125,14 +123,24 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   const knownRefs = useRef<FileReference[]>(savedDraft?.references || []);
   /** Last text pushed INTO the editor, so we only rebuild on external changes. */
   const renderedRef = useRef("");
+  /** Prevents a second key gesture from submitting the same still-visible turn. */
+  const sendingRef = useRef(false);
+  /** A successful send clears only the exact revision it submitted. */
+  const revisionRef = useRef(0);
   const harness = harnessForRuntime(view.member.runtime);
 
   useEffect(() => {
     if (!draft && attachments.length === 0) {
-      savedComposerDrafts.delete(draftKey);
+      clearComposerDraft(draftKey);
       return;
     }
-    savedComposerDrafts.set(draftKey, { text: draft, attachments, references: [...knownRefs.current] });
+    writeComposerDraft(draftKey, { text: draft, attachments, references: [...knownRefs.current] });
+  }, [draftKey, draft, attachments]);
+
+  // React may unmount the composer before a passive effect gets its turn (tab
+  // close, party switch, navigation). A layout-effect cleanup closes that gap.
+  useLayoutEffect(() => () => {
+    writeComposerDraft(draftKey, { text: draft, attachments, references: [...knownRefs.current] });
   }, [draftKey, draft, attachments]);
 
   // A Stop the harness has not acknowledged yet. It stays "interrupting" only
@@ -331,11 +339,12 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       return;
     }
     const text = serializeDraft(root);
+    revisionRef.current += 1;
     renderedRef.current = text;
     if (!text && attachments.length === 0) {
-      savedComposerDrafts.delete(draftKey);
+      clearComposerDraft(draftKey);
     } else {
-      savedComposerDrafts.set(draftKey, { text, attachments, references: [...knownRefs.current] });
+      writeComposerDraft(draftKey, { text, attachments, references: [...knownRefs.current] });
     }
     setDraft(text);
     if (attachError) {
@@ -574,6 +583,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       added.push({ kind: "image", mediaType: file.type, dataBase64, name: file.name || undefined });
     }
     if (added.length) {
+      revisionRef.current += 1;
       setAttachments((current) => [...current, ...added]);
     }
     setAttachError(error);
@@ -699,6 +709,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   }
 
   function removeAttachment(index: number) {
+    revisionRef.current += 1;
     setAttachments((current) => current.filter((_, i) => i !== index));
   }
 
@@ -718,8 +729,9 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
    * 대기열에 없습니다", reporting a delivered message as still waiting; and it
    * stopped the turn even mid-COMPACTION, which the single path refuses to do.
    */
-  function submit(event?: FormEvent, bypassQueue = false) {
+  async function submit(event?: FormEvent, bypassQueue = false) {
     event?.preventDefault();
+    if (sendingRef.current) return;
     // What the model receives is the editor read back as plain text: every chip
     // writes out its FULL path. The chip only ever shortened the display.
     const root = editorRef.current;
@@ -733,7 +745,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
     }
     if (palette.typedAction) {
       runPaletteAction(palette.typedAction);
-      savedComposerDrafts.delete(draftKey);
+      clearComposerDraft(draftKey);
       setDraft("");
       knownRefs.current = [];
       setAttachments([]);
@@ -741,21 +753,26 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       return;
     }
     const images = attachments.length ? attachments : undefined;
-    const references = [...knownRefs.current];
-    savedComposerDrafts.delete(draftKey);
-    setDraft("");
-    knownRefs.current = [];
-    setAttachments([]);
-    setAttachError("");
+    const submittedRevision = revisionRef.current;
+    sendingRef.current = true;
     // `interrupt: true` only when the gesture asked for it; otherwise the send
     // keeps whatever the composer setting says (App resolves that).
-    void actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined)
-      .catch((error) => {
-        knownRefs.current = references;
-        setDraft((current) => current || text);
-        setAttachments((current) => current.length ? current : attachments);
-        setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
-      });
+    try {
+      await actions.sendMessage(view.name, text, images, bypassQueue ? { interrupt: true } : undefined);
+      if (revisionRef.current === submittedRevision) {
+        clearComposerDraft(draftKey);
+        setDraft("");
+        knownRefs.current = [];
+        setAttachments([]);
+        setAttachError("");
+      }
+    } catch (error) {
+      // The untouched draft is still both on screen and in the window-scoped
+      // store. A rejection or transport failure must not require reconstruction.
+      setAttachError(`보내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      sendingRef.current = false;
+    }
   }
 
   /**
@@ -798,7 +815,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
       // NOT "was Ctrl held": under the default send key Ctrl+Enter IS the send
       // key, so reading the modifier alone made every ordinary send stop the
       // member's turn. See `sendsImmediately`.
-      submit(undefined, sendsImmediately(prefs.sendKey, modifiers));
+      void submit(undefined, sendsImmediately(prefs.sendKey, modifiers));
       return;
     }
     if (!multiline) {
@@ -973,6 +990,7 @@ export function Composer({ view, density, actions, commandUi, permission: showPe
   function takeBackForEdit(text: string) {
     // Goes through `draft`, so the rehydrate effect rebuilds the editor and any
     // path in the recalled text becomes a chip again where it is still known.
+    revisionRef.current += 1;
     setDraft((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n${text}` : text));
     editorRef.current?.focus();
   }
