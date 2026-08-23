@@ -1,4 +1,4 @@
-/* Real Electron E2E for the seven Settings color-theme presets. */
+/* Real Electron E2E for every built-in Settings color-theme preset. */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -19,6 +19,15 @@ const presets = [
   { id: "dracula", label: "Dracula", bg0: "#282a36", panel: "#30323f", text: "#f8f8f2", accent: "#bd93f9", selection: "#44475a", status: "#6272a4" },
   { id: "nord", label: "Nord", bg0: "#2e3440", panel: "#3b4252", text: "#eceff4", accent: "#88c0d0", selection: "#4c566a", status: "#5e81ac" },
   { id: "solarized-dark", label: "Solarized Dark", bg0: "#002b36", panel: "#073642", text: "#fdf6e3", accent: "#2aa198", selection: "#075b6b", status: "#268bd2" },
+  ...[
+    "one-dark-pro", "atom-one-dark", "ayu-mirage", "winter-is-coming", "night-owl", "one-monokai",
+    "tokyo-night", "palenight", "synthwave-84", "shades-of-purple", "cobalt2", "andromeda",
+    "atom-one-light", "noctis", "catppuccin-mocha", "gruvbox-dark-medium", "sublime-material-dark",
+    "omni", "jellyfish", "darcula",
+  ].map((id) => {
+    const definition = JSON.parse(fs.readFileSync(path.join(root, "src/shared/themes", `${id}.json`), "utf8"));
+    return { id, label: definition.label, bg0: definition.color["bg-0"], panel: definition.color["bg-2"], text: definition.color["text-0"], accent: definition.color.accent, selection: definition.color.selection, status: definition.color.status };
+  }),
 ];
 const failures = [];
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -91,10 +100,10 @@ async function main() {
   for (const target of [workspace, userData]) try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* absent */ }
   fs.mkdirSync(workspace, { recursive: true });
 
-  await run("seven-presets", async () => {
+  await run("built-in-presets", async () => {
     const initial = await request("GET", "/api/appearance/theme");
     assert(initial.payload?.preference === "agentparty-light", "fresh install defaults to AgentParty Light");
-    assert(JSON.stringify(initial.payload?.options) === JSON.stringify(presets.map(({ id }) => id)), "API exposes exactly seven presets");
+    assert(JSON.stringify(initial.payload?.options) === JSON.stringify(presets.map(({ id }) => id)), `API exposes exactly ${presets.length} presets`);
     const spec = (await request("GET", "/api/spec")).payload?.endpoints || [];
     assert(spec.includes("GET /api/appearance/theme") && spec.includes("POST /api/appearance/theme"), "appearance routes are published in /api/spec");
     assert(!spec.includes("POST /api/qa/appearance/os"), "removed nativeTheme QA route is absent");
@@ -107,16 +116,16 @@ async function main() {
     const navigation = await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
     assert(navigation.status === 200, "navigation opens Settings > General");
     await delay(500);
-    const options = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select] option", attributes: ["value"], styles: [], limit: 10 })).payload?.elements || [];
-    assert(options.length === 7, "Settings has one dropdown with exactly seven options");
+    const options = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-select] option", attributes: ["value"], styles: [], limit: 50 })).payload?.elements || [];
+    assert(options.length === presets.length, `Settings has one dropdown with exactly ${presets.length} options`);
     assert(options.map((entry) => entry.attributes.value).join(",") === presets.map(({ id }) => id).join(","), "dropdown option ids are exact");
     assert(options.map((entry) => entry.text).join(",") === presets.map(({ label }) => label).join(","), "dropdown labels are exact");
     const trigger = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-trigger]", attributes: ["aria-haspopup", "aria-expanded"], styles: [], limit: 1 })).payload?.elements?.[0];
     assert(trigger?.attributes?.["aria-haspopup"] === "menu", "titlebar exposes an ARIA theme menu trigger");
     await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu.png"), click: "[data-theme-menu-trigger]" });
     await delay(150);
-    const menuOptions = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option]", attributes: ["data-theme-menu-option", "aria-checked"], styles: [], limit: 10 })).payload?.elements || [];
-    assert(menuOptions.length === 7, "titlebar menu contains the same seven presets");
+    const menuOptions = (await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option]", attributes: ["data-theme-menu-option", "aria-checked"], styles: [], limit: 50 })).payload?.elements || [];
+    assert(menuOptions.length === presets.length, "titlebar menu contains every built-in preset");
     await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-agentparty-dark.png"), click: "[data-theme-menu-option=agentparty-dark]" });
     await delay(350);
     assert((await request("GET", "/api/appearance/theme")).payload?.preference === "agentparty-dark", "titlebar menu selects AgentParty Dark through AppController");
@@ -129,6 +138,17 @@ async function main() {
     await delay(100);
     const closedMenu = await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu]", styles: [], limit: 1 });
     assert(Boolean(closedMenu.payload?.error), "Escape closes the titlebar theme menu");
+
+    await request("POST", `/api/qa/window/bounds?window=${encodeURIComponent(win1)}`, { width: 1100, height: 720 });
+    await request("POST", "/api/appearance/theme", { theme: "one-dark-pro" });
+    await request("POST", `/api/capture?window=${encodeURIComponent(win1)}`, { path: path.join(os.tmpdir(), "agentparty-theme-menu-compact-dark.png"), click: "[data-theme-menu-trigger]" });
+    const compactMenuMeasure = await request("POST", `/api/measure?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu]", styles: ["overflow-y", "max-height"], limit: 1 });
+    const compactMenu = compactMenuMeasure.payload?.elements?.[0];
+    assert(compactMenu?.styles?.["overflow-y"] === "auto", "27-preset titlebar menu scrolls at the minimum window height");
+    assert(compactMenu?.box?.y + compactMenu?.box?.height <= compactMenuMeasure.payload?.viewport?.height, "minimum-height titlebar menu stays inside the viewport");
+    assert(compactMenu?.scroll?.height > compactMenu?.box?.height, "minimum-height titlebar menu exposes the remaining presets through scrolling");
+    await request("POST", `/api/qa/input?window=${encodeURIComponent(win1)}`, { selector: "[data-theme-menu-option=agentparty-dark]", key: "Escape" });
+    await request("POST", `/api/qa/window/bounds?window=${encodeURIComponent(win1)}`, { width: 1480, height: 960 });
 
     for (let index = 0; index < presets.length; index += 1) {
       const preset = presets[index];
@@ -150,6 +170,13 @@ async function main() {
         }
       }
     }
+
+    // Persistence assertions below intentionally exercise Solarized Dark.
+    // Select it explicitly so extending the ordered catalog cannot change the
+    // scenario merely by adding another preset at the end.
+    const persistencePresetIndex = presets.findIndex(({ id }) => id === "solarized-dark");
+    await request("POST", `/api/navigation?window=${encodeURIComponent(win1)}`, { view: "settings", tab: "general" });
+    await choosePreset(persistencePresetIndex, win1);
 
     const invalid = await request("POST", "/api/appearance/theme", { theme: "dark" });
     assert(invalid.status === 400 && invalid.payload?.code === "invalid_theme", "removed legacy id is strict invalid_theme 400");

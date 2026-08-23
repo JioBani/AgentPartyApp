@@ -1,0 +1,16 @@
+{
+  "$schema": "../theme.schema.json", "schemaVersion": 1, "id": "catppuccin-mocha", "label": "Catppuccin Mocha", "scheme": "dark",
+  "color": {
+    "bg-0": "#11111b", "bg-1": "#181825", "bg-2": "#1e1e2e", "bg-3": "#181825", "bg-4": "#393947", "bg-input": "#313244",
+    "border-subtle": "#393947", "border": "#4b4b58", "border-strong": "#666671",
+    "text-0": "#cdd6f4", "text-1": "#cdd6f4", "text-2": "#cdd6f4", "text-3": "#6b6b75",
+    "accent": "#cba6f7", "accent-dim": "rgba(203,166,247,0.14)", "accent-bd": "rgba(203,166,247,0.4)", "accent-fg": "#000000",
+    "selection": "#3b3d4f", "selection-fg": "#cdd6f4", "status": "#cba6f7", "status-fg": "#000000",
+    "live": "#f9e2af", "live-dim": "rgba(249,226,175,0.14)", "live-bd": "rgba(249,226,175,0.38)", "compact-zone": "rgba(249,226,175,0.29)",
+    "success": "#a6e3a1", "success-dim": "rgba(166,227,161,0.14)", "success-bd": "rgba(166,227,161,0.36)",
+    "danger": "#f38ba8", "danger-dim": "rgba(243,139,168,0.14)", "danger-bd": "rgba(243,139,168,0.38)", "danger-fg": "#000000",
+    "warning": "#f9e2af", "warning-dim": "rgba(249,226,175,0.14)", "warning-bd": "rgba(249,226,175,0.38)", "warning-fg": "#000000",
+    "grid": "rgba(255,255,255,.07)", "scrim": "rgba(0,0,0,.64)", "shadow": "rgba(0,0,0,.45)", "shadow-strong": "rgba(0,0,0,.7)"
+  },
+  "shape": {"radius-window": "9px","radius-panel": "11px","radius-card": "10px","radius-button": "7px","radius-input": "8px","radius-pill": "6px","radius-badge": "5px","border-width": "1px","focus-ring-width": "2px"}
+}

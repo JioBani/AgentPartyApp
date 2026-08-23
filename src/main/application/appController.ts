@@ -882,7 +882,7 @@ export class AppController {
   }
 
   /**
-   * Appearance: the user's seven-preset color theme and the theme the UI is
+   * Appearance: the user's built-in color theme and the theme the UI is
    * actually painting. Same method behind Settings
    * and GET /api/appearance/theme. A headless engine forwards to the desktop
    * over HostChannel; without a channel it rejects instead of writing a

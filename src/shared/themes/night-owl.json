@@ -1,0 +1,16 @@
+{
+  "$schema": "../theme.schema.json", "schemaVersion": 1, "id": "night-owl", "label": "Night Owl", "scheme": "dark",
+  "color": {
+    "bg-0": "#011627", "bg-1": "#011627", "bg-2": "#011627", "bg-3": "#021320", "bg-4": "#1f3241", "bg-input": "#0b253a",
+    "border-subtle": "#1f3241", "border": "#344552", "border-strong": "#52616c",
+    "text-0": "#d6deeb", "text-1": "#d6deeb", "text-2": "#76818a", "text-3": "#576570",
+    "accent": "#82aaff", "accent-dim": "rgba(130,170,255,0.14)", "accent-bd": "rgba(130,170,255,0.4)", "accent-fg": "#000000",
+    "selection": "#1d3b53", "selection-fg": "#d6deeb", "status": "#82aaff", "status-fg": "#000000",
+    "live": "#c5e478", "live-dim": "rgba(197,228,120,0.14)", "live-bd": "rgba(197,228,120,0.38)", "compact-zone": "rgba(197,228,120,0.29)",
+    "success": "#22da6e", "success-dim": "rgba(34,218,110,0.14)", "success-bd": "rgba(34,218,110,0.36)",
+    "danger": "#ef5350", "danger-dim": "rgba(239,83,80,0.14)", "danger-bd": "rgba(239,83,80,0.38)", "danger-fg": "#000000",
+    "warning": "#c5e478", "warning-dim": "rgba(197,228,120,0.14)", "warning-bd": "rgba(197,228,120,0.38)", "warning-fg": "#000000",
+    "grid": "rgba(255,255,255,.07)", "scrim": "rgba(0,0,0,.64)", "shadow": "rgba(0,0,0,.45)", "shadow-strong": "rgba(0,0,0,.7)"
+  },
+  "shape": {"radius-window": "9px","radius-panel": "11px","radius-card": "10px","radius-button": "7px","radius-input": "8px","radius-pill": "6px","radius-badge": "5px","border-width": "1px","focus-ring-width": "2px"}
+}

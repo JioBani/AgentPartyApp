@@ -5,6 +5,26 @@ import githubDarkJson from "./themes/github-dark.json";
 import draculaJson from "./themes/dracula.json";
 import nordJson from "./themes/nord.json";
 import solarizedDarkJson from "./themes/solarized-dark.json";
+import oneDarkProJson from "./themes/one-dark-pro.json";
+import atomOneDarkJson from "./themes/atom-one-dark.json";
+import ayuMirageJson from "./themes/ayu-mirage.json";
+import winterIsComingJson from "./themes/winter-is-coming.json";
+import nightOwlJson from "./themes/night-owl.json";
+import oneMonokaiJson from "./themes/one-monokai.json";
+import tokyoNightJson from "./themes/tokyo-night.json";
+import palenightJson from "./themes/palenight.json";
+import synthwave84Json from "./themes/synthwave-84.json";
+import shadesOfPurpleJson from "./themes/shades-of-purple.json";
+import cobalt2Json from "./themes/cobalt2.json";
+import andromedaJson from "./themes/andromeda.json";
+import atomOneLightJson from "./themes/atom-one-light.json";
+import noctisJson from "./themes/noctis.json";
+import catppuccinMochaJson from "./themes/catppuccin-mocha.json";
+import gruvboxDarkMediumJson from "./themes/gruvbox-dark-medium.json";
+import sublimeMaterialDarkJson from "./themes/sublime-material-dark.json";
+import omniJson from "./themes/omni.json";
+import jellyfishJson from "./themes/jellyfish.json";
+import darculaJson from "./themes/darcula.json";
 import themeJsonSchema from "./theme.schema.json";
 import { parseThemeCatalog, ThemeDefinitionError, type ThemeDefinition } from "./themeSchema";
 
@@ -21,6 +41,26 @@ const BUILTIN_THEME_JSON: readonly unknown[] = [
   draculaJson,
   nordJson,
   solarizedDarkJson,
+  oneDarkProJson,
+  atomOneDarkJson,
+  ayuMirageJson,
+  winterIsComingJson,
+  nightOwlJson,
+  oneMonokaiJson,
+  tokyoNightJson,
+  palenightJson,
+  synthwave84Json,
+  shadesOfPurpleJson,
+  cobalt2Json,
+  andromedaJson,
+  atomOneLightJson,
+  noctisJson,
+  catppuccinMochaJson,
+  gruvboxDarkMediumJson,
+  sublimeMaterialDarkJson,
+  omniJson,
+  jellyfishJson,
+  darculaJson,
 ];
 
 const BUILTIN_THEME_SOURCES = [
@@ -31,6 +71,26 @@ const BUILTIN_THEME_SOURCES = [
   "themes/dracula.json",
   "themes/nord.json",
   "themes/solarized-dark.json",
+  "themes/one-dark-pro.json",
+  "themes/atom-one-dark.json",
+  "themes/ayu-mirage.json",
+  "themes/winter-is-coming.json",
+  "themes/night-owl.json",
+  "themes/one-monokai.json",
+  "themes/tokyo-night.json",
+  "themes/palenight.json",
+  "themes/synthwave-84.json",
+  "themes/shades-of-purple.json",
+  "themes/cobalt2.json",
+  "themes/andromeda.json",
+  "themes/atom-one-light.json",
+  "themes/noctis.json",
+  "themes/catppuccin-mocha.json",
+  "themes/gruvbox-dark-medium.json",
+  "themes/sublime-material-dark.json",
+  "themes/omni.json",
+  "themes/jellyfish.json",
+  "themes/darcula.json",
 ] as const;
 
 /** Static imports keep startup and first paint synchronous; no directory scan occurs. */

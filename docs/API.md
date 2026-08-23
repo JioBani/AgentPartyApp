@@ -515,7 +515,7 @@ Appearance and the titlebar theme menu.
 {
   "preference": "agentparty-light",
   "applied": "agentparty-light",
-  "options": ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"],
+  "options": ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark", "one-dark-pro", "atom-one-dark", "ayu-mirage", "winter-is-coming", "night-owl", "one-monokai", "tokyo-night", "palenight", "synthwave-84", "shades-of-purple", "cobalt2", "andromeda", "atom-one-light", "noctis", "catppuccin-mocha", "gruvbox-dark-medium", "sublime-material-dark", "omni", "jellyfish", "darcula"],
   "stored": true,
   "background": "#e7e8eb"
 }
@@ -534,7 +534,7 @@ First paint is owned by main: `createWindow` resolves the preset from
 boot payload into the preload (`window.agentPartyAppearanceBoot`) before the
 page loads. `index.html` and `ThemeProvider` prefer that value.
 `localStorage` is used only when settings.json has **no** `theme`. Both cache
-keys use one shared pre-React/persistence rule: a current seven-preset preference
+keys use one shared pre-React/persistence rule: a current built-in preference
 wins over the applied cache; a removed `system` preference instead preserves
 its last `light`/`dark` applied value. A stale cache cannot override an explicit
 setting.
@@ -549,8 +549,9 @@ Settings appearance selector and titlebar menu.
 { "theme": "nord" }
 ```
 
-Accepted values are `agentparty-light`, `agentparty-dark`, `github-light`,
-`github-dark`, `dracula`, `nord`, and `solarized-dark`. Any other value (including a
+Accepted values are the built-in preset ids returned by `options`; the full
+catalog and authoring sources are documented in [`docs/THEMES.md`](THEMES.md).
+Any other value (including a
 missing `theme`) returns **HTTP 400** `{ "ok": false, "error": "지원하지 않는 테마입니다: …", "code": "invalid_theme" }`
 instead of a 500 or a silent default. The change is persisted in `settings.json`
 and pushed to every open window immediately.
@@ -568,7 +569,7 @@ instead of writing the distro's own settings file. `POST /api/settings` with
 
 Updates app settings.
 
-`theme` is one of the seven preset ids documented above. The same
+`theme` is one of the built-in preset ids documented above. The same
 validation and broadcast as `POST /api/appearance/theme` above, and only on
 the desktop process — a headless engine rejects a `theme` patch instead of
 writing its own settings.json.
