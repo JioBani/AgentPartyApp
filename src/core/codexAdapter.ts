@@ -35,7 +35,14 @@ import { partyMcpRuntimeEnv, spawnablePartyMcpCommand } from "./partyMcpRuntime"
 import { approvalAnswers, codexApprovalFields } from "../shared/approvalRequest";
 import { fileEditsFrom, planStepsFrom, toolSourceLabel } from "../shared/codexItems";
 import type { CodexFileEdit } from "../shared/codexItems";
-import { pluginCommands, skillCommands } from "../shared/codexDiscovery";
+import {
+  CODEX_IN_APP_BROWSER_PLUGIN,
+  CODEX_IN_APP_BROWSER_SKILL,
+  pluginCommands,
+  skillCommands,
+  unsupportedHostSkillOverrides,
+  type CodexSkillConfigOverride,
+} from "../shared/codexDiscovery";
 import { classifyDiagnostic } from "../shared/codexDiagnostics";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { emptyMcpSnapshot } from "../shared/mcp";
@@ -163,6 +170,8 @@ export class CodexAdapter extends EventEmitter {
   private readonly subagentTracker = new CodexSubagentTracker();
   /** Live palette inventory: built-in commands + discovered skills/plugins. */
   private inventory: HarnessCommand[] = CODEX_COMMANDS;
+  /** Thread-local exclusions for capabilities AgentParty does not host. */
+  private unsupportedHostSkills: CodexSkillConfigOverride[] = [];
   /** Live per-server MCP startup state (name → state) from startupStatus/updated. */
   private readonly mcpStartup = new Map<string, { status: string; error?: string; failureReason?: string }>();
   private usageRefreshTimer: NodeJS.Timeout | undefined;
@@ -639,6 +648,7 @@ export class CodexAdapter extends EventEmitter {
       this.ensureProcess();
       await this.initializeServer();
     });
+    await this.resolveUnsupportedHostSkills();
     if (this.sessionId) {
       await this.resumeThread();
     } else {
@@ -801,7 +811,7 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
-      config: this.partyToolConfig(),
+      config: this.threadConfig(),
       developerInstructions: this.partyDeveloperInstructions(),
     });
     this.applyThreadResult(result);
@@ -817,7 +827,7 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
-      config: this.partyToolConfig(),
+      config: this.threadConfig(),
       developerInstructions: this.partyDeveloperInstructions(),
     });
     this.applyThreadResult(result);
@@ -837,11 +847,21 @@ export class CodexAdapter extends EventEmitter {
     return this.options.partyPrimer || buildPartyPrimer(this.options.partyIdentity);
   }
 
-  private partyToolConfig(): Record<string, unknown> | undefined {
-    if (!this.options.partyBridge || !this.options.partyIdentity) {
-      return undefined;
+  private threadConfig(): Record<string, unknown> | undefined {
+    const config: Record<string, unknown> = {};
+    if (this.options.partyBridge && this.options.partyIdentity) {
+      config.dynamic_tools = [buildPartyDynamicToolSpec()];
     }
-    return { dynamic_tools: [buildPartyDynamicToolSpec()] };
+    if (this.unsupportedHostSkills.length) {
+      config.skills = { config: this.unsupportedHostSkills };
+    }
+    return Object.keys(config).length ? config : undefined;
+  }
+
+  private async resolveUnsupportedHostSkills(): Promise<void> {
+    const skills = await this.request("skills/list", { cwds: [this.options.cwd] })
+      .catch((error) => this.noteDiscoveryError("skills", error));
+    this.unsupportedHostSkills = unsupportedHostSkillOverrides(skills);
   }
 
   /**
@@ -965,7 +985,11 @@ export class CodexAdapter extends EventEmitter {
       this.request("skills/list", { cwds: [this.options.cwd] }).catch((error) => this.noteDiscoveryError("skills", error)),
       this.request("plugin/installed", {}).catch((error) => this.noteDiscoveryError("plugins", error)),
     ]);
-    const merged = [...CODEX_COMMANDS, ...skillCommands(skills), ...pluginCommands(plugins)];
+    const merged = [
+      ...CODEX_COMMANDS,
+      ...skillCommands(skills, new Set([CODEX_IN_APP_BROWSER_SKILL])),
+      ...pluginCommands(plugins, new Set([CODEX_IN_APP_BROWSER_PLUGIN])),
+    ];
     // Dedupe by name, keeping the first (built-ins win over same-named skills).
     const seen = new Set<string>();
     this.inventory = merged.filter((command) => (seen.has(command.name) ? false : seen.add(command.name)));

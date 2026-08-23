@@ -52,9 +52,9 @@ async function main() {
     // app-server; /api/models must then expose every visible model as a route.
     const catalog = await waitForModelCatalog();
     assert(catalog.codexModels.status === "ready", "codex model discovery reports ready");
-    // Account-catalog routes (from model/list) are the openai-provider codex
-    // routes; codex OpenRouter routes (Phase 2) carry providerId openrouter.
-    const accountRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.providerId === "openai");
+    // Select the deterministic app-server models by id. Provider metadata can
+    // be omitted for the native account catalog, depending on the app version.
+    const accountRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.model.startsWith("fake-"));
     assert(accountRoutes.length === 2, "both visible fake models are account codex routes (hidden one dropped)");
     assert(accountRoutes[0].model === "fake-5.5", "the account-default model is first");
     assert(accountRoutes[0].capabilities?.effort?.options?.length === 4, "effort options come from the model's supportedReasoningEfforts");
@@ -81,6 +81,8 @@ async function main() {
     assert(byName["legacy-skill"]?.disabledReason, "disabled skill carries a disabled reason");
     assert(byName.formatter?.source === "plugin", "installed plugin merged with source=plugin");
     assert(byName["blocked-plugin"]?.disabledReason, "admin-disabled plugin carries a disabled reason");
+    assert(!byName["browser:control-in-app-browser"], "unsupported in-app-browser skill is not advertised");
+    assert(!byName.browser, "in-app-browser plugin is not advertised");
 
     await post(`/api/sessions/${session.id}/close`, {});
     await post("/api/window/close", {});
