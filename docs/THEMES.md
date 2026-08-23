@@ -1,6 +1,6 @@
 # Theme authoring contract
 
-AgentParty's seven built-in themes are declarative JSON files in
+AgentParty's 27 built-in themes are declarative JSON files in
 [`src/shared/themes/`](../src/shared/themes/). Both the main process and the
 renderer synchronously consume the same validated registry. The main process
 derives native window backgrounds from `color.bg-0`; the renderer generates CSS
@@ -9,6 +9,45 @@ custom properties from the same `color` and `shape` records.
 This contract is intentionally only an authoring and registration boundary.
 There is no theme file picker, installation endpoint, dynamic directory scan,
 or runtime loading feature yet.
+
+## Marketplace popularity pack
+
+Twenty presets are adapted from the most-installed eligible color-theme
+extensions in the Visual Studio Marketplace, ordered by Marketplace install
+count as observed on 2026-08-23. The selection excludes AgentParty's existing
+GitHub, Dracula, and Nord presets; icon/language/companion extensions;
+deprecated extensions; duplicate palettes; and themes without a
+redistribution-compatible public license. Monokai Pro is intentionally absent
+because its Marketplace license forbids redistribution.
+
+The install count ranks the extension, not an individual variant. When an
+extension ships several variants, AgentParty uses its primary or namesake dark
+variant (Ayu Mirage for Ayu and Catppuccin Mocha for Catppuccin). Each palette
+is adapted to AgentParty's complete UI-token and WCAG contrast contract rather
+than copying VS Code-specific token names verbatim.
+
+| Rank | AgentParty preset | Marketplace extension | Installs | License |
+| ---: | --- | --- | ---: | --- |
+| 1 | One Dark Pro | [One Dark Pro](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme) | 12,643,952 | MIT |
+| 2 | Atom One Dark | [Atom One Dark Theme](https://marketplace.visualstudio.com/items?itemName=akamud.vscode-theme-onedark) | 7,300,923 | MIT |
+| 3 | Ayu Mirage | [Ayu](https://marketplace.visualstudio.com/items?itemName=teabyii.ayu) | 4,180,504 | MIT |
+| 4 | Winter is Coming | [Winter is Coming](https://marketplace.visualstudio.com/items?itemName=johnpapa.winteriscoming) | 3,725,217 | MIT |
+| 5 | Night Owl | [Night Owl](https://marketplace.visualstudio.com/items?itemName=sdras.night-owl) | 3,562,484 | MIT |
+| 6 | One Monokai | [One Monokai](https://marketplace.visualstudio.com/items?itemName=azemoh.one-monokai) | 2,932,431 | MIT |
+| 7 | Tokyo Night | [Tokyo Night](https://marketplace.visualstudio.com/items?itemName=enkia.tokyo-night) | 2,869,774 | MIT |
+| 8 | Palenight | [Palenight](https://marketplace.visualstudio.com/items?itemName=whizkydee.material-palenight-theme) | 2,625,279 | MIT |
+| 9 | SynthWave '84 | [SynthWave '84](https://marketplace.visualstudio.com/items?itemName=RobbOwen.synthwave-vscode) | 2,533,074 | MIT |
+| 10 | Shades of Purple | [Shades of Purple](https://marketplace.visualstudio.com/items?itemName=ahmadawais.shades-of-purple) | 2,331,417 | MIT |
+| 11 | Cobalt2 | [Cobalt2](https://marketplace.visualstudio.com/items?itemName=wesbos.theme-cobalt2) | 1,893,553 | MIT |
+| 12 | Andromeda | [Andromeda](https://marketplace.visualstudio.com/items?itemName=EliverLara.andromeda) | 1,688,149 | MIT |
+| 13 | Atom One Light | [Atom One Light](https://marketplace.visualstudio.com/items?itemName=akamud.vscode-theme-onelight) | 1,443,935 | MIT |
+| 14 | Noctis | [Noctis](https://marketplace.visualstudio.com/items?itemName=liviuschera.noctis) | 1,384,529 | MIT |
+| 15 | Catppuccin Mocha | [Catppuccin](https://marketplace.visualstudio.com/items?itemName=Catppuccin.catppuccin-vsc) | 1,367,844 | MIT |
+| 16 | Gruvbox Dark Medium | [Gruvbox](https://marketplace.visualstudio.com/items?itemName=jdinhlife.gruvbox) | 1,044,479 | MIT |
+| 17 | Sublime Material Dark | [Sublime Material](https://marketplace.visualstudio.com/items?itemName=jprestidge.theme-material-theme) | 1,036,780 | MIT |
+| 18 | Omni | [Omni](https://marketplace.visualstudio.com/items?itemName=rocketseat.theme-omni) | 1,006,649 | MIT |
+| 19 | JellyFish | [JellyFish](https://marketplace.visualstudio.com/items?itemName=PawelBorkar.jellyfish) | 939,474 | Apache-2.0 |
+| 20 | Darcula | [Darcula](https://marketplace.visualstudio.com/items?itemName=rokoroku.vscode-theme-darcula) | 925,648 | MIT |
 
 ## Authoring a built-in theme
 

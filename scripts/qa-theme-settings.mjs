@@ -1,4 +1,4 @@
-/* Seven-preset theme model, migration, first paint, ownership, and token checks. */
+/* Built-in theme model, migration, first paint, ownership, and token checks. */
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -21,7 +21,13 @@ const theme = await bundle("src/shared/appTheme.ts", "app-theme.mjs");
 const registry = await bundle("src/renderer/theme/themes.ts", "theme-registry.mjs");
 const catalog = await bundle("src/shared/themeCatalog.ts", "theme-catalog.mjs");
 const schema = await bundle("src/shared/themeSchema.ts", "theme-schema.mjs");
-const expected = ["agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark"];
+const expected = [
+  "agentparty-light", "agentparty-dark", "github-light", "github-dark", "dracula", "nord", "solarized-dark",
+  "one-dark-pro", "atom-one-dark", "ayu-mirage", "winter-is-coming", "night-owl", "one-monokai",
+  "tokyo-night", "palenight", "synthwave-84", "shades-of-purple", "cobalt2", "andromeda",
+  "atom-one-light", "noctis", "catppuccin-mocha", "gruvbox-dark-medium", "sublime-material-dark",
+  "omni", "jellyfish", "darcula",
+];
 
 function definitionError(mutator, expectedPath, message) {
   const candidate = structuredClone(registry.THEMES[0]);
@@ -36,7 +42,7 @@ const themesDirectory = path.join(root, "src/shared/themes");
 const jsonFiles = readdirSync(themesDirectory).filter((file) => file.endsWith(".json"));
 const jsonThemes = jsonFiles.map((file) => JSON.parse(readFileSync(path.join(themesDirectory, file), "utf8")));
 const parsedJsonThemes = schema.parseThemeCatalog(jsonThemes, jsonFiles);
-assert(jsonFiles.length === 7, "exactly seven built-in JSON theme files exist");
+assert(jsonFiles.length === expected.length, `exactly ${expected.length} built-in JSON theme files exist`);
 assert(parsedJsonThemes.every(({ schemaVersion }) => schemaVersion === 1), "every built-in JSON uses schemaVersion 1");
 assert(expected.every((id) => parsedJsonThemes.some((entry) => entry.id === id)), "JSON catalog contains the exact public ids");
 assert(registry.THEMES.every((entry) => JSON.stringify(entry) === JSON.stringify(parsedJsonThemes.find(({ id }) => id === entry.id))), "runtime catalog exactly matches the JSON definitions");
@@ -90,15 +96,15 @@ assert(unregisteredError?.code === "invalid_theme_definition" && unregisteredErr
 assert(Object.isFrozen(theme.THEME_METADATA) && theme.THEME_METADATA.every(Object.isFrozen), "theme metadata array and every entry are frozen");
 
 const gate = spawnSync(process.execPath, [path.join(root, "scripts/validate-theme-catalog.mjs")], { cwd: root, encoding: "utf8" });
-assert(gate.status === 0 && gate.stdout.includes("validated 7 built-in themes"), "dedicated catalog validation command executes successfully");
+assert(gate.status === 0 && gate.stdout.includes(`validated ${expected.length} built-in themes`), "dedicated catalog validation command executes successfully");
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 assert(packageJson.scripts.build.startsWith("npm run validate:theme-catalog &&"), "npm build runs catalog validation as its first gate");
 const packageWinSource = readFileSync(path.join(root, "scripts/package-win.mjs"), "utf8");
 assert(packageWinSource.indexOf("scripts/validate-theme-catalog.mjs") < packageWinSource.indexOf('name: "타입 체크 (renderer)"'), "package:win validates the catalog before compilation and packaging");
 
-console.log("\nseven preset ids + strict API validation:");
+console.log("\nbuilt-in preset ids + strict API validation:");
 assert(theme.DEFAULT_THEME_PREFERENCE === "agentparty-light", "AgentParty Light is the safe default");
-assert(JSON.stringify(theme.THEME_PREFERENCES) === JSON.stringify(expected), "exactly seven preset ids are exposed in order");
+assert(JSON.stringify(theme.THEME_PREFERENCES) === JSON.stringify(expected), `exactly ${expected.length} preset ids are exposed in order`);
 for (const id of expected) {
   assert(theme.isThemePreference(id), `${id} is accepted`);
   assert(theme.requireThemePreference(id) === id, `${id} passes strict API validation`);
@@ -146,7 +152,7 @@ function contrast(a, b) {
 }
 
 console.log("\ncomplete preset tokens + contrast:");
-assert(registry.THEMES.length === 7 && registry.THEMES.map(({ id }) => id).join(",") === expected.join(","), "registry has exactly the seven public presets");
+assert(registry.THEMES.length === expected.length && registry.THEMES.map(({ id }) => id).join(",") === expected.join(","), `registry has exactly the ${expected.length} public presets`);
 const original = {
   "agentparty-light": { "bg-0": "#e7e8eb", "bg-1": "#f3f4f6", "bg-2": "#ffffff", "bg-3": "#eef0f3", "bg-4": "#e6e9ed", "bg-input": "#ffffff", "border-subtle": "#e2e5ea", border: "#d3d7df", "border-strong": "#c0c5ce", "text-0": "#171a1f", "text-1": "#454b56", "text-2": "#6c7480", "text-3": "#9aa1ac", accent: "#3f6fe6", live: "#b9791d", success: "#2f8f5e", danger: "#cf4b45", warning: "#b07816", grid: "rgba(20,25,35,.07)", scrim: "rgba(20,23,29,.42)", shadow: "rgba(20,23,29,.13)", "shadow-strong": "rgba(20,23,29,.2)" },
   "agentparty-dark": { "bg-0": "#0a0b0e", "bg-1": "#0e1014", "bg-2": "#14171d", "bg-3": "#1b1f27", "bg-4": "#222731", "bg-input": "#0c0e12", "border-subtle": "#1c2028", border: "#262b35", "border-strong": "#333a46", "text-0": "#e7e9ee", "text-1": "#aeb4c0", "text-2": "#79808d", "text-3": "#535965", accent: "#5b8cff", live: "#e0a14e", success: "#54b585", danger: "#e0635d", warning: "#d9a441", grid: "rgba(255,255,255,.06)", scrim: "rgba(0,0,0,.5)", shadow: "rgba(0,0,0,.4)", "shadow-strong": "rgba(0,0,0,.6)" },
@@ -157,7 +163,7 @@ for (const [id, tokens] of Object.entries(original)) {
   const originalShape = { "radius-window": "9px", "radius-panel": "11px", "radius-card": "10px", "radius-button": "7px", "radius-input": "8px", "radius-pill": "6px", "radius-badge": "5px", "border-width": "1px", "focus-ring-width": "1px" };
   assert(Object.entries(originalShape).every(([key, value]) => preset?.shape[key] === value), `${id} preserves every original 23dc88b shape token`);
 }
-assert(registry.THEMES.filter(({ id }) => !id.startsWith("agentparty-")).every(({ shape }) => shape["focus-ring-width"] === "2px"), "the other five presets keep their 2px focus ring");
+assert(registry.THEMES.filter(({ id }) => !id.startsWith("agentparty-")).every(({ shape }) => shape["focus-ring-width"] === "2px"), "non-AgentParty presets keep their 2px focus ring");
 const tokenKeys = Object.keys(registry.THEMES[0].color).sort().join(",");
 for (const preset of registry.THEMES) {
   assert(Object.keys(preset.color).sort().join(",") === tokenKeys, `${preset.label} defines every color token`);
