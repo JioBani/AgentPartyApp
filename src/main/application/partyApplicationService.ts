@@ -14,7 +14,7 @@ import type {
   TranscriptSave,
   TranscriptSaveResult,
 } from "../../shared/types";
-import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting } from "../../shared/types";
+import { HARNESS_IDS, harnessDefaultsOf, isPermissionModeSetting, normalizeServiceTierSelection } from "../../shared/types";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
 import {
@@ -2634,7 +2634,12 @@ export class PartyApplicationService {
     }
     member.reasoning = input.thinking || member.reasoning || defaults.reasoning;
     member.reasoningBudget = input.thinkingBudget ?? member.reasoningBudget ?? defaults.reasoningBudget;
-    member.serviceTier = input.serviceTier ?? member.serviceTier ?? defaults.serviceTier;
+    // An omitted tier preserves whatever the member had (explicit or unset); a
+    // provided one is normalized so `inherit` explicitly CLEARS a stored choice
+    // back to "follow the harness's own config".
+    member.serviceTier = input.serviceTier === undefined
+      ? member.serviceTier ?? normalizeServiceTierSelection(defaults.serviceTier)
+      : normalizeServiceTierSelection(input.serviceTier);
     if (harnessId === "codex") {
       const executionDefaults = harnessDefaultsOf(getSettings(), "codex");
       member.codexPolicy = {

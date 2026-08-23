@@ -9,7 +9,7 @@ import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
-import { harnessLabel } from "../../shared/types";
+import { SERVICE_TIER_INHERIT, harnessLabel, normalizeServiceTierSelection } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import { CwdPicker, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
@@ -190,7 +190,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
     const budgetDefault = thinkingCap?.budget?.default ?? 0;
     setEffort(effortCap?.supported && hDefaults?.effort ? hDefaults.effort : effDefault);
-    setServiceTier(serviceTierCap?.supported ? hDefaults?.serviceTier || serviceTierCap.defaultValue || "standard" : "");
+    setServiceTier(serviceTierCap?.supported ? hDefaults?.serviceTier || serviceTierCap.defaultValue || SERVICE_TIER_INHERIT : "");
     setThinkingMode(thinkingCap?.supported && hDefaults?.reasoning ? hDefaults.reasoning : thinkDefault);
     setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);
   }, [selectedKey]);
@@ -280,7 +280,11 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
       runtime: harness,
       model: selected?.route.model,
       effort: effortCap?.supported ? effort : undefined,
-      serviceTier: serviceTierCap?.supported ? serviceTier : undefined,
+      // Only an explicit Standard/Fast choice travels; the untouched "설정
+      // 따름" state is omitted so the member follows the user's own harness
+      // config (e.g. a Codex config.toml Fast default) instead of AgentParty
+      // silently forcing Standard.
+      serviceTier: serviceTierCap?.supported ? normalizeServiceTierSelection(serviceTier) : undefined,
       reasoning: thinkingCap?.supported ? thinkingMode : undefined,
       reasoningBudget: showBudget ? budget : undefined,
       permissionMode: executionHarness === "claude-code" ? permissionMode : undefined,

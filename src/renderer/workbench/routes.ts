@@ -3,6 +3,9 @@ import { resolveCatalogModel } from "../../shared/modelCatalog";
 export interface RouteOption {
   id: string;
   label: string;
+  /** Registry-provided detail shown where the option is chosen (e.g. the Fast
+   *  tier's credit-consumption note). */
+  description?: string;
 }
 
 /** Multimodal input support surfaced from the catalog. `image` tri-state:

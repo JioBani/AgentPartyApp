@@ -1,5 +1,5 @@
 import type { AppSettings, CreateMemberInput, HarnessId, PartyDefinition, PartyMember, PartyMessage } from "../../shared/types";
-import { harnessDefaultsOf, harnessForRuntime, isPermissionModeSetting } from "../../shared/types";
+import { harnessDefaultsOf, harnessForRuntime, isPermissionModeSetting, normalizeServiceTierSelection } from "../../shared/types";
 import { DEFAULT_CODEX_POLICY, requireCodexPolicy } from "../../shared/codexPolicy";
 import { cursorPolicyOf, requireCursorPolicy } from "../../shared/cursorPolicy";
 
@@ -53,7 +53,11 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     effort: input.effort || profile.effort,
     reasoning: input.reasoning ?? profile.reasoning,
     reasoningBudget: input.reasoningBudget ?? profile.reasoningBudget,
-    serviceTier: input.serviceTier ?? profile.serviceTier,
+    // Only an explicit tier choice is stored; `inherit` (and omission) stays
+    // unset so the member keeps following the harness's own config.
+    serviceTier: input.serviceTier === undefined
+      ? normalizeServiceTierSelection(profile.serviceTier)
+      : normalizeServiceTierSelection(input.serviceTier),
     permissionMode: harnessId === "claude-code" ? input.permissionMode || profile.permissionMode || "default" : undefined,
     // Permission semantics belong to the selected harness. Cross-routed models
     // do not replace the Claude Code SDK or Codex app-server process.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, BookOpen, Flag, KeyRound, Maximize2, Minus, Palette, Settings, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, PartyCommandResult, PartyMember, PermissionModeSetting, SessionView } from "../shared/types";
 import { HARNESS_IDS } from "../shared/types";
-import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime } from "../shared/types";
+import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime, normalizeServiceTierSelection } from "../shared/types";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../shared/nativeCliAuth";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
@@ -1885,7 +1885,13 @@ export function App() {
       const selectedHarness = (runtime.route?.harnessId as HarnessId | undefined) || "claude-code";
       const currentHarness = harnessForRuntime(member?.runtime);
       const grokEffortNeedsRestart = selectedHarness === "grok" && Boolean(runtime.effort) && runtime.effort !== member?.effort;
-      if (runtime.route && (selectedHarness !== currentHarness || runtime.serviceTier !== member?.serviceTier || grokEffortNeedsRestart)) {
+      // The picker stages the unset state as the `inherit` sentinel while the
+      // stored member keeps `undefined` — compare normalized so an untouched
+      // tier never forces a respawn, but a real change (including clearing an
+      // explicit choice back to inherit) still does.
+      const serviceTierChanged =
+        normalizeServiceTierSelection(runtime.serviceTier) !== normalizeServiceTierSelection(member?.serviceTier);
+      if (runtime.route && (selectedHarness !== currentHarness || serviceTierChanged || grokEffortNeedsRestart)) {
         // A harness is the adapter PROCESS, not model metadata. Recreate the
         // prewarmed session when the actual selected harness changes or when a
         // process-start setting changes. Grok Build consumes reasoning effort

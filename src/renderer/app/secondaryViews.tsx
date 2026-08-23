@@ -16,7 +16,7 @@ import {
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { GateReviewer } from "../../shared/messageGate";
 import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
-import { HARNESS_IDS } from "../../shared/types";
+import { HARNESS_IDS, normalizeServiceTierSelection } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { MobileLinkCard } from "./MobileLinkTab";
 import { HarnessIcon } from "../workbench/HarnessIcon";
@@ -1650,7 +1650,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const thinkingOptions = selectedRoute?.capabilities?.thinking?.supported ? (selectedRoute.capabilities.thinking.modes || []) : [];
   const runtimeSummary = [
     typeof reasoningBudget === "number" ? `budget ${reasoningBudget.toLocaleString()}` : "",
-    serviceTier ? `speed ${serviceTier}` : "",
+    normalizeServiceTierSelection(serviceTier) ? `speed ${serviceTier}` : "",
   ].filter(Boolean).join(" · ");
 
   const baseCursor = cursorPolicyOf(defaults.cursorPolicy, defaults.permissionMode);
@@ -1659,7 +1659,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
     || effort !== defaults.effort
     || reasoning !== (defaults.reasoning || "")
     || reasoningBudget !== defaults.reasoningBudget
-    || serviceTier !== (defaults.serviceTier || "")
+    || normalizeServiceTierSelection(serviceTier) !== normalizeServiceTierSelection(defaults.serviceTier)
     || (isCodex
       ? codexPolicy.sandbox !== baseCodex.sandbox || codexPolicy.approval !== baseCodex.approval || Boolean(codexPolicy.guardian) !== Boolean(baseCodex.guardian)
       : isCursor
@@ -1674,7 +1674,9 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
       effort: effort as HarnessDefaults["effort"],
       reasoning: reasoning || undefined,
       reasoningBudget,
-      serviceTier: serviceTier || undefined,
+      // `inherit` is a picker state, not a default worth persisting — an unset
+      // default keeps new members on "follow the harness's own config".
+      serviceTier: normalizeServiceTierSelection(serviceTier),
     };
     if (isCodex) {
       patch.codexPolicy = codexPolicy;
