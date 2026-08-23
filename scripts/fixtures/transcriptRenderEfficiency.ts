@@ -1,5 +1,5 @@
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "../../src/renderer/app/sessionRenderState";
-import { nextTranscriptRestore, nextTranscriptReveal, transcriptRestoreOrder } from "../../src/renderer/app/transcriptRestorePlan";
+import { isTranscriptRestoreSettled, nextTranscriptRestore, nextTranscriptReveal, transcriptRestoreOrder } from "../../src/renderer/app/transcriptRestorePlan";
 import { needsClip, previewOf, sameBlockProps } from "../../src/renderer/workbench/Transcript";
 import { nextTranscriptMountLimit } from "../../src/renderer/workbench/transcriptScheduling";
 import { createLatestMethodProxy } from "../../src/renderer/workbench/stableActions";
@@ -27,6 +27,10 @@ export function run(assert: Assert): void {
   assert(
     nextTranscriptRestore(restoreMembers, ["worker", "main"], () => false, (member) => member.name === "worker") === undefined,
     "a second transcript does not start while the current sequential restore is in flight",
+  );
+  assert(
+    !isTranscriptRestoreSettled(true, true) && isTranscriptRestoreSettled(true, false),
+    "a cached transcript refreshes in the background without treating its visible history as absent",
   );
   assert(
     nextTranscriptReveal(["worker", "main"], new Set(["worker"]), new Set(["worker", "main"])) === "main",

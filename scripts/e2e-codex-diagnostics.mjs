@@ -59,6 +59,9 @@ async function main() {
     const session = await waitForTurn();
     assert(session.snapshot.turnCount >= 1, "turn completed (adapter surfaced reroute/warning/rate-limit without error)");
     assert(session.snapshot.status !== "error", `session did not error (status=${session.snapshot.status})`);
+    const transcript = await getJson(`/api/party/members/${name}/transcript`);
+    const rateLimitNotices = (transcript.blocks || []).filter((block) => block.kind === "diagnostic" && block.category === "rate-limit");
+    assert(rateLimitNotices.length === 1 && rateLimitNotices[0].repeat === undefined, "an unchanged near-limit update produces exactly one chat notice");
     const refreshed = await post("/api/usage/refresh", {});
     assert(refreshed.usage?.codex?.windows?.find((w) => w.kind === "five_hour")?.utilization === 21, "manual usage refresh re-reads Codex account limits through the automation API");
 

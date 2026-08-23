@@ -39,6 +39,14 @@ export function nextTranscriptRestore<T extends { name: string }>(
   return ordered.find((member) => !isSettled(member));
 }
 
+/** A cached transcript stays readable while an explicit disk refresh is pending. */
+export function isTranscriptRestoreSettled(
+  hasRestoredTranscript: boolean,
+  needsRefresh: boolean,
+): boolean {
+  return hasRestoredTranscript && !needsRefresh;
+}
+
 /** Chooses exactly one panel whose already-loaded transcript may mount next. */
 export function nextTranscriptReveal(
   visibleNames: string[],

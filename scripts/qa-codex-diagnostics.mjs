@@ -36,7 +36,7 @@ async function bundle(entry, name, external = []) {
 }
 
 // ---- Layer 1: classifier ----------------------------------------------------
-const { classifyDiagnostic } = await bundle("src/shared/codexDiagnostics.ts", "codex-diag.mjs", []);
+const { classifyDiagnostic, rateLimitNoticeKey } = await bundle("src/shared/codexDiagnostics.ts", "codex-diag.mjs", []);
 console.log("\nclassifyDiagnostic:");
 const reroute = classifyDiagnostic("model/rerouted", { fromModel: "gpt-5.4", toModel: "gpt-5.4-mini", reason: "highRiskCyberActivity" });
 assert(reroute.severity === "warning" && reroute.category === "reroute", "model/rerouted → warning/reroute (never silent)");
@@ -44,6 +44,9 @@ assert(reroute.title.includes("gpt-5.4-mini") && reroute.detail.includes("gpt-5.
 assert(classifyDiagnostic("account/rateLimits/updated", { rateLimits: { primary: { usedPercent: 20 } } }) === null, "low rate-limit tick is NOT surfaced (no noise)");
 const rl = classifyDiagnostic("account/rateLimits/updated", { rateLimits: { limitName: "weekly", primary: { usedPercent: 96 } } });
 assert(rl?.severity === "warning" && rl.category === "rate-limit", "near-exhausted rate-limit → warning");
+assert(rateLimitNoticeKey(rl) === rateLimitNoticeKey(classifyDiagnostic("account/rateLimits/updated", { rateLimits: { limitName: "weekly", primary: { usedPercent: 96 } } })), "an unchanged rate-limit reading keeps one stable notice identity");
+assert(rateLimitNoticeKey(rl) !== rateLimitNoticeKey(classifyDiagnostic("account/rateLimits/updated", { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } })), "a changed rate-limit reading gets a new notice identity");
+assert(rateLimitNoticeKey(classifyDiagnostic("account/rateLimits/updated", { rateLimits: { primary: { usedPercent: 20 } } })) === "", "dropping below the warning threshold re-arms the notice");
 const rlHit = classifyDiagnostic("account/rateLimits/updated", { rateLimits: { rateLimitReachedType: "hard", primary: { usedPercent: 100 } } });
 assert(rlHit?.severity === "error", "rate-limit reached → error");
 assert(classifyDiagnostic("guardianWarning", { message: "위험" }).category === "guardian", "guardianWarning → guardian");

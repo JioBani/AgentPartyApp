@@ -31,6 +31,18 @@ export interface CodexDiagnostic {
   recovery?: string;
 }
 
+/** Stable identity for a chat-visible rate-limit state; empty means re-armed. */
+export function rateLimitNoticeKey(diagnostic: CodexDiagnostic | null): string {
+  if (!diagnostic || diagnostic.category !== "rate-limit") {
+    return "";
+  }
+  return JSON.stringify([
+    diagnostic.severity,
+    diagnostic.title,
+    diagnostic.detail || "",
+  ]);
+}
+
 /** The recovery step for the known Windows sandbox ACL drift (openai/codex#9062). */
 const WINDOWS_SANDBOX_RECOVERY = "Windows 샌드박스 문제일 수 있습니다 — /codex-fix-sandbox 로 복구를 시도하세요.";
 

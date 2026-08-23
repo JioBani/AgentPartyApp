@@ -62,7 +62,7 @@ import { createI18n, I18nProvider } from "./i18n/I18nProvider";
 import type { AppLocale } from "../shared/appLocale";
 import { localized } from "./i18n/I18nProvider";
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
-import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
+import { isTranscriptRestoreSettled, nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
 import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState } from "../shared/sidebarDrawers";
 import { clearComposerDraftsForMember, clearComposerDraftsForParty } from "./workbench/composerDraftStore";
 
@@ -919,6 +919,7 @@ export function App() {
   // session's blocks — losing the member's whole history (SEL-6910 incident).
   const [restoreRetryNonce, setRestoreRetryNonce] = useState(0);
   const restoreRequestedRef = useRef<Set<string>>(new Set());
+  const transcriptRefreshRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const wanted = members.filter((member) => transcriptMembers.has(member.name));
     const readyButHidden = visibleMembers.some((name) => {
@@ -929,7 +930,13 @@ export function App() {
     const member = nextTranscriptRestore(
       wanted,
       visibleMembers,
-      (candidate) => restoredRef.current[memberKey(candidate)] !== undefined,
+      (candidate) => {
+        const key = memberKey(candidate);
+        return isTranscriptRestoreSettled(
+          restoredRef.current[key] !== undefined,
+          transcriptRefreshRef.current.has(key),
+        );
+      },
       (candidate) => restoreRequestedRef.current.has(memberKey(candidate)),
     );
     if (!member) return;
@@ -942,6 +949,7 @@ export function App() {
       void window.agentParty.getMemberTranscript?.(member.name, member.partyId)?.then((raw) => {
         const blocks = Array.isArray(raw) ? normalizeTranscriptBlocks(raw as TranscriptBlock[]) : [];
         // Always record the result (even empty): it marks the restore as done.
+        transcriptRefreshRef.current.delete(key);
         setRestoredByMember((current) => ({ ...current, [key]: blocks }));
       }).catch(() => {
         // Surface and retry — silently treating a failed read as "no history"
@@ -1048,19 +1056,28 @@ export function App() {
       }
       // The owner's restored mirror was last synced from this session's live
       // blocks. If the member is still around WITHOUT a replacement session,
-      // that mirror is what its panel shows — drop it together with the fetch
-      // marker so the next look re-reads the (main-maintained) disk copy
-      // instead of showing the seed-time snapshot forever. A member already
-      // rebound to a new session keeps its mirror: activation already used it.
+      // keep that mirror visible while refreshing the main-maintained disk
+      // copy. Clearing it here briefly replaced every block with a loading
+      // state, which looked like a whole-app flash when several panels slept.
+      // A member already rebound to a new session keeps its mirror unchanged:
+      // activation already used it.
       const owner = members.find((member) => memberKey(member) === ownerKey);
       if (owner && !owner.sessionId) {
+        const liveBlocks = logsBySession[id];
+        if (liveBlocks?.length) {
+          // A brand-new session can sleep before the normal mirror sync timer.
+          // Carry the blocks visible in this exact frame across the eviction;
+          // the disk refresh below remains authoritative once it resolves.
+          setRestoredByMember((current) => {
+            const cached = current[ownerKey];
+            return cached && cached.length > liveBlocks.length
+              ? current
+              : { ...current, [ownerKey]: liveBlocks };
+          });
+        }
         restoreRequestedRef.current.delete(ownerKey);
-        setRestoredByMember((current) => {
-          if (current[ownerKey] === undefined) return current;
-          const next = { ...current };
-          delete next[ownerKey];
-          return next;
-        });
+        transcriptRefreshRef.current.add(ownerKey);
+        setRestoreRetryNonce((n) => n + 1);
       }
     }
     setLogsBySession((current) => {

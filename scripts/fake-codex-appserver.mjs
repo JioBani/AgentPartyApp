@@ -170,6 +170,9 @@ rl.on("line", (line) => {
         send({ method: "model/rerouted", params: { threadId: "thr-fake", turnId: "turn-1", fromModel: "gpt-5.4", toModel: "gpt-5.4-mini", reason: "highRiskCyberActivity" } });
         send({ method: "warning", params: { threadId: "thr-fake", message: "sandbox is read-only despite --write" } });
         send({ method: "account/rateLimits/updated", params: { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } } });
+        // Providers can repeat the same rolling snapshot after every item. The
+        // adapter must not turn an unchanged limit into another chat card.
+        send({ method: "account/rateLimits/updated", params: { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } } });
         send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
         return;
       }

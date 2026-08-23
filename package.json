@@ -39,6 +39,7 @@
     "test:e2e:codex-items": "npm run build && node scripts/e2e-codex-items.mjs",
     "test:e2e:codex-discovery": "npm run build && node scripts/e2e-codex-discovery.mjs",
     "test:e2e:codex-diagnostics": "npm run build && node scripts/e2e-codex-diagnostics.mjs",
+    "test:e2e:chat-enter-stability": "npm run build && node scripts/e2e-chat-enter-stability.mjs",
     "test:e2e:subscription-disconnect": "npm run build && node scripts/e2e-subscription-disconnect.mjs",
     "test:e2e:wsl-codex-auth-switch": "npm run build && node scripts/e2e-wsl-codex-auth-switch.mjs",
     "test:e2e:party-delete": "npm run build && node scripts/qa-app-party-delete-e2e.mjs",

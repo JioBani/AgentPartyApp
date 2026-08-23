@@ -43,7 +43,7 @@ import {
   unsupportedHostSkillOverrides,
   type CodexSkillConfigOverride,
 } from "../shared/codexDiscovery";
-import { classifyDiagnostic } from "../shared/codexDiagnostics";
+import { classifyDiagnostic, rateLimitNoticeKey } from "../shared/codexDiagnostics";
 import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usageLimits";
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
@@ -176,6 +176,7 @@ export class CodexAdapter extends EventEmitter {
   private readonly mcpStartup = new Map<string, { status: string; error?: string; failureReason?: string }>();
   private usageRefreshTimer: NodeJS.Timeout | undefined;
   private lastUsageStatus = "";
+  private lastRateLimitNotice = "";
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
@@ -1405,7 +1406,19 @@ export class CodexAdapter extends EventEmitter {
       const diagnostic = classifyDiagnostic(method, params, {
         modelProvider: this.currentProvider()?.id,
       });
-      if (diagnostic) {
+      const rateLimitKey = method === "account/rateLimits/updated"
+        ? rateLimitNoticeKey(diagnostic)
+        : undefined;
+      const shouldEmitDiagnostic = rateLimitKey === undefined
+        ? Boolean(diagnostic)
+        : Boolean(diagnostic) && rateLimitKey !== this.lastRateLimitNotice;
+      if (rateLimitKey !== undefined) {
+        // Re-arm after the provider drops below 90%. While the same warning is
+        // active, rolling account updates belong in the titlebar meter, not as
+        // repeated cards interleaved throughout the conversation.
+        this.lastRateLimitNotice = rateLimitKey;
+      }
+      if (diagnostic && shouldEmitDiagnostic) {
         this.emitEvent({ type: "diagnostic", ...diagnostic, at: now() });
       }
       // The diagnostic above surfaces ONLY at (near-)exhaustion (no noise); the
