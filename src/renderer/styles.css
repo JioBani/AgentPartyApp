@@ -1942,6 +1942,12 @@ body.wb-resizing {
   overflow-wrap: anywhere;
 }
 
+/* Large in-flight replies intentionally skip markdown parsing. Keep the same
+   content width and wrapping contract as the final rendered answer. */
+.wb-md-live-plain {
+  white-space: pre-wrap;
+}
+
 .wb-md > :first-child {
   margin-top: 0;
 }

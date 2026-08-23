@@ -63,6 +63,10 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the view is pinned to the bottom (true unless the user scrolled up).
   const stickRef = useRef(true);
+  // A layout effect performs the first pin synchronously. Resize and transcript
+  // notifications can request the same expensive scrollHeight read again in the
+  // same frame, so suppress only those duplicates until the next frame.
+  const pinnedThisFrameRef = useRef(false);
   const lastText = lastBlockText(view.transcript);
 
   // The history WINDOW remains 150 blocks. Its DOM mounts progressively: the
@@ -107,9 +111,12 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
 
   const stickToBottom = () => {
     const node = scrollRef.current;
-    if (node && stickRef.current) {
-      node.scrollTop = node.scrollHeight;
-    }
+    if (!node || !stickRef.current || pinnedThisFrameRef.current) return;
+    node.scrollTop = node.scrollHeight;
+    pinnedThisFrameRef.current = true;
+    requestAnimationFrame(() => {
+      pinnedThisFrameRef.current = false;
+    });
   };
 
   // New content keeps the bottom pinned (only if the user hasn't scrolled up).
@@ -156,10 +163,18 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
           <LocalizedText id="STR-2156" /> {Math.min(hiddenCount, TAIL_BLOCKS)}<LocalizedText id="STR-2154" /> {hiddenCount}<LocalizedText id="STR-2155" />
         </button>
       )}
-      {!view.transcriptLoading && shown.map((block) => (
+      {!view.transcriptLoading && shown.map((block, index) => (
         // Key by kind+id: an AskUserQuestion approval and its merged tool block
         // share the same tool-use id, so id alone would collide.
-        <Block key={block.kind + ":" + block.id} block={block} view={view} density={density} actions={actions} detail={detail} />
+        <Block
+          key={block.kind + ":" + block.id}
+          block={block}
+          view={view}
+          density={density}
+          actions={actions}
+          detail={detail}
+          live={index === shown.length - 1 && view.busy && block.kind === "assistant"}
+        />
       ))}
       {!view.transcriptLoading && view.busy && <TypingIndicator />}
     </div>
@@ -190,6 +205,7 @@ interface BlockProps {
   density: PanelDensity;
   actions: WorkbenchActions;
   detail: "full" | "answers";
+  live: boolean;
 }
 
 /**
@@ -198,7 +214,7 @@ interface BlockProps {
  * growing final answer should not rerun 149 unrelated cards and their derived
  * previews on every frame.
  */
-const Block = memo(function TranscriptBlock({ block, view, density, actions, detail }: BlockProps) {
+const Block = memo(function TranscriptBlock({ block, view, density, actions, detail, live }: BlockProps) {
   // Most translated labels are context consumers themselves. A few attributes
   // use `localized()` directly, so subscribe here to keep memoized cards live
   // when the application locale changes.
@@ -256,7 +272,7 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
                 back into an editor or another member, not the rendered HTML. */}
             {block.text && <CopyButton text={block.text} title={localized("STR-2161")} className="wb-assistant-copy" />}
           </div>
-          <div className="wb-assistant-body"><Markdown text={block.text} /></div>
+          <div className="wb-assistant-body"><AssistantMarkdown text={block.text} live={live} /></div>
         </div>
       );
     case "tool":
@@ -313,7 +329,7 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
 
 /** Exported for the small structural-sharing regression; rendering stays here. */
 export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean {
-  if (previous.block !== next.block || previous.density !== next.density || previous.detail !== next.detail) {
+  if (previous.block !== next.block || previous.density !== next.density || previous.detail !== next.detail || previous.live !== next.live) {
     return false;
   }
 
@@ -341,6 +357,67 @@ export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean 
       && previous.actions === next.actions;
   }
   return true;
+}
+
+const LIVE_MARKDOWN_THROTTLE_MS = 250;
+const LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD = 30 * 1024;
+
+/**
+ * Parsing cost grows with the whole answer, even when a stream adds only a few
+ * characters. Keep small live answers responsive at a human-scale cadence and
+ * stop parsing large answers altogether until the turn commits.
+ */
+function AssistantMarkdown({ text: latestText, live }: { text: string; live: boolean }) {
+  const [throttledText, setThrottledText] = useState(latestText);
+  const latestTextRef = useRef(latestText);
+  const liveRef = useRef(live);
+  const lastMarkdownAtRef = useRef(Date.now());
+  const trailingTimerRef = useRef<number>();
+
+  latestTextRef.current = latestText;
+  liveRef.current = live;
+
+  useEffect(() => {
+    if (!live || latestText.length > LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD) {
+      if (trailingTimerRef.current !== undefined) {
+        clearTimeout(trailingTimerRef.current);
+        trailingTimerRef.current = undefined;
+      }
+      return;
+    }
+
+    const elapsed = Date.now() - lastMarkdownAtRef.current;
+    if (elapsed >= LIVE_MARKDOWN_THROTTLE_MS) {
+      if (trailingTimerRef.current !== undefined) {
+        clearTimeout(trailingTimerRef.current);
+        trailingTimerRef.current = undefined;
+      }
+      lastMarkdownAtRef.current = Date.now();
+      setThrottledText(latestText);
+      return;
+    }
+    if (trailingTimerRef.current === undefined) {
+      trailingTimerRef.current = window.setTimeout(() => {
+        trailingTimerRef.current = undefined;
+        if (liveRef.current && latestTextRef.current.length <= LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD) {
+          lastMarkdownAtRef.current = Date.now();
+          setThrottledText(latestTextRef.current);
+        }
+      }, LIVE_MARKDOWN_THROTTLE_MS - elapsed);
+    }
+  }, [latestText, live]);
+
+  useEffect(() => () => {
+    if (trailingTimerRef.current !== undefined) clearTimeout(trailingTimerRef.current);
+  }, []);
+
+  // The committed value bypasses throttled state so live -> false always
+  // produces the final complete markdown in that render.
+  if (!live) return <Markdown text={latestText} />;
+  if (latestText.length > LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD) {
+    return <div className="wb-md wb-md-live-plain">{latestText}</div>;
+  }
+  return <Markdown text={throttledText} />;
 }
 
 const GATE_META = {

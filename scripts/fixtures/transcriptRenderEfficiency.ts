@@ -49,10 +49,11 @@ export function run(assert: Assert): void {
   const view = {
     name: "main", model: "model", member: { runtime: "codex" }, transcript,
   } as any;
-  const previous = { block, view, density: "wide", detail: "full", actions: { old: true } } as any;
+  const previous = { block, view, density: "wide", detail: "full", actions: { old: true }, live: false } as any;
   const rebuiltView = { ...view };
   assert(sameBlockProps(previous, { ...previous, view: rebuiltView, actions: { next: true } }), "an unchanged historical assistant block is reused across a rebuilt member view");
   assert(!sameBlockProps(previous, { ...previous, block: { ...block, text: "streamed" } }), "the one assistant block receiving a delta still rerenders");
+  assert(!sameBlockProps(previous, { ...previous, live: true }), "a completed assistant block rerenders when it becomes live or committed");
 
   const environment = { id: "e1", kind: "environment", checkId: "cli", text: "missing" } as const;
   const environmentProps = { ...previous, block: environment, view, actions: stableCall } as any;
