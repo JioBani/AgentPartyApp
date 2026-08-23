@@ -109,13 +109,25 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     });
   };
 
+  // A suppressed duplicate must not be LOST: when the deduped call was the last
+  // change of the burst, nothing else would pin, leaving the view a few px shy
+  // of the bottom. The next frame performs one compensating pin instead.
+  const pendingPinRef = useRef(false);
   const stickToBottom = () => {
     const node = scrollRef.current;
-    if (!node || !stickRef.current || pinnedThisFrameRef.current) return;
+    if (!node || !stickRef.current) return;
+    if (pinnedThisFrameRef.current) {
+      pendingPinRef.current = true;
+      return;
+    }
     node.scrollTop = node.scrollHeight;
     pinnedThisFrameRef.current = true;
     requestAnimationFrame(() => {
       pinnedThisFrameRef.current = false;
+      if (pendingPinRef.current) {
+        pendingPinRef.current = false;
+        stickToBottom();
+      }
     });
   };
 

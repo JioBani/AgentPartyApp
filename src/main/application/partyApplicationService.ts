@@ -249,6 +249,20 @@ export class PartyApplicationService {
         return;
       }
       this.busySessions.delete(payload.sessionId);
+      // A turn can end WITHOUT `turn_complete` (error, interrupt, force-stop).
+      // Its last events may sit on the relaxed 10s busy timer — re-arm that
+      // pending flush on the idle cadence so the tail reaches disk promptly.
+      if (wasBusy) {
+        const pendingFlush = this.recordFlushTimers.get(payload.sessionId);
+        if (pendingFlush) {
+          clearTimeout(pendingFlush);
+          this.recordFlushTimers.delete(payload.sessionId);
+          const flushOwner = this.memberOwningSession(payload.sessionId);
+          if (flushOwner) {
+            this.scheduleTranscriptFlush(payload.sessionId, flushOwner.name, this.partyIdOf(flushOwner));
+          }
+        }
+      }
       // Only on the busy → idle EDGE. Every idle snapshot would otherwise
       // re-enter the drain for a queue that is simply waiting to be sent by hand.
       //
