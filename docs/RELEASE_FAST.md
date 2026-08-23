@@ -7,11 +7,16 @@
 ## 한 줄 요약
 
 ```powershell
-npm run release:publish -- --notes "이번 릴리스에서 바뀐 것"
+node scripts/release-publish.mjs --notes "이번 릴리스에서 바뀐 것"
 ```
 
 빌드 → 패키징 → 공개 저장소 업로드 → 릴리스 게시 → 익명 다운로드 확인까지 끝난다.
 방금 `npm run build`를 돌렸다면 `--skip-build`를 붙여 빌드를 건너뛴다.
+
+`npm run release:publish -- ...`는 npm/PowerShell 버전에 따라 `--notes`와
+`--skip-build`를 npm 설정 옵션으로 소비할 수 있다. 그러면 본문이 기본값으로
+게시되거나 검증 빌드가 다시 실행된다. 릴리스에서는 위처럼 Node 스크립트를 직접
+호출하고, 시작 로그에 전달한 옵션이 그대로 보이는지 확인한다.
 
 ## 토큰은 어디에 있나
 
@@ -37,13 +42,54 @@ GITHUB=<공개 저장소에 릴리스를 만들 권한만 있는 토큰>
    된다. 커밋해 둔다.
 2. **릴리스한다.**
    ```powershell
-   npm run release:publish -- --notes "파티/멤버 UI 정리, 세션 시작 카드, ..."
+   node scripts/release-publish.mjs --notes "파티/멤버 UI 정리, 세션 시작 카드, ..."
    ```
    `--notes` 본문은 앱의 업데이트 대화상자와 설정 → **버전** 탭에 그대로 렌더링되므로,
    사용자에게 보여줄 문장으로 쓴다. 생략하면 `AgentParty <version>`만 들어간다.
 3. **끝난다.** 스크립트가 마지막에 릴리스 주소, 자산별 HTTP 상태, 저장된 본문을
    출력한다. 전부 200이면 사용자 앱이 다음 확인 때(시작 직후 또는 6시간 주기)
    이 버전을 본다.
+
+## 외부 release worktree 패키징 사전 점검
+
+릴리스는 `C:\Users\Dev\AppData\Roaming\AgentParty\worktrees` 아래의 전용 외부
+worktree에서 수행한다. 릴리스 checkout은 다른 checkout의 `node_modules`를 빌리거나
+정션으로 공유하지 않고, 그 checkout 안에서 `npm ci`로 설치한 자체 의존성만 쓴다.
+
+`@agentparty/protocol`은 선택적인 로컬 `file:` 의존성이다. 외부 worktree에서
+`npm ci`를 실행하면 실제 대상이 없거나 프로젝트 밖에 있는 정션이
+`node_modules\@agentparty\protocol`에 생길 수 있다. 일반 빌드는 모바일 연결을 뺀
+구성으로 통과하지만, `electron-builder`의 `@electron/rebuild`는 `node_modules`의
+모든 항목을 먼저 `stat`하므로 끊어진 정션에서 `ENOENT`로 중단된다.
+
+`npm ci` 직후, 빌드나 패키징 전에 다음을 실행한다.
+
+```powershell
+Get-Item node_modules\@agentparty\protocol -Force -ErrorAction SilentlyContinue |
+  Select-Object FullName, LinkType, Target
+
+node --input-type=module -e `
+  "import('./scripts/mobile-pipe.mjs').then(m => console.log(m.pruneExternalPipeLinkForPackaging() ?? m.pruneBrokenPipeLink() ?? 'optional link 없음'))"
+```
+
+이 명령은 공식 패키징 헬퍼로 링크 자체만 제거하며 대상 디렉터리는 건드리지 않는다.
+실행 뒤 해당 경로가 없어졌는지 확인한다. 실제 디렉터리로 복사된 패키지라면 임의로
+삭제하지 않는다.
+
+### 패키징 재시도 규칙
+
+- `electron-builder`는 같은 release worktree에서 **한 프로세스만** 실행한다.
+- 호출 측 타임아웃은 하위 `electron-builder` 종료를 보장하지 않는다. 타임아웃이나
+  강제 중단 뒤에는 `electron-builder`, `node`, 해당 worktree 경로를 명령줄에 가진
+  프로세스가 모두 끝났는지 확인하기 전 재실행하지 않는다.
+- 첫 패키징에는 충분히 긴 타임아웃을 사용한다. 진행 중인 패키징 위에 두 번째
+  패키징을 시작하지 않는다.
+- 실패 후 `release\win-unpacked` 같은 부분 결과를 정리하거나 옮길 때도 먼저 관련
+  프로세스가 없음을 확인한다. 두 프로세스가 같은 출력 경로를 쓰면 한쪽이
+  `electron.exe`를 이동한 뒤 다른 쪽이 같은 파일을 찾지 못하는 rename `ENOENT`가
+  발생할 수 있다.
+- 재시도는 선택적 링크 정리, 프로세스 종료, 부분 결과 격리까지 끝난 뒤 깨끗한
+  출력 경로에서 한 번만 수행한다.
 
 ## 스크립트가 대신 해주는 것
 
