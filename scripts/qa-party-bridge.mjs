@@ -168,6 +168,25 @@ assert(listed.data.members.find((m) => m.name === "reviewer")?.harness === "clau
 // --- member-remove: main protected, others removable -------------------------
 const rmMain = await bridge.removeMember("main");
 assert(!rmMain.ok, "member-remove refuses to remove 'main'");
+
+// A different process/window can move the advisory last-active hint while this
+// bridge remains bound to its own party. Removing a member must return that
+// acted-on party's view, close only that member's session, and leave the other
+// party byte-for-byte equivalent at the service boundary.
+const scopeProbeCreated = await bridge.createMember({ name: "scope-probe", role: "remove scope QA", harness: "claude-code" });
+assert(scopeProbeCreated.ok, "created a scoped member-removal probe");
+const scopeProbeSession = svc.list(partyId).members.find((m) => m.name === "scope-probe")?.sessionId;
+const otherCreated = svc.createParty({ name: "other-party" });
+const otherPartyId = otherCreated.member?.partyId || otherCreated.currentPartyId;
+const otherMembersBefore = svc.list(otherPartyId).members.map((m) => `${m.partyId}/${m.name}/${m.sessionId || ""}`).sort();
+const scopedRemoval = svc.removeMember("scope-probe", partyId);
+assert(scopedRemoval.currentPartyId === partyId, "member removal result stays scoped to the acted-on party when the global hint points elsewhere");
+assert(!scopedRemoval.members.some((m) => m.name === "scope-probe"), "scoped removal result excludes the deleted member");
+assert(scopeProbeSession && !live.has(scopeProbeSession), "scoped removal still closes the deleted member's session");
+const otherMembersAfter = svc.list(otherPartyId).members.map((m) => `${m.partyId}/${m.name}/${m.sessionId || ""}`).sort();
+assert(JSON.stringify(otherMembersAfter) === JSON.stringify(otherMembersBefore), "scoped removal leaves the other party unchanged");
+svc.selectParty(partyId);
+
 const rmRev = await bridge.removeMember("reviewer");
 assert(rmRev.ok, "member-remove removes a normal member");
 assert(!svc.list().members.some((m) => m.name === "reviewer"), "removed member is gone from party state");

@@ -2132,12 +2132,16 @@ export class PartyApplicationService {
 
       this.deps.sessionManager.closeSession(member.sessionId);
     }
-    state.members = state.members.filter((item) => !(item.partyId === member.partyId && item.name === member.name));
-    state.messages = state.messages.filter((message) => message.partyId !== member.partyId || (message.from !== member.name && message.to !== member.name));
-    fs.rmSync(this.repository.memberDir(workspace, this.partyIdOf(member), member.name), { recursive: true, force: true });
-    this.persistParty(workspace, state, this.partyIdOf(member));
-    log("info", "party", "member removed", { workspace, partyId: member.partyId, member: member.name });
-    return this.result(`Member '${member.name}' removed.`, state);
+    const removedPartyId = this.partyIdOf(member);
+    state.members = state.members.filter((item) => !(item.partyId === removedPartyId && item.name === member.name));
+    state.messages = state.messages.filter((message) => message.partyId !== removedPartyId || (message.from !== member.name && message.to !== member.name));
+    fs.rmSync(this.repository.memberDir(workspace, removedPartyId, member.name), { recursive: true, force: true });
+    this.persistParty(workspace, state, removedPartyId);
+    log("info", "party", "member removed", { workspace, partyId: removedPartyId, member: member.name });
+    // The member can no longer carry its party into result(), so scope the
+    // returned view explicitly. Otherwise another window's latest selection
+    // becomes the response's currentPartyId and the caller jumps parties.
+    return this.result(`Member '${member.name}' removed.`, state, undefined, removedPartyId);
   }
 
   /**

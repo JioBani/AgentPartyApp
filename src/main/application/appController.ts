@@ -2355,8 +2355,12 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.bindMember(name, sessionId, this.partyForWindow(windowId)));
   }
 
-  removePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeMember"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.removeMember(name, this.partyForWindow(windowId)));
+  async removePartyMember(workspacePath: string, name: string, windowId?: string): Promise<ReturnType<PartyApplicationService["removeMember"]>> {
+    const result = await this.mutateParty(workspacePath, (engine) => engine.removeMember(name, this.partyForWindow(windowId)));
+    // Member detail and the grouped sidebar summary are separate stores. Keep
+    // the summary authoritative immediately after a successful deletion.
+    await this.syncPartyRegistry(workspacePath);
+    return result;
   }
 
   /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */
