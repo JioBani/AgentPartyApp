@@ -268,7 +268,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
       reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
       effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
-      serviceTier: { type: "string", description: "Optional service tier from list-models." },
+      serviceTier: { type: "string", description: "Optional service tier from list-models. Omit (or pass 'inherit') to follow the harness's own config; 'standard' forces the default speed; a native id like 'priority' forces Fast (higher credit burn)." },
       permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
       location: {
         type: "object",
@@ -745,7 +745,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
         reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
         effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
-        serviceTier: z.string().optional().describe("Optional service tier from list-models."),
+        serviceTier: z.string().optional().describe("Optional service tier from list-models. Omit (or 'inherit') to follow the harness's own config; 'standard' forces default speed; 'priority' forces Fast."),
         permissionMode: z.string().optional().describe("Initial Claude permission mode."),
         location: z.object({
           host: z.enum(MEMBER_EXECUTION_HOSTS).describe("Execution host. WSL is Windows-only; future native hosts extend this field."),

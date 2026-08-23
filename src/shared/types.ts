@@ -58,6 +58,28 @@ export interface HarnessDefaults {
 }
 
 /**
+ * UI/API sentinel for "no explicit service tier — follow the harness's own
+ * config" (e.g. Codex `~/.codex/config.toml` `service_tier`). It exists so a
+ * picker can show the unset state as a real, re-selectable option; it is never
+ * stored on a member and never sent to a harness —
+ * {@link normalizeServiceTierSelection} collapses it to `undefined` at every
+ * boundary.
+ */
+export const SERVICE_TIER_INHERIT = "inherit";
+
+/**
+ * Collapses the inherit sentinel (and empty strings) to `undefined` while
+ * passing explicit tier ids (`standard`, `priority`, `fast`, …) through.
+ */
+export function normalizeServiceTierSelection(tier: string | undefined): string | undefined {
+  const trimmed = tier?.trim();
+  if (!trimmed || trimmed === SERVICE_TIER_INHERIT) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+/**
  * A resolved creation profile for one harness, derived from
  * {@link AppSettings.harnessDefaults}. `main` is created from the default
  * harness's profile and the member wizard is prefilled per selected harness —

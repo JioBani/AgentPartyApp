@@ -4051,8 +4051,13 @@ and the party `list-models` tool. Use the option id returned by that model's
 }
 ```
 
-AgentParty forwards the tier at thread start/resume and on every turn. Omitting
-`serviceTier` preserves Codex's Standard/default behavior. Fast availability is
+AgentParty forwards the tier at thread start/resume and on every turn. The
+field has three states. Omitting `serviceTier` (or passing `inherit`) sends
+nothing, so the member follows the user's own Codex config — including a
+`config.toml` `service_tier = "fast"` default. `"standard"` explicitly forces
+the ordinary tier (a wire `null`, which clears any config Fast). A native id
+such as `"priority"` forces Fast; note Fast consumes ChatGPT credits at a
+higher rate (about 2.5x for GPT-5.6/5.5, 2x for GPT-5.4). Fast availability is
 account- and model-dependent, so callers should use the options returned by the
 live model catalog rather than hard-coding a tier.
 

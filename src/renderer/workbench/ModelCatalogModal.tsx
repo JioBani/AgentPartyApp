@@ -671,6 +671,12 @@ export function ModelCatalogModal({
                         </button>
                       ))}
                     </div>
+                    {/* The selected tier's catalog description — this is where the
+                        Fast credit-consumption note surfaces at decision time. */}
+                    {(() => {
+                      const active = serviceTierCap.options.find((option) => option.id === serviceTier);
+                      return active?.description ? <p className="wb-wizard-hint">{active.description}</p> : null;
+                    })()}
                   </div>
                 )}
 

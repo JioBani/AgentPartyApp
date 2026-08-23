@@ -41,6 +41,7 @@ import { toEpochMs, type UsageWindow, type UsageWindowKind } from "../shared/usa
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
+import { normalizeServiceTierSelection } from "../shared/types";
 import { nextAgentPartyCodexSqliteHome, withAgentPartyCodexStartup } from "./codexSqliteHome";
 
 export interface CodexAdapterOptions {
@@ -176,13 +177,15 @@ export class CodexAdapter extends EventEmitter {
   }
 
   /**
-   * AgentParty gives the UI an explicit Standard choice, while app-server uses
-   * JSON null to clear a previously selected Fast tier. An absent member value
-   * remains undefined so legacy sessions keep following the user's Codex
-   * config instead of AgentParty silently overriding it.
+   * Three explicit states, mirroring the UI ("설정 따름 / Standard / Fast"):
+   * an absent or `inherit` value stays `undefined` so the thread follows the
+   * user's own Codex config (`config.toml` `service_tier`, e.g. a native Fast
+   * default); an explicit Standard maps to JSON null, which app-server defines
+   * as "clear the current service tier" — forcing the ordinary tier even when
+   * the config says Fast; any other id (`priority`) is forwarded verbatim.
    */
   private serviceTierParam(): string | null | undefined {
-    const tier = this.options.serviceTier?.trim();
+    const tier = normalizeServiceTierSelection(this.options.serviceTier);
     if (!tier) return undefined;
     return tier === "standard" || tier === "default" ? null : tier;
   }

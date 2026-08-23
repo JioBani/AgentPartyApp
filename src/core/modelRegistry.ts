@@ -11,6 +11,7 @@ import {
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
+import { SERVICE_TIER_INHERIT } from "../shared/types";
 import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 import { grokReasoningEfforts } from "./grokAgentCli";
@@ -303,14 +304,22 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
           ? {
               supported: true,
               mutableDuringSession: true,
-              // Codex represents its ordinary tier as null on the wire. The
-              // explicit app-level id lets a person turn Fast back off.
-              defaultValue: "standard",
+              // Three explicit states. `inherit` (the default) sends nothing so
+              // the member follows the user's own Codex config (`config.toml`
+              // `service_tier`); `standard` forces the ordinary tier (null on
+              // the wire); a native id such as `priority` forces Fast.
+              defaultValue: SERVICE_TIER_INHERIT,
               options: [
+                { id: SERVICE_TIER_INHERIT, label: "설정 따름", description: "Codex 자체 설정(config.toml service_tier)을 그대로 사용" },
                 { id: "standard", label: "Standard", description: "Codex default serving speed" },
                 ...model.serviceTiers
                   .filter((tier) => tier.id !== "standard" && tier.id !== "default")
-                  .map((tier) => ({ id: tier.id, label: tier.name, description: tier.description })),
+                  .map((tier) => ({
+                    id: tier.id,
+                    label: tier.name,
+                    // Fast trades credits for speed — say so where it is chosen.
+                    description: `${tier.description} · 크레딧 소모 증가 (GPT-5.6/5.5 약 2.5배)`,
+                  })),
               ],
             }
           : { supported: false, mutableDuringSession: false, options: [] },
