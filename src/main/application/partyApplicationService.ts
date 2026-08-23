@@ -197,8 +197,9 @@ export class PartyApplicationService {
    */
   private readonly recordedPersisted = new Map<string, TranscriptBlock[]>();
   private readonly recordFlushTimers = new Map<string, NodeJS.Timeout>();
-  /** Debounce: long enough to batch a streaming reply, short enough to survive a kill. */
+  /** Idle debounce remains short; live turns batch full-transcript rewrites. */
   private static readonly RECORD_FLUSH_MS = 1_500;
+  private static readonly BUSY_RECORD_FLUSH_MS = 10_000;
 
   constructor(private readonly deps: PartyApplicationDeps) {
     // Record the harness thread as soon as it becomes real — the turn that
@@ -216,6 +217,19 @@ export class PartyApplicationService {
       this.recordTranscriptEvents(payload.sessionId, payload.events);
       if (!payload.events.some((event) => event?.type === "turn_complete")) {
         return;
+      }
+      const pendingFlush = this.recordFlushTimers.get(payload.sessionId);
+      if (pendingFlush) {
+        clearTimeout(pendingFlush);
+        this.recordFlushTimers.delete(payload.sessionId);
+      }
+      const owner = this.memberOwningSession(payload.sessionId);
+      if (owner) {
+        try {
+          this.flushTranscript(payload.sessionId, owner.name, this.partyIdOf(owner));
+        } catch (error) {
+          log("error", "party", "turn-complete transcript write failed", { member: owner.name, error: errorMessage(error) });
+        }
       }
       this.persistHarnessThread(payload.sessionId);
     });
@@ -235,6 +249,20 @@ export class PartyApplicationService {
         return;
       }
       this.busySessions.delete(payload.sessionId);
+      // A turn can end WITHOUT `turn_complete` (error, interrupt, force-stop).
+      // Its last events may sit on the relaxed 10s busy timer — re-arm that
+      // pending flush on the idle cadence so the tail reaches disk promptly.
+      if (wasBusy) {
+        const pendingFlush = this.recordFlushTimers.get(payload.sessionId);
+        if (pendingFlush) {
+          clearTimeout(pendingFlush);
+          this.recordFlushTimers.delete(payload.sessionId);
+          const flushOwner = this.memberOwningSession(payload.sessionId);
+          if (flushOwner) {
+            this.scheduleTranscriptFlush(payload.sessionId, flushOwner.name, this.partyIdOf(flushOwner));
+          }
+        }
+      }
       // Only on the busy → idle EDGE. Every idle snapshot would otherwise
       // re-enter the drain for a queue that is simply waiting to be sent by hand.
       //
@@ -322,7 +350,9 @@ export class PartyApplicationService {
         // like a member that stopped talking.
         log("error", "party", "transcript write failed", { member, partyId, error: errorMessage(error) });
       }
-    }, PartyApplicationService.RECORD_FLUSH_MS);
+    }, this.busySessions.has(sessionId)
+      ? PartyApplicationService.BUSY_RECORD_FLUSH_MS
+      : PartyApplicationService.RECORD_FLUSH_MS);
     timer.unref?.();
     this.recordFlushTimers.set(sessionId, timer);
   }
