@@ -42,19 +42,45 @@ console.log("\ncodexDiscovery normalization:");
 const skills = D.skillCommands({ data: [{ cwd: "/w", skills: [
   { name: "deep-dive", shortDescription: "심층 분석", enabled: true },
   { name: "legacy", description: "old skill", enabled: false },
-], errors: [] }] });
+  { name: D.CODEX_IN_APP_BROWSER_SKILL, path: "C:\\fake\\browser\\control-in-app-browser\\SKILL.md", enabled: true },
+], errors: [] }] }, new Set([D.CODEX_IN_APP_BROWSER_SKILL]));
 assert(skills.length === 2 && skills[0].source === "skill", "skills/list → skill commands");
 assert(skills[0].name === "deep-dive" && !skills[0].disabledReason, "enabled skill has no disabled reason");
 assert(skills[1].name === "legacy" && skills[1].disabledReason === "비활성화된 skill", "disabled skill carries a reason");
+const hostOverrides = D.unsupportedHostSkillOverrides({ data: [{ skills: [
+  { name: D.CODEX_IN_APP_BROWSER_SKILL, path: "C:\\fake\\browser\\control-in-app-browser\\SKILL.md" },
+] }] });
+assert(
+  hostOverrides.length === 1
+    && hostOverrides[0].enabled === false
+    && hostOverrides[0].path === "C:\\fake\\browser\\control-in-app-browser\\SKILL.md",
+  "unsupported host skill becomes a thread-local SKILL.md override",
+);
+assert(
+  D.skillCommands(
+    { data: [{ skills: [{ name: D.CODEX_IN_APP_BROWSER_SKILL, enabled: true }] }] },
+    new Set([D.CODEX_IN_APP_BROWSER_SKILL]),
+  ).length === 0,
+  "unsupported host skill can be excluded from discovery",
+);
 
 const plugins = D.pluginCommands({ marketplaces: [{ plugins: [
   { summary: { id: "p1", name: "formatter", installed: true, enabled: true, availability: "AVAILABLE", keywords: ["fmt"] } },
   { summary: { id: "p2", name: "blocked", installed: true, enabled: true, availability: "DISABLED_BY_ADMIN" } },
   { summary: { id: "p3", name: "notinstalled", installed: false, enabled: true, availability: "AVAILABLE" } },
-] }] });
-assert(plugins.map((p) => p.name).join(",") === "formatter,blocked", "installed plugins only (not-installed excluded)");
+  { summary: { id: D.CODEX_IN_APP_BROWSER_PLUGIN, name: "browser", installed: true, enabled: true, availability: "AVAILABLE" } },
+] }] }, new Set([D.CODEX_IN_APP_BROWSER_PLUGIN]));
+assert(plugins.map((p) => p.name).join(",") === "formatter,blocked", "installed plugins only (not-installed and unsupported host plugin excluded)");
 assert(plugins[0].source === "plugin" && !plugins[0].disabledReason, "available plugin has no disabled reason");
 assert(plugins[1].disabledReason === "관리자가 비활성화함", "admin-disabled plugin carries a reason");
+
+assert(
+  D.pluginCommands(
+    { marketplaces: [{ plugins: [{ summary: { id: D.CODEX_IN_APP_BROWSER_PLUGIN, name: "browser", installed: true } }] }] },
+    new Set([D.CODEX_IN_APP_BROWSER_PLUGIN]),
+  ).length === 0,
+  "unsupported host plugin can be excluded from discovery",
+);
 
 // ---- Layer 2: palette grouping ----------------------------------------------
 const P = await bundle("src/renderer/workbench/paletteModel.ts", "codex-palette-model.mjs", []);

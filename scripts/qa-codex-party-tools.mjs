@@ -94,6 +94,14 @@ try {
   const outbound = frames.filter((frame) => frame.direction === "out").map((frame) => frame.payload);
   const threadStart = outbound.find((message) => message.method === "thread/start");
   const turnStart = outbound.find((message) => message.method === "turn/start");
+  const disabledSkills = threadStart?.params?.config?.skills?.config || [];
+  assert(threadStart?.params?.config?.dynamic_tools?.length === 1, "thread config preserves the AgentParty dynamic tool");
+  assert(
+    disabledSkills.length === 1
+      && disabledSkills[0].enabled === false
+      && /control-in-app-browser[\\/]SKILL\.md$/i.test(disabledSkills[0].path),
+    "thread config disables only the unsupported in-app-browser skill by SKILL.md path",
+  );
   assert(
     threadStart?.params?.developerInstructions?.includes("# AgentParty — party member session")
       && threadStart.params.developerInstructions.includes("team-qa")

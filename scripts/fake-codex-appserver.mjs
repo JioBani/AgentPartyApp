@@ -139,6 +139,7 @@ rl.on("line", (line) => {
       send({ id: msg.id, result: { data: [{ cwd: msg.params?.cwds?.[0] || "/w", skills: [
         { name: "deep-dive", shortDescription: "심층 분석 스킬", enabled: true },
         { name: "legacy-skill", description: "구버전", enabled: false },
+        { name: "browser:control-in-app-browser", path: "C:\\fake\\browser\\skills\\control-in-app-browser\\SKILL.md", shortDescription: "In-app browser", enabled: true },
       ], errors: [] }] } });
       return;
     }
@@ -146,6 +147,7 @@ rl.on("line", (line) => {
       send({ id: msg.id, result: { marketplaces: [{ plugins: [
         { summary: { id: "fmt", name: "formatter", installed: true, enabled: true, availability: "AVAILABLE", keywords: ["format"] } },
         { summary: { id: "blk", name: "blocked-plugin", installed: true, enabled: true, availability: "DISABLED_BY_ADMIN" } },
+        { summary: { id: "browser@openai-bundled", name: "browser", installed: true, enabled: true, availability: "AVAILABLE" } },
       ] }], marketplaceLoadErrors: [] } });
       return;
     }
