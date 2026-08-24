@@ -1759,6 +1759,13 @@ body.wb-resizing {
    composer grows), the transcript SCROLLS instead of compressing the cards. */
 .wb-transcript > * {
   flex-shrink: 0;
+  /* A transcript card is a flex item. Without a zero minimum, an unbroken
+     runtime value (MCP transport type, URL, path, request id, …) becomes the
+     item's min-content width and pushes the whole card outside the panel. */
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .wb-transcript.density-narrow {
